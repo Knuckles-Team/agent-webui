@@ -1,5 +1,16 @@
 {
   "version": "0.2",
   "language": "en",
-  "words": ["Pydantic", "pydantic", "Logfire", "uvicorn", "uidotdev", "usehooks", "regen", "conv", "misformatted"]
+  "words": [
+    "Pydantic",
+    "pydantic",
+    "Logfire",
+    "uvicorn",
+    "uidotdev",
+    "usehooks",
+    "regen",
+    "conv",
+    "misformatted",
+    "webui"
+  ]
 }
