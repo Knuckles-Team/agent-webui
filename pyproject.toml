@@ -3,8 +3,8 @@ requires = ["setuptools>=80.9.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-web"
-version = "0.1.5"
+name = "agent-webui"
+version = "0.1.7"
 description = "Agent Web Interface for Pydantic AI Agents"
 readme = "README.md"
 classifiers = [
@@ -47,7 +47,7 @@ quote-style = "single"
 include-package-data = true
 
 [tool.setuptools.package-data]
-agent_web = ["dist/**", "icon.png"]
+agent_webui = ["dist/**", "icon.png"]
 
 [tool.setuptools.packages.find]
 where = ["agent"]

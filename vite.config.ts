@@ -12,7 +12,7 @@ export default defineConfig(() => ({
   plugins: [react(), tailwindcss(), tsconfigPaths({ root: __dirname })],
   base: '',
   build: {
-    outDir: 'agent/agent_web/dist',
+    outDir: 'agent/agent_webui/dist',
     emptyOutDir: true,
     assetsDir: 'assets',
   },
