@@ -1,6 +1,4 @@
 from __future__ import annotations as _annotations
-
-__version__ = '0.1.0'
 import os
 from pathlib import Path
 from typing import Any, Dict
@@ -16,6 +14,7 @@ from .api_extensions import router as enhanced_router, set_workspace_helpers
 logfire.configure(send_to_logfire='if-token-present')
 logfire.instrument_pydantic_ai()
 
+__version__ = "0.1.2"
 
 def create_agent_web_app(
     agent: Agent,
