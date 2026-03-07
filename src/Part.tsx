@@ -25,11 +25,14 @@ export function Part({ part, message, status, regen, index, lastMessage }: PartP
   }
 
   if (part.type === 'text') {
+    const isCron = part.text.startsWith('[CRON]')
+    const displayText = isCron ? part.text.replace('[CRON]', '').trim() : part.text
+
     return (
       <div className="py-4">
-        <Message from={message.role}>
+        <Message from={message.role} isCron={isCron}>
           <MessageContent>
-            <Response>{part.text}</Response>
+            <Response>{displayText}</Response>
           </MessageContent>
         </Message>
         {message.role === 'assistant' && index === message.parts.length - 1 && (

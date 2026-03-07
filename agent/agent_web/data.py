@@ -49,12 +49,7 @@ def get_table_of_contents(repo: Repo):
         headers = soup.find_all(['h1', 'h2', 'h3', 'h4'])
         result += f'{file.relative_to(get_docs_dir(repo))}\n'
         result += '\n'.join(
-            '#'
-            * int(
-                header.name[1]  # type: ignore
-            )
-            + ' '
-            + header.get_text()
+            '#' * int(header.name[1]) + ' ' + header.get_text()  # type: ignore
             for header in headers
         )
         result += '\n\n'

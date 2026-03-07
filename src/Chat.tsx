@@ -133,8 +133,8 @@ const Chat = () => {
   }
 
   return (
-    <>
-      <Conversation className="h-full">
+    <div className="flex flex-col h-full overflow-hidden">
+      <Conversation className="flex-1">
         <ConversationContent>
           {messages.map((message) => (
             <div key={message.id}>
@@ -240,11 +240,13 @@ const Chat = () => {
                     <PromptInputModelSelectValue />
                   </PromptInputModelSelectTrigger>
                   <PromptInputModelSelectContent>
-                    {(configQuery.data as { models: { id: string; name: string }[] }).models.map((model) => (
-                      <PromptInputModelSelectItem key={model.id} value={model.id}>
-                        {model.name}
-                      </PromptInputModelSelectItem>
-                    ))}
+                    {(configQuery.data as { models: { id: string; name: string }[] }).models
+                      .filter((m) => m.id && m.name) // Ensure we have valid entries
+                      .map((model) => (
+                        <PromptInputModelSelectItem key={model.id} value={model.id}>
+                          {model.name}
+                        </PromptInputModelSelectItem>
+                      ))}
                   </PromptInputModelSelectContent>
                 </PromptInputModelSelect>
               )}
@@ -253,7 +255,7 @@ const Chat = () => {
           </PromptInputToolbar>
         </PromptInput>
       </div>
-    </>
+    </div>
   )
 }
 

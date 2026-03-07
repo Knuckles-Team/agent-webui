@@ -8,14 +8,14 @@ pre-commit:
   commands:
     lint:
       glob: "*.{ts,tsx,js,jsx}"
-      run: pnpm run lint --no-warn-ignored {staged_files}
+      run: npm run lint --no-warn-ignored {staged_files}
     format:
       glob: "*.{ts,tsx,js,jsx,json,md,css}"
-      run: pnpm run format {staged_files}
+      run: npm run format {staged_files}
       stage_fixed: true
     typecheck:
       glob: "*.{ts,tsx}"
-      run: pnpm run typecheck
+      run: npm run typecheck
     check-yaml:
       glob: "*.{yaml,yml}"
       run: npx yaml-lint {staged_files}

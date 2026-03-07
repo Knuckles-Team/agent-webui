@@ -13,13 +13,23 @@ export default defineConfig(
   neostandard({ noJsx: true, noStyle: true }),
   eslintPluginPrettierRecommended,
   eslintConfigPrettier,
-  { files: ['src/*.{js,mjs,cjs,ts}'] },
+  { files: ['src/**/*.{js,mjs,cjs,ts,tsx}', '*.{js,mjs,cjs,ts,tsx}'] },
   {
     languageOptions: {
       globals: globals.node,
     },
   },
-  { ignores: ['dist/**', 'server/**', 'node_modules/**', 'scratch/**', 'agent/**', 'commitlint.config.js'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/build/**',
+      'server/**',
+      'node_modules/**',
+      'scratch/**',
+      'agent/**',
+      'commitlint.config.js',
+    ],
+  },
   {
     rules: {
       '@typescript-eslint/no-unused-vars': [
@@ -45,6 +55,7 @@ export default defineConfig(
         },
       ],
       '@typescript-eslint/no-non-null-assertion': 'off',
+      'no-void': ['error', { allowAsStatement: true }],
     },
   },
   {

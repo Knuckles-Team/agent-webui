@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=80.9.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-web"
+version = "0.1.0"
+description = "Agent Web Interface for Pydantic AI Agents"
+readme = "README.md"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3"]
+requires-python = ">=3.10"
+dependencies = [
+    "bs4>=0.0.2",
+    "fastapi>=0.117.1",
+    "lancedb>=0.25.0",
+    "langchain-text-splitters>=0.3.11",
+    "logfire[fastapi,starlette]>=4.9.0",
+    "markdown2>=2.5.4",
+    "pip>=25.2",
+    "pydantic-ai-slim[anthropic,cli,google,openai]>=1.14.0",
+    "pyright>=1.1.405",
+    "python-frontmatter>=1.1.0",
+    "sentence-transformers>=5.1.1",
+    "sse-starlette>=3.0.2",
+    "starlette>=0.48.0",
+    "uvicorn>=0.37.0",
+    "watchfiles>=1.1.0",
+]
+
+[[project.authors]]
+name = "Audel Rouhi"
+email = "knucklessg1@gmail.com"
+
+[project.license]
+text = "MIT"
+
+[tool.ruff.format]
+docstring-code-format = false
+quote-style = "single"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+agent_web = ["dist/**", "icon.png"]
+
+[tool.setuptools.packages.find]
+where = ["agent"]

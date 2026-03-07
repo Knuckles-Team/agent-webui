@@ -5,13 +5,15 @@ import type { ComponentProps, HTMLAttributes } from 'react'
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage['role']
+  isCron?: boolean
 }
 
-export const Message = ({ className, from, ...props }: MessageProps) => (
+export const Message = ({ className, from, isCron, ...props }: MessageProps) => (
   <div
     className={cn(
       'group flex w-full items-end justify-end gap-2',
       from === 'user' ? 'is-user' : 'is-assistant flex-row-reverse justify-end',
+      isCron && 'is-cron',
       '[&>div]:max-w-[80%]',
       className,
     )}
@@ -27,6 +29,7 @@ export const MessageContent = ({ children, className, ...props }: MessageContent
       'flex flex-col gap-2 overflow-hidden rounded-lg px-4 py-3 text-foreground text-sm',
       'group-[.is-user]:bg-primary group-[.is-user]:text-primary-foreground',
       'group-[.is-assistant]:bg-secondary group-[.is-assistant]:text-foreground',
+      'group-[.is-cron]:bg-muted group-[.is-cron]:text-muted-foreground',
       'is-user:dark',
       className,
     )}
