@@ -59,6 +59,7 @@ Note: Stop any logfire platform instances to avoid port 8000 conflicts.
 - Messages contain multiple parts: text, reasoning, tool calls, sources
 - Part rendering delegated to `Part.tsx` component
 - Tool calls show input/output with collapsible UI
+- **Elicitation**: Special part type that renders a dynamic form based on a JSON schema, allowing the user to provide structured input required by MCP tools.
 
 ### Backend Structure
 
@@ -75,6 +76,7 @@ Note: Stop any logfire platform instances to avoid port 8000 conflicts.
 - `POST /api/chat`: Handles chat messages via `VercelAIAdapter`
   - Accepts `model` and `builtinTools` in request body extra data
   - Streams responses using SSE
+- `POST /api/elicit`: Submits user responses to pending elicitation requests from MCP servers.
 
 **Builtin Tools:**
 

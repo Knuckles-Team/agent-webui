@@ -7,6 +7,7 @@ import type { UIDataTypes, UIMessagePart, UITools, UIMessage } from 'ai'
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai-elements/reasoning'
 import { Tool, ToolHeader, ToolInput, ToolOutput, ToolContent } from '@/components/ai-elements/tool'
 import { CodeBlock } from '@/components/ai-elements/code-block'
+import { Elicitation, type ElicitationSchema } from '@/components/ai-elements/elicitation'
 
 interface PartProps {
   part: UIMessagePart<UIDataTypes, UITools>
@@ -15,6 +16,13 @@ interface PartProps {
   regen: (id: string) => void
   index: number
   lastMessage: boolean
+}
+
+interface ElicitationPart {
+  type: 'elicitation'
+  id: string
+  message: string
+  schema: unknown
 }
 
 export function Part({ part, message, status, regen, index, lastMessage }: PartProps) {
@@ -84,6 +92,15 @@ export function Part({ part, message, status, regen, index, lastMessage }: PartP
           )}
         </ToolContent>
       </Tool>
+    )
+  } else if ((part as { type: string }).type === 'elicitation') {
+    const elicitationPart = part as unknown as ElicitationPart
+    return (
+      <Elicitation
+        id={elicitationPart.id}
+        message={elicitationPart.message}
+        schema={elicitationPart.schema as ElicitationSchema}
+      />
     )
   }
 }

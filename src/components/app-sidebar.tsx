@@ -1,6 +1,6 @@
 import { CirclePlus, MessageCircle, Trash, Files, Zap, Book, Calendar, Settings, Pencil, Check, X } from 'lucide-react'
 import type React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -33,25 +33,50 @@ import { ModeToggle } from './mode-toggle'
 // import logoSvg from '../assets/logo.svg'
 
 function useConversations(): ConversationEntry[] {
-  const [conversations, setConversations] = useState<ConversationEntry[]>(() => {
+  const [localConversations, setLocalConversations] = useState<ConversationEntry[]>(() => {
     const stored = window.localStorage.getItem('conversationIds')
     return stored ? (JSON.parse(stored) as ConversationEntry[]) : []
   })
+  const [remoteConversations, setRemoteConversations] = useState<ConversationEntry[]>([])
+
+  useEffect(() => {
+    const fetchRemote = async () => {
+      try {
+        const res = await fetch('/api/enhanced/chats')
+        if (res.ok) {
+          const data = (await res.json()) as ConversationEntry[]
+          // Ensure timestamp is a number for sorting consistency if needed,
+          // but Date constructor handles both.
+          setRemoteConversations(
+            data.map((c) => ({
+              ...c,
+              timestamp:
+                typeof c.timestamp === 'string' || typeof c.timestamp === 'number'
+                  ? new Date(c.timestamp).getTime()
+                  : Date.now(),
+            })),
+          )
+        }
+      } catch (err) {
+        console.error('Failed to fetch remote conversations', err)
+      }
+    }
+    void fetchRemote()
+  }, [])
 
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'conversationIds' && e.newValue) {
-        setConversations(JSON.parse(e.newValue) as ConversationEntry[])
+        setLocalConversations(JSON.parse(e.newValue) as ConversationEntry[])
       }
     }
 
     const handleCustomStorageChange = () => {
       const stored = window.localStorage.getItem('conversationIds')
-      setConversations(stored ? (JSON.parse(stored) as ConversationEntry[]) : [])
+      setLocalConversations(stored ? (JSON.parse(stored) as ConversationEntry[]) : [])
     }
 
     window.addEventListener('storage', handleStorageChange)
-    // a custom event to handle same-tab updates
     window.addEventListener('local-storage-change', handleCustomStorageChange)
 
     return () => {
@@ -60,7 +85,18 @@ function useConversations(): ConversationEntry[] {
     }
   }, [])
 
-  return conversations
+  // Merge and deduplicate
+  const allConversations = useMemo(() => {
+    const map = new Map<string, ConversationEntry>()
+    // Local first
+    localConversations.forEach((c) => map.set(c.id, c))
+    // Remote second (overwrites if ID matches, which is fine for "sync")
+    remoteConversations.forEach((c) => map.set(c.id, c))
+
+    return Array.from(map.values()).sort((a, b) => b.timestamp - a.timestamp)
+  }, [localConversations, remoteConversations])
+
+  return allConversations
 }
 
 function doLocalNavigation(e: React.MouseEvent) {

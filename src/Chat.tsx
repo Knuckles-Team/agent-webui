@@ -40,10 +40,13 @@ interface BuiltinTool {
   id: string
 }
 
-// TODO: if just a single model, don't show model selector, just a label.
 interface RemoteConfig {
   models: ModelConfig[]
   builtinTools: BuiltinTool[]
+}
+
+interface ChatResponse {
+  messages: typeof useChat extends () => { messages: infer M } ? M : unknown[]
 }
 
 async function getModels() {
@@ -78,6 +81,20 @@ const Chat = () => {
       const localStorageMessages = window.localStorage.getItem(conversationId)
       if (localStorageMessages) {
         setMessages(JSON.parse(localStorageMessages) as typeof messages)
+      } else {
+        // Fallback to backend fetch
+        const fetchMessages = async () => {
+          try {
+            const res = await fetch(`/api/enhanced/chats${conversationId}`)
+            if (res.ok) {
+              const data = (await res.json()) as ChatResponse
+              setMessages(data.messages)
+            }
+          } catch (err) {
+            console.error('Failed to fetch messages for conversation', err)
+          }
+        }
+        void fetchMessages()
       }
     }
     textareaRef.current?.focus()

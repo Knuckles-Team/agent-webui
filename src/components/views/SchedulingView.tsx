@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
+  MessageCircle,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -32,6 +33,7 @@ interface CronLog {
   task_name: string
   output: string
   status: 'success' | 'error'
+  chat_id?: string
 }
 
 export default function SchedulingView() {
@@ -429,6 +431,20 @@ export default function SchedulingView() {
                             <span className="text-xs font-black uppercase tracking-wider">
                               {log.task_name || log.task_id}
                             </span>
+                            {log.chat_id && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-[10px] gap-1 text-primary hover:text-primary hover:bg-primary/10"
+                                onClick={() => {
+                                  window.history.pushState({}, '', `/${log.chat_id}`)
+                                  window.dispatchEvent(new Event('history-state-changed'))
+                                }}
+                              >
+                                <MessageCircle className="size-3" />
+                                View Chat
+                              </Button>
+                            )}
                           </div>
                           <Badge
                             variant="outline"

@@ -1,6 +1,6 @@
 # Agent WebUI
 
-_Version 0.1.8_
+_Version 0.1.9_
 
 A React-based chat interface for [Pydantic AI](https://ai.pydantic.dev/). This package powers the documentation assistant at [ai.pydantic.dev/web/](https://ai.pydantic.dev/web/).
 
@@ -10,6 +10,7 @@ Built with [Vercel AI SDK](https://sdk.vercel.ai/) and designed to work with Pyd
 
 - Streaming message responses with reasoning display
 - Tool call visualization with collapsible input/output
+- Interactive Elicitation Forms for structured user input
 - Conversation persistence via localStorage
 - Dynamic model and tool selection
 - Dark/light theme support
