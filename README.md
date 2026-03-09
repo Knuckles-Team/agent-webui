@@ -1,6 +1,6 @@
 # Agent WebUI
 
-_Version 0.1.11_
+_Version 0.1.12_
 
 A React-based chat interface for [Pydantic AI](https://ai.pydantic.dev/). This package powers the documentation assistant at [ai.pydantic.dev/web/](https://ai.pydantic.dev/web/).
 
