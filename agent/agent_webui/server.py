@@ -14,7 +14,7 @@ from .api_extensions import router as enhanced_router, set_workspace_helpers
 logfire.configure(send_to_logfire='if-token-present')
 logfire.instrument_pydantic_ai()
 
-__version__ = '0.1.14'
+__version__ = '0.1.15'
 
 
 def create_agent_web_app(
