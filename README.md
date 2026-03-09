@@ -15,6 +15,10 @@ Built with [Vercel AI SDK](https://sdk.vercel.ai/) and designed to work with Pyd
 - Dynamic model and tool selection
 - Dark/light theme support
 - Mobile-responsive sidebar
+- Scheduling jobs
+- Memory
+- MCP Support
+- Multi-model support
 
 ## Development
 
