@@ -11,6 +11,8 @@
     "regen",
     "conv",
     "misformatted",
-    "webui"
+    "webui",
+    "Embla",
+    "nums"
   ]
 }

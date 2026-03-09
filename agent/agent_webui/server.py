@@ -110,25 +110,3 @@ def create_agent_web_app(
 
     logfire.instrument_starlette(app)
     return app
-
-
-# For standalone testing
-if __name__ == '__main__':
-    from .agent import agent as test_agent
-
-    dummy_helpers = {
-        'agent_name': 'Test Agent',
-        'agent_description': 'A standalone test agent',
-        'agent_emoji': '🧪',
-        'get_workspace_path': lambda x: Path('/tmp') / x,
-        'load_workspace_file': lambda x: f'Content of {x}',
-        'write_md_file': lambda x, y: print(f'Writing {y} to {x}'),
-        'list_workspace_files': lambda: ['IDENTITY.md', 'USER.md'],
-        'list_skills': lambda: [],
-        'get_cron_calendar': lambda: [],
-        'get_agent_icon_path': lambda: None,
-    }
-    app = create_agent_web_app(test_agent, dummy_helpers)
-    import uvicorn
-
-    uvicorn.run(app, host='0.0.0.0', port=8000)
