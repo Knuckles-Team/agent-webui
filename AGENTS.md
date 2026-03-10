@@ -76,6 +76,7 @@ Note: Stop any logfire platform instances to avoid port 8000 conflicts.
 - `POST /api/chat`: Handles chat messages via `VercelAIAdapter`
   - Accepts `model` and `builtinTools` in request body extra data
   - Streams responses using SSE
+  - **Note on System Prompts:** The React frontend (via Vercel AI SDK) provides the entire message history in every request to `/api/chat`. Because of this, Pydantic AI's `UserPromptNode` assumes the conversation is "resumed" and skips applying any static `Agent.system_prompt`s. On the backend, we must use dynamic `@agent.instructions` to ensure the agent's core identity and boundaries are properly injected into the request.
 - `POST /api/elicit`: Submits user responses to pending elicitation requests from MCP servers.
 
 **Builtin Tools:**
