@@ -14,7 +14,7 @@ from .api_extensions import router as enhanced_router, set_workspace_helpers
 logfire.configure(send_to_logfire='if-token-present')
 logfire.instrument_pydantic_ai()
 
-__version__ = '0.1.20'
+__version__ = '0.1.21'
 
 
 def create_agent_web_app(
@@ -61,19 +61,28 @@ def create_agent_web_app(
         html_source=html_source,
     )
 
+    from starlette.routing import Mount, Route as StarletteRoute
+
     # Merge pydantic-ai routes into our main app
-    for route in pydantic_app.routes:
-        if hasattr(route, 'path'):
-            # Core API routes
-            if (
-                route.path.startswith('/chat')
-                or route.path.startswith('/configure')
-                or route.path.startswith('/api')
-            ):
-                app.routes.append(route)
-            # If html_source is provided, we also want Pydantic AI's UI routes (/ and /{id})
-            elif html_source and (route.path == '/' or route.path == '/{id}'):
-                app.routes.append(route)
+    def add_pydantic_routes(routes, prefix=''):
+        for route in routes:
+            if isinstance(route, Mount):
+                # Recurse into mounts
+                add_pydantic_routes(route.app.routes, prefix + route.path)
+            elif isinstance(route, StarletteRoute):
+                full_path = prefix + route.path
+                # Normalize the path (ensure it starts with / and has no double slashes)
+                full_path = '/' + full_path.strip('/')
+
+                if (
+                    full_path.startswith('/api')
+                    or full_path.startswith('/chat')
+                    or full_path.startswith('/configure')
+                    or (html_source and (full_path == '/' or full_path == '/{id}'))
+                ):
+                    app.add_route(full_path, route.endpoint, methods=route.methods)
+
+    add_pydantic_routes(pydantic_app.routes)
 
     dist_path = Path(__file__).parent / 'dist'
 

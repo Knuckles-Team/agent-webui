@@ -7,7 +7,6 @@ import type { UIDataTypes, UIMessagePart, UITools, UIMessage } from 'ai'
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai-elements/reasoning'
 import { Tool, ToolHeader, ToolInput, ToolOutput, ToolContent } from '@/components/ai-elements/tool'
 import { CodeBlock } from '@/components/ai-elements/code-block'
-import { Elicitation, type ElicitationSchema } from '@/components/ai-elements/elicitation'
 
 interface PartProps {
   part: UIMessagePart<UIDataTypes, UITools>
@@ -18,13 +17,6 @@ interface PartProps {
   lastMessage: boolean
 }
 
-interface ElicitationPart {
-  type: 'elicitation'
-  id: string
-  message: string
-  schema: unknown
-}
-
 export function Part({ part, message, status, regen, index, lastMessage }: PartProps) {
   function copy(text: string) {
     navigator.clipboard.writeText(text).catch((error: unknown) => {
@@ -33,11 +25,15 @@ export function Part({ part, message, status, regen, index, lastMessage }: PartP
   }
 
   if (part.type === 'text') {
+    if (!part.text.trim()) {
+      return null
+    }
+
     const isCron = part.text.startsWith('[CRON]')
     const displayText = isCron ? part.text.replace('[CRON]', '').trim() : part.text
 
     return (
-      <div className="py-4">
+      <div className="py-2">
         <Message from={message.role} isCron={isCron}>
           <MessageContent>
             <Response>{displayText}</Response>
@@ -66,14 +62,23 @@ export function Part({ part, message, status, regen, index, lastMessage }: PartP
       </div>
     )
   } else if (part.type === 'reasoning') {
+    if (!part.text.trim() && status !== 'streaming') {
+      return null
+    }
     return (
-      <Reasoning
-        className="w-full"
-        isStreaming={status === 'streaming' && index === message.parts.length - 1 && lastMessage}
-      >
-        <ReasoningTrigger />
-        <ReasoningContent>{part.text}</ReasoningContent>
-      </Reasoning>
+      <div className="py-2">
+        <Message from={message.role}>
+          <MessageContent>
+            <Reasoning
+              className="w-full mb-0"
+              isStreaming={status === 'streaming' && index === message.parts.length - 1 && lastMessage}
+            >
+              <ReasoningTrigger />
+              <ReasoningContent>{part.text}</ReasoningContent>
+            </Reasoning>
+          </MessageContent>
+        </Message>
+      </div>
     )
   } else if (part.type === 'dynamic-tool') {
     return <>Dynamic Tool, TODO {JSON.stringify(part)}</>
@@ -92,15 +97,6 @@ export function Part({ part, message, status, regen, index, lastMessage }: PartP
           )}
         </ToolContent>
       </Tool>
-    )
-  } else if ((part as { type: string }).type === 'elicitation') {
-    const elicitationPart = part as unknown as ElicitationPart
-    return (
-      <Elicitation
-        id={elicitationPart.id}
-        message={elicitationPart.message}
-        schema={elicitationPart.schema as ElicitationSchema}
-      />
     )
   }
 }

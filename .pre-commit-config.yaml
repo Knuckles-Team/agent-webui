@@ -1,65 +1,65 @@
 repos:
-- repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: v0.15.6
-  hooks:
-    - id: ruff
-      args: [--fix, --exit-non-zero-on-fix]
-      exclude: ^(tests/|test/|scripts/|script/)
-    - id: ruff-format
-      exclude: ^(tests/|test/|scripts/|script/)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.6
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        exclude: ^(tests/|test/|scripts/|script/)
+      - id: ruff-format
+        exclude: ^(tests/|test/|scripts/|script/)
 
-- repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v6.0.0
-  hooks:
-    - id: check-added-large-files
-      args: ['--maxkb=1000']
-    - id: check-ast
-      exclude: ^(tests/|test/|scripts/|script/)
-    - id: check-yaml
-    - id: check-toml
-    - id: check-json
-      exclude: ^(package-lock\.json|pnpm-lock\.yaml|bun\.lock|tsconfig\.json)$
-    - id: fix-byte-order-marker
-      exclude: .gitignore
-    - id: check-merge-conflict
-    - id: detect-private-key
-    - id: trailing-whitespace
-    - id: end-of-file-fixer
-    - id: no-commit-to-branch
-      args: [--branch, staging, --branch, dev]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-ast
+        exclude: ^(tests/|test/|scripts/|script/)
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: ^(package-lock\.json|pnpm-lock\.yaml|bun\.lock|tsconfig\.json)$
+      - id: fix-byte-order-marker
+        exclude: .gitignore
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: no-commit-to-branch
+        args: [--branch, staging, --branch, dev]
 
-- repo: https://github.com/codespell-project/codespell
-  rev: v2.4.2
-  hooks:
-    - id: codespell
-      args: ["-L", "ans,linar,nam,tread,ot"]
-      exclude: ^(package-lock\.json|pnpm-lock\.yaml|bun\.lock|tests/|test/|scripts/|script/)
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.2
+    hooks:
+      - id: codespell
+        args: ['-L', 'ans,linar,nam,tread,ot']
+        exclude: ^(package-lock\.json|pnpm-lock\.yaml|bun\.lock|tests/|test/|scripts/|script/)
 
-- repo: local
-  hooks:
-    - id: prettier
-      name: prettier
-      entry: pnpm format
-      language: system
-      types_or: [javascript, jsx, ts, tsx, json, css, html, markdown]
-      pass_filenames: true
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier
+        entry: pnpm format
+        language: system
+        types_or: [javascript, jsx, ts, tsx, json, css, html, markdown]
+        pass_filenames: true
 
-    - id: eslint
-      name: eslint
-      entry: pnpm lint
-      language: system
-      types_or: [javascript, jsx, ts, tsx]
-      pass_filenames: false
+      - id: eslint
+        name: eslint
+        entry: pnpm lint
+        language: system
+        types_or: [javascript, jsx, ts, tsx]
+        pass_filenames: false
 
-    - id: typecheck
-      name: typecheck
-      entry: pnpm typecheck
-      language: system
-      types_or: [ts, tsx]
-      pass_filenames: false
+      - id: typecheck
+        name: typecheck
+        entry: pnpm typecheck
+        language: system
+        types_or: [ts, tsx]
+        pass_filenames: false
 
-    - id: cspell
-      name: cspell
-      entry: pnpm exec cspell --no-progress
-      language: system
-      types_or: [javascript, jsx, ts, tsx, markdown]
+      - id: cspell
+        name: cspell
+        entry: pnpm exec cspell --no-progress
+        language: system
+        types_or: [javascript, jsx, ts, tsx, markdown]

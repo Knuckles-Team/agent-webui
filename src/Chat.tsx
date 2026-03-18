@@ -17,9 +17,11 @@ import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Switch } from '@/components/ui/switch'
-import { useChat } from '@ai-sdk/react'
+import { useChat, type UIMessage } from '@ai-sdk/react'
+import type { ChatStatus, UIDataTypes, UIMessagePart, UITools } from 'ai'
 import { Settings2Icon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react'
+import { useMCP } from './lib/mcp-context'
 
 import { useQuery } from '@tanstack/react-query'
 import { useThrottle } from '@uidotdev/usehooks'
@@ -28,6 +30,12 @@ import { useConversationIdFromUrl } from './hooks/useConversationIdFromUrl'
 import { Part } from './Part'
 import type { ConversationEntry } from './types'
 import { getToolIcon } from '@/lib/tool-icons'
+
+interface MessagePart {
+  type: string
+  url?: string
+  [key: string]: unknown
+}
 
 interface ModelConfig {
   id: string
@@ -58,7 +66,21 @@ const Chat = () => {
   const [input, setInput] = useState('')
   const [model, setModel] = useState<string>('')
   const [enabledTools, setEnabledTools] = useState<string[]>([])
-  const { messages, sendMessage, status, setMessages, regenerate, error } = useChat()
+  const { tools: mcpTools, isLoadingTools } = useMCP()
+
+  const { messages, sendMessage, status, setMessages, regenerate, error } = useChat({
+    tools: isLoadingTools ? undefined : mcpTools,
+  } as unknown as Parameters<typeof useChat>[0]) as unknown as {
+    messages: UIMessage[]
+    sendMessage: (
+      message: { text: string },
+      options?: { body?: Record<string, unknown> },
+    ) => Promise<string | undefined>
+    status: ChatStatus
+    setMessages: (messages: UIMessage[]) => void
+    regenerate: (options?: { messageId: string }) => Promise<string | undefined>
+    error: unknown
+  }
   const throttledMessages = useThrottle(messages, 500)
   const [conversationId, setConversationId] = useConversationIdFromUrl()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -116,7 +138,7 @@ const Chat = () => {
         window.history.pushState({}, '', theCurrentUrl.toString())
       }
 
-      sendMessage(
+      void sendMessage(
         { text: input },
         {
           body: { model, builtinTools: enabledTools },
@@ -135,7 +157,7 @@ const Chat = () => {
   }, [throttledMessages, conversationId])
 
   function regen(messageId: string) {
-    regenerate({ messageId }).catch((error: unknown) => {
+    void regenerate({ messageId }).catch((error: unknown) => {
       console.error('Error regenerating message:', error)
     })
   }
@@ -153,40 +175,55 @@ const Chat = () => {
     <div className="flex flex-col h-full overflow-hidden">
       <Conversation className="flex-1">
         <ConversationContent>
-          {messages.map((message) => (
+          {messages.map((message: UIMessage) => (
             <div key={message.id}>
               {message.role === 'assistant' &&
-                message.parts.filter((part) => part.type === 'source-url').length > 0 && (
+                (message.parts as MessagePart[]).filter((part) => part.type === 'source-url').length > 0 && (
                   <Sources>
-                    <SourcesTrigger count={message.parts.filter((part) => part.type === 'source-url').length} />
-                    {message.parts
+                    <SourcesTrigger
+                      count={(message.parts as MessagePart[]).filter((part) => part.type === 'source-url').length}
+                    />
+                    {(message.parts as MessagePart[])
                       .filter((part) => part.type === 'source-url')
-                      .map((part, i) => (
+                      .map((part, i: number) => (
                         <SourcesContent key={`${message.id}-${i}`}>
-                          <Source key={`${message.id}-${i}`} href={part.url} title={part.url} />
+                          <Source key={`${message.id}-${i}`} href={part.url ?? ''} title={part.url ?? ''} />
                         </SourcesContent>
                       ))}
                   </Sources>
                 )}
-              {message.parts.map((part, i) => (
+              {(message.parts as MessagePart[]).map((part, i: number) => (
                 <Part
                   key={`${message.id}-${i}`}
-                  part={part}
+                  part={part as unknown as UIMessagePart<UIDataTypes, UITools>}
                   message={message}
                   status={status}
                   index={i}
                   regen={regen}
-                  lastMessage={message.id === messages.at(-1)?.id}
+                  lastMessage={message.id === (messages as { id: string }[]).at(-1)?.id}
                 />
               ))}
+              {((message as unknown as Record<string, unknown>).annotations as MessagePart[] | undefined)?.map(
+                (annotation, i: number) => (
+                  <Part
+                    key={`${message.id}-ann-${i}`}
+                    part={annotation as unknown as UIMessagePart<UIDataTypes, UITools>}
+                    message={message}
+                    status={status}
+                    index={i}
+                    regen={regen}
+                    lastMessage={message.id === (messages as { id: string }[]).at(-1)?.id}
+                  />
+                ),
+              )}
             </div>
           ))}
           {status === 'submitted' && <Loader />}
-          {status === 'error' && error && (
+          {status === 'error' && error ? (
             <div className="px-4 py-3 mx-4 my-2 bg-destructive/10 border border-destructive/20 rounded-md text-destructive text-sm">
-              <strong>Error:</strong> {error.message}
+              <strong>Error:</strong> {(error as { message?: string }).message ?? 'Unknown error'}
             </div>
-          )}
+          ) : null}
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
