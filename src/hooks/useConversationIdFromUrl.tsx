@@ -13,7 +13,7 @@ export function useConversationIdFromUrl(): [string, (id: string) => void] {
     }
 
     window.addEventListener('popstate', handlePopState)
-    // local event to handle same-tab updates
+
     window.addEventListener('history-state-changed', handlePopState)
     return () => {
       window.removeEventListener('popstate', handlePopState)

@@ -30,7 +30,6 @@ import { useConversationIdFromUrl } from '@/hooks/useConversationIdFromUrl'
 import { cn } from '@/lib/utils'
 import type { ConversationEntry } from '@/types'
 import { ModeToggle } from './mode-toggle'
-// import logoSvg from '../assets/logo.svg'
 
 function useConversations(): ConversationEntry[] {
   const [localConversations, setLocalConversations] = useState<ConversationEntry[]>(() => {
@@ -45,8 +44,7 @@ function useConversations(): ConversationEntry[] {
         const res = await fetch('/api/enhanced/chats')
         if (res.ok) {
           const data = (await res.json()) as ConversationEntry[]
-          // Ensure timestamp is a number for sorting consistency if needed,
-          // but Date constructor handles both.
+
           setRemoteConversations(
             data.map((c) => ({
               ...c,
@@ -85,12 +83,11 @@ function useConversations(): ConversationEntry[] {
     }
   }, [])
 
-  // Merge and deduplicate
   const allConversations = useMemo(() => {
     const map = new Map<string, ConversationEntry>()
-    // Local first
+
     localConversations.forEach((c) => map.set(c.id, c))
-    // Remote second (overwrites if ID matches, which is fine for "sync")
+
     remoteConversations.forEach((c) => map.set(c.id, c))
 
     return Array.from(map.values()).sort((a, b) => b.timestamp - a.timestamp)
@@ -105,26 +102,23 @@ function doLocalNavigation(e: React.MouseEvent) {
   }
   const path = new URL((e.currentTarget as HTMLAnchorElement).href).pathname
   window.history.pushState({}, '', path)
-  // custom event to notify other components of the URL change
+
   window.dispatchEvent(new Event('history-state-changed'))
   e.preventDefault()
 }
 
 function deleteConversation(conversationId: string) {
-  // Remove from conversationIds list
   const stored = window.localStorage.getItem('conversationIds')
   if (stored) {
     const conversations = JSON.parse(stored) as ConversationEntry[]
     const updated = conversations.filter((conv) => conv.id !== conversationId)
     window.localStorage.setItem('conversationIds', JSON.stringify(updated))
-    // Dispatch event to notify other components
+
     window.dispatchEvent(new Event('local-storage-change'))
   }
 
-  // Remove the conversation's messages
   window.localStorage.removeItem(conversationId)
 
-  // If the deleted conversation was active, navigate to home
   const currentPath = window.location.pathname
   if (currentPath === conversationId) {
     window.history.pushState({}, '', '/')

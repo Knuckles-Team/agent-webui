@@ -11,20 +11,18 @@ from pydantic_ai import Agent
 
 from .api_extensions import router as enhanced_router, set_workspace_helpers
 
-# Configure logfire
+
 logfire.configure(send_to_logfire='if-token-present')
 logfire.instrument_pydantic_ai()
 
-__version__ = '0.1.26'
+__version__ = '0.1.31'
 
 
-# Standard Agent Patterns for ecosystem compliance
 def agent_template():
     """Stub to satisfy static analysis for the agent ecosystem."""
     pass
 
 
-# Suppress Warnings
 warnings.filterwarnings('ignore', message='.*urllib3.*or chardet.*')
 print(f'Agent WebUI v{__version__}', file=sys.stderr)
 
@@ -40,10 +38,9 @@ def create_agent_web_app(
     Creates the agent-web FastAPI application, integrating Pydantic-AI's
     built-in web UI with enhanced features for workspace management.
     """
-    # Set helpers for the enhanced API
+
     set_workspace_helpers(workspace_helpers)
 
-    # Filter models based on available API keys
     default_models = {}
     if os.getenv('ANTHROPIC_API_KEY'):
         default_models['Claude Sonnet 3.5'] = 'anthropic:claude-3-5-sonnet-latest'
@@ -52,21 +49,16 @@ def create_agent_web_app(
     if os.getenv('GOOGLE_API_KEY'):
         default_models['Gemini 2.0 Pro'] = 'google-gla:gemini-2.0-pro'
 
-    # Check for Ollama / Local models
-    # We'll include Qwen 3 Coder if Ollama is configured
     if os.getenv('OLLAMA_BASE_URL') or os.getenv('OLLAMA_HOST'):
         default_models['Qwen 3 Coder'] = 'ollama:qwen3-coder'
 
     if not default_models:
         default_models['Test Model (Markdown Only)'] = 'test'
 
-    # Create the main FastAPI app
     app = FastAPI(title='Agent Web Dashboard')
 
-    # Include the enhanced API routes
     app.include_router(enhanced_router)
 
-    # Use Pydantic-AI's to_web to get their Starlette app
     pydantic_app = agent.to_web(
         models=models or default_models,
         builtin_tools=builtin_tools,
@@ -75,15 +67,13 @@ def create_agent_web_app(
 
     from starlette.routing import Mount, Route as StarletteRoute
 
-    # Merge pydantic-ai routes into our main app
     def add_pydantic_routes(routes, prefix=''):
         for route in routes:
             if isinstance(route, Mount):
-                # Recurse into mounts
                 add_pydantic_routes(route.app.routes, prefix + route.path)
             elif isinstance(route, StarletteRoute):
                 full_path = prefix + route.path
-                # Normalize the path (ensure it starts with / and has no double slashes)
+
                 full_path = '/' + full_path.strip('/')
 
                 if (
@@ -98,7 +88,6 @@ def create_agent_web_app(
 
     dist_path = Path(__file__).parent / 'dist'
 
-    # Custom StaticFiles to handle SPA routing (fallback to index.html)
     class SPAStaticFiles(StaticFiles):
         async def get_response(self, path: str, scope):
             try:
@@ -107,7 +96,8 @@ def create_agent_web_app(
                 if (
                     ex.status_code == 404
                     and not any(
-                        path.startswith(p) for p in ['api', 'chat', 'configure']
+                        path.startswith(p)
+                        for p in ['api', 'chat', 'configure', 'mcp', 'a2a', 'ag-ui']
                     )
                     and '.' not in path
                 ):
@@ -116,7 +106,6 @@ def create_agent_web_app(
 
     from starlette import exceptions as _errors
 
-    # Mount our built React app (only if no custom html_source is provided)
     if not html_source:
         if dist_path.exists():
             app.mount(
@@ -146,7 +135,6 @@ def main():
     parser.add_argument('--web', action='store_true')
     args, _ = parser.parse_known_args()
 
-    # Create a dummy agent for validation
     agent = Agent(TestModel())
     app = create_agent_web_app(agent, workspace_helpers={})
 

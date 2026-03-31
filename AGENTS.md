@@ -1,101 +1,163 @@
-# CLAUDE.md
+# Agent Guidelines for @pydantic/agent-webui
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Build, Lint, and Test Commands
 
-## Project Overview
-
-A React-based chat interface for Pydantic AI that uses Vercel AI SDK and Elements. The project consists of a frontend (Vite + React + TypeScript) and a Python backend (FastAPI + Pydantic AI).
-
-## Development Commands
-
-**Frontend:**
+### Frontend
 
 ```bash
-npm install
-npm run dev              # Start dev server (proxies /api to localhost:8000)
-npm run build            # Build for production (CDN deployment via jsdelivr)
-npm run typecheck        # Type check without emitting
-npm run lint             # Run ESLint
-npm run lint-fix         # Fix ESLint issues
-npm run format           # Format with Prettier
+# Install dependencies
+pnpm install
+
+# Start development server (proxies /api to localhost:8000)
+pnpm run dev
+
+# Start backend server on port 38001 (separate terminal)
+pnpm run dev:server
+
+# Build for production
+pnpm run build
+
+# Preview production build
+pnpm run preview
+
+# Type checking (TypeScript)
+pnpm run typecheck
+
+# Linting (ESLint)
+pnpm run lint
+
+# Auto-fix linting issues
+pnpm run lint-fix
+
+# Format code (Prettier)
+pnpm run format
 ```
 
-**Backend:**
+### Backend (Manual)
 
 ```bash
+# Start backend server
 cd agent
-uv run uvicorn chatbot.server:app  # Start backend on port 8000
+uv run uvicorn chatbot.server:app --port 8000
 ```
 
 Note: Stop any logfire platform instances to avoid port 8000 conflicts.
 
-## Architecture
+### Running Tests
 
-### Frontend Structure
+Currently, there are no test scripts configured. To run a single test:
 
-- **src/Chat.tsx**: Main chat component handling conversation state, message sending, and local storage persistence
-- **src/Part.tsx**: Renders individual message parts (text, reasoning, tools, etc.)
-- **src/App.tsx**: Root component with theme provider, sidebar, and React Query setup
-- **src/components/ai-elements/**: Vercel AI Elements wrappers (conversation, prompt-input, message, tool, reasoning, sources, etc.)
-- **src/components/ui/**: Radix UI and shadcn/ui components
+1. Set up a testing framework (e.g., Vitest) if needed
+2. Add test scripts to package.json
+3. Run specific test with: `pnpm vitest run path/to/test.test.ts -t "test name"`
 
-### Key Frontend Concepts
+## Code Style Guidelines
 
-**Conversation Management:**
+### TypeScript/JavaScript
 
-- Conversations stored in localStorage by ID (nanoid)
-- URL-based routing: `/` for new chat, `/{nanoid}` for existing
-- Messages persisted via `useChat` hook and localStorage sync (throttled 500ms)
-- Conversation list stored in localStorage key `conversationIds`
+#### Formatting
 
-**Model & Tool Selection:**
+- Use Prettier with default settings (via `pnpm run format`)
+- Maximum line length: 100 characters
+- Use semicolons
+- Single quotes for strings
+- Trailing commas in multi-line structures
 
-- Dynamic model/tool configuration fetched from `/api/configure`
-- Models and available builtin tools configured per-model
-- Tools toggled via checkboxes in prompt toolbar
+#### Imports
 
-**Message Parts:**
+- Sort imports: built-in, external, internal
+- Internal imports use `@/` alias (maps to `./src/`)
+- Relative imports for files in same directory
+- Named imports destructured when importing 2+ items
+- Default imports first, then named imports
 
-- Messages contain multiple parts: text, reasoning, tool calls, sources
-- Part rendering delegated to `Part.tsx` component
-- Tool calls show input/output with collapsible UI
-- **Elicitation**: Special part type that renders a dynamic form based on a JSON schema, allowing the user to provide structured input required by MCP tools.
+Example:
 
-### Backend Structure
+```typescript
+import React from 'react'
+import { useState, useEffect } from 'react'
+import { Chat } from '@/components/Chat'
+import { useChat } from '@/hooks/useChat'
+import './styles.css'
+```
 
-- **agent/chatbot/server.py**: FastAPI app with Vercel AI adapter, model/tool configuration
-- **agent/chatbot/agent.py**: Pydantic AI agent with documentation search tools
-- **agent/chatbot/db.py**: LanceDB vector store for documentation
-- **agent/chatbot/data.py**: Documentation loading and processing
+#### Types and Interfaces
 
-### Backend Integration
+- Use interfaces for object shapes, types for complex types
+- Prefer explicit return types for exported functions
+- Use type aliases for union/intersection types
+- Avoid `any`; use `unknown` with type guards
+- Define props interfaces for components
 
-**Endpoints:**
+#### Naming Conventions
 
-- `GET /api/configure`: Returns available models and builtin tools (camelCase)
-- `POST /api/chat`: Handles chat messages via `VercelAIAdapter`
-  - Accepts `model` and `builtinTools` in request body extra data
-  - Streams responses using SSE
-  - **Note on System Prompts:** The React frontend (via Vercel AI SDK) provides the entire message history in every request to `/api/chat`. Because of this, Pydantic AI's `UserPromptNode` assumes the conversation is "resumed" and skips applying any static `Agent.system_prompt`s. On the backend, we must use dynamic `@agent.instructions` to ensure the agent's core identity and boundaries are properly injected into the request.
-- `POST /api/elicit`: Submits user responses to pending elicitation requests from MCP servers.
+- Components: PascalCase (e.g., `Chat.tsx`)
+- Functions and variables: camelCase
+- Constants: UPPER_SNAKE_CASE
+- Files and directories: kebab-case
+- Type interfaces: PascalCase with `Props` suffix for component props
 
-**Builtin Tools:**
+#### Error Handling
 
-- `web_search`, `code_execution`, `image_generation`
-- Enabled per-model in AI_MODELS configuration
-- Selected tools passed to agent via `VercelAIAdapter.dispatch_request`
+- Use try/catch for asynchronous operations
+- Throw specific error types rather than strings
+- Handle errors at boundaries (API calls, event handlers)
+- Log errors appropriately for debugging
+- Show user-friendly error messages in UI
 
-## Configuration
+#### React Specific
 
-- **TypeScript paths**: `@/*` maps to `./src/*`
-- **Vite base URL**: CDN path for production (`jsdelivr.net/npm/@pydantic/pydantic-ai-chat/dist/`)
-- **Dev proxy**: `/api` proxied to `localhost:8000`
-- **Package**: Published as `@pydantic/pydantic-ai-chat` (public npm package)
+- Use functional components with hooks
+- Prefer `const` for function declarations
+- Use early returns for conditional rendering
+- Extract complex logic into custom hooks
+- Use React.memo for performance optimization when needed
+- Accessibility: add alt text, labels, keyboard navigation
 
-## Tech Stack
+#### ESLint Configuration
 
-- React 19, TypeScript, Vite, Tailwind CSS 4
-- Vercel AI SDK (`@ai-sdk/react`, `ai`)
-- Radix UI primitives
-- FastAPI, Pydantic AI, LanceDB
-- ESLint (neostandard), Prettier
+- Uses neostandard with TypeScript and Prettier
+- Rules enforced via `pnpm run lint`
+- Key rules:
+  - No console.log in production (except debug)
+  - Consistent return statements
+  - No unused variables or imports
+  - Proper react/jsx-no-target-blank
+  - React hooks rules enabled
+
+## Architecture Conventions
+
+### Frontend
+
+- State management: React Query for server state, Context/Zustand for client state
+- Routing: File-based via Vite (pages directory pattern)
+- Styling: Tailwind CSS with custom classes in src/styles/
+- Components: shadcn/ui primitives in src/components/ui/
+- AI elements: Vercel AI SDK wrappers in src/components/ai-elements/
+
+### Backend
+
+- FastAPI app with Pydantic AI agent
+- Endpoints under /api/
+- Model configuration in agent/chatbot/
+- Vector storage with LanceDB
+
+## Additional Notes
+
+- Commit messages: Follow conventional commits (feat:, fix:, docs:, etc.)
+- Branch naming: feature/_, bugfix/_, release/\*
+- Pull requests: Include summary and testing steps
+- Documentation: Update README.md for user-facing changes
+- Performance: Monitor bundle size with vite-bundle-analyzer
+- Security: Never commit secrets; use environment variables
+
+## Getting Started
+
+1. Fork and clone repository
+2. Run `pnpm install`
+3. Start development: `pnpm run dev` (frontend) and `pnpm run dev:server` (backend)
+4. Open http://localhost:5173
+
+---
+
+_Generated for agentic coding agents to maintain consistency in this codebase._

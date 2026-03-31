@@ -16,6 +16,7 @@ import {
 import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai-elements/sources'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ApprovalCard } from '@/components/ApprovalCard'
 import { Switch } from '@/components/ui/switch'
 import { useChat, type UIMessage } from '@ai-sdk/react'
 import type { ChatStatus, UIDataTypes, UIMessagePart, UITools } from 'ai'
@@ -68,7 +69,7 @@ const Chat = () => {
   const [enabledTools, setEnabledTools] = useState<string[]>([])
   const { tools: mcpTools, isLoadingTools } = useMCP()
 
-  const { messages, sendMessage, status, setMessages, regenerate, error } = useChat({
+  const { messages, sendMessage, status, setMessages, regenerate, error, addToolOutput } = useChat({
     tools: isLoadingTools ? undefined : mcpTools,
   } as unknown as Parameters<typeof useChat>[0]) as unknown as {
     messages: UIMessage[]
@@ -80,6 +81,7 @@ const Chat = () => {
     setMessages: (messages: UIMessage[]) => void
     regenerate: (options?: { messageId: string }) => Promise<string | undefined>
     error: unknown
+    addToolOutput: (opts: { toolCallId: string; output: unknown; state?: string; errorText?: string }) => void
   }
   const throttledMessages = useThrottle(messages, 500)
   const [conversationId, setConversationId] = useConversationIdFromUrl()
@@ -104,7 +106,6 @@ const Chat = () => {
       if (localStorageMessages) {
         setMessages(JSON.parse(localStorageMessages) as typeof messages)
       } else {
-        // Fallback to backend fetch
         const fetchMessages = async () => {
           try {
             const res = await fetch(`/api/enhanced/chats${conversationId}`)
@@ -127,7 +128,6 @@ const Chat = () => {
     if (input.trim()) {
       const theCurrentUrl = new URL(window.location.toString())
 
-      // we're starting a new conversation
       if (theCurrentUrl.pathname === '/') {
         const newConversationId = `/${nanoid()}`
         setConversationId(newConversationId)
@@ -171,6 +171,21 @@ const Chat = () => {
     return null
   }
 
+  const handleApproveToolCall = (toolCallId: string) => {
+    addToolOutput({
+      toolCallId,
+      output: { approved: true },
+    })
+  }
+
+  const handleRejectToolCall = (toolCallId: string) => {
+    addToolOutput({
+      toolCallId,
+      output: { approved: false },
+      errorText: 'Tool call rejected by user',
+    })
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <Conversation className="flex-1">
@@ -198,11 +213,43 @@ const Chat = () => {
                   part={part as unknown as UIMessagePart<UIDataTypes, UITools>}
                   message={message}
                   status={status}
-                  index={i}
                   regen={regen}
-                  lastMessage={message.id === (messages as { id: string }[]).at(-1)?.id}
+                  index={i}
+                  lastMessage={throttledMessages.indexOf(message) === throttledMessages.length - 1}
+                  onApprove={handleApproveToolCall}
+                  onReject={handleRejectToolCall}
                 />
               ))}
+
+              {}
+              {message.role === 'assistant' &&
+                (message as any).annotations?.map((ann: any, idx: number) => {
+                  const isApproval =
+                    ann.event === 'approval_required' ||
+                    ann.data?.event === 'approval_required' ||
+                    (ann.data?.type === 'graph-event' && ann.data?.event === 'approval_required')
+                  const data = ann.data || ann
+
+                  if (isApproval) {
+                    const toolCalls = data.tool_calls || data.tool_calls || []
+                    const toolPart = {
+                      toolName: data.tool_name || toolCalls[0]?.tool_name || 'Graph Tool',
+                      toolCallId: toolCalls[0]?.tool_call_id || message.id + '-ann-' + idx,
+                      input: toolCalls[0]?.args || {},
+                      state: 'input-available' as const,
+                    }
+                    return (
+                      <div key={`ann-approval-${idx}`} className="py-2">
+                        <ApprovalCard
+                          toolPart={toolPart}
+                          onApprove={handleApproveToolCall}
+                          onReject={handleRejectToolCall}
+                        />
+                      </div>
+                    )
+                  }
+                  return null
+                })}
               {((message as unknown as Record<string, unknown>).annotations as MessagePart[] | undefined)?.map(
                 (annotation, i: number) => (
                   <Part
@@ -295,7 +342,7 @@ const Chat = () => {
                   </PromptInputModelSelectTrigger>
                   <PromptInputModelSelectContent>
                     {(configQuery.data as { models: { id: string; name: string }[] }).models
-                      .filter((m) => m.id && m.name) // Ensure we have valid entries
+                      .filter((m) => m.id && m.name)
                       .map((model) => (
                         <PromptInputModelSelectItem key={model.id} value={model.id}>
                           {model.name}
@@ -330,6 +377,6 @@ function saveConversationEntryInLocalStorage(newConversationId: string, firstMes
     timestamp: Date.now(),
   })
   window.localStorage.setItem('conversationIds', JSON.stringify(conversationIds))
-  // dispatch a custom event so that the sidebar can update
+
   window.dispatchEvent(new Event('local-storage-change'))
 }

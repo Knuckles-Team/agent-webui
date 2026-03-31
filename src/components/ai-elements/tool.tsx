@@ -45,7 +45,7 @@ const getStatusBadge = (status: ToolUIPart['state']) => {
 }
 
 export const ToolHeader = ({ className, type, state, ...props }: ToolHeaderProps) => {
-  const toolId = type.slice(5) // Remove 'tool-' prefix
+  const toolId = type.slice(5)
   const toolIcon = getToolIcon(toolId, 'size-4 text-muted-foreground')
 
   return (

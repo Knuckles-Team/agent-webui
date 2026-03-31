@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react'
+import { createMCPClient, ElicitationRequestSchema, type MCPClient } from '@ai-sdk/mcp'
 import type { ToolSet } from 'ai'
 import { ElicitationModal } from '../components/ElicitationModal'
 
@@ -32,8 +33,8 @@ interface MCPContextValue {
 const MCPContext = createContext<MCPContextValue | undefined>(undefined)
 
 export function MCPProvider({ children }: { children: ReactNode }) {
-  const [tools] = useState<ToolSet | null>(null)
-  const [isLoadingTools, setIsLoadingTools] = useState(false)
+  const [tools, setTools] = useState<ToolSet | null>(null)
+  const [isLoadingTools, setIsLoadingTools] = useState(true)
   const [elicitation, setElicitation] = useState<ElicitationState>({
     isOpen: false,
     message: '',
@@ -42,7 +43,59 @@ export function MCPProvider({ children }: { children: ReactNode }) {
   })
 
   useEffect(() => {
-    setIsLoadingTools(false)
+    let client: MCPClient | undefined
+    ;(async () => {
+      try {
+        // In this project, the internal server is on 8000 or 38001
+        // sseUrl is used to create the client below.
+        // In this project, the internal MCP server is mounted at /mcp
+        const sseUrlStr = process.env.NEXT_PUBLIC_MCP_SSE_URL ?? '/mcp/sse'
+
+        // Ensure we have a base URL to avoid "Invalid URL" errors in some environments
+        const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
+        const sseUrl = new URL(sseUrlStr, origin).toString()
+
+        client = await createMCPClient({
+          transport: {
+            type: 'sse',
+            url: sseUrl,
+          },
+          capabilities: {
+            elicitation: {},
+          },
+        })
+
+        // Register elicitation handler
+        client.onElicitationRequest(ElicitationRequestSchema, async (request: unknown) => {
+          const { message, requestedSchema } = (
+            request as { params: { message: string; requestedSchema: JSONSchema } }
+          ).params
+
+          return new Promise<ElicitationResult>((resolve) => {
+            setElicitation({
+              isOpen: true,
+              message,
+              schema: requestedSchema,
+              resolve,
+            })
+          })
+        })
+
+        // Load tools (used by useChat)
+        const loadedTools = (await client.tools()) as ToolSet
+        setTools(loadedTools)
+      } catch (err) {
+        console.error('MCP client init failed:', err)
+      } finally {
+        setIsLoadingTools(false)
+      }
+    })().catch((err: unknown) => {
+      console.error('MCP client context init error:', err)
+    })
+
+    return () => {
+      if (client) client.close().catch(console.error)
+    }
   }, [])
 
   const handleElicitationResponse = useCallback(

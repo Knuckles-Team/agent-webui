@@ -37,7 +37,7 @@ export default function KnowledgeView() {
       setLoading(true)
       const res = await fetch('/api/enhanced/skills')
       const data = (await res.json()) as Skill[]
-      // Filter only skills ending in -docs and sort by name
+
       const docSkills = data
         .filter((s: Skill) => s.id.endsWith('-docs'))
         .sort((a: Skill, b: Skill) => a.name.localeCompare(b.name))
@@ -53,8 +53,6 @@ export default function KnowledgeView() {
   }
 
   const fetchDocs = (_skillId: string) => {
-    // In a real scenario, we might fetch a specific documentation file
-    // For now, we'll try to load the skill's description or a placeholder
     setDocContent(
       `# ${selectedSkill?.name}\n\n${selectedSkill?.description}\n\n---\n\n*Detailed skill documentation and graph visualization coming soon.*`,
     )

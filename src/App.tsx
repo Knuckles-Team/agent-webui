@@ -31,7 +31,7 @@ export default function App() {
     }
 
     window.addEventListener('history-state-changed', handleNavigation)
-    handleNavigation() // Initial check
+    handleNavigation()
 
     return () => {
       window.removeEventListener('history-state-changed', handleNavigation)
@@ -46,7 +46,7 @@ export default function App() {
             <AppSidebar />
 
             <div className="flex flex-col justify-center flex-1 h-screen overflow-hidden">
-              {/* Mobile Header with Sidebar Trigger */}
+              {}
               <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:hidden">
                 <SidebarTrigger className="-ml-1" />
                 <div className="flex items-center gap-2 px-3">

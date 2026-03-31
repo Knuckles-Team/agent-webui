@@ -84,17 +84,17 @@ export default function SchedulingView() {
     const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate()
 
     const days = []
-    // Padding for previous month
+
     for (let i = 0; i < startDay; i++) {
       const day = new Date(startOfMonth)
       day.setDate(startOfMonth.getDate() - (startDay - i))
       days.push(day)
     }
-    // Current month days
+
     for (let i = 1; i <= daysInMonth; i++) {
       days.push(new Date(currentDate.getFullYear(), currentDate.getMonth(), i))
     }
-    // Padding for next month
+
     const remaining = 42 - days.length
     for (let i = 1; i <= remaining; i++) {
       const day = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, i)
@@ -110,7 +110,6 @@ export default function SchedulingView() {
       const interval = parseInt(task.schedule)
       if (isNaN(interval)) return false
 
-      // Minutes since the beginning of the week
       const dayStart = new Date(day)
       dayStart.setHours(hour, 0, 0, 0)
 
@@ -123,7 +122,7 @@ export default function SchedulingView() {
     return tasks.filter((task) => {
       const interval = parseInt(task.schedule)
       if (isNaN(interval)) return false
-      // If it runs at least once a day (interval <= 1440)
+
       return interval <= 1440
     })
   }

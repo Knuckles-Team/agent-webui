@@ -17,7 +17,7 @@ router = APIRouter(prefix='/api/enhanced')
 AGENT_WORKSPACE = get_agent_workspace()
 DEFAULT_AGENT_DIR = Path(__file__).parent / 'agent'
 
-# These will be provided by agent-utilities when the app is initialized
+
 workspace_helpers: Dict[str, Any] = {}
 
 
@@ -70,11 +70,10 @@ async def list_files():
 
 @router.get('/files/{filename}')
 async def get_file(filename: str):
-    # Check workspace first
+
     load_file = get_helper('load_workspace_file')
     content = load_file(filename) if load_file else ''
 
-    # Fallback to default template if content is empty and it's a core file
     if not content and DEFAULT_AGENT_DIR.joinpath(filename).exists():
         content = DEFAULT_AGENT_DIR.joinpath(filename).read_text(encoding='utf-8')
 
@@ -83,12 +82,11 @@ async def get_file(filename: str):
 
 @router.get('/config-files')
 async def list_config_files():
-    # Merge workspace files with default templates
+
     list_files = get_helper('list_workspace_files')
     workspace_files = set(list_files() if list_files else [])
     default_files = set(f.name for f in DEFAULT_AGENT_DIR.glob('*.md') if f.is_file())
 
-    # We care about .md files and specifically mcp_config.json for configuration
     all_files = sorted(list(workspace_files.union(default_files)))
     config_files = [
         f
@@ -103,9 +101,7 @@ async def list_config_files():
 async def update_file(filename: str, data: Dict[str, str]):
     if not filename.endswith('.md') and not filename.endswith('.json'):
         raise HTTPException(status_code=400, detail='Only .md and .json files allowed')
-    write_helper = get_helper(
-        'write_md_file'
-    )  # Using write_md_file for general writing for now
+    write_helper = get_helper('write_md_file')
     if not write_helper:
         raise HTTPException(status_code=501, detail='Write helper not initialized')
     write_helper(filename, data.get('content', ''))
@@ -127,7 +123,7 @@ async def toggle_skill(skill_id: str):
 async def reload_agent(request: Request):
     try:
         workspace_helpers['initialize_workspace']()
-        # Find the reloadable app wrapper in the state
+
         reloadable = getattr(request.app.state, 'reload_app', None)
         if not reloadable:
             raise HTTPException(
@@ -151,7 +147,7 @@ def parse_cron_table(content: str) -> List[Dict[str, Any]]:
                     {
                         'id': parts[0],
                         'name': parts[1],
-                        'schedule': parts[2],  # Interval in minutes or cron string
+                        'schedule': parts[2],
                     }
                 )
     return tasks
@@ -159,7 +155,7 @@ def parse_cron_table(content: str) -> List[Dict[str, Any]]:
 
 def parse_cron_logs(content: str) -> List[Dict[str, Any]]:
     logs = []
-    # Each entry starts with "### ["
+
     parts = re.split(r'(?=^### \[)', content, flags=re.MULTILINE)
 
     for part in parts:
@@ -167,14 +163,12 @@ def parse_cron_logs(content: str) -> List[Dict[str, Any]]:
             continue
 
         try:
-            # Format: ### [2026-03-07 05:32:11] Log Cleanup (`log-cleanup`)
             header_match = re.search(r'^### \[(.*?)\] (.*?) \(`(.*?)`\)', part)
             if header_match:
                 ts = header_match.group(1)
                 name = header_match.group(2)
                 tid = header_match.group(3)
 
-                # Output is after the header line, up to the separator "---"
                 body = part.split('\n\n', 1)[1] if '\n\n' in part else ''
                 output = body.split('\n---')[0].strip()
 
@@ -183,14 +177,14 @@ def parse_cron_logs(content: str) -> List[Dict[str, Any]]:
                         'timestamp': ts,
                         'task_id': tid,
                         'task_name': name,
-                        'status': 'success',  # Default for now
+                        'status': 'success',
                         'output': output,
                     }
                 )
         except Exception as e:
             logger.debug(f'Error parsing log entry: {e}')
 
-    return logs[::-1]  # Newest first
+    return logs[::-1]
 
 
 @router.get('/cron/calendar')
@@ -198,7 +192,6 @@ async def get_cron_calendar():
     get_cal = get_helper('get_cron_calendar')
     tasks = get_cal() if get_cal else []
     if not tasks:
-        # Try fallback to DEFAULT_AGENT_DIR/CRON.md
         cron_path = DEFAULT_AGENT_DIR / 'CRON.md'
         if cron_path.exists():
             tasks = parse_cron_table(cron_path.read_text(encoding='utf-8'))
@@ -211,7 +204,6 @@ async def get_cron_logs():
     logs = get_logs() if get_logs else []
 
     if not logs:
-        # Try fallback to DEFAULT_AGENT_DIR/CRON_LOG.md
         log_path = DEFAULT_AGENT_DIR / 'CRON_LOG.md'
         if log_path.exists():
             logs = parse_cron_logs(log_path.read_text(encoding='utf-8'))
@@ -232,14 +224,13 @@ async def upload_file(file: UploadFile = File(...)):
 
 @router.get('/agent-icon')
 async def get_agent_icon():
-    # Try to get custom icon from workspace first
+
     get_path = workspace_helpers.get('get_workspace_path')
     if get_path:
         workspace_icon = get_path('icon.png')
         if workspace_icon.exists():
             return FileResponse(path=workspace_icon)
 
-    # Fallback to package icon
     get_icon_p = workspace_helpers.get('get_agent_icon_path')
     icon_path = get_icon_p() if get_icon_p else None
     if not icon_path or not Path(icon_path).exists():

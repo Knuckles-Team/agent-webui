@@ -16,7 +16,7 @@ const CodeBlockContext = createContext<CodeBlockContextType>({
 
 export type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string
-  // TODO add any more languages we want here
+
   language: 'json'
   showLineNumbers?: boolean
   children?: ReactNode
@@ -106,7 +106,6 @@ export const CodeBlockCopyButton = ({
   const { code } = useContext(CodeBlockContext)
 
   const copyToClipboard = () => {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (typeof window === 'undefined' || !navigator.clipboard.writeText) {
       onError?.(new Error('Clipboard API not available'))
       return

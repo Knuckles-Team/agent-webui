@@ -7,6 +7,8 @@ import type { UIDataTypes, UIMessagePart, UITools, UIMessage } from 'ai'
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai-elements/reasoning'
 import { Tool, ToolHeader, ToolInput, ToolOutput, ToolContent } from '@/components/ai-elements/tool'
 import { CodeBlock } from '@/components/ai-elements/code-block'
+import { ApprovalCard } from '@/components/ApprovalCard'
+import { GraphActivity, type GraphEvent } from '@/components/GraphActivity'
 
 interface PartProps {
   part: UIMessagePart<UIDataTypes, UITools>
@@ -15,22 +17,27 @@ interface PartProps {
   regen: (id: string) => void
   index: number
   lastMessage: boolean
+  onApprove?: (toolCallId: string) => void
+  onReject?: (toolCallId: string) => void
 }
 
-export function Part({ part, message, status, regen, index, lastMessage }: PartProps) {
+export function Part({ part, message, status, regen, index, lastMessage, onApprove, onReject }: PartProps) {
   function copy(text: string) {
     navigator.clipboard.writeText(text).catch((error: unknown) => {
       console.error('Error copying text:', error)
     })
   }
 
+  if (!part) return null
+
   if (part.type === 'text') {
-    if (!part.text.trim()) {
+    const textStr = (part as any).text ?? ''
+    if (!textStr || !textStr.trim()) {
       return null
     }
 
-    const isCron = part.text.startsWith('[CRON]')
-    const displayText = isCron ? part.text.replace('[CRON]', '').trim() : part.text
+    const isCron = textStr.startsWith('[CRON]')
+    const displayText = isCron ? textStr.replace('[CRON]', '').trim() : textStr
 
     return (
       <div className="py-2">
@@ -51,7 +58,7 @@ export function Part({ part, message, status, regen, index, lastMessage }: PartP
             </Action>
             <Action
               onClick={() => {
-                copy(part.text)
+                copy(textStr)
               }}
               label="Copy"
             >
@@ -62,7 +69,8 @@ export function Part({ part, message, status, regen, index, lastMessage }: PartP
       </div>
     )
   } else if (part.type === 'reasoning') {
-    if (!part.text.trim() && status !== 'streaming') {
+    const reasoningText = (part as any).text ?? ''
+    if (!reasoningText && status !== 'streaming') {
       return null
     }
     return (
@@ -74,7 +82,7 @@ export function Part({ part, message, status, regen, index, lastMessage }: PartP
               isStreaming={status === 'streaming' && index === message.parts.length - 1 && lastMessage}
             >
               <ReasoningTrigger />
-              <ReasoningContent>{part.text}</ReasoningContent>
+              <ReasoningContent>{reasoningText}</ReasoningContent>
             </Reasoning>
           </MessageContent>
         </Message>
@@ -83,7 +91,9 @@ export function Part({ part, message, status, regen, index, lastMessage }: PartP
   } else if (part.type === 'dynamic-tool') {
     return <>Dynamic Tool, TODO {JSON.stringify(part)}</>
   } else if ('toolCallId' in part) {
-    // return <div>{JSON.stringify(part)}</div>
+    if (part.state === 'input-available' && !('output' in part) && lastMessage && onApprove && onReject) {
+      return <ApprovalCard toolPart={part} onApprove={onApprove} onReject={onReject} />
+    }
     return (
       <Tool>
         <ToolHeader type={part.type} state={part.state} />
@@ -98,5 +108,41 @@ export function Part({ part, message, status, regen, index, lastMessage }: PartP
         </ToolContent>
       </Tool>
     )
+  } else if ((part as any)?.type === 'graph-event' || (part as any)?.type === 'graph_event') {
+    const rawEvents = (part as any).events || (part as any).event_data || (part as any).data
+    const events = Array.isArray(rawEvents)
+      ? rawEvents
+      : rawEvents
+        ? [rawEvents]
+        : ([(part as any).event ? part : null].filter(Boolean) as any[])
+
+    if (events.length === 0) return null
+
+    const approvalEvent = events.find((ev) => ev.event === 'approval_required')
+
+    return (
+      <div className="py-2">
+        <Message from="assistant">
+          <MessageContent>
+            {approvalEvent && onApprove && onReject ? (
+              <ApprovalCard
+                toolPart={{
+                  toolName: approvalEvent.tool_name || approvalEvent.tool_calls?.[0]?.tool_name || 'Graph Tool',
+                  toolCallId: approvalEvent.tool_calls?.[0]?.tool_call_id || message.id + '-graph-approval',
+                  input: approvalEvent.tool_calls?.[0]?.args || {},
+                  state: 'input-available',
+                }}
+                onApprove={onApprove}
+                onReject={onReject}
+              />
+            ) : (
+              <GraphActivity events={events as GraphEvent[]} isStreaming={status === 'streaming' && lastMessage} />
+            )}
+          </MessageContent>
+        </Message>
+      </div>
+    )
   }
+
+  return null
 }
