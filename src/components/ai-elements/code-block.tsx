@@ -91,12 +91,14 @@ export const CodeBlock = ({
 export type CodeBlockCopyButtonProps = ComponentProps<typeof Button> & {
   onCopy?: () => void
   onError?: (error: Error) => void
+  onOpenChange?: (open: boolean) => void
   timeout?: number
 }
 
 export const CodeBlockCopyButton = ({
   onCopy,
   onError,
+  onOpenChange,
   timeout = 2000,
   children,
   className,
@@ -106,12 +108,11 @@ export const CodeBlockCopyButton = ({
   const { code } = useContext(CodeBlockContext)
 
   const copyToClipboard = () => {
-    if (typeof window === 'undefined' || !navigator.clipboard.writeText) {
-      onError?.(new Error('Clipboard API not available'))
+    if (typeof window === 'undefined') {
       return
     }
 
-    navigator.clipboard
+    void navigator.clipboard
       .writeText(code)
       .then(() => {
         setIsCopied(true)

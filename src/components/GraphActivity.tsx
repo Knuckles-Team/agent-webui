@@ -12,7 +12,12 @@ export interface GraphEvent {
   tool_name?: string
   tool_args?: string
   duration?: number
-  [key: string]: any
+  subagent?: string
+  expert?: string
+  count?: number
+  message?: string
+  text?: string
+  [key: string]: unknown
 }
 
 interface GraphActivityProps {
@@ -23,12 +28,10 @@ interface GraphActivityProps {
 export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) => {
   const [isOpen, setIsOpen] = useState(true)
 
-  const validEvents = events.filter(Boolean) as GraphEvent[]
+  const validEvents = events.filter(Boolean)
   if (validEvents.length === 0) return null
 
-  const lastEvent = validEvents[validEvents.length - 1]
-
-  const getIcon = (event: string = 'activity') => {
+  const getIcon = (event = 'activity') => {
     if (event.includes('routing')) return <NetworkIcon className="size-4 text-blue-400" />
     if (event.includes('tool')) return <CpuIcon className="size-4 text-purple-400" />
     if (event.includes('completed')) return <CheckCircle2Icon className="size-4 text-green-400" />
@@ -36,29 +39,40 @@ export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) 
   }
 
   const getEventLabel = (ev: GraphEvent) => {
-    if (!ev || !ev.event) return 'Internal activity'
-    const domain = ev.domain || (ev as any).subagent || 'Unknown domain'
+    if (!ev.event) return 'Internal activity'
+    const domain = ev.domain ?? ev.expert ?? ev.subagent ?? 'Specialist'
     switch (ev.event) {
+      case 'expert-metadata':
+        return `Handshaking with ${domain} Specialist...`
+      case 'tools-bound':
+        return `Successfully bound ${ev.count ?? 0} tools to ${domain}`
+      case 'expert-warning':
+        return `Expert Warning: ${ev.message ?? 'Unknown issue'}`
       case 'routing_started':
         return 'Analyzing routing path...'
-      case 'routing_completed':
-        return `Routed to ${domain || ev.domains?.join(', ')}`
+      case 'routing_completed': {
+        const domainsText = ev.domains ? ev.domains.join(', ') : 'Unknown'
+        const target = domain === 'Specialist' ? domainsText : domain
+        return `Routed to ${target}`
+      }
       case 'subagent_tool_call':
-        return `Executing ${ev.tool_name}...`
+        return `Executing ${ev.tool_name ?? 'tool'}...`
       case 'subagent_tool_completed':
-        return `Tool ${ev.tool_name} completed`
+        return `Tool ${ev.tool_name ?? 'tool'} completed`
       case 'subagent_text':
         return `Streaming response from ${domain}...`
       case 'subagent_completed':
-        return `Domain ${domain} finished`
+        return `Expert ${domain} finished`
       case 'parallel_execution_started':
-        return `Executing ${ev.domains?.length} domains in parallel`
+        return `Executing ${ev.domains?.length ?? 0} domains in parallel`
       case 'parallel_execution_completed':
         return 'Parallel execution finished'
       default:
-        return (ev.event || 'activity').replace(/_/g, ' ')
+        return ev.event.replace(/_/g, ' ')
     }
   }
+
+  const lastEvent = validEvents[validEvents.length - 1]
 
   return (
     <Collapsible
@@ -68,7 +82,7 @@ export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) 
     >
       <CollapsibleTrigger className="flex items-center justify-between w-full gap-2 text-xs font-medium text-muted-foreground hover:text-foreground">
         <div className="flex items-center gap-2">
-          {getIcon(lastEvent?.event)}
+          {getIcon(lastEvent.event)}
           <span>{getEventLabel(lastEvent)}</span>
           {isStreaming && <span className="flex h-1 w-1 rounded-full bg-blue-500 animate-pulse" />}
         </div>
@@ -77,7 +91,7 @@ export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) 
       <CollapsibleContent className="mt-2 space-y-2.5 border-t pt-2 max-h-[300px] overflow-y-auto scrollbar-hide">
         {validEvents.map((ev, i) => {
           if (ev.event === 'subagent_text') {
-            const domainName = ev.domain || (ev as any).subagent || 'Unknown domain'
+            const domainName = ev.domain ?? ev.subagent ?? 'Unknown domain'
             const textPreview = ev.text ?? ''
             return (
               <div

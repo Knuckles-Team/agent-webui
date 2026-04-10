@@ -7,14 +7,20 @@ import { CodeBlock } from './ai-elements/code-block'
 import { getToolIcon } from '@/lib/tool-icons'
 
 export interface ApprovalCardProps extends Omit<ComponentProps<'div'>, 'part'> {
-  toolPart: any
+  toolPart: {
+    toolName?: string
+    toolCallId: string
+    type?: string
+    input?: unknown
+    state?: string
+  }
   onApprove: (toolCallId: string) => void
   onReject: (toolCallId: string) => void
 }
 
 export function ApprovalCard({ toolPart, onApprove, onReject, className, ...props }: ApprovalCardProps) {
   const [decided, setDecided] = useState<'approved' | 'rejected' | null>(null)
-  const toolId = String(toolPart.toolName || toolPart.type || 'tool')
+  const toolId = toolPart.toolName ?? toolPart.type ?? 'tool'
   const toolIcon = getToolIcon(toolId, 'size-5 text-amber-500')
 
   const handleApprove = () => {
@@ -69,7 +75,7 @@ export function ApprovalCard({ toolPart, onApprove, onReject, className, ...prop
       </div>
 
       {}
-      {toolPart.input && (
+      {!!toolPart.input && (
         <div className="p-3 space-y-1">
           <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Parameters</h4>
           <div className="rounded-md bg-muted/50 max-h-48 overflow-auto">

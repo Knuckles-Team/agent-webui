@@ -18,11 +18,6 @@ logfire.instrument_pydantic_ai()
 __version__ = '0.1.32'
 
 
-def agent_template():
-    """Stub to satisfy static analysis for the agent ecosystem."""
-    pass
-
-
 warnings.filterwarnings('ignore', message='.*urllib3.*or chardet.*')
 print(f'Agent WebUI v{__version__}', file=sys.stderr)
 

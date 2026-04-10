@@ -31,6 +31,7 @@ import { useConversationIdFromUrl } from './hooks/useConversationIdFromUrl'
 import { Part } from './Part'
 import type { ConversationEntry } from './types'
 import { getToolIcon } from '@/lib/tool-icons'
+import { GraphActivity, type GraphEvent } from '@/components/GraphActivity'
 
 interface MessagePart {
   type: string
@@ -55,7 +56,7 @@ interface RemoteConfig {
 }
 
 interface ChatResponse {
-  messages: typeof useChat extends () => { messages: infer M } ? M : unknown[]
+  messages: UIMessage[]
 }
 
 async function getModels() {
@@ -63,13 +64,30 @@ async function getModels() {
   return (await res.json()) as RemoteConfig
 }
 
+interface AppAnnotation {
+  event?: string
+  data?: {
+    event?: string
+    type?: string
+    tool_calls?: {
+      tool_name?: string
+      tool_call_id?: string
+      args?: Record<string, unknown>
+    }[]
+    tool_name?: string
+    tool_call_id?: string
+    args?: Record<string, unknown>
+  }
+}
+
 const Chat = () => {
   const [input, setInput] = useState('')
   const [model, setModel] = useState<string>('')
+  const [mode, setMode] = useState<'ask' | 'plan' | 'execute'>('ask')
   const [enabledTools, setEnabledTools] = useState<string[]>([])
   const { tools: mcpTools, isLoadingTools } = useMCP()
 
-  const { messages, sendMessage, status, setMessages, regenerate, error, addToolOutput } = useChat({
+  const { messages, sendMessage, status, setMessages, regenerate, error, addToolOutput, data } = useChat({
     tools: isLoadingTools ? undefined : mcpTools,
   } as unknown as Parameters<typeof useChat>[0]) as unknown as {
     messages: UIMessage[]
@@ -82,6 +100,7 @@ const Chat = () => {
     regenerate: (options?: { messageId: string }) => Promise<string | undefined>
     error: unknown
     addToolOutput: (opts: { toolCallId: string; output: unknown; state?: string; errorText?: string }) => void
+    data: unknown[]
   }
   const throttledMessages = useThrottle(messages, 500)
   const [conversationId, setConversationId] = useConversationIdFromUrl()
@@ -141,7 +160,7 @@ const Chat = () => {
       void sendMessage(
         { text: input },
         {
-          body: { model, builtinTools: enabledTools },
+          body: { model, builtinTools: enabledTools, mode },
         },
       ).catch((error: unknown) => {
         console.error('Error sending message:', error)
@@ -149,6 +168,12 @@ const Chat = () => {
       setInput('')
     }
   }
+
+  useEffect(() => {
+    if (conversationId && throttledMessages.length > 0) {
+      window.localStorage.setItem(conversationId, JSON.stringify(throttledMessages))
+    }
+  }, [throttledMessages, conversationId])
 
   useEffect(() => {
     if (conversationId && throttledMessages.length > 0) {
@@ -218,38 +243,36 @@ const Chat = () => {
                   lastMessage={throttledMessages.indexOf(message) === throttledMessages.length - 1}
                   onApprove={handleApproveToolCall}
                   onReject={handleRejectToolCall}
+                  sideband={data}
                 />
               ))}
 
-              {}
-              {message.role === 'assistant' &&
-                (message as any).annotations?.map((ann: any, idx: number) => {
-                  const isApproval =
-                    ann.event === 'approval_required' ||
-                    ann.data?.event === 'approval_required' ||
-                    (ann.data?.type === 'graph-event' && ann.data?.event === 'approval_required')
-                  const data = ann.data || ann
+              {(message as unknown as { annotations?: AppAnnotation[] }).annotations?.map((ann, idx: number) => {
+                const isApproval =
+                  ann.event === 'approval_required' ||
+                  ann.data?.event === 'approval_required' ||
+                  ann.data?.type === 'approval_required'
 
-                  if (isApproval) {
-                    const toolCalls = data.tool_calls || data.tool_calls || []
-                    const toolPart = {
-                      toolName: data.tool_name || toolCalls[0]?.tool_name || 'Graph Tool',
-                      toolCallId: toolCalls[0]?.tool_call_id || message.id + '-ann-' + idx,
-                      input: toolCalls[0]?.args || {},
-                      state: 'input-available' as const,
-                    }
-                    return (
-                      <div key={`ann-approval-${idx}`} className="py-2">
-                        <ApprovalCard
-                          toolPart={toolPart}
-                          onApprove={handleApproveToolCall}
-                          onReject={handleRejectToolCall}
-                        />
-                      </div>
-                    )
-                  }
-                  return null
-                })}
+                if (!isApproval) return null
+
+                return (
+                  <div className="py-2" key={`ann-${idx}`}>
+                    <ApprovalCard
+                      onApprove={handleApproveToolCall}
+                      onReject={handleRejectToolCall}
+                      toolPart={{
+                        toolName: ann.data?.tool_name ?? ann.data?.tool_calls?.[0]?.tool_name ?? 'Graph Tool',
+                        toolCallId:
+                          ann.data?.tool_call_id ??
+                          ann.data?.tool_calls?.[0]?.tool_call_id ??
+                          `${message.id}-graph-approval`,
+                        input: ann.data?.args ?? ann.data?.tool_calls?.[0]?.args ?? {},
+                        state: 'input-available',
+                      }}
+                    />
+                  </div>
+                )
+              })}
               {((message as unknown as Record<string, unknown>).annotations as MessagePart[] | undefined)?.map(
                 (annotation, i: number) => (
                   <Part
@@ -260,9 +283,48 @@ const Chat = () => {
                     index={i}
                     regen={regen}
                     lastMessage={message.id === (messages as { id: string }[]).at(-1)?.id}
+                    sideband={data}
                   />
                 ),
               )}
+
+              {/* Message-level Sideband rendering for immediate graph visibility */}
+              {message.role === 'assistant' &&
+                (() => {
+                  const annotations = (message as unknown as Record<string, unknown>).annotations as
+                    | unknown[]
+                    | undefined
+                  const parts = message.parts as unknown[] | undefined
+                  const messageSideband =
+                    throttledMessages.indexOf(message) === throttledMessages.length - 1 ? data : []
+
+                  const rawEvents = [
+                    ...(Array.isArray(annotations) ? annotations : []),
+                    ...(Array.isArray(parts) ? parts : []),
+                    ...(Array.isArray(messageSideband) ? messageSideband : []),
+                  ]
+
+                  const graphEvents = rawEvents
+                    .filter((a: unknown) => {
+                      if (!a || typeof a !== 'object') return false
+                      const ann = a as Record<string, unknown>
+                      return ann.type === 'graph-event' || ann.type === 'graph_event'
+                    })
+                    .map((a: unknown) => a as GraphEvent)
+
+                  if (graphEvents.length === 0) return null
+
+                  return (
+                    <div className="py-1 px-4">
+                      <GraphActivity
+                        events={graphEvents}
+                        isStreaming={
+                          status === 'streaming' && throttledMessages.indexOf(message) === throttledMessages.length - 1
+                        }
+                      />
+                    </div>
+                  )
+                })()}
             </div>
           ))}
           {status === 'submitted' && <Loader />}
@@ -337,20 +399,36 @@ const Chat = () => {
                   }}
                   value={model}
                 >
-                  <PromptInputModelSelectTrigger>
+                  <PromptInputModelSelectTrigger className="w-[120px]">
                     <PromptInputModelSelectValue />
                   </PromptInputModelSelectTrigger>
                   <PromptInputModelSelectContent>
                     {(configQuery.data as { models: { id: string; name: string }[] }).models
                       .filter((m) => m.id && m.name)
-                      .map((model) => (
-                        <PromptInputModelSelectItem key={model.id} value={model.id}>
-                          {model.name}
+                      .map((m) => (
+                        <PromptInputModelSelectItem key={m.id} value={m.id}>
+                          {m.name}
                         </PromptInputModelSelectItem>
                       ))}
                   </PromptInputModelSelectContent>
                 </PromptInputModelSelect>
               )}
+
+              <PromptInputModelSelect
+                onValueChange={(value) => {
+                  setMode(value as 'ask' | 'plan' | 'execute')
+                }}
+                value={mode}
+              >
+                <PromptInputModelSelectTrigger className="w-[90px]">
+                  <PromptInputModelSelectValue />
+                </PromptInputModelSelectTrigger>
+                <PromptInputModelSelectContent>
+                  <PromptInputModelSelectItem value="ask">Ask</PromptInputModelSelectItem>
+                  <PromptInputModelSelectItem value="plan">Plan</PromptInputModelSelectItem>
+                  <PromptInputModelSelectItem value="execute">Execute</PromptInputModelSelectItem>
+                </PromptInputModelSelectContent>
+              </PromptInputModelSelect>
             </PromptInputTools>
             <PromptInputSubmit disabled={!input} status={status} />
           </PromptInputToolbar>
