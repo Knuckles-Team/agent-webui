@@ -1,6 +1,18 @@
+#!/usr/bin/python
+# coding: utf-8
+"""
+Agent WebUI Server Core.
+
+This module provides the factory function for creating the Agent Web
+Dashboard application. It integrates Pydantic-AI's built-in web features
+with enhanced workspace management, real-time observability via Logfire,
+and a high-performance React-based frontend.
+"""
+
 import os
 import sys
 import warnings
+import logging
 from pathlib import Path
 from typing import Any, Dict
 
@@ -8,16 +20,19 @@ import logfire
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic_ai import Agent
+from starlette import exceptions as _errors
+from starlette.routing import Mount, Route as StarletteRoute
 
 from .api_extensions import router as enhanced_router, set_workspace_helpers
 
+logger = logging.getLogger(__name__)
 
 logfire.configure(send_to_logfire='if-token-present')
 logfire.instrument_pydantic_ai()
 
 __version__ = '0.1.32'
 
-
+# Suppress common dependency warnings during startup
 warnings.filterwarnings('ignore', message='.*urllib3.*or chardet.*')
 print(f'Agent WebUI v{__version__}', file=sys.stderr)
 
@@ -29,13 +44,26 @@ def create_agent_web_app(
     builtin_tools: list[Any] | None = None,
     html_source: str | Path | None = None,
 ) -> FastAPI:
-    """
-    Creates the agent-web FastAPI application, integrating Pydantic-AI's
-    built-in web UI with enhanced features for workspace management.
+    """Create the agent-web FastAPI application.
+
+    Integrates Pydantic-AI's internal web UI with custom extensions for
+    workspace awareness, dynamic model selection, and high-fidelity
+    observability.
+
+    Args:
+        agent: The Pydantic-AI Agent instance to serve.
+        workspace_helpers: Metadata and tools for workspace situational awareness.
+        models: Optional explicit mapping of provider:model_id to display names.
+        builtin_tools: Optional list of tools to inject into the web interface.
+        html_source: Path to custom HTML to serve as the dashboard root.
+
+    Returns:
+        A fully configured FastAPI application instance.
     """
 
     set_workspace_helpers(workspace_helpers)
 
+    # Detect available providers based on environment variables
     default_models = {}
     if os.getenv('ANTHROPIC_API_KEY'):
         default_models['Claude Sonnet 3.5'] = 'anthropic:claude-3-5-sonnet-latest'
@@ -44,6 +72,7 @@ def create_agent_web_app(
     if os.getenv('GOOGLE_API_KEY'):
         default_models['Gemini 2.0 Pro'] = 'google-gla:gemini-2.0-pro'
 
+    # Support for local induction via Ollama/OpenWebUI patterns
     if os.getenv('OLLAMA_BASE_URL') or os.getenv('OLLAMA_HOST'):
         default_models['Qwen 3 Coder'] = 'ollama:qwen3-coder'
 
@@ -52,25 +81,31 @@ def create_agent_web_app(
 
     app = FastAPI(title='Agent Web Dashboard')
 
+    # Mount the enhanced API extensions (ACP/A2A/Management)
     app.include_router(enhanced_router)
 
+    # Delegate to Pydantic-AI's native web wrapper for base functionality
     pydantic_app = agent.to_web(
         models=models or default_models,
         builtin_tools=builtin_tools,
         html_source=html_source,
     )
 
-    from starlette.routing import Mount, Route as StarletteRoute
-
     def add_pydantic_routes(routes, prefix=''):
+        """Recursively discover and mount Pydantic-AI internal routes.
+
+        Args:
+            routes: List of routes to process.
+            prefix: URL prefix for the current route layer.
+        """
         for route in routes:
             if isinstance(route, Mount):
                 add_pydantic_routes(route.app.routes, prefix + route.path)
             elif isinstance(route, StarletteRoute):
                 full_path = prefix + route.path
-
                 full_path = '/' + full_path.strip('/')
 
+                # Only bridge routes that match the dashboard's functional scope
                 if (
                     full_path.startswith('/api')
                     or full_path.startswith('/chat')
@@ -84,6 +119,12 @@ def create_agent_web_app(
     dist_path = Path(__file__).parent / 'dist'
 
     class SPAStaticFiles(StaticFiles):
+        """Custom StaticFiles implementation to support Single Page Application (SPA).
+
+        Intercepts 404s for client-side routing, falling back to index.html
+        unless the request targets a known API endpoint or specific file.
+        """
+
         async def get_response(self, path: str, scope):
             try:
                 return await super().get_response(path, scope)
@@ -99,8 +140,7 @@ def create_agent_web_app(
                     return await super().get_response('index.html', scope)
                 raise ex
 
-    from starlette import exceptions as _errors
-
+    # Fallback to serving the built React dashboard if no custom source provided
     if not html_source:
         if dist_path.exists():
             app.mount(
@@ -109,16 +149,16 @@ def create_agent_web_app(
                 name='dashboard',
             )
         else:
-            print(
-                f'Warning: Static assets not found at {dist_path}. Dashboard UI will not be served.'
+            logger.warning(
+                f'Static assets not found at {dist_path}. Dashboard UI will not be served.'
             )
 
     logfire.instrument_starlette(app)
     return app
 
 
-def main():
-    """Minimal CLI to satisfy ecosystem validation."""
+def main() -> None:
+    """Application entry point for CLI usage and ecosystem validation."""
     import uvicorn
     import argparse
     from pydantic_ai import Agent

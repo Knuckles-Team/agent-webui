@@ -1,3 +1,15 @@
+/**
+ * @file Chat.tsx
+ * @description Main Chat interface for the Agent Web Quickstart.
+ *
+ * Implements a high-fidelity conversational UI using @ai-sdk/react, featuring:
+ * - Real-time streaming with sideband graph activity visualization.
+ * - Multi-modal support (image attachments).
+ * - Human-in-the-loop tool approval workflows.
+ * - Dynamic model and tool configuration.
+ * - Local storage persistence and URL-based conversation routing.
+ */
+
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Loader } from '@/components/ai-elements/loader'
 import {
@@ -13,6 +25,7 @@ import {
   PromptInputToolbar,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
+import { XIcon, Settings2Icon, PaperclipIcon } from 'lucide-react'
 import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai-elements/sources'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -20,8 +33,7 @@ import { ApprovalCard } from '@/components/ApprovalCard'
 import { Switch } from '@/components/ui/switch'
 import { useChat, type UIMessage } from '@ai-sdk/react'
 import type { ChatStatus, UIDataTypes, UIMessagePart, UITools } from 'ai'
-import { Settings2Icon } from 'lucide-react'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type SyntheticEvent, type ChangeEvent } from 'react'
 import { useMCP } from './lib/mcp-context'
 
 import { useQuery } from '@tanstack/react-query'
@@ -34,37 +46,58 @@ import { getToolIcon } from '@/lib/tool-icons'
 import { GraphActivity, type GraphEvent } from '@/components/ai-elements/graph-activity'
 import { acpClient } from './lib/acp-client'
 
+/**
+ * Interface for specialized message parts (sources, images, etc.)
+ */
 interface MessagePart {
   type: string
   url?: string
   [key: string]: unknown
 }
 
+/**
+ * Configuration for an available LLM model
+ */
 interface ModelConfig {
   id: string
   name: string
   builtinTools: string[]
 }
 
+/**
+ * Built-in tool metadata
+ */
 interface BuiltinTool {
   name: string
   id: string
 }
 
+/**
+ * Remote configuration data structure returned by the backend
+ */
 interface RemoteConfig {
   models: ModelConfig[]
   builtinTools: BuiltinTool[]
 }
 
+/**
+ * Basic chat response structure for loading history
+ */
 interface ChatResponse {
   messages: UIMessage[]
 }
 
+/**
+ * Fetches the available models and tools from the server configuration endpoint
+ */
 async function getModels() {
   const res = await fetch('/api/configure')
   return (await res.json()) as RemoteConfig
 }
 
+/**
+ * Metadata for approval events and sideband graph interactions
+ */
 interface AppAnnotation {
   event?: string
   data?: {
@@ -81,11 +114,19 @@ interface AppAnnotation {
   }
 }
 
+/**
+ * Primary Chat Component
+ *
+ * Orchestrates the chat lifecycle including message history management,
+ * streaming response handling, and tool interaction flows.
+ */
 const Chat = () => {
   const [input, setInput] = useState('')
   const [model, setModel] = useState<string>('')
   const [mode, setMode] = useState<'ask' | 'plan' | 'execute'>('ask')
   const [enabledTools, setEnabledTools] = useState<string[]>([])
+  const [attachments, setAttachments] = useState<{ url: string; base64: string; type: string }[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const { tools: mcpTools, isLoadingTools } = useMCP()
 
   const { messages, sendMessage, status, setMessages, regenerate, error, addToolOutput } = useChat({
@@ -111,12 +152,14 @@ const Chat = () => {
     queryKey: ['models'],
   })
 
+  // Set default model once configuration is loaded
   useEffect(() => {
     if (configQuery.data) {
       setModel(configQuery.data.models[0].id)
     }
   }, [configQuery.data])
 
+  // Load chat history from local storage or server on conversation ID change
   useLayoutEffect(() => {
     if (conversationId === '/') {
       setMessages([])
@@ -142,6 +185,33 @@ const Chat = () => {
     textareaRef.current?.focus()
   }, [conversationId])
 
+  /**
+   * Handles multi-modal image uploads, converting files to base64 for the AI SDK
+   */
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files) return
+
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith('image/')) continue
+
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string
+        setAttachments((prev) => [...prev, { url: URL.createObjectURL(file), base64, type: file.type }])
+      }
+      reader.readAsDataURL(file)
+    }
+    e.target.value = '' // Clear input for next upload
+  }
+
+  const removeAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  /**
+   * Submits the user prompt, handling conversation initialization and optional ACP/Multi-modal routing.
+   */
   const handleSubmit = (e: SyntheticEvent) => {
     e.preventDefault()
     if (input.trim()) {
@@ -160,19 +230,34 @@ const Chat = () => {
       if (import.meta.env.VITE_ENABLE_ACP === 'true') {
         void handleAcpSubmit(input)
       } else {
+        const parts = attachments.map((a) => ({
+          image: a.base64,
+          media_type: a.type,
+        }))
+
         void sendMessage(
           { text: input },
           {
-            body: { model, builtinTools: enabledTools, mode },
+            body: {
+              model,
+              builtinTools: enabledTools,
+              mode,
+              parts: parts.length > 0 ? [...parts, { text: input }] : [],
+            },
           },
         ).catch((error: unknown) => {
           console.error('Error sending message:', error)
         })
       }
       setInput('')
+      setAttachments([])
     }
   }
 
+  /**
+   * Specialized submission flow for Agent Client Protocol (ACP) interactions.
+   * Manages low-level RPC streaming and tool-call mapping.
+   */
   const handleAcpSubmit = async (query: string) => {
     // Manually add user message to local state
     const userMessage: UIMessage = {
@@ -241,18 +326,23 @@ const Chat = () => {
     }
   }
 
+  // Persist messages to local storage whenever they are updated
   useEffect(() => {
     if (conversationId && throttledMessages.length > 0) {
       window.localStorage.setItem(conversationId, JSON.stringify(throttledMessages))
     }
   }, [throttledMessages, conversationId])
 
+  /**
+   * Triggers a message regeneration for the specified ID
+   */
   function regen(messageId: string) {
     void regenerate({ messageId }).catch((error: unknown) => {
       console.error('Error regenerating message:', error)
     })
   }
 
+  // Memoize the available tools based on the currently selected model
   const availableTools = useMemo(() => {
     const enabledToolIds = configQuery.data?.models.find((entry) => entry.id === model)?.builtinTools ?? []
     return configQuery.data?.builtinTools.filter((tool) => enabledToolIds.includes(tool.id)) ?? []
@@ -262,6 +352,9 @@ const Chat = () => {
     return null
   }
 
+  /**
+   * UI Callback for human-in-the-loop tool approval
+   */
   const handleApproveToolCall = (toolCallId: string) => {
     addToolOutput({
       toolCallId,
@@ -269,6 +362,9 @@ const Chat = () => {
     })
   }
 
+  /**
+   * UI Callback for human-in-the-loop tool rejection
+   */
   const handleRejectToolCall = (toolCallId: string) => {
     addToolOutput({
       toolCallId,
@@ -405,8 +501,51 @@ const Chat = () => {
             value={input}
             autoFocus={true}
           />
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 p-2 border-t bg-muted/30">
+              {attachments.map((attachment, index) => (
+                <div key={index} className="relative group">
+                  <img
+                    src={attachment.url}
+                    alt="attachment"
+                    className="h-16 w-16 object-cover rounded-md border border-border bg-background shadow-sm transition-all group-hover:opacity-80"
+                  />
+                  <button
+                    onClick={() => {
+                      removeAttachment(index)
+                    }}
+                    className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Remove attachment"
+                  >
+                    <XIcon className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <PromptInputToolbar>
             <PromptInputTools>
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept="image/*"
+                multiple
+                onChange={handleFileChange}
+              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PromptInputButton
+                    variant="outline"
+                    onClick={() => {
+                      fileInputRef.current?.click()
+                    }}
+                  >
+                    <PaperclipIcon className="size-4" />
+                  </PromptInputButton>
+                </TooltipTrigger>
+                <TooltipContent>Attach files</TooltipContent>
+              </Tooltip>
               {availableTools.length > 0 && (
                 <DropdownMenu>
                   <Tooltip>
@@ -498,8 +637,14 @@ const Chat = () => {
 
 export default Chat
 
+/**
+ * Limit for the displayed length of the first message in conversation history
+ */
 const MAX_FIRST_MESSAGE_LENGTH = 30
 
+/**
+ * Persists a new conversation entry to the local storage list
+ */
 function saveConversationEntryInLocalStorage(newConversationId: string, firstMessage: string) {
   const currentConversations = window.localStorage.getItem('conversationIds') ?? '[]'
   const conversationIds = JSON.parse(currentConversations) as ConversationEntry[]

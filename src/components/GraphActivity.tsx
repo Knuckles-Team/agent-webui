@@ -1,36 +1,79 @@
+/**
+ * @file GraphActivity.tsx
+ * @description Visualizes real-time graph execution events in a collapsible timeline.
+ *
+ * Displays sideband events emitted by the agent orchestrator, including:
+ * - Domain routing decisions.
+ * - Parallel execution status.
+ * - Tool binding and execution progress.
+ * - Expert specialized reasoning and warnings.
+ */
+
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import { ActivityIcon, ChevronDownIcon, CpuIcon, NetworkIcon, CheckCircle2Icon } from 'lucide-react'
 import { memo, useState } from 'react'
 
+/**
+ * Interface representing a single event emitted by the agent graph orchestrator.
+ */
 export interface GraphEvent {
+  /** The unique event type identifier (e.g., 'routing_started', 'tool_call') */
   event: string
+  /** Unix timestamp of the event */
   timestamp: number
+  /** The domain or specialist involved in the event */
   domain?: string
+  /** List of domains involved in parallel execution */
   domains?: string[]
+  /** Free-text reasoning explanation from the expert */
   reasoning?: string
+  /** Name of the tool being executed */
   tool_name?: string
+  /** Serialized tool arguments */
   tool_args?: string
+  /** Duration of the operation in seconds */
   duration?: number
+  /** Alternative identifier for the specialist */
   subagent?: string
+  /** The expert node identifier */
   expert?: string
+  /** Count of items (e.g., tools bound) */
   count?: number
+  /** Generic message payload */
   message?: string
+  /** Textual delta or content */
   text?: string
+  /** Catch-all for additional dynamic event data */
   [key: string]: unknown
 }
 
+/**
+ * Props for the GraphActivity component
+ */
 interface GraphActivityProps {
+  /** Ordered list of graph events for the current message */
   events: GraphEvent[]
+  /** Whether the parent message is still being streamed */
   isStreaming?: boolean
 }
 
+/**
+ * GraphActivity Component
+ *
+ * Renders a specialized timeline of events associated with a message.
+ * Collapses by default to show only the most recent status, but can be
+ * expanded to view the full execution trace.
+ */
 export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) => {
   const [isOpen, setIsOpen] = useState(true)
 
   const validEvents = events.filter(Boolean)
   if (validEvents.length === 0) return null
 
+  /**
+   * Returns the appropriate Lucide icon for a given event type
+   */
   const getIcon = (event = 'activity') => {
     if (event.includes('routing')) return <NetworkIcon className="size-4 text-blue-400" />
     if (event.includes('tool')) return <CpuIcon className="size-4 text-purple-400" />
@@ -38,6 +81,9 @@ export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) 
     return <ActivityIcon className="size-4 text-muted-foreground" />
   }
 
+  /**
+   * Generates a human-friendly label for common graph events
+   */
   const getEventLabel = (ev: GraphEvent) => {
     if (!ev.event) return 'Internal activity'
     const domain = ev.domain ?? ev.expert ?? ev.subagent ?? 'Specialist'

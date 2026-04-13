@@ -1,3 +1,12 @@
+/**
+ * @file App.tsx
+ * @description Root application component for the Agent Web Quickstart.
+ *
+ * Orchestrates the overall layout, theme management, sidebar navigation,
+ * and routing between different views (Chat, Files, Skills, Scheduling, etc.).
+ * Initializes the React Query client and MCP context provider.
+ */
+
 import { useState, useEffect } from 'react'
 import Chat from './Chat.tsx'
 import { AppSidebar } from './components/app-sidebar.tsx'
@@ -15,11 +24,25 @@ import KnowledgeView from './components/views/KnowledgeView'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
 
+/**
+ * Global React Query client instance for managing server state.
+ */
 const queryClient = new QueryClient()
 
+/**
+ * Root Application Component
+ *
+ * Manages view state based on URL path and provides the necessary context
+ * providers for theme, sidebar, MCP tools, and data fetching.
+ */
 export default function App() {
+  /** Possible views: 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge' */
   const [currentView, setCurrentView] = useState('chat')
 
+  /**
+   * Effect hook to synchronize the current view with the browser URL path.
+   * Listens for custom 'history-state-changed' events for reactive navigation.
+   */
   useEffect(() => {
     const handleNavigation = () => {
       const path = window.location.pathname
@@ -31,8 +54,9 @@ export default function App() {
       else setCurrentView('chat')
     }
 
+    // Listen for custom navigation events emitted by sidebar/links
     window.addEventListener('history-state-changed', handleNavigation)
-    handleNavigation()
+    handleNavigation() // Initial check on mount
 
     return () => {
       window.removeEventListener('history-state-changed', handleNavigation)
@@ -48,7 +72,7 @@ export default function App() {
               <AppSidebar />
 
               <div className="flex flex-col justify-center flex-1 h-screen overflow-hidden">
-                {}
+                {/* Mobile Header: Only visible on small screens */}
                 <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:hidden">
                   <SidebarTrigger className="-ml-1" />
                   <div className="flex items-center gap-2 px-3">
@@ -57,6 +81,7 @@ export default function App() {
                   </div>
                 </header>
 
+                {/* Main Chat View (CSS-hidden when other views active to preserve chat state) */}
                 <div
                   className={cn(
                     'flex flex-col mx-auto relative w-full basis-[100vh] overflow-hidden px-4 md:px-8',
@@ -66,6 +91,7 @@ export default function App() {
                   <Chat />
                 </div>
 
+                {/* Secondary Views (Rendered conditionally) */}
                 {currentView !== 'chat' && (
                   <div className="flex flex-col flex-1 h-screen overflow-auto p-8">
                     <div className="mx-auto w-full">

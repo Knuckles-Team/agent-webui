@@ -1,3 +1,13 @@
+/**
+ * @file ApprovalCard.tsx
+ * @description UI component for human-in-the-loop tool execution approval.
+ *
+ * Provides a focused card for reviewing pending tool calls that require
+ * explicit user permission. Displays the tool name, arguments (as JSON),
+ * and provides Approve/Reject actions. Once a decision is made, the card
+ * transitions to a compact status summary.
+ */
+
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -6,7 +16,13 @@ import { useState, type ComponentProps } from 'react'
 import { CodeBlock } from './ai-elements/code-block'
 import { getToolIcon } from '@/lib/tool-icons'
 
+/**
+ * Props for the ApprovalCard component
+ */
 export interface ApprovalCardProps extends Omit<ComponentProps<'div'>, 'part'> {
+  /**
+   * The tool call metadata requiring approval
+   */
   toolPart: {
     toolName?: string
     toolCallId: string
@@ -14,25 +30,40 @@ export interface ApprovalCardProps extends Omit<ComponentProps<'div'>, 'part'> {
     input?: unknown
     state?: string
   }
+  /** Callback triggered when the user clicks 'Approve' */
   onApprove: (toolCallId: string) => void
+  /** Callback triggered when the user clicks 'Reject' */
   onReject: (toolCallId: string) => void
 }
 
+/**
+ * ApprovalCard Component
+ *
+ * Used within the chat feed to intercept security-sensitive tool calls.
+ * Prevents the agent from proceeding until the user has reviewed the input.
+ */
 export function ApprovalCard({ toolPart, onApprove, onReject, className, ...props }: ApprovalCardProps) {
   const [decided, setDecided] = useState<'approved' | 'rejected' | null>(null)
   const toolId = toolPart.toolName ?? toolPart.type ?? 'tool'
   const toolIcon = getToolIcon(toolId, 'size-5 text-amber-500')
 
+  /**
+   * Finalizes the 'Approve' decision and notifies the chat logic
+   */
   const handleApprove = () => {
     setDecided('approved')
     onApprove(toolPart.toolCallId)
   }
 
+  /**
+   * Finalizes the 'Reject' decision and notifies the chat logic
+   */
   const handleReject = () => {
     setDecided('rejected')
     onReject(toolPart.toolCallId)
   }
 
+  // Render the post-decision summary state
   if (decided) {
     return (
       <div
@@ -57,12 +88,13 @@ export function ApprovalCard({ toolPart, onApprove, onReject, className, ...prop
     )
   }
 
+  // Render the active review state
   return (
     <div
       className={cn('mb-4 w-full rounded-md border border-amber-500/30 bg-amber-500/5 overflow-hidden', className)}
       {...props}
     >
-      {}
+      {/* Header section with tool identity */}
       <div className="flex items-center justify-between gap-4 p-3 border-b border-amber-500/20">
         <div className="flex items-center gap-2">
           <ShieldAlertIcon className="size-5 text-amber-500" />
@@ -74,7 +106,7 @@ export function ApprovalCard({ toolPart, onApprove, onReject, className, ...prop
         </div>
       </div>
 
-      {}
+      {/* Parameter review section */}
       {!!toolPart.input && (
         <div className="p-3 space-y-1">
           <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Parameters</h4>
@@ -84,7 +116,7 @@ export function ApprovalCard({ toolPart, onApprove, onReject, className, ...prop
         </div>
       )}
 
-      {}
+      {/* Action footer */}
       <div className="flex items-center gap-2 p-3 border-t border-amber-500/20">
         <Button size="sm" onClick={handleApprove} className="gap-1.5">
           <CheckIcon className="size-3.5" />

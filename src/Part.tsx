@@ -1,5 +1,15 @@
-import { Message, MessageContent } from '@/components/ai-elements/message'
+/**
+ * @file Part.tsx
+ * @description Renders individual message parts (text, reasoning, tools) in the chat feed.
+ *
+ * Implements granular rendering logic for:
+ * - Text messages with Markdown sub-rendering and action buttons.
+ * - Thinking/Reasoning blocks with streaming support and expand/collapse triggers.
+ * - Multi-stage tool execution (calls, approvals, outputs).
+ * - Sideband data events (intercepted for consolidated rendering).
+ */
 
+import { Message, MessageContent } from '@/components/ai-elements/message'
 import { Actions, Action } from '@/components/ai-elements/actions'
 import { Response } from '@/components/ai-elements/response'
 import { CopyIcon, RefreshCcwIcon } from 'lucide-react'
@@ -8,17 +18,31 @@ import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai-e
 import { Tool, ToolHeader, ToolInput, ToolOutput, ToolContent } from '@/components/ai-elements/tool'
 import { CodeBlock } from '@/components/ai-elements/code-block'
 
+/**
+ * Props for the Part component
+ */
 interface PartProps {
+  /** The specific AI SDK message part to render */
   part: UIMessagePart<UIDataTypes, UITools>
+  /** The parent message object current part belongs to */
   message: UIMessage
+  /** Current chat status ('streaming', 'ready', etc.) */
   status: string
+  /** Callback to trigger a message regeneration */
   regen: (id: string) => void
+  /** Index of the part within the message */
   index: number
+  /** Whether this is the last message in the list */
   lastMessage: boolean
+  /** Optional callback for approving tool calls */
   onApprove?: (toolCallId: string) => void
+  /** Optional callback for rejecting tool calls */
   onReject?: (toolCallId: string) => void
 }
 
+/**
+ * Metadata structure for sideband graph events
+ */
 interface GraphEventData {
   event?: string
   tool_name?: string
@@ -31,6 +55,9 @@ interface GraphEventData {
   }[]
 }
 
+/**
+ * internal mapping for custom non-standard part types
+ */
 interface CustomPart {
   type: string
   text?: string
@@ -40,17 +67,29 @@ interface CustomPart {
   event?: string
 }
 
+/**
+ * Message Part Component
+ *
+ * Determines and renders the appropriate UI component based on the part's 'type'
+ * (text, tool-call, reasoning, thought, data-graph-event).
+ */
 export function Part(props: PartProps) {
   const { part, message, status, regen, index, lastMessage } = props
 
+  /**
+   * Helper to copy text to clipboard using the modern Clipboard API
+   */
   function copy(text: string) {
     navigator.clipboard.writeText(text).catch((error: unknown) => {
       console.error('Error copying text:', error)
     })
   }
 
-  // Helper to render the specific part content
+  /**
+   * Dispatches rendering logic based on part type
+   */
   const renderPartContent = () => {
+    // 1. Text Parts (Standard Conversation)
     if (part.type === 'text') {
       const textPart = part as unknown as { text: string }
       const textStr = textPart.text
@@ -88,6 +127,7 @@ export function Part(props: PartProps) {
       )
     }
 
+    // 2. Reasoning/Thought Parts (Deep Thinking)
     if (part.type === 'reasoning' || (part as unknown as { type: string }).type === 'thought') {
       const reasoningPart = part as unknown as { text: string }
       const reasoningText = reasoningPart.text
@@ -109,10 +149,12 @@ export function Part(props: PartProps) {
       )
     }
 
+    // 3. Dynamic Tool Placeholders
     if (part.type === 'dynamic-tool') {
       return <div className="py-2 opacity-50 text-[10px]">Dynamic Tool: {JSON.stringify(part)}</div>
     }
 
+    // 4. Standard AI SDK Tools (Call/Input/Output)
     if ('toolCallId' in part) {
       return (
         <div className="py-2">
@@ -132,8 +174,9 @@ export function Part(props: PartProps) {
       )
     }
 
+    // 5. Sideband Graph Activity (Handled by Chat.tsx root)
     if ((part as unknown as CustomPart).type === 'data-graph-event') {
-      // Handled by consolidated renderer at index 0
+      // Intentionally bypassed; Chat.tsx handles this for consolidated rendering
       return null
     }
 
