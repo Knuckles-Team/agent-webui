@@ -24,7 +24,7 @@ _Version: 0.1.32_
 
 A React-based chat interface for Pydantic AI Agents built using Agent Utilities.
 
-Built with [Vercel AI SDK](https://sdk.vercel.ai/) and designed to work with Pydantic AI's streaming chat API.
+Built with [Vercel AI SDK](https://sdk.vercel.ai/) and the official [@mcpc-tech/acp-ai-provider](https://www.npmjs.com/package/@mcpc-tech/acp-ai-provider), it implements the native Agent Communication Protocol (ACP) for high-fidelity streaming, planning, and session management.
 
 ## Features
 

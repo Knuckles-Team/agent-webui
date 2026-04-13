@@ -32,9 +32,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ApprovalCard } from '@/components/ApprovalCard'
 import { Switch } from '@/components/ui/switch'
 import { useChat, type UIMessage } from '@ai-sdk/react'
-import type { ChatStatus, UIDataTypes, UIMessagePart, UITools } from 'ai'
+import type { UIDataTypes, UIMessagePart, UITools, ChatStatus } from 'ai'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type SyntheticEvent, type ChangeEvent } from 'react'
-import { useMCP } from './lib/mcp-context'
 
 import { useQuery } from '@tanstack/react-query'
 import { useThrottle } from '@uidotdev/usehooks'
@@ -44,7 +43,6 @@ import { Part } from './Part'
 import type { ConversationEntry } from './types'
 import { getToolIcon } from '@/lib/tool-icons'
 import { GraphActivity, type GraphEvent } from '@/components/ai-elements/graph-activity'
-import { acpClient } from './lib/acp-client'
 
 /**
  * Interface for specialized message parts (sources, images, etc.)
@@ -115,6 +113,27 @@ interface AppAnnotation {
 }
 
 /**
+ * Locally defined interfaces to satisfy strict typing requirements
+ * while working around complex generic constraints in the AI SDK.
+ */
+interface LocalUseChatOptions {
+  api: string
+}
+
+interface LocalUseChatHelpers {
+  messages: UIMessage[]
+  append: (
+    message: { role: 'user' | 'assistant'; content: string },
+    options?: { body?: Record<string, unknown> },
+  ) => Promise<string | undefined>
+  status: ChatStatus
+  setMessages: (messages: UIMessage[]) => void
+  reload: () => Promise<string | undefined>
+  addToolOutput: (output: { tool: string; toolCallId: string; output: unknown }) => Promise<void>
+  error: Error | undefined
+}
+
+/**
  * Primary Chat Component
  *
  * Orchestrates the chat lifecycle including message history management,
@@ -127,23 +146,13 @@ const Chat = () => {
   const [enabledTools, setEnabledTools] = useState<string[]>([])
   const [attachments, setAttachments] = useState<{ url: string; base64: string; type: string }[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const { tools: mcpTools, isLoadingTools } = useMCP()
 
-  const { messages, sendMessage, status, setMessages, regenerate, error, addToolOutput } = useChat({
-    tools: isLoadingTools ? undefined : mcpTools,
-  } as unknown as Parameters<typeof useChat>[0]) as unknown as {
-    messages: UIMessage[]
-    sendMessage: (
-      message: { text: string },
-      options?: { body?: Record<string, unknown> },
-    ) => Promise<string | undefined>
-    status: ChatStatus
-    setMessages: (messages: UIMessage[] | ((prev: UIMessage[]) => UIMessage[])) => void
-    regenerate: (options?: { messageId: string }) => Promise<string | undefined>
-    error: unknown
-    addToolOutput: (opts: { toolCallId: string; output: unknown; state?: string; errorText?: string }) => void
-  }
-  const throttledMessages = useThrottle(messages, 500)
+  const { messages, append, status, setMessages, reload, addToolOutput, error } = (
+    useChat as unknown as (options: LocalUseChatOptions) => LocalUseChatHelpers
+  )({
+    api: '/acp',
+  })
+  const throttledMessages = useThrottle<UIMessage[]>(messages, 500)
   const [conversationId, setConversationId] = useConversationIdFromUrl()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -227,28 +236,28 @@ const Chat = () => {
         window.history.pushState({}, '', theCurrentUrl.toString())
       }
 
-      if (import.meta.env.VITE_ENABLE_ACP === 'true') {
-        void handleAcpSubmit(input)
-      } else {
-        const parts = attachments.map((a) => ({
-          image: a.base64,
-          media_type: a.type,
-        }))
+      const parts = attachments.map((a) => ({
+        image: a.base64,
+        media_type: a.type,
+      }))
 
-        void sendMessage(
-          { text: input },
-          {
-            body: {
-              model,
-              builtinTools: enabledTools,
-              mode,
-              parts: parts.length > 0 ? [...parts, { text: input }] : [],
-            },
+      void append(
+        {
+          role: 'user',
+          content: input,
+        },
+        {
+          body: {
+            model,
+            builtinTools: enabledTools,
+            mode,
+            parts: parts.length > 0 ? [...parts, { text: input }] : [],
           },
-        ).catch((error: unknown) => {
-          console.error('Error sending message:', error)
-        })
-      }
+        },
+      ).catch((error: unknown) => {
+        console.error('Error sending message:', error)
+      })
+
       setInput('')
       setAttachments([])
     }
@@ -258,73 +267,6 @@ const Chat = () => {
    * Specialized submission flow for Agent Client Protocol (ACP) interactions.
    * Manages low-level RPC streaming and tool-call mapping.
    */
-  const handleAcpSubmit = async (query: string) => {
-    // Manually add user message to local state
-    const userMessage: UIMessage = {
-      id: nanoid(),
-      role: 'user',
-      parts: [{ type: 'text', text: query }],
-    }
-    setMessages((prev: UIMessage[]) => [...prev, userMessage])
-
-    // Create assistant message placeholder
-    const assistantId = nanoid()
-    const assistantMessage: UIMessage = {
-      id: assistantId,
-      role: 'assistant',
-      parts: [{ type: 'text', text: '' }],
-    }
-    setMessages((prev: UIMessage[]) => [...prev, assistantMessage])
-
-    try {
-      await acpClient.sendRpc('prompt', { text: query })
-
-      for await (const event of acpClient.streamEvents()) {
-        if (event.type === 'text-delta') {
-          const delta = (event as unknown as { delta: string }).delta
-          setMessages((prev: UIMessage[]) =>
-            prev.map((m: UIMessage) =>
-              m.id === assistantId
-                ? {
-                    ...m,
-                    parts: m.parts.map((p) =>
-                      (p as unknown as { type: string }).type === 'text'
-                        ? ({
-                            ...p,
-                            text: (p as unknown as { text: string }).text + delta,
-                          } as UIMessagePart<UIDataTypes, UITools>)
-                        : p,
-                    ),
-                  }
-                : m,
-            ),
-          )
-        } else if (event.type === 'tool-call') {
-          const callData = (event as unknown as { call: Record<string, unknown> }).call
-          // Explicit mapping to AI SDK camelCase format
-          const toolCall = {
-            type: 'tool-call',
-            toolCallId: (callData.tool_call_id ?? callData.id ?? nanoid()) as string,
-            toolName: (callData.tool_name ?? callData.name) as string,
-            args: callData.args ?? {},
-          }
-
-          setMessages((prev: UIMessage[]) =>
-            prev.map((m: UIMessage) =>
-              m.id === assistantId
-                ? {
-                    ...m,
-                    parts: [...m.parts, toolCall as UIMessagePart<UIDataTypes, UITools>],
-                  }
-                : m,
-            ),
-          )
-        }
-      }
-    } catch (err) {
-      console.error('ACP Submission failed:', err)
-    }
-  }
 
   // Persist messages to local storage whenever they are updated
   useEffect(() => {
@@ -336,8 +278,8 @@ const Chat = () => {
   /**
    * Triggers a message regeneration for the specified ID
    */
-  function regen(messageId: string) {
-    void regenerate({ messageId }).catch((error: unknown) => {
+  function regen(_messageId: string) {
+    void reload().catch((error: unknown) => {
       console.error('Error regenerating message:', error)
     })
   }
@@ -356,7 +298,8 @@ const Chat = () => {
    * UI Callback for human-in-the-loop tool approval
    */
   const handleApproveToolCall = (toolCallId: string) => {
-    addToolOutput({
+    void addToolOutput({
+      tool: 'agent_tool',
       toolCallId,
       output: { approved: true },
     })
@@ -366,10 +309,10 @@ const Chat = () => {
    * UI Callback for human-in-the-loop tool rejection
    */
   const handleRejectToolCall = (toolCallId: string) => {
-    addToolOutput({
+    void addToolOutput({
+      tool: 'agent_tool',
       toolCallId,
       output: { approved: false },
-      errorText: 'Tool call rejected by user',
     })
   }
 
@@ -380,12 +323,15 @@ const Chat = () => {
           {messages.map((message: UIMessage) => (
             <div key={message.id}>
               {message.role === 'assistant' &&
-                (message.parts as MessagePart[]).filter((part) => part.type === 'source-url').length > 0 && (
+                (message.parts as unknown as MessagePart[]).filter((part) => part.type === 'source-url').length >
+                  0 && (
                   <Sources>
                     <SourcesTrigger
-                      count={(message.parts as MessagePart[]).filter((part) => part.type === 'source-url').length}
+                      count={
+                        (message.parts as unknown as MessagePart[]).filter((part) => part.type === 'source-url').length
+                      }
                     />
-                    {(message.parts as MessagePart[])
+                    {(message.parts as unknown as MessagePart[])
                       .filter((part) => part.type === 'source-url')
                       .map((part, i: number) => (
                         <SourcesContent key={`${message.id}-${i}`}>
@@ -394,7 +340,7 @@ const Chat = () => {
                       ))}
                   </Sources>
                 )}
-              {(message.parts as MessagePart[]).map((part, i: number) => (
+              {(message.parts as unknown as MessagePart[]).map((part, i: number) => (
                 <Part
                   key={`${message.id}-${i}`}
                   part={part as unknown as UIMessagePart<UIDataTypes, UITools>}

@@ -60,6 +60,7 @@
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.18",
     "use-stick-to-bottom": "^1.1.1",
+    "@mcpc-tech/acp-ai-provider": "^0.3.0",
     "zod": "^4.3.5"
   },
   "devDependencies": {
