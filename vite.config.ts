@@ -20,6 +20,10 @@ export default defineConfig(() => ({
         target: `http://localhost:${BACKEND_DEV_SERVER_PORT}/`,
         changeOrigin: true,
       },
+      '/acp': {
+        target: `http://localhost:${BACKEND_DEV_SERVER_PORT}/`,
+        changeOrigin: true,
+      },
     },
   },
 }))

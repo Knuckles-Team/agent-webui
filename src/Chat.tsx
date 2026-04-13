@@ -31,7 +31,8 @@ import { useConversationIdFromUrl } from './hooks/useConversationIdFromUrl'
 import { Part } from './Part'
 import type { ConversationEntry } from './types'
 import { getToolIcon } from '@/lib/tool-icons'
-import { GraphActivity, type GraphEvent } from '@/components/GraphActivity'
+import { GraphActivity, type GraphEvent } from '@/components/ai-elements/graph-activity'
+import { acpClient } from './lib/acp-client'
 
 interface MessagePart {
   type: string
@@ -87,7 +88,7 @@ const Chat = () => {
   const [enabledTools, setEnabledTools] = useState<string[]>([])
   const { tools: mcpTools, isLoadingTools } = useMCP()
 
-  const { messages, sendMessage, status, setMessages, regenerate, error, addToolOutput, data } = useChat({
+  const { messages, sendMessage, status, setMessages, regenerate, error, addToolOutput } = useChat({
     tools: isLoadingTools ? undefined : mcpTools,
   } as unknown as Parameters<typeof useChat>[0]) as unknown as {
     messages: UIMessage[]
@@ -96,11 +97,10 @@ const Chat = () => {
       options?: { body?: Record<string, unknown> },
     ) => Promise<string | undefined>
     status: ChatStatus
-    setMessages: (messages: UIMessage[]) => void
+    setMessages: (messages: UIMessage[] | ((prev: UIMessage[]) => UIMessage[])) => void
     regenerate: (options?: { messageId: string }) => Promise<string | undefined>
     error: unknown
     addToolOutput: (opts: { toolCallId: string; output: unknown; state?: string; errorText?: string }) => void
-    data: unknown[]
   }
   const throttledMessages = useThrottle(messages, 500)
   const [conversationId, setConversationId] = useConversationIdFromUrl()
@@ -157,23 +157,89 @@ const Chat = () => {
         window.history.pushState({}, '', theCurrentUrl.toString())
       }
 
-      void sendMessage(
-        { text: input },
-        {
-          body: { model, builtinTools: enabledTools, mode },
-        },
-      ).catch((error: unknown) => {
-        console.error('Error sending message:', error)
-      })
+      if (import.meta.env.VITE_ENABLE_ACP === 'true') {
+        void handleAcpSubmit(input)
+      } else {
+        void sendMessage(
+          { text: input },
+          {
+            body: { model, builtinTools: enabledTools, mode },
+          },
+        ).catch((error: unknown) => {
+          console.error('Error sending message:', error)
+        })
+      }
       setInput('')
     }
   }
 
-  useEffect(() => {
-    if (conversationId && throttledMessages.length > 0) {
-      window.localStorage.setItem(conversationId, JSON.stringify(throttledMessages))
+  const handleAcpSubmit = async (query: string) => {
+    // Manually add user message to local state
+    const userMessage: UIMessage = {
+      id: nanoid(),
+      role: 'user',
+      parts: [{ type: 'text', text: query }],
     }
-  }, [throttledMessages, conversationId])
+    setMessages((prev: UIMessage[]) => [...prev, userMessage])
+
+    // Create assistant message placeholder
+    const assistantId = nanoid()
+    const assistantMessage: UIMessage = {
+      id: assistantId,
+      role: 'assistant',
+      parts: [{ type: 'text', text: '' }],
+    }
+    setMessages((prev: UIMessage[]) => [...prev, assistantMessage])
+
+    try {
+      await acpClient.sendRpc('prompt', { text: query })
+
+      for await (const event of acpClient.streamEvents()) {
+        if (event.type === 'text-delta') {
+          const delta = (event as unknown as { delta: string }).delta
+          setMessages((prev: UIMessage[]) =>
+            prev.map((m: UIMessage) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    parts: m.parts.map((p) =>
+                      (p as unknown as { type: string }).type === 'text'
+                        ? ({
+                            ...p,
+                            text: (p as unknown as { text: string }).text + delta,
+                          } as UIMessagePart<UIDataTypes, UITools>)
+                        : p,
+                    ),
+                  }
+                : m,
+            ),
+          )
+        } else if (event.type === 'tool-call') {
+          const callData = (event as unknown as { call: Record<string, unknown> }).call
+          // Explicit mapping to AI SDK camelCase format
+          const toolCall = {
+            type: 'tool-call',
+            toolCallId: (callData.tool_call_id ?? callData.id ?? nanoid()) as string,
+            toolName: (callData.tool_name ?? callData.name) as string,
+            args: callData.args ?? {},
+          }
+
+          setMessages((prev: UIMessage[]) =>
+            prev.map((m: UIMessage) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    parts: [...m.parts, toolCall as UIMessagePart<UIDataTypes, UITools>],
+                  }
+                : m,
+            ),
+          )
+        }
+      }
+    } catch (err) {
+      console.error('ACP Submission failed:', err)
+    }
+  }
 
   useEffect(() => {
     if (conversationId && throttledMessages.length > 0) {
@@ -243,7 +309,6 @@ const Chat = () => {
                   lastMessage={throttledMessages.indexOf(message) === throttledMessages.length - 1}
                   onApprove={handleApproveToolCall}
                   onReject={handleRejectToolCall}
-                  sideband={data}
                 />
               ))}
 
@@ -283,34 +348,27 @@ const Chat = () => {
                     index={i}
                     regen={regen}
                     lastMessage={message.id === (messages as { id: string }[]).at(-1)?.id}
-                    sideband={data}
                   />
                 ),
               )}
 
-              {/* Message-level Sideband rendering for immediate graph visibility */}
+              {/* Message-level graph activity rendering from data-graph-event parts */}
               {message.role === 'assistant' &&
                 (() => {
-                  const annotations = (message as unknown as Record<string, unknown>).annotations as
-                    | unknown[]
-                    | undefined
                   const parts = message.parts as unknown[] | undefined
-                  const messageSideband =
-                    throttledMessages.indexOf(message) === throttledMessages.length - 1 ? data : []
-
-                  const rawEvents = [
-                    ...(Array.isArray(annotations) ? annotations : []),
-                    ...(Array.isArray(parts) ? parts : []),
-                    ...(Array.isArray(messageSideband) ? messageSideband : []),
-                  ]
-
-                  const graphEvents = rawEvents
-                    .filter((a: unknown) => {
-                      if (!a || typeof a !== 'object') return false
-                      const ann = a as Record<string, unknown>
-                      return ann.type === 'graph-event' || ann.type === 'graph_event'
+                  // AI SDK v5 delivers sideband 8: events as DataUIParts in message.parts
+                  // with type "data-graph-event" and the payload in .data
+                  const graphEvents = (Array.isArray(parts) ? parts : [])
+                    .filter((p: unknown) => {
+                      if (!p || typeof p !== 'object') return false
+                      const part = p as Record<string, unknown>
+                      return part.type === 'data-graph-event'
                     })
-                    .map((a: unknown) => a as GraphEvent)
+                    .map((p: unknown) => {
+                      const part = p as Record<string, unknown>
+                      const payload = (part.data && typeof part.data === 'object' ? part.data : part) as GraphEvent
+                      return payload
+                    })
 
                   if (graphEvents.length === 0) return null
 

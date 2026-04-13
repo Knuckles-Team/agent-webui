@@ -17,7 +17,6 @@ interface PartProps {
   lastMessage: boolean
   onApprove?: (toolCallId: string) => void
   onReject?: (toolCallId: string) => void
-  sideband?: unknown[]
 }
 
 interface GraphEventData {
@@ -133,10 +132,7 @@ export function Part(props: PartProps) {
       )
     }
 
-    if (
-      (part as unknown as CustomPart).type === 'graph-event' ||
-      (part as unknown as CustomPart).type === 'graph_event'
-    ) {
+    if ((part as unknown as CustomPart).type === 'data-graph-event') {
       // Handled by consolidated renderer at index 0
       return null
     }
