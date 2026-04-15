@@ -11,7 +11,6 @@ and a high-performance React-based frontend.
 
 import os
 import sys
-import warnings
 import logging
 from pathlib import Path
 from typing import Any, Dict
@@ -32,8 +31,6 @@ logfire.instrument_pydantic_ai()
 
 __version__ = '0.1.32'
 
-# Suppress common dependency warnings during startup
-warnings.filterwarnings('ignore', message='.*urllib3.*or chardet.*')
 print(f'Agent WebUI v{__version__}', file=sys.stderr)
 
 
