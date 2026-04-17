@@ -10,7 +10,7 @@
     "access": "public",
     "provenance": true
   },
-  "version": "0.1.32",
+  "version": "0.1.33",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -20,7 +20,8 @@
     "dev": "vite",
     "dev:server": "cd agent && uv run uvicorn chatbot.server:app --port 38001",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "files": [
     "dist"
@@ -28,6 +29,7 @@
   "dependencies": {
     "@ai-sdk/mcp": "^1.0.25",
     "@ai-sdk/react": "^2.0.125",
+    "@mcpc-tech/acp-ai-provider": "^0.3.0",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-checkbox": "^1.3.3",
     "@radix-ui/react-collapsible": "^1.1.12",
@@ -60,7 +62,6 @@
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.18",
     "use-stick-to-bottom": "^1.1.1",
-    "@mcpc-tech/acp-ai-provider": "^0.3.0",
     "zod": "^4.3.5"
   },
   "devDependencies": {
@@ -71,6 +72,10 @@
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/npm": "^13.1.3",
     "@taplo/cli": "^0.7.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^24.10.9",
     "@types/react": "^19.2.9",
     "@types/react-dom": "^19.2.3",
@@ -83,6 +88,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.26",
     "globals": "^16.5.0",
+    "jsdom": "^29.0.2",
     "neostandard": "^0.12.2",
     "prettier": "^3.8.1",
     "semantic-release": "^25.0.2",
@@ -92,6 +98,7 @@
     "vite": "^7.3.1",
     "vite-bundle-analyzer": "^1.3.2",
     "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^4.1.4",
     "yaml-lint": "^1.7.0"
   }
 }

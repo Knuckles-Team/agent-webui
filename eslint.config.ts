@@ -28,6 +28,8 @@ export default defineConfig(
       'scratch/**',
       'agent/**',
       'commitlint.config.js',
+      'vitest.config.ts',
+      'vite.config.ts',
     ],
   },
   {

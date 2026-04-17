@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.8
+    rev: v0.15.10
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
@@ -41,32 +41,35 @@ repos:
       - id: codespell
         args: ['-L', 'ans,linar,nam,tread,ot']
         exclude: ^(package-lock\.json|pnpm-lock\.yaml|bun\.lock|tests/|test/|scripts/|script/)
-
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.11.7
+    hooks:
+      - id: uv-lock
   - repo: local
     hooks:
       - id: prettier
         name: prettier
-        entry: pnpm format
+        entry: npx pnpm format
         language: system
         types_or: [javascript, jsx, ts, tsx, json, css, html, markdown]
         pass_filenames: true
 
       - id: eslint
         name: eslint
-        entry: pnpm lint
+        entry: npx pnpm lint
         language: system
         types_or: [javascript, jsx, ts, tsx]
         pass_filenames: false
 
       - id: typecheck
         name: typecheck
-        entry: pnpm typecheck
+        entry: npx pnpm typecheck
         language: system
         types_or: [ts, tsx]
         pass_filenames: false
 
       - id: cspell
         name: cspell
-        entry: pnpm exec cspell --no-progress
+        entry: npx pnpm exec cspell --no-progress
         language: system
         types_or: [javascript, jsx, ts, tsx, markdown]

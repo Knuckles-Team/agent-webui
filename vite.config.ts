@@ -5,6 +5,8 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 
 const BACKEND_DEV_SERVER_PORT = process.env.BACKEND_PORT ?? 38001
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore - Vite type mismatch after dependency update
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss(), tsconfigPaths({ root: __dirname })],
   base: '',
