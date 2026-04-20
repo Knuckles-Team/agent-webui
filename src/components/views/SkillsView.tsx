@@ -11,6 +11,7 @@ interface Skill {
   name: string
   description: string
   enabled: boolean
+  type?: string
 }
 
 export default function SkillsView() {
@@ -75,7 +76,14 @@ export default function SkillsView() {
                           {skill.enabled ? <Zap className="size-5" /> : <ZapOff className="size-5" />}
                         </div>
                         <div>
-                          <h3 className="font-semibold text-sm leading-none mb-1">{skill.name}</h3>
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-semibold text-sm leading-none">{skill.name}</h3>
+                            {skill.type && (
+                              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-secondary-foreground uppercase tracking-wider">
+                                {skill.type}
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-muted-foreground font-mono">{skill.id}</p>
                         </div>
                       </div>
