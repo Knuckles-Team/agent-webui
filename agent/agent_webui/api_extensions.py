@@ -1,39 +1,25 @@
-#!/usr/bin/python
-# coding: utf-8
-"""
-Enhanced API Extensions for Agent WebUI.
-
-This module defines specialized FastAPI routes for workspace management,
-file operations (upload/download), cron task monitoring, and chat persistence.
-It uses a registration-based helper system to interact with the underlying
-agent's workspace.
-"""
-
-from __future__ import annotations
-
 import logging
+import os
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Request, UploadFile, File, HTTPException
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
-from agent_utilities.agent_utilities import get_agent_workspace
-
+router = APIRouter()
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix='/api/enhanced')
-AGENT_WORKSPACE = get_agent_workspace()
-DEFAULT_AGENT_DIR = Path(__file__).parent / 'agent'
+# Directory where agent stores its workspace data
+DEFAULT_AGENT_DIR = Path(os.getenv('AGENT_WORKSPACE', 'workspace'))
 
-# GLOBAL: Registry for workspace implementation helpers
-workspace_helpers: Dict[str, Any] = {}
+# Global registry for operational helpers (set during agent initialization)
+workspace_helpers: dict[str, Any] = {}
 
 
 def get_helper(name: str, fallback: Any = None) -> Any:
-    """Retrieve a registered workspace helper by name.
+    """Safely retrieve a registered workspace helper by name.
 
     Args:
         name: The identifier of the helper function.
@@ -45,13 +31,14 @@ def get_helper(name: str, fallback: Any = None) -> Any:
     helper = workspace_helpers.get(name)
     if not helper:
         logger.warning(
-            f"Helper '{name}' not found in workspace_helpers. Available: {list(workspace_helpers.keys())}"
+            f"Helper '{name}' not found in workspace_helpers. "
+            f'Available: {list(workspace_helpers.keys())}'
         )
         return fallback
     return helper
 
 
-def set_workspace_helpers(helpers: Dict[str, Any]) -> None:
+def set_workspace_helpers(helpers: dict[str, Any]) -> None:
     """Register the operational helpers for the current workspace context.
 
     Args:
@@ -63,7 +50,7 @@ def set_workspace_helpers(helpers: Dict[str, Any]) -> None:
 
 
 @router.get('/info')
-async def get_info() -> Dict[str, str]:
+async def get_info() -> dict[str, str]:
     """Retrieve agent identity and user personalization metadata.
 
     Returns:
@@ -91,7 +78,7 @@ async def get_info() -> Dict[str, str]:
 
 
 @router.get('/files')
-async def list_files() -> List[str]:
+async def list_files() -> list[str]:
     """List all available files in the agent's current workspace.
 
     Returns:
@@ -104,7 +91,7 @@ async def list_files() -> List[str]:
 
 
 @router.get('/files/{filename}')
-async def get_file(filename: str) -> Dict[str, str]:
+async def get_file(filename: str) -> dict[str, str]:
     """Retrieve the content of a specific workspace file.
 
     Args:
@@ -123,7 +110,7 @@ async def get_file(filename: str) -> Dict[str, str]:
 
 
 @router.get('/config-files')
-async def list_config_files() -> List[str]:
+async def list_config_files() -> list[str]:
     """List markdown-based configuration files and MCP server configs.
 
     Returns:
@@ -144,7 +131,7 @@ async def list_config_files() -> List[str]:
 
 
 @router.put('/files/{filename}')
-async def update_file(filename: str, data: Dict[str, str]) -> Dict[str, str]:
+async def update_file(filename: str, data: dict[str, str]) -> dict[str, str]:
     """Create or update a configuration file in the workspace.
 
     Args:
@@ -164,7 +151,7 @@ async def update_file(filename: str, data: Dict[str, str]) -> Dict[str, str]:
 
 
 @router.get('/skills')
-async def list_skills() -> List[Dict[str, Any]]:
+async def list_skills() -> list[dict[str, Any]]:
     """Retrieve the catalog of dynamic agent skills.
 
     Returns:
@@ -175,7 +162,7 @@ async def list_skills() -> List[Dict[str, Any]]:
 
 
 @router.post('/skills/{skill_id}/toggle')
-async def toggle_skill(skill_id: str) -> Dict[str, Any]:
+async def toggle_skill(skill_id: str) -> dict[str, Any]:
     """Enable or disable a specific agent skill.
 
     Args:
@@ -188,7 +175,7 @@ async def toggle_skill(skill_id: str) -> Dict[str, Any]:
 
 
 @router.post('/reload')
-async def reload_agent(request: Request) -> Dict[str, str]:
+async def reload_agent(request: Request) -> dict[str, str]:
     """Trigger a full re-initialization of the agent's graph and workspace.
 
     Args:
@@ -209,10 +196,10 @@ async def reload_agent(request: Request) -> Dict[str, str]:
         return {'status': 'success', 'message': 'Agent reloaded successfully'}
     except Exception as e:
         logger.error(f'Reload failed: {e}')
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-def parse_cron_table(content: str) -> List[Dict[str, Any]]:
+def parse_cron_table(content: str) -> list[dict[str, Any]]:
     """Parse a markdown table of cron tasks into structured data.
 
     Args:
@@ -237,7 +224,7 @@ def parse_cron_table(content: str) -> List[Dict[str, Any]]:
     return tasks
 
 
-def parse_cron_logs(content: str) -> List[Dict[str, Any]]:
+def parse_cron_logs(content: str) -> list[dict[str, Any]]:
     """Extract structured execution logs from a CRON_LOG.md markdown file.
 
     Args:
@@ -280,7 +267,7 @@ def parse_cron_logs(content: str) -> List[Dict[str, Any]]:
 
 
 @router.get('/cron/calendar')
-async def get_cron_calendar() -> List[Dict[str, Any]]:
+async def get_cron_calendar() -> list[dict[str, Any]]:
     """Retrieve the scheduled cron task calendar.
 
     Returns:
@@ -296,7 +283,7 @@ async def get_cron_calendar() -> List[Dict[str, Any]]:
 
 
 @router.get('/cron/logs')
-async def get_cron_logs() -> List[Dict[str, Any]]:
+async def get_cron_logs() -> list[dict[str, Any]]:
     """Retrieve the execution history logs for cron tasks.
 
     Returns:
@@ -313,7 +300,7 @@ async def get_cron_logs() -> List[Dict[str, Any]]:
 
 
 @router.post('/upload')
-async def upload_file(file: UploadFile = File(...)) -> Dict[str, str]:
+async def upload_file(file: Annotated[UploadFile, File()]) -> dict[str, str]:
     """Upload a file to the agent's workspace directly.
 
     Args:
@@ -373,7 +360,7 @@ async def download_file(filename: str) -> FileResponse:
 
 
 @router.get('/chats')
-async def list_chats() -> List[Dict[str, Any]]:
+async def list_chats() -> list[dict[str, Any]]:
     """List historical chat sessions stored on the server.
 
     Returns:
@@ -384,7 +371,7 @@ async def list_chats() -> List[Dict[str, Any]]:
 
 
 @router.get('/chats/{chat_id}')
-async def get_chat(chat_id: str) -> Dict[str, Any] | None:
+async def get_chat(chat_id: str) -> dict[str, Any] | None:
     """Retrieve a specific chat session's message history.
 
     Args:
@@ -398,7 +385,7 @@ async def get_chat(chat_id: str) -> Dict[str, Any] | None:
 
 
 @router.post('/chats')
-async def save_chat(data: Dict[str, Any]) -> Dict[str, Any]:
+async def save_chat(data: dict[str, Any]) -> dict[str, Any]:
     """Persist a new or updated chat session.
 
     Args:
@@ -412,7 +399,7 @@ async def save_chat(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.put('/chats/{chat_id}/title')
-async def update_chat_title(chat_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+async def update_chat_title(chat_id: str, data: dict[str, Any]) -> dict[str, Any]:
     """Update the display title of a specific chat session.
 
     Args:
@@ -426,8 +413,8 @@ async def update_chat_title(chat_id: str, data: Dict[str, Any]) -> Dict[str, Any
     return h(chat_id, data) if h else {'status': 'error'}
 
 
-@router.delete('/chats/{chat_id}')
-async def delete_chat(chat_id: str) -> Dict[str, Any]:
+@router.get('/chats/{chat_id}/title')
+async def delete_chat(chat_id: str) -> dict[str, Any]:
     """Permanently delete a chat session record.
 
     Args:

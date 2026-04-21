@@ -1,24 +1,24 @@
-repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.10
-    hooks:
-      - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-        exclude: ^(tests/|test/|scripts/|script/)
-      - id: ruff-format
-        exclude: ^(tests/|test/|scripts/|script/)
+default_language_version:
+  python: python3
+exclude: 'dotnet|node_modules'
+ci:
+  autofix_prs: true
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit suggestions'
+  autoupdate_schedule: 'monthly'
 
+repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: check-added-large-files
-        args: ['--maxkb=1000']
+        args: ["--maxkb=2000"]
+        exclude: ^uv\.lock$
       - id: check-ast
         exclude: ^(tests/|test/|scripts/|script/)
       - id: check-yaml
+        exclude: ^pnpm-lock\.yaml$
       - id: check-toml
       - id: check-json
-        exclude: ^(package-lock\.json|pnpm-lock\.yaml|bun\.lock|tsconfig\.json)$
       - id: fix-byte-order-marker
         exclude: .gitignore
       - id: check-merge-conflict
@@ -26,50 +26,48 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: no-commit-to-branch
-        args: [--branch, staging, --branch, dev]
-
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.11
+    hooks:
+      - id: ruff-check
+        args: ["--fix", "--ignore=E402"]
+        exclude: ^(tests/|test/|scripts/|script/)
+      - id: ruff-format
+        exclude: ^(tests/|test/|scripts/|script/)
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.15.0
+    hooks:
+      - id: mypy
+        additional_dependencies: [pydantic, types-PyYAML, types-requests]
+        args: ["--ignore-missing-imports"]
   - repo: https://github.com/jendrikseipp/vulture
     rev: v2.16
     hooks:
       - id: vulture
         pass_filenames: false
-        args: [ ".", "--min-confidence", "95", "--exclude", "node_modules" ]   # or 100 if you want very high confidence only
+        args: [ ".", "--min-confidence", "95", "--exclude", "node_modules,dotnet" ]   # or 100 if you want very high confidence only
         require_serial: true
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.2
     hooks:
       - id: codespell
-        args: ['-L', 'ans,linar,nam,tread,ot']
-        exclude: ^(package-lock\.json|pnpm-lock\.yaml|bun\.lock|tests/|test/|scripts/|script/)
+        args: ["-L", "ans,linar,nam,tread,ot,", "--ignore-words=.codespellignore"]
+        exclude: ^(tests/|test/|scripts/|script/|.*lock.*)
+  - repo: https://github.com/nbQA-dev/nbQA
+    rev: 1.9.1
+    hooks:
+      - id: nbqa-ruff
+        args: ["--fix"]
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.11.7
     hooks:
       - id: uv-lock
   - repo: local
     hooks:
-      - id: prettier
-        name: prettier
-        entry: npx pnpm format
+      - id: pytest
+        name: pytest
+        entry: pytest
         language: system
-        types_or: [javascript, jsx, ts, tsx, json, css, html, markdown]
-        pass_filenames: true
-
-      - id: eslint
-        name: eslint
-        entry: npx pnpm lint
-        language: system
-        types_or: [javascript, jsx, ts, tsx]
+        types: [python]
         pass_filenames: false
-
-      - id: typecheck
-        name: typecheck
-        entry: npx pnpm typecheck
-        language: system
-        types_or: [ts, tsx]
-        pass_filenames: false
-
-      - id: cspell
-        name: cspell
-        entry: npx pnpm exec cspell --no-progress
-        language: system
-        types_or: [javascript, jsx, ts, tsx, markdown]
+        always_run: true

@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# coding: utf-8
 """
 Agent WebUI Server Core.
 
@@ -9,20 +8,22 @@ with enhanced workspace management, real-time observability via Logfire,
 and a high-performance React-based frontend.
 """
 
+import logging
 import os
 import sys
-import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import logfire
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic_ai import Agent
 from starlette import exceptions as _errors
-from starlette.routing import Mount, Route as StarletteRoute
+from starlette.routing import Mount
+from starlette.routing import Route as StarletteRoute
 
-from .api_extensions import router as enhanced_router, set_workspace_helpers
+from .api_extensions import router as enhanced_router
+from .api_extensions import set_workspace_helpers
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +37,8 @@ print(f'Agent WebUI v{__version__}', file=sys.stderr)
 
 def create_agent_web_app(
     agent: Agent,
-    workspace_helpers: Dict[str, Any],
-    models: Dict[str, str] | None = None,
+    workspace_helpers: dict[str, Any],
+    models: dict[str, str] | None = None,
     builtin_tools: list[Any] | None = None,
     html_source: str | Path | None = None,
 ) -> FastAPI:
@@ -79,7 +80,7 @@ def create_agent_web_app(
     app = FastAPI(title='Agent Web Dashboard')
 
     # Mount the enhanced API extensions (ACP/A2A/Management)
-    app.include_router(enhanced_router)
+    app.include_router(enhanced_router, prefix='/api/enhanced')
 
     # Delegate to Pydantic-AI's native web wrapper for base functionality
     pydantic_app = agent.to_web(
@@ -147,7 +148,8 @@ def create_agent_web_app(
             )
         else:
             logger.warning(
-                f'Static assets not found at {dist_path}. Dashboard UI will not be served.'
+                f'Static assets not found at {dist_path}. '
+                'Dashboard UI will not be served.'
             )
 
     logfire.instrument_starlette(app)
@@ -156,8 +158,9 @@ def create_agent_web_app(
 
 def main() -> None:
     """Application entry point for CLI usage and ecosystem validation."""
-    import uvicorn
     import argparse
+
+    import uvicorn
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
 
