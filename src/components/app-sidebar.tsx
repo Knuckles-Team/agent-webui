@@ -1,4 +1,4 @@
-import { CirclePlus, MessageCircle, Trash, Files, Zap, Book, Calendar, Settings, Pencil, Check, X } from 'lucide-react'
+import { CirclePlus, MessageCircle, Trash, Files, Zap, Book, Calendar, Settings, Pencil, Check, X, Network } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
 import { toast } from 'sonner'
@@ -281,6 +281,19 @@ export function AppSidebar() {
                   >
                     <Settings />
                     <span>Configuration</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="View Knowledge Graph visualization">
+                  <a
+                    href="/graph"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Network />
+                    <span>Graph</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>

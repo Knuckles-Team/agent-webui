@@ -21,7 +21,13 @@
     "dev:server": "cd agent && uv run uvicorn chatbot.server:app --port 38001",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest watch",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed"
   },
   "files": [
     "dist"
@@ -81,6 +87,8 @@
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^5.1.2",
+    "@vitest/coverage-v8": "^1.0.0",
+    "@playwright/test": "^1.48.0",
     "cspell": "^8.19.4",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",

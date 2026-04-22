@@ -45,11 +45,32 @@ Note: Stop any logfire platform instances to avoid port 8000 conflicts.
 
 ### Running Tests
 
-Currently, there are no test scripts configured. To run a single test:
+```bash
+# Frontend tests
+pnpm run test              # Run unit tests
+pnpm run test:ui           # Run tests with UI
+pnpm run test:coverage     # Run with coverage
+pnpm run test:watch        # Watch mode
 
-1. Set up a testing framework (e.g., Vitest) if needed
-2. Add test scripts to package.json
-3. Run specific test with: `pnpm vitest run path/to/test.test.ts -t "test name"`
+# Backend tests
+cd agent
+pytest agent_webui/__tests__/              # Run backend tests
+pytest agent_webui/__tests__/ --cov        # With coverage
+pytest agent_webui/__tests__/test_api_extensions.py  # Specific test file
+
+# E2E tests
+pnpm run test:e2e          # Run E2E tests with Playwright
+pnpm run test:e2e:ui       # Run E2E tests with UI
+pnpm run test:e2e:headed   # Run E2E tests in headed mode
+```
+
+### Coverage Targets
+
+- **Frontend**: 90% code coverage (Vitest)
+- **Backend**: 85% code coverage (Pytest)
+- **Integration**: 80% code coverage
+
+See [TESTING.md](TESTING.md) for comprehensive testing documentation.
 
 ## Code Style Guidelines
 
@@ -134,13 +155,17 @@ import './styles.css'
 - Styling: Tailwind CSS with custom classes in src/styles/
 - Components: shadcn/ui primitives in src/components/ui/
 - AI elements: Vercel AI SDK wrappers in src/components/ai-elements/
+- Testing: Vitest for unit tests, Playwright for E2E tests
+- Coverage: @vitest/coverage-v8 with 90% target
 
 ### Backend
 
 - FastAPI app with Pydantic AI agent
-- Endpoints under /api/
+- Endpoints under /api/ and /api/enhanced/*
 - Model configuration in agent/chatbot/
 - Vector storage with LanceDB
+- Testing: Pytest with pytest-cov, 85% coverage target
+- Knowledge Graph: LadybugDB (default), FalkorDB, Neo4j support via GraphBackend abstraction
 
 ## Additional Notes
 
@@ -166,12 +191,17 @@ _Generated for agentic coding agents to maintain consistency in this codebase._
 
 ### Recent Architecture Changes
 
-- ACP protocol now routes through the full HSM graph pipeline (not a flat agent) via `create_graph_acp_app()`.
-- Graph Activity visualization (`GraphActivity.tsx`) shows specialist routing decisions, parallel execution status, tool calls, and expert reasoning in a collapsible timeline.
+- **Comprehensive API Extensions**: Added 20+ new API endpoints for knowledge graph CRUD, knowledge base management, SDD lifecycle, MAGMA views, resource management, and maintenance operations
+- **Enhanced Frontend Components**: Created GraphView with interactive visualization, KnowledgeBaseView for KB management, MemoryView for memory management, and SDDView for spec-driven development
+- **Testing Infrastructure**: Implemented comprehensive testing with Vitest (frontend), Pytest (backend), Playwright (E2E), and CI/CD pipeline with coverage reporting
+- **Knowledge Graph Integration**: Full CRUD operations for memory nodes, article management, and MAGMA orthogonal views (semantic, temporal, causal, entity)
+- **Backend Abstraction**: GraphBackend factory supporting LadybugDB (default), FalkorDB, and Neo4j for hot-swappable database backends
+- **ACP protocol** now routes through the full HSM graph pipeline (not a flat agent) via `create_graph_acp_app()`.
+- **Graph Activity visualization** (`GraphActivity.tsx`) shows specialist routing decisions, parallel execution status, tool calls, and expert reasoning in a collapsible timeline.
 - Backend uses `create_agent_web_app()` in `agent/agent_webui/server.py` to compose Pydantic AI web routes with enhanced workspace APIs.
-- Unified execution: all protocols (AG-UI, ACP, SSE /stream) share the same graph engine via `graph/unified.py`.
-- Human-in-the-loop approval (`ApprovalCard.tsx`) intercepts security-sensitive tool calls before execution.
-- Conversation persistence merges localStorage entries with server-side records from `/api/enhanced/chats`.
+- **Unified execution**: all protocols (AG-UI, ACP, SSE /stream) share the same graph engine via `graph/unified.py`.
+- **Human-in-the-loop approval** (`ApprovalCard.tsx`) intercepts security-sensitive tool calls before execution.
+- **Conversation persistence** merges localStorage entries with server-side records from `/api/enhanced/chats`.
 - **Unified specialist discovery**: The backend now uses `discover_all_specialists()` to merge MCP agents (`NODE_AGENTS.md`) and A2A peers (`A2A_AGENTS.md`) into a single `DiscoveredSpecialist` roster during graph bootstrap. Both sources share the same registration and tag-prompt code path. The frontend does not need changes -- it consumes the same sideband events regardless of specialist source.
 - **Tool-count telemetry**: The `tools-bound` sideband event now includes `toolset_count`, `dev_tools`, and `mcp_tools` breakdowns alongside the existing `count` and `tools` fields. `GraphActivity.tsx` can render these for richer tool-binding visibility.
 - **Structured trace logger**: The backend emits structured log lines to `agent_utilities.graph.trace` for every graph event, enabling server-side prompt-flow tracing without the UI.
@@ -187,17 +217,24 @@ SSE:   /stream    -> run_graph_stream() -> direct graph execution
 ### Key Component Map
 
 | Component         | File                                         | Responsibility                                                                                            |
-| ----------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| ----------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Chat              | `src/Chat.tsx`                               | Main chat interface with streaming, tool execution, graph activity, multi-modal input, approval workflows |
 | GraphActivity     | `src/components/GraphActivity.tsx`           | Real-time graph execution timeline (routing, parallel execution, tool binding, expert reasoning)          |
 | ApprovalCard      | `src/components/ApprovalCard.tsx`            | Human-in-the-loop tool approval for security-sensitive operations                                         |
-| Part              | `src/Part.tsx`                               | Message part renderer (text, tool calls, elicitation forms, sources, images)                              |
+| Part              | `src/Part.tsx`                               | Message part renderer (text, tool calls, elicitation forms, sources, images)                            |
 | AppSidebar        | `src/components/app-sidebar.tsx`             | Navigation, conversation history, agent identity, view switching                                          |
+| **New Components** |                                              |                                                                                                          |
+| GraphView         | `src/components/views/GraphView.tsx`         | Interactive graph visualization with layouts, zoom/pan, node inspection, statistics                      |
+| KnowledgeBaseView | `src/components/views/KnowledgeBaseView.tsx` | Knowledge base ingestion, article management, health checks, search                                      |
+| MemoryView        | `src/components/views/MemoryView.tsx`        | Memory CRUD with timeline visualization, importance scoring, advanced search                             |
+| SDDView           | `src/components/views/SDDView.tsx`          | Spec-driven development: constitution, specs, plans, tasks, memory synchronization                        |
+| **Workspace Views** |                                              |                                                                                                          |
 | FilesView         | `src/components/views/FilesView.tsx`         | Workspace file browser                                                                                    |
 | SkillsView        | `src/components/views/SkillsView.tsx`        | Universal skills viewer and configuration                                                                 |
 | SchedulingView    | `src/components/views/SchedulingView.tsx`    | Cron task monitoring and management                                                                       |
 | ConfigurationView | `src/components/views/ConfigurationView.tsx` | Agent and workspace configuration                                                                         |
-| KnowledgeView     | `src/components/views/KnowledgeView.tsx`     | Knowledge base and embedding management                                                                   |
+| KnowledgeView     | `src/components/views/KnowledgeView.tsx`     | Knowledge base and embedding management (legacy)                                                          |
+| **Protocol**       |                                              |                                                                                                          |
 | ACP Client        | `src/lib/acp-client.ts`                      | ACP protocol client (session management, JSON-RPC, SSE event streaming)                                   |
 | MCP Context       | `src/lib/mcp-context.tsx`                    | MCP tool context provider for the React tree                                                              |
 
@@ -206,7 +243,7 @@ SSE:   /stream    -> run_graph_stream() -> direct graph execution
 | Module         | File                                  | Responsibility                                                                                                  |
 | -------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Server Factory | `agent/agent_webui/server.py`         | `create_agent_web_app()` -- composes FastAPI app with Pydantic AI routes, enhanced APIs, and SPA static serving |
-| API Extensions | `agent/agent_webui/api_extensions.py` | `/api/enhanced/*` routes for workspace files, chat persistence, cron monitoring, skill management               |
+| API Extensions | `agent/agent_webui/api_extensions.py` | `/api/enhanced/*` routes for knowledge graph, KB, SDD, MAGMA, resources, and maintenance                    |
 
 ### Environment Variables (Frontend)
 
@@ -234,3 +271,49 @@ The `GraphActivity` component renders sideband events emitted by the agent orche
 | `verification_result`                                         | Quality gate score and feedback                                           |
 | `replanning_started` / `replanning_completed`                 | Plan-level failure recovery                                               |
 | `graph_force_terminated`                                      | Infinite-loop guard triggered                                             |
+
+### API Endpoint Summary
+
+#### Knowledge Graph APIs
+- `GET /api/enhanced/graph/stats` - Graph statistics
+- `GET /api/enhanced/graph/nodes` - List graph nodes
+- `GET /api/enhanced/graph/relationships` - List relationships
+- `POST /api/enhanced/graph/memory` - Create memory node
+- `GET /api/enhanced/graph/memory/{id}` - Get memory node
+- `PUT /api/enhanced/graph/memory/{id}` - Update memory node
+- `DELETE /api/enhanced/graph/memory/{id}` - Delete memory node
+- `POST /api/enhanced/graph/link` - Link nodes
+- `GET /api/enhanced/graph/search` - Hybrid search
+- `GET /api/enhanced/graph/impact/{symbol}` - Impact analysis
+- `POST /api/enhanced/graph/query` - Execute Cypher query
+
+#### Knowledge Base APIs
+- `POST /api/enhanced/kb/ingest` - Ingest knowledge base
+- `GET /api/enhanced/kb/list` - List knowledge bases
+- `GET /api/enhanced/kb/search` - Search knowledge base
+- `GET /api/enhanced/kb/article/{id}` - Get article
+- `POST /api/enhanced/kb/health` - Health check
+
+#### SDD Lifecycle APIs
+- `GET /api/enhanced/sdd/constitution` - Get constitution
+- `POST /api/enhanced/sdd/constitution` - Save constitution
+- `GET /api/enhanced/sdd/specs` - List specifications
+- `POST /api/enhanced/sdd/spec` - Create specification
+- `GET /api/enhanced/sdd/plans` - List implementation plans
+- `GET /api/enhanced/sdd/tasks` - Get tasks
+- `POST /api/enhanced/sdd/sync` - Sync SDD to memory
+
+#### MAGMA View APIs
+- `POST /api/enhanced/graph/magma` - Retrieve orthogonal context
+
+#### Resource Management APIs
+- `GET /api/enhanced/resources` - List callable resources
+- `POST /api/enhanced/resources/spawn` - Spawn specialized agent
+
+#### Maintenance APIs
+- `GET /api/enhanced/maintenance/status` - Get maintenance status
+- `POST /api/enhanced/maintenance/trigger` - Trigger maintenance operation
+
+#### Pipeline APIs
+- `GET /api/enhanced/pipeline/status` - Get pipeline status
+- `POST /api/enhanced/pipeline/trigger` - Trigger pipeline phase

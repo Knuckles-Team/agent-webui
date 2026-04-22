@@ -20,6 +20,7 @@ import SkillsView from './components/views/SkillsView'
 import SchedulingView from './components/views/SchedulingView'
 import ConfigurationView from './components/views/ConfigurationView'
 import KnowledgeView from './components/views/KnowledgeView'
+import GraphView from './components/views/GraphView'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
@@ -36,7 +37,7 @@ const queryClient = new QueryClient()
  * providers for theme, sidebar, MCP tools, and data fetching.
  */
 export default function App() {
-  /** Possible views: 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge' */
+  /** Possible views: 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph' */
   const [currentView, setCurrentView] = useState('chat')
 
   /**
@@ -51,6 +52,7 @@ export default function App() {
       else if (path === '/scheduling') setCurrentView('scheduling')
       else if (path === '/configuration') setCurrentView('configuration')
       else if (path === '/knowledge') setCurrentView('knowledge')
+      else if (path === '/graph') setCurrentView('graph')
       else setCurrentView('chat')
     }
 
@@ -125,6 +127,7 @@ export default function App() {
                           <KnowledgeView />
                         </>
                       )}
+                      {currentView === 'graph' && <GraphView />}
                     </div>
                   </div>
                 )}

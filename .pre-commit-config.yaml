@@ -26,14 +26,15 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: no-commit-to-branch
+        args: [--branch, main, --branch, master]
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.11
     hooks:
       - id: ruff-check
         args: ["--fix", "--ignore=E402"]
-        exclude: ^(tests/|test/|scripts/|script/)
+        exclude: ^(tests/|test/|scripts/|script/|__tests__/)
       - id: ruff-format
-        exclude: ^(tests/|test/|scripts/|script/)
+        exclude: ^(tests/|test/|scripts/|script/|__tests__/)
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.15.0
     hooks:

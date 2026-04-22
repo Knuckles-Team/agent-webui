@@ -138,7 +138,7 @@ export default function SchedulingView() {
                   <Clock className="size-4 text-primary" />
                   Active Tasks
                 </CardTitle>
-                <CardDescription>Cron jobs from CRON.md</CardDescription>
+                <CardDescription>Scheduled tasks from Knowledge Graph</CardDescription>
               </div>
               <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
                 {tasks.length} total
@@ -382,7 +382,7 @@ export default function SchedulingView() {
                 <CheckCircle2 className="size-4 text-green-500" />
                 Execution History
               </CardTitle>
-              <CardDescription>Recent records from CRON_LOG.md</CardDescription>
+              <CardDescription>Recent task execution logs from Knowledge Graph</CardDescription>
             </div>
             <Button
               variant="ghost"
@@ -412,7 +412,7 @@ export default function SchedulingView() {
                     </div>
                     <div className="text-center">
                       <p className="text-sm font-bold text-foreground">No History Found</p>
-                      <p className="text-xs">CRON_LOG.md appears to be empty or misformatted.</p>
+                      <p className="text-xs">No execution logs found in Knowledge Graph.</p>
                     </div>
                   </div>
                 ) : (

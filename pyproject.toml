@@ -17,6 +17,7 @@ requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.117.1",
     "logfire[fastapi,starlette]>=4.9.0",
+    "pydantic-ai>=0.0.0",
     "sse-starlette>=3.0.2",
     "starlette>=0.48.0",
     "uvicorn>=0.37.0",
@@ -26,7 +27,8 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest",
-    "pytest-asyncio"
+    "pytest-asyncio",
+    "pytest-cov"
 ]
 
 [[project.authors]]
