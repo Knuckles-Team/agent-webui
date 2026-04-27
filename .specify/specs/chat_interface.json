@@ -1,0 +1,35 @@
+{
+  "feature_id": "chat_interface",
+  "title": "Chat Interface Specification",
+  "user_stories": [
+    {
+      "id": "US-001",
+      "title": "Real-time Streaming",
+      "description": "As a User, I want to see real-time streaming of agent responses.",
+      "acceptance_criteria": [
+        "Messages stream character by character",
+        "Protocol supports AG-UI and ACP"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Action Visualization",
+      "description": "As a User, I want a clear visualization of tool calls and graph routing.",
+      "acceptance_criteria": [
+        "GraphActivity timeline renders correctly",
+        "Tool calls are visually distinct from text"
+      ]
+    }
+  ],
+  "non_functional_requirements": [
+    "High responsiveness during streaming",
+    "Persistent conversation state"
+  ],
+  "success_metrics": [
+    "Zero dropped stream events",
+    "Correct rendering of complex tool parts"
+  ],
+  "metadata": {
+    "status": "baseline"
+  }
+}

@@ -1,5 +1,10 @@
 # Agent Guidelines for @pydantic/agent-webui
 
+> **Notice:** This project uses **Spec-Driven Development (SDD)**.
+> - Project constitution and governance: `.specify/memory/constitution.md`.
+> - Feature specifications and tasks: `.specify/specs/` and `.specify/tasks/`.
+> This file (`AGENTS.md`) is for system-prompt context; the SDD directory is the source of truth for architecture and new features.
+
 ## Build, Lint, and Test Commands
 
 ### Frontend
@@ -148,6 +153,8 @@ import './styles.css'
 
 ## Architecture Conventions
 
+> **Note:** The complete specification for the core **Chat Interface** (streaming, graph activity, approvals) is now formally tracked in `.specify/specs/chat_interface.md`.
+
 ### Frontend
 
 - State management: React Query for server state, Context/Zustand for client state
@@ -205,6 +212,7 @@ _Generated for agentic coding agents to maintain consistency in this codebase._
 - **Unified specialist discovery**: The backend now uses `discover_all_specialists()` to merge MCP agents (`NODE_AGENTS.md`) and A2A peers (`A2A_AGENTS.md`) into a single `DiscoveredSpecialist` roster during graph bootstrap. Both sources share the same registration and tag-prompt code path. The frontend does not need changes -- it consumes the same sideband events regardless of specialist source.
 - **Tool-count telemetry**: The `tools-bound` sideband event now includes `toolset_count`, `dev_tools`, and `mcp_tools` breakdowns alongside the existing `count` and `tools` fields. `GraphActivity.tsx` can render these for richer tool-binding visibility.
 - **Structured trace logger**: The backend emits structured log lines to `agent_utilities.graph.trace` for every graph event, enabling server-side prompt-flow tracing without the UI.
+- **Model registry is backend-driven**: the hardcoded `MODEL_COST_TABLE` in `Chat.tsx` has been removed. Both the model picker and the per-session cost badge now consume `GET /api/enhanced/models` (which mirrors the `agent-utilities` core `GET /models`). The payload shape is `{ models: ModelDefinition[], default_id: string | null }`; see `agent-utilities/AGENTS.md` > *Model Registry* for the data model. Zero-cost models render as `$0.00` so token / tool counts remain visible for local / free deployments.
 
 ### Protocol Flow
 

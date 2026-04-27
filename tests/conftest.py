@@ -5,6 +5,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+import networkx as nx
 
 import pytest
 
@@ -38,7 +39,9 @@ def mock_graph_engine():
     engine.retrieve_orthogonal_context.return_value = []
     engine.list_callable_resources.return_value = []
     engine.spawn_specialized_agent.return_value = MagicMock()
-    engine.backend = MagicMock()
+    from agent_utilities.knowledge_graph.backends.base import GraphBackend
+    engine.backend = MagicMock(spec=GraphBackend)
+    engine.graph = nx.MultiDiGraph()
 
     return engine
 
@@ -80,7 +83,7 @@ def mock_sdd_manager():
 @pytest.fixture
 def mock_maintainer():
     """Mock graph maintainer."""
-    from agent_utilities.knowledge_graph.maintenance import GraphMaintainer
+    from agent_utilities.knowledge_graph.maintainer import GraphMaintainer
 
     maintainer = MagicMock(spec=GraphMaintainer)
     maintainer.get_status.return_value = {

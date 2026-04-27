@@ -19,8 +19,11 @@ import FilesView from './components/views/FilesView'
 import SkillsView from './components/views/SkillsView'
 import SchedulingView from './components/views/SchedulingView'
 import ConfigurationView from './components/views/ConfigurationView'
-import KnowledgeView from './components/views/KnowledgeView'
+import KnowledgeBaseView from './components/views/KnowledgeBaseView'
 import GraphView from './components/views/GraphView'
+import OpsPanelView from './components/views/OpsPanelView'
+import MagmaView from './components/views/MagmaView'
+import CypherReplView from './components/views/CypherReplView'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
@@ -37,7 +40,7 @@ const queryClient = new QueryClient()
  * providers for theme, sidebar, MCP tools, and data fetching.
  */
 export default function App() {
-  /** Possible views: 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph' */
+  /** Possible views: 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'ops', 'magma', 'cypher' */
   const [currentView, setCurrentView] = useState('chat')
 
   /**
@@ -53,6 +56,9 @@ export default function App() {
       else if (path === '/configuration') setCurrentView('configuration')
       else if (path === '/knowledge') setCurrentView('knowledge')
       else if (path === '/graph') setCurrentView('graph')
+      else if (path === '/ops') setCurrentView('ops')
+      else if (path === '/magma') setCurrentView('magma')
+      else if (path === '/cypher') setCurrentView('cypher')
       else setCurrentView('chat')
     }
 
@@ -124,10 +130,13 @@ export default function App() {
                       {currentView === 'knowledge' && (
                         <>
                           <h1 className="text-2xl font-bold mb-4">Knowledge</h1>
-                          <KnowledgeView />
+                          <KnowledgeBaseView />
                         </>
                       )}
                       {currentView === 'graph' && <GraphView />}
+                      {currentView === 'ops' && <OpsPanelView />}
+                      {currentView === 'magma' && <MagmaView />}
+                      {currentView === 'cypher' && <CypherReplView />}
                     </div>
                   </div>
                 )}

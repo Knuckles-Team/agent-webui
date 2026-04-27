@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 logfire.configure(send_to_logfire='if-token-present')
 logfire.instrument_pydantic_ai()
 
-__version__ = '0.1.33'
+__version__ = '0.1.34'
 
 print(f'Agent WebUI v{__version__}', file=sys.stderr)
 
@@ -165,7 +165,7 @@ def main() -> None:
     from pydantic_ai.models.test import TestModel
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--host', default='0.0.0.0')
+    parser.add_argument('--host', default='0.0.0.0')  # nosec B104
     parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--web', action='store_true')
     args, _ = parser.parse_known_args()

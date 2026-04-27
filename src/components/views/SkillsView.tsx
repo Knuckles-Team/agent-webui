@@ -1,22 +1,89 @@
-import { useState, useEffect } from 'react'
-import { Zap, ZapOff, Info } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { Zap, ZapOff, Search, Tag as TagIcon, RefreshCw, LayoutGrid, List } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { toast } from 'sonner'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
+/**
+ * Describes a single skill / capability exposed by the agent.
+ *
+ * The backend `GET /api/enhanced/skills` endpoint returns arbitrary dicts via
+ * the `list_skills` workspace helper, so every field except `name` should be
+ * treated as optional. We synthesize `id` when the helper omits it so React
+ * keys stay stable.
+ */
 interface Skill {
   id: string
   name: string
-  description: string
+  description?: string
   enabled: boolean
   type?: string
+  tags: string[]
+}
+
+const UNTAGGED_GROUP = 'untagged'
+
+interface ErrorResponse {
+  detail?: string
+}
+
+async function extractErrorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await res.json()) as ErrorResponse
+    if (body && typeof body.detail === 'string') return body.detail
+  } catch {
+    // ignore — response wasn't JSON
+  }
+  return fallback
+}
+
+/**
+ * Normalize an arbitrary payload from `/api/enhanced/skills` into a strict
+ * `Skill[]`. Tolerates missing `id`, `tags`, `enabled`, and `description`.
+ */
+function normalizeSkills(raw: unknown): Skill[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((item, idx): Skill | null => {
+      if (!item || typeof item !== 'object') return null
+      const rec = item as Record<string, unknown>
+      const name = typeof rec.name === 'string' ? rec.name : null
+      if (!name) return null
+
+      const id =
+        typeof rec.id === 'string'
+          ? rec.id
+          : typeof rec.skill_id === 'string'
+            ? rec.skill_id
+            : `${name}-${idx}`
+
+      const rawTags: unknown = rec.tags
+      const tags = Array.isArray(rawTags)
+        ? rawTags.filter((t): t is string => typeof t === 'string')
+        : []
+
+      return {
+        id,
+        name,
+        description: typeof rec.description === 'string' ? rec.description : undefined,
+        enabled: rec.enabled === true,
+        type: typeof rec.type === 'string' ? rec.type : undefined,
+        tags,
+      }
+    })
+    .filter((s): s is Skill => s !== null)
 }
 
 export default function SkillsView() {
   const [skills, setSkills] = useState<Skill[]>([])
   const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [groupByTag, setGroupByTag] = useState(false)
 
   useEffect(() => {
     void fetchSkills()
@@ -26,9 +93,14 @@ export default function SkillsView() {
     try {
       setLoading(true)
       const res = await fetch('/api/enhanced/skills')
-      const data = (await res.json()) as Skill[]
-      const sortedData = [...data].sort((a, b) => a.name.localeCompare(b.name))
-      setSkills(sortedData)
+      if (!res.ok) {
+        toast.error(await extractErrorMessage(res, 'Failed to load skills'))
+        return
+      }
+      const data = (await res.json()) as unknown
+      const normalized = normalizeSkills(data)
+      normalized.sort((a, b) => a.name.localeCompare(b.name))
+      setSkills(normalized)
     } catch (_err) {
       toast.error('Failed to load skills')
     } finally {
@@ -37,84 +109,227 @@ export default function SkillsView() {
   }
 
   const handleToggle = async (id: string) => {
+    const previous = skills
+    // Optimistic update so the switch responds instantly even if the network
+    // round-trip is slow; we roll back on failure.
+    setSkills((current) => current.map((s) => (s.id === id ? { ...s, enabled: !s.enabled } : s)))
     try {
-      const res = await fetch(`/api/enhanced/skills/${id}/toggle`, { method: 'POST' })
-      if (res.ok) {
-        setSkills(skills.map((s) => (s.id === id ? { ...s, enabled: !s.enabled } : s)))
-        toast.success(`Skill ${id} status updated`)
+      const res = await fetch(`/api/enhanced/skills/${encodeURIComponent(id)}/toggle`, {
+        method: 'POST',
+      })
+      if (!res.ok) {
+        setSkills(previous)
+        toast.error(await extractErrorMessage(res, 'Failed to update skill'))
+        return
       }
+      toast.success('Skill updated')
     } catch (_err) {
-      toast.error('Failed to update skill status')
+      setSkills(previous)
+      toast.error('Failed to update skill')
     }
   }
 
+  const filteredSkills = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return skills
+    return skills.filter((skill) => {
+      if (skill.name.toLowerCase().includes(query)) return true
+      if (skill.description?.toLowerCase().includes(query)) return true
+      if (skill.id.toLowerCase().includes(query)) return true
+      if (skill.tags.some((t) => t.toLowerCase().includes(query))) return true
+      return false
+    })
+  }, [skills, searchQuery])
+
+  /**
+   * Groups the filtered skills by tag. Skills without tags land in an
+   * `untagged` bucket. Skills with multiple tags appear in each of their
+   * groups so the user can surface them from any angle.
+   */
+  const grouped = useMemo(() => {
+    const groups = new Map<string, Skill[]>()
+    for (const skill of filteredSkills) {
+      if (skill.tags.length === 0) {
+        const bucket = groups.get(UNTAGGED_GROUP) ?? []
+        bucket.push(skill)
+        groups.set(UNTAGGED_GROUP, bucket)
+        continue
+      }
+      for (const tag of skill.tags) {
+        const bucket = groups.get(tag) ?? []
+        bucket.push(skill)
+        groups.set(tag, bucket)
+      }
+    }
+    return Array.from(groups.entries()).sort(([a], [b]) => {
+      if (a === UNTAGGED_GROUP) return 1
+      if (b === UNTAGGED_GROUP) return -1
+      return a.localeCompare(b)
+    })
+  }, [filteredSkills])
+
+  const totalTags = useMemo(() => {
+    const tagSet = new Set<string>()
+    for (const skill of skills) {
+      for (const tag of skill.tags) tagSet.add(tag)
+    }
+    return tagSet.size
+  }, [skills])
+
+  const enabledCount = useMemo(() => skills.filter((s) => s.enabled).length, [skills])
+
   return (
-    <TooltipProvider>
-      <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Agent Skills</CardTitle>
-            <CardDescription>Manage your agent's capabilities and integrated tools</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <p>Loading skills...</p>
-            ) : skills.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">No skills discovered in the current workspace.</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {skills.map((skill) => (
-                  <div
-                    key={skill.id}
-                    className="flex flex-col p-4 border rounded-lg bg-card text-card-foreground shadow-sm group"
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`p-2 rounded-md ${skill.enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}
-                        >
-                          {skill.enabled ? <Zap className="size-5" /> : <ZapOff className="size-5" />}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-semibold text-sm leading-none">{skill.name}</h3>
-                            {skill.type && (
-                              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-secondary-foreground uppercase tracking-wider">
-                                {skill.type}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground font-mono">{skill.id}</p>
-                        </div>
-                      </div>
-                      <Switch
-                        checked={skill.enabled}
-                        onCheckedChange={() => {
-                          void handleToggle(skill.id)
-                        }}
-                      />
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <div>
+              <CardTitle>Agent Skills</CardTitle>
+              <CardDescription>
+                Manage your agent's capabilities and integrated tools
+                {skills.length > 0 && (
+                  <span className="ml-2">
+                    · {enabledCount}/{skills.length} enabled
+                    {totalTags > 0 && ` · ${totalTags} tags`}
+                  </span>
+                )}
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setGroupByTag((v) => !v)}
+                disabled={loading || skills.length === 0}
+                title={groupByTag ? 'Show flat list' : 'Group by tag'}
+              >
+                {groupByTag ? <List className="size-4" /> : <LayoutGrid className="size-4" />}
+                <span className="ml-1 hidden sm:inline">{groupByTag ? 'Flat' : 'By tag'}</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void fetchSkills()}
+                disabled={loading}
+                title="Refresh"
+              >
+                <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+              </Button>
+            </div>
+          </div>
+          <div className="relative mt-2">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, description, or tag..."
+              className="pl-9"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <p className="text-muted-foreground text-sm">Loading skills...</p>
+          ) : skills.length === 0 ? (
+            <p className="text-muted-foreground text-center py-8">
+              No skills discovered in the current workspace.
+            </p>
+          ) : filteredSkills.length === 0 ? (
+            <p className="text-muted-foreground text-center py-8">No skills match your search.</p>
+          ) : groupByTag ? (
+            <ScrollArea className="max-h-[calc(100vh-20rem)]">
+              <div className="space-y-6 pr-4">
+                {grouped.map(([tag, groupSkills]) => (
+                  <div key={tag}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <TagIcon className="size-4 text-muted-foreground" />
+                      <h3 className="font-semibold text-sm">
+                        {tag === UNTAGGED_GROUP ? 'Untagged' : tag}
+                      </h3>
+                      <Badge variant="secondary" className="text-[10px]">
+                        {groupSkills.length}
+                      </Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground line-clamp-2 mt-2">
-                      {skill.description || 'No description provided for this skill.'}
-                    </p>
-                    <div className="mt-4 flex justify-end">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 gap-1">
-                            <Info className="size-3" />
-                            <span className="text-xs">Details</span>
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Skill manifests and additional metadata view coming soon</TooltipContent>
-                      </Tooltip>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {groupSkills.map((skill) => (
+                        <SkillCard key={`${tag}-${skill.id}`} skill={skill} onToggle={handleToggle} />
+                      ))}
                     </div>
                   </div>
                 ))}
               </div>
+            </ScrollArea>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredSkills.map((skill) => (
+                <SkillCard key={skill.id} skill={skill} onToggle={handleToggle} />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+/**
+ * Presentational card for a single skill. Kept local to avoid leaking a
+ * component module that isn't reused elsewhere.
+ */
+function SkillCard({ skill, onToggle }: { skill: Skill; onToggle: (id: string) => void }) {
+  return (
+    <div
+      className={cn(
+        'flex flex-col p-4 border rounded-lg bg-card text-card-foreground shadow-sm transition-all',
+        skill.enabled ? 'border-primary/30' : '',
+      )}
+    >
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div
+            className={cn(
+              'p-2 rounded-md shrink-0',
+              skill.enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
             )}
-          </CardContent>
-        </Card>
+          >
+            {skill.enabled ? <Zap className="size-5" /> : <ZapOff className="size-5" />}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <h3 className="font-semibold text-sm leading-none truncate">{skill.name}</h3>
+              {skill.type && (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-secondary-foreground uppercase tracking-wider">
+                  {skill.type}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground font-mono truncate">{skill.id}</p>
+          </div>
+        </div>
+        <Switch
+          checked={skill.enabled}
+          onCheckedChange={() => onToggle(skill.id)}
+          aria-label={`Toggle ${skill.name}`}
+        />
       </div>
-    </TooltipProvider>
+      <p className="text-sm text-muted-foreground line-clamp-2 mt-2">
+        {skill.description ?? 'No description provided for this skill.'}
+      </p>
+      {skill.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-3">
+          {skill.tags.slice(0, 6).map((tag) => (
+            <Badge key={tag} variant="secondary" className="text-[10px]">
+              <TagIcon className="size-2.5 mr-1" />
+              {tag}
+            </Badge>
+          ))}
+          {skill.tags.length > 6 && (
+            <Badge variant="secondary" className="text-[10px]">
+              +{skill.tags.length - 6}
+            </Badge>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

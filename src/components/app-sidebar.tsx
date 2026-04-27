@@ -1,4 +1,4 @@
-import { CirclePlus, MessageCircle, Trash, Files, Zap, Book, Calendar, Settings, Pencil, Check, X, Network } from 'lucide-react'
+import { CirclePlus, MessageCircle, Trash, Files, Zap, Book, Calendar, Settings, Pencil, Check, X, Network, Wrench, Compass, Terminal } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
 import { toast } from 'sonner'
@@ -294,6 +294,51 @@ export function AppSidebar() {
                   >
                     <Network />
                     <span>Graph</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Pipeline, maintenance, and resources admin"
+                >
+                  <a
+                    href="/ops"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Wrench />
+                    <span>Ops</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="MAGMA orthogonal views explorer"
+                >
+                  <a
+                    href="/magma"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Compass />
+                    <span>MAGMA</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Cypher query REPL">
+                  <a
+                    href="/cypher"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Terminal />
+                    <span>Cypher</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>

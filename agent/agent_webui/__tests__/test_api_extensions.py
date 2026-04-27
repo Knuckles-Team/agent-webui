@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 """Test API endpoints for agent-webui backend."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from agent_webui.server import create_agent_web_app
@@ -326,15 +328,22 @@ class TestGraphQueryEndpoint:
 class TestKnowledgeBaseEndpoints:
     """Test knowledge base endpoints."""
 
-    def test_ingest_kb_success(self, client, mock_kb_engine, sample_kb_data):
+    def test_ingest_kb_success(
+        self, client, mock_kb_engine, mock_graph_engine, sample_kb_data
+    ):
         """Test successful KB ingestion."""
         with patch(
-            'agent_webui.api_extensions.KBIngestionEngine', return_value=mock_kb_engine
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
         ):
-            response = client.post('/api/enhanced/kb/ingest', json=sample_kb_data)
-            assert response.status_code in [200, 202]
-            data = response.json()
-            assert data['status'] == 'success'
+            with patch(
+                'agent_webui.api_extensions.KBIngestionEngine',
+                return_value=mock_kb_engine,
+            ):
+                response = client.post('/api/enhanced/kb/ingest', json=sample_kb_data)
+                assert response.status_code in [200, 202]
+                data = response.json()
+                assert data['status'] == 'success'
 
     def test_list_kbs_success(self, client, mock_kb_engine, mock_knowledge_base):
         """Test successful KB listing."""
@@ -386,20 +395,27 @@ class TestKnowledgeBaseEndpoints:
                 response = client.get('/api/enhanced/kb/article/article1')
                 assert response.status_code == 200
 
-    def test_kb_health_check_success(self, client, mock_kb_engine):
+    def test_kb_health_check_success(self, client, mock_kb_engine, mock_graph_engine):
         """Test successful KB health check."""
         with patch(
-            'agent_webui.api_extensions.KBIngestionEngine', return_value=mock_kb_engine
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
         ):
-            mock_kb_engine.health_check.return_value = {
-                'health_status': 'healthy',
-                'issues': [],
-            }
+            with patch(
+                'agent_webui.api_extensions.KBIngestionEngine',
+                return_value=mock_kb_engine,
+            ):
+                mock_kb_engine.health_check.return_value = {
+                    'health_status': 'healthy',
+                    'issues': [],
+                }
 
-            response = client.post('/api/enhanced/kb/health', json={'kb_id': 'test_kb'})
-            assert response.status_code == 200
-            data = response.json()
-            assert data['health_status'] == 'healthy'
+                response = client.post(
+                    '/api/enhanced/kb/health', json={'kb_id': 'test_kb'}
+                )
+                assert response.status_code == 200
+                data = response.json()
+                assert data['health_status'] == 'healthy'
 
 
 class TestSDDEndpoints:
@@ -585,63 +601,86 @@ class TestMaintenanceEndpoints:
             assert 'operations' in data
 
     def test_trigger_maintenance_success(
-        self, client, mock_maintainer, sample_maintenance_operation
+        self, client, mock_maintainer, mock_graph_engine, sample_maintenance_operation
     ):
         """Test successful maintenance trigger."""
         with patch(
-            'agent_webui.api_extensions.GraphMaintainer', return_value=mock_maintainer
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
         ):
-            response = client.post(
-                '/api/enhanced/maintenance/trigger', json=sample_maintenance_operation
-            )
-            assert response.status_code == 200
-            data = response.json()
-            assert data['status'] == 'success'
+            with patch(
+                'agent_webui.api_extensions.GraphMaintainer',
+                return_value=mock_maintainer,
+            ):
+                response = client.post(
+                    '/api/enhanced/maintenance/trigger',
+                    json=sample_maintenance_operation,
+                )
+                assert response.status_code == 200
+                data = response.json()
+                assert data['status'] == 'success'
 
 
 class TestPipelineEndpoints:
     """Test pipeline monitoring endpoints."""
 
-    def test_get_pipeline_status_success(self, client, mock_pipeline_runner):
+    def test_get_pipeline_status_success(
+        self, client, mock_pipeline_runner, mock_graph_engine
+    ):
         """Test successful pipeline status retrieval."""
         with patch(
-            'agent_webui.api_extensions.PipelineRunner',
-            return_value=mock_pipeline_runner,
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
         ):
-            response = client.get('/api/enhanced/pipeline/status')
-            assert response.status_code == 200
-            data = response.json()
-            assert 'status' in data
-            assert 'phases' in data
+            with patch(
+                'agent_webui.api_extensions.PipelineRunner',
+                return_value=mock_pipeline_runner,
+            ):
+                response = client.get('/api/enhanced/pipeline/status')
+                assert response.status_code == 200
+                data = response.json()
+                assert 'status' in data
+                assert 'phases' in data
 
     def test_trigger_pipeline_success(
-        self, client, mock_pipeline_runner, sample_pipeline_phase
+        self, client, mock_pipeline_runner, mock_graph_engine, sample_pipeline_phase
     ):
         """Test successful pipeline trigger."""
         with patch(
-            'agent_webui.api_extensions.PipelineRunner',
-            return_value=mock_pipeline_runner,
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
         ):
-            response = client.post(
-                '/api/enhanced/pipeline/trigger', json=sample_pipeline_phase
-            )
-            assert response.status_code == 200
-            data = response.json()
-            assert data['status'] == 'success'
+            with patch(
+                'agent_webui.api_extensions.PipelineRunner',
+                return_value=mock_pipeline_runner,
+            ):
+                response = client.post(
+                    '/api/enhanced/pipeline/trigger', json=sample_pipeline_phase
+                )
+                assert response.status_code == 200
+                data = response.json()
+                assert data['status'] == 'success'
 
 
 class TestExtendedEndpoints:
     """Test various extended endpoints for coverage."""
 
-    def test_update_kb_success(self, client, mock_kb_engine):
+    def test_update_kb_success(self, client, mock_kb_engine, mock_graph_engine):
         """Test successful KB update."""
         with patch(
-            'agent_webui.api_extensions.KBIngestionEngine', return_value=mock_kb_engine
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
         ):
-            response = client.post('/api/enhanced/kb/update', json={'kb_id': 'test_kb'})
-            assert response.status_code == 200
-            data = response.json()
-            assert data['status'] == 'success'
+            with patch(
+                'agent_webui.api_extensions.KBIngestionEngine',
+                return_value=mock_kb_engine,
+            ):
+                response = client.post(
+                    '/api/enhanced/kb/update', json={'kb_id': 'test_kb'}
+                )
+                assert response.status_code == 200
+                data = response.json()
+                assert data['status'] == 'success'
 
     def test_update_kb_error(self, client, mock_kb_engine):
         """Test KB update error."""
@@ -652,7 +691,9 @@ class TestExtendedEndpoints:
             response = client.post('/api/enhanced/kb/update', json={'kb_id': 'test_kb'})
             assert response.status_code == 500
 
-    def test_sync_sdd_to_memory_success(self, client, mock_sdd_manager, mock_graph_engine):
+    def test_sync_sdd_to_memory_success(
+        self, client, mock_sdd_manager, mock_graph_engine
+    ):
         """Test successful SDD sync to memory."""
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
@@ -661,7 +702,9 @@ class TestExtendedEndpoints:
             with patch(
                 'agent_webui.api_extensions.SDDManager', return_value=mock_sdd_manager
             ):
-                response = client.post('/api/enhanced/sdd/sync', json={'plan_id': 'plan1'})
+                response = client.post(
+                    '/api/enhanced/sdd/sync', json={'plan_id': 'plan1'}
+                )
                 assert response.status_code == 200
                 data = response.json()
                 assert data['status'] == 'success'
@@ -701,51 +744,92 @@ class TestExtendedEndpoints:
 
 class TestCoverageExpansion:
     """Additional tests for coverage expansion."""
+
     def test_list_agents_error(self, client):
-        with patch('agent_webui.api_extensions.IntelligenceGraphEngine.get_active', side_effect=Exception('List agents failed')):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            side_effect=Exception('List agents failed'),
+        ):
             response = client.get('/api/enhanced/agents')
             assert response.status_code == 200
             assert response.json() == []
 
     def test_add_memory_error(self, client, mock_graph_engine):
-        with patch('agent_webui.api_extensions.IntelligenceGraphEngine.get_active', return_value=mock_graph_engine):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
             mock_graph_engine.add_memory_node.side_effect = Exception('Add failed')
-            response = client.post('/api/enhanced/graph/memory', json={'content': 'test'})
+            response = client.post(
+                '/api/enhanced/graph/memory', json={'content': 'test'}
+            )
             assert response.status_code == 500
 
     def test_update_memory_error(self, client, mock_graph_engine):
-        with patch('agent_webui.api_extensions.IntelligenceGraphEngine.get_active', return_value=mock_graph_engine):
-            mock_graph_engine.update_memory_node.side_effect = Exception('Update failed')
-            response = client.put('/api/enhanced/graph/memory/mem1', json={'content': 'test'})
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.update_memory_node.side_effect = Exception(
+                'Update failed'
+            )
+            response = client.put(
+                '/api/enhanced/graph/memory/mem1', json={'content': 'test'}
+            )
             assert response.status_code == 500
 
     def test_delete_memory_error(self, client, mock_graph_engine):
-        with patch('agent_webui.api_extensions.IntelligenceGraphEngine.get_active', return_value=mock_graph_engine):
-            mock_graph_engine.delete_memory_node.side_effect = Exception('Delete failed')
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.delete_memory_node.side_effect = Exception(
+                'Delete failed'
+            )
             response = client.delete('/api/enhanced/graph/memory/mem1')
             assert response.status_code == 500
 
     def test_link_nodes_error(self, client, mock_graph_engine):
-        with patch('agent_webui.api_extensions.IntelligenceGraphEngine.get_active', return_value=mock_graph_engine):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
             mock_graph_engine.link_nodes.side_effect = Exception('Link failed')
-            response = client.post('/api/enhanced/graph/link', json={'source': 'a', 'target': 'b', 'relationship_type': 'c'})
+            response = client.post(
+                '/api/enhanced/graph/link',
+                json={'source': 'a', 'target': 'b', 'relationship_type': 'c'},
+            )
             assert response.status_code == 500
 
     def test_hybrid_search_error(self, client, mock_graph_engine):
-        with patch('agent_webui.api_extensions.IntelligenceGraphEngine.get_active', return_value=mock_graph_engine):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
             mock_graph_engine.search_hybrid.side_effect = Exception('Search failed')
             response = client.get('/api/enhanced/graph/search?query=test')
             assert response.status_code == 200
             assert response.json() == []
 
-    def test_ingest_kb_error(self, client, mock_kb_engine):
-        with patch('agent_webui.api_extensions.KBIngestionEngine', return_value=mock_kb_engine):
-            mock_kb_engine.ingest.side_effect = Exception('Ingest failed')
-            response = client.post('/api/enhanced/kb/ingest', json={'kb_id': 'test', 'source': 'test'})
-            assert response.status_code == 500
+    def test_ingest_kb_error(self, client, mock_kb_engine, mock_graph_engine):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            with patch(
+                'agent_webui.api_extensions.KBIngestionEngine',
+                return_value=mock_kb_engine,
+            ):
+                mock_kb_engine.ingest.side_effect = Exception('Ingest failed')
+                response = client.post(
+                    '/api/enhanced/kb/ingest', json={'kb_id': 'test', 'source': 'test'}
+                )
+                assert response.status_code == 500
 
     def test_get_tasks_error(self, client):
-        with patch('agent_webui.api_extensions.SDDManager', side_effect=Exception('SDD error')):
+        with patch(
+            'agent_webui.api_extensions.SDDManager', side_effect=Exception('SDD error')
+        ):
             response = client.get('/api/enhanced/sdd/tasks')
             assert response.status_code == 200
             assert response.json() == {}
@@ -769,92 +853,155 @@ class TestCoverageExpansion:
             assert response.json()['status'] == 'enabled'
 
     def test_spawn_agent_success(self, client, mock_graph_engine):
-        with patch('agent_webui.api_extensions.IntelligenceGraphEngine.get_active', return_value=mock_graph_engine):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
             mock_agent = MagicMock()
             mock_agent.model_dump.return_value = {'id': 'agent1'}
             mock_graph_engine.spawn_specialized_agent.return_value = mock_agent
-            response = client.post('/api/enhanced/resources/spawn', json={'agent_id': 'test'})
+            response = client.post(
+                '/api/enhanced/resources/spawn', json={'agent_id': 'test'}
+            )
             assert response.status_code == 200
             assert response.json()['id'] == 'agent1'
 
-
     def test_get_graph_stats_error(self, client):
-        with patch('agent_webui.api_extensions.IntelligenceGraphEngine.get_active', side_effect=Exception('Stats failed')):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            side_effect=Exception('Stats failed'),
+        ):
             response = client.get('/api/enhanced/graph/stats')
             assert response.status_code == 200
             assert response.json()['total_nodes'] == 0
 
-
     def test_list_kbs_success(self, client, mock_graph_engine, mock_kb_engine):
-        with patch('agent_webui.api_extensions.IntelligenceGraphEngine.get_active', return_value=mock_graph_engine):
-            with patch('agent_webui.api_extensions.KBIngestionEngine', return_value=mock_kb_engine):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            with patch(
+                'agent_webui.api_extensions.KBIngestionEngine',
+                return_value=mock_kb_engine,
+            ):
                 mock_kb_engine.list_bases.return_value = [{'id': 'kb1'}]
                 response = client.get('/api/enhanced/kb/list')
                 assert response.status_code == 200
                 assert len(response.json()) == 1
 
     def test_kb_health_check_success(self, client, mock_graph_engine, mock_kb_engine):
-        with patch('agent_webui.api_extensions.IntelligenceGraphEngine.get_active', return_value=mock_graph_engine):
-            with patch('agent_webui.api_extensions.KBIngestionEngine', return_value=mock_kb_engine):
-                response = client.post('/api/enhanced/kb/health', json={'kb_id': 'test'})
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            with patch(
+                'agent_webui.api_extensions.KBIngestionEngine',
+                return_value=mock_kb_engine,
+            ):
+                response = client.post(
+                    '/api/enhanced/kb/health', json={'kb_id': 'test'}
+                )
                 assert response.status_code == 200
                 assert response.json()['health_status'] == 'healthy'
 
     def test_list_specs_success(self, client, mock_sdd_manager):
-        with patch('agent_webui.api_extensions.SDDManager', return_value=mock_sdd_manager):
+        with patch(
+            'agent_webui.api_extensions.SDDManager', return_value=mock_sdd_manager
+        ):
             mock_sdd_manager.list_specs.return_value = [{'id': 'spec1'}]
             response = client.get('/api/enhanced/sdd/specs')
             assert response.status_code == 200
             assert len(response.json()) == 1
 
     def test_create_spec_success(self, client, mock_sdd_manager):
-        with patch('agent_webui.api_extensions.SDDManager', return_value=mock_sdd_manager):
+        with patch(
+            'agent_webui.api_extensions.SDDManager', return_value=mock_sdd_manager
+        ):
             mock_sdd_manager.create_spec.return_value = MagicMock()
             mock_sdd_manager.create_spec.return_value.id = 'spec1'
+            mock_sdd_manager.create_spec.return_value.model_dump.return_value = {
+                'id': 'spec1'
+            }
             # Use data that won't fail validation
-            response = client.post('/api/enhanced/sdd/spec', json={'name': 'test', 'description': 'test'})
+            response = client.post(
+                '/api/enhanced/sdd/spec', json={'name': 'test', 'description': 'test'}
+            )
             assert response.status_code == 200
 
     def test_graph_impact_success(self, client, mock_graph_engine):
-        with patch('agent_webui.api_extensions.IntelligenceGraphEngine.get_active', return_value=mock_graph_engine):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
             mock_graph_engine.query_impact.return_value = [{'id': 'impact1'}]
             # Fix URL: /graph/impact/{symbol}
             response = client.get('/api/enhanced/graph/impact/test')
             assert response.status_code == 200
             assert len(response.json()) == 1
 
-    def test_pipeline_status_error(self, client):
-        with patch('agent_webui.api_extensions.PipelineRunner', side_effect=Exception('Status failed')):
-            response = client.get('/api/enhanced/pipeline/status')
-            assert response.status_code == 200
-            # Matches return {'status': 'unavailable'} in api_extensions.py
-            assert response.json()['status'] == 'unavailable'
+    def test_pipeline_status_error(self, client, mock_graph_engine):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            with patch(
+                'agent_webui.api_extensions.PipelineRunner',
+                side_effect=Exception('Status failed'),
+            ):
+                response = client.get('/api/enhanced/pipeline/status')
+                assert response.status_code == 200
+                # Matches return {'status': 'error'} in api_extensions.py
+                assert response.json()['status'] == 'error'
 
     def test_list_plans_success(self, client, mock_sdd_manager):
-        with patch('agent_webui.api_extensions.SDDManager', return_value=mock_sdd_manager):
+        with patch(
+            'agent_webui.api_extensions.SDDManager', return_value=mock_sdd_manager
+        ):
             mock_sdd_manager.list_plans.return_value = [{'id': 'plan1'}]
             response = client.get('/api/enhanced/sdd/plans')
             assert response.status_code == 200
             assert len(response.json()) == 1
 
-    def test_sync_sdd_success(self, client, mock_sdd_manager):
-        with patch('agent_webui.api_extensions.SDDManager', return_value=mock_sdd_manager):
-            response = client.post('/api/enhanced/sdd/sync', json={'spec_id': 'test'})
-            assert response.status_code == 200
-            assert response.json()['status'] == 'success'
+    def test_sync_sdd_success(self, client, mock_sdd_manager, mock_graph_engine):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            with patch(
+                'agent_webui.api_extensions.SDDManager', return_value=mock_sdd_manager
+            ):
+                response = client.post(
+                    '/api/enhanced/sdd/sync', json={'spec_id': 'test'}
+                )
+                assert response.status_code == 200
+                assert response.json()['status'] == 'success'
 
     def test_graph_stats_success(self, client, mock_graph_engine):
-        with patch('agent_webui.api_extensions.IntelligenceGraphEngine.get_active', return_value=mock_graph_engine):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
             mock_graph_engine.backend.execute.return_value = [{'total': 10}]
             response = client.get('/api/enhanced/graph/stats')
             assert response.status_code == 200
             assert 'total_nodes' in response.json()
 
-    def test_trigger_pipeline_success(self, client, mock_pipeline_runner):
-        with patch('agent_webui.api_extensions.PipelineRunner', return_value=mock_pipeline_runner):
-            response = client.post('/api/enhanced/pipeline/trigger', json={'phase': 'test'})
-            assert response.status_code == 200
-            assert response.json()['status'] == 'success'
+    def test_trigger_pipeline_success(
+        self, client, mock_pipeline_runner, mock_graph_engine
+    ):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            with patch(
+                'agent_webui.api_extensions.PipelineRunner',
+                return_value=mock_pipeline_runner,
+            ):
+                response = client.post(
+                    '/api/enhanced/pipeline/trigger', json={'phase': 'test'}
+                )
+                assert response.status_code == 200
+                assert response.json()['status'] == 'success'
 
 
 class TestServerIntegration:

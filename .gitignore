@@ -14,6 +14,7 @@ dist-ssr
 
 # Test artifacts
 coverage
+coverage.json
 .nyc_output
 test-results
 playwright-report

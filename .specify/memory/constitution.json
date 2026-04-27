@@ -1,0 +1,26 @@
+{
+  "vision": "Cinematic React-based web interface for agentic orchestration.",
+  "mission": "Bridge complex graph execution with intuitive user interaction through rich visualizations.",
+  "core_principles": [
+    "Functional Components & Hooks",
+    "Strict TypeScript typing",
+    "90% Frontend coverage requirement",
+    "Tailwind CSS / shadcn UI standardization"
+  ],
+  "tech_stack": {
+    "frontend": ["React", "Vite", "Tailwind", "shadcn/ui", "Vercel AI SDK"],
+    "backend": ["FastAPI", "Pydantic AI"],
+    "testing": ["Vitest", "Playwright", "Pytest"]
+  },
+  "quality_gates": [
+    "All features MUST be implemented with Pytests/Vitests",
+    "Run `pre-commit run --all-files` after changes",
+    "Update plan and re-run if issues are found",
+    "90% Vitest coverage",
+    "85% Pytest coverage",
+    "Passing lint and typecheck"
+  ],
+  "metadata": {
+    "project_name": "agent-webui"
+  }
+}

@@ -37,6 +37,7 @@ class TestGraphWorkflowIntegration:
             assert stats_data['total_nodes'] == 100
 
             # Step 2: Get nodes
+            mock_graph_engine.backend.execute.side_effect = None
             mock_graph_engine.backend.execute.return_value = [
                 {
                     'n': {
@@ -54,8 +55,9 @@ class TestGraphWorkflowIntegration:
 
             # Step 3: Create memory
             memory_data = {
+                'id': 'mem_integration',
                 'content': 'Integration test memory',
-                'importance': 0.9,
+                'importance_score': 0.9,
                 'tags': ['integration', 'test'],
             }
 
@@ -84,24 +86,25 @@ class TestKnowledgeBaseWorkflowIntegration:
     def test_complete_kb_workflow(self, client, mock_kb_engine, mock_graph_engine):
         """Test complete workflow: ingest → list → search → health check."""
         with patch(
-            'agent_webui.api_extensions.KBIngestionEngine', return_value=mock_kb_engine
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
         ):
-            # Step 1: Ingest knowledge base
-            kb_data = {
-                'kb_id': 'integration_kb',
-                'source': '/test/integration',
-                'name': 'Integration Test KB',
-                'options': {'chunk_size': 1024},
-            }
-
-            ingest_response = client.post('/api/enhanced/kb/ingest', json=kb_data)
-            assert ingest_response.status_code in [200, 202]
-
-            # Step 2: List knowledge bases
             with patch(
-                'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
-                return_value=mock_graph_engine,
+                'agent_webui.api_extensions.KBIngestionEngine',
+                return_value=mock_kb_engine,
             ):
+                # Step 1: Ingest knowledge base
+                kb_data = {
+                    'kb_id': 'integration_kb',
+                    'source': '/test/integration',
+                    'name': 'Integration Test KB',
+                    'options': {'chunk_size': 1024},
+                }
+
+                ingest_response = client.post('/api/enhanced/kb/ingest', json=kb_data)
+                assert ingest_response.status_code in [200, 202]
+
+                # Step 2: List knowledge bases
                 mock_graph_engine.backend = MagicMock()
                 mock_graph_engine.backend.execute.return_value = [
                     {'kb': {'id': 'integration_kb', 'name': 'Integration Test KB'}}
@@ -110,28 +113,28 @@ class TestKnowledgeBaseWorkflowIntegration:
                 list_response = client.get('/api/enhanced/kb/list')
                 assert list_response.status_code == 200
 
-            # Step 3: Search knowledge base
-            mock_kb_engine.search.return_value = [
-                {'id': 'article1', 'title': 'Integration Article'}
-            ]
+                # Step 3: Search knowledge base
+                mock_kb_engine.search.return_value = [
+                    {'id': 'article1', 'title': 'Integration Article'}
+                ]
 
-            search_response = client.get(
-                '/api/enhanced/kb/search?query=integration&kb_id=integration_kb'
-            )
-            assert search_response.status_code == 200
+                search_response = client.get(
+                    '/api/enhanced/kb/search?query=integration&kb_id=integration_kb'
+                )
+                assert search_response.status_code == 200
 
-            # Step 4: Health check
-            mock_kb_engine.health_check.return_value = {
-                'health_status': 'healthy',
-                'issues': [],
-            }
+                # Step 4: Health check
+                mock_kb_engine.health_check.return_value = {
+                    'health_status': 'healthy',
+                    'issues': [],
+                }
 
-            health_response = client.post(
-                '/api/enhanced/kb/health', json={'kb_id': 'integration_kb'}
-            )
-            assert health_response.status_code == 200
-            health_data = health_response.json()
-            assert health_data['health_status'] == 'healthy'
+                health_response = client.post(
+                    '/api/enhanced/kb/health', json={'kb_id': 'integration_kb'}
+                )
+                assert health_response.status_code == 200
+                health_data = health_response.json()
+                assert health_data['health_status'] == 'healthy'
 
 
 class TestSDDWorkflowIntegration:
@@ -170,18 +173,16 @@ class TestSDDWorkflowIntegration:
             spec_response = client.post('/api/enhanced/sdd/spec', json=spec_data)
             assert spec_response.status_code == 200
 
-            # Step 3: Create plan
-            plan_data = {
-                'spec_id': 'integration_spec',
-                'technical_approach': 'Integration technical approach',
-            }
-
+            # Step 3: List plans
             mock_plan = MagicMock()
             mock_plan.id = 'integration_plan'
-            mock_plan.model_dump.return_value = {**plan_data, 'id': 'integration_plan'}
-            mock_sdd_manager.create_plan.return_value = mock_plan
+            mock_plan.model_dump.return_value = {
+                'id': 'integration_plan',
+                'spec_id': 'integration_spec',
+            }
+            mock_sdd_manager.list_plans.return_value = [mock_plan]
 
-            plan_response = client.post('/api/enhanced/sdd/plan', json=plan_data)
+            plan_response = client.get('/api/enhanced/sdd/plans')
             assert plan_response.status_code == 200
 
             # Step 4: Get tasks
@@ -315,32 +316,37 @@ class TestResourceManagementWorkflowIntegration:
 class TestMaintenanceWorkflowIntegration:
     """Test end-to-end maintenance workflow."""
 
-    def test_maintenance_workflow(self, client, mock_maintainer):
+    def test_maintenance_workflow(self, client, mock_maintainer, mock_graph_engine):
         """Test maintenance status and operation triggering."""
         with patch(
-            'agent_webui.api_extensions.GraphMaintainer', return_value=mock_maintainer
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
         ):
-            # Step 1: Get maintenance status
-            status_response = client.get('/api/enhanced/maintenance/status')
-            assert status_response.status_code == 200
-            status_data = status_response.json()
-            assert 'status' in status_data
-            assert 'operations' in status_data
+            with patch(
+                'agent_webui.api_extensions.GraphMaintainer',
+                return_value=mock_maintainer,
+            ):
+                # Step 1: Get maintenance status
+                status_response = client.get('/api/enhanced/maintenance/status')
+                assert status_response.status_code == 200
+                status_data = status_response.json()
+                assert 'status' in status_data
+                assert 'operations' in status_data
 
-            # Step 2: Trigger maintenance operation
-            operation_data = {
-                'operation': 'embedding_enrichment',
-                'options': {'force': True, 'batch_size': 100},
-            }
+                # Step 2: Trigger maintenance operation
+                operation_data = {
+                    'operation': 'embedding_enrichment',
+                    'options': {'force': True, 'batch_size': 100},
+                }
 
-            mock_maintainer.trigger_operation.return_value = {'status': 'success'}
+                mock_maintainer.trigger_operation.return_value = {'status': 'success'}
 
-            trigger_response = client.post(
-                '/api/enhanced/maintenance/trigger', json=operation_data
-            )
-            assert trigger_response.status_code == 200
-            trigger_data = trigger_response.json()
-            assert trigger_data['status'] == 'success'
+                trigger_response = client.post(
+                    '/api/enhanced/maintenance/trigger', json=operation_data
+                )
+                assert trigger_response.status_code == 200
+                trigger_data = trigger_response.json()
+                assert trigger_data['status'] == 'success'
 
 
 class TestErrorHandlingIntegration:

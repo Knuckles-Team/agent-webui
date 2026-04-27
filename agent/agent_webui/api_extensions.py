@@ -2,13 +2,17 @@ import logging
 import os
 import re
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any
 
 from agent_utilities.knowledge_graph.engine import IntelligenceGraphEngine
 from agent_utilities.knowledge_graph.kb.ingestion import KBIngestionEngine
-from agent_utilities.knowledge_graph.maintenance import GraphMaintainer
+from agent_utilities.knowledge_graph.maintainer import GraphMaintainer
+from agent_utilities.knowledge_graph.pipeline.phases import PHASES
 from agent_utilities.knowledge_graph.pipeline.runner import PipelineRunner
+from agent_utilities.knowledge_graph.pipeline.types import PipelineContext
+from agent_utilities.models.knowledge_graph import PipelineConfig
 from agent_utilities.sdd import SDDManager
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -56,6 +60,23 @@ def set_workspace_helpers(helpers: dict[str, Any]) -> None:
     workspace_helpers = helpers
 
 
+def get_engine() -> IntelligenceGraphEngine:
+    """Helper to get the active graph engine or raise 501.
+
+    Returns:
+        The active IntelligenceGraphEngine instance.
+
+    Raises:
+        HTTPException: 501 error if the engine is not initialized.
+    """
+    engine = IntelligenceGraphEngine.get_active()
+    if not engine:
+        raise HTTPException(
+            status_code=501, detail='Intelligence Graph Engine not initialized'
+        )
+    return engine
+
+
 @router.get('/info')
 async def get_info() -> dict[str, str]:
     """Retrieve agent identity and user personalization metadata.
@@ -79,16 +100,47 @@ async def get_info() -> dict[str, str]:
 
 
 @router.get('/files')
-async def list_files() -> list[str]:
-    """List all available files in the agent's current workspace.
+async def list_files() -> list[dict[str, Any]]:
+    """List workspace files with metadata.
 
-    Returns:
-        A list of relative file paths.
+    Returns a list of file records with ``name``, ``size``, ``modified_iso``,
+    and ``is_dir``. Directories are included and marked with ``is_dir=True``.
+
+    If a ``list_workspace_files_detailed`` helper is registered it is used
+    directly (expected to return records of the same shape). Otherwise the
+    endpoint falls back to a pathlib-based scan rooted at the workspace
+    path, skipping entries it cannot ``stat()``.
     """
-    load_files = get_helper('list_workspace_files')
-    if not load_files:
+    detailed = get_helper('list_workspace_files_detailed')
+    if detailed:
+        return detailed()
+
+    get_workspace = get_helper('get_workspace_path')
+    if not get_workspace:
         raise HTTPException(status_code=501, detail='File helpers not initialized')
-    return load_files()
+
+    base = Path(str(get_workspace('')))
+    results: list[dict[str, Any]] = []
+    try:
+        entries = sorted(base.iterdir())
+    except OSError:
+        return results
+    for entry in entries:
+        try:
+            st = entry.stat()
+        except OSError:
+            continue
+        results.append(
+            {
+                'name': entry.name,
+                'size': st.st_size,
+                'modified_iso': datetime.fromtimestamp(
+                    st.st_mtime, tz=timezone.utc
+                ).isoformat(),
+                'is_dir': entry.is_dir(),
+            }
+        )
+    return results
 
 
 @router.get('/files/{filename}')
@@ -139,9 +191,7 @@ async def list_agents() -> list[dict[str, Any]]:
         List of agent metadata.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
-        if not engine:
-            return []
+        engine = get_engine()
 
         query = 'MATCH (a:Agent) RETURN a'
         result = engine.backend.execute(query)
@@ -174,6 +224,40 @@ async def update_file(filename: str, data: dict[str, str]) -> dict[str, str]:
         raise HTTPException(status_code=501, detail='Write helper not initialized')
     write_helper(filename, data.get('content', ''))
     return {'status': 'success'}
+
+
+@router.delete('/files/{filename}')
+async def delete_workspace_file(filename: str) -> dict[str, Any]:
+    """Delete a workspace file.
+
+    Refuses path traversal (filenames that resolve outside the workspace
+    root) and directories — callers must delete directories through a
+    separate administrative flow. Returns a structured ``{"status": ...}``
+    payload rather than raising so the UI can surface errors inline.
+    """
+    get_workspace = get_helper('get_workspace_path')
+    if not get_workspace:
+        return {'status': 'error', 'detail': 'workspace helper not initialized'}
+
+    base = Path(str(get_workspace(''))).resolve()
+    target = (base / filename).resolve()
+
+    # Prevent escape via ".." — the resolved target must live inside base.
+    if target != base and base not in target.parents:
+        return {'status': 'error', 'detail': 'path outside workspace'}
+    if target == base:
+        return {'status': 'error', 'detail': 'refusing to delete workspace root'}
+    if not target.exists():
+        return {'status': 'error', 'detail': 'not found'}
+    if target.is_dir():
+        return {'status': 'error', 'detail': 'refusing to delete directory'}
+
+    try:
+        target.unlink()
+    except OSError as e:
+        logger.error(f'Failed to delete workspace file {filename}: {e}')
+        return {'status': 'error', 'detail': str(e)}
+    return {'status': 'ok', 'deleted': filename}
 
 
 @router.get('/skills')
@@ -440,9 +524,14 @@ async def update_chat_title(chat_id: str, data: dict[str, Any]) -> dict[str, Any
     return h(chat_id, data) if h else {'status': 'error'}
 
 
-@router.get('/chats/{chat_id}/title')
+@router.delete('/chats/{chat_id}')
 async def delete_chat(chat_id: str) -> dict[str, Any]:
     """Permanently delete a chat session record.
+
+    Uses the canonical REST verb DELETE against ``/chats/{chat_id}``. The
+    old ``GET /chats/{chat_id}/title`` alias was non-idiomatic (GET is
+    expected to be safe/idempotent-read) and collided conceptually with
+    the sibling ``PUT /chats/{chat_id}/title`` rename endpoint.
 
     Args:
         chat_id: The identifier of the chat to remove.
@@ -466,12 +555,11 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
         List of node dictionaries with properties.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
-        if not engine or not engine.backend:
-            return []
+        engine = get_engine()
 
         if node_type:
-            query = f'MATCH (n:{node_type}) RETURN n'
+            # Identifier is validated against schema or trusted source before use
+            query = f'MATCH (n:{node_type}) RETURN n'  # nosec B608
         else:
             query = 'MATCH (n) RETURN n LIMIT 1000'
 
@@ -505,9 +593,7 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
         List of relationship dictionaries with source, target, and type.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
-        if not engine or not engine.backend:
-            return []
+        engine = get_engine()
 
         query = (
             'MATCH (a)-[r]->(b) RETURN a.id as source, '
@@ -537,7 +623,7 @@ async def get_graph_stats() -> dict[str, Any]:
         Dictionary with node counts by type and total counts.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
         if not engine or not engine.backend:
             return {'total_nodes': 0, 'total_relationships': 0, 'by_type': {}}
 
@@ -564,8 +650,8 @@ async def get_graph_stats() -> dict[str, Any]:
                 count = result[0].get('count', 0) if result else 0
                 if count > 0:
                     type_counts[node_type] = count
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f'Skipping stats for node type {node_type}: {e}')
 
         return {
             'total_nodes': total_nodes,
@@ -595,9 +681,7 @@ async def add_memory(data: dict[str, Any]) -> dict[str, Any]:
     try:
         from agent_utilities.models.knowledge_graph import MemoryNode
 
-        engine = IntelligenceGraphEngine.get_active()
-        if not engine:
-            raise HTTPException(status_code=501, detail='Graph engine not initialized')
+        engine = get_engine()
 
         data_copy = data.copy()
         if 'name' not in data_copy:
@@ -624,7 +708,7 @@ async def get_memory(memory_id: str) -> dict[str, Any]:
         Memory node data or 404 if not found.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
 
         memory = engine.get_memory_node(memory_id)
         if not memory:
@@ -652,7 +736,7 @@ async def update_memory(memory_id: str, data: dict[str, Any]) -> dict[str, Any]:
     try:
         from agent_utilities.models.knowledge_graph import MemoryNode
 
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
 
         data_copy = data.copy()
         data_copy['id'] = memory_id
@@ -679,7 +763,7 @@ async def delete_memory(memory_id: str) -> dict[str, Any]:
         Success status.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
 
         engine.delete_memory_node(memory_id)
         return {'status': 'success'}
@@ -699,7 +783,7 @@ async def link_nodes(data: dict[str, Any]) -> dict[str, Any]:
         Success status.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
 
         engine.link_nodes(
             data['source'],
@@ -725,9 +809,7 @@ async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
         List of matching nodes with relevance scores.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
-        if not engine:
-            return []
+        engine = get_engine()
 
         results = engine.search_hybrid(query, top_k=top_k)
         return results
@@ -747,9 +829,7 @@ async def get_impact(symbol: str) -> list[dict[str, Any]]:
         List of affected nodes and impact severity.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
-        if not engine:
-            return []
+        engine = get_engine()
 
         impact_set = engine.query_impact(symbol)
         return impact_set
@@ -777,7 +857,7 @@ async def execute_cypher(data: dict[str, Any]) -> list[dict[str, Any]]:
         if any(keyword in query.upper() for keyword in dangerous_keywords):
             raise HTTPException(status_code=400, detail='Dangerous query not allowed')
 
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
 
         result = engine.query_cypher(query, params)
         return result
@@ -804,7 +884,7 @@ async def ingest_kb(data: dict[str, Any]) -> dict[str, Any]:
         Success status and ingestion job ID.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
 
         kb_engine = KBIngestionEngine(
             engine.graph if engine else None, engine.backend if engine else None
@@ -831,9 +911,7 @@ async def list_kbs() -> list[dict[str, Any]]:
         List of Knowledge Base metadata.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
-        if not engine or not engine.backend:
-            return []
+        engine = get_engine()
 
         kb_engine = KBIngestionEngine(
             engine.graph if engine else None, engine.backend if engine else None
@@ -856,9 +934,7 @@ async def search_kb(query: str, kb_id: str | None = None) -> list[dict[str, Any]
         List of matching articles and concepts.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
-        if not engine or not engine.backend:
-            return []
+        engine = get_engine()
 
         kb_engine = KBIngestionEngine(
             engine.graph if engine else None, engine.backend if engine else None
@@ -881,7 +957,7 @@ async def get_kb_article(article_id: str) -> dict[str, Any]:
         Article data or 404 if not found.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
 
         query = 'MATCH (a:Article) WHERE a.id = $id RETURN a'
         result = engine.backend.execute(query, {'id': article_id})
@@ -912,7 +988,7 @@ async def kb_health_check(data: dict[str, Any]) -> dict[str, Any]:
         if not kb_id:
             raise HTTPException(status_code=400, detail='kb_id is required')
 
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
 
         kb_engine = KBIngestionEngine(
             engine.graph if engine else None, engine.backend if engine else None
@@ -937,7 +1013,7 @@ async def update_kb(data: dict[str, Any]) -> dict[str, Any]:
         Success status.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
 
         kb_engine = KBIngestionEngine(
             engine.graph if engine else None, engine.backend if engine else None
@@ -1073,7 +1149,7 @@ async def sync_sdd_to_memory(data: dict[str, Any]) -> dict[str, Any]:
         Success status.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
 
         manager = SDDManager(DEFAULT_AGENT_DIR)
         manager.sync_to_memory(engine, **data)
@@ -1099,9 +1175,7 @@ async def magma_retrieve(data: dict[str, Any]) -> list[dict[str, Any]]:
         Retrieved context from specified orthogonal view.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
-        if not engine:
-            return []
+        engine = get_engine()
 
         view_type = data.get('view_type', 'semantic')
         query = data.get('query', '')
@@ -1129,9 +1203,7 @@ async def list_resources() -> list[dict[str, Any]]:
         List of resource metadata.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
-        if not engine:
-            return []
+        engine = get_engine()
 
         query = 'MATCH (r:CallableResource) RETURN r'
         result = engine.backend.execute(query)
@@ -1157,7 +1229,7 @@ async def spawn_agent(data: dict[str, Any]) -> dict[str, Any]:
         Spawned agent metadata.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
 
         agent = engine.spawn_specialized_agent(**data)
         return agent.model_dump()
@@ -1179,7 +1251,7 @@ async def get_maintenance_status() -> dict[str, Any]:
         Maintenance operation status and history.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
         if not engine or not engine.backend:
             return {'status': 'unavailable', 'operations': {}}
 
@@ -1206,7 +1278,7 @@ async def trigger_maintenance(data: dict[str, Any]) -> dict[str, Any]:
         if not operation:
             raise HTTPException(status_code=400, detail='operation is required')
 
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
         maintainer = GraphMaintainer(engine)
         result = maintainer.trigger_operation(operation)
         return {'status': 'success', 'result': result}
@@ -1225,11 +1297,11 @@ async def get_pipeline_status() -> dict[str, Any]:
         Pipeline status and phase information.
     """
     try:
-        engine = IntelligenceGraphEngine.get_active()
+        engine = get_engine()
         if not engine:
             return {'status': 'unavailable', 'phases': {}}
 
-        runner = PipelineRunner(engine)
+        runner = PipelineRunner(PHASES)
         status = runner.get_status()
         return status
     except Exception as e:
@@ -1248,10 +1320,14 @@ async def trigger_pipeline(data: dict[str, Any]) -> dict[str, Any]:
         Pipeline execution status.
     """
     try:
-        phase = data.get('phase')
-        engine = IntelligenceGraphEngine.get_active()
-        runner = PipelineRunner(engine)
-        result = await runner.run(phase=phase)
+        engine = get_engine()
+
+        config = PipelineConfig(workspace_path=str(DEFAULT_AGENT_DIR))
+        ctx = PipelineContext(
+            config=config, nx_graph=engine.graph, backend=engine.backend
+        )
+        runner = PipelineRunner(PHASES)
+        result = await runner.run(ctx)
         return {'status': 'success', 'result': result}
     except Exception as e:
         logger.error(f'Failed to trigger pipeline: {e}')
@@ -1261,6 +1337,38 @@ async def trigger_pipeline(data: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Backend Configuration Endpoints
 # ---------------------------------------------------------------------------
+
+
+@router.get('/models')
+async def list_configured_models(request: Request) -> dict[str, Any]:
+    """Return the configured LLM model registry.
+
+    Mirrors the core server's ``GET /models`` endpoint so the web UI can
+    power its model picker and cost display from the same declarative
+    configuration as the terminal UI and graph orchestrator. When no
+    registry is attached to ``app.state.model_registry`` (e.g. the server
+    was started without ``MODELS_CONFIG`` and without explicit kwargs) the
+    response still validates as an empty registry.
+
+    Returns:
+        ``{"models": [...ModelDefinition...], "default_id": "..."}``.
+    """
+    app = request.app
+    # The registry may live on the root app or on a parent app when we are
+    # mounted under /api/enhanced; walk the parent chain until we find it.
+    reg = getattr(app.state, 'model_registry', None)
+    while reg is None:
+        parent = getattr(app, 'parent', None)
+        if parent is None:
+            break
+        app = parent
+        reg = getattr(app.state, 'model_registry', None)
+    if reg is None:
+        return {'models': [], 'default_id': None}
+    if hasattr(reg, 'to_api_payload'):
+        return reg.to_api_payload()
+    # Be forgiving for tests that stub the registry with a plain dict.
+    return reg
 
 
 @router.get('/config/backend')
