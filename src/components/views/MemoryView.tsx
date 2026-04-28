@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Brain, Plus, Search, Clock, Link2, Trash2, Edit2, Calendar, Tag, TrendingUp } from 'lucide-react'
+import { Brain, Plus, Search, Link2, Trash2, Edit2, Calendar, Tag, TrendingUp } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -312,7 +312,7 @@ export default function MemoryView() {
           <div className="relative">
             <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />
             <div className="space-y-6 pl-10">
-              {sortedMemories.map((memory, index) => (
+              {sortedMemories.map((memory) => (
                 <div key={memory.id} className="relative">
                   <div className="absolute left-[-26px] w-4 h-4 rounded-full bg-primary border-2 border-background" />
                   <Card

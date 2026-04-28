@@ -64,6 +64,12 @@ repos:
       - id: uv-lock
   - repo: local
     hooks:
+      - id: pnpm-build
+        name: pnpm build
+        entry: pnpm build
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: pytest
         name: pytest
         entry: bash -c 'if [ -f uv.lock ]; then uv run --extra test pytest -v -s; else pytest -v -s; fi'

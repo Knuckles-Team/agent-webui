@@ -44,7 +44,7 @@ describe('CypherReplView Component', () => {
       expect(fetchSpy).toHaveBeenCalled()
     })
 
-    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit]
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toContain('/api/enhanced/graph/query')
     expect(init.method).toBe('POST')
 

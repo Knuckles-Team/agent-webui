@@ -1,6 +1,7 @@
-import { ReactElement } from 'react'
+import type { ReactElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 // Create a custom render function with providers
 export function renderWithProviders(ui: ReactElement) {
@@ -16,11 +17,14 @@ export function renderWithProviders(ui: ReactElement) {
     },
   })
 
-  return render(
-    <QueryClientProvider client={queryClient}>
-      {ui}
-    </QueryClientProvider>
-  )
+  return {
+    user: userEvent.setup(),
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        {ui}
+      </QueryClientProvider>
+    )
+  }
 }
 
 // Mock data fixtures

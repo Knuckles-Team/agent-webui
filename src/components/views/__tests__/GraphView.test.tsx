@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { screen, waitFor } from '@testing-library/react'
 import GraphView from '@/components/views/GraphView'
+import { api } from '@/lib/api'
 import { renderWithProviders, mockGraphStats, mockGraphNodes, mockGraphRelationships } from '@/__tests__/fixtures'
 
 // Mock API calls
@@ -126,7 +126,7 @@ describe('GraphView Component', () => {
   })
 
   it('handles empty graph data gracefully', async () => {
-    vi.mocked('@/lib/api').getGraphStats.mockResolvedValueOnce({
+    vi.mocked(api).getGraphStats.mockResolvedValueOnce({
       total_nodes: 0,
       total_relationships: 0,
       by_type: {}

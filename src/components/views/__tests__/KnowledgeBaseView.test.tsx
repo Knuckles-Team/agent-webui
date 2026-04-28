@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { screen, waitFor } from '@testing-library/react'
 import KnowledgeBaseView from '@/components/views/KnowledgeBaseView'
+import { api } from '@/lib/api'
 import { renderWithProviders, mockKnowledgeBase, mockArticle } from '@/__tests__/fixtures'
 
 // Mock API calls
@@ -118,7 +118,7 @@ describe('KnowledgeBaseView Component', () => {
   })
 
   it('handles empty knowledge bases gracefully', async () => {
-    vi.mocked('@/lib/api').listKnowledgeBases.mockResolvedValueOnce([])
+    vi.mocked(api).listKnowledgeBases.mockResolvedValueOnce([])
 
     renderWithProviders(<KnowledgeBaseView />)
 

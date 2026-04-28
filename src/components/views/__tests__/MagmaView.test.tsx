@@ -46,7 +46,7 @@ describe('MagmaView Component', () => {
       expect(fetchSpy).toHaveBeenCalled()
     })
 
-    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit]
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toContain('/api/enhanced/graph/magma')
     expect(init.method).toBe('POST')
     expect(init.body).toContain('why did auth fail')

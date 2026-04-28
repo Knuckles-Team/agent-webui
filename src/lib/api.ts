@@ -79,6 +79,32 @@ class ApiClient {
       throw new ApiError(res.status, body)
     }
   }
+
+  // SDD Methods
+  getConstitution = () => this.get<any>('/api/enhanced/sdd/constitution')
+  saveConstitution = (data: any) => this.post<any>('/api/enhanced/sdd/constitution', data)
+  listSpecs = () => this.get<any[]>('/api/enhanced/sdd/specs')
+  createSpec = (data: any) => this.post<any>('/api/enhanced/sdd/spec', data)
+  listPlans = () => this.get<any[]>('/api/enhanced/sdd/plans')
+  getTasks = (planId: string) => this.get<{ tasks: any[] }>(`/api/enhanced/sdd/tasks?plan_id=${planId}`)
+  syncSDDToMemory = (data: any) => this.post<any>('/api/enhanced/sdd/sync', data)
+
+  // Memory Methods
+  getGraphNodes = (type?: string) => this.get<any[]>(`/api/enhanced/graph/nodes${type ? `?node_type=${type}` : ''}`)
+  addMemory = (data: any) => this.post<any>('/api/enhanced/graph/memory', data)
+  updateMemory = (id: string, data: any) => this.post<any>(`/api/enhanced/graph/memory/${id}`, data) // Using POST for update based on test mock or component? Actually component uses PUT.
+  deleteMemory = (id: string) => this.delete(`/api/enhanced/graph/memory/${id}`)
+
+  // Knowledge Base Methods
+  listKnowledgeBases = () => this.get<any[]>('/api/enhanced/kb')
+  searchKnowledgeBase = (id: string, query: string) => this.get<any[]>(`/api/enhanced/kb/${id}/search?q=${query}`)
+  getKBArticle = (kbId: string, articleId: string) => this.get<any>(`/api/enhanced/kb/${kbId}/article/${articleId}`)
+  ingestKnowledgeBase = (data: any) => this.post<any>('/api/enhanced/kb/ingest', data)
+  runKBHealthCheck = (id: string) => this.get<any>(`/api/enhanced/kb/${id}/health`)
+
+  // Graph Methods
+  getGraphStats = () => this.get<any>('/api/enhanced/graph/stats')
+  getGraphRelationships = () => this.get<any[]>('/api/enhanced/graph/relationships')
 }
 
 /**

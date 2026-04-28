@@ -158,7 +158,7 @@ export default function GraphView() {
     } else if (graphLayout === 'hierarchical') {
       const levels = groupNodesByLevel()
       let y = 50
-      Object.entries(levels).forEach(([level, levelNodes]) => {
+      Object.entries(levels).forEach(([, levelNodes]) => {
         const xStep = canvas.width / (levelNodes.length + 1)
         levelNodes.forEach((node, i) => {
           positions.set(node.id, {
@@ -170,7 +170,7 @@ export default function GraphView() {
       })
     } else {
       // Force layout (simplified)
-      nodes.forEach((node, i) => {
+      nodes.forEach((node) => {
         const angle = Math.random() * 2 * Math.PI
         const radius = 100 + Math.random() * 200
         positions.set(node.id, {

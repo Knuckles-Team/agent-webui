@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Book, Search, Plus, FileText, Brain, CheckCircle, AlertCircle, RefreshCw, Download, Upload, Settings } from 'lucide-react'
+import { Book, Search, Plus, FileText, Brain, CheckCircle, AlertCircle, RefreshCw, Settings } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -7,7 +7,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -102,7 +101,7 @@ export default function KnowledgeBaseView() {
       const res = await fetch('/api/enhanced/kb/health', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kb_id })
+        body: JSON.stringify({ kb_id: kbId })
       })
       const data = await res.json()
       setHealthResults(data)

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import SDDView from '@/components/views/SDDView'
+import { api } from '@/lib/api'
 import { renderWithProviders, mockSpec, mockPlan, mockTask } from '@/__tests__/fixtures'
 
 // Mock API calls
@@ -153,7 +154,7 @@ describe('SDDView Component', () => {
   })
 
   it('handles empty specs gracefully', async () => {
-    vi.mocked('@/lib/api').listSpecs.mockResolvedValueOnce([])
+    vi.mocked(api).listSpecs.mockResolvedValueOnce([])
 
     renderWithProviders(<SDDView />)
 

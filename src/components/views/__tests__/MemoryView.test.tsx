@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { screen, waitFor } from '@testing-library/react'
 import MemoryView from '@/components/views/MemoryView'
+import { api } from '@/lib/api'
 import { renderWithProviders, mockMemoryNode } from '@/__tests__/fixtures'
 
 // Mock API calls
@@ -164,7 +164,7 @@ describe('MemoryView Component', () => {
   })
 
   it('handles empty memories gracefully', async () => {
-    vi.mocked('@/lib/api').getGraphNodes.mockResolvedValueOnce([])
+    vi.mocked(api).getGraphNodes.mockResolvedValueOnce([])
 
     renderWithProviders(<MemoryView />)
 
