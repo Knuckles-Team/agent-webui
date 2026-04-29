@@ -19,6 +19,7 @@ name = "agent-utilities"
 version = "0.2.40"
 source = { directory = "../agent-utilities" }
 dependencies = [
+    { name = "cryptography" },
     { name = "ladybug" },
     { name = "networkx" },
     { name = "numpy" },
@@ -52,14 +53,17 @@ requires-dist = [
     { name = "agent-utilities", extras = ["embeddings"], marker = "extra == 'embeddings-ollama'", specifier = ">=0.2.40" },
     { name = "agent-utilities", extras = ["embeddings"], marker = "extra == 'embeddings-openai'", specifier = ">=0.2.40" },
     { name = "agent-utilities", extras = ["mcp", "ag-ui", "terminal"], marker = "extra == 'agent'", specifier = ">=0.2.40" },
-    { name = "agent-utilities", extras = ["mcp", "agent", "agent-google", "agent-groq", "agent-mistral", "agent-anthropic", "agent-huggingface", "embeddings-openai", "embeddings-huggingface", "embeddings-ollama", "logfire", "acp", "graph", "browser", "test", "owl", "stardog"], marker = "extra == 'all'", specifier = ">=0.2.40" },
+    { name = "agent-utilities", extras = ["mcp", "agent", "agent-google", "agent-groq", "agent-mistral", "agent-anthropic", "agent-huggingface", "embeddings-openai", "embeddings-huggingface", "embeddings-ollama", "logfire", "acp", "graph", "browser", "test", "owl", "stardog", "vault", "auth"], marker = "extra == 'all'", specifier = ">=0.2.40" },
     { name = "agent-utilities", extras = ["owl"], marker = "extra == 'stardog'" },
     { name = "agent-webui", marker = "extra == 'ag-ui'", directory = "." },
+    { name = "authlib", marker = "extra == 'auth'", specifier = ">=1.4.0" },
+    { name = "cryptography", specifier = ">=44.0.0" },
     { name = "eunomia-mcp", marker = "extra == 'mcp'", specifier = ">=0.3.10" },
     { name = "falkordb", marker = "extra == 'falkordb'", specifier = ">=1.0.1" },
     { name = "fastapi", marker = "extra == 'mcp'", specifier = ">=0.131.0" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.2.0" },
     { name = "httpx", marker = "extra == 'mcp'", specifier = ">=0.28.1" },
+    { name = "hvac", marker = "extra == 'vault'", specifier = ">=2.3.0" },
     { name = "hypothesis", marker = "extra == 'test'", specifier = ">=6.152.1" },
     { name = "ladybug", specifier = ">=0.15.3" },
     { name = "ladybug", marker = "extra == 'graph'", specifier = ">=0.15.3" },
@@ -89,7 +93,7 @@ requires-dist = [
     { name = "pydantic-ai-slim", extras = ["huggingface"], marker = "extra == 'agent-huggingface'", specifier = ">=1.73.0,<2.0.0" },
     { name = "pydantic-ai-slim", extras = ["logfire"], marker = "extra == 'logfire'", specifier = ">=1.73.0,<2.0.0" },
     { name = "pydantic-ai-slim", extras = ["mistral"], marker = "extra == 'agent-mistral'", specifier = ">=1.73.0,<2.0.0" },
-    { name = "pydantic-graph", marker = "extra == 'agent'", specifier = ">=0.1.8" },
+    { name = "pydantic-graph", marker = "extra == 'agent'", specifier = ">=1.0.0" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "pystardog", marker = "extra == 'stardog'", specifier = ">=0.20.0" },
     { name = "pytest-asyncio", marker = "extra == 'test'" },
@@ -110,7 +114,7 @@ requires-dist = [
     { name = "universal-skills", marker = "extra == 'agent'", directory = "../skills/universal-skills" },
     { name = "urllib3", specifier = ">=2.3.0" },
 ]
-provides-extras = ["mcp", "agent", "agent-google", "agent-groq", "agent-mistral", "agent-anthropic", "agent-huggingface", "ag-ui", "terminal", "browser", "acp", "embeddings", "embeddings-openai", "embeddings-huggingface", "embeddings-ollama", "logfire", "graph", "neo4j", "falkordb", "owl", "stardog", "test", "all"]
+provides-extras = ["mcp", "agent", "agent-google", "agent-groq", "agent-mistral", "agent-anthropic", "agent-huggingface", "ag-ui", "terminal", "browser", "acp", "embeddings", "embeddings-openai", "embeddings-huggingface", "embeddings-ollama", "logfire", "graph", "neo4j", "falkordb", "owl", "stardog", "vault", "auth", "test", "all"]
 
 [[package]]
 name = "agent-webui"
