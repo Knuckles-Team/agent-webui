@@ -1,0 +1,292 @@
+{
+  "feature_id": "code-enhancement-20260429",
+  "title": "Code Enhancement: agent-webui",
+  "created": "2026-04-29T21:54:39.160179+00:00",
+  "overview": "Automated code enhancement review for agent-webui. Covers 14 analysis domains.",
+  "user_stories": [
+    {
+      "role": "developer",
+      "action": "address Project Analysis findings (grade: B, score: 84)",
+      "value": "improve project project analysis from B to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Dependency Audit findings (grade: D, score: 60)",
+      "value": "improve project dependency audit from D to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Codebase Optimization findings (grade: F, score: 57)",
+      "value": "improve project codebase optimization from F to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Security Analysis findings (grade: A, score: 100)",
+      "value": "improve project security analysis from A to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Test Coverage findings (grade: F, score: 55)",
+      "value": "improve project test coverage from F to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Documentation & Governance findings (grade: D, score: 66)",
+      "value": "improve project documentation & governance from D to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Architecture & Design Patterns findings (grade: B, score: 80)",
+      "value": "improve project architecture & design patterns from B to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Concept Traceability findings (grade: F, score: 16)",
+      "value": "improve project concept traceability from F to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Linting & Formatting findings (grade: A, score: 96)",
+      "value": "improve project linting & formatting from A to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Pre-Commit Compliance findings (grade: B, score: 89)",
+      "value": "improve project pre-commit compliance from B to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Test Execution findings (grade: F, score: 20)",
+      "value": "improve project test execution from F to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Directory Organization findings (grade: A, score: 95)",
+      "value": "improve project directory organization from A to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address UI/UX Quality findings (grade: A, score: 100)",
+      "value": "improve project ui/ux quality from A to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Version Sync Analysis findings (grade: A, score: 100)",
+      "value": "improve project version sync analysis from A to at least B (80+)"
+    }
+  ],
+  "functional_requirements": [
+    {
+      "id": "FR-001",
+      "description": "Detected ecosystem marker: pydantic-ai \u2192 Pydantic-AI Agent",
+      "testable": true
+    },
+    {
+      "id": "FR-002",
+      "description": "Detected ecosystem marker: pydantic-ai-slim \u2192 Pydantic-AI Agent",
+      "testable": true
+    },
+    {
+      "id": "FR-003",
+      "description": "Detected ecosystem marker: fastapi \u2192 Web Agent / API",
+      "testable": true
+    },
+    {
+      "id": "FR-004",
+      "description": "Detected ecosystem marker: agent-utilities \u2192 Agent-Utilities Ecosystem",
+      "testable": true
+    },
+    {
+      "id": "FR-005",
+      "description": "Observability integration: logfire, opentelemetry",
+      "testable": true
+    },
+    {
+      "id": "FR-006",
+      "description": "Protocol support: MCP",
+      "testable": true
+    },
+    {
+      "id": "FR-007",
+      "description": "Minor update: sse-starlette 3.0.2 -> 3.4.1",
+      "testable": true
+    },
+    {
+      "id": "FR-008",
+      "description": "MAJOR update: starlette 0.48.0 -> 1.0.0",
+      "testable": true
+    },
+    {
+      "id": "FR-009",
+      "description": "Minor update: fastapi 0.117.1 -> 0.136.1",
+      "testable": true
+    },
+    {
+      "id": "FR-010",
+      "description": "MAJOR update: pydantic-ai 0.64.0 -> 1.88.0",
+      "testable": true
+    },
+    {
+      "id": "FR-011",
+      "description": "Minor update: uvicorn 0.37.0 -> 0.46.0",
+      "testable": true
+    },
+    {
+      "id": "FR-012",
+      "description": "MAJOR update: langfuse 2.0.0 -> 4.5.1",
+      "testable": true
+    },
+    {
+      "id": "FR-013",
+      "description": "4 monolithic files (>1000 lines) \u2014 consider splitting into packages or logical modules",
+      "testable": true
+    },
+    {
+      "id": "FR-014",
+      "description": "High code duplication ratio: 46.8%",
+      "testable": true
+    },
+    {
+      "id": "FR-015",
+      "description": "Low test-to-source ratio: 0.02",
+      "testable": true
+    },
+    {
+      "id": "FR-016",
+      "description": "Test suite lacks intent diversity (only one type)",
+      "testable": true
+    },
+    {
+      "id": "FR-017",
+      "description": "17 potential doc-test drift items",
+      "testable": true
+    },
+    {
+      "id": "FR-018",
+      "description": "README.md missing sections: overview, installation, usage|quick start",
+      "testable": true
+    },
+    {
+      "id": "FR-019",
+      "description": "README missing: Has a Table of Contents",
+      "testable": true
+    },
+    {
+      "id": "FR-020",
+      "description": "README missing: Has installation instructions",
+      "testable": true
+    },
+    {
+      "id": "FR-021",
+      "description": "README missing: Has usage examples with code blocks",
+      "testable": true
+    },
+    {
+      "id": "FR-022",
+      "description": "README missing: References /docs directory material",
+      "testable": true
+    },
+    {
+      "id": "FR-023",
+      "description": "AGENTS.md missing sections: tech stack, project structure",
+      "testable": true
+    },
+    {
+      "id": "FR-024",
+      "description": "No LICENSE file found",
+      "testable": true
+    },
+    {
+      "id": "FR-025",
+      "description": "SRP: 4 modules exceed 500 lines (god modules)",
+      "testable": true
+    },
+    {
+      "id": "FR-026",
+      "description": "SRP: 2 classes have >15 methods",
+      "testable": true
+    },
+    {
+      "id": "FR-027",
+      "description": "Low dependency injection ratio: 0%",
+      "testable": true
+    },
+    {
+      "id": "FR-028",
+      "description": "No CONCEPT markers found \u2014 traceability not implemented",
+      "testable": true
+    },
+    {
+      "id": "FR-029",
+      "description": "2 test functions missing concept markers",
+      "testable": true
+    },
+    {
+      "id": "FR-030",
+      "description": "76 significant functions (>10 lines) missing concept markers in docstrings",
+      "testable": true
+    },
+    {
+      "id": "FR-031",
+      "description": "Total lint findings: 2 (high/error: 0, medium/warning: 2, low: 0)",
+      "testable": true
+    },
+    {
+      "id": "FR-032",
+      "description": "bandit: not available in PATH",
+      "testable": true
+    },
+    {
+      "id": "FR-033",
+      "description": "1/21 pre-commit hooks failed: don't commit to branch",
+      "testable": true
+    },
+    {
+      "id": "FR-034",
+      "description": "2 hook(s) may be outdated: ruff-pre-commit, uv-pre-commit",
+      "testable": true
+    },
+    {
+      "id": "FR-035",
+      "description": "Pytest hooks skipped (handled by CE-016 Test Execution): pytest, local-pytest",
+      "testable": true
+    },
+    {
+      "id": "FR-036",
+      "description": "No tests were executed (test framework detected but no tests found)",
+      "testable": true
+    },
+    {
+      "id": "FR-037",
+      "description": "1 test execution error(s)",
+      "testable": true
+    },
+    {
+      "id": "FR-038",
+      "description": "1 directories with >20 files: src/components/ui",
+      "testable": true
+    },
+    {
+      "id": "FR-039",
+      "description": "All version '0.1.36' declarations appear to be tracked correctly.",
+      "testable": true
+    }
+  ],
+  "success_criteria": [
+    {
+      "metric": "Overall GPA",
+      "current": 2.21,
+      "target": 3.0
+    },
+    {
+      "metric": "Domains at B or above",
+      "current": 8,
+      "target": 14
+    },
+    {
+      "metric": "Critical findings resolved",
+      "current": 0,
+      "target": 10
+    }
+  ]
+}

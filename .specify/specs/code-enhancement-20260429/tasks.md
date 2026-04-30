@@ -1,0 +1,82 @@
+# Tasks: Code Enhancement: agent-webui
+
+Generated: 2026-04-29T21:54:39.160179+00:00
+
+- [ ] [P] **T001** [Project Analysis] Detected ecosystem marker: pydantic-ai → Pydantic-AI Agent
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T002** [Project Analysis] Detected ecosystem marker: pydantic-ai-slim → Pydantic-AI Ag
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T003** [Project Analysis] Detected ecosystem marker: fastapi → Web Agent / API
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T004** [Project Analysis] Detected ecosystem marker: agent-utilities → Agent-Utilities
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T005** [Project Analysis] Observability integration: logfire, opentelemetry
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T006** [Project Analysis] Protocol support: MCP
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T007** [Dependency Audit] Minor update: sse-starlette 3.0.2 -> 3.4.1
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T008** [Dependency Audit] MAJOR update: starlette 0.48.0 -> 1.0.0
+  - Priority: P1-High | Effort: Small
+- [ ] [P] **T009** [Dependency Audit] Minor update: fastapi 0.117.1 -> 0.136.1
+  - Priority: P1-High | Effort: Small
+- [ ] [P] **T010** [Dependency Audit] MAJOR update: pydantic-ai 0.64.0 -> 1.88.0
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T011** [Dependency Audit] Minor update: uvicorn 0.37.0 -> 0.46.0
+  - Priority: P1-High | Effort: Small
+- [ ] [P] **T012** [Dependency Audit] MAJOR update: langfuse 2.0.0 -> 4.5.1
+  - Priority: P1-High | Effort: Small
+- [ ] [P] **T013** [Codebase Optimization] 4 monolithic files (>1000 lines) — consider splitting into p
+  - Priority: P0-Critical | Effort: Large
+- [ ] [P] **T014** [Codebase Optimization] High code duplication ratio: 46.8%
+  - Priority: P0-Critical | Effort: Small
+- [ ] [P] **T015** [Test Coverage] Low test-to-source ratio: 0.02
+  - Priority: P0-Critical | Effort: Small
+- [ ] [P] **T016** [Test Coverage] Test suite lacks intent diversity (only one type)
+  - Priority: P0-Critical | Effort: Medium
+- [ ] [P] **T017** [Test Coverage] 17 potential doc-test drift items
+  - Priority: P0-Critical | Effort: Small
+- [ ] [P] **T018** [Documentation & Governance] README.md missing sections: overview, installation, usage|qu
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T019** [Documentation & Governance] README missing: Has a Table of Contents
+  - Priority: P1-High | Effort: Small
+- [ ] [P] **T020** [Documentation & Governance] README missing: Has installation instructions
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T021** [Documentation & Governance] README missing: Has usage examples with code blocks
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T022** [Documentation & Governance] README missing: References /docs directory material
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T023** [Documentation & Governance] AGENTS.md missing sections: tech stack, project structure
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T024** [Documentation & Governance] No LICENSE file found
+  - Priority: P1-High | Effort: Small
+- [ ] [P] **T025** [Architecture & Design Patterns] SRP: 4 modules exceed 500 lines (god modules)
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T026** [Architecture & Design Patterns] SRP: 2 classes have >15 methods
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T027** [Architecture & Design Patterns] Low dependency injection ratio: 0%
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T028** [Concept Traceability] No CONCEPT markers found — traceability not implemented
+  - Priority: P0-Critical | Effort: Medium
+- [ ] [P] **T029** [Concept Traceability] 2 test functions missing concept markers
+  - Priority: P0-Critical | Effort: Small
+- [ ] [P] **T030** [Concept Traceability] 76 significant functions (>10 lines) missing concept markers
+  - Priority: P0-Critical | Effort: Medium
+- [ ] [P] **T031** [Linting & Formatting] Total lint findings: 2 (high/error: 0, medium/warning: 2, lo
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T032** [Linting & Formatting] bandit: not available in PATH
+  - Priority: P4-Enhancement | Effort: Small
+- [ ] [P] **T033** [Pre-Commit Compliance] 1/21 pre-commit hooks failed: don't commit to branch
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T034** [Pre-Commit Compliance] 2 hook(s) may be outdated: ruff-pre-commit, uv-pre-commit
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T035** [Pre-Commit Compliance] Pytest hooks skipped (handled by CE-016 Test Execution): pyt
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T036** [Test Execution] No tests were executed (test framework detected but no tests
+  - Priority: P0-Critical | Effort: Medium
+- [ ] [P] **T037** [Test Execution] 1 test execution error(s)
+  - Priority: P0-Critical | Effort: Small
+- [ ] [P] **T038** [Directory Organization] 1 directories with >20 files: src/components/ui
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T039** [Version Sync Analysis] All version '0.1.36' declarations appear to be tracked corre
+  - Priority: P4-Enhancement | Effort: Medium

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-webui"
-version = "0.1.36"
+version = "0.1.37"
 description = "Agent Web Interface for Pydantic AI Agents"
 readme = "README.md"
 classifiers = [
@@ -16,10 +16,10 @@ classifiers = [
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "fastapi>=0.117.1",
-    "langfuse>=2.0.0",
-    "pydantic-ai>=0.64.0",
+    "langfuse>=4.5.1",
+    "pydantic-ai>=1.88.0",
     "sse-starlette>=3.0.2",
-    "starlette>=0.48.0",
+    "starlette>=1.0.0",
     "uvicorn>=0.37.0",
     "watchfiles>=1.1.0",
     "logfire[fastapi,starlette]"
