@@ -16,8 +16,8 @@ wheels = [
 
 [[package]]
 name = "agent-utilities"
-version = "0.2.41"
-source = { directory = "../agent-utilities" }
+version = "0.2.42"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "ladybug" },
@@ -33,6 +33,10 @@ dependencies = [
     { name = "tree-sitter" },
     { name = "urllib3" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/71/5e/d67065b4e7b8450f720ee593a6b01f2a459f61222e10a26e65cb733cb714/agent_utilities-0.2.42.tar.gz", hash = "sha256:5959d3cc29c9e128affd29cff640f8d0dd27575e4a7a64cccd6d7fb6d72ed606", size = 685987, upload-time = "2026-04-30T07:08:33.25Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/16/647deae692770a44f6a9192072478e06b2757227ae3d1df7ab5732b1464a/agent_utilities-0.2.42-py3-none-any.whl", hash = "sha256:46eeb56372805d4e97f8fc610f9757401ed38970fa4d49f6c470b928b705a504", size = 833403, upload-time = "2026-04-30T07:08:30.782Z" },
+]
 
 [package.optional-dependencies]
 graph = [
@@ -43,82 +47,9 @@ graph = [
     { name = "tree-sitter-typescript" },
 ]
 
-[package.metadata]
-requires-dist = [
-    { name = "acpkit", extras = ["pydantic"], marker = "extra == 'acp'", directory = "../../open-source-libraries/acpkit" },
-    { name = "agent-terminal-ui", marker = "extra == 'terminal'", directory = "../agent-terminal-ui" },
-    { name = "agent-utilities", extras = ["agent"], marker = "extra == 'logfire'", specifier = ">=0.2.41" },
-    { name = "agent-utilities", extras = ["agent", "graph", "acp", "owl"], marker = "extra == 'test'" },
-    { name = "agent-utilities", extras = ["embeddings"], marker = "extra == 'embeddings-huggingface'", specifier = ">=0.2.41" },
-    { name = "agent-utilities", extras = ["embeddings"], marker = "extra == 'embeddings-ollama'", specifier = ">=0.2.41" },
-    { name = "agent-utilities", extras = ["embeddings"], marker = "extra == 'embeddings-openai'", specifier = ">=0.2.41" },
-    { name = "agent-utilities", extras = ["mcp", "ag-ui", "terminal"], marker = "extra == 'agent'", specifier = ">=0.2.41" },
-    { name = "agent-utilities", extras = ["mcp", "agent", "agent-google", "agent-groq", "agent-mistral", "agent-anthropic", "agent-huggingface", "embeddings-openai", "embeddings-huggingface", "embeddings-ollama", "logfire", "acp", "graph", "browser", "test", "owl", "stardog", "vault", "auth"], marker = "extra == 'all'", specifier = ">=0.2.41" },
-    { name = "agent-utilities", extras = ["owl"], marker = "extra == 'stardog'" },
-    { name = "agent-webui", marker = "extra == 'ag-ui'", directory = "." },
-    { name = "authlib", marker = "extra == 'auth'", specifier = ">=1.4.0" },
-    { name = "cryptography", specifier = ">=47.0.0" },
-    { name = "eunomia-mcp", marker = "extra == 'mcp'", specifier = ">=0.3.10" },
-    { name = "falkordb", marker = "extra == 'falkordb'", specifier = ">=1.0.1" },
-    { name = "fastapi", marker = "extra == 'mcp'", specifier = ">=0.131.0" },
-    { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.2.0" },
-    { name = "httpx", marker = "extra == 'mcp'", specifier = ">=0.28.1" },
-    { name = "hvac", marker = "extra == 'vault'", specifier = ">=2.3.0" },
-    { name = "hypothesis", marker = "extra == 'test'", specifier = ">=6.152.1" },
-    { name = "ladybug", specifier = ">=0.15.3" },
-    { name = "ladybug", marker = "extra == 'graph'", specifier = ">=0.15.3" },
-    { name = "llama-index-core", marker = "extra == 'embeddings'", specifier = ">=0.14.15" },
-    { name = "llama-index-embeddings-huggingface", marker = "extra == 'embeddings-huggingface'", specifier = ">=0.6.1" },
-    { name = "llama-index-embeddings-ollama", marker = "extra == 'embeddings-ollama'", specifier = ">=0.8.6" },
-    { name = "llama-index-embeddings-openai", marker = "extra == 'embeddings-openai'", specifier = ">=0.5.1" },
-    { name = "mutmut", marker = "extra == 'test'" },
-    { name = "mypy", marker = "extra == 'test'" },
-    { name = "neo4j", marker = "extra == 'neo4j'", specifier = ">=6.1.0" },
-    { name = "networkx", specifier = ">=3.0" },
-    { name = "networkx", marker = "extra == 'graph'", specifier = ">=3.0" },
-    { name = "numpy" },
-    { name = "opentelemetry-instrumentation-asgi", marker = "extra == 'test'" },
-    { name = "opentelemetry-instrumentation-fastapi", marker = "extra == 'test'" },
-    { name = "opentelemetry-instrumentation-starlette", marker = "extra == 'test'" },
-    { name = "owlready2", marker = "extra == 'owl'", specifier = ">=0.46" },
-    { name = "pathspec" },
-    { name = "playwright", marker = "extra == 'browser'", specifier = ">=1.49.1" },
-    { name = "pydantic", extras = ["email"], specifier = ">=2.8.2" },
-    { name = "pydantic-acp", marker = "extra == 'acp'", specifier = ">=0.1.0" },
-    { name = "pydantic-ai-skills", marker = "extra == 'agent'", specifier = ">=0.4.1" },
-    { name = "pydantic-ai-slim", extras = ["anthropic"], marker = "extra == 'agent-anthropic'", specifier = ">=1.73.0,<2.0.0" },
-    { name = "pydantic-ai-slim", extras = ["fastmcp", "openai", "a2a", "ag-ui", "web", "cli"], marker = "extra == 'agent'", specifier = ">=1.73.0,<2.0.0" },
-    { name = "pydantic-ai-slim", extras = ["google"], marker = "extra == 'agent-google'", specifier = ">=1.73.0,<2.0.0" },
-    { name = "pydantic-ai-slim", extras = ["groq"], marker = "extra == 'agent-groq'", specifier = ">=1.73.0,<2.0.0" },
-    { name = "pydantic-ai-slim", extras = ["huggingface"], marker = "extra == 'agent-huggingface'", specifier = ">=1.73.0,<2.0.0" },
-    { name = "pydantic-ai-slim", extras = ["logfire"], marker = "extra == 'logfire'", specifier = ">=1.73.0,<2.0.0" },
-    { name = "pydantic-ai-slim", extras = ["mistral"], marker = "extra == 'agent-mistral'", specifier = ">=1.73.0,<2.0.0" },
-    { name = "pydantic-graph", marker = "extra == 'agent'", specifier = ">=1.0.0" },
-    { name = "pydantic-settings", specifier = ">=2.0.0" },
-    { name = "pystardog", marker = "extra == 'stardog'", specifier = ">=0.20.0" },
-    { name = "pytest-asyncio", marker = "extra == 'test'" },
-    { name = "pytest-cov", marker = "extra == 'test'" },
-    { name = "pytest-env", marker = "extra == 'test'" },
-    { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "pyyaml", specifier = ">=6.0.0" },
-    { name = "rdflib", marker = "extra == 'owl'", specifier = ">=7.0.0" },
-    { name = "repository-manager", marker = "extra == 'test'", editable = "../agents/repository-manager" },
-    { name = "requests", specifier = ">=2.32.5" },
-    { name = "ruff", marker = "extra == 'test'" },
-    { name = "scipy" },
-    { name = "skill-graphs", marker = "extra == 'agent'", directory = "../skills/skill-graphs" },
-    { name = "tree-sitter", specifier = ">=0.23.2" },
-    { name = "tree-sitter-javascript", marker = "extra == 'graph'", specifier = ">=0.23.0" },
-    { name = "tree-sitter-python", marker = "extra == 'graph'", specifier = ">=0.23.0" },
-    { name = "tree-sitter-typescript", marker = "extra == 'graph'", specifier = ">=0.23.0" },
-    { name = "universal-skills", marker = "extra == 'agent'", directory = "../skills/universal-skills" },
-    { name = "urllib3", specifier = ">=2.3.0" },
-]
-provides-extras = ["mcp", "agent", "agent-google", "agent-groq", "agent-mistral", "agent-anthropic", "agent-huggingface", "ag-ui", "terminal", "browser", "acp", "embeddings", "embeddings-openai", "embeddings-huggingface", "embeddings-ollama", "logfire", "graph", "neo4j", "falkordb", "owl", "stardog", "vault", "auth", "test", "all"]
-
 [[package]]
 name = "agent-webui"
-version = "0.1.37"
+version = "0.1.38"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -146,7 +77,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-utilities", extras = ["graph"], marker = "extra == 'test'", directory = "../agent-utilities" },
+    { name = "agent-utilities", extras = ["graph"], marker = "extra == 'test'" },
     { name = "fastapi", specifier = ">=0.117.1" },
     { name = "langfuse", specifier = ">=4.5.1" },
     { name = "logfire", extras = ["fastapi", "starlette"] },
