@@ -81,21 +81,31 @@ def get_engine() -> IntelligenceGraphEngine:
 async def get_info() -> dict[str, str]:
     """Retrieve agent identity and user personalization metadata.
 
+    CONCEPT:KG-001 — Identity Management
+
     Returns:
         A dictionary containing agent name, description, and emojis.
     """
+    engine = IntelligenceGraphEngine.get_active()
+    if engine:
+        identity = engine.get_agent_identity()
+        return {
+            'name': identity.get('name', 'Agent'),
+            'description': identity.get('description', 'AI Agent'),
+            'emoji': identity.get('emoji', workspace_helpers.get('agent_emoji', '🤖')),
+            'user_emoji': '👤',
+        }
+
+    # Legacy fallback for edge cases during startup
     name = workspace_helpers.get('agent_name', 'Agent')
     description = workspace_helpers.get('agent_description', 'AI Agent')
     emoji = workspace_helpers.get('agent_emoji', '🤖')
-
-    user_emoji = '👤'
-    # User data now stored in Knowledge Graph - no longer reading from USER.md
 
     return {
         'name': name,
         'description': description,
         'emoji': emoji,
-        'user_emoji': user_emoji,
+        'user_emoji': '👤',
     }
 
 
@@ -264,9 +274,16 @@ async def delete_workspace_file(filename: str) -> dict[str, Any]:
 async def list_skills() -> list[dict[str, Any]]:
     """Retrieve the catalog of dynamic agent skills.
 
+    CONCEPT:KG-003 — Granular Resource Queries
+
     Returns:
         A list of skill definitions sorted alphabetically.
     """
+    engine = IntelligenceGraphEngine.get_active()
+    if engine:
+        return engine.get_skills()
+
+    # Legacy fallback
     list_skills_helper = get_helper('list_skills')
     if not list_skills_helper:
         raise HTTPException(status_code=501, detail='Skill helper not initialized')
@@ -278,12 +295,21 @@ async def list_skills() -> list[dict[str, Any]]:
 async def toggle_skill(skill_id: str) -> dict[str, Any]:
     """Enable or disable a specific agent skill.
 
+    CONCEPT:KG-003 — Granular Resource Queries
+
     Args:
         skill_id: The identifier of the skill to toggle.
 
     Returns:
         The resulting state of the toggled skill.
     """
+    engine = IntelligenceGraphEngine.get_active()
+    if engine:
+        try:
+            return engine.toggle_resource(skill_id)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
+
     toggle_helper = get_helper('toggle_skill')
     if not toggle_helper:
         raise HTTPException(status_code=501, detail='Skill helper not initialized')
@@ -291,18 +317,29 @@ async def toggle_skill(skill_id: str) -> dict[str, Any]:
 
 
 @router.post('/reload')
-async def reload_agent(request: Request) -> dict[str, str]:
-    """Trigger a full re-initialization of the agent's graph and workspace.
+async def reload_agent(request: Request) -> dict[str, Any]:
+    """Trigger a KG-first reload of the agent's configuration.
+
+    CONCEPT:KG-004 — Workspace Reload
 
     Args:
         request: The current FastAPI Request object.
 
     Returns:
-        Success message or error summary.
+        Structured change summary with counts of updated resources.
     """
     try:
-        workspace_helpers['initialize_workspace']()
+        engine = IntelligenceGraphEngine.get_active()
+        if engine:
+            changes = engine.reload_from_workspace()
+            return {
+                'status': 'success',
+                'message': 'Agent reloaded via Knowledge Graph',
+                **changes,
+            }
 
+        # Legacy fallback
+        workspace_helpers['initialize_workspace']()
         reloadable = getattr(request.app.state, 'reload_app', None)
         if not reloadable:
             raise HTTPException(
@@ -1423,3 +1460,211 @@ async def update_backend_config(data: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:
         logger.error(f'Failed to update backend config: {e}')
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Prompt Management (CONCEPT:KG-002)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@router.get('/prompts')
+async def list_prompts() -> list[dict[str, Any]]:
+    """List all prompts from the Knowledge Graph.
+
+    CONCEPT:KG-002 — Prompt Management
+
+    Returns:
+        A list of prompt dicts with id, name, content, and metadata.
+    """
+    engine = get_engine()
+    return engine.get_all_prompts()
+
+
+@router.get('/prompts/{prompt_id}')
+async def get_prompt(prompt_id: str) -> dict[str, Any]:
+    """Retrieve a single prompt by ID.
+
+    CONCEPT:KG-002 — Prompt Management
+
+    Args:
+        prompt_id: The unique identifier of the prompt.
+
+    Returns:
+        The prompt dict with full content.
+    """
+    engine = get_engine()
+    result = engine.get_prompt(prompt_id)
+    if not result:
+        raise HTTPException(status_code=404, detail=f'Prompt {prompt_id} not found')
+    return result
+
+
+@router.post('/prompts')
+async def create_prompt(data: dict[str, Any]) -> dict[str, Any]:
+    """Create a new prompt in the Knowledge Graph.
+
+    CONCEPT:KG-002 — Prompt Management
+
+    Args:
+        data: Dict with 'name', 'content', and optional 'description', 'author'.
+
+    Returns:
+        The created prompt dict.
+    """
+    engine = get_engine()
+    name = data.get('name', '')
+    content = data.get('content', '')
+    if not name or not content:
+        raise HTTPException(status_code=400, detail='name and content are required')
+    return engine.add_prompt(
+        content=content,
+        name=name,
+        author=data.get('author', 'user'),
+        description=data.get('description', ''),
+    )
+
+
+@router.put('/prompts/{prompt_id}')
+async def update_prompt(prompt_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Update a prompt, creating a new version via SUPERSEDES.
+
+    CONCEPT:KG-002 — Prompt Management
+
+    Args:
+        prompt_id: The identifier of the prompt to update.
+        data: Dict with 'content' and optional 'author'.
+
+    Returns:
+        The new version dict with version number and parent_id.
+    """
+    engine = get_engine()
+    content = data.get('content', '')
+    if not content:
+        raise HTTPException(status_code=400, detail='content is required')
+    try:
+        return engine.update_prompt(
+            prompt_id=prompt_id,
+            content=content,
+            author=data.get('author', 'user'),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.get('/prompts/{prompt_id}/versions')
+async def get_prompt_versions(prompt_id: str) -> list[dict[str, Any]]:
+    """Get version history for a prompt.
+
+    CONCEPT:KG-002 — Prompt Management
+
+    Args:
+        prompt_id: The identifier of the prompt.
+
+    Returns:
+        List of version dicts ordered newest-first.
+    """
+    engine = get_engine()
+    return engine.get_prompt_versions(prompt_id)
+
+
+@router.post('/prompts/{prompt_id}/rollback/{version_id}')
+async def rollback_prompt(prompt_id: str, version_id: str) -> dict[str, Any]:
+    """Rollback a prompt to a previous version.
+
+    CONCEPT:KG-002 — Prompt Management (AHE Rollback)
+
+    Creates a new version that copies the target's content.
+    Always forward, never destructive.
+
+    Args:
+        prompt_id: The current prompt identifier.
+        version_id: The target version to rollback to.
+
+    Returns:
+        The new version dict (a copy of the target).
+    """
+    engine = get_engine()
+    try:
+        return engine.rollback_prompt(prompt_id, version_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.get('/prompts/{prompt_id}/diff/{version_a}/{version_b}')
+async def diff_prompt_versions(
+    prompt_id: str, version_a: str, version_b: str
+) -> dict[str, Any]:
+    """Get a unified diff between two prompt versions.
+
+    CONCEPT:KG-002 — Prompt Management
+
+    Args:
+        prompt_id: The prompt family identifier (unused, for URL structure).
+        version_a: ID of the first version.
+        version_b: ID of the second version.
+
+    Returns:
+        Dict with 'diff' (unified diff string) and version metadata.
+    """
+    import difflib
+
+    engine = get_engine()
+    va = engine.get_prompt(version_a)
+    vb = engine.get_prompt(version_b)
+    if not va:
+        raise HTTPException(status_code=404, detail=f'Version {version_a} not found')
+    if not vb:
+        raise HTTPException(status_code=404, detail=f'Version {version_b} not found')
+
+    content_a = va.get('content', va.get('system_prompt', '')).splitlines(keepends=True)
+    content_b = vb.get('content', vb.get('system_prompt', '')).splitlines(keepends=True)
+    diff_lines = list(
+        difflib.unified_diff(
+            content_a,
+            content_b,
+            fromfile=f'{version_a} ({va.get("timestamp", "")})',
+            tofile=f'{version_b} ({vb.get("timestamp", "")})',
+        )
+    )
+    return {
+        'diff': ''.join(diff_lines),
+        'version_a': {'id': version_a, 'timestamp': va.get('timestamp', '')},
+        'version_b': {'id': version_b, 'timestamp': vb.get('timestamp', '')},
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Tools Management (CONCEPT:KG-003)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@router.get('/tools')
+async def list_tools() -> list[dict[str, Any]]:
+    """List MCP tools from the Knowledge Graph.
+
+    CONCEPT:KG-003 — Granular Resource Queries
+
+    Returns:
+        A list of MCP tool dicts sorted alphabetically.
+    """
+    engine = get_engine()
+    return engine.get_tools()
+
+
+@router.post('/tools/{tool_id}/toggle')
+async def toggle_tool(tool_id: str) -> dict[str, Any]:
+    """Toggle the enabled/disabled KG flag on an MCP tool.
+
+    CONCEPT:KG-003 — Granular Resource Queries
+
+    Args:
+        tool_id: The identifier of the tool to toggle.
+
+    Returns:
+        The resulting state of the toggled tool.
+    """
+    engine = get_engine()
+    try:
+        return engine.toggle_resource(tool_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e

@@ -1,0 +1,71 @@
+# Tasks: Code Enhancement: agent-webui
+
+Generated: 2026-05-01T00:58:13.903446+00:00
+Skipped informational: 9
+
+- [ ] [P] **T001** [Dependency Audit] MAJOR update: starlette 0.50.0 (installed) -> 1.0.0
+  - Priority: P2-Medium | Effort: Small
+- [ ] [P] **T002** [Dependency Audit] Minor update: sse-starlette 3.0.3 (installed) -> 3.4.1
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T003** [Dependency Audit] Minor update: uvicorn 0.38.0 (installed) -> 0.46.0
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T004** [Dependency Audit] Minor update: pydantic-ai 1.83.0 (installed) -> 1.88.0
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T005** [Dependency Audit] Minor update: opentelemetry-instrumentation-starlette 0.60b1 (installed) -> 0.62
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T006** [Dependency Audit] Minor update: opentelemetry-instrumentation-fastapi 0.60b1 (installed) -> 0.62b1
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T007** [Dependency Audit] Minor update: opentelemetry-instrumentation-asgi 0.60b1 (installed) -> 0.62b1
+  - Priority: P3-Low | Effort: Small
+- [ ] [P] **T008** [Codebase Optimization] Monolithic: api_extensions.py (1670L) — Low cohesion: 69 distinct concepts in on
+  - Priority: P1-High | Effort: Large
+- [ ] [P] **T009** [Security Analysis] 4 MEDIUM severity vulnerabilities found
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T010** [Test Coverage] Low test-to-source ratio: 0.02
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T011** [Test Coverage] Test suite lacks intent diversity (only one type)
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T012** [Test Coverage] 21 potential doc-test drift items
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T013** [Documentation & Governance] README missing: References /docs directory material
+  - Priority: P4-Enhancement | Effort: Small
+- [ ] [P] **T014** [Architecture & Design Patterns] SRP: 4 modules exceed 500 lines (god modules)
+  - Priority: P2-Medium | Effort: Large
+- [ ] [P] **T015** [Architecture & Design Patterns] SRP: 2 classes have >15 methods
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T016** [Architecture & Design Patterns] Low dependency injection ratio: 0%
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T017** [Concept Traceability] Low traceability ratio: 0% concepts fully traced
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T018** [Concept Traceability] 6 orphaned concepts (only in one source)
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T019** [Concept Traceability] 2 test functions missing concept markers
+  - Priority: P4-Enhancement | Effort: Small
+- [ ] [P] **T020** [Concept Traceability] 72 significant functions (>10 lines) missing concept markers in docstrings
+  - Priority: P4-Enhancement | Effort: Small
+- [ ] [P] **T021** [Linting & Formatting] Total lint findings: 2 (high/error: 0, medium/warning: 2, low: 0)
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T022** [Pre-Commit Compliance] 2 hook(s) may be outdated: ruff-pre-commit, uv-pre-commit
+  - Priority: P2-Medium | Effort: Small
+- [ ] [P] **T023** [Test Execution] 1 test execution error(s)
+  - Priority: P1-High | Effort: Medium
+- [ ] [P] **T024** [Directory Organization] 1 directories with >20 files: src/components/ui
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T025** [Version Sync Analysis] Found 2 file(s) with version '0.2.0' that are NOT tracked in .bumpversion.cfg:
+  - Priority: P2-Medium | Effort: Small
+- [ ] [P] **T026** [Version Sync Analysis]   - .specify/reports/results.json
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T027** [Version Sync Analysis]   - .specify/reports/code_enhancement_report.md
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T028** [Changelog Audit] Version drift: pyproject.toml=0.2.0 vs CHANGELOG.md=1.1.0
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T029** [Changelog Audit] No changelog entries within the last 30 days
+  - Priority: P3-Low | Effort: Medium
+- [ ] [P] **T030** [Pytest Quality] 1 tests have no assertions
+  - Priority: P4-Enhancement | Effort: Medium
+- [ ] [P] **T031** [Environment Variables] Only 4% of env vars documented in README.md
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T032** [Environment Variables] Undocumented env vars: AGENT_NAME, AGENT_WORKSPACE, ANTHROPIC_API_KEY, BASE_URL,
+  - Priority: P2-Medium | Effort: Medium
+- [ ] [P] **T033** [Environment Variables] 4 Python env vars not in .env.example: GRAPH_BACKEND, GRAPH_DB_PATH, OLLAMA_BASE
+  - Priority: P2-Medium | Effort: Medium

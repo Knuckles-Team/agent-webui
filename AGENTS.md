@@ -5,6 +5,31 @@
 > - Feature specifications and tasks: `.specify/specs/` and `.specify/tasks/`.
 > This file (`AGENTS.md`) is for system-prompt context; the SDD directory is the source of truth for architecture and new features.
 
+## Tech Stack
+
+- **Frontend Framework**: React 18 with TypeScript
+- **Styling**: Tailwind CSS and shadcn/ui components
+- **Routing & Tooling**: Vite, React Router, Radix UI
+- **Backend Framework**: FastAPI (Python)
+- **Agent Orchestration**: Pydantic AI with LadybugDB/Neo4j graph backends
+- **Database**: LanceDB for vectors, LadybugDB for knowledge graph
+
+## Project Structure
+
+```text
+agent-webui/
+├── agent/                  # Python backend application
+│   └── agent_webui/        # Core FastAPI and Pydantic AI integration
+├── src/                    # React frontend application
+│   ├── components/         # React components (ui, views, chat elements)
+│   ├── hooks/              # Custom React hooks
+│   └── lib/                # Utilities and protocol clients (ACP)
+├── docs/                   # Detailed documentation
+├── .specify/               # SDD architecture and specs
+├── AGENTS.md               # Developer/Agent guidelines
+└── pyproject.toml          # Python dependencies
+```
+
 ## Build, Lint, and Test Commands
 
 ### Frontend

@@ -1,21 +1,25 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Zap, ZapOff, Search, Tag as TagIcon, RefreshCw, LayoutGrid, List } from 'lucide-react'
+import { Zap, ZapOff, Search, Tag as TagIcon, RefreshCw, LayoutGrid, List, Wrench, Filter } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
 /**
- * Describes a single skill / capability exposed by the agent.
+ * Describes a single skill / capability / MCP tool exposed by the agent.
  *
- * The backend `GET /api/enhanced/skills` endpoint returns arbitrary dicts via
- * the `list_skills` workspace helper, so every field except `name` should be
- * treated as optional. We synthesize `id` when the helper omits it so React
- * keys stay stable.
+ * CONCEPT:KG-003 — Granular Resource Queries
  */
 interface Skill {
   id: string
@@ -24,6 +28,7 @@ interface Skill {
   enabled: boolean
   type?: string
   tags: string[]
+  source?: string
 }
 
 const UNTAGGED_GROUP = 'untagged'
@@ -74,6 +79,7 @@ function normalizeSkills(raw: unknown): Skill[] {
         enabled: rec.enabled === true,
         type: typeof rec.type === 'string' ? rec.type : undefined,
         tags,
+        source: typeof rec.source === 'string' ? rec.source : undefined,
       }
     })
     .filter((s): s is Skill => s !== null)
@@ -84,6 +90,7 @@ export default function SkillsView() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [groupByTag, setGroupByTag] = useState(false)
+  const [typeFilter, setTypeFilter] = useState<'all' | 'skill' | 'mcp_tool'>('all')
 
   useEffect(() => {
     void fetchSkills()
@@ -92,17 +99,35 @@ export default function SkillsView() {
   const fetchSkills = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/enhanced/skills')
-      if (!res.ok) {
-        toast.error(await extractErrorMessage(res, 'Failed to load skills'))
-        return
+      // Fetch from both /skills and /tools endpoints (CONCEPT:KG-003)
+      const [skillsRes, toolsRes] = await Promise.allSettled([
+        fetch('/api/enhanced/skills'),
+        fetch('/api/enhanced/tools'),
+      ])
+
+      let allItems: Skill[] = []
+
+      if (skillsRes.status === 'fulfilled' && skillsRes.value.ok) {
+        const skillData = (await skillsRes.value.json()) as unknown
+        allItems.push(...normalizeSkills(skillData))
       }
-      const data = (await res.json()) as unknown
-      const normalized = normalizeSkills(data)
-      normalized.sort((a, b) => a.name.localeCompare(b.name))
-      setSkills(normalized)
+
+      if (toolsRes.status === 'fulfilled' && toolsRes.value.ok) {
+        const toolData = (await toolsRes.value.json()) as unknown
+        const normalizedTools = normalizeSkills(toolData)
+        // Avoid duplicates
+        const existingIds = new Set(allItems.map((s) => s.id))
+        for (const tool of normalizedTools) {
+          if (!existingIds.has(tool.id)) {
+            allItems.push(tool)
+          }
+        }
+      }
+
+      allItems.sort((a, b) => a.name.localeCompare(b.name))
+      setSkills(allItems)
     } catch (_err) {
-      toast.error('Failed to load skills')
+      toast.error('Failed to load skills and tools')
     } finally {
       setLoading(false)
     }
@@ -130,16 +155,24 @@ export default function SkillsView() {
   }
 
   const filteredSkills = useMemo(() => {
+    let filtered = skills
+
+    // Type filter (CONCEPT:KG-003)
+    if (typeFilter !== 'all') {
+      filtered = filtered.filter((s) => s.type === typeFilter)
+    }
+
+    // Text search
     const query = searchQuery.trim().toLowerCase()
-    if (!query) return skills
-    return skills.filter((skill) => {
+    if (!query) return filtered
+    return filtered.filter((skill) => {
       if (skill.name.toLowerCase().includes(query)) return true
       if (skill.description?.toLowerCase().includes(query)) return true
       if (skill.id.toLowerCase().includes(query)) return true
       if (skill.tags.some((t) => t.toLowerCase().includes(query))) return true
       return false
     })
-  }, [skills, searchQuery])
+  }, [skills, searchQuery, typeFilter])
 
   /**
    * Groups the filtered skills by tag. Skills without tags land in an
@@ -191,11 +224,24 @@ export default function SkillsView() {
                   <span className="ml-2">
                     · {enabledCount}/{skills.length} enabled
                     {totalTags > 0 && ` · ${totalTags} tags`}
+                    {skills.filter((s) => s.type === 'mcp_tool').length > 0 &&
+                      ` · ${skills.filter((s) => s.type === 'mcp_tool').length} MCP tools`}
                   </span>
                 )}
               </CardDescription>
             </div>
             <div className="flex gap-2">
+              <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'all' | 'skill' | 'mcp_tool')}>
+                <SelectTrigger className="w-[130px] h-9">
+                  <Filter className="size-3.5 mr-1.5" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="skill">Skills</SelectItem>
+                  <SelectItem value="mcp_tool">MCP Tools</SelectItem>
+                </SelectContent>
+              </Select>
               <Button
                 variant="outline"
                 size="sm"
@@ -304,6 +350,25 @@ function SkillCard({ skill, onToggle }: { skill: Skill; onToggle: (id: string) =
               )}
             </div>
             <p className="text-xs text-muted-foreground font-mono truncate">{skill.id}</p>
+            {skill.source && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  'text-[9px] h-4 mt-0.5',
+                  skill.type === 'mcp_tool'
+                    ? 'border-purple-400/30 text-purple-400'
+                    : skill.source === 'universal-skills'
+                      ? 'border-blue-400/30 text-blue-400'
+                      : 'border-muted-foreground/30 text-muted-foreground',
+                )}
+              >
+                {skill.type === 'mcp_tool' ? (
+                  <><Wrench className="size-2.5 mr-0.5" />{skill.source}</>
+                ) : (
+                  skill.source
+                )}
+              </Badge>
+            )}
           </div>
         </div>
         <Switch

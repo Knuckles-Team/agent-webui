@@ -1,11 +1,18 @@
-# [1.1.0](https://github.com/pydantic/ai-chat-ui/compare/v1.0.0...v1.1.0) (2026-02-16)
+# Changelog
 
-### Features
+All notable changes to this project will be documented in this file.
 
-- display tool error text in modal dialog ([#11](https://github.com/pydantic/ai-chat-ui/issues/11)) ([eeba30c](https://github.com/pydantic/ai-chat-ui/commit/eeba30cc315bcd3efd553bf91aabac46647c7f56))
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-# 1.0.0 (2026-01-09)
+## [Unreleased]
 
-### Features
+## [1.1.0] - 2026-02-16
 
-- setup automation ([f966b87](https://github.com/pydantic/ai-chat-ui/commit/f966b87c3bd8627cc28730ff4b5034b395a4450a))
+### Added
+- display tool error text in modal dialog
+
+## [1.0.0] - 2026-01-09
+
+### Added
+- setup automation

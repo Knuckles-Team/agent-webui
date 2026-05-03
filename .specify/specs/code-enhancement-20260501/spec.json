@@ -1,0 +1,227 @@
+{
+  "feature_id": "code-enhancement-20260501",
+  "title": "Code Enhancement: agent-webui",
+  "created": "2026-05-01T00:58:13.903446+00:00",
+  "overview": "Automated code enhancement review for agent-webui. Covers 17 analysis domains.",
+  "user_stories": [
+    {
+      "role": "developer",
+      "action": "address Dependency Audit findings (grade: C, score: 70)",
+      "value": "improve project dependency audit from C to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Security Analysis findings (grade: F, score: 50)",
+      "value": "improve project security analysis from F to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Test Coverage findings (grade: F, score: 55)",
+      "value": "improve project test coverage from F to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Concept Traceability findings (grade: F, score: 41)",
+      "value": "improve project concept traceability from F to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Test Execution findings (grade: F, score: 20)",
+      "value": "improve project test execution from F to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Version Sync Analysis findings (grade: D, score: 60)",
+      "value": "improve project version sync analysis from D to at least B (80+)"
+    },
+    {
+      "role": "developer",
+      "action": "address Environment Variables findings (grade: D, score: 62)",
+      "value": "improve project environment variables from D to at least B (80+)"
+    }
+  ],
+  "functional_requirements": [
+    {
+      "id": "FR-001",
+      "description": "MAJOR update: starlette 0.50.0 (installed) -> 1.0.0",
+      "testable": true
+    },
+    {
+      "id": "FR-002",
+      "description": "Minor update: sse-starlette 3.0.3 (installed) -> 3.4.1",
+      "testable": true
+    },
+    {
+      "id": "FR-003",
+      "description": "Minor update: uvicorn 0.38.0 (installed) -> 0.46.0",
+      "testable": true
+    },
+    {
+      "id": "FR-004",
+      "description": "Minor update: pydantic-ai 1.83.0 (installed) -> 1.88.0",
+      "testable": true
+    },
+    {
+      "id": "FR-005",
+      "description": "Minor update: opentelemetry-instrumentation-starlette 0.60b1 (installed) -> 0.62b1",
+      "testable": true
+    },
+    {
+      "id": "FR-006",
+      "description": "Minor update: opentelemetry-instrumentation-fastapi 0.60b1 (installed) -> 0.62b1",
+      "testable": true
+    },
+    {
+      "id": "FR-007",
+      "description": "Minor update: opentelemetry-instrumentation-asgi 0.60b1 (installed) -> 0.62b1",
+      "testable": true
+    },
+    {
+      "id": "FR-008",
+      "description": "Monolithic: api_extensions.py (1670L) \u2014 Low cohesion: 69 distinct concepts in one file; 68 public functions \u2014 consider grouping into modules",
+      "testable": true
+    },
+    {
+      "id": "FR-009",
+      "description": "4 MEDIUM severity vulnerabilities found",
+      "testable": true
+    },
+    {
+      "id": "FR-010",
+      "description": "Low test-to-source ratio: 0.02",
+      "testable": true
+    },
+    {
+      "id": "FR-011",
+      "description": "Test suite lacks intent diversity (only one type)",
+      "testable": true
+    },
+    {
+      "id": "FR-012",
+      "description": "21 potential doc-test drift items",
+      "testable": true
+    },
+    {
+      "id": "FR-013",
+      "description": "README missing: References /docs directory material",
+      "testable": true
+    },
+    {
+      "id": "FR-014",
+      "description": "SRP: 4 modules exceed 500 lines (god modules)",
+      "testable": true
+    },
+    {
+      "id": "FR-015",
+      "description": "SRP: 2 classes have >15 methods",
+      "testable": true
+    },
+    {
+      "id": "FR-016",
+      "description": "Low dependency injection ratio: 0%",
+      "testable": true
+    },
+    {
+      "id": "FR-017",
+      "description": "Low traceability ratio: 0% concepts fully traced",
+      "testable": true
+    },
+    {
+      "id": "FR-018",
+      "description": "6 orphaned concepts (only in one source)",
+      "testable": true
+    },
+    {
+      "id": "FR-019",
+      "description": "2 test functions missing concept markers",
+      "testable": true
+    },
+    {
+      "id": "FR-020",
+      "description": "72 significant functions (>10 lines) missing concept markers in docstrings",
+      "testable": true
+    },
+    {
+      "id": "FR-021",
+      "description": "Total lint findings: 2 (high/error: 0, medium/warning: 2, low: 0)",
+      "testable": true
+    },
+    {
+      "id": "FR-022",
+      "description": "2 hook(s) may be outdated: ruff-pre-commit, uv-pre-commit",
+      "testable": true
+    },
+    {
+      "id": "FR-023",
+      "description": "1 test execution error(s)",
+      "testable": true
+    },
+    {
+      "id": "FR-024",
+      "description": "1 directories with >20 files: src/components/ui",
+      "testable": true
+    },
+    {
+      "id": "FR-025",
+      "description": "Found 2 file(s) with version '0.2.0' that are NOT tracked in .bumpversion.cfg:",
+      "testable": true
+    },
+    {
+      "id": "FR-026",
+      "description": "  - .specify/reports/results.json",
+      "testable": true
+    },
+    {
+      "id": "FR-027",
+      "description": "  - .specify/reports/code_enhancement_report.md",
+      "testable": true
+    },
+    {
+      "id": "FR-028",
+      "description": "Version drift: pyproject.toml=0.2.0 vs CHANGELOG.md=1.1.0",
+      "testable": true
+    },
+    {
+      "id": "FR-029",
+      "description": "No changelog entries within the last 30 days",
+      "testable": true
+    },
+    {
+      "id": "FR-030",
+      "description": "1 tests have no assertions",
+      "testable": true
+    },
+    {
+      "id": "FR-031",
+      "description": "Only 4% of env vars documented in README.md",
+      "testable": true
+    },
+    {
+      "id": "FR-032",
+      "description": "Undocumented env vars: AGENT_NAME, AGENT_WORKSPACE, ANTHROPIC_API_KEY, BASE_URL, DATABASE_PATH, GOOGLE_API_KEY, GRAPH_BACKEND, GRAPH_DB_PATH, GROQ_API_KEY, LANGFUSE_HOST",
+      "testable": true
+    },
+    {
+      "id": "FR-033",
+      "description": "4 Python env vars not in .env.example: GRAPH_BACKEND, GRAPH_DB_PATH, OLLAMA_BASE_URL, OLLAMA_HOST",
+      "testable": true
+    }
+  ],
+  "success_criteria": [
+    {
+      "metric": "Overall GPA",
+      "current": 2.35,
+      "target": 3.0
+    },
+    {
+      "metric": "Domains at B or above",
+      "current": 10,
+      "target": 17
+    },
+    {
+      "metric": "Actionable findings",
+      "current": 33,
+      "target": 0
+    }
+  ]
+}

@@ -20,11 +20,26 @@
 ![PyPI - Wheel](https://img.shields.io/pypi/wheel/agent-webui)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/agent-webui)
 
-_Version: 0.2.0_
+_Version: 0.3.0_
 
 A React-based chat interface for Pydantic AI Agents built using Agent Utilities.
 
 Built with [Vercel AI SDK](https://sdk.vercel.ai/) and designed to work with Pydantic AI's streaming chat API.
+
+## Overview
+
+Agent WebUI is a highly interactive, responsive chat interface designed specifically for complex agentic workflows. It visualizes background reasoning, renders tool invocations, and provides a real-time sideband view of parallel multi-agent graph execution.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Development](#development)
+- [Detailed Documentation](#detailed-documentation)
+- [License](#license)
 
 ## Features
 
@@ -185,6 +200,40 @@ Both MCP and A2A specialists are registered through the same code path. The fron
 - **Chat state**: Vercel AI SDK `useChat` hook for message streaming and tool execution
 - **Client state**: React Context and local component state
 - **Persistence**: localStorage for conversation IDs and preferences, server-side via `/api/enhanced/chats`
+
+## Installation
+
+Ensure you have [Node.js](https://nodejs.org/) (with `pnpm`) and [Python 3.11+](https://www.python.org/) installed.
+
+```sh
+# Clone the repository
+git clone https://github.com/pydantic/ai-chat-ui.git
+cd ai-chat-ui
+
+# Install frontend dependencies
+pnpm install
+
+# Install backend dependencies (in a virtual environment)
+cd agent
+uv venv
+source .venv/bin/activate
+uv pip install -e .
+cd ..
+```
+
+## Usage
+
+Start both the frontend and backend servers to run the interface:
+
+```sh
+# Terminal 1: Start the Python backend
+pnpm run dev:server
+
+# Terminal 2: Start the Vite frontend dev server
+pnpm run dev
+```
+
+Navigate to `http://localhost:5173` to interact with the agent.
 
 ## Development
 

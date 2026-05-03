@@ -24,6 +24,7 @@ import GraphView from './components/views/GraphView'
 import OpsPanelView from './components/views/OpsPanelView'
 import MagmaView from './components/views/MagmaView'
 import CypherReplView from './components/views/CypherReplView'
+import PromptsView from './components/views/PromptsView'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
@@ -40,7 +41,7 @@ const queryClient = new QueryClient()
  * providers for theme, sidebar, MCP tools, and data fetching.
  */
 export default function App() {
-  /** Possible views: 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'ops', 'magma', 'cypher' */
+  /** Possible views: 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'ops', 'magma', 'cypher', 'prompts' */
   const [currentView, setCurrentView] = useState('chat')
 
   /**
@@ -59,6 +60,7 @@ export default function App() {
       else if (path === '/ops') setCurrentView('ops')
       else if (path === '/magma') setCurrentView('magma')
       else if (path === '/cypher') setCurrentView('cypher')
+      else if (path === '/prompts') setCurrentView('prompts')
       else setCurrentView('chat')
     }
 
@@ -137,6 +139,12 @@ export default function App() {
                       {currentView === 'ops' && <OpsPanelView />}
                       {currentView === 'magma' && <MagmaView />}
                       {currentView === 'cypher' && <CypherReplView />}
+                      {currentView === 'prompts' && (
+                        <>
+                          <h1 className="text-2xl font-bold mb-4">Prompts</h1>
+                          <PromptsView />
+                        </>
+                      )}
                     </div>
                   </div>
                 )}

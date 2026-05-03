@@ -1,4 +1,4 @@
-import { CirclePlus, MessageCircle, Trash, Files, Zap, Book, Calendar, Settings, Pencil, Check, X, Network, Wrench, Compass, Terminal } from 'lucide-react'
+import { CirclePlus, MessageCircle, Trash, Files, Zap, Book, Calendar, Settings, Pencil, Check, X, Network, Wrench, Compass, Terminal, ScrollText } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
 import { toast } from 'sonner'
@@ -242,6 +242,19 @@ export function AppSidebar() {
                   >
                     <Zap />
                     <span>Skills</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Manage and version system prompts">
+                  <a
+                    href="/prompts"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <ScrollText />
+                    <span>Prompts</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
