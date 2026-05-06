@@ -10,7 +10,7 @@
     "access": "public",
     "provenance": true
   },
-  "version": "0.8.1",
+  "version": "0.8.2",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -110,5 +110,11 @@
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^4.1.4",
     "yaml-lint": "^1.7.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "unrs-resolver"
+    ]
   }
 }
