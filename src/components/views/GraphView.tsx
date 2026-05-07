@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { Network, Database, Brain, FileText, Clock, RefreshCw, Search, ZoomIn, ZoomOut, Maximize2, Download } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Network, Database, Brain, FileText, Clock, RefreshCw, Search } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { GraphCanvas } from '../knowledge-graph/GraphCanvas'
 
 interface GraphNode {
   id: string
@@ -36,173 +37,29 @@ export default function GraphView() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
-  const [graphLayout, setGraphLayout] = useState<'force' | 'hierarchical' | 'circular'>('force')
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [zoomLevel, setZoomLevel] = useState(1)
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
 
   useEffect(() => {
     void fetchData()
   }, [selectedNodeType])
 
-  // Canvas rendering effect
-  useEffect(() => {
-    if (activeTab === 'visualization' && canvasRef.current) {
-      renderGraph()
+  const handleUpdateNode = (id: string, properties: any) => {
+    setNodes(prev => prev.map(n => n.id === id ? { ...n, properties: { ...n.properties, ...properties } } : n))
+  }
+
+  const handleDeleteNode = (id: string) => {
+    setNodes(prev => prev.filter(n => n.id !== id))
+    setRelationships(prev => prev.filter(e => e.source !== id && e.target !== id))
+  }
+
+  const handleAddNode = (labels: string[], properties: any) => {
+    const newNode: GraphNode = {
+      id: `node_${Date.now()}`,
+      labels,
+      properties
     }
-  }, [activeTab, nodes, relationships, graphLayout, zoomLevel, panOffset, selectedNode])
-
-  const renderGraph = () => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    // Set canvas size
-    const rect = canvas.getBoundingClientRect()
-    canvas.width = rect.width
-    canvas.height = rect.height
-
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.save()
-    ctx.translate(panOffset.x, panOffset.y)
-    ctx.scale(zoomLevel, zoomLevel)
-
-    // Calculate node positions based on layout
-    const nodePositions = calculateNodePositions()
-
-    // Draw relationships
-    relationships.forEach(rel => {
-      const source = nodePositions.get(rel.source)
-      const target = nodePositions.get(rel.target)
-      if (source && target) {
-        ctx.beginPath()
-        ctx.moveTo(source.x, source.y)
-        ctx.lineTo(target.x, target.y)
-        ctx.strokeStyle = '#64748b'
-        ctx.lineWidth = 1
-        ctx.stroke()
-
-        // Draw arrow
-        const angle = Math.atan2(target.y - source.y, target.x - source.x)
-        const arrowLength = 10
-        ctx.beginPath()
-        ctx.moveTo(target.x, target.y)
-        ctx.lineTo(
-          target.x - arrowLength * Math.cos(angle - Math.PI / 6),
-          target.y - arrowLength * Math.sin(angle - Math.PI / 6)
-        )
-        ctx.lineTo(
-          target.x - arrowLength * Math.cos(angle + Math.PI / 6),
-          target.y - arrowLength * Math.sin(angle + Math.PI / 6)
-        )
-        ctx.closePath()
-        ctx.fillStyle = '#64748b'
-        ctx.fill()
-      }
-    })
-
-    // Draw nodes
-    nodes.forEach(node => {
-      const pos = nodePositions.get(node.id)
-      if (!pos) return
-
-      const mainType = node.labels.find(l => nodeTypeColors[l]) || node.labels[0]
-      const color = nodeTypeColors[mainType] || 'bg-muted'
-
-      // Extract color classes (simplified)
-      const bgColor = color.includes('blue') ? '#3b82f6' :
-                     color.includes('green') ? '#22c55e' :
-                     color.includes('purple') ? '#a855f7' :
-                     color.includes('orange') ? '#f97316' :
-                     color.includes('red') ? '#ef4444' : '#64748b'
-
-      // Draw node circle
-      ctx.beginPath()
-      ctx.arc(pos.x, pos.y, 20, 0, 2 * Math.PI)
-      ctx.fillStyle = bgColor
-      ctx.fill()
-      ctx.strokeStyle = selectedNode?.id === node.id ? '#ffffff' : '#1e293b'
-      ctx.lineWidth = selectedNode?.id === node.id ? 3 : 1
-      ctx.stroke()
-
-      // Draw node label
-      ctx.fillStyle = '#ffffff'
-      ctx.font = '10px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(node.id.substring(0, 10), pos.x, pos.y + 35)
-    })
-
-    ctx.restore()
+    setNodes(prev => [...prev, newNode])
   }
 
-  const calculateNodePositions = () => {
-    const positions = new Map<string, { x: number; y: number }>()
-    const canvas = canvasRef.current
-    if (!canvas) return positions
-
-    const centerX = canvas.width / 2 / zoomLevel - panOffset.x / zoomLevel
-    const centerY = canvas.height / 2 / zoomLevel - panOffset.y / zoomLevel
-
-    if (graphLayout === 'circular') {
-      const radius = Math.min(canvas.width, canvas.height) / 3
-      nodes.forEach((node, i) => {
-        const angle = (2 * Math.PI * i) / nodes.length
-        positions.set(node.id, {
-          x: centerX + radius * Math.cos(angle),
-          y: centerY + radius * Math.sin(angle)
-        })
-      })
-    } else if (graphLayout === 'hierarchical') {
-      const levels = groupNodesByLevel()
-      let y = 50
-      Object.entries(levels).forEach(([, levelNodes]) => {
-        const xStep = canvas.width / (levelNodes.length + 1)
-        levelNodes.forEach((node, i) => {
-          positions.set(node.id, {
-            x: xStep * (i + 1),
-            y: y
-          })
-        })
-        y += 100
-      })
-    } else {
-      // Force layout (simplified)
-      nodes.forEach((node) => {
-        const angle = Math.random() * 2 * Math.PI
-        const radius = 100 + Math.random() * 200
-        positions.set(node.id, {
-          x: centerX + radius * Math.cos(angle),
-          y: centerY + radius * Math.sin(angle)
-        })
-      })
-    }
-
-    return positions
-  }
-
-  const groupNodesByLevel = () => {
-    const levels: Record<string, GraphNode[]> = {}
-    nodes.forEach((node, i) => {
-      const level = Math.floor(i / 5).toString()
-      if (!levels[level]) levels[level] = []
-      levels[level].push(node)
-    })
-    return levels
-  }
-
-  const exportGraph = () => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const link = document.createElement('a')
-    link.download = 'graph-visualization.png'
-    link.href = canvas.toDataURL()
-    link.click()
-    toast.success('Graph exported as PNG')
-  }
 
   const fetchData = async () => {
     try {
@@ -482,83 +339,27 @@ export default function GraphView() {
 
         {/* Visualization Tab */}
         <TabsContent value="visualization" className="space-y-4">
-          <Card>
-            <CardHeader>
+          <Card className="h-full">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-lg">Interactive Graph Visualization</CardTitle>
-                  <CardDescription>Visualize graph topology with interactive controls</CardDescription>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant={graphLayout === 'force' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setGraphLayout('force')}
-                  >
-                    Force
-                  </Button>
-                  <Button
-                    variant={graphLayout === 'hierarchical' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setGraphLayout('hierarchical')}
-                  >
-                    Hierarchical
-                  </Button>
-                  <Button
-                    variant={graphLayout === 'circular' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setGraphLayout('circular')}
-                  >
-                    Circular
-                  </Button>
+                  <CardDescription>Visualize and edit graph topology with intelligent clustering for 100K+ scaling</CardDescription>
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="flex gap-2 mb-4">
-                <Button variant="outline" size="sm" onClick={() => setZoomLevel(Math.min(zoomLevel + 0.2, 3))}>
-                  <ZoomIn className="size-4" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setZoomLevel(Math.max(zoomLevel - 0.2, 0.2))}>
-                  <ZoomOut className="size-4" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => { setZoomLevel(1); setPanOffset({ x: 0, y: 0 }) }}>
-                  <Maximize2 className="size-4" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => void fetchData()}>
-                  <RefreshCw className="size-4" />
-                </Button>
-                <div className="flex-1" />
-                <Button variant="outline" size="sm" onClick={() => exportGraph()}>
-                  <Download className="size-4" />
-                </Button>
-              </div>
-              <div className="relative border rounded-lg overflow-hidden" style={{ height: '600px' }}>
-                <canvas
-                  ref={canvasRef}
-                  className="w-full h-full bg-background"
-                  style={{ cursor: 'grab' }}
-                  onMouseDown={(e) => { e.currentTarget.style.cursor = 'grabbing' }}
-                  onMouseUp={(e) => { e.currentTarget.style.cursor = 'grab' }}
+            <CardContent className="h-[600px] p-0 relative">
+              {activeTab === 'visualization' && (
+                <GraphCanvas
+                  nodes={nodes}
+                  relationships={relationships}
+                  onUpdateNode={handleUpdateNode}
+                  onDeleteNode={handleDeleteNode}
+                  onAddNode={handleAddNode}
+                  selectedNodeExternally={selectedNode}
+                  onSelectNode={setSelectedNode}
                 />
-                {selectedNode && (
-                  <div className="absolute top-4 right-4 w-80 bg-background border rounded-lg p-4 shadow-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-semibold">Node Details</h4>
-                      <Button variant="ghost" size="sm" onClick={() => setSelectedNode(null)}>
-                        ×
-                      </Button>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      <div><span className="font-medium">ID:</span> {selectedNode.id}</div>
-                      <div><span className="font-medium">Labels:</span> {selectedNode.labels.join(', ')}</div>
-                      {Object.entries(selectedNode.properties).slice(0, 5).map(([key, value]) => (
-                        <div key={key}><span className="font-medium">{key}:</span> {String(value)}</div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

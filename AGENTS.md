@@ -5,6 +5,12 @@
 > - Feature specifications and tasks: `.specify/specs/` and `.specify/tasks/`.
 > This file (`AGENTS.md`) is for system-prompt context; the SDD directory is the source of truth for architecture and new features.
 
+<!-- Ecosystem Concepts (cross-project, from agent-utilities kernel) -->
+<!-- CONCEPT:ECO-4.7 Ecosystem Topology Map — classified as FrontendPackage -->
+<!-- CONCEPT:KG-2.18 Topological Graph Visualization — owned by this project -->
+<!-- CONCEPT:KG-2.14 Project-Aware Context — AGENTS.md auto-loaded by kernel -->
+<!-- CONCEPT:KG-2.19 Cross-Pillar Synergy Engine — topology consumer -->
+
 ## Tech Stack
 
 - **Frontend Framework**: React 18 with TypeScript
@@ -21,7 +27,7 @@ agent-webui/
 ├── agent/                  # Python backend application
 │   └── agent_webui/        # Core FastAPI and Pydantic AI integration
 ├── src/                    # React frontend application
-│   ├── components/         # React components (ui, views, chat elements)
+│   ├── components/         # React components (ui, views, chat elements, knowledge-graph)
 │   ├── hooks/              # Custom React hooks
 │   └── lib/                # Utilities and protocol clients (ACP)
 ├── docs/                   # Detailed documentation
