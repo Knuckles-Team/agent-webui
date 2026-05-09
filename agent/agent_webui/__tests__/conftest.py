@@ -24,6 +24,9 @@ _SHARED_FIXTURES_SRC = Path(__file__).resolve().parents[3] / 'tests' / 'conftest
 _MODULE_NAME = '_agent_webui_shared_fixtures'
 
 if _SHARED_FIXTURES_SRC.is_file() and _MODULE_NAME not in sys.modules:
+    import pytest
+
+    pytest.register_assert_rewrite(_MODULE_NAME)
     _spec = importlib.util.spec_from_file_location(_MODULE_NAME, _SHARED_FIXTURES_SRC)
     if _spec is not None and _spec.loader is not None:
         _mod = importlib.util.module_from_spec(_spec)

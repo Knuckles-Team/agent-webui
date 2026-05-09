@@ -26,7 +26,7 @@ def temp_db():
 @pytest.fixture
 def mock_graph_engine():
     """Mock intelligence graph engine."""
-    from agent_utilities.knowledge_graph.engine import IntelligenceGraphEngine
+    from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
 
     engine = MagicMock(spec=IntelligenceGraphEngine)
     engine.query_cypher.return_value = []
@@ -83,7 +83,7 @@ def mock_sdd_manager():
 @pytest.fixture
 def mock_maintainer():
     """Mock graph maintainer."""
-    from agent_utilities.knowledge_graph.maintainer import GraphMaintainer
+    from agent_utilities.knowledge_graph.core.maintainer import GraphMaintainer
 
     maintainer = MagicMock(spec=GraphMaintainer)
     maintainer.get_status.return_value = {
@@ -323,7 +323,7 @@ def patch_graph_engine(monkeypatch):
 
     def patch_get_active(engine_mock):
         monkeypatch.setattr(
-            'agent_utilities.knowledge_graph.engine.IntelligenceGraphEngine.get_active',
+            'agent_utilities.knowledge_graph.core.engine.IntelligenceGraphEngine.get_active',
             lambda: engine_mock,
         )
         return engine_mock

@@ -1,9 +1,8 @@
 fastapi>=0.117.1
-logfire[fastapi,starlette]>=4.9.0
-pip>=25.2
-pydantic-ai-slim[anthropic,cli,google,openai]>=1.14.0
-pyright>=1.1.405
-sse-starlette>=3.0.2
-starlette>=0.48.0
-uvicorn>=0.37.0
+langfuse>=4.5.1
+pydantic-ai>=1.88.0
+sse-starlette>=3.4.1
+starlette>=1.0.0
+uvicorn>=0.46.0
 watchfiles>=1.1.0
+logfire[fastapi,starlette]

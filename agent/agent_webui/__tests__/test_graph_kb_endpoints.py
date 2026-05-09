@@ -19,7 +19,7 @@ def client():
 
 @pytest.fixture
 def mock_graph_engine():
-    from agent_utilities.knowledge_graph.engine import IntelligenceGraphEngine
+    from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
 
     engine = MagicMock(spec=IntelligenceGraphEngine)
     engine.backend = MagicMock()

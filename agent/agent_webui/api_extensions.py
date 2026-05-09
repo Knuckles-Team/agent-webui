@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any
 
-from agent_utilities.knowledge_graph.engine import IntelligenceGraphEngine
+from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
+from agent_utilities.knowledge_graph.core.maintainer import GraphMaintainer
 from agent_utilities.knowledge_graph.kb.ingestion import KBIngestionEngine
-from agent_utilities.knowledge_graph.maintainer import GraphMaintainer
 from agent_utilities.knowledge_graph.pipeline.phases import PHASES
 from agent_utilities.knowledge_graph.pipeline.runner import PipelineRunner
 from agent_utilities.knowledge_graph.pipeline.types import PipelineContext
