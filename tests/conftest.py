@@ -40,6 +40,7 @@ def mock_graph_engine():
     engine.list_callable_resources.return_value = []
     engine.spawn_specialized_agent.return_value = MagicMock()
     from agent_utilities.knowledge_graph.backends.base import GraphBackend
+
     engine.backend = MagicMock(spec=GraphBackend)
     engine.graph = nx.MultiDiGraph()
 
@@ -56,7 +57,9 @@ def mock_kb_engine():
     engine.list_bases.return_value = []
     engine.search.return_value = []
     engine.get_article.return_value = None
-    engine.health_check = AsyncMock(return_value={'health_status': 'healthy', 'issues': []})
+    engine.health_check = AsyncMock(
+        return_value={'health_status': 'healthy', 'issues': []}
+    )
     engine.update = AsyncMock(return_value=None)
 
     return engine

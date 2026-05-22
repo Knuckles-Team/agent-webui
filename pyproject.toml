@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-webui"
-version = "0.12.1"
+version = "0.12.2"
 description = "Agent Web Interface for Pydantic AI Agents"
 readme = "README.md"
 classifiers = [
@@ -27,6 +27,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
+    "pytest-xdist>=3.6.0",
     "pytest",
     "pytest-asyncio", "pytest-cov",
     "pytest-env",

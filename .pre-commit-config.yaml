@@ -74,7 +74,7 @@ repos:
   - id: pytest
     name: pytest
     entry: bash -c 'if [ -f uv.lock ]; then uv run --locked --extra test pytest
-      -v -s; else pytest -v -s; fi'
+      -v -s; else pytest -n auto -v -s; fi'
     language: system
     types: [python]
     pass_filenames: false
