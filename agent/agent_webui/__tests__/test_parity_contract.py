@@ -35,6 +35,7 @@ ENHANCED_PREFIX = '/api/enhanced'
 
 ALLOWED_URL_PREFIXES = (
     '/api/enhanced/',
+    '/api/dashboard/',
     '/mcp/',
     '/ag-ui',
     '/stream',

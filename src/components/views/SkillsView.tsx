@@ -1,400 +1,615 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Zap, ZapOff, Search, Tag as TagIcon, RefreshCw, LayoutGrid, List, Wrench, Filter } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import {
+  Wrench,
+  Code,
+  Zap,
+  Network,
+  GitBranch,
+  RefreshCw,
+  Search,
+  CheckCircle,
+  ChevronDown,
+  ChevronUp,
+  Sliders,
+  Layers
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 
-/**
- * Describes a single skill / capability / MCP tool exposed by the agent.
- *
- * CONCEPT:KG-003 — Granular Resource Queries
- */
+interface MCPTool {
+  name: string
+  type: string
+  command: string
+  args: string[]
+  status: string
+  enabled: boolean
+}
+
+interface BuiltinTool {
+  name: string
+  type: string
+  file_path: string
+  status: string
+  enabled: boolean
+}
+
 interface Skill {
   id: string
   name: string
   description?: string
   enabled: boolean
-  type?: string
   tags: string[]
-  source?: string
+  type: string
 }
 
-const UNTAGGED_GROUP = 'untagged'
-
-interface ErrorResponse {
-  detail?: string
+interface SkillGraph {
+  id: string
+  name: string
+  type: string
+  file_path: string
+  enabled: boolean
 }
 
-async function extractErrorMessage(res: Response, fallback: string): Promise<string> {
-  try {
-    const body = (await res.json()) as ErrorResponse
-    if (body && typeof body.detail === 'string') return body.detail
-  } catch {
-    // ignore — response wasn't JSON
-  }
-  return fallback
+interface SkillWorkflow {
+  id: string
+  name: string
+  type: string
+  file_path: string
+  enabled: boolean
 }
 
-/**
- * Normalize an arbitrary payload from `/api/enhanced/skills` into a strict
- * `Skill[]`. Tolerates missing `id`, `tags`, `enabled`, and `description`.
- */
-function normalizeSkills(raw: unknown): Skill[] {
-  if (!Array.isArray(raw)) return []
-  return raw
-    .map((item, idx): Skill | null => {
-      if (!item || typeof item !== 'object') return null
-      const rec = item as Record<string, unknown>
-      const name = typeof rec.name === 'string' ? rec.name : null
-      if (!name) return null
+interface ToolsData {
+  mcp_tools: MCPTool[]
+  builtin_tools: BuiltinTool[]
+  skills: Skill[]
+  skill_graphs: SkillGraph[]
+  skill_workflows: SkillWorkflow[]
+}
 
-      const id =
-        typeof rec.id === 'string'
-          ? rec.id
-          : typeof rec.skill_id === 'string'
-            ? rec.skill_id
-            : `${name}-${idx}`
-
-      const rawTags: unknown = rec.tags
-      const tags = Array.isArray(rawTags)
-        ? rawTags.filter((t): t is string => typeof t === 'string')
-        : []
-
-      return {
-        id,
-        name,
-        description: typeof rec.description === 'string' ? rec.description : undefined,
-        enabled: rec.enabled === true,
-        type: typeof rec.type === 'string' ? rec.type : undefined,
-        tags,
-        source: typeof rec.source === 'string' ? rec.source : undefined,
-      }
-    })
-    .filter((s): s is Skill => s !== null)
+interface LiveMCPTool {
+  name: string
+  description: string
+  input_schema: any
+  enabled: boolean
 }
 
 export default function SkillsView() {
-  const [skills, setSkills] = useState<Skill[]>([])
+  const [data, setData] = useState<ToolsData>({
+    mcp_tools: [],
+    builtin_tools: [],
+    skills: [],
+    skill_graphs: [],
+    skill_workflows: []
+  })
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [groupByTag, setGroupByTag] = useState(false)
-  const [typeFilter, setTypeFilter] = useState<'all' | 'skill' | 'mcp_tool'>('all')
+  const [activeTab, setActiveTab] = useState<'mcp' | 'builtin' | 'cognitive'>('mcp')
+
+  // Track expanded MCP servers and their loaded tools
+  const [expandedMcp, setExpandedMcp] = useState<Record<string, boolean>>({})
+  const [mcpTools, setMcpTools] = useState<Record<string, LiveMCPTool[]>>({})
+  const [loadingMcpTools, setLoadingMcpTools] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    void fetchSkills()
+    void fetchTools()
   }, [])
 
-  const fetchSkills = async () => {
+  const fetchTools = async () => {
     try {
       setLoading(true)
-      // Fetch from both /skills and /tools endpoints (CONCEPT:KG-003)
-      const [skillsRes, toolsRes] = await Promise.allSettled([
-        fetch('/api/enhanced/skills'),
-        fetch('/api/enhanced/tools'),
-      ])
-
-      let allItems: Skill[] = []
-
-      if (skillsRes.status === 'fulfilled' && skillsRes.value.ok) {
-        const skillData = (await skillsRes.value.json()) as unknown
-        allItems.push(...normalizeSkills(skillData))
+      const res = await fetch('/api/enhanced/tools')
+      if (!res.ok) {
+        toast.error('Failed to load tools catalog')
+        return
       }
-
-      if (toolsRes.status === 'fulfilled' && toolsRes.value.ok) {
-        const toolData = (await toolsRes.value.json()) as unknown
-        const normalizedTools = normalizeSkills(toolData)
-        // Avoid duplicates
-        const existingIds = new Set(allItems.map((s) => s.id))
-        for (const tool of normalizedTools) {
-          if (!existingIds.has(tool.id)) {
-            allItems.push(tool)
-          }
-        }
-      }
-
-      allItems.sort((a, b) => a.name.localeCompare(b.name))
-      setSkills(allItems)
-    } catch (_err) {
-      toast.error('Failed to load skills and tools')
+      const json = await res.json() as ToolsData
+      setData(json)
+    } catch (err) {
+      toast.error('Failed to connect to backend tools registry')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleToggle = async (id: string) => {
-    const previous = skills
-    // Optimistic update so the switch responds instantly even if the network
-    // round-trip is slow; we roll back on failure.
-    setSkills((current) => current.map((s) => (s.id === id ? { ...s, enabled: !s.enabled } : s)))
+  const handleToggleMcpServer = async (name: string, currentVal: boolean) => {
     try {
-      const res = await fetch(`/api/enhanced/skills/${encodeURIComponent(id)}/toggle`, {
+      const res = await fetch('/api/enhanced/tools/toggle', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'mcp_server',
+          id: name,
+          enabled: !currentVal
+        })
       })
-      if (!res.ok) {
-        setSkills(previous)
-        toast.error(await extractErrorMessage(res, 'Failed to update skill'))
-        return
+      if (res.ok) {
+        toast.success(`MCP Server '${name}' ${!currentVal ? 'enabled' : 'disabled'}`)
+        void fetchTools()
+      } else {
+        toast.error('Failed to toggle MCP server')
       }
-      toast.success('Skill updated')
-    } catch (_err) {
-      setSkills(previous)
-      toast.error('Failed to update skill')
+    } catch {
+      toast.error('Error toggling MCP server')
     }
   }
 
-  const filteredSkills = useMemo(() => {
-    let filtered = skills
-
-    // Type filter (CONCEPT:KG-003)
-    if (typeFilter !== 'all') {
-      filtered = filtered.filter((s) => s.type === typeFilter)
-    }
-
-    // Text search
-    const query = searchQuery.trim().toLowerCase()
-    if (!query) return filtered
-    return filtered.filter((skill) => {
-      if (skill.name.toLowerCase().includes(query)) return true
-      if (skill.description?.toLowerCase().includes(query)) return true
-      if (skill.id.toLowerCase().includes(query)) return true
-      if (skill.tags.some((t) => t.toLowerCase().includes(query))) return true
-      return false
-    })
-  }, [skills, searchQuery, typeFilter])
-
-  /**
-   * Groups the filtered skills by tag. Skills without tags land in an
-   * `untagged` bucket. Skills with multiple tags appear in each of their
-   * groups so the user can surface them from any angle.
-   */
-  const grouped = useMemo(() => {
-    const groups = new Map<string, Skill[]>()
-    for (const skill of filteredSkills) {
-      if (skill.tags.length === 0) {
-        const bucket = groups.get(UNTAGGED_GROUP) ?? []
-        bucket.push(skill)
-        groups.set(UNTAGGED_GROUP, bucket)
-        continue
+  const handleToggleBuiltin = async (name: string, currentVal: boolean) => {
+    try {
+      const res = await fetch('/api/enhanced/tools/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'builtin_tool',
+          id: name,
+          enabled: !currentVal
+        })
+      })
+      if (res.ok) {
+        toast.success(`Built-in tool '${name}' ${!currentVal ? 'enabled' : 'disabled'}`)
+        void fetchTools()
+      } else {
+        toast.error('Failed to toggle tool')
       }
-      for (const tag of skill.tags) {
-        const bucket = groups.get(tag) ?? []
-        bucket.push(skill)
-        groups.set(tag, bucket)
+    } catch {
+      toast.error('Error toggling tool')
+    }
+  }
+
+  const handleToggleCognitive = async (type: 'skill' | 'skill_graph' | 'skill_workflow', id: string, currentVal: boolean) => {
+    try {
+      const res = await fetch('/api/enhanced/tools/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type,
+          id,
+          enabled: !currentVal
+        })
+      })
+      if (res.ok) {
+        toast.success(`Cognitive asset updated successfully`)
+        void fetchTools()
+      } else {
+        toast.error('Failed to update asset status')
       }
+    } catch {
+      toast.error('Error saving toggle status')
     }
-    return Array.from(groups.entries()).sort(([a], [b]) => {
-      if (a === UNTAGGED_GROUP) return 1
-      if (b === UNTAGGED_GROUP) return -1
-      return a.localeCompare(b)
-    })
-  }, [filteredSkills])
+  }
 
-  const totalTags = useMemo(() => {
-    const tagSet = new Set<string>()
-    for (const skill of skills) {
-      for (const tag of skill.tags) tagSet.add(tag)
+  const handleToggleMcpTool = async (serverName: string, toolName: string, currentVal: boolean) => {
+    try {
+      const res = await fetch('/api/enhanced/tools/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'mcp_tool',
+          id: `${serverName}:${toolName}`,
+          enabled: !currentVal
+        })
+      })
+      if (res.ok) {
+        toast.success(`Tool '${toolName}' ${!currentVal ? 'enabled' : 'disabled'}`)
+        // Refresh local cache for this server
+        void loadMcpTools(serverName)
+      } else {
+        toast.error('Failed to toggle tool status')
+      }
+    } catch {
+      toast.error('Error toggling tool status')
     }
-    return tagSet.size
-  }, [skills])
+  }
 
-  const enabledCount = useMemo(() => skills.filter((s) => s.enabled).length, [skills])
+  const loadMcpTools = async (serverName: string) => {
+    try {
+      setLoadingMcpTools(prev => ({ ...prev, [serverName]: true }))
+      const res = await fetch(`/api/enhanced/mcp/servers/${encodeURIComponent(serverName)}/tools`)
+      if (res.ok) {
+        const toolsList = await res.json() as LiveMCPTool[]
+        setMcpTools(prev => ({ ...prev, [serverName]: toolsList }))
+      } else {
+        toast.error(`Could not load tools for server '${serverName}'`)
+      }
+    } catch {
+      toast.error(`Error loading tools for '${serverName}'`)
+    } finally {
+      setLoadingMcpTools(prev => ({ ...prev, [serverName]: false }))
+    }
+  }
+
+  const toggleMcpExpansion = (serverName: string) => {
+    const isExpanded = !expandedMcp[serverName]
+    setExpandedMcp(prev => ({ ...prev, [serverName]: isExpanded }))
+    if (isExpanded && !mcpTools[serverName]) {
+      void loadMcpTools(serverName)
+    }
+  }
+
+  // Filters
+  const filteredMcp = data.mcp_tools.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredBuiltin = data.builtin_tools.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredSkills = data.skills.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredGraphs = data.skill_graphs.filter(g => g.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredWorkflows = data.skill_workflows.filter(w => w.name.toLowerCase().includes(searchQuery.toLowerCase()))
 
   return (
     <div className="space-y-6">
-      <Card>
+      <Card className="border-border/40 bg-card/60 backdrop-blur-md">
         <CardHeader>
-          <div className="flex items-start justify-between gap-2 flex-wrap">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
-              <CardTitle>Agent Skills</CardTitle>
+              <CardTitle className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-400 via-emerald-400 to-green-500">
+                Tools & Cognitive Registry
+              </CardTitle>
               <CardDescription>
-                Manage your agent's capabilities and integrated tools
-                {skills.length > 0 && (
-                  <span className="ml-2">
-                    · {enabledCount}/{skills.length} enabled
-                    {totalTags > 0 && ` · ${totalTags} tags`}
-                    {skills.filter((s) => s.type === 'mcp_tool').length > 0 &&
-                      ` · ${skills.filter((s) => s.type === 'mcp_tool').length} MCP tools`}
-                  </span>
-                )}
+                Unified control plane to discover, monitor, and dynamically toggle MCP servers, built-in operations, and dynamic cognitive assets.
               </CardDescription>
             </div>
-            <div className="flex gap-2">
-              <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'all' | 'skill' | 'mcp_tool')}>
-                <SelectTrigger className="w-[130px] h-9">
-                  <Filter className="size-3.5 mr-1.5" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="skill">Skills</SelectItem>
-                  <SelectItem value="mcp_tool">MCP Tools</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setGroupByTag((v) => !v)}
-                disabled={loading || skills.length === 0}
-                title={groupByTag ? 'Show flat list' : 'Group by tag'}
-              >
-                {groupByTag ? <List className="size-4" /> : <LayoutGrid className="size-4" />}
-                <span className="ml-1 hidden sm:inline">{groupByTag ? 'Flat' : 'By tag'}</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void fetchSkills()}
-                disabled={loading}
-                title="Refresh"
-              >
-                <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <div className="relative flex-1 md:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search catalog..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 h-9 bg-muted/20"
+                />
+              </div>
+              <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => void fetchTools()} disabled={loading}>
+                <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           </div>
-          <div className="relative mt-2">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by name, description, or tag..."
-              className="pl-9"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+
+          {/* Pretty Categorized Navigation Tabs */}
+          <div className="flex flex-wrap gap-2 mt-4 border-b border-border/40 pb-2">
+            {[
+              { id: 'mcp', label: 'MCP Servers', icon: Wrench, count: data.mcp_tools.length },
+              { id: 'builtin', label: 'Built-in Tools', icon: Code, count: data.builtin_tools.length },
+              { id: 'cognitive', label: 'Cognitive Skills', icon: Layers, count: data.skills.length + data.skill_graphs.length + data.skill_workflows.length }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all border ${
+                  activeTab === tab.id
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold'
+                    : 'bg-transparent border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <tab.icon className="size-3.5" />
+                <span>{tab.label}</span>
+                <Badge variant="secondary" className="px-1.5 py-0.25 text-[10px] bg-muted/40">
+                  {tab.count}
+                </Badge>
+              </button>
+            ))}
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <p className="text-muted-foreground text-sm">Loading skills...</p>
-          ) : skills.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">
-              No skills discovered in the current workspace.
-            </p>
-          ) : filteredSkills.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">No skills match your search.</p>
-          ) : groupByTag ? (
-            <ScrollArea className="max-h-[calc(100vh-20rem)]">
-              <div className="space-y-6 pr-4">
-                {grouped.map(([tag, groupSkills]) => (
-                  <div key={tag}>
-                    <div className="flex items-center gap-2 mb-3">
-                      <TagIcon className="size-4 text-muted-foreground" />
-                      <h3 className="font-semibold text-sm">
-                        {tag === UNTAGGED_GROUP ? 'Untagged' : tag}
-                      </h3>
-                      <Badge variant="secondary" className="text-[10px]">
-                        {groupSkills.length}
-                      </Badge>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {groupSkills.map((skill) => (
-                        <SkillCard key={`${tag}-${skill.id}`} skill={skill} onToggle={handleToggle} />
-                      ))}
-                    </div>
-                  </div>
-                ))}
+          <ScrollArea className="h-[calc(100vh-20rem)] pr-4">
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <RefreshCw className="size-8 text-emerald-500 animate-spin" />
+                <span className="text-sm text-muted-foreground font-medium">Querying graph registry...</span>
               </div>
-            </ScrollArea>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredSkills.map((skill) => (
-                <SkillCard key={skill.id} skill={skill} onToggle={handleToggle} />
-              ))}
-            </div>
-          )}
+            ) : (
+              <>
+                {/* 1. MCP Tools */}
+                {activeTab === 'mcp' && (
+                  <div className="space-y-4">
+                    {filteredMcp.length === 0 ? (
+                      <div className="text-center py-12 text-muted-foreground text-sm">No MCP servers registered.</div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-4">
+                        {filteredMcp.map(server => {
+                          const isExpanded = !!expandedMcp[server.name]
+                          const serverTools = mcpTools[server.name] || []
+                          const isLoadingTools = !!loadingMcpTools[server.name]
+
+                          return (
+                            <div key={server.name} className="p-4 rounded-xl border border-border/40 bg-muted/10 backdrop-blur-sm hover:border-emerald-500/30 transition-all flex flex-col justify-between">
+                              <div>
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <Wrench className="size-4 text-emerald-400" />
+                                    <h4 className="font-bold text-sm text-foreground">{server.name}</h4>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="outline" className={`text-[10px] font-semibold ${server.enabled ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
+                                      {server.enabled ? 'Active' : 'Disabled'}
+                                    </Badge>
+                                    <button
+                                      onClick={() => void handleToggleMcpServer(server.name, server.enabled)}
+                                      className={`px-2.5 py-1 rounded text-xs font-bold transition-all border ${
+                                        server.enabled
+                                          ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
+                                          : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                                      }`}
+                                    >
+                                      {server.enabled ? 'Disable' : 'Enable'}
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="space-y-1.5 mt-2">
+                                  <div className="text-xs text-muted-foreground">
+                                    <span className="font-semibold text-foreground">Command: </span>
+                                    <code className="font-mono bg-muted/40 px-1 py-0.5 rounded text-[10px]">{server.command}</code>
+                                  </div>
+                                  {server.args.length > 0 && (
+                                    <div className="text-xs text-muted-foreground">
+                                      <span className="font-semibold text-foreground">Args: </span>
+                                      <code className="font-mono bg-muted/40 px-1 py-0.5 rounded text-[10px]">{server.args.join(' ')}</code>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Sub-tools list control toggle */}
+                              {server.enabled && (
+                                <div className="mt-4 border-t border-border/20 pt-3">
+                                  <button
+                                    onClick={() => toggleMcpExpansion(server.name)}
+                                    className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground transition-all"
+                                  >
+                                    <Sliders className="size-3.5 text-teal-400" />
+                                    <span>Manage MCP Tools</span>
+                                    {isExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                                  </button>
+
+                                  {isExpanded && (
+                                    <div className="mt-3 bg-muted/5 rounded-lg border border-border/20 p-3 space-y-2">
+                                      {isLoadingTools ? (
+                                        <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground font-medium">
+                                          <RefreshCw className="size-3.5 animate-spin text-teal-400" />
+                                          <span>Discovering tools via stdio handshake...</span>
+                                        </div>
+                                      ) : serverTools.length === 0 ? (
+                                        <div className="text-xs text-muted-foreground py-2">No tools exposed by this MCP server.</div>
+                                      ) : (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                          {serverTools.map(tool => (
+                                            <div key={tool.name} className="flex items-start justify-between p-2.5 rounded-md border border-border/20 bg-muted/10">
+                                              <div className="space-y-1 pr-2">
+                                                <div className="flex items-center gap-1.5">
+                                                  <span className="font-mono font-bold text-xs text-foreground">{tool.name}</span>
+                                                </div>
+                                                {tool.description && (
+                                                  <p className="text-[10px] text-muted-foreground leading-normal line-clamp-2">{tool.description}</p>
+                                                )}
+                                              </div>
+                                              <button
+                                                onClick={() => void handleToggleMcpTool(server.name, tool.name, tool.enabled)}
+                                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 border transition-all ${
+                                                  tool.enabled
+                                                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
+                                                    : 'bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20'
+                                                }`}
+                                              >
+                                                {tool.enabled ? 'ON' : 'OFF'}
+                                              </button>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              <div className="mt-4 flex items-center justify-between border-t border-border/30 pt-3 text-[11px] text-muted-foreground">
+                                <span>Protocol: MCP Server v1.0</span>
+                                <div className="flex items-center gap-1 text-emerald-400 font-bold">
+                                  <CheckCircle className="size-3" /> Handshake Verified
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 2. Built-in Agent Tools */}
+                {activeTab === 'builtin' && (
+                  <div className="space-y-4">
+                    {filteredBuiltin.length === 0 ? (
+                      <div className="text-center py-12 text-muted-foreground text-sm">No built-in tools found.</div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {filteredBuiltin.map(tool => (
+                          <div key={tool.name} className="p-4 rounded-xl border border-border/40 bg-muted/10 backdrop-blur-sm hover:border-emerald-500/30 transition-all flex flex-col justify-between">
+                            <div>
+                              <div className="flex items-center justify-between gap-2 mb-2">
+                                <div className="flex items-center gap-2">
+                                  <Code className="size-4 text-emerald-400" />
+                                  <h4 className="font-bold text-sm text-foreground">{tool.name}</h4>
+                                </div>
+                                <button
+                                  onClick={() => void handleToggleBuiltin(tool.name, tool.enabled)}
+                                  className={`px-2 py-0.75 rounded text-[10px] font-bold border transition-all ${
+                                    tool.enabled
+                                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                                      : 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
+                                  }`}
+                                >
+                                  {tool.enabled ? 'Enabled' : 'Disabled'}
+                                </button>
+                              </div>
+                              <div className="space-y-1.5 mt-2">
+                                <div className="text-xs text-muted-foreground">
+                                  <span className="font-semibold text-foreground">File Path: </span>
+                                  <span className="font-mono text-muted-foreground text-[10px] break-all">{tool.file_path}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-4 flex items-center justify-between border-t border-border/30 pt-3 text-[11px] text-muted-foreground">
+                              <span>Source: agent-utilities core</span>
+                              <div className="flex items-center gap-1 text-emerald-400 font-bold">
+                                <CheckCircle className="size-3" /> Class Ingested
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 3. Cognitive Registry - 3 Separate Side-by-Side boxes */}
+                {activeTab === 'cognitive' && (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                    {/* Box 1: Agent Skills */}
+                    <div className="space-y-4 border border-border/40 rounded-xl bg-card/40 p-4">
+                      <div className="flex items-center gap-2 border-b border-border/20 pb-3 mb-2">
+                        <Zap className="size-5 text-emerald-400" />
+                        <div>
+                          <h3 className="font-bold text-sm text-foreground">Agent Skills</h3>
+                          <p className="text-[10px] text-muted-foreground">Dynamic cognitive modular skills</p>
+                        </div>
+                        <Badge variant="secondary" className="ml-auto px-1.5 text-[10px] bg-muted/40">
+                          {filteredSkills.length}
+                        </Badge>
+                      </div>
+
+                      <ScrollArea className="h-[calc(100vh-27rem)] pr-2">
+                        <div className="space-y-3">
+                          {filteredSkills.length === 0 ? (
+                            <div className="text-center py-6 text-xs text-muted-foreground">No matching skills found.</div>
+                          ) : (
+                            filteredSkills.map(skill => (
+                              <div key={skill.id} className="p-3.5 rounded-lg border border-border/30 bg-muted/5 hover:border-emerald-500/20 transition-all flex flex-col justify-between space-y-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="font-bold text-xs text-foreground">{skill.name}</span>
+                                  <button
+                                    onClick={() => void handleToggleCognitive('skill', skill.id, skill.enabled)}
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold border shrink-0 transition-all ${
+                                      skill.enabled
+                                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                        : 'bg-red-500/10 border-red-500/20 text-red-400'
+                                    }`}
+                                  >
+                                    {skill.enabled ? 'ON' : 'OFF'}
+                                  </button>
+                                </div>
+                                <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">
+                                  {skill.description || 'No description available.'}
+                                </p>
+                                {skill.tags && skill.tags.length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {skill.tags.slice(0, 3).map(t => (
+                                      <Badge key={t} variant="secondary" className="text-[8px] bg-muted/40 font-semibold scale-90 origin-left">
+                                        {t}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+
+                    {/* Box 2: Skill Graphs */}
+                    <div className="space-y-4 border border-border/40 rounded-xl bg-card/40 p-4">
+                      <div className="flex items-center gap-2 border-b border-border/20 pb-3 mb-2">
+                        <Network className="size-5 text-teal-400" />
+                        <div>
+                          <h3 className="font-bold text-sm text-foreground">Skill Graphs</h3>
+                          <p className="text-[10px] text-muted-foreground">Epistemic connection abstractions</p>
+                        </div>
+                        <Badge variant="secondary" className="ml-auto px-1.5 text-[10px] bg-muted/40">
+                          {filteredGraphs.length}
+                        </Badge>
+                      </div>
+
+                      <ScrollArea className="h-[calc(100vh-27rem)] pr-2">
+                        <div className="space-y-3">
+                          {filteredGraphs.length === 0 ? (
+                            <div className="text-center py-6 text-xs text-muted-foreground">No matching graphs found.</div>
+                          ) : (
+                            filteredGraphs.map(graph => (
+                              <div key={graph.id} className="p-3.5 rounded-lg border border-border/30 bg-muted/5 hover:border-emerald-500/20 transition-all flex flex-col justify-between space-y-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="font-bold text-xs text-foreground">{graph.name}</span>
+                                  <button
+                                    onClick={() => void handleToggleCognitive('skill_graph', graph.id, graph.enabled)}
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold border shrink-0 transition-all ${
+                                      graph.enabled
+                                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                        : 'bg-red-500/10 border-red-500/20 text-red-400'
+                                    }`}
+                                  >
+                                    {graph.enabled ? 'ON' : 'OFF'}
+                                  </button>
+                                </div>
+                                <div className="text-[9px] text-muted-foreground font-mono truncate break-all">
+                                  {graph.file_path}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+
+                    {/* Box 3: Skill Workflows */}
+                    <div className="space-y-4 border border-border/40 rounded-xl bg-card/40 p-4">
+                      <div className="flex items-center gap-2 border-b border-border/20 pb-3 mb-2">
+                        <GitBranch className="size-5 text-green-400" />
+                        <div>
+                          <h3 className="font-bold text-sm text-foreground">Skill Workflows</h3>
+                          <p className="text-[10px] text-muted-foreground">Orchestrated execution pipelines</p>
+                        </div>
+                        <Badge variant="secondary" className="ml-auto px-1.5 text-[10px] bg-muted/40">
+                          {filteredWorkflows.length}
+                        </Badge>
+                      </div>
+
+                      <ScrollArea className="h-[calc(100vh-27rem)] pr-2">
+                        <div className="space-y-3">
+                          {filteredWorkflows.length === 0 ? (
+                            <div className="text-center py-6 text-xs text-muted-foreground">No matching workflows found.</div>
+                          ) : (
+                            filteredWorkflows.map(wf => (
+                              <div key={wf.id} className="p-3.5 rounded-lg border border-border/30 bg-muted/5 hover:border-emerald-500/20 transition-all flex flex-col justify-between space-y-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="font-bold text-xs text-foreground">{wf.name}</span>
+                                  <button
+                                    onClick={() => void handleToggleCognitive('skill_workflow', wf.id, wf.enabled)}
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold border shrink-0 transition-all ${
+                                      wf.enabled
+                                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                        : 'bg-red-500/10 border-red-500/20 text-red-400'
+                                    }`}
+                                  >
+                                    {wf.enabled ? 'ON' : 'OFF'}
+                                  </button>
+                                </div>
+                                <div className="text-[9px] text-muted-foreground font-mono truncate break-all">
+                                  {wf.file_path}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+
+                  </div>
+                )}
+              </>
+            )}
+          </ScrollArea>
         </CardContent>
       </Card>
-    </div>
-  )
-}
-
-/**
- * Presentational card for a single skill. Kept local to avoid leaking a
- * component module that isn't reused elsewhere.
- */
-function SkillCard({ skill, onToggle }: { skill: Skill; onToggle: (id: string) => void }) {
-  return (
-    <div
-      className={cn(
-        'flex flex-col p-4 border rounded-lg bg-card text-card-foreground shadow-sm transition-all',
-        skill.enabled ? 'border-primary/30' : '',
-      )}
-    >
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <div
-            className={cn(
-              'p-2 rounded-md shrink-0',
-              skill.enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
-            )}
-          >
-            {skill.enabled ? <Zap className="size-5" /> : <ZapOff className="size-5" />}
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <h3 className="font-semibold text-sm leading-none truncate">{skill.name}</h3>
-              {skill.type && (
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-secondary-foreground uppercase tracking-wider">
-                  {skill.type}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground font-mono truncate">{skill.id}</p>
-            {skill.source && (
-              <Badge
-                variant="outline"
-                className={cn(
-                  'text-[9px] h-4 mt-0.5',
-                  skill.type === 'mcp_tool'
-                    ? 'border-purple-400/30 text-purple-400'
-                    : skill.source === 'universal-skills'
-                      ? 'border-blue-400/30 text-blue-400'
-                      : 'border-muted-foreground/30 text-muted-foreground',
-                )}
-              >
-                {skill.type === 'mcp_tool' ? (
-                  <><Wrench className="size-2.5 mr-0.5" />{skill.source}</>
-                ) : (
-                  skill.source
-                )}
-              </Badge>
-            )}
-          </div>
-        </div>
-        <Switch
-          checked={skill.enabled}
-          onCheckedChange={() => onToggle(skill.id)}
-          aria-label={`Toggle ${skill.name}`}
-        />
-      </div>
-      <p className="text-sm text-muted-foreground line-clamp-2 mt-2">
-        {skill.description ?? 'No description provided for this skill.'}
-      </p>
-      {skill.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-3">
-          {skill.tags.slice(0, 6).map((tag) => (
-            <Badge key={tag} variant="secondary" className="text-[10px]">
-              <TagIcon className="size-2.5 mr-1" />
-              {tag}
-            </Badge>
-          ))}
-          {skill.tags.length > 6 && (
-            <Badge variant="secondary" className="text-[10px]">
-              +{skill.tags.length - 6}
-            </Badge>
-          )}
-        </div>
-      )}
     </div>
   )
 }

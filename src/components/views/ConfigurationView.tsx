@@ -1,213 +1,256 @@
 import { useState, useEffect } from 'react'
-import { Save, RefreshCw, FileText, Layout, Columns, Eye } from 'lucide-react'
+import {
+  Save,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  Settings,
+  Shield,
+  Sliders,
+  Variable
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { toast } from 'sonner'
-import { Response } from '@/components/ai-elements/response'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 export default function ConfigurationView() {
-  const [configFiles, setConfigFiles] = useState<string[]>([])
-  const [selectedFile, setSelectedFile] = useState('')
-  const [content, setContent] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [config, setConfig] = useState<Record<string, any>>({})
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'split'>('split')
+  const [reloading, setReloading] = useState(false)
+  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    void fetchConfigFiles()
+    void fetchConfig()
   }, [])
 
-  useEffect(() => {
-    if (selectedFile) {
-      void fetchFileContent(selectedFile)
-    }
-  }, [selectedFile])
-
-  const fetchConfigFiles = async () => {
-    try {
-      const res = await fetch('/api/enhanced/config-files')
-      const data = (await res.json()) as string[]
-      setConfigFiles(data)
-      if (data.length > 0 && !selectedFile) {
-        setSelectedFile(data[0])
-      }
-    } catch (_err) {
-      toast.error('Failed to load configuration files')
-    }
-  }
-
-  const fetchFileContent = async (filename: string) => {
+  const fetchConfig = async () => {
     try {
       setLoading(true)
-      const res = await fetch(`/api/enhanced/files/${filename}`)
-      const data = (await res.json()) as { content: string }
-      setContent(data.content)
-    } catch (_err) {
-      toast.error(`Failed to load ${filename}`)
+      const res = await fetch('/api/enhanced/config')
+      if (!res.ok) {
+        toast.error('Failed to load active configuration')
+        return
+      }
+      const data = await res.json()
+      setConfig(data)
+    } catch {
+      toast.error('Failed to connect to configuration service')
     } finally {
       setLoading(false)
     }
   }
 
   const handleSave = async () => {
+    setSaving(true)
     try {
-      setSaving(true)
-      const res = await fetch(`/api/enhanced/files/${selectedFile}`, {
+      const res = await fetch('/api/enhanced/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify(config)
       })
       if (res.ok) {
-        toast.success(`${selectedFile} saved successfully`)
+        toast.success('Central config.json updated successfully')
+      } else {
+        toast.error('Failed to update config.json')
       }
-    } catch (_err) {
-      toast.error(`Failed to save ${selectedFile}`)
+    } catch {
+      toast.error('Network error saving configuration')
     } finally {
       setSaving(false)
     }
   }
 
   const handleReload = async () => {
+    setReloading(true)
     try {
       const res = await fetch('/api/enhanced/reload', { method: 'POST' })
       if (res.ok) {
-        toast.success('Agent reloaded with new configuration')
+        toast.success('Agent-utilities background workers reloaded')
+      } else {
+        toast.error('Reload trigger failed')
       }
-    } catch (_err) {
-      toast.error('Reload failed')
+    } catch {
+      toast.error('Network error during reload trigger')
+    } finally {
+      setReloading(false)
     }
   }
 
-  return (
-    <div className="flex flex-col md:flex-row gap-6 h-auto md:h-[calc(100vh-12rem)]">
-      <div className="w-full md:w-64 flex flex-col gap-2 shrink-0">
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">Core Files</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-col gap-1">
-          {configFiles.map((file) => (
-            <Button
-              key={file}
-              variant={selectedFile === file ? 'secondary' : 'ghost'}
-              className="justify-start gap-2 h-9 px-3"
-              onClick={() => {
-                setSelectedFile(file)
-              }}
-            >
-              <FileText className="size-4 shrink-0" />
-              <span className="truncate">{file}</span>
-            </Button>
-          ))}
-        </div>
+  const handleFieldChange = (key: string, value: any) => {
+    setConfig(prev => ({ ...prev, [key]: value }))
+  }
 
-        <div className="mt-4 md:mt-auto pt-4 border-t">
-          <Button
-            variant="outline"
-            className="w-full gap-2 text-primary border-primary/20 hover:bg-primary/5"
-            onClick={() => {
-              void handleReload()
-            }}
-          >
-            <RefreshCw className="size-4" />
-            Reload Agent
+  const toggleShowKey = (key: string) => {
+    setShowKeys(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const apiKeyFields = [
+    { key: 'openai_api_key', label: 'OpenAI API Key', placeholder: 'sk-proj-...' },
+    { key: 'anthropic_api_key', label: 'Anthropic API Key', placeholder: 'sk-ant-...' },
+    { key: 'gemini_api_key', label: 'Gemini API Key', placeholder: 'AIzaSy...' },
+    { key: 'github_token', label: 'GitHub Personal Access Token', placeholder: 'ghp_...' }
+  ]
+
+  const operationalFields = [
+    { key: 'graph_timeout', label: 'Knowledge Graph Request Timeout (ms)', type: 'number' },
+    { key: 'log_level', label: 'System Log Level Verbosity', type: 'select', options: ['DEBUG', 'INFO', 'WARNING', 'ERROR'] }
+  ]
+
+  // Filter other custom/arbitrary variables not in standard fields
+  const customKeys = Object.keys(config).filter(
+    key => !apiKeyFields.some(f => f.key === key) && !operationalFields.some(f => f.key === key)
+  )
+
+  return (
+    <div className="space-y-6 max-w-5xl mx-auto h-[calc(100vh-12rem)] flex flex-col">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0">
+        <div>
+          <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-500 flex items-center gap-2">
+            <Settings className="size-6 text-emerald-400" />
+            Configuration Dashboard
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Manage your agent central parameters, provider API credentials, and query boundaries.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button variant="outline" size="sm" onClick={() => void handleReload()} disabled={reloading} className="border-emerald-500/20 hover:bg-emerald-500/5 text-emerald-400">
+            <RefreshCw className={`size-4 mr-1.5 ${reloading ? 'animate-spin' : ''}`} />
+            Reload Engine
+          </Button>
+          <Button size="sm" onClick={() => void handleSave()} disabled={saving || loading} className="bg-emerald-600 hover:bg-emerald-700">
+            <Save className="size-4 mr-1.5" />
+            {saving ? 'Saving...' : 'Save Settings'}
           </Button>
         </div>
       </div>
 
-      <Card className="flex-1 flex flex-col overflow-hidden border-border/40 shadow-sm transition-all min-h-[500px] md:min-h-0">
-        <CardHeader className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-3 border-b bg-muted/5">
-          <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
-            <div className="text-center sm:text-left">
-              <CardTitle className="text-lg">Editing {selectedFile}</CardTitle>
-              <CardDescription className="hidden sm:block">Modify the agent's core identity and rules</CardDescription>
-            </div>
-
-            <Tabs
-              value={viewMode}
-              onValueChange={(v: string) => {
-                setViewMode(v as 'edit' | 'preview' | 'split')
-              }}
-              className="ml-0 sm:ml-4"
-            >
-              <TabsList className="h-8 bg-muted/50 p-0.5">
-                <TabsTrigger
-                  value="edit"
-                  className="h-7 gap-1 px-3 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                >
-                  <Layout className="size-3" /> Edit
-                </TabsTrigger>
-                <TabsTrigger
-                  value="split"
-                  className="h-7 gap-1 px-3 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm hidden md:flex"
-                >
-                  <Columns className="size-3" /> Split
-                </TabsTrigger>
-                <TabsTrigger
-                  value="preview"
-                  className="h-7 gap-1 px-3 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                >
-                  <Eye className="size-3" /> Preview
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+      <ScrollArea className="flex-1 pr-4">
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <RefreshCw className="size-8 text-emerald-500 animate-spin" />
+            <span className="text-sm text-muted-foreground">Reading config.json parameters...</span>
           </div>
-          <Button
-            onClick={() => {
-              void handleSave()
-            }}
-            disabled={saving || loading || !selectedFile}
-            className="w-full sm:w-auto gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
-          >
-            <Save className="size-4" />
-            {saving ? 'Saving...' : 'Save Changes'}
-          </Button>
-        </CardHeader>
-        <CardContent className="flex-1 p-0 overflow-hidden bg-background">
-          {loading ? (
-            <div className="h-full flex items-center justify-center min-h-[300px]">
-              <div className="flex flex-col items-center gap-2">
-                <RefreshCw className="size-8 animate-spin text-primary/40" />
-                <p className="text-muted-foreground text-sm font-medium animate-pulse">Fetching content...</p>
-              </div>
-            </div>
-          ) : !selectedFile ? (
-            <div className="h-full flex items-center justify-center text-muted-foreground min-h-[300px]">
-              Select a file to start editing
-            </div>
-          ) : (
-            <div className="flex flex-col h-full divide-y md:divide-y-0 md:flex-row md:divide-x divide-border/60">
-              {(viewMode === 'edit' || viewMode === 'split') && (
-                <textarea
-                  className={cn(
-                    'flex-1 p-6 bg-muted/10 font-mono text-sm resize-none focus:outline-none transition-colors focus:bg-background h-full min-h-[300px]',
-                    viewMode === 'split' ? 'md:w-1/2' : 'w-full',
-                  )}
-                  value={content}
-                  onChange={(e) => {
-                    setContent(e.target.value)
-                  }}
-                  spellCheck={false}
-                  placeholder="Start writing markdown..."
-                />
-              )}
-              {(viewMode === 'preview' || viewMode === 'split') && (
-                <ScrollArea
-                  className={cn('flex-1 min-w-0 h-full min-h-[300px]', viewMode === 'split' ? 'md:w-1/2' : 'w-full')}
-                >
-                  <div className="p-8 prose prose-sm dark:prose-invert max-w-none">
-                    <Response>
-                      {selectedFile.endsWith('.json')
-                        ? `\`\`\`json\n${content}\n\`\`\``
-                        : content || '*No content to preview*'}
-                    </Response>
+        ) : (
+          <div className="space-y-6 pb-12">
+            {/* 1. API Credentials Section */}
+            <Card className="border-border/40 bg-card/60 backdrop-blur-md">
+              <CardHeader className="pb-3 flex flex-row items-center gap-3">
+                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                  <Shield className="size-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-bold">API Credentials</CardTitle>
+                  <CardDescription>Secure tokens for AI model providers and platforms.</CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {apiKeyFields.map(field => (
+                    <div key={field.key} className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">{field.label}</label>
+                      <div className="relative">
+                        <Input
+                          type={showKeys[field.key] ? 'text' : 'password'}
+                          value={config[field.key] || ''}
+                          placeholder={field.placeholder}
+                          onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                          className="bg-muted/20 pr-10 font-mono text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => toggleShowKey(field.key)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showKeys[field.key] ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 2. Operational Tuning Section */}
+            <Card className="border-border/40 bg-card/60 backdrop-blur-md">
+              <CardHeader className="pb-3 flex flex-row items-center gap-3">
+                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                  <Sliders className="size-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-bold">Operational Thresholds</CardTitle>
+                  <CardDescription>Set query timeout margins and verbosity filters.</CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {operationalFields.map(field => (
+                    <div key={field.key} className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">{field.label}</label>
+                      {field.type === 'select' ? (
+                        <select
+                          value={config[field.key] || 'INFO'}
+                          onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                          className="w-full h-10 px-3 rounded-md border border-input bg-muted/20 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        >
+                          {field.options?.map(opt => (
+                            <option key={opt} value={opt} className="bg-background text-foreground">
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Input
+                          type="number"
+                          value={config[field.key] || ''}
+                          onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                          className="bg-muted/20 font-mono text-xs"
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 3. Custom Metadata Fields */}
+            {customKeys.length > 0 && (
+              <Card className="border-border/40 bg-card/60 backdrop-blur-md">
+                <CardHeader className="pb-3 flex flex-row items-center gap-3">
+                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                    <Variable className="size-5" />
                   </div>
-                </ScrollArea>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  <div>
+                    <CardTitle className="text-base font-bold">Custom Workspace Environment</CardTitle>
+                    <CardDescription>Arbitrary values loaded from your active config profile.</CardDescription>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {customKeys.map(key => (
+                      <div key={key} className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                          {key}
+                          <Badge variant="outline" className="text-[8px] px-1 py-0.25">env</Badge>
+                        </label>
+                        <Input
+                          value={config[key] !== null ? String(config[key]) : ''}
+                          onChange={(e) => handleFieldChange(key, e.target.value)}
+                          className="bg-muted/20 font-mono text-xs"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
+      </ScrollArea>
     </div>
   )
 }

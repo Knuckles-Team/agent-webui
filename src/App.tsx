@@ -15,6 +15,8 @@ import { ThemeProvider } from './components/theme-provider.tsx'
 import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
 import { cn } from './lib/utils.ts'
+import ChatPanel from './components/ChatPanel'
+import DashboardView from './components/views/DashboardView'
 import FilesView from './components/views/FilesView'
 import SkillsView from './components/views/SkillsView'
 import SchedulingView from './components/views/SchedulingView'
@@ -25,6 +27,9 @@ import OpsPanelView from './components/views/OpsPanelView'
 import MagmaView from './components/views/MagmaView'
 import CypherReplView from './components/views/CypherReplView'
 import PromptsView from './components/views/PromptsView'
+import SessionsView from './components/views/SessionsView'
+import GoalsView from './components/views/GoalsView'
+import EcosystemView from './components/views/EcosystemView'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
@@ -41,8 +46,8 @@ const queryClient = new QueryClient()
  * providers for theme, sidebar, MCP tools, and data fetching.
  */
 export default function App() {
-  /** Possible views: 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'ops', 'magma', 'cypher', 'prompts' */
-  const [currentView, setCurrentView] = useState('chat')
+  /** Possible views: 'dashboard', 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'ops', 'magma', 'cypher', 'prompts', 'sessions', 'goals', 'ecosystem' */
+  const [currentView, setCurrentView] = useState('dashboard')
 
   /**
    * Effect hook to synchronize the current view with the browser URL path.
@@ -51,7 +56,8 @@ export default function App() {
   useEffect(() => {
     const handleNavigation = () => {
       const path = window.location.pathname
-      if (path === '/files') setCurrentView('files')
+      if (path === '/chat') setCurrentView('chat')
+      else if (path === '/files') setCurrentView('files')
       else if (path === '/skills') setCurrentView('skills')
       else if (path === '/scheduling') setCurrentView('scheduling')
       else if (path === '/configuration') setCurrentView('configuration')
@@ -61,7 +67,10 @@ export default function App() {
       else if (path === '/magma') setCurrentView('magma')
       else if (path === '/cypher') setCurrentView('cypher')
       else if (path === '/prompts') setCurrentView('prompts')
-      else setCurrentView('chat')
+      else if (path === '/sessions') setCurrentView('sessions')
+      else if (path === '/goals') setCurrentView('goals')
+      else if (path === '/ecosystem') setCurrentView('ecosystem')
+      else setCurrentView('dashboard')
     }
 
     // Listen for custom navigation events emitted by sidebar/links
@@ -91,7 +100,17 @@ export default function App() {
                   </div>
                 </header>
 
-                {/* Main Chat View (CSS-hidden when other views active to preserve chat state) */}
+                {/* Dashboard View — Agent-OS Homepage (default landing) */}
+                <div
+                  className={cn(
+                    'flex flex-col w-full h-full overflow-hidden',
+                    currentView === 'dashboard' ? 'block' : 'hidden',
+                  )}
+                >
+                  <DashboardView />
+                </div>
+
+                {/* Chat View (CSS-hidden when other views active to preserve chat state) */}
                 <div
                   className={cn(
                     'flex flex-col mx-auto relative w-full basis-[100vh] overflow-hidden px-4 md:px-8',
@@ -113,7 +132,7 @@ export default function App() {
                       )}
                       {currentView === 'skills' && (
                         <>
-                          <h1 className="text-2xl font-bold mb-4">Skills</h1>
+                          <h1 className="text-2xl font-bold mb-4">Tools</h1>
                           <SkillsView />
                         </>
                       )}
@@ -145,10 +164,17 @@ export default function App() {
                           <PromptsView />
                         </>
                       )}
+                      {currentView === 'sessions' && <SessionsView />}
+                      {currentView === 'goals' && <GoalsView />}
+                      {currentView === 'ecosystem' && <EcosystemView />}
                     </div>
                   </div>
                 )}
               </div>
+              {/* Collapsible Chat Drawer — available on all views except /chat */}
+              {currentView !== 'chat' && (
+                <ChatPanel currentView={currentView} />
+              )}
             </SidebarProvider>
           </ThemeProvider>
         </MCPProvider>

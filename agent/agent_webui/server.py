@@ -78,9 +78,21 @@ def create_agent_web_app(
         default_models['Test Model (Markdown Only)'] = 'test'
 
     app = FastAPI(title='Agent Web Dashboard')
+    app.state.agent = agent
 
     # Mount the enhanced API extensions (ACP/A2A/Management)
     app.include_router(enhanced_router, prefix='/api/enhanced')
+
+    # Mount the service dashboard API if available (optional dependency)
+    try:
+        from agent_utilities.gateway.api import dashboard_router
+        from agent_utilities.gateway.ws import dashboard_ws_router as ws_router
+
+        app.include_router(dashboard_router, prefix='/api/dashboard')
+        app.include_router(ws_router)
+        logger.info('Service Dashboard API mounted at /api/dashboard')
+    except ImportError:
+        logger.info('agent-utilities gateway not available — dashboard API unavailable')
 
     # Delegate to Pydantic-AI's native web wrapper for base functionality
     pydantic_app = agent.to_web(

@@ -166,7 +166,7 @@ export default function FilesView() {
 
   const handlePreview = async (filename: string) => {
     try {
-      const res = await fetch(`/api/enhanced/files/${encodeURIComponent(filename)}`)
+      const res = await fetch(`/api/enhanced/files/${filename}`)
       if (!res.ok) {
         toast.error(await extractErrorMessage(res, 'Failed to load file preview'))
         return
@@ -220,7 +220,7 @@ export default function FilesView() {
     }
     try {
       setSaving(true)
-      const res = await fetch(`/api/enhanced/files/${encodeURIComponent(filename)}`, {
+      const res = await fetch(`/api/enhanced/files/${filename}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
@@ -274,7 +274,7 @@ export default function FilesView() {
     const filename = deleteCandidate
     try {
       setDeleting(true)
-      const res = await fetch(`/api/enhanced/files/${encodeURIComponent(filename)}`, {
+      const res = await fetch(`/api/enhanced/files/${filename}`, {
         method: 'DELETE',
       })
       if (!res.ok) {

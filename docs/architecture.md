@@ -1,37 +1,55 @@
 # Architecture
 
-## Protocol Flow
+## Centralized Epistemic Gateway Topology
 
+The `agent-webui` interfaces directly with a centralized system layer located inside `agent-utilities` (`agent-utilities-kg`). This gateway centralizes data access and tool registry control, ensuring absolute consistency across multi-agent workflows.
+
+```mermaid
+graph TD
+    UI[React frontend] -->|Vercel AI SDK useChat| API_Chat[/api/chat]
+    UI -->|Enhanced Admin Dashboard| API_Enhanced[/api/enhanced/*]
+
+    subgraph WebUI_Backend ["WebUI Backend Server (agent-webui)"]
+        API_Chat --> ChatAgent[Pydantic AI Chat Agent]
+        API_Enhanced --> ProxyRouter[FastAPI Route Proxy]
+    end
+
+    subgraph Centralized_Gateway ["Centralized Epistemic Gateway (agent-utilities)"]
+        ProxyRouter -->|JSON-RPC / SSE / HTTP| GatewayREST[REST APIs / Starlette Routes]
+        GatewayREST -->|/tools & /tools/toggle| ToolsConfig[Unified Tool Listing & Toggling]
+        GatewayREST -->|7 Symmetric Endpoints| GraphExecutor[Direct Tool Executor]
+
+        ToolsConfig -->|Persist state| KG[IntelligenceGraphEngine]
+        GraphExecutor -->|Query / Search / Write / Ingest / Analyze / Orchestrate / Configure| KG
+    end
+
+    subgraph Database ["Persistence Layer"]
+        KG --> LadybugDB[LadybugDB Engine / FalkorDB]
+    end
 ```
-AG-UI: /api/chat  -> Vercel AI SDK useChat -> pydantic-ai agent -> graph (via tools)
-ACP:   /acp/*     -> create_graph_acp_app() -> graph (via run_graph_flow tool)
-SSE:   /stream    -> run_graph_stream() -> direct graph execution
-```
 
-## Key Component Map
+## REST Endpoints Overview
 
-| Component         | File                                         | Responsibility                                                                                            |
-| ----------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Chat              | `src/Chat.tsx`                               | Main chat interface with streaming, tool execution, graph activity, multi-modal input, approval workflows |
-| GraphActivity     | `src/components/GraphActivity.tsx`           | Real-time graph execution timeline (routing, parallel execution, tool binding, expert reasoning)          |
-| ApprovalCard      | `src/components/ApprovalCard.tsx`            | Human-in-the-loop tool approval for security-sensitive operations                                         |
-| Part              | `src/Part.tsx`                               | Message part renderer (text, tool calls, elicitation forms, sources, images)                            |
-| AppSidebar        | `src/components/app-sidebar.tsx`             | Navigation, conversation history, agent identity, view switching                                          |
-| GraphView         | `src/components/views/GraphView.tsx`         | Interactive graph visualization with layouts, zoom/pan, node inspection, statistics                      |
-| KnowledgeBaseView | `src/components/views/KnowledgeBaseView.tsx` | Knowledge base ingestion, article management, health checks, search                                      |
-| MemoryView        | `src/components/views/MemoryView.tsx`        | Memory CRUD with timeline visualization, importance scoring, advanced search                             |
-| SDDView           | `src/components/views/SDDView.tsx`          | Spec-driven development: constitution, specs, plans, tasks, memory synchronization                        |
-| FilesView         | `src/components/views/FilesView.tsx`         | Workspace file browser                                                                                    |
-| SkillsView        | `src/components/views/SkillsView.tsx`        | Universal skills viewer and configuration                                                                 |
-| SchedulingView    | `src/components/views/SchedulingView.tsx`    | Cron task monitoring and management                                                                       |
-| ConfigurationView | `src/components/views/ConfigurationView.tsx` | Agent and workspace configuration                                                                         |
-| KnowledgeView     | `src/components/views/KnowledgeView.tsx`     | Knowledge base and embedding management (legacy)                                                          |
-| ACP Client        | `src/lib/acp-client.ts`                      | ACP protocol client (session management, JSON-RPC, SSE event streaming)                                   |
-| MCP Context       | `src/lib/mcp-context.tsx`                    | MCP tool context provider for the React tree                                                              |
+The centralized `agent-utilities-kg` server exposes two primary REST API namespaces to the proxy:
 
-## Backend Structure
+### 1. Unified Tools Registry (`/tools`, `/tools/toggle`)
+- **GET `/tools`**: Returns a complete, consolidated catalog of all three tool layers (MCP Server tools, Native Pydantic AI tools, and Universal Skills/Workflows/Graphs).
+- **POST `/tools/toggle`**: Toggles individual tool status and records preferences inside the graph as a `Preference` node, dynamically enabling or disabling them within the `IntelligenceGraphEngine`.
 
-| Module         | File                                  | Responsibility                                                                                                  |
-| -------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Server Factory | `agent/agent_webui/server.py`         | `create_agent_web_app()` — composes FastAPI app with Pydantic AI routes, enhanced APIs, and SPA static serving |
-| API Extensions | `agent/agent_webui/api_extensions.py` | `/api/enhanced/*` routes for knowledge graph, KB, SDD, MAGMA, resources, and maintenance                    |
+### 2. Symmetric Graph Tools (`/graph/*`)
+Symmetrically maps the 7 main FastMCP tools to HTTP endpoints, enabling zero-wrapper REST execution of complex KG queries:
+- **POST `/graph/query`**: Cypher console execution.
+- **POST `/graph/search`**: Semantic, concept-based, analogy-based, or episodic search.
+- **POST `/graph/write`**: Bulk write node and edge insertions.
+- **POST `/graph/ingest`**: Codebase, document, or logs ingestion.
+- **POST `/graph/analyze`**: Complex traversal, sweep, and evaluation algorithms.
+- **POST `/graph/orchestrate`**: Multi-agent swarm dispatch and workflow compiles.
+- **POST `/graph/configure`**: Secret configuration, tool registrations, hooks.
+
+## Backend Component Mapping
+
+| Component         | Responsibility                                                                                            |
+| ----------------- | -------------------------------------------------------------------------------------------------------- |
+| Chat Server       | Composes the local FastAPI server with SPA static serving.                                               |
+| Centralized Gateway | Manages the primary Ne04j/LadybugDB database connections, memory storage pools, and execution processes.  |
+| API Extensions    | Intercepts dashboard routes and dynamically proxy-forwards them directly to the Epistemic Gateway.       |

@@ -80,7 +80,7 @@ export default function MagmaView() {
   const runQuery = async () => {
     const trimmed = query.trim()
     if (!trimmed) {
-      toast.warning('Enter a query to run MAGMA retrieval.')
+      toast.warning('Enter a query to run perspective retrieval.')
       return
     }
     if (limit <= 0 || !Number.isFinite(limit)) {
@@ -112,10 +112,10 @@ export default function MagmaView() {
       setGrouped(groupByView(flat, viewType))
       setLastQuery(trimmed)
       if (flat.length === 0) {
-        toast.info('No MAGMA results for that query.')
+        toast.info('No perspective results for that query.')
       }
     } catch (err) {
-      toast.error(`MAGMA retrieval failed: ${String(err)}`)
+      toast.error(`Perspective retrieval failed: ${String(err)}`)
     } finally {
       setLoading(false)
     }
@@ -127,7 +127,7 @@ export default function MagmaView() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Compass className="size-6" />
-            MAGMA Views
+            Perspective Views
           </h1>
           <p className="text-muted-foreground text-sm">
             Orthogonal retrieval across semantic, temporal, causal, entity, place,
@@ -140,7 +140,7 @@ export default function MagmaView() {
         <CardHeader>
           <CardTitle>Query</CardTitle>
           <CardDescription>
-            Compose a query and pick the MAGMA view to retrieve against.
+            Compose a query and pick the perspective view to retrieve against.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -166,7 +166,7 @@ export default function MagmaView() {
                 value={viewType}
                 onValueChange={(v) => setViewType(v as MagmaView)}
               >
-                <SelectTrigger id="magma-view-type" aria-label="MAGMA view type">
+                <SelectTrigger id="magma-view-type" aria-label="Perspective view type">
                   <SelectValue placeholder="Select a view" />
                 </SelectTrigger>
                 <SelectContent>
@@ -221,7 +221,7 @@ export default function MagmaView() {
         {grouped.length === 0 && !loading ? (
           <Card>
             <CardContent className="py-8 text-center text-muted-foreground">
-              Run a query to see MAGMA results.
+              Run a query to see perspective results.
             </CardContent>
           </Card>
         ) : (

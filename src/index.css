@@ -122,6 +122,116 @@
   --pydantic-brand: oklch(0.62 0.18 260);
 }
 
+/* ── Glass Theme — Frosted translucent glassmorphism ──────────────── */
+.glass {
+  --background: oklch(0.10 0.02 260 / 85%);
+  --foreground: oklch(0.96 0.005 260);
+  --card: oklch(0.18 0.02 260 / 40%);
+  --card-foreground: oklch(0.96 0.005 260);
+  --popover: oklch(0.15 0.02 260 / 80%);
+  --popover-foreground: oklch(0.96 0.005 260);
+  --primary: oklch(0.72 0.18 280);
+  --primary-foreground: oklch(0.10 0.015 260);
+  --secondary: oklch(0.22 0.015 260 / 50%);
+  --secondary-foreground: oklch(0.96 0.005 260);
+  --muted: oklch(0.22 0.015 260 / 40%);
+  --muted-foreground: oklch(0.64 0.02 260);
+  --accent: oklch(0.25 0.06 280 / 50%);
+  --accent-foreground: oklch(0.96 0.005 260);
+  --destructive: oklch(0.70 0.19 22);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 10%);
+  --ring: oklch(0.72 0.18 280);
+  --sugar: oklch(0.14 0.025 260 / 60%);
+  --sidebar: oklch(0.12 0.02 260 / 70%);
+  --sidebar-foreground: oklch(0.96 0.005 260);
+  --sidebar-primary: oklch(0.72 0.18 280);
+  --sidebar-primary-foreground: oklch(0.10 0.015 260);
+  --sidebar-accent: oklch(0.25 0.06 280 / 40%);
+  --sidebar-accent-foreground: oklch(0.96 0.005 260);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.72 0.18 280);
+  --pydantic-brand: oklch(0.72 0.18 280);
+  --chart-1: oklch(0.72 0.24 280);
+  --chart-2: oklch(0.70 0.17 162);
+  --chart-3: oklch(0.77 0.19 70);
+  --chart-4: oklch(0.63 0.27 304);
+  --chart-5: oklch(0.71 0.15 164);
+}
+
+.glass body,
+.glass [data-sidebar] {
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+}
+
+/* ── Dashboard Widget Cards ───────────────────────────────────────── */
+.widget-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.25s cubic-bezier(0.33, 1, 0.68, 1),
+              box-shadow 0.25s cubic-bezier(0.33, 1, 0.68, 1),
+              border-color 0.25s ease;
+}
+
+.widget-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    oklch(1 0 0 / 8%) 0%,
+    oklch(1 0 0 / 2%) 50%,
+    oklch(1 0 0 / 6%) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.widget-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 8px 24px oklch(0 0 0 / 12%),
+    0 0 0 1px oklch(1 0 0 / 5%);
+}
+
+.dark .widget-card:hover,
+.glass .widget-card:hover {
+  box-shadow:
+    0 8px 32px oklch(0 0 0 / 40%),
+    0 0 0 1px oklch(1 0 0 / 8%);
+}
+
+/* Status dot pulse animation */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.3); }
+}
+
+.status-dot-ok {
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+/* Staggered card entrance */
+@keyframes widget-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.widget-enter {
+  animation: widget-enter 0.4s cubic-bezier(0.33, 1, 0.68, 1) both;
+}
+
 /* ── Base layer ────────────────────────────────────────────────────── */
 @layer base {
   * {

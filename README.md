@@ -80,11 +80,20 @@ Agent WebUI is a highly interactive, responsive chat interface designed specific
   - Importance scoring and temporal decay tracking
   - Tag-based organization and advanced search
   - Impact analysis for code changes
-- **MAGMA Orthogonal Views** -- policy-guided retrieval across:
+- **Brain & Knowledge Orthogonal Views** -- policy-guided retrieval across:
   - Semantic view (vector-based similarity)
   - Temporal view (episodic memory with decay)
   - Causal view (reasoning traces and "why" links)
   - Entity view (people, organizations, code symbols)
+
+### Unified Agent Homelab
+- **Ecosystem Service Discovery** -- Automatically scans for and lists active/installed local agent packages and MCP servers.
+- **5-Domain Navigation Layout**:
+  - **DevOps & Workspace**: Workspace Matrix code status, branch operations, and git pulling.
+  - **Brain & Knowledge**: Visual SVG graph nodes, Cypher console, scientific literature papers explorer, and Prompts visual configurator.
+  - **Infrastructure Hub**: SSH tunnels drawer, remote terminal commands, CPU/RAM/Disk dials, active process trees, and Docker registry boards.
+  - **Lifestyle & Automation**: SmartHome device dimmers, Calendar tasks, qBittorrent torrent speedometers, and MealieScaled grocery trackers.
+  - **System Config**: Scheduled crons timeline and Global settings configurator forms.
 
 ### Spec-Driven Development (SDD)
 - **Constitution Management** -- project governance and tech stack configuration
@@ -121,25 +130,24 @@ Agent WebUI is a highly interactive, responsive chat interface designed specific
 - **AG-UI (default)**: Standard Vercel AI SDK streaming via `/api/chat`. Supports text, reasoning, tool calls, and graph sideband events. Uses the `@ai-sdk/react` `useChat` hook for real-time streaming.
 - **ACP (opt-in)**: Advanced Agent Communication Protocol via `/acp/*`. Provides session management, planning modes, and approval bridges. Enabled by setting `VITE_ENABLE_ACP=true`. Routes through the full HSM graph pipeline via `create_graph_acp_app()`, ensuring ACP clients benefit from specialist routing, parallel execution, circuit breakers, and verification.
 
-### Backend Integration
+### Backend Integration & Centralized Gateway
 
-The backend (`agent/agent_webui/server.py`) creates a FastAPI application via `create_agent_web_app()` that:
+The WebUI backend (`agent/agent_webui/server.py`) integrates with a **Centralized Epistemic Gateway** hosted directly in `agent-utilities` (`agent-utilities-kg`). This gateway centralizes database connections, memory stores, and workspace actions for multiple concurrent agents and client applications.
 
-1. Mounts Pydantic AI's web routes for `/api/chat` (model selection, tool configuration, streaming)
-2. Provides enhanced workspace APIs at `/api/enhanced/*`:
-   - **Knowledge Graph APIs**: Memory CRUD, node linking, search, impact analysis, Cypher queries
-   - **Knowledge Base APIs**: Ingestion, listing, search, article retrieval, health checks
-   - **SDD Lifecycle APIs**: Constitution, specs, plans, tasks management, memory synchronization
-   - **MAGMA View APIs**: Orthogonal context retrieval (semantic, temporal, causal, entity)
-   - **Resource Management APIs**: MCP/A2A resource listing, specialized agent spawning
-   - **Maintenance APIs**: Graph maintenance operations and status monitoring
-   - **Pipeline APIs**: 12-phase intelligence pipeline monitoring and execution
-3. Serves the built React SPA with client-side routing support via a custom `SPAStaticFiles` handler
-4. Integrates Logfire for real-time observability
-5. Uses **unified specialist discovery** (`discover_all_specialists()`) at graph bootstrap, merging MCP agents and A2A peers into a single `DiscoveredSpecialist` roster before graph initialization
-6. Provides **backend abstraction** via `GraphBackend` factory, supporting LadybugDB (default), FalkorDB, and Neo4j
+1. **Vercel AI SDK Integration**: Mounts Pydantic AI's streaming chat routes for `/api/chat`.
+2. **Centralized Routing & API Proxy**: Proxy-routes `/api/enhanced/*` dynamically to the Centralized Epistemic Gateway:
+   - **Knowledge Graph APIs**: Memory CRUD, node linking, search, impact analysis, Cypher console queries.
+   - **Knowledge Base & Ingestion**: Resource parsing, sitemap scanning, literature exploration, hybrid vector search.
+   - **SDD Lifecycle APIs**: Constitution, specification matrices, implementation planning, and automatic task/memory sync.
+3. **Unified Tools Configuration (Centralized /tools & /tools/toggle)**:
+   - Lists and configures all 3 tool classes (MCP Servers, Built-in Tools, Agent Skills/Workflows/Graphs) via standard `/tools` API.
+   - Toggles status of individual skills, workflows, graphs, servers, or native tools via `/tools/toggle`, persisting preferences directly inside the Knowledge Graph as `Preference` nodes.
+4. **Symmetric Bilateral Graph Execution Routes**:
+   - Exposes 7 high-fidelity graph REST routes (`/graph/query`, `/graph/search`, `/graph/write`, `/graph/ingest`, `/graph/analyze`, `/graph/orchestrate`, `/graph/configure`) that map symmetrically to the Knowledge Graph's registered tools, letting external applications execute graph methods as standard HTTP endpoints.
+5. **Unified Specialist Discovery**: Consolidates MCP specialists and A2A peers into a single discovered registry at graph boot.
+6. **Robust Storage Abstraction**: Utilizes the gateway's optimized engine database connection pooling and backend adapters (LadybugDB, Neo4j).
 
-ACP requests route through the full HSM graph pipeline, ensuring ACP clients share the same specialist routing, parallel execution, and verification logic as AG-UI and SSE clients.
+All communication is fully traceable, logging session parameters, agent identities, and provenance for complete ecosystem visibility.
 
 ### Unified Discovery Architecture
 

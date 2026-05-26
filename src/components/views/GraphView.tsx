@@ -1,13 +1,21 @@
 import { useState, useEffect } from 'react'
-import { Network, Database, Brain, FileText, Clock, RefreshCw, Search } from 'lucide-react'
+import {
+  Network,
+  Terminal,
+  Brain,
+  RefreshCw,
+  Database,
+  Play,
+  Layers,
+  Sparkles
+} from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 import { GraphCanvas } from '../knowledge-graph/GraphCanvas'
 
 interface GraphNode {
@@ -32,15 +40,48 @@ export default function GraphView() {
   const [stats, setStats] = useState<GraphStats>({ total_nodes: 0, total_relationships: 0, by_type: {} })
   const [nodes, setNodes] = useState<GraphNode[]>([])
   const [relationships, setRelationships] = useState<GraphRelationship[]>([])
-  const [selectedNodeType, setSelectedNodeType] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('overview')
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState('visualization')
+
+  // Cypher states
+  const [cypherQuery, setCypherQuery] = useState('MATCH (n) RETURN n LIMIT 15')
+  const [cypherResults, setCypherResults] = useState<any[] | null>(null)
+  const [executingCypher, setExecutingCypher] = useState(false)
+
+  // MAGMA states
+  const [magmaQuery, setMagmaQuery] = useState('')
+  const [magmaView, setMagmaView] = useState<'semantic' | 'structural' | 'temporal' | 'hybrid'>('semantic')
+  const [magmaResults, setMagmaResults] = useState<any[] | null>(null)
+  const [retrievingMagma, setRetrievingMagma] = useState(false)
 
   useEffect(() => {
     void fetchData()
-  }, [selectedNodeType])
+  }, [])
+
+  const fetchData = async () => {
+    try {
+      setLoading(true)
+      const [statsRes, nodesRes, relsRes] = await Promise.all([
+        fetch('/api/enhanced/graph/stats'),
+        fetch('/api/enhanced/graph/nodes'),
+        fetch('/api/enhanced/graph/relationships'),
+      ])
+
+      const statsData = (await statsRes.json()) as GraphStats
+      const nodesData = (await nodesRes.json()) as GraphNode[]
+      const relsData = (await relsRes.json()) as GraphRelationship[]
+
+      setStats(statsData)
+      setNodes(nodesData)
+      setRelationships(relsData)
+    } catch (err) {
+      toast.error('Failed to load graph database nodes')
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleUpdateNode = (id: string, properties: any) => {
     setNodes(prev => prev.map(n => n.id === id ? { ...n, properties: { ...n.properties, ...properties } } : n))
@@ -60,295 +101,103 @@ export default function GraphView() {
     setNodes(prev => [...prev, newNode])
   }
 
-
-  const fetchData = async () => {
+  const runCypherQuery = async () => {
+    if (!cypherQuery.trim()) return
+    setExecutingCypher(true)
     try {
-      setLoading(true)
-      const [statsRes, nodesRes, relsRes] = await Promise.all([
-        fetch('/api/enhanced/graph/stats'),
-        fetch(selectedNodeType ? `/api/enhanced/graph/nodes?node_type=${selectedNodeType}` : '/api/enhanced/graph/nodes'),
-        fetch('/api/enhanced/graph/relationships'),
-      ])
-
-      const statsData = (await statsRes.json()) as GraphStats
-      const nodesData = (await nodesRes.json()) as GraphNode[]
-      const relsData = (await relsRes.json()) as GraphRelationship[]
-
-      setStats(statsData)
-      setNodes(nodesData)
-      setRelationships(relsData)
-    } catch (err) {
-      toast.error('Failed to load graph data')
-      console.error(err)
+      const res = await fetch('/api/enhanced/graph/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: cypherQuery })
+      })
+      if (!res.ok) {
+        const errorText = await res.text()
+        toast.error(`Cypher Execution Failed: ${errorText}`)
+        return
+      }
+      const data = await res.json()
+      setCypherResults(data)
+      toast.success('Cypher query completed')
+    } catch {
+      toast.error('Error executing Cypher query')
     } finally {
-      setLoading(false)
+      setExecutingCypher(false)
     }
   }
 
-  const filteredNodes = nodes.filter(
-    (node) =>
-      node.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      Object.values(node.properties).some(
-        (val) => String(val).toLowerCase().includes(searchQuery.toLowerCase())
-      )
-  )
-
-  const nodeTypeColors: Record<string, string> = {
-    Job: 'bg-blue-500/10 border-blue-500/20 text-blue-500',
-    Log: 'bg-green-500/10 border-green-500/20 text-green-500',
-    Memory: 'bg-purple-500/10 border-purple-500/20 text-purple-500',
-    KnowledgeBase: 'bg-orange-500/10 border-orange-500/20 text-orange-500',
-    Article: 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500',
-    KBConcept: 'bg-pink-500/10 border-pink-500/20 text-pink-500',
-    KBFact: 'bg-cyan-500/10 border-cyan-500/20 text-cyan-500',
-    Prompt: 'bg-indigo-500/10 border-indigo-500/20 text-indigo-500',
-    Tool: 'bg-red-500/10 border-red-500/20 text-red-500',
-    User: 'bg-teal-500/10 border-teal-500/20 text-teal-500',
-    Client: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500',
-    Heartbeat: 'bg-rose-500/10 border-rose-500/20 text-rose-500',
-    Message: 'bg-violet-500/10 border-violet-500/20 text-violet-500',
-  }
-
-  const nodeTypeIcons: Record<string, any> = {
-    Job: Clock,
-    Log: FileText,
-    Memory: Brain,
-    KnowledgeBase: Database,
-    Article: FileText,
-    KBConcept: Brain,
-    KBFact: FileText,
-    Prompt: Brain,
-    Tool: Network,
-    User: Brain,
-    Client: Network,
-    Heartbeat: Clock,
-    Message: FileText,
+  const runMagmaRetrieve = async () => {
+    if (!magmaQuery.trim()) return
+    setRetrievingMagma(true)
+    try {
+      const res = await fetch('/api/enhanced/graph/magma', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: magmaQuery,
+          view_type: magmaView
+        })
+      })
+      if (!res.ok) {
+        toast.error('Failed orthogonal view MAGMA retrieval')
+        return
+      }
+      const data = await res.json()
+      setMagmaResults(data)
+      toast.success('MAGMA orthogonal context retrieved')
+    } catch {
+      toast.error('Error during MAGMA contextual scan')
+    } finally {
+      setRetrievingMagma(false)
+    }
   }
 
   return (
-    <div className="space-y-6 h-[calc(100vh-12rem)]">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 h-[calc(100vh-12rem)] flex flex-col">
+      {/* Dynamic Summary Cards */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Network className="size-6" />
-            Knowledge Graph
-          </h1>
-          <p className="text-muted-foreground text-sm">Full visibility into graph components</p>
+          <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-500 flex items-center gap-2">
+            <Network className="size-6 text-emerald-400" />
+            Unified Graph Workspace
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Execute cypher commands, traverse MAGMA orthogonal contexts, and view live active clusters.
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void fetchData()} className="gap-2">
-          <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Badge variant="outline" className="h-7 bg-muted/20 border-border/40 text-xs">
+            Nodes: {stats.total_nodes}
+          </Badge>
+          <Badge variant="outline" className="h-7 bg-muted/20 border-border/40 text-xs">
+            Edges: {stats.total_relationships}
+          </Badge>
+          <Button variant="outline" size="sm" onClick={() => void fetchData()} disabled={loading}>
+            <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="nodes">Nodes</TabsTrigger>
-          <TabsTrigger value="relationships">Relationships</TabsTrigger>
-          <TabsTrigger value="visualization">Visualization</TabsTrigger>
-          <TabsTrigger value="explorer">Explorer</TabsTrigger>
+      {/* Structured Graph Tab List */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+        <TabsList className="grid w-full grid-cols-3 max-w-lg bg-muted/30 p-1 shrink-0 border border-border/40 rounded-xl">
+          <TabsTrigger value="visualization" className="gap-1.5 text-xs">
+            <Network className="size-3.5" />
+            Visual Canvas
+          </TabsTrigger>
+          <TabsTrigger value="cypher" className="gap-1.5 text-xs">
+            <Terminal className="size-3.5" />
+            Cypher Console
+          </TabsTrigger>
+          <TabsTrigger value="magma" className="gap-1.5 text-xs">
+            <Brain className="size-3.5" />
+            MAGMA Context
+          </TabsTrigger>
         </TabsList>
 
-        {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium">Total Nodes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">{stats.total_nodes}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium">Total Relationships</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">{stats.total_relationships}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium">Node Types</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">{Object.keys(stats.by_type).length}</div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Nodes by Type</CardTitle>
-              <CardDescription>Distribution of node types in the graph</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {Object.entries(stats.by_type).map(([type, count]) => {
-                  const Icon = nodeTypeIcons[type] || Database
-                  return (
-                    <div key={type} className="flex items-center justify-between p-3 rounded-lg border border-border/40 hover:bg-muted/50 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <div className={cn('p-2 rounded-lg', nodeTypeColors[type] || 'bg-muted')}>
-                          <Icon className="size-4" />
-                        </div>
-                        <span className="font-medium">{type}</span>
-                      </div>
-                      <Badge variant="secondary">{count}</Badge>
-                    </div>
-                  )
-                })}
-                {Object.keys(stats.by_type).length === 0 && (
-                  <p className="text-center text-muted-foreground py-8">No nodes found</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Nodes Tab */}
-        <TabsContent value="nodes" className="space-y-4">
-          <div className="flex gap-4 items-center">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-              <Input
-                placeholder="Search nodes..."
-                className="pl-9"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant={selectedNodeType === null ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedNodeType(null)}
-              >
-                All
-              </Button>
-              {Object.keys(stats.by_type).map((type) => (
-                <Button
-                  key={type}
-                  variant={selectedNodeType === type ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setSelectedNodeType(type)}
-                >
-                  {type}
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Graph Nodes</CardTitle>
-              <CardDescription>
-                {selectedNodeType ? `${selectedNodeType} nodes` : 'All nodes'} ({filteredNodes.length})
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[500px]">
-                <div className="space-y-2">
-                  {loading ? (
-                    <p className="text-center text-muted-foreground py-8">Loading...</p>
-                  ) : filteredNodes.length === 0 ? (
-                    <p className="text-center text-muted-foreground py-8">No nodes found</p>
-                  ) : (
-                    filteredNodes.map((node) => {
-                      const mainType = node.labels.find((l) => nodeTypeColors[l]) || node.labels[0]
-                      const Icon = nodeTypeIcons[mainType] || Database
-                      return (
-                        <div
-                          key={node.id}
-                          className="p-4 rounded-lg border border-border/40 hover:bg-muted/50 transition-colors"
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex items-start gap-3 flex-1">
-                              <div className={cn('p-2 rounded-lg mt-1', nodeTypeColors[mainType] || 'bg-muted')}>
-                                <Icon className="size-4" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="font-mono text-sm font-medium mb-1 truncate">{node.id}</div>
-                                <div className="flex flex-wrap gap-1 mb-2">
-                                  {node.labels.map((label) => (
-                                    <Badge key={label} variant="outline" className="text-[10px]">
-                                      {label}
-                                    </Badge>
-                                  ))}
-                                </div>
-                                <div className="text-xs text-muted-foreground space-y-1">
-                                  {Object.entries(node.properties).slice(0, 5).map(([key, value]) => (
-                                    <div key={key} className="flex gap-2">
-                                      <span className="font-medium">{key}:</span>
-                                      <span className="truncate">{String(value)}</span>
-                                    </div>
-                                  ))}
-                                  {Object.keys(node.properties).length > 5 && (
-                                    <div className="text-muted-foreground italic">
-                                      +{Object.keys(node.properties).length - 5} more properties
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Relationships Tab */}
-        <TabsContent value="relationships" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Graph Relationships</CardTitle>
-              <CardDescription>Connections between nodes ({relationships.length})</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[500px]">
-                <div className="space-y-2">
-                  {loading ? (
-                    <p className="text-center text-muted-foreground py-8">Loading...</p>
-                  ) : relationships.length === 0 ? (
-                    <p className="text-center text-muted-foreground py-8">No relationships found</p>
-                  ) : (
-                    relationships.map((rel, index) => (
-                      <div
-                        key={index}
-                        className="p-3 rounded-lg border border-border/40 hover:bg-muted/50 transition-colors flex items-center gap-3"
-                      >
-                        <code className="text-sm font-mono bg-muted px-2 py-1 rounded">{rel.source}</code>
-                        <Badge variant="outline" className="shrink-0">{rel.type}</Badge>
-                        <code className="text-sm font-mono bg-muted px-2 py-1 rounded">{rel.target}</code>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Visualization Tab */}
-        <TabsContent value="visualization" className="space-y-4">
-          <Card className="h-full">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-lg">Interactive Graph Visualization</CardTitle>
-                  <CardDescription>Visualize and edit graph topology with intelligent clustering for 100K+ scaling</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="h-[600px] p-0 relative">
+        {/* Tab 1: Network Visualization */}
+        <TabsContent value="visualization" className="flex-1 overflow-hidden mt-4">
+          <Card className="h-full border-border/40 bg-card/60 backdrop-blur-md flex flex-col">
+            <CardContent className="flex-1 p-0 relative overflow-hidden h-full min-h-[450px]">
               {activeTab === 'visualization' && (
                 <GraphCanvas
                   nodes={nodes}
@@ -364,40 +213,124 @@ export default function GraphView() {
           </Card>
         </TabsContent>
 
-        {/* Explorer Tab */}
-        <TabsContent value="explorer" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Quick Access</CardTitle>
-              <CardDescription>Navigate to specific graph components</CardDescription>
+        {/* Tab 2: Cypher Console Terminal */}
+        <TabsContent value="cypher" className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden mt-4">
+          <Card className="lg:col-span-1 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
+            <CardHeader className="pb-3 border-b border-border/30">
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <Terminal className="size-4 text-emerald-400" />
+                Query Editor
+              </CardTitle>
+              <CardDescription>Enter Cypher graph query syntax.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Object.keys(stats.by_type).map((type) => {
-                  const Icon = nodeTypeIcons[type] || Database
-                  const count = stats.by_type[type]
-                  return (
-                    <Button
-                      key={type}
-                      variant="outline"
-                      className="h-24 flex-col gap-2 hover:bg-muted/50"
-                      onClick={() => {
-                        setSelectedNodeType(type)
-                        setActiveTab('nodes')
-                      }}
-                    >
-                      <Icon className={cn('size-6', nodeTypeColors[type]?.split(' ')[2])} />
-                      <div className="text-center">
-                        <div className="font-medium">{type}</div>
-                        <div className="text-xs text-muted-foreground">{count} nodes</div>
-                      </div>
-                    </Button>
-                  )
-                })}
-                {Object.keys(stats.by_type).length === 0 && (
-                  <p className="text-center text-muted-foreground col-span-3 py-8">No node types found</p>
-                )}
+            <CardContent className="flex-1 flex flex-col p-4 gap-4">
+              <Textarea
+                value={cypherQuery}
+                onChange={(e) => setCypherQuery(e.target.value)}
+                className="flex-1 font-mono text-xs bg-muted/10 border-border/40 p-3 resize-none h-[250px] lg:h-auto"
+                placeholder="MATCH (n) RETURN n LIMIT 10"
+              />
+              <Button onClick={() => void runCypherQuery()} disabled={executingCypher} className="bg-emerald-600 hover:bg-emerald-700 w-full">
+                <Play className="size-4 mr-2" />
+                {executingCypher ? 'Executing...' : 'Run Query'}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="lg:col-span-2 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
+            <CardHeader className="pb-3 border-b border-border/30 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-sm font-bold">Execution Output</CardTitle>
+                <CardDescription>Formatted tabular cypher nodes return.</CardDescription>
               </div>
+              {cypherResults && (
+                <Badge variant="secondary" className="text-[10px]">
+                  {cypherResults.length} records returned
+                </Badge>
+              )}
+            </CardHeader>
+            <CardContent className="flex-1 overflow-hidden p-0 bg-muted/5">
+              <ScrollArea className="h-full">
+                {cypherResults ? (
+                  <pre className="p-4 font-mono text-xs text-muted-foreground whitespace-pre overflow-auto">
+                    {JSON.stringify(cypherResults, null, 2)}
+                  </pre>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground">
+                    <Database className="size-10 text-muted-foreground/30 mb-2" />
+                    <p className="text-xs">No active execution dataset found. Submit a query to inspect live nodes.</p>
+                  </div>
+                )}
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab 3: MAGMA Orthogonal views retriever */}
+        <TabsContent value="magma" className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden mt-4">
+          <Card className="lg:col-span-1 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
+            <CardHeader className="pb-3 border-b border-border/30">
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <Brain className="size-4 text-emerald-400" />
+                Orthogonal Scanning
+              </CardTitle>
+              <CardDescription>Leverage multi-perspective contextual slices.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex-1 flex flex-col p-4 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Orthogonal Perspective View</label>
+                <select
+                  value={magmaView}
+                  onChange={(e) => setMagmaView(e.target.value as any)}
+                  className="w-full h-10 px-3 rounded-md border border-input bg-muted/20 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="semantic" className="bg-background text-foreground">Semantic View (NL concepts)</option>
+                  <option value="structural" className="bg-background text-foreground">Structural View (Code inheritance)</option>
+                  <option value="temporal" className="bg-background text-foreground">Temporal View (Execution logs/crons)</option>
+                  <option value="hybrid" className="bg-background text-foreground">Hybrid Synthesized View</option>
+                </select>
+              </div>
+              <div className="space-y-1.5 flex-1 flex flex-col">
+                <label className="text-xs font-semibold text-muted-foreground">Target Prompt Context / Seed</label>
+                <Textarea
+                  value={magmaQuery}
+                  onChange={(e) => setMagmaQuery(e.target.value)}
+                  className="flex-1 font-mono text-xs bg-muted/10 border-border/40 p-3 resize-none h-[180px] lg:h-auto"
+                  placeholder="Enter retrieval keywords or context snippet..."
+                />
+              </div>
+              <Button onClick={() => void runMagmaRetrieve()} disabled={retrievingMagma} className="bg-emerald-600 hover:bg-emerald-700 w-full shrink-0">
+                <Sparkles className="size-4 mr-2" />
+                {retrievingMagma ? 'Scanning...' : 'Retrieve MAGMA Context'}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="lg:col-span-2 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
+            <CardHeader className="pb-3 border-b border-border/30 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-sm font-bold">Retrieved Perspectives Context</CardTitle>
+                <CardDescription>Nodes grouped by perspective weights.</CardDescription>
+              </div>
+              {magmaResults && (
+                <Badge variant="secondary" className="text-[10px]">
+                  {magmaResults.length} vectors returned
+                </Badge>
+              )}
+            </CardHeader>
+            <CardContent className="flex-1 overflow-hidden p-0 bg-muted/5">
+              <ScrollArea className="h-full">
+                {magmaResults ? (
+                  <pre className="p-4 font-mono text-xs text-muted-foreground whitespace-pre overflow-auto">
+                    {JSON.stringify(magmaResults, null, 2)}
+                  </pre>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground">
+                    <Layers className="size-10 text-muted-foreground/30 mb-2" />
+                    <p className="text-xs">No active MAGMA orthogonal context slices retrieved. Submit keywords above.</p>
+                  </div>
+                )}
+              </ScrollArea>
             </CardContent>
           </Card>
         </TabsContent>

@@ -1,4 +1,4 @@
-import { CirclePlus, MessageCircle, Trash, Files, Zap, Book, Calendar, Settings, Pencil, Check, X, Network, Wrench, Compass, Terminal, ScrollText } from 'lucide-react'
+import { CirclePlus, MessageCircle, Trash, Files, Zap, Book, Calendar, Settings, Pencil, Check, X, Network, Wrench, Compass, Terminal, ScrollText, Cpu, LayoutDashboard } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
 import { toast } from 'sonner'
@@ -216,11 +216,58 @@ export function AppSidebar() {
         </SidebarHeader>
 
         <SidebarContent>
+          {/* Section 1: Agent-OS Dashboard & Chat */}
           <SidebarGroup>
-            <SidebarGroupLabel>Workspace Management</SidebarGroupLabel>
-            <SidebarMenu className="mb-4">
+            <SidebarGroupLabel>Agent-OS</SidebarGroupLabel>
+            <SidebarMenu className="mb-2">
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="View and manage workspace files">
+                <SidebarMenuButton asChild tooltip="Agent-OS Service Dashboard — Homepage">
+                  <a
+                    href="/"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <LayoutDashboard className="text-primary" />
+                    <span>Dashboard</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Central AI Assistant Chat Console">
+                  <a
+                    href="/chat"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <MessageCircle />
+                    <span>Chat Console</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Start a new conversation session">
+                  <a
+                    href="/chat"
+                    onClick={(e) => {
+                      window.localStorage.removeItem('activeConversationId')
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <CirclePlus className="text-emerald-500" />
+                    <span>New Conversation</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroup>
+
+          <SidebarGroup>
+            <SidebarGroupLabel>Workspace Manager</SidebarGroupLabel>
+            <SidebarMenu className="mb-2">
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Browse and edit workspace files">
                   <a
                     href="/files"
                     onClick={(e) => {
@@ -228,77 +275,45 @@ export function AppSidebar() {
                     }}
                   >
                     <Files />
-                    <span>Files</span>
+                    <span>Workspace Files</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Manage agent skills and capabilities">
+                <SidebarMenuButton asChild tooltip="Autonomous goal execution loops (ORCH-5.0)">
                   <a
-                    href="/skills"
+                    href="/goals"
                     onClick={(e) => {
                       doLocalNavigation(e)
                     }}
                   >
-                    <Zap />
-                    <span>Skills</span>
+                    <Compass className="text-primary" />
+                    <span>Autonomous Goals</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Manage and version system prompts">
+                <SidebarMenuButton asChild tooltip="Durable SQLite-backed agent sessions">
                   <a
-                    href="/prompts"
+                    href="/sessions"
                     onClick={(e) => {
                       doLocalNavigation(e)
                     }}
                   >
-                    <ScrollText />
-                    <span>Prompts</span>
+                    <Terminal className="text-primary" />
+                    <span>Active Sessions</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroup>
+
+          {/* Section 3: Brain & Knowledge */}
+          <SidebarGroup>
+            <SidebarGroupLabel>Brain & Knowledge</SidebarGroupLabel>
+            <SidebarMenu className="mb-2">
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Access the agent's knowledge base and documentation">
-                  <a
-                    href="/knowledge"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Book />
-                    <span>Knowledge</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="View and manage scheduled tasks">
-                  <a
-                    href="/scheduling"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Calendar />
-                    <span>Scheduling</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Edit agent configuration files">
-                  <a
-                    href="/configuration"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Settings />
-                    <span>Configuration</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="View Knowledge Graph visualization">
+                <SidebarMenuButton asChild tooltip="Interactive specialist nodes & links graph visualization">
                   <a
                     href="/graph"
                     onClick={(e) => {
@@ -306,31 +321,12 @@ export function AppSidebar() {
                     }}
                   >
                     <Network />
-                    <span>Graph</span>
+                    <span>Knowledge Graph</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Pipeline, maintenance, and resources admin"
-                >
-                  <a
-                    href="/ops"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Wrench />
-                    <span>Ops</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="MAGMA orthogonal views explorer"
-                >
+                <SidebarMenuButton asChild tooltip="Orthogonal perspectives (semantic, causal, temporal, entity) views explorer">
                   <a
                     href="/magma"
                     onClick={(e) => {
@@ -338,12 +334,12 @@ export function AppSidebar() {
                     }}
                   >
                     <Compass />
-                    <span>MAGMA</span>
+                    <span>Perspective Views</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Cypher query REPL">
+                <SidebarMenuButton asChild tooltip="Cypher query REPL terminal">
                   <a
                     href="/cypher"
                     onClick={(e) => {
@@ -351,29 +347,119 @@ export function AppSidebar() {
                     }}
                   >
                     <Terminal />
-                    <span>Cypher</span>
+                    <span>Cypher Console</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-            </SidebarMenu>
-
-            <SidebarGroupLabel>Chat</SidebarGroupLabel>
-            <SidebarMenu className="mb-2">
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Start a new conversation">
+                <SidebarMenuButton asChild tooltip="Access the agent's knowledge bases and documents">
                   <a
-                    href="/"
+                    href="/knowledge"
                     onClick={(e) => {
                       doLocalNavigation(e)
                     }}
                   >
-                    <CirclePlus />
-                    <span>New conversation</span>
+                    <Book />
+                    <span>Knowledge Base</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Manage and version agent system prompts">
+                  <a
+                    href="/prompts"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <ScrollText />
+                    <span>Prompts Registry</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Manage agent tools, MCP servers, and skills">
+                  <a
+                    href="/skills"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Zap />
+                    <span>Tools</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
+          </SidebarGroup>
 
+          {/* Section 4: Ecosystem & Infrastructure */}
+          <SidebarGroup>
+            <SidebarGroupLabel>Ecosystem & Infrastructure</SidebarGroupLabel>
+            <SidebarMenu className="mb-2">
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="System-wide hardware, docker containers, and SSH tunnels mapping">
+                  <a
+                    href="/ecosystem"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Cpu className="text-primary" />
+                    <span>Ecosystem Hub</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Pipeline, maintenance, and resources admin panel">
+                  <a
+                    href="/ops"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Wrench />
+                    <span>Ops Panel</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroup>
+
+          {/* Section 5: Maintenance & Settings */}
+          <SidebarGroup>
+            <SidebarGroupLabel>Maintenance & Settings</SidebarGroupLabel>
+            <SidebarMenu className="mb-2">
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="View and manage scheduled cron tasks">
+                  <a
+                    href="/scheduling"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Calendar />
+                    <span>Cron Scheduling</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Edit agent and workspace configuration settings">
+                  <a
+                    href="/configuration"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Settings />
+                    <span>Global Settings</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroup>
+
+          <SidebarGroup>
             <SidebarGroupLabel>Active Chats</SidebarGroupLabel>
 
             <SidebarGroupContent>

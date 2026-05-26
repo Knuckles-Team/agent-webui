@@ -10,6 +10,7 @@
  * - Local storage persistence and URL-based conversation routing.
  */
 
+import { cn } from '@/lib/utils'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Loader } from '@/components/ai-elements/loader'
 import {
@@ -373,6 +374,34 @@ interface LocalUseChatHelpers {
  */
 const Chat = () => {
   const [input, setInput] = useState('')
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number>(0)
+
+  useEffect(() => {
+    if (input.startsWith('/')) {
+      const controller = new AbortController()
+      fetch(`/api/enhanced/commands/autocomplete?query=${encodeURIComponent(input)}`, {
+        signal: controller.signal,
+      })
+        .then((res) => (res.ok ? res.json() : { suggestions: [] }))
+        .then((data) => {
+          if (data && Array.isArray(data.suggestions)) {
+            setSuggestions(data.suggestions)
+            setActiveSuggestionIndex(0)
+          } else {
+            setSuggestions([])
+          }
+        })
+        .catch((err) => {
+          if (err.name !== 'AbortError') {
+            console.error('Error fetching autocomplete:', err)
+          }
+        })
+      return () => controller.abort()
+    } else {
+      setSuggestions([])
+    }
+  }, [input])
   const [model, setModel] = useState<string>('')
   const [mode, setMode] = useState<AgentMode>(() => {
     // Hydrate from localStorage on mount; tolerate SSR and quota errors.
@@ -497,12 +526,270 @@ const Chat = () => {
     setAttachments((prev) => prev.filter((_, i) => i !== index))
   }
 
+    /**
+   * Processes a client-side slash command and appends the result to the chat.
+   */
+  const handleSlashCommand = async (rawInput: string) => {
+    const trimmed = rawInput.trim()
+    if (!trimmed.startsWith('/')) return false
+
+    const parts = trimmed.split(/\s+/)
+    const command = parts[0].toLowerCase()
+    const arg = parts.slice(1).join(' ').trim()
+
+    // Add user message to display
+    const userMsg: UIMessage = {
+      id: nanoid(),
+      role: 'user',
+      parts: [{ type: 'text', text: trimmed }],
+    }
+
+    let assistantReply = ''
+
+    switch (command) {
+      case '/help':
+        assistantReply = `### 💻 Agent WebUI Slash Commands
+
+Available commands:
+- **\`/help\`**: Show this help summary.
+- **\`/clear\`** or **\`/reset\`**: Wipe all messages in this conversation.
+- **\`/new [model]\`**: Archive the current conversation and start a new one. Optionally specify a model ID (e.g. \`/new\`, \`/new gpt-4o\`).
+- **\`/tools\`**: List all tools configured for the current agent/model.
+- **\`/model [model_id]\`**: View active model or switch to a new model (e.g. \`/model\`, \`/model gemini-2.5-pro\`).
+- **\`/mode [ask|plan|code]\`**: View or change the agent interaction mode (e.g. \`/mode\`, \`/mode code\`).
+- **\`/system\`**: Retrieve the active agent's system prompt.
+- **\`/prompt [name]\`**: View or list system prompt profiles (e.g. \`/prompt\`, \`/prompt mobile_programmer\`).
+- **\`/skills\`**: List loaded custom skills centrally.
+- **\`/graph stats|nodes|search|impact\`**: Access knowledge graph and run blast radius / impact analysis.
+- **\`/kb list|search|ingest\`**: Manage and query connected knowledge bases.
+- **\`/sdd specs|constitution|sync\`**: Manage spec-driven development rules and sync workspace.
+- **\`/cron calendar|logs\`**: View scheduled background tasks and logs.
+- **\`/resources list|spawn\`**: List and spawn subagents and tasks.`
+        break
+
+      case '/clear':
+      case '/reset':
+        setMessages([])
+        if (conversationId && conversationId !== '/') {
+          window.localStorage.removeItem(conversationId)
+        }
+        setInput('')
+        return true
+
+      case '/new': {
+        const newConversationId = `/${nanoid()}`
+        let modelMsg = ''
+        if (arg) {
+          const list = modelRegistry?.models || configQuery.data?.models || []
+          const matched = list.find(
+            (m) =>
+              m.id.toLowerCase().includes(arg.toLowerCase()) ||
+              m.name.toLowerCase().includes(arg.toLowerCase()),
+          )
+          if (matched) {
+            setModel(matched.id)
+            modelMsg = ` with model **${matched.name}** (\`${matched.id}\`)`
+          } else {
+            modelMsg = ` (model \`${arg}\` not found, keeping active model)`
+          }
+        }
+
+        saveConversationEntryInLocalStorage(newConversationId, arg ? `New chat (${arg})` : 'New Chat')
+        setConversationId(newConversationId)
+
+        const welcomeMsg: UIMessage = {
+          id: nanoid(),
+          role: 'assistant',
+          parts: [{ type: 'text', text: `🔄 Started a fresh conversation${modelMsg}. How can I assist you today?` }],
+        }
+        setMessages([welcomeMsg])
+        setInput('')
+        return true
+      }
+
+      case '/tools': {
+        const toolList = availableTools.map((t) => `- **${t.name}** (\`${t.id}\`)`).join('\n')
+        assistantReply = `### 🛠️ Available Tools for \`${model}\`\n\n${toolList || 'No tools configured.'}`
+        break
+      }
+
+      case '/model':
+        if (!arg) {
+          const currentModelName = modelRegistry?.models.find((m) => m.id === model)?.name || model
+          const modelsList =
+            (modelRegistry?.models || configQuery.data?.models || [])
+              .map((m) => `- \`${m.id}\` (${m.name})`)
+              .join('\n') || ''
+          assistantReply = `**Active Model:** \`${currentModelName}\` (\`${model}\`)\n\n**Available Models:**\n${modelsList}`
+        } else {
+          const list = modelRegistry?.models || configQuery.data?.models || []
+          const matched = list.find(
+            (m) =>
+              m.id.toLowerCase().includes(arg.toLowerCase()) ||
+              m.name.toLowerCase().includes(arg.toLowerCase()),
+          )
+          if (matched) {
+            setModel(matched.id)
+            assistantReply = `🔄 Active model switched to **${matched.name}** (\`${matched.id}\`).`
+          } else {
+            assistantReply =
+              `❌ Model \`${arg}\` not found. Available models:\n` +
+              list.map((m) => `- \`${m.id}\` (${m.name})`).join('\n')
+          }
+        }
+        break
+
+      case '/mode':
+        if (!arg) {
+          assistantReply = `Active agent interaction mode: **${mode}** (options: \`ask\`, \`plan\`, \`code\`).`
+        } else {
+          const normalized = arg.toLowerCase()
+          if (normalized === 'ask' || normalized === 'plan' || normalized === 'code') {
+            setMode(normalized as AgentMode)
+            assistantReply = `🔄 Interaction mode switched to **${normalized}**.`
+          } else {
+            assistantReply = `❌ Invalid mode \`${arg}\`. Valid options are: \`ask\`, \`plan\`, \`code\`.`
+          }
+        }
+        break
+
+      case '/system':
+        try {
+          const res = await fetch('/api/enhanced/system')
+          if (res.ok) {
+            const data = await res.json()
+            assistantReply = `### 🤖 Active Agent System Prompt\n\n\`\`\`markdown\n${
+              data.system_prompt || 'No system prompt found.'
+            }\n\`\`\``
+          } else {
+            assistantReply = `❌ Failed to fetch active system prompt from agent server.`
+          }
+        } catch (e: any) {
+          assistantReply = `❌ Error retrieving system prompt: ${e.message}`
+        }
+        break
+
+      case '/prompt':
+        if (!arg) {
+          try {
+            const res = await fetch('/api/enhanced/prompts')
+            if (res.ok) {
+              const list = await res.json()
+              const items = list.map((p: any) => `- \`${p.name}\`: **${p.title}**`).join('\n')
+              assistantReply = `### 📝 Registered Prompt Profiles\n\n${
+                items || 'No prompt profiles found.'
+              }\n\n*Use \`/prompt [name]\` to view a specific profile.*`
+            } else {
+              assistantReply = `❌ Failed to load prompts list.`
+            }
+          } catch (e: any) {
+            assistantReply = `❌ Error loading prompts: ${e.message}`
+          }
+        } else {
+          try {
+            const res = await fetch(`/api/enhanced/prompts/${arg}`)
+            if (res.ok) {
+              const data = await res.json()
+              assistantReply =
+                `### 📝 Prompt Profile: **${data.title || arg}** (\`${arg}.json\`)\n\n` +
+                `**Goal:** ${data.goal || 'No goal specified.'}\n\n` +
+                `#### Core Directive:\n\`\`\`markdown\n${data.core_directive || 'No directive.'}\n\`\`\``
+            } else {
+              assistantReply = `❌ Prompt profile \`${arg}\` not found.`
+            }
+          } catch (e: any) {
+            assistantReply = `❌ Error loading prompt: ${e.message}`
+          }
+        }
+        break
+
+      default: {
+        try {
+          const res = await fetch('/api/enhanced/commands/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: trimmed }),
+          })
+          if (res.ok) {
+            const data = await res.json()
+            assistantReply = data.response_markdown || ''
+
+            // Handle client actions if returned
+            if (data.client_actions && Array.isArray(data.client_actions)) {
+              for (const act of data.client_actions) {
+                if (act.action === 'clear_chat') {
+                  setMessages([])
+                  if (conversationId && conversationId !== '/') {
+                    window.localStorage.removeItem(conversationId)
+                  }
+                  setInput('')
+                } else if (act.action === 'set_model' && act.value) {
+                  setModel(act.value)
+                }
+              }
+            }
+          } else {
+            assistantReply = `❌ Failed to execute slash command \`${command}\` on the gateway server.`
+          }
+        } catch (e: any) {
+          assistantReply = `❌ Error executing slash command: ${e.message}`
+        }
+        break
+      }
+    }
+
+    const replyMsg: UIMessage = {
+      id: nanoid(),
+      role: 'assistant',
+      parts: [{ type: 'text', text: assistantReply }],
+    }
+
+    setMessages([...messages, userMsg, replyMsg])
+    setInput('')
+    return true
+  }
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (suggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setActiveSuggestionIndex((prev) => (prev + 1) % suggestions.length)
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setActiveSuggestionIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length)
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        setInput(suggestions[activeSuggestionIndex])
+        setSuggestions([])
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        setSuggestions([])
+      }
+    } else {
+      if (e.key === 'Enter') {
+        if (e.nativeEvent.isComposing || e.shiftKey) {
+          return
+        }
+        e.preventDefault()
+        const form = e.currentTarget.form
+        if (form) {
+          form.requestSubmit()
+        }
+      }
+    }
+  }
+
   /**
    * Submits the user prompt, handling conversation initialization and optional ACP/Multi-modal routing.
    */
   const handleSubmit = (e: SyntheticEvent) => {
     e.preventDefault()
     if (input.trim()) {
+      if (input.trim().startsWith('/')) {
+        void handleSlashCommand(input.trim())
+        return
+      }
+
       const theCurrentUrl = new URL(window.location.toString())
 
       if (theCurrentUrl.pathname === '/') {
@@ -716,13 +1003,42 @@ const Chat = () => {
         <ConversationScrollButton />
       </Conversation>
 
-      <div className="sticky bottom-0 p-3">
+      <div className="sticky bottom-0 p-3 relative">
+        {suggestions.length > 0 && (
+          <div className="absolute bottom-full left-3 right-3 mb-2 max-h-60 overflow-y-auto rounded-lg border border-border bg-background/95 backdrop-blur-md shadow-lg z-50 divide-y divide-border">
+            {suggestions.map((suggestion, index) => (
+              <button
+                key={suggestion}
+                type="button"
+                className={cn(
+                  'w-full text-left px-4 py-2 text-sm flex items-center justify-between transition-colors',
+                  index === activeSuggestionIndex
+                    ? 'bg-accent text-accent-foreground font-medium'
+                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                )}
+                onClick={() => {
+                  setInput(suggestion)
+                  setSuggestions([])
+                  textareaRef.current?.focus()
+                }}
+              >
+                <span>{suggestion}</span>
+                {index === activeSuggestionIndex && (
+                  <span className="text-xs text-muted-foreground bg-background border rounded px-1.5 py-0.5">
+                    Tab or Enter
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
         <PromptInput onSubmit={handleSubmit}>
           <PromptInputTextarea
             ref={textareaRef}
             onChange={(e) => {
               setInput(e.target.value)
             }}
+            onKeyDown={handleInputKeyDown}
             value={input}
             autoFocus={true}
           />

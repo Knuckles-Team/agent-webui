@@ -36,7 +36,7 @@ test = [
     "opentelemetry-instrumentation-starlette",
     "opentelemetry-instrumentation-fastapi",
     "opentelemetry-instrumentation-asgi",
-    "agent-utilities[graph]"
+    "agent-utilities[agent,graph]"
 ]
 
 [[project.authors]]
