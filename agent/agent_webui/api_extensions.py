@@ -477,7 +477,7 @@ def _parse_skill_md(path: Path) -> dict[str, Any]:
     try:
         content = path.read_text(encoding='utf-8', errors='ignore')
         match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
-        metadata = {}
+        metadata: dict[str, Any] = {}
         if match:
             try:
                 metadata = yaml.safe_load(match.group(1)) or {}
