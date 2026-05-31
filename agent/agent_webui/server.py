@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 logfire.configure(send_to_logfire='if-token-present')
 logfire.instrument_pydantic_ai()
 
-__version__ = '0.29.2'
+__version__ = '0.29.3'
 
 print(f'Agent WebUI v{__version__}', file=sys.stderr)
 
