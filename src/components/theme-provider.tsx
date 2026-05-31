@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { createContext, useContext, useEffect, useState } from 'react'
+import { useThemeColorizer } from '../hooks/use-theme-colorizer'
 
 type Theme = 'dark' | 'light' | 'system'
 
@@ -12,11 +13,15 @@ interface ThemeProviderProps {
 interface ThemeProviderState {
   theme: Theme
   setTheme: (theme: Theme) => void
+  baseColor: string
+  setBaseColor: (color: string) => void
 }
 
 const initialState: ThemeProviderState = {
   theme: 'system',
   setTheme: () => null,
+  baseColor: '0.52 0.18 260',
+  setBaseColor: () => null,
 }
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
@@ -30,6 +35,8 @@ export function ThemeProvider({
   const [theme, setTheme] = useState<Theme>(
     () => (window.localStorage.getItem(storageKey) as Theme | undefined) ?? defaultTheme,
   )
+
+  const { baseColor, setBaseColor } = useThemeColorizer()
 
   useEffect(() => {
     const root = window.document.documentElement
@@ -52,6 +59,8 @@ export function ThemeProvider({
       window.localStorage.setItem(storageKey, theme)
       setTheme(theme)
     },
+    baseColor,
+    setBaseColor,
   }
 
   return (
