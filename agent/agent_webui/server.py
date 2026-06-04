@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 logfire.configure(send_to_logfire='if-token-present')
 logfire.instrument_pydantic_ai()
 
-__version__ = '0.33.0'
+__version__ = '0.35.0'
 
 print(f'Agent WebUI v{__version__}', file=sys.stderr)
 
@@ -91,6 +91,21 @@ def create_agent_web_app(
         app.include_router(dashboard_router, prefix='/api/dashboard')
         app.include_router(ws_router)
         logger.info('Service Dashboard API mounted at /api/dashboard')
+
+        # This process is the KG daemon HOST: it runs the single consolidated
+        # background daemon (queue drain + graph writer + task workers +
+        # maintenance scheduler + file-watch) that all KG_DAEMON_ROLE=client
+        # processes (MCP server / CLI / scripts) rely on. Start it on app
+        # startup. (CONCEPT:KG-2.8 / OS-5.9)
+        @app.on_event('startup')
+        async def _start_kg_host_daemon() -> None:
+            try:
+                from agent_utilities.gateway.daemon import start_host_daemon
+
+                start_host_daemon()
+                logger.info('KG host daemon started (KG_DAEMON_ROLE=host)')
+            except Exception as exc:  # noqa: BLE001
+                logger.warning('Failed to start KG host daemon: %s', exc)
     except ImportError:
         logger.info('agent-utilities gateway not available — dashboard API unavailable')
 

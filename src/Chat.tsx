@@ -26,9 +26,14 @@ import {
   PromptInputToolbar,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
-import { XIcon, Settings2Icon, PaperclipIcon } from 'lucide-react'
+import { XIcon, Settings2Icon, PaperclipIcon, DownloadIcon } from 'lucide-react'
 import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai-elements/sources'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
 import { ApprovalCard } from '@/components/ApprovalCard'
@@ -301,6 +306,104 @@ function formatCost(cost: number): string {
 }
 
 const TOKEN_FORMATTER = new Intl.NumberFormat('en-US')
+
+/**
+ * Concatenate the human-readable text of a message's parts. Non-text parts
+ * (tool calls, sources, files, reasoning) are summarised as bracketed tags so
+ * the export stays faithful without dumping raw payloads.
+ */
+function extractMessageText(message: UIMessage): string {
+  const parts = message.parts as unknown as MessagePart[] | undefined
+  if (!parts || parts.length === 0) return ''
+  const chunks: string[] = []
+  for (const part of parts) {
+    if (part.type === 'text' && typeof part.text === 'string') {
+      chunks.push(part.text)
+    } else if (part.type === 'reasoning' && typeof part.text === 'string') {
+      chunks.push(part.text)
+    } else if (part.type === 'source-url' && typeof part.url === 'string') {
+      chunks.push(`[source: ${part.url}]`)
+    } else if (part.type.startsWith('tool-') || part.type === 'dynamic-tool') {
+      const name = (part.type === 'dynamic-tool' ? part.toolName : part.type) as string
+      chunks.push(`[tool: ${name}]`)
+    }
+  }
+  return chunks.join('\n').trim()
+}
+
+/**
+ * Render the conversation as a Markdown transcript.
+ */
+function conversationToMarkdown(messages: readonly UIMessage[], conversationId?: string): string {
+  const header = ['# Conversation export']
+  if (conversationId && conversationId !== '/') header.push(`\n_Conversation: ${conversationId}_`)
+  header.push(`\n_Exported: ${new Date().toISOString()}_`)
+  const body = messages.map((m) => {
+    const role = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : m.role
+    const text = extractMessageText(m) || '_(no text content)_'
+    return `## ${role}\n\n${text}`
+  })
+  return [...header, '', ...body, ''].join('\n')
+}
+
+/**
+ * Render the conversation as a structured JSON document.
+ */
+function conversationToJson(messages: readonly UIMessage[], conversationId?: string): string {
+  return JSON.stringify(
+    {
+      conversationId: conversationId && conversationId !== '/' ? conversationId : null,
+      exportedAt: new Date().toISOString(),
+      messages: messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        text: extractMessageText(m),
+        parts: m.parts,
+      })),
+    },
+    null,
+    2,
+  )
+}
+
+/**
+ * Trigger a client-side file download of `content` under `filename`.
+ */
+function downloadTextFile(content: string, filename: string, mimeType: string): void {
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  URL.revokeObjectURL(url)
+}
+
+/**
+ * Export the current conversation as Markdown or JSON, downloading the file.
+ */
+function exportConversation(
+  format: 'markdown' | 'json',
+  messages: readonly UIMessage[],
+  conversationId?: string,
+): void {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  if (format === 'json') {
+    downloadTextFile(
+      conversationToJson(messages, conversationId),
+      `conversation-${stamp}.json`,
+      'application/json',
+    )
+  } else {
+    downloadTextFile(
+      conversationToMarkdown(messages, conversationId),
+      `conversation-${stamp}.md`,
+      'text/markdown',
+    )
+  }
+}
 
 /**
  * Fetches the available models and tools from the server configuration endpoint
@@ -1159,6 +1262,36 @@ Available commands:
                     </div>
                   </TooltipContent>
                 </Tooltip>
+              )}
+              {messages.length > 0 && (
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <PromptInputButton variant="outline" aria-label="Export conversation">
+                          <DownloadIcon className="size-4" />
+                        </PromptInputButton>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Export conversation</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem
+                      onClick={() => {
+                        exportConversation('markdown', messages, conversationId)
+                      }}
+                    >
+                      Export as Markdown
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        exportConversation('json', messages, conversationId)
+                      }}
+                    >
+                      Export as JSON
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               {/* Prefer the backend-configured model registry; fall back
                 to the legacy `/api/configure` list when no registry is

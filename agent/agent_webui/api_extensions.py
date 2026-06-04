@@ -280,6 +280,8 @@ async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
                         dirs[:] = [d for d in dirs if d not in excluded_dirs]
 
                         # Add directories
+                        # Be forgiving for tests that mock the registry
+                        # but real runs should have valid types:
                         for d in dirs:
                             if len(results) >= limit:
                                 break
@@ -1936,7 +1938,7 @@ async def list_configured_models(request: Request) -> dict[str, Any]:
         return {'models': [], 'default_id': None}
     if hasattr(reg, 'to_api_payload'):
         return reg.to_api_payload()
-    # Be forgiving for tests that stub the registry with a plain dict.
+    # Be forgiving for tests that mock the registry with a plain dict.
     return reg
 
 

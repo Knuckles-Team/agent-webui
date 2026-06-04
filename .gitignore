@@ -247,3 +247,11 @@ marimo/_lsp/
 __marimo__/
 *.db
 agent_utilities/agent_data/
+
+# AI agent scratch (do not commit) — keep repo roots pristine
+.agent/
+.agents/
+.agent_data/
+.tmp/
+.pytest_tmp/
+.hypothesis/
