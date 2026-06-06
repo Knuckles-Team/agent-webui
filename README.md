@@ -20,7 +20,7 @@
 ![PyPI - Wheel](https://img.shields.io/pypi/wheel/agent-webui)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/agent-webui)
 
-_Version: 0.38.0_
+_Version: 0.39.0_
 
 A React-based chat interface for Pydantic AI Agents built using Agent Utilities.
 
