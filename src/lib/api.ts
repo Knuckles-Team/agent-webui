@@ -7,6 +7,16 @@
  * uniform error handling via the ApiError class.
  */
 
+import type { SavedWorkflow, WorkflowCapabilities, WorkflowCanvas, WorkflowRunResult } from './workflow'
+
+/** Body accepted by `POST /workflows`. */
+export interface SaveWorkflowPayload {
+  name: string
+  steps: string[]
+  orchestrates: string[]
+  canvas?: WorkflowCanvas
+}
+
 /**
  * Custom error class for API-related failures
  */
@@ -105,6 +115,13 @@ class ApiClient {
   // Graph Methods
   getGraphStats = () => this.get<any>('/api/enhanced/graph/stats')
   getGraphRelationships = () => this.get<any[]>('/api/enhanced/graph/relationships')
+
+  // Workflow Editor Methods (D9 — visual workflow editor)
+  listWorkflowCapabilities = () => this.get<WorkflowCapabilities>('/api/enhanced/workflows/capabilities')
+  listWorkflows = () => this.get<SavedWorkflow[]>('/api/enhanced/workflows')
+  saveWorkflow = (payload: SaveWorkflowPayload) =>
+    this.post<{ id: string; saved: boolean }>('/api/enhanced/workflows', payload)
+  runWorkflow = (id: string) => this.post<WorkflowRunResult>(`/api/enhanced/workflows/${encodeURIComponent(id)}/run`)
 }
 
 /**

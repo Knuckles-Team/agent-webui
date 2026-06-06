@@ -4529,3 +4529,300 @@ async def autocomplete_slash_command(query: str = ''):
 
     suggestions = [cmd for cmd in commands_list if cmd.startswith(query.lower())]
     return {'suggestions': suggestions}
+
+
+# ---------------------------------------------------------------------------
+# Visual Workflow Editor (D9)
+#
+# These endpoints back the node-based workflow editor in the web UI. They
+# round-trip the canonical ``WorkflowSpec`` ({name, steps, orchestrates}) and
+# persist the editor's exact canvas (nodes/edges/layout) so it can be restored
+# verbatim on reload. Imports of the orchestration stack are lazy/guarded so
+# this module still imports if orchestration is unavailable.
+# ---------------------------------------------------------------------------
+
+
+def _canvas_node_id(name: str) -> str:
+    """Stable canvas-sidecar node id for a given workflow id/name."""
+    slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+    return f'workflowcanvas:{slug}'
+
+
+@router.get('/workflows')
+async def list_workflows() -> list[dict[str, Any]]:
+    """List saved workflows from the Knowledge Graph.
+
+    Returns a list of ``{id, name, steps, orchestrates, canvas}`` dicts. The
+    canvas (editor node/edge/layout JSON) is loaded from the sibling
+    ``:WorkflowCanvas`` node when present so the editor round-trips exactly.
+    Degrades to ``[]`` on any error.
+    """
+    import json
+
+    try:
+        engine = get_engine()
+        rows = engine.backend.execute('MATCH (w:Workflow) RETURN w')
+        workflows: list[dict[str, Any]] = []
+        for row in rows:
+            wdata = row.get('w', {})
+            if not isinstance(wdata, dict):
+                continue
+            wid = wdata.get('id') or f'workflow:{wdata.get("name", "")}'
+            name = wdata.get('name', '')
+            steps_raw = wdata.get('steps', '')
+            steps = (
+                [s for s in steps_raw.split(',') if s]
+                if isinstance(steps_raw, str)
+                else list(steps_raw or [])
+            )
+            # Resolve orchestrates via ORCHESTRATES edges.
+            orchestrates: list[str] = []
+            try:
+                erows = engine.backend.execute(
+                    f'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
+                    f"WHERE w.id = '{wid}' RETURN t"
+                )
+                for er in erows:
+                    target = er.get('t', {})
+                    if isinstance(target, dict) and target.get('id'):
+                        orchestrates.append(target['id'])
+            except Exception as edge_err:  # noqa: BLE001
+                logger.debug(f'Could not resolve orchestrates for {wid}: {edge_err}')
+
+            # Load persisted canvas sidecar if present.
+            canvas: Any = None
+            try:
+                crows = engine.backend.execute(
+                    f"MATCH (c:WorkflowCanvas) WHERE c.workflow_id = '{wid}' RETURN c"
+                )
+                if crows:
+                    cdata = crows[0].get('c', {})
+                    raw = cdata.get('canvas') if isinstance(cdata, dict) else None
+                    if raw:
+                        canvas = json.loads(raw)
+            except Exception as canvas_err:  # noqa: BLE001
+                logger.debug(f'Could not load canvas for {wid}: {canvas_err}')
+
+            workflows.append(
+                {
+                    'id': wid,
+                    'name': name,
+                    'steps': steps,
+                    'orchestrates': orchestrates,
+                    'canvas': canvas,
+                }
+            )
+        return workflows
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to list workflows: {e}')
+        return []
+
+
+@router.get('/workflows/capabilities')
+async def workflow_capabilities() -> dict[str, list[dict[str, Any]]]:
+    """Return the palette catalog (agents/tools/skills) in a single call.
+
+    Sources agents and tools/skills from the same queries used by ``/agents``
+    and ``/tools`` so the editor palette stays consistent with the rest of the
+    UI. Degrades gracefully (empty lists) on error.
+    """
+    agents: list[dict[str, Any]] = []
+    tools: list[dict[str, Any]] = []
+    skills: list[dict[str, Any]] = []
+
+    # Agents from the KG.
+    try:
+        engine = get_engine()
+        rows = engine.backend.execute('MATCH (a:Agent) RETURN a')
+        for row in rows:
+            a = row.get('a', {})
+            if not isinstance(a, dict):
+                continue
+            agents.append(
+                {
+                    'id': a.get('id') or a.get('name', ''),
+                    'name': a.get('name', a.get('id', '')),
+                    'system_prompt': a.get('system_prompt'),
+                    'tools': (
+                        a.get('tools', '').split(',')
+                        if isinstance(a.get('tools'), str) and a.get('tools')
+                        else a.get('tools')
+                    ),
+                }
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'workflow_capabilities: failed to load agents: {e}')
+
+    # Tools + skills reuse the categorized /tools catalog.
+    try:
+        catalog = await list_all_tools()
+        for t in catalog.get('mcp_tools', []) + catalog.get('builtin_tools', []):
+            tools.append({'id': t.get('name', ''), 'name': t.get('name', '')})
+        for s in catalog.get('skills', []) + catalog.get('skill_graphs', []):
+            skills.append(
+                {
+                    'id': s.get('id', s.get('name', '')),
+                    'name': s.get('name', ''),
+                    'description': s.get('description', ''),
+                }
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'workflow_capabilities: failed to load tools/skills: {e}')
+
+    return {'agents': agents, 'tools': tools, 'skills': skills}
+
+
+@router.post('/workflows')
+async def save_workflow(request: Request) -> dict[str, Any]:
+    """Persist a workflow as a canonical ``WorkflowSpec`` + canvas sidecar.
+
+    Body: ``{name, steps:[str], orchestrates:[str], nodes?, edges?, layout?,
+    canvas?}``. Builds a ``WorkflowSpec`` and persists it via the canonical
+    ``workflow_to_batch`` path, then stores the editor's node/edge/layout JSON
+    on a sibling ``:WorkflowCanvas`` node keyed by the workflow id so the
+    canvas round-trips exactly. Returns ``{id, saved}``.
+    """
+    import json
+
+    body = await request.json()
+    name = body.get('name') or 'Untitled Workflow'
+    steps = body.get('steps') or []
+    orchestrates = body.get('orchestrates') or []
+    canvas = body.get('canvas')
+    if canvas is None and ('nodes' in body or 'edges' in body):
+        canvas = {
+            'nodes': body.get('nodes', []),
+            'edges': body.get('edges', []),
+            'layout': body.get('layout'),
+        }
+
+    try:
+        from agent_utilities.knowledge_graph.enrichment.orchestration import (
+            WorkflowSpec,
+            workflow_to_batch,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'save_workflow: orchestration unavailable: {e}')
+        raise HTTPException(
+            status_code=503, detail=f'Workflow orchestration unavailable: {e}'
+        ) from e
+
+    spec = WorkflowSpec(name=name, steps=steps, orchestrates=orchestrates)
+
+    try:
+        engine = get_engine()
+        # Build the canonical batch, then persist via the engine's node/edge API
+        # (the engine exposes add_node/link_nodes rather than a raw write_batch).
+        batch = workflow_to_batch(spec)
+        for node in batch.nodes:
+            engine.add_node(node.id, node.type, dict(node.props or {}))
+        for edge in batch.edges:
+            engine.link_nodes(edge.source, edge.target, edge.rel_type)
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'save_workflow: failed to persist spec: {e}')
+        raise HTTPException(
+            status_code=500, detail=f'Failed to persist workflow: {e}'
+        ) from e
+
+    # Persist the canvas sidecar so the editor restores exactly on reload.
+    if canvas is not None:
+        try:
+            canvas_id = _canvas_node_id(spec.id)
+            engine.add_node(
+                canvas_id,
+                'WorkflowCanvas',
+                {
+                    'workflow_id': spec.id,
+                    'name': name,
+                    'canvas': json.dumps(canvas),
+                    'updated_at': datetime.now(timezone.utc).isoformat(),
+                },
+            )
+        except Exception as e:  # noqa: BLE001
+            # Non-fatal: the spec is saved even if the canvas sidecar fails.
+            logger.warning(f'save_workflow: failed to persist canvas: {e}')
+
+    return {'id': spec.id, 'saved': True}
+
+
+@router.post('/workflows/{wid:path}/run')
+async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
+    """Run a saved workflow by dispatching it through the orchestration engine.
+
+    Loads the workflow, builds a ``WorkflowSpec`` and dispatches it via
+    ``AgentOrchestrationEngine(...).dispatch(task=spec, mode="workflow")``.
+    Wraps failures so an error returns ``{status: "error", error}`` instead of
+    a 500. Returns ``{run_id, status, result/summary}``.
+    """
+    import uuid
+
+    run_id = uuid.uuid4().hex[:12]
+
+    # Resolve the spec — prefer the live KG record, fall back to request body.
+    name = wid
+    steps: list[str] = []
+    orchestrates: list[str] = []
+    try:
+        engine = get_engine()
+        rows = engine.backend.execute(
+            f"MATCH (w:Workflow) WHERE w.id = '{wid}' RETURN w"
+        )
+        if rows:
+            wdata = rows[0].get('w', {})
+            if isinstance(wdata, dict):
+                name = wdata.get('name', wid)
+                steps_raw = wdata.get('steps', '')
+                steps = (
+                    [s for s in steps_raw.split(',') if s]
+                    if isinstance(steps_raw, str)
+                    else list(steps_raw or [])
+                )
+        erows = engine.backend.execute(
+            f"MATCH (w:Workflow)-[:ORCHESTRATES]->(t) WHERE w.id = '{wid}' RETURN t"
+        )
+        for er in erows:
+            target = er.get('t', {})
+            if isinstance(target, dict) and target.get('id'):
+                orchestrates.append(target['id'])
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f'run_workflow: could not load workflow {wid}: {e}')
+
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    if not steps:
+        steps = body.get('steps', [])
+    if not orchestrates:
+        orchestrates = body.get('orchestrates', [])
+
+    try:
+        from agent_utilities.knowledge_graph.enrichment.orchestration import (
+            WorkflowSpec,
+        )
+        from agent_utilities.orchestration.engine import AgentOrchestrationEngine
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'run_workflow: orchestration unavailable: {e}')
+        return {
+            'run_id': run_id,
+            'status': 'error',
+            'error': f'Workflow orchestration unavailable: {e}',
+        }
+
+    spec = WorkflowSpec(name=name, steps=steps, orchestrates=orchestrates)
+
+    try:
+        orch = AgentOrchestrationEngine(engine=get_engine())
+        result = await orch.dispatch(task=spec, mode='workflow')
+        if isinstance(result, dict):
+            status = result.get('status', 'completed')
+            return {
+                'run_id': run_id,
+                'status': status,
+                'result': result,
+                'summary': result.get('summary'),
+            }
+        return {'run_id': run_id, 'status': 'completed', 'result': result}
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'run_workflow: dispatch failed: {e}')
+        return {'run_id': run_id, 'status': 'error', 'error': str(e)}

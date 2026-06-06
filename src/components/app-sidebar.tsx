@@ -1,4 +1,24 @@
-import { CirclePlus, MessageCircle, Trash, Files, Zap, Book, Calendar, Settings, Pencil, Check, X, Network, Wrench, Compass, Terminal, ScrollText, Cpu, LayoutDashboard } from 'lucide-react'
+import {
+  CirclePlus,
+  MessageCircle,
+  Trash,
+  Files,
+  Zap,
+  Book,
+  Calendar,
+  Settings,
+  Pencil,
+  Check,
+  X,
+  Network,
+  Wrench,
+  Compass,
+  Terminal,
+  ScrollText,
+  Cpu,
+  LayoutDashboard,
+  Workflow,
+} from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
 import { toast } from 'sonner'
@@ -326,7 +346,23 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Orthogonal perspectives (semantic, causal, temporal, entity) views explorer">
+                <SidebarMenuButton asChild tooltip="Compose, edit & run agent workflows visually (D9)">
+                  <a
+                    href="/workflows"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Workflow />
+                    <span>Workflows</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Orthogonal perspectives (semantic, causal, temporal, entity) views explorer"
+                >
                   <a
                     href="/magma"
                     onClick={(e) => {

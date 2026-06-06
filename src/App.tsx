@@ -30,6 +30,7 @@ import PromptsView from './components/views/PromptsView'
 import SessionsView from './components/views/SessionsView'
 import GoalsView from './components/views/GoalsView'
 import EcosystemView from './components/views/EcosystemView'
+import WorkflowEditorView from './components/views/WorkflowEditorView'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
@@ -46,7 +47,7 @@ const queryClient = new QueryClient()
  * providers for theme, sidebar, MCP tools, and data fetching.
  */
 export default function App() {
-  /** Possible views: 'dashboard', 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'ops', 'magma', 'cypher', 'prompts', 'sessions', 'goals', 'ecosystem' */
+  /** Possible views: 'dashboard', 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'workflows', 'ops', 'magma', 'cypher', 'prompts', 'sessions', 'goals', 'ecosystem' */
   const [currentView, setCurrentView] = useState('dashboard')
 
   /**
@@ -70,6 +71,7 @@ export default function App() {
       else if (path === '/sessions') setCurrentView('sessions')
       else if (path === '/goals') setCurrentView('goals')
       else if (path === '/ecosystem') setCurrentView('ecosystem')
+      else if (path === '/workflows') setCurrentView('workflows')
       else setCurrentView('dashboard')
     }
 
@@ -155,6 +157,7 @@ export default function App() {
                         </>
                       )}
                       {currentView === 'graph' && <GraphView />}
+                      {currentView === 'workflows' && <WorkflowEditorView />}
                       {currentView === 'ops' && <OpsPanelView />}
                       {currentView === 'magma' && <MagmaView />}
                       {currentView === 'cypher' && <CypherReplView />}
@@ -172,9 +175,7 @@ export default function App() {
                 )}
               </div>
               {/* Collapsible Chat Drawer — available on all views except /chat */}
-              {currentView !== 'chat' && (
-                <ChatPanel currentView={currentView} />
-              )}
+              {currentView !== 'chat' && <ChatPanel currentView={currentView} />}
             </SidebarProvider>
           </ThemeProvider>
         </MCPProvider>

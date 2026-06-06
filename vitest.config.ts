@@ -38,5 +38,8 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    // Ensure a single React instance is shared with @xyflow/react and other
+    // libraries under jsdom (mirrors the dedupe in vite.config.ts).
+    dedupe: ['react', 'react-dom'],
   },
 })
