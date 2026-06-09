@@ -2,8 +2,14 @@ import type { ReactElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Toaster } from 'sonner'
 
-// Create a custom render function with providers
+// Create a custom render function with providers.
+//
+// We mount sonner's raw <Toaster /> (not the themed `@/components/ui/sonner`
+// wrapper, which depends on a next-themes provider) so that `toast.*` calls the
+// views make render into the DOM and success/error messages become assertable —
+// mirroring how App.tsx mounts the toaster in production.
 export function renderWithProviders(ui: ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -22,6 +28,7 @@ export function renderWithProviders(ui: ReactElement) {
     ...render(
       <QueryClientProvider client={queryClient}>
         {ui}
+        <Toaster />
       </QueryClientProvider>
     )
   }

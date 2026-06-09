@@ -31,6 +31,9 @@ import SessionsView from './components/views/SessionsView'
 import GoalsView from './components/views/GoalsView'
 import EcosystemView from './components/views/EcosystemView'
 import WorkflowEditorView from './components/views/WorkflowEditorView'
+import ObjectExplorerView from './components/views/ObjectExplorerView'
+import ObjectView from './components/views/ObjectView'
+import VertexView from './components/views/VertexView'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
@@ -47,8 +50,10 @@ const queryClient = new QueryClient()
  * providers for theme, sidebar, MCP tools, and data fetching.
  */
 export default function App() {
-  /** Possible views: 'dashboard', 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'workflows', 'ops', 'magma', 'cypher', 'prompts', 'sessions', 'goals', 'ecosystem' */
+  /** Possible views: 'dashboard', 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'workflows', 'ops', 'magma', 'cypher', 'prompts', 'sessions', 'goals', 'ecosystem', 'explorer', 'object', 'vertex' */
   const [currentView, setCurrentView] = useState('dashboard')
+  /** Selected ontology object id, parsed from the `/object/:id` path. */
+  const [objectId, setObjectId] = useState('')
 
   /**
    * Effect hook to synchronize the current view with the browser URL path.
@@ -72,7 +77,12 @@ export default function App() {
       else if (path === '/goals') setCurrentView('goals')
       else if (path === '/ecosystem') setCurrentView('ecosystem')
       else if (path === '/workflows') setCurrentView('workflows')
-      else setCurrentView('dashboard')
+      else if (path === '/explorer') setCurrentView('explorer')
+      else if (path === '/vertex') setCurrentView('vertex')
+      else if (path.startsWith('/object/')) {
+        setObjectId(decodeURIComponent(path.slice('/object/'.length)))
+        setCurrentView('object')
+      } else setCurrentView('dashboard')
     }
 
     // Listen for custom navigation events emitted by sidebar/links
@@ -170,6 +180,17 @@ export default function App() {
                       {currentView === 'sessions' && <SessionsView />}
                       {currentView === 'goals' && <GoalsView />}
                       {currentView === 'ecosystem' && <EcosystemView />}
+                      {currentView === 'explorer' && <ObjectExplorerView />}
+                      {currentView === 'vertex' && <VertexView />}
+                      {currentView === 'object' && (
+                        <ObjectView
+                          objectId={objectId}
+                          onNavigate={(id) => {
+                            window.history.pushState({}, '', `/object/${encodeURIComponent(id)}`)
+                            window.dispatchEvent(new Event('history-state-changed'))
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
                 )}

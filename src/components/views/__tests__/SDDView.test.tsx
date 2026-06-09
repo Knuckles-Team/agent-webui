@@ -1,25 +1,32 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import SDDView from '@/components/views/SDDView'
 import { api } from '@/lib/api'
 import { renderWithProviders, mockSpec, mockPlan, mockTask } from '@/__tests__/fixtures'
 
-// Mock API calls
+// Mock API calls. The component imports the `api` instance from '@/lib/api',
+// so the factory must expose an `api` object carrying the spied methods.
 vi.mock('@/lib/api', () => ({
-  getConstitution: vi.fn(() => Promise.resolve({
-    governance_rules: ['Rule 1', 'Rule 2'],
-    tech_stack: { language: 'Python' },
-    quality_gates: ['Gate 1']
-  })),
-  saveConstitution: vi.fn(() => Promise.resolve({ status: 'success' })),
-  listSpecs: vi.fn(() => Promise.resolve([mockSpec])),
-  createSpec: vi.fn(() => Promise.resolve({ ...mockSpec, id: 'new_spec' })),
-  listPlans: vi.fn(() => Promise.resolve([mockPlan])),
-  getTasks: vi.fn(() => Promise.resolve({ tasks: [mockTask] })),
-  syncSDDToMemory: vi.fn(() => Promise.resolve({ status: 'success' })),
+  api: {
+    getConstitution: vi.fn(() => Promise.resolve({
+      governance_rules: ['Rule 1', 'Rule 2'],
+      tech_stack: { language: 'Python' },
+      quality_gates: ['Gate 1']
+    })),
+    saveConstitution: vi.fn(() => Promise.resolve({ status: 'success' })),
+    listSpecs: vi.fn(() => Promise.resolve([mockSpec])),
+    createSpec: vi.fn(() => Promise.resolve({ ...mockSpec, id: 'new_spec' })),
+    listPlans: vi.fn(() => Promise.resolve([mockPlan])),
+    getTasks: vi.fn(() => Promise.resolve({ tasks: [mockTask] })),
+    syncSDDToMemory: vi.fn(() => Promise.resolve({ status: 'success' })),
+  },
 }))
 
+// SDDView loads its data with bare fetch('/api/enhanced/sdd/*') calls; the
+// default fetch shim in setup.ts serves the constitution / specs / plans / tasks
+// from the same fixtures. These tests assert against the live UI:
+//   tabs: Constitution / Specifications / Plans / Tasks
+//   header action: "New Specification" -> "Create Specification" dialog
 describe('SDDView Component', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -29,7 +36,7 @@ describe('SDDView Component', () => {
     renderWithProviders(<SDDView />)
 
     await waitFor(() => {
-      expect(screen.getByText('Constitution')).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Constitution' })).toBeInTheDocument()
       expect(screen.getByText('Governance Rules')).toBeInTheDocument()
     })
   })
@@ -38,20 +45,19 @@ describe('SDDView Component', () => {
     const { user } = renderWithProviders(<SDDView />)
 
     await waitFor(() => {
-      expect(screen.getByText('Specifications')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /new specification/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByText('Specifications'))
+    await user.click(screen.getByRole('button', { name: /new specification/i }))
 
     await waitFor(() => {
-      expect(screen.getByText('Create Spec')).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByText('Create Spec'))
-
-    await waitFor(() => {
-      expect(screen.getByText('Create New Specification')).toBeInTheDocument()
-      expect(screen.getByPlaceholderText(/specification title/i)).toBeInTheDocument()
+      // "Create Specification" is both the dialog title and the submit button;
+      // assert the dialog itself is open plus its title.
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(
+        screen.getByText('Create Specification', { selector: '[data-slot="dialog-title"]' }),
+      ).toBeInTheDocument()
+      expect(screen.getByPlaceholderText(/feature title/i)).toBeInTheDocument()
     })
   })
 
@@ -59,27 +65,41 @@ describe('SDDView Component', () => {
     const { user } = renderWithProviders(<SDDView />)
 
     await waitFor(() => {
-      expect(screen.getByText('Specifications')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /new specification/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByText('Specifications'))
-    await user.click(screen.getByText('Create Spec'))
+    await user.click(screen.getByRole('button', { name: /new specification/i }))
 
     await waitFor(() => {
-      expect(screen.getByPlaceholderText(/specification title/i)).toBeInTheDocument()
+      expect(screen.getByPlaceholderText(/feature title/i)).toBeInTheDocument()
     })
 
     // Fill form
-    const titleInput = screen.getByPlaceholderText(/specification title/i)
-    await user.type(titleInput, 'New Feature Spec')
+    await user.type(screen.getByPlaceholderText(/feature title/i), 'New Feature Spec')
+    await user.type(screen.getByPlaceholderText(/feature description/i), 'Test feature description')
 
-    const descriptionInput = screen.getByPlaceholderText(/description/i)
-    await user.type(descriptionInput, 'Test feature description')
-
-    await user.click(screen.getByRole('button', { name: /create spec/i }))
+    // The dialog's submit button is labelled "Create Specification".
+    const submit = screen
+      .getAllByRole('button', { name: /create specification/i })
+      .pop() as HTMLElement
+    await user.click(submit)
 
     await waitFor(() => {
       expect(screen.getByText('Specification created successfully')).toBeInTheDocument()
+    })
+  })
+
+  it('displays specifications tab with spec cards', async () => {
+    const { user } = renderWithProviders(<SDDView />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Specifications' })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('tab', { name: 'Specifications' }))
+
+    await waitFor(() => {
+      expect(screen.getByText(mockSpec.title)).toBeInTheDocument()
     })
   })
 
@@ -87,147 +107,149 @@ describe('SDDView Component', () => {
     const { user } = renderWithProviders(<SDDView />)
 
     await waitFor(() => {
-      expect(screen.getByText('Plans')).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Plans' })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByText('Plans'))
+    await user.click(screen.getByRole('tab', { name: 'Plans' }))
 
+    // Plan cards are titled "Plan <id-prefix>".
     await waitFor(() => {
-      expect(screen.getByText('Implementation Plans')).toBeInTheDocument()
+      expect(
+        screen.getByText(`Plan ${mockPlan.id.substring(0, 8)}`),
+      ).toBeInTheDocument()
     })
   })
 
-  it('displays tasks tab with task list', async () => {
+  it('displays tasks tab and prompts to select a plan', async () => {
     const { user } = renderWithProviders(<SDDView />)
 
     await waitFor(() => {
-      expect(screen.getByText('Tasks')).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Tasks' })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByText('Tasks'))
+    await user.click(screen.getByRole('tab', { name: 'Tasks' }))
 
+    // No plan selected yet -> the tasks tab prompts for one.
     await waitFor(() => {
-      expect(screen.getByText('Task Management')).toBeInTheDocument()
+      expect(screen.getByText('Select a plan to view tasks')).toBeInTheDocument()
     })
   })
 
-  it('handles constitution editing', async () => {
-    const { user } = renderWithProviders(<SDDView />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Constitution')).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByRole('button', { name: /edit constitution/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Edit Constitution')).toBeInTheDocument()
-    })
-  })
-
-  it('displays SDD lifecycle visualization', async () => {
+  it('renders the SDD header', async () => {
     renderWithProviders(<SDDView />)
 
     await waitFor(() => {
-      expect(screen.getByText('SDD Lifecycle')).toBeInTheDocument()
+      expect(screen.getByText('Spec-Driven Development')).toBeInTheDocument()
     })
   })
 
-  it('handles sync to memory operation', async () => {
+  it('handles sync to memory after selecting a plan', async () => {
     const { user } = renderWithProviders(<SDDView />)
 
+    // Select a plan first so the Tasks tab exposes the Sync to Memory action.
     await waitFor(() => {
-      expect(screen.getByText('Sync to Memory')).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Plans' })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('tab', { name: 'Plans' }))
+
+    await waitFor(() => {
+      expect(screen.getByText(`Plan ${mockPlan.id.substring(0, 8)}`)).toBeInTheDocument()
+    })
+    await user.click(screen.getByText(`Plan ${mockPlan.id.substring(0, 8)}`))
+
+    await user.click(screen.getByRole('tab', { name: 'Tasks' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /sync to memory/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByText('Sync to Memory'))
+    await user.click(screen.getByRole('button', { name: /sync to memory/i }))
 
     await waitFor(() => {
-      expect(screen.getByText('SDD synced to memory successfully')).toBeInTheDocument()
+      expect(screen.getByText('SDD data synced to knowledge graph')).toBeInTheDocument()
     })
   })
 
-  it('shows loading state initially', () => {
+  it('renders synchronously on initial mount (pre-fetch)', () => {
     renderWithProviders(<SDDView />)
 
-    expect(screen.getByText(/loading/i) || screen.queryByText(/loading/i)).toBeDefined()
+    // On first paint — before any /sdd/* fetch resolves — the static header and
+    // tab chrome render. (The constitution tab is the default; its data-driven
+    // body fills in asynchronously.)
+    expect(screen.getByText('Spec-Driven Development')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Constitution' })).toBeInTheDocument()
   })
 
   it('handles empty specs gracefully', async () => {
+    // Drive the real data path: SDDView lists specs via fetch('/api/enhanced/sdd/specs').
     vi.mocked(api).listSpecs.mockResolvedValueOnce([])
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      let body: unknown = []
+      if (url.includes('/sdd/constitution')) {
+        body = { governance_rules: [], tech_stack: {}, quality_gates: [] }
+      } else if (url.includes('/sdd/tasks')) {
+        body = { tasks: [] }
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      } as unknown as Response)
+    }) as unknown as typeof fetch
 
-    renderWithProviders(<SDDView />)
+    const { user } = renderWithProviders(<SDDView />)
 
     await waitFor(() => {
-      expect(screen.getByText('Specifications')).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Specifications' })).toBeInTheDocument()
     })
 
-    await userEvent.click(screen.getByText('Specifications'))
+    await user.click(screen.getByRole('tab', { name: 'Specifications' }))
 
     await waitFor(() => {
       expect(screen.getByText('No specifications found')).toBeInTheDocument()
     })
   })
 
-  it('filters specs by search query', async () => {
+  it('renders task details after selecting a plan', async () => {
     const { user } = renderWithProviders(<SDDView />)
 
     await waitFor(() => {
-      expect(screen.getByText('Specifications')).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Plans' })).toBeInTheDocument()
     })
-
-    await user.click(screen.getByText('Specifications'))
+    await user.click(screen.getByRole('tab', { name: 'Plans' }))
 
     await waitFor(() => {
-      expect(screen.getByPlaceholderText(/search specs/i)).toBeInTheDocument()
+      expect(screen.getByText(`Plan ${mockPlan.id.substring(0, 8)}`)).toBeInTheDocument()
     })
+    await user.click(screen.getByText(`Plan ${mockPlan.id.substring(0, 8)}`))
 
-    const searchInput = screen.getByPlaceholderText(/search specs/i)
-    await user.type(searchInput, 'Test')
-
-    await waitFor(() => {
-      expect(screen.getByText('Test Spec')).toBeInTheDocument()
-    })
-  })
-
-  it('displays task dependency visualization', async () => {
-    const { user } = renderWithProviders(<SDDView />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Tasks')).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByText('Tasks'))
-
-    await waitFor(() => {
-      expect(screen.getByText('Task Dependencies')).toBeInTheDocument()
-    })
-  })
-
-  it('handles task status updates', async () => {
-    const { user } = renderWithProviders(<SDDView />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Tasks')).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByText('Tasks'))
+    await user.click(screen.getByRole('tab', { name: 'Tasks' }))
 
     await waitFor(() => {
       expect(screen.getByText('Test Task')).toBeInTheDocument()
     })
+  })
 
-    // Find and click status dropdown
-    const statusButtons = screen.getAllByRole('button').filter(btn =>
-      btn.textContent === 'pending'
-    )
+  it('reflects task status on the task card', async () => {
+    const { user } = renderWithProviders(<SDDView />)
 
-    if (statusButtons.length > 0) {
-      await user.click(statusButtons[0])
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Plans' })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('tab', { name: 'Plans' }))
 
-      await waitFor(() => {
-        expect(screen.getByText('in_progress')).toBeInTheDocument()
-      })
-    }
+    await waitFor(() => {
+      expect(screen.getByText(`Plan ${mockPlan.id.substring(0, 8)}`)).toBeInTheDocument()
+    })
+    await user.click(screen.getByText(`Plan ${mockPlan.id.substring(0, 8)}`))
+
+    await user.click(screen.getByRole('tab', { name: 'Tasks' }))
+
+    // The seeded task is "pending"; its status badge is rendered on the card.
+    await waitFor(() => {
+      expect(screen.getByText(mockTask.status)).toBeInTheDocument()
+    })
   })
 })

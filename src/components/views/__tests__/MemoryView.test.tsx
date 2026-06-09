@@ -4,12 +4,15 @@ import MemoryView from '@/components/views/MemoryView'
 import { api } from '@/lib/api'
 import { renderWithProviders, mockMemoryNode } from '@/__tests__/fixtures'
 
-// Mock API calls
+// Mock API calls. The component imports the `api` instance from '@/lib/api',
+// so the factory must expose an `api` object carrying the spied methods.
 vi.mock('@/lib/api', () => ({
-  getGraphNodes: vi.fn(() => Promise.resolve([mockMemoryNode])),
-  addMemory: vi.fn(() => Promise.resolve({ status: 'success', id: 'mem_test' })),
-  updateMemory: vi.fn(() => Promise.resolve({ status: 'success' })),
-  deleteMemory: vi.fn(() => Promise.resolve({ status: 'success' })),
+  api: {
+    getGraphNodes: vi.fn(() => Promise.resolve([mockMemoryNode])),
+    addMemory: vi.fn(() => Promise.resolve({ status: 'success', id: 'mem_test' })),
+    updateMemory: vi.fn(() => Promise.resolve({ status: 'success' })),
+    deleteMemory: vi.fn(() => Promise.resolve({ status: 'success' })),
+  },
 }))
 
 describe('MemoryView Component', () => {
@@ -73,8 +76,11 @@ describe('MemoryView Component', () => {
 
     await user.click(screen.getByText('Timeline'))
 
+    // The Timeline tab renders the loaded memories on a vertical timeline.
+    // Card titles truncate the content and append an ellipsis, so match on a
+    // substring of the seeded memory content.
     await waitFor(() => {
-      expect(screen.getByText(/no memories found/i)).toBeInTheDocument()
+      expect(screen.getAllByText(/Test memory content/).length).toBeGreaterThan(0)
     })
   })
 
@@ -87,8 +93,12 @@ describe('MemoryView Component', () => {
 
     await user.click(screen.getByText('Search'))
 
+    // "Advanced Search" appears both as the card title and the action button,
+    // so scope the assertion to the heading to stay unambiguous.
     await waitFor(() => {
-      expect(screen.getByText('Advanced Search')).toBeInTheDocument()
+      expect(
+        screen.getByText('Advanced Search', { selector: '[data-slot="card-title"]' }),
+      ).toBeInTheDocument()
     })
   })
 
@@ -96,28 +106,28 @@ describe('MemoryView Component', () => {
     const { user } = renderWithProviders(<MemoryView />)
 
     await waitFor(() => {
-      expect(screen.getByText('Test memory content')).toBeInTheDocument()
+      // Browse-tab card titles truncate content + append an ellipsis.
+      expect(screen.getAllByText(/Test memory content/).length).toBeGreaterThan(0)
     })
 
-    // Find and click delete button
-    const deleteButtons = screen.getAllByRole('button').filter(btn =>
-      btn.textContent === '' || btn.querySelector('svg')
-    )
+    // The delete affordance on each memory card is the icon button carrying the
+    // lucide trash icon; click it directly rather than guessing button order.
+    const trashButton = screen
+      .getAllByRole('button')
+      .find(btn => btn.querySelector('svg.lucide-trash-2'))
+    expect(trashButton).toBeDefined()
+    await user.click(trashButton as HTMLElement)
 
-    if (deleteButtons.length > 0) {
-      await user.click(deleteButtons[0])
-
-      await waitFor(() => {
-        expect(screen.getByText('Memory deleted successfully')).toBeInTheDocument()
-      })
-    }
+    await waitFor(() => {
+      expect(screen.getByText('Memory deleted successfully')).toBeInTheDocument()
+    })
   })
 
   it('handles memory editing', async () => {
     const { user } = renderWithProviders(<MemoryView />)
 
     await waitFor(() => {
-      expect(screen.getByText('Test memory content')).toBeInTheDocument()
+      expect(screen.getAllByText(/Test memory content/).length).toBeGreaterThan(0)
     })
 
     // Find and click edit button
@@ -164,7 +174,19 @@ describe('MemoryView Component', () => {
   })
 
   it('handles empty memories gracefully', async () => {
+    // MemoryView loads via fetch('/api/enhanced/graph/nodes?node_type=Memory');
+    // drive the real data path with an empty backend response. The api spies are
+    // mocked above (`vi.mocked(api)`) for the suite contract; here we override
+    // fetch to assert the genuine empty-state branch.
     vi.mocked(api).getGraphNodes.mockResolvedValueOnce([])
+    global.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve([]),
+        text: () => Promise.resolve('[]'),
+      } as unknown as Response),
+    ) as unknown as typeof fetch
 
     renderWithProviders(<MemoryView />)
 
@@ -184,7 +206,8 @@ describe('MemoryView Component', () => {
     await user.type(searchInput, 'Test')
 
     await waitFor(() => {
-      expect(screen.getByText('Test memory content')).toBeInTheDocument()
+      // Card title truncates to "Test memory content...".
+      expect(screen.getAllByText(/Test memory content/).length).toBeGreaterThan(0)
     })
   })
 
@@ -192,7 +215,7 @@ describe('MemoryView Component', () => {
     renderWithProviders(<MemoryView />)
 
     await waitFor(() => {
-      expect(screen.getByText('Test memory content')).toBeInTheDocument()
+      expect(screen.getAllByText(/Test memory content/).length).toBeGreaterThan(0)
       // Should show importance percentage
       expect(screen.getByText('80%')).toBeInTheDocument()
     })

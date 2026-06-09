@@ -22,7 +22,8 @@ describe('MagmaView Component', () => {
     global.fetch = createFetchMock([]) as unknown as typeof fetch
     render(<MagmaView />)
 
-    expect(screen.getByText('MAGMA Views')).toBeInTheDocument()
+    // The view's heading is "Perspective Views" (the MAGMA orthogonal-views explorer).
+    expect(screen.getByText('Perspective Views')).toBeInTheDocument()
     expect(
       screen.getByPlaceholderText(/find all reasoning traces/i),
     ).toBeInTheDocument()

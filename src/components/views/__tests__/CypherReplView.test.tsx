@@ -48,12 +48,16 @@ describe('CypherReplView Component', () => {
     expect(url).toContain('/api/enhanced/graph/query')
     expect(init.method).toBe('POST')
 
+    // Result panel reports the count as "Returned 1 row(s). ...". Match that
+    // exact phrasing so it does not also collide with the history badge below
+    // (which reads "1 rows").
     await waitFor(() => {
-      expect(screen.getByText(/1 row/i)).toBeInTheDocument()
+      expect(screen.getByText(/Returned 1 row\(s\)/i)).toBeInTheDocument()
     })
 
+    // History sidebar badge records the run as "1 rows".
     await waitFor(() => {
-      expect(screen.getByText(/1 rows/i)).toBeInTheDocument()
+      expect(screen.getByText(/^1 rows$/i)).toBeInTheDocument()
     })
   })
 

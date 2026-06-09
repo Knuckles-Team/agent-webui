@@ -13,7 +13,7 @@ classifiers = [
     "Environment :: Console",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3"]
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11,<3.15"
 dependencies = [
     "fastapi>=0.117.1",
     "langfuse>=4.5.1",

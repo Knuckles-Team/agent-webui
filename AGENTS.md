@@ -16,7 +16,7 @@
 
 ## Tech Stack
 
-- **Frontend Framework**: React 18 with TypeScript
+- **Frontend Framework**: React 19 (`react`/`react-dom` 19.2.4) with TypeScript
 - **Styling**: Tailwind CSS and shadcn/ui components
 - **Routing & Tooling**: Vite, React Router, Radix UI
 - **Backend Framework**: FastAPI (Python)
@@ -198,6 +198,8 @@ import './styles.css'
 - AI elements: Vercel AI SDK wrappers in src/components/ai-elements/
 - Testing: Vitest for unit tests, Playwright for E2E tests
 - Coverage: @vitest/coverage-v8 with 90% target
+- Ontology operator views: `ObjectExplorerView.tsx` (object-set search/pivot/aggregate/bulk-actions), `ObjectView.tsx` (single-object hub: properties/derived/links/markings/edit-history), and `VertexView.tsx` (graph-canvas what-if scenario), all over `/api/enhanced/ontology/*` — see README "Ontology Operator Views".
+- Vitest harness: a single React instance is enforced via pnpm `overrides` (`react`/`react-dom` pinned to 19.2.4); `src/__tests__/setup.ts` provides jsdom shims — a route-aware `fetch` shim for `/api/enhanced/*` and a WebGL/WebGL2 `getContext` stub for sigma.js graph rendering.
 
 ### Backend
 
