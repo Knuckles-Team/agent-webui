@@ -22,6 +22,11 @@
 
 _Version: 0.39.0_
 
+> **Documentation** — The architecture, graph-activity event model, feature surface,
+> and ecosystem integration of Agent WebUI are maintained in the
+> [official documentation](https://knuckles-team.github.io/agent-webui/), which
+> presents the project's reference material as a searchable, published site.
+
 A React-based chat interface for Pydantic AI Agents built using Agent Utilities.
 
 Built with [Vercel AI SDK](https://sdk.vercel.ai/) and designed to work with Pydantic AI's streaming chat API.
@@ -39,6 +44,7 @@ Agent WebUI is a highly interactive, responsive chat interface designed specific
 - [Usage](#usage)
 - [Development](#development)
 - [Detailed Documentation](#detailed-documentation)
+- [Documentation](#documentation)
 - [License](#license)
 
 ## Features
@@ -309,6 +315,15 @@ pytest agent/agent_webui/__tests__/ --cov        # With coverage
 | Variable          | Default | Description                                 |
 | ----------------- | ------- | ------------------------------------------- |
 | `VITE_ENABLE_ACP` | `false` | Enable ACP protocol support alongside AG-UI |
+
+## Documentation
+
+The complete reference for Agent WebUI is published as a searchable site at the
+[official documentation](https://knuckles-team.github.io/agent-webui/). It covers the
+[system architecture and protocol flow](https://knuckles-team.github.io/agent-webui/architecture/),
+the [agent and graph-activity event model](https://knuckles-team.github.io/agent-webui/agents/),
+the [feature surface and API endpoints](https://knuckles-team.github.io/agent-webui/features/),
+and the [unified homelab ecosystem integration](https://knuckles-team.github.io/agent-webui/ecosystem/).
 
 ## License
 
