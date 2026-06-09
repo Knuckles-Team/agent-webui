@@ -4,13 +4,16 @@ import KnowledgeBaseView from '@/components/views/KnowledgeBaseView'
 import { api } from '@/lib/api'
 import { renderWithProviders, mockKnowledgeBase, mockArticle } from '@/__tests__/fixtures'
 
-// Mock API calls
+// Mock API calls. The component imports the `api` instance from '@/lib/api',
+// so the factory must expose an `api` object carrying the spied methods.
 vi.mock('@/lib/api', () => ({
-  listKnowledgeBases: vi.fn(() => Promise.resolve([mockKnowledgeBase])),
-  searchKnowledgeBase: vi.fn(() => Promise.resolve([mockArticle])),
-  getKBArticle: vi.fn(() => Promise.resolve(mockArticle)),
-  ingestKnowledgeBase: vi.fn(() => Promise.resolve({ status: 'success', job_id: 'test_job' })),
-  runKBHealthCheck: vi.fn(() => Promise.resolve({ health_status: 'healthy', issues: [] })),
+  api: {
+    listKnowledgeBases: vi.fn(() => Promise.resolve([mockKnowledgeBase])),
+    searchKnowledgeBase: vi.fn(() => Promise.resolve([mockArticle])),
+    getKBArticle: vi.fn(() => Promise.resolve(mockArticle)),
+    ingestKnowledgeBase: vi.fn(() => Promise.resolve({ status: 'success', job_id: 'test_job' })),
+    runKBHealthCheck: vi.fn(() => Promise.resolve({ health_status: 'healthy', issues: [] })),
+  },
 }))
 
 describe('KnowledgeBaseView Component', () => {
@@ -30,15 +33,18 @@ describe('KnowledgeBaseView Component', () => {
   it('displays ingestion dialog', async () => {
     const { user } = renderWithProviders(<KnowledgeBaseView />)
 
+    // "Ingest Knowledge Base" is the trigger button label.
     await waitFor(() => {
-      expect(screen.getByText('Ingest Knowledge Base')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /ingest knowledge base/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByText('Ingest Knowledge Base'))
+    await user.click(screen.getByRole('button', { name: /ingest knowledge base/i }))
 
+    // Once open, the dialog exposes the same text as its title plus the form.
     await waitFor(() => {
-      expect(screen.getByText('Ingest Knowledge Base')).toBeInTheDocument()
-      expect(screen.getByPlaceholderText(/knowledge base id/i)).toBeInTheDocument()
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      // Knowledge Base ID input is identified by its placeholder example.
+      expect(screen.getByPlaceholderText(/pydantic-ai-docs/i)).toBeInTheDocument()
     })
   })
 
@@ -46,24 +52,19 @@ describe('KnowledgeBaseView Component', () => {
     const { user } = renderWithProviders(<KnowledgeBaseView />)
 
     await waitFor(() => {
-      expect(screen.getByText('Ingest Knowledge Base')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /ingest knowledge base/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByText('Ingest Knowledge Base'))
+    await user.click(screen.getByRole('button', { name: /ingest knowledge base/i }))
 
     await waitFor(() => {
-      expect(screen.getByPlaceholderText(/knowledge base id/i)).toBeInTheDocument()
+      expect(screen.getByPlaceholderText(/pydantic-ai-docs/i)).toBeInTheDocument()
     })
 
-    // Fill form
-    const kbIdInput = screen.getByPlaceholderText(/knowledge base id/i)
-    await user.type(kbIdInput, 'test_kb')
-
-    const nameInput = screen.getByPlaceholderText(/knowledge base name/i)
-    await user.type(nameInput, 'Test KB')
-
-    const sourceInput = screen.getByPlaceholderText(/source path/i)
-    await user.type(sourceInput, '/test/path')
+    // Fill form. Inputs are keyed by their actual placeholders.
+    await user.type(screen.getByPlaceholderText(/pydantic-ai-docs/i), 'test_kb')
+    await user.type(screen.getByPlaceholderText(/knowledge base name/i), 'Test KB')
+    await user.type(screen.getByPlaceholderText(/path\/to\/docs/i), '/test/path')
 
     await user.click(screen.getByRole('button', { name: /start ingestion/i }))
 
@@ -82,11 +83,12 @@ describe('KnowledgeBaseView Component', () => {
     // Click on KB
     await user.click(screen.getByText('Test Knowledge Base'))
 
+    // "Articles" is both a tab and a card stat label; target the tab.
     await waitFor(() => {
-      expect(screen.getByText('Articles')).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Articles' })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByText('Articles'))
+    await user.click(screen.getByRole('tab', { name: 'Articles' }))
 
     await waitFor(() => {
       expect(screen.getByText('Test Article')).toBeInTheDocument()
@@ -118,7 +120,16 @@ describe('KnowledgeBaseView Component', () => {
   })
 
   it('handles empty knowledge bases gracefully', async () => {
+    // Drive the real data path: KnowledgeBaseView lists via fetch('/api/enhanced/kb/list').
     vi.mocked(api).listKnowledgeBases.mockResolvedValueOnce([])
+    global.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve([]),
+        text: () => Promise.resolve('[]'),
+      } as unknown as Response),
+    ) as unknown as typeof fetch
 
     renderWithProviders(<KnowledgeBaseView />)
 
@@ -149,10 +160,13 @@ describe('KnowledgeBaseView Component', () => {
       expect(screen.getByText('Test Knowledge Base')).toBeInTheDocument()
     })
 
-    await user.click(screen.getByText('Concepts'))
+    await user.click(screen.getByRole('tab', { name: 'Concepts' }))
 
+    // With a knowledge base auto-selected and its article loaded, the concepts
+    // tab renders concept cards derived from the article's concepts.
     await waitFor(() => {
-      expect(screen.getByText('Select a knowledge base to view concepts')).toBeInTheDocument()
+      expect(screen.getByText('AI')).toBeInTheDocument()
+      expect(screen.getByText('Testing')).toBeInTheDocument()
     })
   })
 })

@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Ontology Operator UI** — Three operator views surfacing the `agent-utilities` ontology system (`kg.ontology`) over live `/api/enhanced/ontology/*` routes (no fixtures), resolved against the same `IntelligenceGraphEngine` backend and gated by `kg.ontology.permissioning.enforce`.
+  - `ObjectExplorerView.tsx` — faceted/full-text object-set search with property filters, results table, pivot across a link type, search-around (N-hop related objects), aggregate metrics (count/sum/avg/min/max, optionally grouped), bulk Actions on a row selection through the governed `ActionExecutor` (Edit-Ledger writeback, HITL approve for high-risk verbs), and save/list of object sets.
+  - `ObjectView.tsx` — single-object hub renderer: value-type-aware properties, computed derived properties, in/out links grouped by link type, marking/permission badges, bitemporal edit-history timeline, inline edit/revert; `variant` (full/panel) and `layout` (standard schema-derived / configured stored widget composition).
+  - `VertexView.tsx` — graph-canvas exploration over an object-set seed with link-type expansion, per-node derived-property computation, and a what-if scenario mode (remove nodes, recompute an aggregate scenario metric, compare baseline vs delta).
+  - Backend (`agent/agent_webui/api_extensions.py`): `/ontology/object-types`, `/property-types`, `/interfaces[/{name}/implementers]`, `/object-set/{search,search-around,pivot,aggregate,save,list,action}`, `/actions`, `/object/{id}[/edit,/revert]`, `/function/invoke`, `/derive`, `/document/process`, and `/object-view/{type}` (GET/POST). Maps to ontology concepts KG-2.38/40/41/47/48 and the action-type extension KG-2.42.
 - **Ecosystem Integration (CONCEPT:ECO-4.7)** — Classified as `FrontendPackage` in the kernel ecosystem topology. Inherits project-aware context (KG-2.14) from `agent-utilities` kernel.
 - **CONCEPT:KG-2.18: Topological Graph Visualization** — Replaced legacy canvas with scalable WebGL Sigma.js visualization capable of 100K+ nodes. Added ForceAtlas2 physics and interactive GraphOverlayUI.
 

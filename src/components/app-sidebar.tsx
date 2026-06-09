@@ -18,6 +18,8 @@ import {
   Cpu,
   LayoutDashboard,
   Workflow,
+  Boxes,
+  Waypoints,
 } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
@@ -355,6 +357,38 @@ export function AppSidebar() {
                   >
                     <Workflow />
                     <span>Workflows</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Faceted object-set search, pivot, search-around & bulk actions over the ontology"
+                >
+                  <a
+                    href="/explorer"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Boxes />
+                    <span>Object Explorer</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Object-set graph: expand via search-around, inspect derived properties, run what-if scenarios"
+                >
+                  <a
+                    href="/vertex"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Waypoints />
+                    <span>Vertex Explorer</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>

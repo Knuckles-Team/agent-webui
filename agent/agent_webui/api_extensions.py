@@ -4826,3 +4826,1381 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         logger.error(f'run_workflow: dispatch failed: {e}')
         return {'run_id': run_id, 'status': 'error', 'error': str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Ontology Endpoints (Palantir-Foundry-parity ontology system)
+#
+# Surfaces the agent_utilities OntologySystem (kg.ontology) to the web UI:
+# object/property/interface types, ObjectSet search/search-around/pivot/
+# aggregate, per-object view (props + links + derived + markings + edit
+# history), durable edits + revert, typed function invocation, derived-
+# property compute, document processing, and stored/standard object views.
+#
+# All routes bind a real KnowledgeGraph facade to the SAME live store/compute
+# the IntelligenceGraphEngine uses, so they drive the real ontology end to end
+# (no stubs). Read routes pass results through the fine-grained permissioning
+# gate (kg.ontology.permissioning.enforce).
+# ---------------------------------------------------------------------------
+
+
+# Process-level cache of the KnowledgeGraph facade keyed by the live engine's
+# backend object. The facade (and the OntologySystem + EditLedger it composes)
+# is stateful — the durable edit ledger keeps an in-process mirror that backs
+# history/revert/as_of — so it must be a singleton bound to the singleton engine
+# rather than rebuilt per request, otherwise edit history would not survive
+# across stateless HTTP calls. A WeakKeyDictionary auto-evicts the entry when
+# the backend is replaced/garbage-collected (avoiding id() reuse hazards).
+import weakref as _weakref
+
+_ontology_kg_cache: "_weakref.WeakKeyDictionary[Any, Any]" = (
+    _weakref.WeakKeyDictionary()
+)
+
+
+def get_ontology_kg() -> Any:
+    """Return the process-singleton KnowledgeGraph facade bound to the live engine.
+
+    Reuses :func:`get_engine` (the same helper the ``/graph/*`` routes use) so
+    the ontology layer resolves against the exact same backend the rest of the
+    UI reads/writes — never a second, divergent graph. The facade is cached per
+    engine backend so the composed :class:`OntologySystem` (and its durable edit
+    ledger) is stateful across requests, matching the singleton engine.
+
+    Raises:
+        HTTPException: 501 when the engine cannot be initialized, or when the
+            ontology layer is unavailable in this environment.
+    """
+    from agent_utilities.knowledge_graph.facade import KnowledgeGraph
+
+    engine = get_engine()
+    backend = engine.backend
+    try:
+        cached = _ontology_kg_cache.get(backend)
+    except TypeError:
+        # Backend not weak-referenceable — fall back to a fresh facade.
+        cached = None
+    if cached is not None:
+        kg = cached
+    else:
+        kg = KnowledgeGraph()
+        # Bind to the live store; the facade derives compute from the store graph.
+        kg._store = backend
+        try:
+            _ontology_kg_cache[backend] = kg
+        except TypeError:
+            pass
+    ontology = kg.ontology
+    if ontology is None:
+        raise HTTPException(status_code=501, detail='Ontology layer unavailable')
+    return kg, ontology
+
+
+def _actor_id_from_request(request: Request | None) -> str:
+    """Best-effort actor id from request context (header/state), else 'system'."""
+    if request is None:
+        return 'system'
+    try:
+        actor = request.headers.get('X-Actor-Id') or getattr(
+            request.state, 'actor_id', None
+        )
+        if actor:
+            return str(actor)
+    except Exception:  # noqa: BLE001
+        pass
+    return 'system'
+
+
+def _actor_context(request: Request | None) -> Any:
+    """Construct an ActorContext for permissioning from the request, else default."""
+    from agent_utilities.knowledge_graph.ontology.permissioning import (
+        ActorContext,
+        current_actor,
+    )
+
+    actor_id = _actor_id_from_request(request)
+    if actor_id == 'system':
+        return current_actor()
+    return ActorContext(actor_id=actor_id)
+
+
+def _serialize_property_type(name: str, pt: Any) -> dict[str, Any]:
+    """Serialize a PropertyType to JSON-safe dict (its ``type`` fields are unsafe).
+
+    ``python_type``/``element_type`` hold Python ``type`` objects which are not
+    JSON serializable, so they are rendered as their type names.
+    """
+    from agent_utilities.knowledge_graph.ontology import column_type_for
+
+    py = getattr(pt, 'python_type', None)
+    elem = getattr(pt, 'element_type', None)
+    try:
+        column_type = column_type_for(name)
+    except Exception:  # noqa: BLE001
+        column_type = ''
+    return {
+        'name': getattr(pt, 'name', name),
+        'description': getattr(pt, 'description', ''),
+        'xsd_iri': getattr(pt, 'xsd_iri', ''),
+        'python_type': getattr(py, '__name__', None) if py is not None else None,
+        'storage_hint': getattr(pt, 'storage_hint', ''),
+        'is_complex': bool(getattr(pt, 'is_complex', False)),
+        'element_type': (
+            getattr(elem, 'name', getattr(elem, '__name__', str(elem)))
+            if elem is not None
+            else None
+        ),
+        'dimension': getattr(pt, 'dimension', None),
+        'column_type': column_type,
+    }
+
+
+def _node_properties(backend: Any, object_id: str) -> dict[str, Any]:
+    """Read a node's full property map from the live store via Cypher."""
+    try:
+        rows = backend.execute(
+            'MATCH (n {id: $id}) RETURN n LIMIT 1', {'id': object_id}
+        )
+    except Exception:  # noqa: BLE001
+        rows = []
+    if not rows:
+        return {}
+    node = rows[0].get('n', {})
+    return dict(node) if isinstance(node, dict) else {}
+
+
+def _node_links(backend: Any, object_id: str) -> dict[str, list[dict[str, Any]]]:
+    """Read in/out typed links for a node from the live store."""
+    out_links: list[dict[str, Any]] = []
+    in_links: list[dict[str, Any]] = []
+    try:
+        out_rows = backend.execute(
+            'MATCH (n {id: $id})-[r]->(m) '
+            'RETURN type(r) as type, m.id as target LIMIT 1000',
+            {'id': object_id},
+        )
+        for row in out_rows or []:
+            out_links.append(
+                {'type': row.get('type', ''), 'target': row.get('target', '')}
+            )
+    except Exception:  # noqa: BLE001
+        out_links = []
+    try:
+        in_rows = backend.execute(
+            'MATCH (m)-[r]->(n {id: $id}) '
+            'RETURN type(r) as type, m.id as source LIMIT 1000',
+            {'id': object_id},
+        )
+        for row in in_rows or []:
+            in_links.append(
+                {'type': row.get('type', ''), 'source': row.get('source', '')}
+            )
+    except Exception:  # noqa: BLE001
+        in_links = []
+    return {'out': out_links, 'in': in_links}
+
+
+@router.get('/ontology/object-types')
+async def list_object_types() -> list[dict[str, Any]]:
+    """List ontology object/node types (registry types + interface implementers).
+
+    Returns the distinct object-type values known to the ontology: every concrete
+    type that implements a registered interface, unioned with the live node
+    labels present in the store. Each entry carries the interfaces it implements.
+    """
+    try:
+        kg, ontology = get_ontology_kg()
+        backend = kg.store
+
+        # Concrete types declared as interface implementers (programmatic targets).
+        implementers_by_type: dict[str, list[str]] = {}
+        for iface in ontology.interfaces.list_interfaces():
+            try:
+                for t in ontology.interfaces.find_implementers(iface.name):
+                    implementers_by_type.setdefault(t, []).append(iface.name)
+            except Exception:  # noqa: BLE001
+                continue
+
+        # Live node labels present in the store.
+        live_types: dict[str, int] = {}
+        try:
+            rows = backend.execute(
+                'MATCH (n) RETURN labels(n) as labels, count(n) as count'
+            )
+            for row in rows or []:
+                labels = row.get('labels') or []
+                if isinstance(labels, str):
+                    labels = [labels]
+                for label in labels:
+                    if label and not str(label).startswith('_'):
+                        live_types[label] = live_types.get(label, 0) + int(
+                            row.get('count', 0) or 0
+                        )
+        except Exception:  # noqa: BLE001
+            live_types = {}
+
+        names = set(implementers_by_type) | set(live_types)
+        return [
+            {
+                'name': name,
+                'implements': sorted(implementers_by_type.get(name, [])),
+                'count': int(live_types.get(name, 0)),
+            }
+            for name in sorted(names)
+        ]
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to list object types: {e}')
+        return []
+
+
+@router.get('/ontology/property-types')
+async def list_ontology_property_types() -> list[dict[str, Any]]:
+    """Return the ontology property-type registry (KG-2.47)."""
+    try:
+        _kg, ontology = get_ontology_kg()
+        return [
+            _serialize_property_type(name, pt)
+            for name, pt in sorted(ontology.property_types.items())
+        ]
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to list property types: {e}')
+        return []
+
+
+@router.get('/ontology/interfaces')
+async def list_ontology_interfaces() -> list[dict[str, Any]]:
+    """List ontology interfaces with their implementers (KG-2.38)."""
+    try:
+        _kg, ontology = get_ontology_kg()
+        out: list[dict[str, Any]] = []
+        for iface in ontology.interfaces.list_interfaces():
+            data = iface.model_dump(mode='json')
+            try:
+                data['implementers'] = ontology.interfaces.find_implementers(
+                    iface.name
+                )
+            except Exception:  # noqa: BLE001
+                data['implementers'] = []
+            out.append(data)
+        return out
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to list interfaces: {e}')
+        return []
+
+
+@router.get('/ontology/interfaces/{name}/implementers')
+async def get_interface_implementers(name: str) -> dict[str, Any]:
+    """Resolve the concrete object types that implement interface ``name``."""
+    try:
+        _kg, ontology = get_ontology_kg()
+        implementers = ontology.interfaces.find_implementers(name)
+        return {'interface': name, 'implementers': implementers}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to resolve implementers for {name}: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _object_set_rows(
+    ontology: Any, object_set: Any, actor: Any, *, limit: int = 200
+) -> list[dict[str, Any]]:
+    """Materialize an ObjectSet to permission-enforced summary rows."""
+    from agent_utilities.knowledge_graph.ontology.permissioning import enforce
+
+    ids = object_set.ids()[:limit]
+    rows: list[dict[str, Any]] = []
+    for nid in ids:
+        try:
+            props = object_set._view.props(nid)
+        except Exception:  # noqa: BLE001
+            props = {'id': nid}
+        props.setdefault('id', nid)
+        rows.append(dict(props))
+    return enforce(rows, actor)
+
+
+@router.post('/ontology/object-set/search')
+async def ontology_object_set_search(
+    data: dict[str, Any], request: Request
+) -> dict[str, Any]:
+    """Search an object set and return permission-enforced summary rows.
+
+    Body: ``{query, filters, kind}`` — ``kind`` is an object type / interface to
+    scope to (omit for a graph-wide search); ``filters`` is an optional list of
+    ``{property, op, value}`` typed predicates; ``query`` is the search string.
+    """
+    try:
+        _kg, ontology = get_ontology_kg()
+        actor = _actor_context(request)
+        query = str(data.get('query', '') or '')
+        kind = data.get('kind')
+        limit = int(data.get('limit', 50) or 50)
+        raw_filters = data.get('filters') or []
+
+        from agent_utilities.knowledge_graph.ontology.object_set import PropertyFilter
+
+        filters = []
+        for f in raw_filters:
+            if isinstance(f, dict) and (f.get('property') or f.get('field')):
+                filters.append(
+                    PropertyFilter(
+                        field=str(f.get('property') or f.get('field')),
+                        op=str(f.get('op', 'eq')),
+                        value=f.get('value'),
+                    )
+                )
+
+        if kind:
+            base = ontology.object_set_of_type(str(kind))
+        elif filters:
+            base = ontology.dynamic_object_set(filters=filters)
+            filters = []  # already applied to the base set
+        else:
+            # Graph-wide: a dynamic set over a permissive predicate.
+            base = ontology.dynamic_object_set(lambda props: True)
+
+        result = base.search(query, filters=filters or None, limit=limit)
+        rows = _object_set_rows(ontology, result, actor, limit=limit)
+        return {
+            'ids': [r.get('id') for r in rows],
+            'rows': rows,
+            'count': len(rows),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Ontology object-set search failed: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post('/ontology/object-set/search-around')
+async def ontology_object_set_search_around(
+    data: dict[str, Any], request: Request
+) -> dict[str, Any]:
+    """Traverse a typed link from a seed id set to the related object set.
+
+    Body: ``{ids, link_type, hops, cap, direction}``.
+    """
+    try:
+        _kg, ontology = get_ontology_kg()
+        actor = _actor_context(request)
+        ids = list(data.get('ids') or [])
+        link_type = data.get('link_type')
+        hops = int(data.get('hops', 1) or 1)
+        cap = int(data.get('cap', 10000) or 10000)
+        direction = str(data.get('direction', 'out') or 'out')
+
+        base = ontology.object_set(ids)
+        related = base.search_around(
+            link_type, hops=hops, direction=direction, cap=cap
+        )
+        rows = _object_set_rows(ontology, related, actor, limit=cap)
+        return {
+            'ids': [r.get('id') for r in rows],
+            'rows': rows,
+            'count': len(rows),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Ontology search-around failed: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post('/ontology/object-set/pivot')
+async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
+    """Pivot an object set across a link type, grouping the linked set.
+
+    Body: ``{ids, link_type, group_by, direction}``.
+    """
+    try:
+        _kg, ontology = get_ontology_kg()
+        ids = list(data.get('ids') or [])
+        link_type = data.get('link_type')
+        group_by = str(data.get('group_by', '') or '')
+        direction = str(data.get('direction', 'out') or 'out')
+        if not group_by:
+            raise HTTPException(status_code=422, detail='group_by is required')
+
+        base = ontology.object_set(ids)
+        pivot = base.pivot(link_type, group_by, direction=direction)
+        return {
+            'link_type': pivot.link_type,
+            'group_by': pivot.group_by,
+            'groups': {str(k): v for k, v in pivot.groups.items()},
+        }
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Ontology pivot failed: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post('/ontology/object-set/aggregate')
+async def ontology_object_set_aggregate(data: dict[str, Any]) -> dict[str, Any]:
+    """Aggregate an object set (count/sum/avg/min/max), optionally grouped.
+
+    Body: ``{ids, group_by, metric, field}``.
+    """
+    try:
+        _kg, ontology = get_ontology_kg()
+        ids = list(data.get('ids') or [])
+        metric = str(data.get('metric', 'count') or 'count')
+        group_by = data.get('group_by')
+        field = data.get('field')
+
+        base = ontology.object_set(ids)
+        agg = base.aggregate(metric, field=field, group_by=group_by)
+        return {
+            'metric': agg.metric,
+            'field': agg.field,
+            'group_by': agg.group_by,
+            'groups': {str(k): v for k, v in agg.groups.items()},
+            'value': agg.value,
+            'total_objects': agg.total_objects,
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Ontology aggregate failed: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _resolve_object_set_ids(
+    ontology: Any, data: dict[str, Any], *, limit: int = 10000
+) -> tuple[list[str], str]:
+    """Resolve an ObjectSet spec ``{ids|filter|query, kind}`` to concrete ids.
+
+    Mirrors the ``/object-set/search`` resolution: an explicit ``ids`` list wins;
+    otherwise a ``kind`` (type/interface) and/or ``filter`` predicates and/or a
+    ``query`` string materialise the set through the real OntologySystem. Returns
+    ``(ids, kind)`` where ``kind`` echoes the scoping type/interface (or '').
+    """
+    from agent_utilities.knowledge_graph.ontology.object_set import PropertyFilter
+
+    kind = str(data.get('kind') or '')
+    explicit = data.get('ids')
+    if explicit:
+        ids = [str(x) for x in explicit][:limit]
+        return ids, kind
+
+    raw_filters = data.get('filter') or data.get('filters') or []
+    filters = []
+    for f in raw_filters:
+        if isinstance(f, dict) and (f.get('property') or f.get('field')):
+            filters.append(
+                PropertyFilter(
+                    field=str(f.get('property') or f.get('field')),
+                    op=str(f.get('op', 'eq')),
+                    value=f.get('value'),
+                )
+            )
+
+    if kind:
+        base = ontology.object_set_of_type(kind)
+    elif filters:
+        base = ontology.dynamic_object_set(filters=filters)
+        filters = []
+    else:
+        base = ontology.dynamic_object_set(lambda props: True)
+
+    query = str(data.get('query', '') or '')
+    if query or filters:
+        base = base.search(query, filters=filters or None, limit=limit)
+    return [str(i) for i in base.ids()[:limit]], kind
+
+
+def _object_set_store_path() -> Path:
+    """Path to the JSON store of saved (named) ObjectSets."""
+    try:
+        from agent_utilities.core.paths import data_dir
+
+        base = Path(data_dir())
+    except Exception:  # noqa: BLE001
+        base = DEFAULT_AGENT_DIR
+    base.mkdir(parents=True, exist_ok=True)
+    return base / 'ontology_object_sets.json'
+
+
+def _load_object_sets() -> dict[str, Any]:
+    """Load the saved ObjectSet definitions (JSON), keyed by saved-set id."""
+    import json
+
+    path = _object_set_store_path()
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding='utf-8')) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _save_object_sets(sets: dict[str, Any]) -> None:
+    """Persist the saved ObjectSet definitions (JSON)."""
+    import json
+
+    path = _object_set_store_path()
+    path.write_text(json.dumps(sets, indent=2), encoding='utf-8')
+
+
+def _persist_object_set_node(backend: Any, record: dict[str, Any]) -> bool:
+    """Persist a saved set as a durable ``object_set`` KG node. Best-effort.
+
+    Materialises the named set as a node carrying its member ids + metadata, so
+    a saved/shared set survives independently of the JSON mirror and is queryable
+    on the live store. Returns whether the node was persisted.
+    """
+    import json
+
+    if backend is None:
+        return False
+    try:
+        backend.execute(
+            "MERGE (n {id: $id}) SET n.type = 'object_set', n.name = $name, "
+            "n.kind = $kind, n.shared = $shared, n.count = $count, "
+            "n.member_ids = $member_ids, n.created_at = $created_at, "
+            "n.actor = $actor",
+            {
+                'id': record['id'],
+                'name': record['name'],
+                'kind': record.get('kind', ''),
+                'shared': bool(record.get('shared', False)),
+                'count': int(record.get('count', 0)),
+                'member_ids': json.dumps(record.get('ids', [])),
+                'created_at': record.get('created_at', 0.0),
+                'actor': record.get('actor', 'system'),
+            },
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001 — persistence is best-effort
+        logger.debug('Failed to persist object_set node %s: %s', record['id'], exc)
+        return False
+
+
+@router.post('/ontology/object-set/save')
+async def ontology_object_set_save(
+    data: dict[str, Any], request: Request
+) -> dict[str, Any]:
+    """Persist a named ObjectSet so it can be revisited / shared.
+
+    Body: ``{name, ids|filter|query, kind, shared?}`` — the Palantir
+    'save / share object set' primitive. The set is materialised to concrete
+    member ids and persisted **durably** as an ``object_set`` KG node on the live
+    store (with a JSON mirror so it survives offline backends). Returns
+    ``{id, name, count, kind}``.
+    """
+    import time
+    import uuid
+
+    try:
+        kg, ontology = get_ontology_kg()
+        backend = kg.store
+        name = str(data.get('name') or '').strip()
+        if not name:
+            raise HTTPException(status_code=422, detail='name is required')
+
+        ids, kind = _resolve_object_set_ids(ontology, data)
+        actor = data.get('actor') or _actor_id_from_request(request)
+        set_id = f'object_set:{uuid.uuid4().hex[:12]}'
+        record = {
+            'id': set_id,
+            'name': name,
+            'kind': kind,
+            'shared': bool(data.get('shared', False)),
+            'ids': ids,
+            'count': len(ids),
+            'created_at': time.time(),
+            'actor': actor,
+        }
+
+        record['persisted'] = _persist_object_set_node(backend, record)
+        sets = _load_object_sets()
+        sets[set_id] = record
+        _save_object_sets(sets)
+
+        return {
+            'id': set_id,
+            'name': name,
+            'count': len(ids),
+            'kind': kind,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to save object set: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get('/ontology/object-set/list')
+async def ontology_object_set_list(request: Request) -> dict[str, Any]:
+    """List saved ObjectSets for the Explorer 'saved sets' panel.
+
+    Merges the durable ``object_set`` KG nodes with the JSON mirror so a set
+    saved by any worker is visible. A non-shared set is only listed for its
+    owning actor (or for an admin/system actor); shared sets are visible to all.
+    """
+    import json
+
+    try:
+        kg, _ontology = get_ontology_kg()
+        backend = kg.store
+        actor_id = _actor_id_from_request(request)
+
+        merged: dict[str, dict[str, Any]] = {}
+        for rec in _load_object_sets().values():
+            if isinstance(rec, dict) and rec.get('id'):
+                merged[rec['id']] = rec
+
+        try:
+            rows = backend.execute(
+                "MATCH (n {type: 'object_set'}) RETURN n", {}
+            )
+        except Exception:  # noqa: BLE001
+            rows = []
+        for row in rows or []:
+            node = row.get('n', {}) if isinstance(row, dict) else {}
+            if not isinstance(node, dict) or not node.get('id'):
+                continue
+            raw_ids = node.get('member_ids')
+            try:
+                member_ids = json.loads(raw_ids) if isinstance(raw_ids, str) else (
+                    raw_ids or []
+                )
+            except Exception:  # noqa: BLE001
+                member_ids = []
+            merged.setdefault(
+                node['id'],
+                {
+                    'id': node['id'],
+                    'name': node.get('name', ''),
+                    'kind': node.get('kind', ''),
+                    'shared': bool(node.get('shared', False)),
+                    'ids': member_ids,
+                    'count': int(node.get('count', len(member_ids))),
+                    'created_at': node.get('created_at', 0.0),
+                    'actor': node.get('actor', 'system'),
+                },
+            )
+
+        visible = [
+            {
+                'id': r['id'],
+                'name': r.get('name', ''),
+                'kind': r.get('kind', ''),
+                'shared': bool(r.get('shared', False)),
+                'count': int(r.get('count', len(r.get('ids', []) or []))),
+                'created_at': r.get('created_at', 0.0),
+                'actor': r.get('actor', 'system'),
+            }
+            for r in merged.values()
+            if r.get('shared')
+            or r.get('actor', 'system') == actor_id
+            or actor_id in ('system', 'admin')
+        ]
+        visible.sort(key=lambda r: r.get('created_at') or 0.0, reverse=True)
+        return {'sets': visible, 'count': len(visible)}
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to list object sets: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get('/ontology/actions')
+async def ontology_actions(object_type: str | None = None) -> list[dict[str, Any]]:
+    """List the REAL registered ontology actions, optionally scoped to a type.
+
+    Backs the Object Explorer's bulk-action menu so every offered action is a
+    genuinely registered :class:`OntologyAction` routed through the governed
+    executor — no hardcoded/fake verbs. When ``object_type`` is supplied the
+    list is narrowed via :meth:`ActionRegistry.actions_for_type` (the actions
+    whose ``acts_on`` covers that type); otherwise the full registry is returned
+    via :meth:`ActionRegistry.list_actions`. Each entry carries ``name``,
+    ``verb``, ``description``, ``produces_effect`` and ``required_capability``
+    so the client can filter to mutation/external-effect actions.
+    """
+    try:
+        from agent_utilities.knowledge_graph.actions import DEFAULT_REGISTRY
+
+        if object_type:
+            actions = DEFAULT_REGISTRY.actions_for_type(object_type)
+        else:
+            actions = DEFAULT_REGISTRY.list_actions()
+
+        return [
+            {
+                'name': a.name,
+                'verb': a.verb,
+                'description': a.description,
+                'produces_effect': getattr(
+                    a.produces_effect, 'value', str(a.produces_effect)
+                ),
+                'required_capability': a.required_capability,
+                'acts_on': list(a.acts_on or []),
+            }
+            for a in actions
+        ]
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to list ontology actions: {e}')
+        return []
+
+
+@router.post('/ontology/object-set/action')
+async def ontology_object_set_action(
+    data: dict[str, Any], request: Request
+) -> dict[str, Any]:
+    """Apply a bulk OntologyAction over selected objects via the governed executor.
+
+    Body: ``{ids, action_name, params, actor?}`` — Palantir 'bulk Actions with
+    writeback'. Each target is run through the governed
+    :class:`ActionExecutor` (authorize → escalate → validate → run → audit →
+    persist), with side-effects journaled in the live-store-bound Edit Ledger so
+    every writeback is durable + revertible. Permissioning is enforced: an actor
+    lacking the action's ``required_capability`` is DENIED per target. Returns
+    ``{applied, results:[{id, status, edit_ids}], errors}``.
+    """
+    try:
+        from agent_utilities.knowledge_graph.actions import (
+            DEFAULT_REGISTRY,
+            ActionExecutor,
+            ActionStatus,
+        )
+        from agent_utilities.knowledge_graph.ontology.permissioning import ActorContext
+
+        _kg, ontology = get_ontology_kg()
+        ids = [str(x) for x in (data.get('ids') or [])]
+        action_name = str(data.get('action_name') or '').strip()
+        if not action_name:
+            raise HTTPException(status_code=422, detail='action_name is required')
+        if not ids:
+            raise HTTPException(status_code=422, detail='ids is required')
+        params = dict(data.get('params') or {})
+
+        actor_id = data.get('actor') or _actor_id_from_request(request)
+        # Capabilities come from the actor's roles (ActorContext treats roles as
+        # the capability set the executor authorizes against).
+        roles = [str(r) for r in (data.get('roles') or [])]
+        actor = ActorContext(actor_id=str(actor_id), roles=roles)
+
+        # Bind the executor's ledger to the SAME live-store ledger the object
+        # view reads, so bulk writeback edits are durable and surface in history.
+        executor = ActionExecutor(DEFAULT_REGISTRY, ledger=ontology.edits)
+
+        # A mutating bulk action is a HIGH-risk verb that the HITL escalation
+        # gate (CONCEPT:OS-5.12) pauses for human approval — without a decision
+        # it auto-denies, never silently writes. When the caller supplies an
+        # explicit ``approve`` payload (the operator pressing 'approve' in the
+        # bulk-action dialog), wire it as the gate's decision_provider so the
+        # writeback proceeds under a recorded, role-checked approval.
+        approve = data.get('approve')
+        decision_provider = None
+        if approve:
+            approver = (
+                approve.get('approver')
+                if isinstance(approve, dict)
+                else None
+            ) or str(actor_id)
+            approver_role = (
+                approve.get('approver_role')
+                if isinstance(approve, dict)
+                else None
+            ) or 'admin'
+            reason = (
+                approve.get('reason') if isinstance(approve, dict) else None
+            ) or 'bulk action approved by operator'
+
+            def decision_provider(_request: Any) -> dict[str, Any]:
+                return {
+                    'approved': True,
+                    'approver': approver,
+                    'approver_role': approver_role,
+                    'reason': reason,
+                }
+
+        # The per-target object id must reach the action's templated side-effects
+        # (e.g. ``target: "$concept_id"``). Resolve the action's required ``*_id``
+        # parameter once so each iteration binds the loop's target id to it when
+        # the caller did not pin it explicitly.
+        action_def = DEFAULT_REGISTRY.get(action_name)
+        id_param = ''
+        if action_def is not None:
+            declared = {p.name for p in action_def.parameters}
+            for p in action_def.parameters:
+                if p.required and p.name.endswith('_id') and p.name not in params:
+                    id_param = p.name
+                    break
+            # Only a declared ``target_id`` param may receive the fallback —
+            # validate_params rejects unknown keys.
+            if not id_param and 'target_id' in declared and 'target_id' not in params:
+                id_param = 'target_id'
+
+        results: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+        applied = 0
+        for target_id in ids:
+            # Bind the loop's target id under the action's declared ``*_id``
+            # parameter so single-target $-templates resolve per object.
+            call_params = dict(params)
+            if id_param:
+                call_params[id_param] = target_id
+            inv = executor.execute(
+                action_name,
+                actor,
+                call_params,
+                target_id=target_id,
+                decision_provider=decision_provider,
+            )
+            status = str(inv.status)
+            edit_ids = list(getattr(inv, 'edit_ids', []) or [])
+            results.append(
+                {'id': target_id, 'status': status, 'edit_ids': edit_ids}
+            )
+            if inv.status == ActionStatus.SUCCESS:
+                applied += 1
+            elif inv.status in (ActionStatus.ERROR, ActionStatus.DENIED):
+                errors.append(
+                    {
+                        'id': target_id,
+                        'status': status,
+                        'error': getattr(inv, 'error', '')
+                        or getattr(inv, 'result_summary', ''),
+                    }
+                )
+
+        return {'applied': applied, 'results': results, 'errors': errors}
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Bulk ontology action failed: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _durable_edit_history(backend: Any, object_id: str) -> list[dict[str, Any]]:
+    """Read an object's durable edit history from the store's ``object_edit`` nodes.
+
+    The :class:`EditLedger` persists each edit as an ``object_edit`` node (with
+    ``EDITS`` → target edges) but serves :meth:`history` from an in-process
+    mirror that does not survive across stateless HTTP requests. This reads the
+    durable nodes directly so the object view shows the full audit trail
+    regardless of which worker recorded the edit.
+    """
+    import json
+
+    try:
+        rows = backend.execute(
+            "MATCH (n {object_id: $id, type: 'object_edit'}) RETURN n",
+            {'id': object_id},
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    edits: list[dict[str, Any]] = []
+    for row in rows or []:
+        node = row.get('n', {})
+        if not isinstance(node, dict):
+            continue
+
+        def _loads(raw: Any) -> Any:
+            if isinstance(raw, str):
+                try:
+                    return json.loads(raw)
+                except Exception:  # noqa: BLE001
+                    return raw
+            return raw or {}
+
+        edits.append(
+            {
+                'id': node.get('id', ''),
+                'actor': node.get('actor', ''),
+                'edit_type': node.get('edit_type', ''),
+                'object_id': node.get('object_id', object_id),
+                'before': _loads(node.get('before')),
+                'after': _loads(node.get('after')),
+                'link_source': node.get('link_source', ''),
+                'link_label': node.get('link_label', ''),
+                'link_target': node.get('link_target', ''),
+                'provenance': node.get('provenance', ''),
+                'invocation_ref': node.get('invocation_ref', ''),
+                'timestamp': node.get('timestamp', 0.0),
+            }
+        )
+    edits.sort(key=lambda e: e.get('timestamp') or 0.0)
+    return edits
+
+
+@router.get('/ontology/object/{object_id}')
+async def get_ontology_object(
+    object_id: str, request: Request, layout: str = 'standard'
+) -> dict[str, Any]:
+    """Full object view: properties, in/out links, derived props, markings, history.
+
+    The properties are passed through the fine-grained permissioning gate
+    (``enforce``) for the requesting actor; a fully-redacted/denied object yields
+    a 404.
+
+    ``layout`` selects the widget composition returned under ``view``:
+    ``standard`` (default) derives the layout from the object type's interface
+    schema; ``configured`` returns the stored :func:`ObjectView` widget
+    composition for that type when one has been saved (falling back to standard
+    when none exists). The selection is a real change in the returned payload —
+    the same affordance the Explorer's layout toggle reaches.
+    """
+    try:
+        from agent_utilities.knowledge_graph.ontology.permissioning import (
+            enforce,
+            markings_for,
+        )
+
+        kg, ontology = get_ontology_kg()
+        backend = kg.store
+        actor = _actor_context(request)
+
+        props = _node_properties(backend, object_id)
+        props.setdefault('id', object_id)
+        enforced = enforce([props], actor)
+        if not enforced:
+            raise HTTPException(status_code=404, detail='Object not found or denied')
+        view_props = enforced[0]
+
+        object_type = (
+            view_props.get('type')
+            or view_props.get('_type')
+            or view_props.get('object_type')
+        )
+        try:
+            derived = ontology.derive_all(
+                view_props, object_type=object_type, actor_id=actor.actor_id
+            )
+        except Exception:  # noqa: BLE001
+            derived = {}
+        try:
+            markings = sorted(markings_for(object_id))
+        except Exception:  # noqa: BLE001
+            markings = []
+        # Prefer the durable, cross-request audit trail from the store; fall
+        # back to the in-process ledger mirror when nothing was persisted.
+        history = _durable_edit_history(backend, object_id)
+        if not history:
+            try:
+                history = [
+                    e.model_dump(mode='json')
+                    for e in ontology.history(object_id)
+                ]
+            except Exception:  # noqa: BLE001
+                history = []
+
+        # Resolve the requested layout into a concrete view payload. ``configured``
+        # serves the stored ObjectView widget composition for this type (when one
+        # exists); ``standard`` derives the layout from the type's interface
+        # schema. The selection genuinely changes the returned ``view``.
+        layout_choice = (layout or 'standard').strip().lower()
+        view: dict[str, Any] = {}
+        if object_type:
+            configured = (
+                _load_object_views().get(str(object_type))
+                if layout_choice == 'configured'
+                else None
+            )
+            if configured is not None:
+                view = {
+                    'object_type': object_type,
+                    'view_type': 'configured',
+                    **configured,
+                }
+            else:
+                view = _standard_object_view(ontology, str(object_type))
+
+        return {
+            'id': object_id,
+            'object_type': object_type,
+            'properties': view_props,
+            'links': _node_links(backend, object_id),
+            'derived': derived,
+            'markings': markings,
+            'history': history,
+            'layout': view.get('view_type', 'standard') if view else layout_choice,
+            'view': view,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to load ontology object {object_id}: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post('/ontology/object/{object_id}/edit')
+async def edit_ontology_object(
+    object_id: str, data: dict[str, Any], request: Request
+) -> dict[str, Any]:
+    """Record a durable edit on an object and return the edit + updated object.
+
+    Body: ``{edit_type, property|properties, value, link_type, target, actor}``.
+    ``edit_type`` is one of ``property_set`` / ``link_add`` / ``link_remove``.
+    """
+    try:
+        kg, ontology = get_ontology_kg()
+        backend = kg.store
+        actor = data.get('actor') or _actor_id_from_request(request)
+        edit_type = str(data.get('edit_type', 'property_set') or 'property_set')
+
+        if edit_type == 'property_set':
+            properties = data.get('properties')
+            if not isinstance(properties, dict):
+                prop = data.get('property')
+                if not prop:
+                    raise HTTPException(
+                        status_code=422,
+                        detail='property_set requires properties or property+value',
+                    )
+                properties = {str(prop): data.get('value')}
+            edit = ontology.set_property_edit(
+                object_id, properties, actor=actor
+            )
+        elif edit_type == 'link_add':
+            target = data.get('target') or data.get('link_target')
+            label = str(data.get('link_type') or data.get('link') or 'related')
+            if not target:
+                raise HTTPException(status_code=422, detail='link_add requires target')
+            edit = ontology.edits.add_link(
+                object_id, str(target), label, actor=actor
+            )
+        elif edit_type == 'link_remove':
+            target = data.get('target') or data.get('link_target')
+            label = str(data.get('link_type') or data.get('link') or 'related')
+            if not target:
+                raise HTTPException(
+                    status_code=422, detail='link_remove requires target'
+                )
+            edit = ontology.edits.remove_link(
+                object_id, str(target), label, actor=actor
+            )
+        else:
+            raise HTTPException(
+                status_code=422, detail=f'unsupported edit_type: {edit_type}'
+            )
+
+        return {
+            'edit': edit.model_dump(mode='json'),
+            'object': {
+                'id': object_id,
+                'properties': _node_properties(backend, object_id),
+                'links': _node_links(backend, object_id),
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to edit ontology object {object_id}: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post('/ontology/object/{object_id}/revert')
+async def revert_ontology_edit(
+    object_id: str, data: dict[str, Any], request: Request
+) -> dict[str, Any]:
+    """Revert a recorded edit, recording a durable compensating edit.
+
+    Body: ``{edit_id, actor}``.
+    """
+    try:
+        from agent_utilities.knowledge_graph.ontology.edits import Edit, EditType
+
+        kg, ontology = get_ontology_kg()
+        backend = kg.store
+        actor = data.get('actor') or _actor_id_from_request(request)
+        edit_id = data.get('edit_id')
+        if not edit_id:
+            raise HTTPException(status_code=422, detail='edit_id is required')
+
+        # The in-process ledger mirror does not survive across stateless HTTP
+        # requests, so rehydrate the original edit from its durable store node
+        # and register it on the ledger before reverting.
+        if ontology.edits.get(str(edit_id)) is None:
+            for hist in _durable_edit_history(backend, object_id):
+                if hist.get('id') == str(edit_id):
+                    rehydrated = Edit(
+                        id=hist['id'],
+                        actor=hist.get('actor', 'system'),
+                        edit_type=EditType(hist['edit_type']),
+                        object_id=hist.get('object_id', object_id),
+                        before=hist.get('before') or {},
+                        after=hist.get('after') or {},
+                        link_source=hist.get('link_source', ''),
+                        link_label=hist.get('link_label', ''),
+                        link_target=hist.get('link_target', ''),
+                        provenance=hist.get('provenance', ''),
+                        invocation_ref=hist.get('invocation_ref', ''),
+                        timestamp=hist.get('timestamp', 0.0) or 0.0,
+                    )
+                    ontology.edits.rehydrate(rehydrated)
+                    break
+
+        compensating = ontology.revert_edit(str(edit_id), actor=actor)
+        return {
+            'edit': compensating.model_dump(mode='json'),
+            'object': {
+                'id': object_id,
+                'properties': _node_properties(backend, object_id),
+                'links': _node_links(backend, object_id),
+            },
+        }
+    except HTTPException:
+        raise
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to revert edit on {object_id}: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post('/ontology/function/invoke')
+async def invoke_ontology_function(
+    data: dict[str, Any], request: Request
+) -> dict[str, Any]:
+    """Invoke a typed, versioned ontology function via the audited runtime.
+
+    Body: ``{name, version, params}``.
+    """
+    try:
+        _kg, ontology = get_ontology_kg()
+        name = data.get('name')
+        if not name:
+            raise HTTPException(status_code=422, detail='name is required')
+        version = data.get('version')
+        params = data.get('params') or {}
+        actor_id = data.get('actor') or _actor_id_from_request(request)
+
+        result = ontology.invoke_function(
+            str(name), params, version, actor_id=actor_id
+        )
+        return result.model_dump(mode='json')
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to invoke ontology function: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post('/ontology/derive')
+async def derive_ontology_property(
+    data: dict[str, Any], request: Request
+) -> dict[str, Any]:
+    """Compute a single derived property for an object.
+
+    Body: ``{object_id, derived_name, object_type}``.
+    """
+    try:
+        kg, ontology = get_ontology_kg()
+        backend = kg.store
+        object_id = data.get('object_id')
+        derived_name = data.get('derived_name')
+        if not object_id or not derived_name:
+            raise HTTPException(
+                status_code=422, detail='object_id and derived_name are required'
+            )
+        actor_id = data.get('actor') or _actor_id_from_request(request)
+
+        props = _node_properties(backend, str(object_id))
+        props.setdefault('id', str(object_id))
+        object_type = (
+            data.get('object_type')
+            or props.get('type')
+            or props.get('_type')
+            or props.get('object_type')
+        )
+        result = ontology.derive(
+            props, str(derived_name), object_type=object_type, actor_id=actor_id
+        )
+        if hasattr(result, 'model_dump'):
+            return result.model_dump(mode='json')
+        return {'name': derived_name, 'value': result}
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to derive property: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post('/ontology/document/process')
+async def process_ontology_document(data: dict[str, Any]) -> dict[str, Any]:
+    """Process a document into Document + Chunk objects (KG-2.48).
+
+    Body: ``{text|path, chunk_size, overlap, title, doc_type, source}``.
+    """
+    try:
+        kg, ontology = get_ontology_kg()
+        text = data.get('text')
+        path = data.get('path')
+        if not text and not path:
+            raise HTTPException(status_code=422, detail='text or path is required')
+
+        chunk_size = int(data.get('chunk_size', 800) or 800)
+        overlap = int(data.get('overlap', 120) or 120)
+        kwargs: dict[str, Any] = {}
+        for key in ('title', 'doc_type', 'source', 'document_id', 'metadata'):
+            if data.get(key) is not None:
+                kwargs[key] = data[key]
+        if text and path:
+            kwargs.setdefault('text', text)
+
+        document = path if path else text
+        result = ontology.process_document(
+            document, chunk_size=chunk_size, overlap=overlap, **kwargs
+        )
+        return {
+            'document': result.get('document_node'),
+            'chunks': result.get('chunk_nodes', []),
+            'edges': result.get('edges', []),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to process document: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _object_view_store_path() -> Path:
+    """Path to the JSON store of configured ObjectView definitions."""
+    try:
+        from agent_utilities.core.paths import data_dir
+
+        base = Path(data_dir())
+    except Exception:  # noqa: BLE001
+        base = DEFAULT_AGENT_DIR
+    base.mkdir(parents=True, exist_ok=True)
+    return base / 'ontology_object_views.json'
+
+
+def _load_object_views() -> dict[str, Any]:
+    """Load the stored configured ObjectView definitions (JSON)."""
+    import json
+
+    path = _object_view_store_path()
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding='utf-8')) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _save_object_views(views: dict[str, Any]) -> None:
+    """Persist the configured ObjectView definitions (JSON)."""
+    import json
+
+    path = _object_view_store_path()
+    path.write_text(json.dumps(views, indent=2), encoding='utf-8')
+
+
+def _standard_object_view(ontology: Any, object_type: str) -> dict[str, Any]:
+    """Derive a standard ObjectView from an object type's interface schema.
+
+    The standard view is auto-composed from the property/link contracts of every
+    interface the type implements — a deterministic widget layout (property table
+    + per-link panels) with no stored configuration.
+    """
+    property_widgets: list[dict[str, Any]] = []
+    link_widgets: list[dict[str, Any]] = []
+    seen_props: set[str] = set()
+    seen_links: set[str] = set()
+    implements: list[str] = []
+
+    for iface in ontology.interfaces.list_interfaces():
+        try:
+            impls = ontology.interfaces.find_implementers(iface.name)
+        except Exception:  # noqa: BLE001
+            impls = []
+        if object_type not in impls:
+            continue
+        implements.append(iface.name)
+        for prop in iface.properties:
+            if prop.name in seen_props:
+                continue
+            seen_props.add(prop.name)
+            property_widgets.append(
+                {
+                    'kind': 'property',
+                    'property': prop.name,
+                    'type_ref': prop.type_ref,
+                    'required': prop.required,
+                    'label': prop.name,
+                }
+            )
+        for lc in iface.link_constraints:
+            if lc.name in seen_links:
+                continue
+            seen_links.add(lc.name)
+            link_widgets.append(
+                {
+                    'kind': 'link',
+                    'name': lc.name,
+                    'edge_type': str(lc.edge_type),
+                    'target_type': lc.target_type,
+                    'label': lc.name,
+                }
+            )
+
+    return {
+        'object_type': object_type,
+        'view_type': 'standard',
+        'implements': implements,
+        'widgets': property_widgets + link_widgets,
+    }
+
+
+@router.get('/ontology/object-view/{object_type}')
+async def get_ontology_object_view(object_type: str) -> dict[str, Any]:
+    """Get the ObjectView for a type: stored (configured) else standard (schema)."""
+    try:
+        _kg, ontology = get_ontology_kg()
+        configured = _load_object_views().get(object_type)
+        if configured is not None:
+            return {
+                'object_type': object_type,
+                'view_type': 'configured',
+                **configured,
+            }
+        return _standard_object_view(ontology, object_type)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to get object view for {object_type}: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post('/ontology/object-view/{object_type}')
+async def save_ontology_object_view(
+    object_type: str, data: dict[str, Any]
+) -> dict[str, Any]:
+    """Save a configured ObjectView definition (widget composition) for a type."""
+    try:
+        # Validate the ontology is reachable before persisting.
+        get_ontology_kg()
+        views = _load_object_views()
+        definition = {
+            'widgets': data.get('widgets', []),
+            'title': data.get('title', object_type),
+        }
+        views[object_type] = definition
+        _save_object_views(views)
+        return {
+            'status': 'success',
+            'object_type': object_type,
+            'view_type': 'configured',
+            **definition,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Failed to save object view for {object_type}: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e

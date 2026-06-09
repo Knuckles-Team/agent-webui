@@ -86,6 +86,41 @@ Agent WebUI is a highly interactive, responsive chat interface designed specific
   - Causal view (reasoning traces and "why" links)
   - Entity view (people, organizations, code symbols)
 
+### Ontology Operator Views
+
+Three operator views surface the `agent-utilities` ontology system (`kg.ontology`) directly in the UI. All data is fetched live (no fixtures) through the `/api/enhanced/ontology/*` backend routes, which resolve against the same `IntelligenceGraphEngine` backend the rest of the app uses and enforce the fine-grained permissioning gate (`kg.ontology.permissioning.enforce`).
+
+- **Object Explorer** (`ObjectExplorerView.tsx`) -- faceted/full-text search and property filters over object sets, with a results table, pivot across a link type, search-around (related objects N hops away), aggregate metrics (count/sum/avg/min/max, optionally grouped), bulk Actions on a row selection (run through the governed `ActionExecutor` with Edit-Ledger writeback and HITL approval for high-risk verbs), and save/list of object sets.
+- **Object View renderer** (`ObjectView.tsx`) -- renders a single ontology object as the central hub: value-type-aware properties, computed derived properties (visually distinguished), in/out links grouped by link type and navigable, marking/permission badges, a bitemporal edit-history timeline, and inline edit/revert affordances. Two form factors via `variant` (`full` page, `panel` embeddable) and two layout sources via `layout` (`standard`, derived from the object type's interface schema; `configured`, a stored widget composition).
+- **Vertex scenario view** (`VertexView.tsx`) -- a graph-canvas exploration over an object-set seed with link-type expansion (search-around), per-node derived-property computation, and a what-if scenario mode: remove nodes from the working set, recompute an aggregate scenario metric against the reduced id set, and compare it to the unmodified baseline (delta).
+
+#### `/api/enhanced/ontology/*` backend routes
+
+Defined in `agent/agent_webui/api_extensions.py`:
+
+| Method & path | Purpose |
+| ------------- | ------- |
+| `GET /ontology/object-types` | Distinct object/node types (registry types + interface implementers) |
+| `GET /ontology/property-types` | Property-type registry (KG-2.47) |
+| `GET /ontology/interfaces` | Interfaces with their implementers (KG-2.38) |
+| `GET /ontology/interfaces/{name}/implementers` | Implementers of a single interface |
+| `POST /ontology/object-set/search` | Resolve an object set by ids / kind / property filters / query |
+| `POST /ontology/object-set/search-around` | Related objects N hops from a seed set |
+| `POST /ontology/object-set/pivot` | Pivot an object set across a link type, grouped |
+| `POST /ontology/object-set/aggregate` | Aggregate (count/sum/avg/min/max), optionally grouped |
+| `POST /ontology/object-set/save` | Persist a named/saved object set |
+| `GET /ontology/object-set/list` | List saved object sets |
+| `GET /ontology/actions` | Registered `OntologyAction`s, optionally scoped to a type |
+| `POST /ontology/object-set/action` | Apply a bulk action via the governed executor (writeback + HITL approve) |
+| `GET /ontology/object/{object_id}` | Full object view: properties, links, derived, markings, history, layout |
+| `POST /ontology/object/{object_id}/edit` | Record a durable edit (property_set / link_add / link_remove) |
+| `POST /ontology/object/{object_id}/revert` | Revert an edit via a compensating edit |
+| `POST /ontology/function/invoke` | Invoke a typed, versioned ontology function (audited runtime, KG-2.41) |
+| `POST /ontology/derive` | Compute a single derived property for an object (KG-2.40) |
+| `POST /ontology/document/process` | Process a document into Document + Chunk objects (KG-2.48) |
+| `GET /ontology/object-view/{object_type}` | Get a type's ObjectView: stored (configured) else standard (schema) |
+| `POST /ontology/object-view/{object_type}` | Save a configured ObjectView widget composition for a type |
+
 ### Unified Agent Homelab
 - **Ecosystem Service Discovery** -- Automatically scans for and lists active/installed local agent packages and MCP servers.
 - **5-Domain Navigation Layout**:
@@ -190,6 +225,10 @@ Both MCP and A2A specialists are registered through the same code path. The fron
 | **Knowledge Management**      |                                              |                                                                                                          |
 | `KnowledgeBaseView.tsx`       | `src/components/views/KnowledgeBaseView.tsx` | Knowledge base ingestion, article management, health checks, and search                                |
 | `MemoryView.tsx`              | `src/components/views/MemoryView.tsx`        | Memory CRUD with timeline visualization, importance scoring, and advanced search                        |
+| **Ontology Operator Views**   |                                              |                                                                                                          |
+| `ObjectExplorerView.tsx`      | `src/components/views/ObjectExplorerView.tsx` | Object-set search, filters, pivot, search-around, aggregate, bulk Actions, and save/list                |
+| `ObjectView.tsx`              | `src/components/views/ObjectView.tsx`        | Single-object hub: properties, derived props, links, markings, edit-history timeline, inline edit/revert |
+| `VertexView.tsx`              | `src/components/views/VertexView.tsx`        | Graph-canvas object-set exploration with link expansion and what-if scenario metrics (baseline vs delta) |
 | **SDD Lifecycle**             |                                              |                                                                                                          |
 | `SDDView.tsx`                 | `src/components/views/SDDView.tsx`          | Spec-driven development: constitution, specs, plans, tasks, and memory synchronization                  |
 | **Workspace Views**            |                                              |                                                                                                          |
