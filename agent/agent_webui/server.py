@@ -92,6 +92,16 @@ def create_agent_web_app(
         app.include_router(ws_router)
         logger.info('Service Dashboard API mounted at /api/dashboard')
 
+        # Native swarm supervisory plane (CONCEPT:OS-5.10): /api/fleet/* +
+        # approvals, consumed by the Fleet Dashboard view.
+        try:
+            from agent_utilities.gateway.fleet import mount_fleet_routes
+
+            mount_fleet_routes(app, prefix='/api')
+            logger.info('Fleet supervisory plane mounted at /api/fleet')
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('Failed to mount fleet supervisory plane: %s', exc)
+
         # This process is the KG daemon HOST: it runs the single consolidated
         # background daemon (queue drain + graph writer + task workers +
         # maintenance scheduler + file-watch) that all KG_DAEMON_ROLE=client

@@ -29,6 +29,7 @@ import CypherReplView from './components/views/CypherReplView'
 import PromptsView from './components/views/PromptsView'
 import SessionsView from './components/views/SessionsView'
 import GoalsView from './components/views/GoalsView'
+import FleetView from './components/views/FleetView'
 import EcosystemView from './components/views/EcosystemView'
 import WorkflowEditorView from './components/views/WorkflowEditorView'
 import ObjectExplorerView from './components/views/ObjectExplorerView'
@@ -75,6 +76,7 @@ export default function App() {
       else if (path === '/prompts') setCurrentView('prompts')
       else if (path === '/sessions') setCurrentView('sessions')
       else if (path === '/goals') setCurrentView('goals')
+      else if (path === '/fleet') setCurrentView('fleet')
       else if (path === '/ecosystem') setCurrentView('ecosystem')
       else if (path === '/workflows') setCurrentView('workflows')
       else if (path === '/explorer') setCurrentView('explorer')
@@ -179,6 +181,7 @@ export default function App() {
                       )}
                       {currentView === 'sessions' && <SessionsView />}
                       {currentView === 'goals' && <GoalsView />}
+                      {currentView === 'fleet' && <FleetView />}
                       {currentView === 'ecosystem' && <EcosystemView />}
                       {currentView === 'explorer' && <ObjectExplorerView />}
                       {currentView === 'vertex' && <VertexView />}
