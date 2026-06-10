@@ -20,6 +20,7 @@ import {
   Workflow,
   Boxes,
   Waypoints,
+  Activity,
 } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
@@ -311,6 +312,19 @@ export function AppSidebar() {
                   >
                     <Compass className="text-primary" />
                     <span>Autonomous Goals</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Swarm supervisor: fleet health, topology & emergency containment (OS-5.10)">
+                  <a
+                    href="/fleet"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Activity className="text-primary" />
+                    <span>Fleet Supervisor</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>

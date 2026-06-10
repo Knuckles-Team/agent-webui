@@ -585,6 +585,49 @@ class ApiClient {
     this.get<Record<string, unknown>>(`/api/enhanced/ontology/object-view/${encodeURIComponent(type)}`)
   saveOntologyObjectView = (type: string, layout: unknown) =>
     this.post<Record<string, unknown>>(`/api/enhanced/ontology/object-view/${encodeURIComponent(type)}`, layout)
+
+  // Fleet supervisory plane (CONCEPT:OS-5.10) — swarm health, topology,
+  // emergency containment, and the mutation/risk approval queue.
+  getFleetHealth = () => this.get<FleetHealth>('/api/fleet/health')
+  getFleetTopology = () => this.get<FleetTopology>('/api/fleet/topology')
+  pauseFleet = (target: { domain?: string; session_ids?: string[] }) =>
+    this.post<FleetActionResult>('/api/fleet/pause', target)
+  killFleet = (target: { domain?: string; session_ids?: string[] }) =>
+    this.post<FleetActionResult>('/api/fleet/kill', target)
+  getFleetApprovals = () => this.get<{ pending: unknown[] }>('/api/fleet/approvals')
+  grantFleetApproval = (job_id: string, decision: string) =>
+    this.post<unknown>('/api/fleet/approvals/grant', { job_id, decision })
+}
+
+export interface FleetDomainHealth {
+  total: number
+  active: number
+  errored: number
+  error_rate: number
+}
+export interface FleetHealth {
+  generated_at: number
+  sessions: { total: number; by_status: Record<string, number> }
+  goals: { active: number; tracked: number }
+  domains: Record<string, FleetDomainHealth>
+}
+export interface FleetTopologySession {
+  id: string
+  status: string
+  background: boolean
+  needs_input: boolean
+  updated_at: number
+}
+export interface FleetTopology {
+  domains: { domain: string; sessions: FleetTopologySession[] }[]
+  goals: unknown[]
+  totals: { domains: number; sessions: number }
+}
+export interface FleetActionResult {
+  status: string
+  action: string
+  affected: string[]
+  count: number
 }
 
 /**
