@@ -109,12 +109,8 @@ def test_object_set_search(client, patched_engine):
 
 
 def test_object_set_aggregate(client, patched_engine):
-    patched_engine.backend.execute(
-        "CREATE (n:Widget {id: 'w1', score: 10, kind: 'a'})"
-    )
-    patched_engine.backend.execute(
-        "CREATE (n:Widget {id: 'w2', score: 20, kind: 'a'})"
-    )
+    patched_engine.backend.execute("CREATE (n:Widget {id: 'w1', score: 10, kind: 'a'})")
+    patched_engine.backend.execute("CREATE (n:Widget {id: 'w2', score: 20, kind: 'a'})")
     resp = client.post(
         '/api/enhanced/ontology/object-set/aggregate',
         json={'ids': ['w1', 'w2'], 'metric': 'count'},
@@ -208,8 +204,7 @@ def test_function_invoke_missing_name(client, patched_engine):
 
 def test_document_process(client, patched_engine):
     text = (
-        'Ontologies model the world. '
-        'They define objects, links, and functions. '
+        'Ontologies model the world. They define objects, links, and functions. '
     ) * 10
     resp = client.post(
         '/api/enhanced/ontology/document/process',
@@ -241,7 +236,10 @@ def test_object_view_standard_and_configured(client, patched_engine, tmp_path):
         # Save a configured view, then read it back.
         save = client.post(
             '/api/enhanced/ontology/object-view/document',
-            json={'widgets': [{'kind': 'property', 'property': 'title'}], 'title': 'Doc'},
+            json={
+                'widgets': [{'kind': 'property', 'property': 'title'}],
+                'title': 'Doc',
+            },
         )
         assert save.status_code == 200
         assert save.json()['view_type'] == 'configured'
@@ -419,7 +417,7 @@ def test_object_get_layout_standard_vs_configured(client, patched_engine, tmp_pa
     # The in-memory test engine does not round-trip node properties through the
     # id-MATCH read path, so resolve the object's type via _node_properties for
     # a 'document' (a real type implementing HasProvenance et al.). This exercises
-    # the real layout-selection code, not a stub.
+    # the real layout-selection code, not a placeholder.
     with (
         patch(
             'agent_webui.api_extensions._object_view_store_path',

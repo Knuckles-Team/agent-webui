@@ -4853,7 +4853,7 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
 # the backend is replaced/garbage-collected (avoiding id() reuse hazards).
 import weakref as _weakref
 
-_ontology_kg_cache: "_weakref.WeakKeyDictionary[Any, Any]" = (
+_ontology_kg_cache: '_weakref.WeakKeyDictionary[Any, Any]' = (
     _weakref.WeakKeyDictionary()
 )
 
@@ -5080,9 +5080,7 @@ async def list_ontology_interfaces() -> list[dict[str, Any]]:
         for iface in ontology.interfaces.list_interfaces():
             data = iface.model_dump(mode='json')
             try:
-                data['implementers'] = ontology.interfaces.find_implementers(
-                    iface.name
-                )
+                data['implementers'] = ontology.interfaces.find_implementers(iface.name)
             except Exception:  # noqa: BLE001
                 data['implementers'] = []
             out.append(data)
@@ -5200,9 +5198,7 @@ async def ontology_object_set_search_around(
         direction = str(data.get('direction', 'out') or 'out')
 
         base = ontology.object_set(ids)
-        related = base.search_around(
-            link_type, hops=hops, direction=direction, cap=cap
-        )
+        related = base.search_around(link_type, hops=hops, direction=direction, cap=cap)
         rows = _object_set_rows(ontology, related, actor, limit=cap)
         return {
             'ids': [r.get('id') for r in rows],
@@ -5368,9 +5364,9 @@ def _persist_object_set_node(backend: Any, record: dict[str, Any]) -> bool:
     try:
         backend.execute(
             "MERGE (n {id: $id}) SET n.type = 'object_set', n.name = $name, "
-            "n.kind = $kind, n.shared = $shared, n.count = $count, "
-            "n.member_ids = $member_ids, n.created_at = $created_at, "
-            "n.actor = $actor",
+            'n.kind = $kind, n.shared = $shared, n.count = $count, '
+            'n.member_ids = $member_ids, n.created_at = $created_at, '
+            'n.actor = $actor',
             {
                 'id': record['id'],
                 'name': record['name'],
@@ -5463,9 +5459,7 @@ async def ontology_object_set_list(request: Request) -> dict[str, Any]:
                 merged[rec['id']] = rec
 
         try:
-            rows = backend.execute(
-                "MATCH (n {type: 'object_set'}) RETURN n", {}
-            )
+            rows = backend.execute("MATCH (n {type: 'object_set'}) RETURN n", {})
         except Exception:  # noqa: BLE001
             rows = []
         for row in rows or []:
@@ -5474,8 +5468,8 @@ async def ontology_object_set_list(request: Request) -> dict[str, Any]:
                 continue
             raw_ids = node.get('member_ids')
             try:
-                member_ids = json.loads(raw_ids) if isinstance(raw_ids, str) else (
-                    raw_ids or []
+                member_ids = (
+                    json.loads(raw_ids) if isinstance(raw_ids, str) else (raw_ids or [])
                 )
             except Exception:  # noqa: BLE001
                 member_ids = []
@@ -5607,14 +5601,10 @@ async def ontology_object_set_action(
         decision_provider = None
         if approve:
             approver = (
-                approve.get('approver')
-                if isinstance(approve, dict)
-                else None
+                approve.get('approver') if isinstance(approve, dict) else None
             ) or str(actor_id)
             approver_role = (
-                approve.get('approver_role')
-                if isinstance(approve, dict)
-                else None
+                approve.get('approver_role') if isinstance(approve, dict) else None
             ) or 'admin'
             reason = (
                 approve.get('reason') if isinstance(approve, dict) else None
@@ -5663,9 +5653,7 @@ async def ontology_object_set_action(
             )
             status = str(inv.status)
             edit_ids = list(getattr(inv, 'edit_ids', []) or [])
-            results.append(
-                {'id': target_id, 'status': status, 'edit_ids': edit_ids}
-            )
+            results.append({'id': target_id, 'status': status, 'edit_ids': edit_ids})
             if inv.status == ActionStatus.SUCCESS:
                 applied += 1
             elif inv.status in (ActionStatus.ERROR, ActionStatus.DENIED):
@@ -5793,8 +5781,7 @@ async def get_ontology_object(
         if not history:
             try:
                 history = [
-                    e.model_dump(mode='json')
-                    for e in ontology.history(object_id)
+                    e.model_dump(mode='json') for e in ontology.history(object_id)
                 ]
             except Exception:  # noqa: BLE001
                 history = []
@@ -5863,17 +5850,13 @@ async def edit_ontology_object(
                         detail='property_set requires properties or property+value',
                     )
                 properties = {str(prop): data.get('value')}
-            edit = ontology.set_property_edit(
-                object_id, properties, actor=actor
-            )
+            edit = ontology.set_property_edit(object_id, properties, actor=actor)
         elif edit_type == 'link_add':
             target = data.get('target') or data.get('link_target')
             label = str(data.get('link_type') or data.get('link') or 'related')
             if not target:
                 raise HTTPException(status_code=422, detail='link_add requires target')
-            edit = ontology.edits.add_link(
-                object_id, str(target), label, actor=actor
-            )
+            edit = ontology.edits.add_link(object_id, str(target), label, actor=actor)
         elif edit_type == 'link_remove':
             target = data.get('target') or data.get('link_target')
             label = str(data.get('link_type') or data.get('link') or 'related')
@@ -5980,9 +5963,7 @@ async def invoke_ontology_function(
         params = data.get('params') or {}
         actor_id = data.get('actor') or _actor_id_from_request(request)
 
-        result = ontology.invoke_function(
-            str(name), params, version, actor_id=actor_id
-        )
+        result = ontology.invoke_function(str(name), params, version, actor_id=actor_id)
         return result.model_dump(mode='json')
     except HTTPException:
         raise
