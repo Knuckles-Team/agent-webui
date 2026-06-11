@@ -5,7 +5,6 @@ import shutil
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
-import networkx as nx
 
 import pytest
 
@@ -42,7 +41,15 @@ def mock_graph_engine():
     from agent_utilities.knowledge_graph.backends.base import GraphBackend
 
     engine.backend = MagicMock(spec=GraphBackend)
-    engine.graph = nx.MultiDiGraph()
+    # Production engines expose ``graph`` as the GraphComputeEngine facade
+    # (IntelligenceGraphEngine.__init__ sets graph = graph_compute), and
+    # consumers like PipelineContext validate that exact type — a bare
+    # networkx graph here makes the mock diverge from the real contract.
+    from agent_utilities.knowledge_graph.core.graph_compute import (
+        GraphComputeEngine,
+    )
+
+    engine.graph = GraphComputeEngine()
 
     return engine
 
