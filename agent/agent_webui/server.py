@@ -92,15 +92,21 @@ def create_agent_web_app(
         app.include_router(ws_router)
         logger.info('Service Dashboard API mounted at /api/dashboard')
 
-        # Native swarm supervisory plane (CONCEPT:OS-5.10): /api/fleet/* +
-        # approvals, consumed by the Fleet Dashboard view.
+        # Canonical Knowledge Graph REST surface (CONCEPT:ECO-4.0): mount the
+        # SAME route table the API gateway serves — /api/graph/*, /api/ontology/*,
+        # /api/object/*, /api/sessions, /api/goals, /api/tools, plus the fleet
+        # supervisory plane (CONCEPT:OS-5.10) and the /cypher fast path — via
+        # the single canonical registrar. WebUI clients and gateway clients are
+        # served by one route implementation, so the two surfaces cannot drift.
         try:
-            from agent_utilities.gateway.fleet import mount_fleet_routes
+            from agent_utilities.gateway.graph_api import register_graph_routes
 
-            mount_fleet_routes(app, prefix='/api')
-            logger.info('Fleet supervisory plane mounted at /api/fleet')
+            register_graph_routes(app, prefix='/api')
+            logger.info(
+                'Canonical KG REST surface + fleet supervisory plane mounted under /api'
+            )
         except Exception as exc:  # noqa: BLE001
-            logger.warning('Failed to mount fleet supervisory plane: %s', exc)
+            logger.warning('Failed to mount canonical KG REST surface: %s', exc)
 
         # This process is the KG daemon HOST: it runs the single consolidated
         # background daemon (queue drain + graph writer + task workers +

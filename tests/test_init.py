@@ -1,5 +1,15 @@
 import pytest
 
+# The backend imports the development line of agent-utilities (its released
+# PyPI build does not yet ship knowledge_graph.core). In a hermetic
+# environment resolved purely from uv.lock (the pre-commit pytest hook), the
+# server modules therefore cannot import; skip rather than fail there. The
+# real backend suite runs with the dev agent-utilities on PYTHONPATH.
+pytest.importorskip(
+    'agent_utilities.knowledge_graph.core',
+    reason='backend requires the development agent-utilities (knowledge_graph.core)',
+)
+
 
 def test_import_agent_webui():
     """Test that the agent_webui package can be imported."""
@@ -26,6 +36,12 @@ def test_main():
 
 
 def test_server_env_vars(monkeypatch):
+    # Forcing the provider env vars makes pydantic-ai's to_web construct real
+    # provider models, which import their SDKs — skip where those extras are
+    # not installed.
+    pytest.importorskip('anthropic')
+    pytest.importorskip('openai')
+
     from agent_webui import server
 
     monkeypatch.setenv('ANTHROPIC_API_KEY', 'test')
