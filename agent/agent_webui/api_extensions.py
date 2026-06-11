@@ -4837,11 +4837,56 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
 # history), durable edits + revert, typed function invocation, derived-
 # property compute, document processing, and stored/standard object views.
 #
+# Relationship to the canonical gateway routes (drift policy):
+#
+# * The canonical KG REST surface (/api/graph/*, /api/ontology/*, /api/object/*
+#   — agent_utilities.mcp.kg_server._mount_rest_routes) is mounted VERBATIM on
+#   this app by server.py via gateway.graph_api.register_graph_routes, so
+#   anything the gateway serves, this backend serves from the same code.
+# * Routes here that have a 1:1 canonical tool twin dispatch through
+#   kg_server's REGISTERED_TOOLS (see _canonical_kg_tool) instead of
+#   reimplementing the logic — /ontology/function/invoke and /ontology/derive.
+# * The remaining routes are UI compositions the canonical action-routed
+#   surface cannot express: permission-enforced row materialization for
+#   object-set search/search-around, id-scoped pivot/aggregate, saved/shared
+#   object sets, the ActionRegistry listing + governed bulk action with HITL
+#   approval, the full per-object view (props+links+derived+markings+history),
+#   edit/revert with durable-ledger rehydration, document processing that
+#   returns the materialized nodes, and ObjectView layout persistence. They
+#   stay here, but compose the same kg.ontology library the canonical tools
+#   call, so the underlying semantics are shared.
+#
 # All routes bind a real KnowledgeGraph facade to the SAME live store/compute
 # the IntelligenceGraphEngine uses, so they drive the real ontology end to end
 # (no stubs). Read routes pass results through the fine-grained permissioning
 # gate (kg.ontology.permissioning.enforce).
 # ---------------------------------------------------------------------------
+
+
+async def _canonical_kg_tool(tool_name: str, **kwargs: Any) -> Any:
+    """Dispatch a call through the canonical KG tool surface.
+
+    ``agent_utilities.mcp.kg_server.REGISTERED_TOOLS`` holds the single
+    canonical implementation behind both the graph-os MCP tools and the API
+    gateway's action-routed REST twins. Routes here that mirror one of those
+    tools 1:1 must dispatch through it — never reimplement the body — so the
+    webui surface cannot drift from what gateway/MCP clients observe.
+
+    Returns the tool's decoded JSON payload (tools return JSON strings).
+    """
+    import json
+
+    from agent_utilities.mcp import kg_server
+
+    kg_server.ensure_tools_registered()
+    raw = await kg_server._execute_tool(tool_name, **kwargs)
+    return json.loads(raw) if isinstance(raw, str) else raw
+
+
+def _raise_canonical_error(result: Any, status_code: int = 500) -> None:
+    """Surface a canonical tool's ``{'error': ...}`` envelope as an HTTP error."""
+    if isinstance(result, dict) and set(result.keys()) == {'error'}:
+        raise HTTPException(status_code=status_code, detail=str(result['error']))
 
 
 # Process-level cache of the KnowledgeGraph facade keyed by the live engine's
@@ -5952,19 +5997,29 @@ async def invoke_ontology_function(
 ) -> dict[str, Any]:
     """Invoke a typed, versioned ontology function via the audited runtime.
 
-    Body: ``{name, version, params}``.
+    Body: ``{name, version, params}``. Dispatches through the canonical
+    ``ontology_function`` tool — the same implementation behind the gateway's
+    ``POST /ontology/function`` — so invocation semantics cannot drift.
     """
+    import json
+
     try:
-        _kg, ontology = get_ontology_kg()
         name = data.get('name')
         if not name:
             raise HTTPException(status_code=422, detail='name is required')
-        version = data.get('version')
         params = data.get('params') or {}
         actor_id = data.get('actor') or _actor_id_from_request(request)
 
-        result = ontology.invoke_function(str(name), params, version, actor_id=actor_id)
-        return result.model_dump(mode='json')
+        result = await _canonical_kg_tool(
+            'ontology_function',
+            action='invoke',
+            name=str(name),
+            params=json.dumps(params, default=str),
+            version=str(data.get('version') or ''),
+            actor=str(actor_id),
+        )
+        _raise_canonical_error(result)
+        return result
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
@@ -5973,15 +6028,19 @@ async def invoke_ontology_function(
 
 
 @router.post('/ontology/derive')
-async def derive_ontology_property(
-    data: dict[str, Any], request: Request
-) -> dict[str, Any]:
+async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
     """Compute a single derived property for an object.
 
-    Body: ``{object_id, derived_name, object_type}``.
+    Body: ``{object_id, derived_name, object_type}``. Resolves the object's
+    live property map from the store (a UI convenience — the canonical tool
+    takes the object dict), then dispatches through the canonical
+    ``ontology_derive`` tool — the same implementation behind the gateway's
+    ``POST /ontology/derive`` — so derive semantics cannot drift.
     """
+    import json
+
     try:
-        kg, ontology = get_ontology_kg()
+        kg, _ontology = get_ontology_kg()
         backend = kg.store
         object_id = data.get('object_id')
         derived_name = data.get('derived_name')
@@ -5989,7 +6048,6 @@ async def derive_ontology_property(
             raise HTTPException(
                 status_code=422, detail='object_id and derived_name are required'
             )
-        actor_id = data.get('actor') or _actor_id_from_request(request)
 
         props = _node_properties(backend, str(object_id))
         props.setdefault('id', str(object_id))
@@ -5999,12 +6057,15 @@ async def derive_ontology_property(
             or props.get('_type')
             or props.get('object_type')
         )
-        result = ontology.derive(
-            props, str(derived_name), object_type=object_type, actor_id=actor_id
+        result = await _canonical_kg_tool(
+            'ontology_derive',
+            action='compute',
+            object_json=json.dumps(props, default=str),
+            name=str(derived_name),
+            object_type=str(object_type or ''),
         )
-        if hasattr(result, 'model_dump'):
-            return result.model_dump(mode='json')
-        return {'name': derived_name, 'value': result}
+        _raise_canonical_error(result)
+        return result
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
