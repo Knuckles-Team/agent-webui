@@ -1004,6 +1004,57 @@ class TestCoverageExpansion:
                 assert response.json()['status'] == 'success'
 
 
+class TestInfraHandlersFailHonestly:
+    """Infra handlers must surface real failures, never fabricate success.
+
+    These previously returned hardcoded 'Simulated' success payloads on error —
+    a dangerous facade for SSH/exec/process-kill operations. The fix raises the
+    real error instead; these tests lock that in.
+    """
+
+    def test_kill_process_failure_raises_not_simulated(self, client):
+        """A failed kill returns a 5xx error, never a fabricated 'terminated'."""
+        with patch('psutil.Process', side_effect=OSError('no such process')):
+            response = client.post(
+                '/api/enhanced/systems-manager/processes/kill',
+                json={'pid': 2147483647},
+            )
+        assert response.status_code == 502
+        body = response.text
+        assert 'Simulated' not in body
+        assert 'success' not in response.json().get('detail', '')
+
+    def test_remote_exec_unknown_host_not_simulated(self, client):
+        """An unresolved host yields a real error, never simulated stdout."""
+        response = client.post(
+            '/api/enhanced/tunnel-manager/remote',
+            json={'host': 'definitely-not-a-real-host', 'cmd': 'uname -a'},
+        )
+        # 404 (host not found) or 502 (backend unavailable) — never a fake 200.
+        assert response.status_code >= 400
+        body = response.text
+        assert 'mock-output' not in body
+        assert 'Simulated' not in body
+        assert 'staging-node' not in body
+
+    def test_add_host_failure_not_simulated(self, client):
+        """A failed host registration reports the error, never 'added (Simulated)'."""
+        with patch(
+            'tunnel_manager.tunnel_manager.HostManager',
+            side_effect=RuntimeError('store unwritable'),
+        ):
+            response = client.post(
+                '/api/enhanced/tunnel-manager/hosts',
+                json={
+                    'alias': 'x',
+                    'hostname': 'h',
+                    'user': 'u',
+                },
+            )
+        assert response.status_code >= 400
+        assert 'Simulated' not in response.text
+
+
 class TestServerIntegration:
     """Test server-level features."""
 
