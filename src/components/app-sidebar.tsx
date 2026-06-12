@@ -21,6 +21,7 @@ import {
   Boxes,
   Waypoints,
   Activity,
+  Coins,
 } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
@@ -491,6 +492,19 @@ export function AppSidebar() {
                   >
                     <Cpu className="text-primary" />
                     <span>Ecosystem Hub</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Token usage, cost, and metrics across every agent + our own runtime">
+                  <a
+                    href="/usage"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Coins className="text-primary" />
+                    <span>Usage &amp; Cost</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
