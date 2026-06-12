@@ -597,6 +597,129 @@ class ApiClient {
   getFleetApprovals = () => this.get<{ pending: unknown[] }>('/api/fleet/approvals')
   grantFleetApproval = (job_id: string, decision: string) =>
     this.post<unknown>('/api/fleet/approvals/grant', { job_id, decision })
+
+  // Usage / cost / observability (CONCEPT:ECO-4.41) — assimilated agentsview.
+  // One surface over both ingested agent logs and our own runtime telemetry.
+  private obs<T>(path: string, filters?: UsageFilters): Promise<T> {
+    const qs = filters
+      ? '?' +
+        Object.entries(filters)
+          .filter(([, v]) => v !== undefined && v !== '' && v !== null)
+          .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+          .join('&')
+      : ''
+    return this.get<T>(`/api/observability${path}${qs}`)
+  }
+  getUsageSummary = (f?: UsageFilters) => this.obs<UsageSummary>('/summary', f)
+  getUsageByModel = (f?: UsageFilters) => this.obs<UsageBreakdown[]>('/by-model', f)
+  getUsageByProject = (f?: UsageFilters) => this.obs<UsageBreakdown[]>('/by-project', f)
+  getUsageByAgent = (f?: UsageFilters) => this.obs<UsageBreakdown[]>('/by-agent', f)
+  getUsageTools = (f?: UsageFilters) => this.obs<UsageToolStat[]>('/analytics/tools', f)
+  getUsageActivity = (f?: UsageFilters) =>
+    this.obs<UsageActivityCell[]>('/analytics/activity', f)
+  getUsageSessionShape = (f?: UsageFilters) =>
+    this.obs<UsageSessionShape>('/analytics/session-shape', f)
+  getUsageTopSessions = (f?: UsageFilters) =>
+    this.obs<UsageSessionRow[]>('/top-sessions', f)
+  getUsageSessions = (f?: UsageFilters) => this.obs<UsageSessionRow[]>('/sessions', f)
+  getUsageSessionDetail = (id: string) =>
+    this.get<UsageSessionDetail>(`/api/observability/sessions/${encodeURIComponent(id)}`)
+  getUsageSearch = (q: string) =>
+    this.get<UsageSearchHit[]>(`/api/observability/search?q=${encodeURIComponent(q)}`)
+  getUsageTraces = () => this.get<UsageTraces>('/api/observability/traces')
+}
+
+export interface UsageFilters {
+  from?: string
+  to?: string
+  project?: string
+  agent?: string
+  model?: string
+  origin?: string
+  tenant_id?: string
+  limit?: number
+}
+export interface UsageSummary {
+  session_count: number
+  totals: {
+    input_tokens: number
+    output_tokens: number
+    cache_creation_tokens: number
+    cache_read_tokens: number
+    reasoning_tokens: number
+    cost_usd: number
+  }
+  cache_hit_rate: number
+}
+export interface UsageBreakdown {
+  key: string
+  session_count: number
+  input_tokens: number
+  output_tokens: number
+  cost_usd: number
+}
+export interface UsageToolStat {
+  name: string
+  category: string
+  calls: number
+  success: number
+  success_rate: number
+}
+export interface UsageActivityCell {
+  day_of_week: number
+  hour: number
+  sessions: number
+  cost_usd: number
+}
+export interface UsageSessionShape {
+  total: number
+  shapes: Record<string, number>
+}
+export interface UsageSessionRow {
+  id: string
+  project: string
+  agent: string
+  started_at?: string
+  ended_at?: string
+  message_count: number
+  total_output_tokens: number
+  cost_usd: number
+  health_grade?: string
+  outcome: string
+  origin: string
+}
+export interface UsageSessionDetail {
+  session: UsageSessionRow
+  messages: Array<{
+    ordinal: number
+    role: string
+    content: string
+    model: string
+    context_tokens: number
+    output_tokens: number
+    has_tool_use: boolean
+  }>
+  tool_calls: Array<{
+    message_ordinal?: number
+    tool_name: string
+    category: string
+    skill_name?: string
+    status: string
+  }>
+  usage_events: Array<{ model: string; input_tokens: number; output_tokens: number; cost_usd?: number }>
+}
+export interface UsageSearchHit {
+  session_id: string
+  ordinal: number
+  role: string
+  snippet: string
+  project: string
+  agent: string
+}
+export interface UsageTraces {
+  enabled: boolean
+  host: string
+  traces: Array<{ session_id: string; project: string; url: string }>
 }
 
 export interface FleetDomainHealth {

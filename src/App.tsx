@@ -35,6 +35,7 @@ import WorkflowEditorView from './components/views/WorkflowEditorView'
 import ObjectExplorerView from './components/views/ObjectExplorerView'
 import ObjectView from './components/views/ObjectView'
 import VertexView from './components/views/VertexView'
+import UsageView from './components/views/UsageView'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
@@ -78,6 +79,7 @@ export default function App() {
       else if (path === '/goals') setCurrentView('goals')
       else if (path === '/fleet') setCurrentView('fleet')
       else if (path === '/ecosystem') setCurrentView('ecosystem')
+      else if (path === '/usage') setCurrentView('usage')
       else if (path === '/workflows') setCurrentView('workflows')
       else if (path === '/explorer') setCurrentView('explorer')
       else if (path === '/vertex') setCurrentView('vertex')
@@ -183,6 +185,7 @@ export default function App() {
                       {currentView === 'goals' && <GoalsView />}
                       {currentView === 'fleet' && <FleetView />}
                       {currentView === 'ecosystem' && <EcosystemView />}
+                      {currentView === 'usage' && <UsageView />}
                       {currentView === 'explorer' && <ObjectExplorerView />}
                       {currentView === 'vertex' && <VertexView />}
                       {currentView === 'object' && (
