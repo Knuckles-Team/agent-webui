@@ -3551,15 +3551,27 @@ async def trigger_container_action(id: str, payload: dict[str, str]) -> dict[str
             if not chunk:
                 break
             response += chunk
-        # Status code checking
-        if b'204 No Content' in response or b'200 OK' in response:
-            return {'status': 'success', 'message': f'Container {id} {action}ed.'}
-    except Exception:
-        pass
+    except Exception as e:
+        # The Docker socket is unreachable (not present, permission denied,
+        # timeout). Report the real failure instead of fabricating success.
+        raise HTTPException(
+            status_code=502,
+            detail=f'Docker socket unreachable for container {id} {action}: {e}',
+        ) from e
     finally:
         sock.close()
 
-    return {'status': 'success', 'message': f'Container {id} {action}ed (Simulated).'}
+    # Parse the real HTTP status line from the daemon's response.
+    status_line = response.split(b'\r\n', 1)[0].decode('latin-1', 'replace')
+    if b'204 No Content' in response or b'200 OK' in response:
+        return {'status': 'success', 'message': f'Container {id} {action}ed.'}
+
+    # Non-2xx: surface the daemon's actual error (e.g. 404 no such container,
+    # 409 already started/stopped) rather than claiming the action succeeded.
+    raise HTTPException(
+        status_code=502,
+        detail=f'Docker daemon rejected {action} on container {id}: {status_line}',
+    )
 
 
 @router.get('/repository-manager/repos')
@@ -3629,24 +3641,86 @@ async def list_workspace_repos() -> list[dict[str, Any]]:
 
 
 @router.post('/repository-manager/bulk')
-async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, str]:
-    """Trigger parallel git pulls, builds, or test commands on active repos."""
+async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, Any]:
+    """Run a git/build/test action across the named workspace repos.
+
+    Executes the requested action against each target repository under
+    ``/home/apps/workspace/agent-packages`` and returns the real per-repo
+    outcome (exit code + captured output). Never reports success for work that
+    did not run: unknown actions and missing repos surface as honest errors.
+    """
+    import subprocess
+
     action = payload.get('action', '')
     targets = payload.get('targets', [])
     if not action or not targets:
         raise HTTPException(status_code=400, detail='Missing action or targets list')
 
-    # Standard non-blocking wrapper running simulated progress logs
-    logger.info(f'Triggered bulk {action} on {len(targets)} repositories.')
+    # Map the high-level action to a concrete command. Only whitelisted,
+    # non-destructive commands are dispatched.
+    command_map: dict[str, list[str]] = {
+        'pull': ['git', 'pull', '--ff-only'],
+        'fetch': ['git', 'fetch', '--all', '--prune'],
+        'status': ['git', 'status', '--porcelain'],
+        'build': ['uv', 'sync'],
+        'test': ['uv', 'run', 'pytest', '-q'],
+    }
+    cmd = command_map.get(action)
+    if cmd is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f'Unsupported bulk action {action!r}. Supported: {sorted(command_map)}'
+            ),
+        )
+
+    base_dir = Path('/home/apps/workspace/agent-packages')
+    results: list[dict[str, Any]] = []
+    for name in targets:
+        repo_path = base_dir / str(name)
+        if not (repo_path / '.git').exists():
+            results.append(
+                {'repo': name, 'status': 'error', 'detail': 'repo not found'}
+            )
+            continue
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            output = (proc.stdout + proc.stderr).strip()
+            results.append(
+                {
+                    'repo': name,
+                    'status': 'success' if proc.returncode == 0 else 'error',
+                    'returncode': proc.returncode,
+                    'output': output[-4000:],
+                }
+            )
+        except Exception as e:  # noqa: BLE001 - report per-repo failure
+            results.append({'repo': name, 'status': 'error', 'detail': str(e)})
+
+    failures = [r for r in results if r['status'] != 'success']
+    logger.info(
+        f'Bulk {action} ran on {len(targets)} repos: '
+        f'{len(targets) - len(failures)} ok, {len(failures)} failed.'
+    )
     return {
-        'status': 'success',
-        'message': f'Bulk {action} pipelines initialized on {len(targets)} repositories.',
+        'status': 'success' if not failures else 'partial',
+        'action': action,
+        'results': results,
     }
 
 
 @router.post('/voice/transcribe')
 async def transcribe_voice_chunk(file: UploadFile = File(...)) -> dict[str, str]:
     """Capture vocal input files and output transcribed instructions."""
+    import shutil as _shutil
+    import subprocess
+
     temp_dir = Path('/home/apps/workspace/agent-packages/agent-webui/scratch')
     temp_dir.mkdir(parents=True, exist_ok=True)
     out_file = temp_dir / f'voice_{uuid.uuid4().hex}.webm'
@@ -3654,18 +3728,51 @@ async def transcribe_voice_chunk(file: UploadFile = File(...)) -> dict[str, str]
         with out_file.open('wb') as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # Call whisper command wrapper or execute beautiful context-aware transcribing
-        import random
+        # Real speech-to-text. Prefer a locally installed whisper-family CLI
+        # (faster-whisper's ``whisper-ctranslate2`` or openai-whisper's
+        # ``whisper``). If none is installed we return an honest, empty
+        # transcript with an error rather than fabricating an instruction.
+        whisper_bin = _shutil.which('whisper-ctranslate2') or _shutil.which('whisper')
+        if not whisper_bin:
+            return {
+                'text': '',
+                'error': (
+                    'transcription not configured: no whisper CLI '
+                    '(whisper / whisper-ctranslate2) found on PATH'
+                ),
+            }
 
-        prompts = [
-            'Check active docker containers and list running services.',
-            'List all registered git hosts in tunnel-manager inventory.',
-            'Run parallel git pulls on my active workspace repositories.',
-            'Show me the current CPU and RAM loads under systems monitor.',
-            'Generate a new exercise routine for biceps and chest muscles in wger.',
-            'Display my active LLM call-traces and latency logs in langfuse dashboard.',
-        ]
-        return {'text': random.choice(prompts)}
+        model = os.getenv('WHISPER_MODEL', 'base')
+        try:
+            proc = subprocess.run(
+                [
+                    whisper_bin,
+                    str(out_file),
+                    '--model',
+                    model,
+                    '--output_format',
+                    'txt',
+                    '--output_dir',
+                    str(temp_dir),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        except Exception as e:  # noqa: BLE001
+            return {'text': '', 'error': f'transcription failed: {e}'}
+
+        if proc.returncode != 0:
+            return {
+                'text': '',
+                'error': f'transcription failed: {proc.stderr.strip()[-500:]}',
+            }
+
+        txt_file = temp_dir / f'{out_file.stem}.txt'
+        if txt_file.exists():
+            return {'text': txt_file.read_text(encoding='utf-8').strip()}
+        # Some whisper builds print the transcript to stdout instead.
+        return {'text': proc.stdout.strip()}
     except Exception as e:
         logger.error(f'Voice audio dictation processing failed: {e}')
         raise HTTPException(status_code=500, detail=str(e))
@@ -3673,532 +3780,757 @@ async def transcribe_voice_chunk(file: UploadFile = File(...)) -> dict[str, str]
 
 # ---------------------------------------------------------------------------
 # Additional Lazy-Loaded Ecosystem Endpoints (ECO-007)
+#
+# Each endpoint queries the real upstream service over HTTP, with the base URL
+# and any credentials taken from environment variables. When the relevant env
+# vars are unset we return an honest ``status: 'not_configured'`` payload that
+# names the missing config; when the service is set but unreachable we return
+# ``status: 'error'`` with the real reason. We never fabricate records.
 # ---------------------------------------------------------------------------
 
 
-@router.get('/ecosystem/atlassian/kanban')
-async def get_atlassian_kanban():
-    """Retrieve Atlassian scrum board issues (Kanban format)."""
+def _service_error(exc: Exception, **empty: Any) -> dict[str, Any]:
+    """Honest payload when a configured service could not be reached."""
+    return {
+        'status': 'error',
+        'source': 'unreachable',
+        'detail': str(exc),
+        **empty,
+    }
+
+
+def _capability_unavailable(reason: str, **empty: Any) -> dict[str, Any]:
+    """Honest payload when no backend exists for a read (not a wiring gap).
+
+    This means the underlying system genuinely exposes no API for the
+    requested read, so there is nothing to wire. ``reason`` states exactly
+    what is missing so it can be built if desired.
+    """
+    return {
+        'status': 'capability_unavailable',
+        'source': 'no_backend',
+        'detail': reason,
+        **empty,
+    }
+
+
+def _resolve_fleet_server(server_name: str) -> dict[str, Any] | None:
+    """Resolve a fleet MCP server's launch config from the on-disk registry.
+
+    The ecosystem dashboards talk to the real homelab/SaaS systems through the
+    fleet's ~57 MCP servers (the canonical *external data source* reuse path).
+    Each server carries its OWN credentials (``PORTAINER_URL``/``TOKEN``,
+    ``GITHUB_TOKEN``, ``UPTIME_KUMA_URL``/``TOKEN`` …) in its ``env`` block, so
+    spawning it returns LIVE data without the web-UI process needing any of
+    those secrets re-declared.
+
+    The individual servers live in the multiplexer's *source* registry
+    (``mcp_config_source.json``); the top-level ``mcp_config.json`` only lists
+    the multiplexer itself. We therefore search the source registry first, then
+    fall back to any config that lists the server directly.
+
+    Returns a normalized ``{name, command, args, env}`` dict, or ``None`` when
+    the server is not present in any known registry.
+    """
+    import json
+
+    candidates = [
+        Path.home() / '.config' / 'agent-utilities' / 'mcp_config_source.json',
+        Path.home() / '.config' / 'agent-utilities' / 'mcp_config.json',
+        Path.home() / '.config' / 'agent-utilities' / 'config.json',
+        get_workspace_dir() / 'mcp_config_source.json',
+        get_workspace_dir() / 'mcp_config.json',
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except Exception:  # noqa: BLE001
+            continue
+        servers = data.get('mcpServers', {})
+        if not servers and isinstance(data.get('mcp_config'), dict):
+            servers = data['mcp_config'].get('mcpServers', {})
+        cfg = servers.get(server_name)
+        if cfg:
+            return {
+                'name': server_name,
+                'command': cfg.get('command', ''),
+                'args': cfg.get('args', []),
+                'env': cfg.get('env', {}),
+            }
+    return None
+
+
+async def _call_mcp_tool(
+    server_name: str,
+    tool_name: str,
+    arguments: dict[str, Any],
+    *,
+    timeout: float = 30.0,
+) -> Any:
+    """Spawn a fleet MCP server over stdio, call one tool, return parsed result.
+
+    This mirrors the engine's live ``discover_mcp_tools`` connection pattern
+    (spawn → ``initialize`` → act) but invokes ``call_tool`` instead of
+    ``list_tools``. The server is resolved from the fleet registry via
+    :func:`_resolve_fleet_server`, so the call hits the *real* external system
+    with the fleet's configured credentials and returns LIVE data.
+
+    JSON text content is decoded to Python; non-JSON text is returned verbatim.
+    Raises ``RuntimeError`` if the server is unknown or the tool reports an
+    error — callers surface that honestly rather than fabricating a result.
+    """
+    import asyncio
+    import json
+    import os
+    import shutil
+
+    server_config = _resolve_fleet_server(server_name)
+    if not server_config:
+        raise RuntimeError(
+            f'MCP server {server_name!r} not found in the fleet registry '
+            '(mcp_config_source.json / mcp_config.json)'
+        )
+
+    command = server_config['command']
+    if not command:
+        raise RuntimeError(f'MCP server {server_name!r} has no launch command')
+
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    env_vars = os.environ.copy()
+    local_bin = os.path.expanduser('~/.local/bin')
+    if local_bin not in env_vars.get('PATH', ''):
+        env_vars['PATH'] = f'{local_bin}:{env_vars.get("PATH", "")}'.strip(':')
+    for key, value in (server_config.get('env') or {}).items():
+        env_vars[key] = str(value)
+    # Keep the server's stdout clean for JSON-RPC framing.
+    env_vars['FASTMCP_SHOW_SERVER_BANNER'] = 'false'
+    env_vars['FASTMCP_LOG_LEVEL'] = 'WARNING'
+
+    resolved = shutil.which(command, path=env_vars.get('PATH'))
+    if resolved:
+        command = resolved
+
+    server_params = StdioServerParameters(
+        command=command,
+        args=server_config.get('args', []),
+        env=env_vars,
+    )
+
+    async def _spawn_and_call() -> Any:
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                return await session.call_tool(tool_name, arguments)
+
+    result = await asyncio.wait_for(_spawn_and_call(), timeout=timeout)
+
+    texts: list[str] = []
+    for chunk in getattr(result, 'content', []) or []:
+        text = getattr(chunk, 'text', None)
+        if text is not None:
+            texts.append(text)
+    joined = '\n'.join(texts)
+
+    if getattr(result, 'isError', False):
+        raise RuntimeError(joined or f'{server_name}:{tool_name} reported an error')
+
+    if not joined:
+        # Some tools return structured content directly.
+        structured = getattr(result, 'structuredContent', None)
+        if structured is not None:
+            return structured
+        return None
     try:
-        # Placeholder call if the actual package has a real API
-        return {'status': 'success', 'source': 'live', 'columns': []}
-    except Exception:
-        return {
-            'status': 'success',
-            'source': 'simulated',
-            'columns': [
-                {
-                    'id': 'todo',
-                    'title': 'To Do',
-                    'issues': [
-                        {
-                            'id': 'ECO-101',
-                            'title': 'Harden secure API routing validation',
-                            'priority': 'High',
-                            'assignee': 'genius',
-                        },
-                        {
-                            'id': 'ECO-104',
-                            'title': 'Draft final system spec walkthroughs',
-                            'priority': 'Medium',
-                            'assignee': 'genius',
-                        },
-                    ],
-                },
-                {
-                    'id': 'inprogress',
-                    'title': 'In Progress',
-                    'issues': [
-                        {
-                            'id': 'ECO-102',
-                            'title': 'Implement multi-host Portainer metrics',
-                            'priority': 'Highest',
-                            'assignee': 'genius',
-                        },
-                        {
-                            'id': 'ECO-103',
-                            'title': 'Wire Nextcloud task triggers to schedule',
-                            'priority': 'High',
-                            'assignee': 'genius',
-                        },
-                    ],
-                },
-                {
-                    'id': 'done',
-                    'title': 'Done',
-                    'issues': [
-                        {
-                            'id': 'ECO-99',
-                            'title': 'Refactor AppSidebar categorical views',
-                            'priority': 'Medium',
-                            'assignee': 'genius',
-                        }
-                    ],
-                },
-            ],
-        }
+        return json.loads(joined)
+    except (ValueError, TypeError):
+        return joined
+
+
+@router.get('/ecosystem/atlassian/kanban')
+async def get_atlassian_kanban(jql: str = 'ORDER BY updated DESC'):
+    """Retrieve Jira issues grouped by status (Kanban format) via ``atlassian-mcp``.
+
+    Dispatches ``atlassian_jira_issue``/``search_for_issues_using_jql`` against
+    the configured Jira Cloud instance and buckets the returned issues into
+    Kanban columns by their status name. ``jql`` selects the slice of work
+    (defaults to most-recently-updated). Surfaces an honest error if the
+    server or Jira is unreachable.
+    """
+    import json as _json
+
+    try:
+        resp = await _call_mcp_tool(
+            'atlassian-mcp',
+            'atlassian_jira_issue',
+            {
+                'action': 'search_for_issues_using_jql',
+                'params_json': _json.dumps({'jql': jql, 'max_results': 100}),
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        return _service_error(e, columns=[])
+    # The MCP tool returns {status_code, data}. Treat any non-2xx (e.g. the
+    # Jira site being unavailable) as an honest backend error, not empty data.
+    if isinstance(resp, dict):
+        status_code = resp.get('status_code')
+        if status_code is not None and not (200 <= int(status_code) < 300):
+            return _service_error(
+                RuntimeError(f'Jira returned HTTP {status_code}'), columns=[]
+            )
+        payload = resp.get('data', resp)
+    else:
+        payload = resp
+    issues = payload.get('issues', []) if isinstance(payload, dict) else []
+    columns: dict[str, dict[str, Any]] = {}
+    for issue in issues if isinstance(issues, list) else []:
+        if not isinstance(issue, dict):
+            continue
+        fields = issue.get('fields', {}) or {}
+        status_name = (fields.get('status') or {}).get('name', 'Unknown')
+        col = columns.setdefault(
+            status_name, {'id': status_name, 'title': status_name, 'issues': []}
+        )
+        col['issues'].append(
+            {
+                'id': issue.get('key'),
+                'title': fields.get('summary', ''),
+                'priority': (fields.get('priority') or {}).get('name'),
+                'assignee': (fields.get('assignee') or {}).get('displayName'),
+            }
+        )
+    return {
+        'status': 'success',
+        'source': 'live',
+        'columns': list(columns.values()),
+    }
 
 
 @router.get('/ecosystem/github/prs')
-async def get_github_prs():
-    """Retrieve active PRs and GitHub actions workflows status."""
-    try:
-        return {'status': 'success', 'source': 'live', 'prs': [], 'workflows': []}
-    except Exception:
+async def get_github_prs(repo: str | None = None):
+    """Retrieve open PRs and recent Actions runs via the ``github-mcp`` server.
+
+    ``repo`` is a required ``owner/name`` slug (falling back to the
+    ``GITHUB_REPO`` env if set) — a PR list is inherently per-repository.
+    Dispatches ``github_pulls``/``list`` and ``github_actions``/``list_runs``
+    against the GitHub API with the token configured on that MCP server.
+    Surfaces an honest error if the server or GitHub is unreachable.
+    """
+    import json as _json
+
+    target_repo = repo or os.getenv('GITHUB_REPO')
+    if not target_repo or '/' not in target_repo:
         return {
-            'status': 'success',
-            'source': 'simulated',
-            'prs': [
-                {
-                    'id': 482,
-                    'title': 'feat: multi-mesh tunnel gateways',
-                    'author': 'genius',
-                    'branch': 'feature/tunnels',
-                    'status': 'approved',
-                    'checks': 'success',
-                },
-                {
-                    'id': 480,
-                    'title': 'fix: stale transactions database locks',
-                    'author': 'genius',
-                    'branch': 'bugfix/ladybug-locks',
-                    'status': 'review_required',
-                    'checks': 'running',
-                },
-            ],
-            'workflows': [
-                {
-                    'name': 'Ecosystem CI Sweep',
-                    'status': 'completed',
-                    'conclusion': 'success',
-                    'run_number': 892,
-                },
-                {
-                    'name': 'Vite Production Bundler',
-                    'status': 'completed',
-                    'conclusion': 'success',
-                    'run_number': 1204,
-                },
-            ],
+            'status': 'needs_input',
+            'source': 'live',
+            'detail': (
+                "Specify a target repository as 'owner/name' "
+                '(query param ?repo=owner/name) to list its pull requests.'
+            ),
+            'prs': [],
+            'workflows': [],
         }
+    owner, _, name = target_repo.partition('/')
+    params = _json.dumps({'owner': owner, 'repo': name, 'state': 'open'})
+    try:
+        pr_resp = await _call_mcp_tool(
+            'github-mcp', 'github_pulls', {'action': 'list', 'params_json': params}
+        )
+    except Exception as e:  # noqa: BLE001
+        return _service_error(e, prs=[], workflows=[])
+    if isinstance(pr_resp, dict) and pr_resp.get('status', 200) >= 400:
+        return _service_error(
+            RuntimeError(pr_resp.get('error') or pr_resp), prs=[], workflows=[]
+        )
+    prs_raw = pr_resp.get('data', pr_resp) if isinstance(pr_resp, dict) else pr_resp
+    prs = [
+        {
+            'id': p.get('number'),
+            'title': p.get('title'),
+            'author': (p.get('user') or {}).get('login'),
+            'branch': (p.get('head') or {}).get('ref'),
+            'status': p.get('state') or 'open',
+        }
+        for p in (prs_raw if isinstance(prs_raw, list) else [])
+        if isinstance(p, dict)
+    ]
+    workflows: list[dict[str, Any]] = []
+    try:
+        run_resp = await _call_mcp_tool(
+            'github-mcp',
+            'github_actions',
+            {
+                'action': 'list_runs',
+                'params_json': _json.dumps({'owner': owner, 'repo': name}),
+            },
+        )
+        runs_data = (
+            run_resp.get('data', run_resp) if isinstance(run_resp, dict) else run_resp
+        )
+        if isinstance(runs_data, dict):
+            runs_data = runs_data.get('workflow_runs', [])
+        workflows = [
+            {
+                'id': r.get('id'),
+                'name': r.get('name'),
+                'status': r.get('status'),
+                'conclusion': r.get('conclusion'),
+            }
+            for r in (runs_data if isinstance(runs_data, list) else [])
+            if isinstance(r, dict)
+        ]
+    except Exception:  # noqa: BLE001
+        # PRs already succeeded; a runs failure should not blank the response.
+        workflows = []
+    return {
+        'status': 'success',
+        'source': 'live',
+        'repo': target_repo,
+        'prs': prs,
+        'workflows': workflows,
+    }
 
 
 @router.get('/ecosystem/gitlab/mrs')
 async def get_gitlab_mrs():
-    """Retrieve GitLab merge requests and pipelines status."""
+    """Retrieve open GitLab merge requests via the ``gitlab-mcp`` fleet server.
+
+    Dispatches ``api_request`` GET ``/merge_requests?scope=all&state=opened``
+    (the token-scoped, project-agnostic MR list) against the configured GitLab
+    instance, plus the latest pipeline per affected project. Surfaces an honest
+    error if the server or GitLab is unreachable.
+    """
+
+    def _unwrap(resp: Any) -> Any:
+        if isinstance(resp, dict):
+            return resp.get('data', resp)
+        return resp
+
     try:
-        return {'status': 'success', 'source': 'live', 'mrs': [], 'pipelines': []}
-    except Exception:
-        return {
-            'status': 'success',
-            'source': 'simulated',
-            'mrs': [
-                {
-                    'id': 104,
-                    'title': 'Draft architectural ecosystem spec',
-                    'author': 'genius',
-                    'target_branch': 'main',
-                    'status': 'merged',
-                }
-            ],
-            'pipelines': [
-                {'id': 59124, 'ref': 'main', 'status': 'success', 'duration': '4m 12s'}
-            ],
+        mr_resp = await _call_mcp_tool(
+            'gitlab-mcp',
+            'api_request',
+            {
+                'method': 'GET',
+                'endpoint': '/merge_requests?scope=all&state=opened&per_page=30',
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        return _service_error(e, mrs=[], pipelines=[])
+    mrs_raw = _unwrap(mr_resp)
+    mrs = [
+        {
+            'id': m.get('iid'),
+            'project_id': m.get('project_id'),
+            'title': m.get('title'),
+            'author': (m.get('author') or {}).get('username'),
+            'target_branch': m.get('target_branch'),
+            'status': m.get('state'),
+            'web_url': m.get('web_url'),
         }
+        for m in (mrs_raw if isinstance(mrs_raw, list) else [])
+        if isinstance(m, dict)
+    ]
+    # Pull the latest pipeline for each distinct project referenced by an MR.
+    pipelines: list[dict[str, Any]] = []
+    seen_projects: set[Any] = set()
+    for m in mrs:
+        pid = m.get('project_id')
+        if pid is None or pid in seen_projects:
+            continue
+        seen_projects.add(pid)
+        try:
+            pipe_resp = await _call_mcp_tool(
+                'gitlab-mcp',
+                'api_request',
+                {
+                    'method': 'GET',
+                    'endpoint': f'/projects/{pid}/pipelines?per_page=5',
+                },
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        for p in _unwrap(pipe_resp) if isinstance(_unwrap(pipe_resp), list) else []:
+            if not isinstance(p, dict):
+                continue
+            pipelines.append(
+                {
+                    'id': p.get('id'),
+                    'project_id': pid,
+                    'ref': p.get('ref'),
+                    'status': p.get('status'),
+                }
+            )
+    return {
+        'status': 'success',
+        'source': 'live',
+        'mrs': mrs,
+        'pipelines': pipelines,
+    }
 
 
 @router.get('/ecosystem/portainer/stacks')
 async def get_portainer_stacks():
-    """Retrieve multi-host Portainer stacks status."""
+    """Retrieve real Portainer stacks via the ``portainer-mcp`` fleet server.
+
+    Dispatches the ``portainer_stack``/``get_stacks`` tool, which talks to the
+    live Portainer instance with the credentials configured on that MCP server.
+    Surfaces an honest error if the server or Portainer is unreachable.
+    """
     try:
-        return {'status': 'success', 'source': 'live', 'stacks': []}
-    except Exception:
-        return {
-            'status': 'success',
-            'source': 'simulated',
-            'stacks': [
-                {
-                    'name': 'homelab-observability',
-                    'services': 4,
-                    'status': 'active',
-                    'type': 'Compose',
-                },
-                {
-                    'name': 'lifestyle-suite',
-                    'services': 2,
-                    'status': 'active',
-                    'type': 'Compose',
-                },
-                {
-                    'name': 'quant-memories',
-                    'services': 3,
-                    'status': 'inactive',
-                    'type': 'Compose',
-                },
-            ],
+        raw = await _call_mcp_tool(
+            'portainer-mcp', 'portainer_stack', {'action': 'get_stacks'}
+        )
+    except Exception as e:  # noqa: BLE001
+        return _service_error(e, stacks=[])
+    items = raw.get('data', raw) if isinstance(raw, dict) else raw
+    type_map: dict[Any, str] = {1: 'Swarm', 2: 'Compose'}
+    status_map: dict[Any, str] = {1: 'active', 2: 'inactive'}
+    stacks = [
+        {
+            'name': s.get('Name'),
+            'status': status_map.get(s.get('Status'), 'unknown'),
+            'type': type_map.get(s.get('Type'), 'unknown'),
+            'endpoint_id': s.get('EndpointId'),
         }
+        for s in (items if isinstance(items, list) else [])
+        if isinstance(s, dict)
+    ]
+    return {'status': 'success', 'source': 'live', 'stacks': stacks}
 
 
 @router.get('/ecosystem/datascience/training')
 async def get_datascience_training():
-    """Retrieve machine learning model training parameters and epoch curves."""
+    """Retrieve real trained-model metrics via the ``data-science-mcp`` server.
+
+    Dispatches ``rank_models``, which returns every fitted/trained model in the
+    live model registry ranked by test score. Returns an empty ``models`` list
+    (not a fabricated run) when nothing has been trained yet, and surfaces an
+    honest error if the server is unreachable.
+    """
     try:
-        return {'status': 'success', 'source': 'live', 'epochs': []}
-    except Exception:
-        return {
-            'status': 'success',
-            'source': 'simulated',
-            'model_name': 'Antigravity-iModel-v4',
-            'hyperparameters': {
-                'learning_rate': 0.0003,
-                'batch_size': 64,
-                'epochs': 10,
-                'optimizer': 'AdamW',
-            },
-            'metrics': {
-                'current_epoch': 6,
-                'loss': 0.184,
-                'val_loss': 0.201,
-                'accuracy': 94.2,
-            },
-            'loss_curve': [
-                {'epoch': 1, 'loss': 0.85, 'val_loss': 0.79},
-                {'epoch': 2, 'loss': 0.52, 'val_loss': 0.49},
-                {'epoch': 3, 'loss': 0.38, 'val_loss': 0.39},
-                {'epoch': 4, 'loss': 0.27, 'val_loss': 0.31},
-                {'epoch': 5, 'loss': 0.21, 'val_loss': 0.24},
-                {'epoch': 6, 'loss': 0.18, 'val_loss': 0.20},
-            ],
-        }
+        data = await _call_mcp_tool('data-science-mcp', 'rank_models', {})
+    except Exception as e:  # noqa: BLE001
+        return _service_error(e, models=[])
+    ranked = data.get('ranked_models', data) if isinstance(data, dict) else data
+    models = ranked if isinstance(ranked, list) else []
+    return {
+        'status': 'success',
+        'source': 'live',
+        'models': models,
+        'detail': 'no trained models registered' if not models else None,
+    }
 
 
 @router.get('/ecosystem/scholarx/papers')
 async def get_scholarx_papers():
-    """Retrieve Scientific downloaded publications database logs."""
+    """List downloaded publications via the ``scholarx-mcp`` fleet server.
+
+    Dispatches ``sx_storage``/``stored`` which returns the real offline PDF
+    library ScholarX has downloaded (id/title/authors/local_path/...). Surfaces
+    an honest error if the server is unreachable.
+    """
     try:
-        return {'status': 'success', 'source': 'live', 'papers': []}
-    except Exception:
-        return {
-            'status': 'success',
-            'source': 'simulated',
-            'papers': [
-                {
-                    'id': 'arxiv:2401.0592',
-                    'title': 'Federated Multi-Agent Reinforcement Learning with Adaptive Consensus Keys',
-                    'author': 'Dr. E. Vance',
-                    'category': 'cs.MA',
-                    'status': 'downloaded',
-                },
-                {
-                    'id': 'pmc:892014',
-                    'title': 'Metabolic Pathing and Scaled Nutritional Micro-environments',
-                    'author': 'Prof. A. Carter',
-                    'category': 'q-bio.MN',
-                    'status': 'downloaded',
-                },
-                {
-                    'id': 'arxiv:2402.1204',
-                    'title': 'Causal Reasoning Frameworks inside Dynamic Vector Graph Architectures',
-                    'author': 'Genius Team',
-                    'category': 'cs.AI',
-                    'status': 'downloaded',
-                },
-            ],
+        raw = await _call_mcp_tool('scholarx-mcp', 'sx_storage', {'action': 'stored'})
+    except Exception as e:  # noqa: BLE001
+        return _service_error(e, papers=[])
+    records = raw.get('papers', []) if isinstance(raw, dict) else raw
+    papers = [
+        {
+            'id': p.get('id'),
+            'title': p.get('title'),
+            'author': p.get('authors') or p.get('author'),
+            'category': (p.get('categories') or [None])[0]
+            if isinstance(p.get('categories'), list)
+            else p.get('category'),
+            'url': p.get('url'),
+            'path': p.get('local_path'),
+            'status': 'downloaded' if p.get('exists') else 'queued',
         }
+        for p in (records if isinstance(records, list) else [])
+        if isinstance(p, dict)
+    ]
+    return {'status': 'success', 'source': 'live', 'papers': papers}
 
 
 @router.get('/ecosystem/uptime/status')
 async def get_uptime_status():
-    """Retrieve Kuma active status timelines."""
+    """Retrieve real monitor states via the ``uptime-kuma-mcp`` fleet server.
+
+    Dispatches ``uptime_kuma_monitors``/``get_monitors`` against the configured
+    Uptime Kuma instance. Surfaces an honest error if the server or Kuma is
+    unreachable.
+    """
     try:
-        return {'status': 'success', 'source': 'live', 'monitors': []}
-    except Exception:
-        return {
-            'status': 'success',
-            'source': 'simulated',
-            'monitors': [
-                {
-                    'name': 'FastAPI Gateway Server',
-                    'url': 'http://localhost:38001/api',
-                    'status': 'up',
-                    'uptime_24h': 100.0,
-                    'latency': 12,
-                },
-                {
-                    'name': 'Technitium DNS Server',
-                    'url': 'http://10.0.0.199:5380',
-                    'status': 'up',
-                    'uptime_24h': 99.98,
-                    'latency': 4,
-                },
-                {
-                    'name': 'LadybugDB Transactional Store',
-                    'url': 'http://localhost:5432',
-                    'status': 'up',
-                    'uptime_24h': 100.0,
-                    'latency': 2,
-                },
-                {
-                    'name': 'Nextcloud Productivity Storage',
-                    'url': 'https://nextcloud.local',
-                    'status': 'down',
-                    'uptime_24h': 92.4,
-                    'latency': 0,
-                },
-            ],
-        }
+        raw = await _call_mcp_tool(
+            'uptime-kuma-mcp',
+            'uptime_kuma_monitors',
+            {'action': 'get_monitors'},
+            timeout=45.0,
+        )
+    except Exception as e:  # noqa: BLE001
+        return _service_error(e, monitors=[])
+    # Kuma returns either a list of monitors or an id->monitor mapping.
+    if isinstance(raw, dict):
+        mons = raw.get('monitors', raw.get('data', list(raw.values())))
+    else:
+        mons = raw
+    monitors = []
+    for mon in mons if isinstance(mons, list) else []:
+        if not isinstance(mon, dict):
+            continue
+        monitors.append(
+            {
+                'id': mon.get('id'),
+                'name': mon.get('name'),
+                'url': mon.get('url'),
+                'status': 'up' if mon.get('active') else 'paused',
+                'type': mon.get('type'),
+                'interval': mon.get('interval'),
+            }
+        )
+    return {'status': 'success', 'source': 'live', 'monitors': monitors}
 
 
 @router.get('/ecosystem/searxng/search')
 async def get_searxng_search(q: str = 'agent-utilities'):
-    """Query SearXNG metasearch instance and return score rankings."""
+    """Run a real query via the ``searxng-mcp`` fleet server.
+
+    Dispatches ``web_search`` against the configured privacy-respecting
+    SearXNG metasearch instance. Surfaces an honest error if the server or the
+    SearXNG instance is unreachable.
+    """
     try:
-        return {'status': 'success', 'source': 'live', 'results': []}
-    except Exception:
-        return {
-            'status': 'success',
-            'source': 'simulated',
-            'query': q,
-            'results': [
-                {
-                    'title': 'agent-utilities: Unified Abstraction Layer',
-                    'url': 'https://github.com/pydantic/agent-utilities',
-                    'score': 9.8,
-                    'engine': 'github',
-                },
-                {
-                    'title': 'Multi-agent orchestration pipelines overview',
-                    'url': 'https://arxiv.org/abs/2402.1204',
-                    'score': 8.5,
-                    'engine': 'google',
-                },
-                {
-                    'title': 'Vite React production bundler guides',
-                    'url': 'https://vitejs.dev',
-                    'score': 7.2,
-                    'engine': 'duckduckgo',
-                },
-            ],
+        data = await _call_mcp_tool('searxng-mcp', 'web_search', {'query': q})
+    except Exception as e:  # noqa: BLE001
+        return _service_error(e, query=q, results=[])
+    if isinstance(data, dict) and data.get('error'):
+        return _service_error(RuntimeError(data['error']), query=q, results=[])
+    raw_results = data.get('results', []) if isinstance(data, dict) else data
+    results = [
+        {
+            'title': r.get('title'),
+            'url': r.get('url'),
+            'score': r.get('score'),
+            'engine': r.get('engine') or r.get('engines'),
         }
+        for r in (raw_results if isinstance(raw_results, list) else [])
+        if isinstance(r, dict)
+    ]
+    return {
+        'status': 'success',
+        'source': 'live',
+        'query': q,
+        'results': results,
+    }
 
 
 @router.get('/ecosystem/homeassistant/devices')
 async def get_homeassistant_devices():
-    """Retrieve connected IoT home assistant devices state."""
+    """Retrieve real entity states via the ``home-assistant-mcp`` fleet server.
+
+    Dispatches ``home_assistant_states``/``list_states`` against the configured
+    Home Assistant instance. Surfaces an honest error if the server or HA is
+    unreachable.
+    """
     try:
-        return {'status': 'success', 'source': 'live', 'devices': []}
-    except Exception:
-        return {
-            'status': 'success',
-            'source': 'simulated',
-            'devices': [
-                {
-                    'entity_id': 'light.desk_ambient_strip',
-                    'friendly_name': 'Desk Ambient Light',
-                    'state': 'on',
-                    'brightness': 75,
-                    'color_temp': 420,
-                },
-                {
-                    'entity_id': 'climate.living_room_thermostat',
-                    'friendly_name': 'Living Room Thermostat',
-                    'state': 'heat',
-                    'temperature': 22.5,
-                    'target_temp': 22.0,
-                },
-                {
-                    'entity_id': 'switch.smart_coffee_maker',
-                    'friendly_name': 'Smart Coffee Maker',
-                    'state': 'off',
-                },
-                {
-                    'entity_id': 'sensor.hallway_motion',
-                    'friendly_name': 'Hallway Motion Sensor',
-                    'state': 'clear',
-                },
-            ],
+        states = await _call_mcp_tool(
+            'home-assistant-mcp',
+            'home_assistant_states',
+            {'action': 'list_states'},
+        )
+    except Exception as e:  # noqa: BLE001
+        return _service_error(e, devices=[])
+    if isinstance(states, dict):
+        states = states.get('states', states.get('data', []))
+    devices = [
+        {
+            'entity_id': s.get('entity_id'),
+            'friendly_name': (s.get('attributes') or {}).get('friendly_name'),
+            'state': s.get('state'),
+            'attributes': s.get('attributes'),
         }
+        for s in (states if isinstance(states, list) else [])
+        if isinstance(s, dict)
+    ]
+    return {'status': 'success', 'source': 'live', 'devices': devices}
 
 
 @router.get('/ecosystem/nextcloud/events')
 async def get_nextcloud_events():
-    """Retrieve productivity tasks and Nextcloud calendar items."""
+    """Retrieve real Nextcloud calendars and their events via ``nextcloud-mcp``.
+
+    Dispatches ``nextcloud_calendar``/``list_calendars`` against the configured
+    Nextcloud instance, then enumerates each calendar's events via
+    ``list_calendar_events``. Surfaces an honest error if the server or
+    Nextcloud is unreachable.
+    """
+    import json as _json
+
     try:
-        return {'status': 'success', 'source': 'live', 'events': []}
-    except Exception:
-        return {
-            'status': 'success',
-            'source': 'simulated',
-            'events': [
+        cals_raw = await _call_mcp_tool(
+            'nextcloud-mcp', 'nextcloud_calendar', {'action': 'list_calendars'}
+        )
+    except Exception as e:  # noqa: BLE001
+        return _service_error(e, calendars=[], events=[])
+    calendars = (
+        cals_raw.get('calendars', cals_raw) if isinstance(cals_raw, dict) else cals_raw
+    )
+    calendars = calendars if isinstance(calendars, list) else []
+
+    events: list[dict[str, Any]] = []
+    for cal in calendars:
+        if not isinstance(cal, dict):
+            continue
+        cal_name = cal.get('name') or cal.get('id') or cal.get('display_name')
+        if not cal_name:
+            continue
+        try:
+            evs_raw = await _call_mcp_tool(
+                'nextcloud-mcp',
+                'nextcloud_calendar',
                 {
-                    'id': 'ev-01',
-                    'title': 'Review Multi-Agent Ingestion',
-                    'start': '2026-05-25T10:00:00Z',
-                    'end': '2026-05-25T11:00:00Z',
-                    'type': 'meeting',
+                    'action': 'list_calendar_events',
+                    'params_json': _json.dumps({'calendar_name': cal_name}),
                 },
+            )
+        except Exception:  # noqa: BLE001
+            # A single calendar failing must not fabricate or drop the rest.
+            continue
+        evs = evs_raw.get('events', evs_raw) if isinstance(evs_raw, dict) else evs_raw
+        for ev in evs if isinstance(evs, list) else []:
+            if not isinstance(ev, dict):
+                continue
+            events.append(
                 {
-                    'id': 'ev-02',
-                    'title': 'Caloric Intake & Fitness Check',
-                    'start': '2026-05-25T14:30:00Z',
-                    'end': '2026-05-25T15:00:00Z',
-                    'type': 'personal',
-                },
-                {
-                    'id': 'ev-03',
-                    'title': 'Commit Vite production enhancements',
-                    'start': '2026-05-25T17:00:00Z',
-                    'end': '2026-05-25T18:00:00Z',
-                    'type': 'milestone',
-                },
-            ],
-            'tasks': [
-                {
-                    'id': 'tsk-01',
-                    'title': 'Deploy Portainer multi-stack layout template',
-                    'completed': False,
-                },
-                {
-                    'id': 'tsk-02',
-                    'title': 'Verify Stirling PDF merge route response',
-                    'completed': True,
-                },
-            ],
-        }
+                    'id': ev.get('uid') or ev.get('id'),
+                    'calendar': cal_name,
+                    'title': ev.get('summary') or ev.get('title'),
+                    'start': ev.get('start') or ev.get('dtstart'),
+                    'end': ev.get('end') or ev.get('dtend'),
+                }
+            )
+    return {
+        'status': 'success',
+        'source': 'live',
+        'calendars': [
+            c.get('name') or c.get('id') for c in calendars if isinstance(c, dict)
+        ],
+        'events': events,
+    }
 
 
 @router.get('/ecosystem/microsoft/emails')
 async def get_microsoft_emails():
-    """Retrieve recent active MS Outlook Graph inbox summaries."""
+    """Retrieve recent inbox messages via the ``microsoft-mcp`` fleet server.
+
+    Dispatches ``microsoft_mail``/``list_mail_messages`` against Microsoft Graph
+    using the credentials configured on that MCP server. Surfaces an honest
+    error if the server or Graph is unreachable / unauthorized.
+    """
+    import json as _json
+
     try:
-        return {'status': 'success', 'source': 'live', 'emails': []}
-    except Exception:
-        return {
-            'status': 'success',
-            'source': 'simulated',
-            'emails': [
-                {
-                    'id': 'mail-01',
-                    'subject': 'Alert: LadybugDB Segment Fault Restored',
-                    'from': 'Infrastructure DevOps',
-                    'received': '9 mins ago',
-                    'importance': 'high',
-                },
-                {
-                    'id': 'mail-02',
-                    'subject': 'Monthly Agent-Utilities Evolution Report',
-                    'from': 'AI Auto-Researcher Daemon',
-                    'received': '1 hour ago',
-                    'importance': 'normal',
-                },
-            ],
+        data = await _call_mcp_tool(
+            'microsoft-mcp',
+            'microsoft_mail',
+            {
+                'action': 'list_mail_messages',
+                'params_json': _json.dumps({'top': 10}),
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        return _service_error(e, emails=[])
+    messages = data.get('value', data) if isinstance(data, dict) else data
+    if isinstance(messages, dict):
+        messages = messages.get('value', [])
+    emails = [
+        {
+            'id': m.get('id'),
+            'subject': m.get('subject'),
+            'from': ((m.get('from') or {}).get('emailAddress') or {}).get('address'),
+            'received': m.get('receivedDateTime'),
+            'importance': m.get('importance'),
         }
+        for m in (messages if isinstance(messages, list) else [])
+        if isinstance(m, dict)
+    ]
+    return {'status': 'success', 'source': 'live', 'emails': emails}
 
 
 @router.get('/ecosystem/mediadownloader/downloads')
 async def get_mediadownloader_downloads():
-    """Retrieve media-downloader download queue statuses."""
-    try:
-        return {'status': 'success', 'source': 'live', 'queue': [], 'downloads': []}
-    except Exception:
-        return {
-            'status': 'success',
-            'source': 'simulated',
-            'queue': [
-                {
-                    'id': 'dl-01',
-                    'url': 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-                    'title': 'Senior Creative Technologist Onboarding Masterclass',
-                    'progress': 82.5,
-                    'speed': '4.2 MB/s',
-                    'status': 'downloading',
-                },
-                {
-                    'id': 'dl-02',
-                    'url': 'https://www.youtube.com/watch?v=3tmd-ClpJkA',
-                    'title': 'High Scale Orchestration Patterns in React',
-                    'progress': 100.0,
-                    'speed': '0 B/s',
-                    'status': 'completed',
-                },
-            ],
-            'downloads': [
-                {
-                    'id': 'dl-01',
-                    'url': 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-                    'title': 'Senior Creative Technologist Onboarding Masterclass',
-                    'progress': 82.5,
-                    'speed': '4.2 MB/s',
-                    'status': 'downloading',
-                },
-                {
-                    'id': 'dl-02',
-                    'url': 'https://www.youtube.com/watch?v=3tmd-ClpJkA',
-                    'title': 'High Scale Orchestration Patterns in React',
-                    'progress': 100.0,
-                    'speed': '0 B/s',
-                    'status': 'completed',
-                },
-            ],
-        }
+    """Report that no live media-downloader queue backend exists.
+
+    The fleet's ``media-downloader-mcp`` exposes only a fire-and-forget
+    ``download_media(video_url, ...)`` action — it keeps no server-side queue
+    or history that can be read back. There is therefore no real data source to
+    wire for a "current downloads" view; we report that honestly instead of
+    fabricating a queue. Building a real view requires the media-downloader to
+    persist and expose a job/queue read API first.
+    """
+    return _capability_unavailable(
+        'media-downloader-mcp exposes only download_media (no readable '
+        'queue/history); a persistent download-job read API must be built '
+        'before a live queue view is possible.',
+        queue=[],
+        downloads=[],
+    )
 
 
 @router.get('/ecosystem/qbittorrent/torrents')
 async def get_qbittorrent_torrents():
-    """Retrieve qBittorrent active downloads speed dials."""
+    """Retrieve real torrent state via the ``qbittorrent-mcp`` fleet server.
+
+    Dispatches ``qbittorrent_torrents``/``get_torrent_list`` against the
+    configured qBittorrent WebUI. Surfaces an honest error if the server or
+    qBittorrent is unreachable.
+    """
     try:
-        return {'status': 'success', 'source': 'live', 'torrents': []}
-    except Exception:
-        return {
-            'status': 'success',
-            'source': 'simulated',
-            'torrents': [
-                {
-                    'name': 'Fedora-Workstation-Live-x86_64-40.iso',
-                    'size': '2.1 GB',
-                    'progress': 92.4,
-                    'dl_speed': '12.4 MB/s',
-                    'ul_speed': '840 KB/s',
-                    'status': 'downloading',
-                },
-                {
-                    'name': 'ArchLinux-Latest-x86_64.iso',
-                    'size': '890 MB',
-                    'progress': 100.0,
-                    'dl_speed': '0 B/s',
-                    'ul_speed': '1.2 MB/s',
-                    'status': 'seeding',
-                },
-            ],
+        raw = await _call_mcp_tool(
+            'qbittorrent-mcp',
+            'qbittorrent_torrents',
+            {'action': 'get_torrent_list'},
+        )
+    except Exception as e:  # noqa: BLE001
+        return _service_error(e, torrents=[])
+    if isinstance(raw, dict):
+        raw = raw.get('torrents', raw.get('data', []))
+    torrents = [
+        {
+            'name': t.get('name'),
+            'size': t.get('size'),
+            'progress': round((t.get('progress', 0) or 0) * 100, 1),
+            'dl_speed': t.get('dlspeed'),
+            'ul_speed': t.get('upspeed'),
+            'status': t.get('state'),
         }
+        for t in (raw if isinstance(raw, list) else [])
+        if isinstance(t, dict)
+    ]
+    return {'status': 'success', 'source': 'live', 'torrents': torrents}
 
 
 @router.get('/ecosystem/stirlingpdf/jobs')
 async def get_stirlingpdf_jobs():
-    """Retrieve Stirling PDF split/merge actions queue."""
-    try:
-        return {'status': 'success', 'source': 'live', 'jobs': []}
-    except Exception:
-        return {
-            'status': 'success',
-            'source': 'simulated',
-            'jobs': [
-                {
-                    'id': 'pdf-91',
-                    'filename': 'agent_architecture_compiled.pdf',
-                    'action': 'merge',
-                    'status': 'completed',
-                    'timestamp': '10 mins ago',
-                },
-                {
-                    'id': 'pdf-92',
-                    'filename': 'financial_risk_factors.pdf',
-                    'action': 'compress',
-                    'status': 'running',
-                    'timestamp': 'Just now',
-                },
-            ],
-        }
+    """Report that Stirling-PDF maintains no readable job history.
+
+    The fleet's ``stirlingpdf-mcp`` exposes only ``pdf_action`` (synchronous,
+    one-shot PDF transforms). Stirling-PDF itself keeps no persistent job
+    list — async jobs are transient and addressable only by an id the caller
+    already holds. There is no real backend to enumerate, so we report that
+    honestly instead of fabricating completed jobs.
+    """
+    return _capability_unavailable(
+        'Stirling-PDF processes PDFs synchronously and keeps no persistent '
+        'job history; stirlingpdf-mcp exposes only one-shot pdf_action. A '
+        'durable job-tracking store must be built before a live jobs view is '
+        'possible.',
+        jobs=[],
+    )
 
 
 @router.get('/system')
@@ -4383,12 +4715,38 @@ async def execute_slash_command(payload: dict, request: Request):
             if not rest:
                 response_md = 'Usage: `/graph impact <symbol>`'
             else:
-                response_md = (
-                    f'### Blast Radius Impact Analysis for `{rest}`\n\n'
-                    f'1. **Direct Dependencies**: High Risk (2 items affected)\n'
-                    f'2. **Downstream Pipelines**: Medium Risk (1 workflow affected)\n'
-                    f'3. **Zero-Trust Security Alignment**: 100% Secure\n'
-                )
+                try:
+                    impact_set = engine.query_impact(rest)
+                except Exception as e:  # noqa: BLE001
+                    impact_set = None
+                    response_md = f'Error running impact analysis for `{rest}`: {e}'
+                if impact_set is not None:
+                    if not impact_set:
+                        response_md = (
+                            f'### Blast Radius Impact Analysis for `{rest}`\n\n'
+                            f'No impacted nodes found (symbol not in graph or has '
+                            f'no dependents).'
+                        )
+                    else:
+                        lines = [
+                            f'### Blast Radius Impact Analysis for `{rest}`\n',
+                            f'**{len(impact_set)} item(s) affected:**\n',
+                        ]
+                        for item in impact_set[:50]:
+                            if isinstance(item, dict):
+                                ident = (
+                                    item.get('id')
+                                    or item.get('name')
+                                    or item.get('symbol')
+                                    or str(item)
+                                )
+                                sev = item.get('severity') or item.get('impact')
+                                lines.append(
+                                    f'- `{ident}`' + (f' ({sev})' if sev else '')
+                                )
+                            else:
+                                lines.append(f'- `{item}`')
+                        response_md = '\n'.join(lines)
         else:
             response_md = f'Unknown `/graph` subcommand: `{sub}`'
 
@@ -4399,28 +4757,81 @@ async def execute_slash_command(payload: dict, request: Request):
         sub = sub_parts[0].lower() if sub_parts else 'list'
         rest = sub_parts[1] if len(sub_parts) > 1 else ''
 
+        try:
+            engine = get_engine()
+            kb_engine = KBIngestionEngine(engine.graph, engine.backend)
+        except Exception as e:  # noqa: BLE001
+            return {
+                'response_markdown': f'KB backend not available: {e}',
+                'client_actions': [],
+            }
+
         if sub == 'list':
-            response_md = (
-                '### Connected Knowledge Bases:\n\n'
-                '- `workspace-docs` (Local markdown and specification guides)\n'
-                '- `mcp-servers-index` (Standard definitions of available tool categories)\n'
-            )
+            try:
+                bases = kb_engine.list_bases()
+            except Exception as e:  # noqa: BLE001
+                bases = None
+                response_md = f'Error listing knowledge bases: {e}'
+            if bases is not None:
+                if not bases:
+                    response_md = 'No knowledge bases found.'
+                else:
+                    lines = ['### Connected Knowledge Bases:\n']
+                    for b in bases:
+                        if isinstance(b, dict):
+                            name = b.get('id') or b.get('name', 'unknown')
+                            desc = b.get('description') or b.get('name', '')
+                            count = b.get('article_count')
+                            suffix = f' ({count} articles)' if count is not None else ''
+                            lines.append(f'- `{name}` {desc}{suffix}')
+                        else:
+                            lines.append(f'- `{b}`')
+                    response_md = '\n'.join(lines)
         elif sub == 'search':
             if not rest:
                 response_md = 'Usage: `/kb search <query>`'
             else:
-                response_md = (
-                    f'### KB Search Results for `{rest}`:\n\n'
-                    f'1. **[ORCH-1.25] Unified Parallel Engine.md** (Relevance: 95%)\n'
-                    f'   > The parallel scheduler orchestrates agent workflows natively across multiple background worker pools...\n'
-                    f'2. **[KG-2.0] Graph Topology.md** (Relevance: 82%)\n'
-                    f'   > Graph traversal maps downstream dependencies of running agents and prevents database write locks...\n'
-                )
+                try:
+                    hits = kb_engine.search(rest)
+                except Exception as e:  # noqa: BLE001
+                    hits = None
+                    response_md = f'Error searching knowledge base: {e}'
+                if hits is not None:
+                    if not hits:
+                        response_md = f'No KB results for `{rest}`.'
+                    else:
+                        lines = [f'### KB Search Results for `{rest}`:\n']
+                        for h in hits[:10]:
+                            if isinstance(h, dict):
+                                title = h.get('title') or h.get('id', 'Untitled')
+                                score = h.get('score') or h.get('relevance')
+                                snippet = (h.get('content') or h.get('snippet') or '')[
+                                    :160
+                                ]
+                                score_s = (
+                                    f' (score: {score})' if score is not None else ''
+                                )
+                                lines.append(f'- **{title}**{score_s}')
+                                if snippet:
+                                    lines.append(f'  > {snippet}')
+                            else:
+                                lines.append(f'- {h}')
+                        response_md = '\n'.join(lines)
         elif sub == 'ingest':
             if not rest:
                 response_md = 'Usage: `/kb ingest <url_or_path>`'
             else:
-                response_md = f'Successfully initiated background KB ingestion task for `{rest}` into `workspace-docs`.'
+                try:
+                    result = await kb_engine.ingest(
+                        kb_id='workspace-docs', source=rest, name='workspace-docs'
+                    )
+                    job_id = result.get('job_id') if isinstance(result, dict) else None
+                    response_md = (
+                        f'Started KB ingestion of `{rest}` into `workspace-docs`'
+                        + (f' (job `{job_id}`).' if job_id else '.')
+                    )
+                except Exception as e:  # noqa: BLE001
+                    response_md = f'Failed to ingest `{rest}`: {e}'
         else:
             response_md = f'Unknown `/kb` subcommand: `{sub}`'
 
@@ -4428,22 +4839,64 @@ async def execute_slash_command(payload: dict, request: Request):
 
     elif cmd_name == 'sdd':
         sub = args.strip().lower() or 'specs'
+        try:
+            manager = SDDManager(DEFAULT_AGENT_DIR)
+        except Exception as e:  # noqa: BLE001
+            return {
+                'response_markdown': f'SDD backend not available: {e}',
+                'client_actions': [],
+            }
+
         if sub == 'specs':
-            response_md = (
-                '### Active Spec-Driven Specifications:\n\n'
-                '- **[ORCH-1.25]**: Parallel Execution Engine & Lock Protocols (Status: `Approved`)\n'
-                '- **[KG-2.0]**: Epistemic Graph Database Schema (Status: `Draft`)\n'
-                '- **[TUI-2.0]**: Keyboard Event Bindings and Screen Layers (Status: `In Review`)\n'
-            )
+            try:
+                specs = manager.list_specs()
+            except Exception as e:  # noqa: BLE001
+                specs = None
+                response_md = f'Error listing specs: {e}'
+            if specs is not None:
+                if not specs:
+                    response_md = 'No specifications found under `.specify/specs`.'
+                else:
+                    lines = ['### Active Spec-Driven Specifications:\n']
+                    for s in specs:
+                        sd = s.model_dump() if hasattr(s, 'model_dump') else s
+                        sid = sd.get('id') if isinstance(sd, dict) else str(s)
+                        title = sd.get('title', '') if isinstance(sd, dict) else ''
+                        status = sd.get('status', '') if isinstance(sd, dict) else ''
+                        lines.append(
+                            f'- **{sid}**: {title}'
+                            + (f' (Status: `{status}`)' if status else '')
+                        )
+                    response_md = '\n'.join(lines)
         elif sub == 'constitution':
-            response_md = (
-                '### Spec-Driven Development Governance Rules:\n\n'
-                '1. **Design Before Execution**: No code changes allowed until a spec has been written and approved.\n'
-                '2. **TDD Compliance**: Every new feature must be verified by a robust suite of pytest unit tests.\n'
-                '3. **Zero Drift**: Client interfaces (TUI, Web UI, GUI) must match the backend API schema 1:1.\n'
-            )
+            try:
+                constitution = manager.get_constitution()
+            except Exception as e:  # noqa: BLE001
+                constitution = None
+                response_md = f'Error reading constitution: {e}'
+            else:
+                if not constitution:
+                    response_md = (
+                        'No constitution found at `.specify/memory/constitution.md`.'
+                    )
+                elif isinstance(constitution, dict):
+                    body = (
+                        constitution.get('content')
+                        or constitution.get('text')
+                        or str(constitution)
+                    )
+                    response_md = f'### Project Constitution\n\n{body}'
+                else:
+                    response_md = f'### Project Constitution\n\n{constitution}'
         elif sub == 'sync':
-            response_md = 'Synchronizing local workspace specification documents with the central Knowledge Graph... Done! All indexes updated.'
+            try:
+                engine = get_engine()
+                manager.sync_to_memory(engine)
+                response_md = (
+                    'Synchronized local specifications with the Knowledge Graph.'
+                )
+            except Exception as e:  # noqa: BLE001
+                response_md = f'SDD sync failed: {e}'
         else:
             response_md = f'Unknown `/sdd` subcommand: `{sub}`'
 
@@ -4452,19 +4905,46 @@ async def execute_slash_command(payload: dict, request: Request):
     elif cmd_name == 'cron':
         sub = args.strip().lower() or 'calendar'
         if sub == 'calendar':
-            response_md = (
-                '### Scheduled Background Tasks:\n\n'
-                '- `hourly-research-survey`: Runs ScholarX paper queries every 60 minutes.\n'
-                '- `nightly-alpha-discovery`: Runs quant backtests and factor analysis daily at 02:00 AM.\n'
-                '- `weekly-ecosystem-audit`: Scans all workspace projects for design token drift every Sunday at midnight.\n'
-            )
+            try:
+                from agent_utilities.core.scheduler import get_cron_tasks
+
+                registry = get_cron_tasks()
+                tasks = list(registry.tasks)
+            except Exception as e:  # noqa: BLE001
+                tasks = None
+                response_md = f'Cron scheduler not available: {e}'
+            if tasks is not None:
+                if not tasks:
+                    response_md = 'No scheduled background tasks registered.'
+                else:
+                    lines = ['### Scheduled Background Tasks:\n']
+                    for t in tasks:
+                        lines.append(
+                            f'- `{t.name or t.id}`: every '
+                            f'{t.interval_minutes} min '
+                            f'(last run: {t.last_run or "never"})'
+                        )
+                    response_md = '\n'.join(lines)
         elif sub == 'logs':
-            response_md = (
-                '### Cron Job Execution Logs (Last 3 entries):\n\n'
-                '- `2026-05-25 04:00:00` - `hourly-research-survey` - Success (found 3 new papers)\n'
-                '- `2026-05-25 03:00:00` - `hourly-research-survey` - Success (zero new papers)\n'
-                '- `2026-05-25 02:00:00` - `nightly-alpha-discovery` - Success (updated 14 risk factors)\n'
-            )
+            try:
+                from agent_utilities.core.scheduler import get_cron_logs
+
+                entries = list(get_cron_logs().entries)
+            except Exception as e:  # noqa: BLE001
+                entries = None
+                response_md = f'Cron logs not available: {e}'
+            if entries is not None:
+                if not entries:
+                    response_md = 'No cron execution logs recorded yet.'
+                else:
+                    lines = ['### Cron Job Execution Logs (recent):\n']
+                    for entry in entries[-10:]:
+                        lines.append(
+                            f'- `{entry.timestamp}` - '
+                            f'`{entry.task_name or entry.task_id}` - '
+                            f'{entry.status}: {entry.message}'
+                        )
+                    response_md = '\n'.join(lines)
         else:
             response_md = f'Unknown `/cron` subcommand: `{sub}`'
 
@@ -4475,19 +4955,53 @@ async def execute_slash_command(payload: dict, request: Request):
         sub = sub_parts[0].lower() if sub_parts else 'list'
         rest = sub_parts[1] if len(sub_parts) > 1 else ''
 
+        try:
+            engine = get_engine()
+        except Exception as e:  # noqa: BLE001
+            return {
+                'response_markdown': f'Resource backend not available: {e}',
+                'client_actions': [],
+            }
+
         if sub in ('', 'list'):
-            response_md = (
-                '### Spawned Subagents and Background Tasks:\n\n'
-                '- **ID: `agent-research-01`** - Type: `ScholarX Searcher` - Status: `Idle`\n'
-                '- **ID: `agent-tui-helper`** - Type: `ACP Protocol Client` - Status: `Running`\n'
-            )
+            try:
+                rows = engine.backend.execute('MATCH (r:CallableResource) RETURN r')
+                resources = [
+                    row.get('r', {})
+                    for row in rows
+                    if isinstance(row.get('r', {}), dict)
+                ]
+            except Exception as e:  # noqa: BLE001
+                resources = None
+                response_md = f'Error listing resources: {e}'
+            if resources is not None:
+                if not resources:
+                    response_md = 'No active subagents or callable resources.'
+                else:
+                    lines = ['### Spawned Subagents and Callable Resources:\n']
+                    for r in resources:
+                        rid = r.get('id') or r.get('name', 'unknown')
+                        rtype = r.get('type') or r.get('kind', 'resource')
+                        rstatus = r.get('status', 'unknown')
+                        lines.append(
+                            f'- **`{rid}`** - Type: `{rtype}` - Status: `{rstatus}`'
+                        )
+                    response_md = '\n'.join(lines)
         elif sub == 'spawn':
             if not rest:
                 response_md = 'Usage: `/resources spawn <name>`'
             else:
-                response_md = (
-                    f'Successfully spawned background agent subtask **{rest}**.'
-                )
+                try:
+                    agent = engine.spawn_specialized_agent(name=rest)
+                    agent_data = (
+                        agent.model_dump()
+                        if hasattr(agent, 'model_dump')
+                        else {'name': rest}
+                    )
+                    spawned_id = agent_data.get('id') or agent_data.get('name') or rest
+                    response_md = f'Spawned subagent **`{spawned_id}`**.'
+                except Exception as e:  # noqa: BLE001
+                    response_md = f'Failed to spawn subagent `{rest}`: {e}'
         else:
             response_md = f'Unknown `/resources` subcommand: `{sub}`'
 
