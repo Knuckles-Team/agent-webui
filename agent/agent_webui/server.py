@@ -108,13 +108,26 @@ def create_agent_web_app(
         except Exception as exc:  # noqa: BLE001
             logger.warning('Failed to mount canonical KG REST surface: %s', exc)
 
-        # This process is the KG daemon HOST: it runs the single consolidated
-        # background daemon (queue drain + graph writer + task workers +
-        # maintenance scheduler + file-watch) that all KG_DAEMON_ROLE=client
-        # processes (MCP server / CLI / scripts) rely on. Start it on app
-        # startup. (CONCEPT:KG-2.8 / OS-5.9)
+        # This process is the KG daemon HOST by default: it runs the single
+        # consolidated background daemon (queue drain + graph writer + task
+        # workers + maintenance scheduler + file-watch) that all
+        # KG_DAEMON_ROLE=client processes (MCP server / CLI / scripts) rely on.
+        # (CONCEPT:KG-2.8 / OS-5.9)
+        #
+        # Thin, horizontally-scalable instances opt out with KG_DAEMON_ROLE=client:
+        # they reach a SHARED KG host over the engine socket instead of each
+        # forcing itself to be the host, so many webui API instances can run
+        # behind a load balancer against one backend (the agent-terminal-ui
+        # scale-many-instances pattern; see the agent-utilities "Scalable
+        # Frontends" guide).
         @app.on_event('startup')
         async def _start_kg_host_daemon() -> None:
+            if (os.environ.get('KG_DAEMON_ROLE') or '').strip().lower() == 'client':
+                logger.info(
+                    'KG_DAEMON_ROLE=client — thin instance; skipping in-process '
+                    'KG host daemon (using the shared backend over the engine socket)'
+                )
+                return
             try:
                 from agent_utilities.gateway.daemon import start_host_daemon
 
