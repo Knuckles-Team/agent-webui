@@ -3186,35 +3186,10 @@ async def get_tunnel_hosts() -> dict[str, Any]:
         return {'hosts': hm.list_hosts()}
     except Exception as e:
         logger.error(f'Failed to load HostManager: {e}')
-        # Return fallback mock hosts inventory
-        return {
-            'hosts': [
-                {
-                    'alias': 'production-api-node',
-                    'hostname': '10.0.0.15',
-                    'user': 'ubuntu',
-                    'port': 22,
-                    'identity_file': '~/.ssh/id_rsa',
-                    'status': 'active',
-                },
-                {
-                    'alias': 'staging-db-replica',
-                    'hostname': '192.168.1.50',
-                    'user': 'postgres',
-                    'port': 2222,
-                    'identity_file': '~/.ssh/staging_key',
-                    'status': 'active',
-                },
-                {
-                    'alias': 'homelab-gateway',
-                    'hostname': '192.168.1.100',
-                    'user': 'root',
-                    'port': 22,
-                    'identity_file': '',
-                    'status': 'inactive',
-                },
-            ]
-        }
+        raise HTTPException(
+            status_code=502,
+            detail=f'tunnel-manager host inventory unavailable: {e}',
+        ) from e
 
 
 @router.post('/tunnel-manager/hosts')
@@ -3242,12 +3217,16 @@ async def add_tunnel_host(payload: dict[str, Any]) -> dict[str, str]:
             'status': 'success',
             'message': f"Host '{payload['alias']}' registered.",
         }
+    except KeyError as e:
+        raise HTTPException(
+            status_code=400, detail=f'Missing required host field: {e}'
+        ) from e
     except Exception as e:
         logger.error(f'Failed to add host configuration: {e}')
-        return {
-            'status': 'success',
-            'message': f"Host '{payload.get('alias')}' added (Simulated).",
-        }
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to register host '{payload.get('alias')}': {e}",
+        ) from e
 
 
 @router.post('/tunnel-manager/remote')
@@ -3269,7 +3248,9 @@ async def run_tunnel_remote(payload: dict[str, Any]) -> dict[str, Any]:
         hm = HostManager()
         host_config = hm.get_host(host)
         if not host_config:
-            raise Exception('Host alias not found')
+            raise HTTPException(
+                status_code=404, detail=f"Host alias '{host}' not found in inventory"
+            )
 
         conf = host_config.model_dump()
         t = Tunnel(
@@ -3289,26 +3270,14 @@ async def run_tunnel_remote(payload: dict[str, Any]) -> dict[str, Any]:
             'stdout': out,
             'stderr': error,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f'Remote ssh execution failed: {e}')
-        # Beautiful fallback simulated execution
-        import time
-
-        time.sleep(0.5)
-        simulated_out = f'[$ ubuntu@{host}:~]$ {cmd}\n'
-        if 'docker ps' in cmd or 'containers' in cmd:
-            simulated_out += 'CONTAINER ID   IMAGE          COMMAND                  CREATED         STATUS         PORTS\n1a2b3c4d5e6f   nginx:latest   "/docker-entrypoint.…"   2 hours ago     Up 2 hours     0.0.0.0:80->80/tcp'
-        elif 'uname' in cmd:
-            simulated_out += 'Linux staging-node 6.1.0-21-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.90-1 x86_64 GNU/Linux'
-        else:
-            simulated_out += f'Executed command successfully on remote SSH node.\nReturn code: 0\n[mock-output-for: {cmd}]'
-
-        return {
-            'status_code': 200,
-            'message': f'Simulated execution output for {host}',
-            'stdout': simulated_out,
-            'stderr': '',
-        }
+        raise HTTPException(
+            status_code=502,
+            detail=f'Remote SSH execution on {host} failed: {e}',
+        ) from e
 
 
 @router.get('/systems-manager/resources')
@@ -3333,13 +3302,12 @@ async def get_system_resources() -> dict[str, Any]:
                 'total_gb': round(disk.total / (1024**3), 2),
             },
         }
-    except Exception:
-        # Fallback values if psutil is missing
-        return {
-            'cpu_percent': 24.5,
-            'memory': {'percent': 42.1, 'used_gb': 6.74, 'total_gb': 16.0},
-            'disk': {'percent': 68.3, 'used_gb': 341.5, 'total_gb': 500.0},
-        }
+    except Exception as e:
+        logger.error(f'Failed to read system resources: {e}')
+        raise HTTPException(
+            status_code=503,
+            detail=f'System resource metrics unavailable (psutil): {e}',
+        ) from e
 
 
 @router.get('/systems-manager/processes')
@@ -3367,45 +3335,12 @@ async def list_system_processes() -> list[dict[str, Any]]:
                 continue
         # Sort by cpu/memory consumption
         return sorted(processes, key=lambda x: x['cpu'], reverse=True)[:50]
-    except Exception:
-        # Fallback process list
-        return [
-            {
-                'pid': 9817,
-                'name': 'python -m agent_webui.server',
-                'user': 'genius',
-                'cpu': 4.2,
-                'memory': 2.1,
-            },
-            {
-                'pid': 1104,
-                'name': 'node /home/apps/workspace/agent-packages/agent-webui/node_modules/.bin/vite',
-                'user': 'genius',
-                'cpu': 1.5,
-                'memory': 3.4,
-            },
-            {
-                'pid': 4512,
-                'name': 'postgres -D /var/lib/postgresql/data',
-                'user': 'postgres',
-                'cpu': 0.5,
-                'memory': 1.2,
-            },
-            {
-                'pid': 9051,
-                'name': 'whisper --model base --language en',
-                'user': 'genius',
-                'cpu': 0.0,
-                'memory': 8.5,
-            },
-            {
-                'pid': 3291,
-                'name': 'nginx -g daemon off;',
-                'user': 'root',
-                'cpu': 0.0,
-                'memory': 0.2,
-            },
-        ]
+    except Exception as e:
+        logger.error(f'Failed to list system processes: {e}')
+        raise HTTPException(
+            status_code=503,
+            detail=f'Process listing unavailable (psutil): {e}',
+        ) from e
 
 
 @router.post('/systems-manager/processes/kill')
@@ -3422,10 +3357,10 @@ async def kill_system_process(payload: dict[str, int]) -> dict[str, str]:
         return {'status': 'success', 'message': f'Process {pid} terminated.'}
     except Exception as e:
         logger.error(f'Failed to kill process {pid}: {e}')
-        return {
-            'status': 'success',
-            'message': f'Process {pid} terminated (Simulated).',
-        }
+        raise HTTPException(
+            status_code=502,
+            detail=f'Failed to terminate process {pid}: {e}',
+        ) from e
 
 
 @router.get('/container-manager/containers')
@@ -3822,7 +3757,7 @@ def _resolve_fleet_server(server_name: str) -> dict[str, Any] | None:
     Each server carries its OWN credentials (``PORTAINER_URL``/``TOKEN``,
     ``GITHUB_TOKEN``, ``UPTIME_KUMA_URL``/``TOKEN`` …) in its ``env`` block, so
     spawning it returns LIVE data without the web-UI process needing any of
-    those secrets re-declared.
+    those secrets redeclared.
 
     The individual servers live in the multiplexer's *source* registry
     (``mcp_config_source.json``); the top-level ``mcp_config.json`` only lists
