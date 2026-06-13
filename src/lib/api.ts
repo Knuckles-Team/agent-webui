@@ -375,6 +375,32 @@ class ApiClient {
   getGraphStats = () => this.get<any>('/api/enhanced/graph/stats')
   getGraphRelationships = () => this.get<any[]>('/api/enhanced/graph/relationships')
 
+  // Document → knowledge-graph fact extraction (ECO-4.43; KG-2.64/2.65/2.66)
+  submitExtraction = (payload: {
+    text?: string
+    url?: string
+    rounds?: number
+    dedup?: boolean
+    dedup_field?: string
+    dedup_threshold?: number
+  }) => this.post<{ status: string; job_id?: string; message?: string }>(
+    '/api/enhanced/extract/submit',
+    payload,
+  )
+  listExtractionJobs = () => this.get<{ status: string; jobs: any[] }>('/api/enhanced/extract/jobs')
+  getExtractionStatus = (jobId: string) =>
+    this.get<any>(`/api/enhanced/extract/status/${encodeURIComponent(jobId)}`)
+  pauseExtraction = (jobId: string) =>
+    this.post<any>(`/api/enhanced/extract/pause/${encodeURIComponent(jobId)}`, {})
+  resumeExtraction = (jobId: string) =>
+    this.post<any>(`/api/enhanced/extract/resume/${encodeURIComponent(jobId)}`, {})
+  /** SSE URL for streaming a job's extraction events (round_start|fact|…|job_done). */
+  extractionStreamUrl = (jobId: string) =>
+    `${this.baseUrl}/api/enhanced/extract/stream/${encodeURIComponent(jobId)}`
+  /** Download URL for a job's facts as JSONL (upstream parity). */
+  extractionJsonlUrl = (jobId: string) =>
+    `${this.baseUrl}/api/enhanced/extract/jsonl/${encodeURIComponent(jobId)}`
+
   // Workflow Editor Methods (D9 — visual workflow editor)
   listWorkflowCapabilities = () => this.get<WorkflowCapabilities>('/api/enhanced/workflows/capabilities')
   listWorkflows = () => this.get<SavedWorkflow[]>('/api/enhanced/workflows')

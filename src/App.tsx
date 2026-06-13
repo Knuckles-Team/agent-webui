@@ -23,6 +23,7 @@ import SchedulingView from './components/views/SchedulingView'
 import ConfigurationView from './components/views/ConfigurationView'
 import KnowledgeBaseView from './components/views/KnowledgeBaseView'
 import GraphView from './components/views/GraphView'
+import ExtractionView from './components/views/ExtractionView'
 import OpsPanelView from './components/views/OpsPanelView'
 import MagmaView from './components/views/MagmaView'
 import CypherReplView from './components/views/CypherReplView'
@@ -71,6 +72,7 @@ export default function App() {
       else if (path === '/configuration') setCurrentView('configuration')
       else if (path === '/knowledge') setCurrentView('knowledge')
       else if (path === '/graph') setCurrentView('graph')
+      else if (path === '/extraction') setCurrentView('extraction')
       else if (path === '/ops') setCurrentView('ops')
       else if (path === '/magma') setCurrentView('magma')
       else if (path === '/cypher') setCurrentView('cypher')
@@ -171,6 +173,7 @@ export default function App() {
                         </>
                       )}
                       {currentView === 'graph' && <GraphView />}
+                      {currentView === 'extraction' && <ExtractionView />}
                       {currentView === 'workflows' && <WorkflowEditorView />}
                       {currentView === 'ops' && <OpsPanelView />}
                       {currentView === 'magma' && <MagmaView />}
