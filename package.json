@@ -10,7 +10,7 @@
     "access": "public",
     "provenance": true
   },
-  "version": "0.40.0",
+  "version": "0.41.0",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
