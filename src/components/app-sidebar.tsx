@@ -363,6 +363,19 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Extract a knowledge graph from a document or URL (live)">
+                  <a
+                    href="/extraction"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Network />
+                    <span>KG Extraction</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
                 <SidebarMenuButton asChild tooltip="Compose, edit & run agent workflows visually (D9)">
                   <a
                     href="/workflows"
