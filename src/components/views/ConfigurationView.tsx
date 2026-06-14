@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { toast } from 'sonner'
 
 export default function ConfigurationView() {
-  const [config, setConfig] = useState<Record<string, any>>({})
+  const [config, setConfig] = useState<Record<string, string | undefined>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [reloading, setReloading] = useState(false)
@@ -26,7 +26,7 @@ export default function ConfigurationView() {
         toast.error('Failed to load active configuration')
         return
       }
-      const data = await res.json()
+      const data = (await res.json()) as Record<string, string | undefined>
       setConfig(data)
     } catch {
       toast.error('Failed to connect to configuration service')
@@ -71,7 +71,7 @@ export default function ConfigurationView() {
     }
   }
 
-  const handleFieldChange = (key: string, value: any) => {
+  const handleFieldChange = (key: string, value: string) => {
     setConfig((prev) => ({ ...prev, [key]: value }))
   }
 
@@ -117,7 +117,9 @@ export default function ConfigurationView() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void handleReload()}
+            onClick={() => {
+              void handleReload()
+            }}
             disabled={reloading}
             className="border-emerald-500/20 hover:bg-emerald-500/5 text-emerald-400"
           >
@@ -126,7 +128,9 @@ export default function ConfigurationView() {
           </Button>
           <Button
             size="sm"
-            onClick={() => void handleSave()}
+            onClick={() => {
+              void handleSave()
+            }}
             disabled={saving || loading}
             className="bg-emerald-600 hover:bg-emerald-700"
           >
@@ -163,14 +167,18 @@ export default function ConfigurationView() {
                       <div className="relative">
                         <Input
                           type={showKeys[field.key] ? 'text' : 'password'}
-                          value={config[field.key] || ''}
+                          value={config[field.key] ?? ''}
                           placeholder={field.placeholder}
-                          onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                          onChange={(e) => {
+                            handleFieldChange(field.key, e.target.value)
+                          }}
                           className="bg-muted/20 pr-10 font-mono text-xs"
                         />
                         <button
                           type="button"
-                          onClick={() => toggleShowKey(field.key)}
+                          onClick={() => {
+                            toggleShowKey(field.key)
+                          }}
                           className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                         >
                           {showKeys[field.key] ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -200,8 +208,10 @@ export default function ConfigurationView() {
                       <label className="text-xs font-semibold text-muted-foreground">{field.label}</label>
                       {field.type === 'select' ? (
                         <select
-                          value={config[field.key] || 'INFO'}
-                          onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                          value={config[field.key] ?? 'INFO'}
+                          onChange={(e) => {
+                            handleFieldChange(field.key, e.target.value)
+                          }}
                           className="w-full h-10 px-3 rounded-md border border-input bg-muted/20 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         >
                           {field.options?.map((opt) => (
@@ -213,8 +223,10 @@ export default function ConfigurationView() {
                       ) : (
                         <Input
                           type="number"
-                          value={config[field.key] || ''}
-                          onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                          value={config[field.key] ?? ''}
+                          onChange={(e) => {
+                            handleFieldChange(field.key, e.target.value)
+                          }}
                           className="bg-muted/20 font-mono text-xs"
                         />
                       )}
@@ -247,8 +259,10 @@ export default function ConfigurationView() {
                           </Badge>
                         </label>
                         <Input
-                          value={config[key] !== null ? String(config[key]) : ''}
-                          onChange={(e) => handleFieldChange(key, e.target.value)}
+                          value={config[key] ?? ''}
+                          onChange={(e) => {
+                            handleFieldChange(key, e.target.value)
+                          }}
                           className="bg-muted/20 font-mono text-xs"
                         />
                       </div>
