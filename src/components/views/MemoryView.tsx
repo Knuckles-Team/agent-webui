@@ -16,7 +16,7 @@ interface MemoryNode {
   id: string
   content: string
   importance: number
-  tags: string[]
+  tags?: string[]
   created_at: string
   updated_at: string
   linked_nodes?: string[]
@@ -48,7 +48,7 @@ export default function MemoryView() {
       const res = await fetch('/api/enhanced/graph/nodes?node_type=Memory')
       const data = (await res.json()) as MemoryNode[]
       setMemories(data)
-    } catch (err) {
+    } catch {
       toast.error('Failed to load memories')
     } finally {
       setLoading(false)
@@ -75,7 +75,7 @@ export default function MemoryView() {
       } else {
         toast.error('Failed to create memory')
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to create memory')
     }
   }
@@ -101,7 +101,7 @@ export default function MemoryView() {
       } else {
         toast.error('Failed to update memory')
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to update memory')
     }
   }
@@ -120,7 +120,7 @@ export default function MemoryView() {
       } else {
         toast.error('Failed to delete memory')
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to delete memory')
     }
   }
@@ -142,7 +142,7 @@ export default function MemoryView() {
       id: memory.id,
       content: memory.content,
       importance: memory.importance,
-      tags: memory.tags || [],
+      tags: memory.tags ?? [],
     })
     setIsEditDialogOpen(true)
   }
@@ -151,7 +151,7 @@ export default function MemoryView() {
     (memory) =>
       memory.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
       memory.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (memory.tags || []).some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase())),
+      (memory.tags ?? []).some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase())),
   )
 
   const sortedMemories = [...filteredMemories].sort((a, b) => {
@@ -174,7 +174,12 @@ export default function MemoryView() {
           <p className="text-muted-foreground text-sm">Manage knowledge graph memory nodes</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void fetchMemories()}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              void fetchMemories()
+            }}
+          >
             Refresh
           </Button>
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
@@ -195,7 +200,9 @@ export default function MemoryView() {
                 setTagInput={setTagInput}
                 onAddTag={handleAddTag}
                 onRemoveTag={handleRemoveTag}
-                onSubmit={handleCreateMemory}
+                onSubmit={() => {
+                  void handleCreateMemory()
+                }}
                 submitLabel="Create Memory"
               />
             </DialogContent>
@@ -219,7 +226,9 @@ export default function MemoryView() {
                 placeholder="Search memories..."
                 className="pl-9"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                }}
               />
             </div>
           </div>
@@ -237,7 +246,9 @@ export default function MemoryView() {
                     'cursor-pointer transition-all hover:shadow-md',
                     selectedMemory?.id === memory.id ? 'ring-2 ring-primary' : '',
                   )}
-                  onClick={() => setSelectedMemory(memory)}
+                  onClick={() => {
+                    setSelectedMemory(memory)
+                  }}
                 >
                   <CardHeader>
                     <div className="flex items-start justify-between">
@@ -284,15 +295,15 @@ export default function MemoryView() {
                         <span className="text-xs font-medium">{(memory.importance * 100).toFixed(0)}%</span>
                       </div>
                       <div className="flex flex-wrap gap-1">
-                        {(memory.tags || []).slice(0, 3).map((tag) => (
+                        {(memory.tags ?? []).slice(0, 3).map((tag) => (
                           <Badge key={tag} variant="secondary" className="text-xs">
                             <Tag className="size-2 mr-1" />
                             {tag}
                           </Badge>
                         ))}
-                        {(memory.tags || []).length > 3 && (
+                        {(memory.tags ?? []).length > 3 && (
                           <Badge variant="secondary" className="text-xs">
-                            +{(memory.tags || []).length - 3}
+                            +{(memory.tags ?? []).length - 3}
                           </Badge>
                         )}
                       </div>
@@ -314,7 +325,9 @@ export default function MemoryView() {
                   <div className="absolute left-[-26px] w-4 h-4 rounded-full bg-primary border-2 border-background" />
                   <Card
                     className="cursor-pointer hover:shadow-md transition-all"
-                    onClick={() => setSelectedMemory(memory)}
+                    onClick={() => {
+                      setSelectedMemory(memory)
+                    }}
                   >
                     <CardHeader>
                       <div className="flex items-start justify-between">
@@ -356,11 +369,18 @@ export default function MemoryView() {
                     placeholder="Search memories..."
                     className="pl-9"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value)
+                    }}
                   />
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setSearchQuery('')}>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSearchQuery('')
+                    }}
+                  >
                     Clear
                   </Button>
                   <Button
@@ -381,7 +401,9 @@ export default function MemoryView() {
               <Card
                 key={memory.id}
                 className="cursor-pointer hover:shadow-md transition-all"
-                onClick={() => setSelectedMemory(memory)}
+                onClick={() => {
+                  setSelectedMemory(memory)
+                }}
               >
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-4">
@@ -391,7 +413,7 @@ export default function MemoryView() {
                         <Badge variant="outline" className="text-xs">
                           {(memory.importance * 100).toFixed(0)}%
                         </Badge>
-                        {(memory.tags || []).slice(0, 2).map((tag) => (
+                        {(memory.tags ?? []).slice(0, 2).map((tag) => (
                           <Badge key={tag} variant="secondary" className="text-xs">
                             {tag}
                           </Badge>
@@ -411,7 +433,12 @@ export default function MemoryView() {
 
       {/* Memory Detail Dialog */}
       {selectedMemory && (
-        <Dialog open={!!selectedMemory} onOpenChange={() => setSelectedMemory(null)}>
+        <Dialog
+          open={!!selectedMemory}
+          onOpenChange={() => {
+            setSelectedMemory(null)
+          }}
+        >
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Memory Details</DialogTitle>
@@ -440,7 +467,7 @@ export default function MemoryView() {
                 <div>
                   <label className="text-sm font-medium">Tags</label>
                   <div className="flex flex-wrap gap-2 mt-1">
-                    {(selectedMemory.tags || []).map((tag) => (
+                    {(selectedMemory.tags ?? []).map((tag) => (
                       <Badge key={tag} variant="secondary">
                         <Tag className="size-2 mr-1" />
                         {tag}
@@ -488,7 +515,9 @@ export default function MemoryView() {
             setTagInput={setTagInput}
             onAddTag={handleAddTag}
             onRemoveTag={handleRemoveTag}
-            onSubmit={handleUpdateMemory}
+            onSubmit={() => {
+              void handleUpdateMemory()
+            }}
             submitLabel="Update Memory"
           />
         </DialogContent>
@@ -508,7 +537,7 @@ function MemoryForm({
   submitLabel,
 }: {
   form: { id: string; content: string; importance: number; tags: string[] }
-  setForm: (form: any) => void
+  setForm: (form: { id: string; content: string; importance: number; tags: string[] }) => void
   tagInput: string
   setTagInput: (value: string) => void
   onAddTag: () => void
@@ -522,7 +551,9 @@ function MemoryForm({
         <label className="text-sm font-medium">Content</label>
         <Textarea
           value={form.content}
-          onChange={(e) => setForm({ ...form, content: e.target.value })}
+          onChange={(e) => {
+            setForm({ ...form, content: e.target.value })
+          }}
           placeholder="Memory content..."
           rows={4}
         />
@@ -531,7 +562,9 @@ function MemoryForm({
         <label className="text-sm font-medium">Importance</label>
         <Select
           value={(form.importance * 100).toString()}
-          onValueChange={(value) => setForm({ ...form, importance: parseInt(value) / 100 })}
+          onValueChange={(value) => {
+            setForm({ ...form, importance: parseInt(value) / 100 })
+          }}
         >
           <SelectTrigger>
             <SelectValue />
@@ -551,7 +584,9 @@ function MemoryForm({
         <div className="flex gap-2 mt-1">
           <Input
             value={tagInput}
-            onChange={(e) => setTagInput(e.target.value)}
+            onChange={(e) => {
+              setTagInput(e.target.value)
+            }}
             placeholder="Add tag..."
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -568,7 +603,13 @@ function MemoryForm({
           {form.tags.map((tag) => (
             <Badge key={tag} variant="secondary" className="gap-1">
               {tag}
-              <button type="button" onClick={() => onRemoveTag(tag)} className="hover:text-destructive">
+              <button
+                type="button"
+                onClick={() => {
+                  onRemoveTag(tag)
+                }}
+                className="hover:text-destructive"
+              >
                 ×
               </button>
             </Badge>
