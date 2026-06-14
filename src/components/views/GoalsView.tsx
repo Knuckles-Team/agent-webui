@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type MouseEvent } from 'react'
 import {
   Compass,
   Play,
@@ -65,14 +65,16 @@ export default function GoalsView() {
   const [showConfig, setShowConfig] = useState(false)
   const [launching, setLaunching] = useState(false)
 
-  const [expandedSteps, setExpandedSteps] = useState<Record<number, boolean>>({})
+  const [expandedSteps, setExpandedSteps] = useState<Record<number, boolean | undefined>>({})
 
   useEffect(() => {
     void fetchGoals()
     const interval = setInterval(() => {
       void fetchGoals(true)
     }, 4000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+    }
   }, [])
 
   useEffect(() => {
@@ -81,7 +83,9 @@ export default function GoalsView() {
       const interval = setInterval(() => {
         void fetchGoalIterations(selectedGoalId, true)
       }, 2000)
-      return () => clearInterval(interval)
+      return () => {
+        clearInterval(interval)
+      }
     }
   }, [selectedGoalId])
 
@@ -107,7 +111,7 @@ export default function GoalsView() {
         const data = (await res.json()) as GoalRun
         setSelectedGoal(data)
         // Auto-expand new iterations
-        if (data.iterations && data.iterations.length > 0) {
+        if (data.iterations.length > 0) {
           const lastIdx = data.iterations.length
           setExpandedSteps((prev) => ({
             ...prev,
@@ -155,7 +159,7 @@ export default function GoalsView() {
     }
   }
 
-  const handleCancelGoal = async (goalId: string, e: React.MouseEvent) => {
+  const handleCancelGoal = async (goalId: string, e: MouseEvent) => {
     e.stopPropagation()
     try {
       const res = await fetch(`/api/enhanced/goals/${goalId}/cancel`, { method: 'POST' })
@@ -213,7 +217,9 @@ export default function GoalsView() {
               <Textarea
                 placeholder="Describe exactly what needs to be solved (e.g., 'Fix the styling alignment of the main sidebar and run pytest validations')"
                 value={objective}
-                onChange={(e) => setObjective(e.target.value)}
+                onChange={(e) => {
+                  setObjective(e.target.value)
+                }}
                 className="min-h-[90px] text-xs bg-muted/20 border-border/40"
               />
             </div>
@@ -222,7 +228,9 @@ export default function GoalsView() {
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => setShowConfig(!showConfig)}
+              onClick={() => {
+                setShowConfig(!showConfig)
+              }}
               className="w-full justify-between px-2 text-xs border border-border/20 hover:bg-muted/40 h-8"
             >
               <span className="flex items-center gap-1 text-muted-foreground font-mono">
@@ -244,7 +252,9 @@ export default function GoalsView() {
                         variant="ghost"
                         size="sm"
                         className="h-full px-2"
-                        onClick={() => setMaxIterations(Math.max(1, maxIterations - 5))}
+                        onClick={() => {
+                          setMaxIterations(Math.max(1, maxIterations - 5))
+                        }}
                       >
                         <Minus className="size-3" />
                       </Button>
@@ -254,7 +264,9 @@ export default function GoalsView() {
                         variant="ghost"
                         size="sm"
                         className="h-full px-2"
-                        onClick={() => setMaxIterations(Math.min(100, maxIterations + 5))}
+                        onClick={() => {
+                          setMaxIterations(Math.min(100, maxIterations + 5))
+                        }}
                       >
                         <Plus className="size-3" />
                       </Button>
@@ -266,7 +278,9 @@ export default function GoalsView() {
                     <Input
                       placeholder="e.g. pytest"
                       value={validationCmd}
-                      onChange={(e) => setValidationCmd(e.target.value)}
+                      onChange={(e) => {
+                        setValidationCmd(e.target.value)
+                      }}
                       className="text-xs bg-muted/20 border-border/40 font-mono h-9"
                     />
                   </div>
@@ -280,7 +294,9 @@ export default function GoalsView() {
                     <Input
                       placeholder="Add rule constraint..."
                       value={newConstraint}
-                      onChange={(e) => setNewConstraint(e.target.value)}
+                      onChange={(e) => {
+                        setNewConstraint(e.target.value)
+                      }}
                       className="text-xs bg-muted/20 border-border/40 h-8"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -303,7 +319,9 @@ export default function GoalsView() {
                         >
                           <span className="truncate pr-2">{c}</span>
                           <button
-                            onClick={() => handleRemoveConstraint(i)}
+                            onClick={() => {
+                              handleRemoveConstraint(i)
+                            }}
                             className="text-destructive hover:opacity-80 transition-opacity"
                           >
                             ×
@@ -319,7 +337,9 @@ export default function GoalsView() {
 
           <CardFooter className="bg-muted/5 border-t border-border/20 pt-4 flex justify-end">
             <Button
-              onClick={handleLaunchGoal}
+              onClick={() => {
+                void handleLaunchGoal()
+              }}
               disabled={launching || !objective.trim()}
               className="bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5 px-4 shadow-sm"
             >
@@ -347,7 +367,9 @@ export default function GoalsView() {
               goals.map((g) => (
                 <div
                   key={g.goal_id}
-                  onClick={() => setSelectedGoalId(g.goal_id)}
+                  onClick={() => {
+                    setSelectedGoalId(g.goal_id)
+                  }}
                   className={cn(
                     'p-4 cursor-pointer hover:bg-muted/20 transition-all flex flex-col gap-2',
                     selectedGoalId === g.goal_id && 'bg-primary/5 hover:bg-primary/10 border-l-2 border-primary',
@@ -401,7 +423,7 @@ export default function GoalsView() {
                   <span>Goal: {selectedGoalId.slice(0, 8)}...</span>
                 </CardTitle>
                 <CardDescription className="text-xs font-mono mt-0.5">
-                  Session Link: {selectedGoal?.session_id || 'none'}
+                  Session Link: {selectedGoal?.session_id ?? 'none'}
                 </CardDescription>
               </div>
 
@@ -409,7 +431,9 @@ export default function GoalsView() {
                 <Button
                   size="sm"
                   variant="destructive"
-                  onClick={(e) => handleCancelGoal(selectedGoalId, e)}
+                  onClick={(e) => {
+                    void handleCancelGoal(selectedGoalId, e)
+                  }}
                   className="h-8 gap-1.5"
                 >
                   <XCircle className="size-4" />
@@ -445,7 +469,7 @@ export default function GoalsView() {
 
                 {/* Vertical Timeline Steps */}
                 <div className="relative border-l-2 border-border/20 ml-3 space-y-6">
-                  {selectedGoal?.iterations?.map((step) => (
+                  {selectedGoal?.iterations.map((step) => (
                     <div key={step.iteration} className="relative pl-6">
                       {/* Timeline Dot Indicator */}
                       <span
@@ -461,7 +485,9 @@ export default function GoalsView() {
 
                       {/* Timeline Step Header */}
                       <div
-                        onClick={() => toggleStepExpand(step.iteration)}
+                        onClick={() => {
+                          toggleStepExpand(step.iteration)
+                        }}
                         className="flex items-center justify-between gap-4 cursor-pointer hover:bg-muted/5 p-2 rounded transition-all"
                       >
                         <div className="flex items-center gap-3">
