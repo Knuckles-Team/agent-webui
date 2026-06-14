@@ -62,7 +62,7 @@ function normalizePhases(phases: PipelineStatus['phases']): PipelinePhase[] {
   if (Array.isArray(phases)) return phases
   return Object.entries(phases).map(([name, info]) => ({
     name,
-    ...(info ?? {}),
+    ...info,
   }))
 }
 
@@ -71,12 +71,12 @@ function normalizeOperations(operations: MaintenanceStatus['operations']): Maint
   if (Array.isArray(operations)) return operations
   return Object.entries(operations).map(([name, info]) => ({
     name,
-    ...(info ?? {}),
+    ...info,
   }))
 }
 
 function formatProgress(progress: number | undefined): string {
-  if (progress === undefined || progress === null) return '-'
+  if (progress === undefined) return '-'
   if (progress <= 1) return `${(progress * 100).toFixed(0)}%`
   return String(progress)
 }
@@ -169,7 +169,7 @@ export default function OpsPanelView() {
   }
 
   const triggerPipelinePhase = async (phase?: string) => {
-    const label = phase || 'full pipeline'
+    const label = phase ?? 'full pipeline'
     setPendingTrigger(`pipeline:${phase ?? '__all__'}`)
     try {
       const res = await fetch('/api/enhanced/pipeline/trigger', {
@@ -188,7 +188,7 @@ export default function OpsPanelView() {
   }
 
   const triggerMaintenance = async (operation?: string) => {
-    const label = operation || 'full maintenance'
+    const label = operation ?? 'full maintenance'
     setPendingTrigger(`maintenance:${operation ?? '__all__'}`)
     try {
       const res = await fetch('/api/enhanced/maintenance/trigger', {
@@ -223,7 +223,7 @@ export default function OpsPanelView() {
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const spawned = (await res.json()) as CallableResource
-      const label = spawned.name || spawned.id || 'new agent'
+      const label = spawned.name ?? spawned.id ?? 'new agent'
       toast.success(`Spawned: ${label}`)
       setIsSpawnOpen(false)
       setSpawnForm({ name: '', agent_type: 'specialist', task: '' })
@@ -250,7 +250,12 @@ export default function OpsPanelView() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => {
+          setActiveTab(v as typeof activeTab)
+        }}
+      >
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="pipeline" className="gap-2">
             <Activity className="size-4" />
@@ -276,11 +281,24 @@ export default function OpsPanelView() {
                 </CardDescription>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => void fetchPipeline()} disabled={loadingPipeline}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void fetchPipeline()
+                  }}
+                  disabled={loadingPipeline}
+                >
                   <RefreshCw className={loadingPipeline ? 'size-4 animate-spin' : 'size-4'} />
                   <span className="ml-2">Refresh</span>
                 </Button>
-                <Button size="sm" onClick={() => void triggerPipelinePhase()} disabled={pendingTrigger !== null}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    void triggerPipelinePhase()
+                  }}
+                  disabled={pendingTrigger !== null}
+                >
                   <Play className="size-4 mr-2" />
                   Run All
                 </Button>
@@ -305,13 +323,13 @@ export default function OpsPanelView() {
                     </thead>
                     <tbody>
                       {phases.map((phase, idx) => {
-                        const phaseName = phase.name || phase.phase || `phase-${idx}`
+                        const phaseName = phase.name ?? phase.phase ?? `phase-${idx}`
                         const phaseKey = `pipeline:${phaseName}`
                         return (
                           <tr key={phaseKey} className="border-t">
                             <td className="p-2 font-medium">{phaseName}</td>
                             <td className="p-2">
-                              <StateBadge state={phase.state || phase.status} />
+                              <StateBadge state={phase.state ?? phase.status} />
                             </td>
                             <td className="p-2 text-muted-foreground">
                               {phase.last_run ? (
@@ -328,7 +346,9 @@ export default function OpsPanelView() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => void triggerPipelinePhase(phaseName)}
+                                onClick={() => {
+                                  void triggerPipelinePhase(phaseName)
+                                }}
                                 disabled={pendingTrigger === phaseKey}
                               >
                                 <Play className="size-3 mr-1" />
@@ -358,7 +378,9 @@ export default function OpsPanelView() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => void fetchMaintenance()}
+                onClick={() => {
+                  void fetchMaintenance()
+                }}
                 disabled={loadingMaintenance}
               >
                 <RefreshCw className={loadingMaintenance ? 'size-4 animate-spin' : 'size-4'} />
@@ -374,7 +396,9 @@ export default function OpsPanelView() {
                       key={op}
                       variant="outline"
                       size="sm"
-                      onClick={() => void triggerMaintenance(op)}
+                      onClick={() => {
+                        void triggerMaintenance(op)
+                      }}
                       disabled={pendingTrigger === key}
                     >
                       <Play className="size-3 mr-1" />
@@ -400,11 +424,11 @@ export default function OpsPanelView() {
                     </thead>
                     <tbody>
                       {operations.map((op, idx) => {
-                        const opName = op.name || op.operation || `op-${idx}`
+                        const opName = op.name ?? op.operation ?? `op-${idx}`
                         return (
                           <tr key={`row-${opName}`} className="border-t">
                             <td className="p-2 font-medium">{opName}</td>
-                            <td className="p-2 text-muted-foreground">{op.last_run || '-'}</td>
+                            <td className="p-2 text-muted-foreground">{op.last_run ?? '-'}</td>
                             <td className="p-2">{op.items_pruned ?? '-'}</td>
                             <td className="p-2">{op.items_updated ?? '-'}</td>
                           </tr>
@@ -426,11 +450,23 @@ export default function OpsPanelView() {
                 <CardDescription>MCP tools, A2A agents, skills, and spawned specialists</CardDescription>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => void fetchResources()} disabled={loadingResources}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void fetchResources()
+                  }}
+                  disabled={loadingResources}
+                >
                   <RefreshCw className={loadingResources ? 'size-4 animate-spin' : 'size-4'} />
                   <span className="ml-2">Refresh</span>
                 </Button>
-                <Button size="sm" onClick={() => setIsSpawnOpen(true)}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setIsSpawnOpen(true)
+                  }}
+                >
                   <Sparkles className="size-4 mr-2" />
                   Spawn
                 </Button>
@@ -453,17 +489,17 @@ export default function OpsPanelView() {
                     </thead>
                     <tbody>
                       {resources.map((resource, idx) => {
-                        const resourceKey = resource.id || resource.name || `resource-${idx}`
+                        const resourceKey = resource.id ?? resource.name ?? `resource-${idx}`
                         return (
                           <tr key={resourceKey} className="border-t">
                             <td className="p-2">
                               <Badge variant="secondary" className="gap-1">
                                 <Server className="size-3" />
-                                {resource.type || resource.resource_type || 'unknown'}
+                                {resource.type ?? resource.resource_type ?? 'unknown'}
                               </Badge>
                             </td>
-                            <td className="p-2 font-medium">{resource.name || resource.id || '-'}</td>
-                            <td className="p-2 text-muted-foreground">{resource.description || '-'}</td>
+                            <td className="p-2 font-medium">{resource.name ?? resource.id ?? '-'}</td>
+                            <td className="p-2 text-muted-foreground">{resource.description ?? '-'}</td>
                           </tr>
                         )
                       })}
@@ -484,7 +520,9 @@ export default function OpsPanelView() {
                   <label className="text-sm font-medium">Name (optional)</label>
                   <Input
                     value={spawnForm.name}
-                    onChange={(e) => setSpawnForm({ ...spawnForm, name: e.target.value })}
+                    onChange={(e) => {
+                      setSpawnForm({ ...spawnForm, name: e.target.value })
+                    }}
                     placeholder="research-specialist"
                   />
                 </div>
@@ -492,7 +530,9 @@ export default function OpsPanelView() {
                   <label className="text-sm font-medium">Agent Type</label>
                   <Input
                     value={spawnForm.agent_type}
-                    onChange={(e) => setSpawnForm({ ...spawnForm, agent_type: e.target.value })}
+                    onChange={(e) => {
+                      setSpawnForm({ ...spawnForm, agent_type: e.target.value })
+                    }}
                     placeholder="specialist"
                   />
                 </div>
@@ -500,16 +540,29 @@ export default function OpsPanelView() {
                   <label className="text-sm font-medium">Task</label>
                   <Textarea
                     value={spawnForm.task}
-                    onChange={(e) => setSpawnForm({ ...spawnForm, task: e.target.value })}
+                    onChange={(e) => {
+                      setSpawnForm({ ...spawnForm, task: e.target.value })
+                    }}
                     placeholder="Describe the task this agent should handle"
                     rows={4}
                   />
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setIsSpawnOpen(false)} disabled={spawnSubmitting}>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsSpawnOpen(false)
+                    }}
+                    disabled={spawnSubmitting}
+                  >
                     Cancel
                   </Button>
-                  <Button onClick={() => void spawnAgent()} disabled={spawnSubmitting || !spawnForm.task.trim()}>
+                  <Button
+                    onClick={() => {
+                      void spawnAgent()
+                    }}
+                    disabled={spawnSubmitting || !spawnForm.task.trim()}
+                  >
                     <Sparkles className="size-4 mr-2" />
                     Spawn
                   </Button>
