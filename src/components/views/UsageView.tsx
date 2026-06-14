@@ -11,7 +11,7 @@
  * chart library.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Activity, BarChart3, Coins, Cpu, RefreshCw, Search, Wrench } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -32,8 +32,8 @@ import {
 } from '@/lib/api'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const fmtUsd = (n: number) => `$${(n ?? 0).toFixed(2)}`
-const fmtNum = (n: number) => ((n ?? 0) >= 1000 ? `${((n ?? 0) / 1000).toFixed(1)}k` : String(n ?? 0))
+const fmtUsd = (n: number) => `$${n.toFixed(2)}`
+const fmtNum = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
 
 function Kpi({ label, value, icon: Icon }: { label: string; value: string; icon: typeof Coins }) {
   return (
@@ -119,7 +119,7 @@ function Heatmap({ cells }: { cells: UsageActivityCell[] }) {
   )
 }
 
-function Empty({ children }: { children: React.ReactNode }) {
+function Empty({ children }: { children: ReactNode }) {
   return <div className="py-8 text-center text-sm text-muted-foreground">{children}</div>
 }
 
@@ -164,7 +164,7 @@ export default function UsageView() {
   }, [])
 
   useEffect(() => {
-    refresh()
+    void refresh()
   }, [refresh])
 
   const runSearch = useCallback(async () => {
@@ -187,7 +187,14 @@ export default function UsageView() {
             Token usage, cost, and metrics across every agent + our own runtime.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            void refresh()
+          }}
+          disabled={loading}
+        >
           <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
@@ -328,7 +335,9 @@ export default function UsageView() {
                       <tr
                         key={s.id}
                         className="cursor-pointer border-t hover:bg-muted/50"
-                        onClick={() => openDetail(s.id)}
+                        onClick={() => {
+                          void openDetail(s.id)
+                        }}
                       >
                         <td className="py-1.5 font-mono text-xs">{s.project || '—'}</td>
                         <td className="py-1.5">
@@ -365,10 +374,18 @@ export default function UsageView() {
                 <Input
                   placeholder="Search…"
                   value={searchQ}
-                  onChange={(e) => setSearchQ(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && runSearch()}
+                  onChange={(e) => {
+                    setSearchQ(e.target.value)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void runSearch()
+                  }}
                 />
-                <Button onClick={runSearch}>
+                <Button
+                  onClick={() => {
+                    void runSearch()
+                  }}
+                >
                   <Search className="mr-2 h-4 w-4" />
                   Search
                 </Button>
@@ -377,7 +394,9 @@ export default function UsageView() {
                 <div
                   key={`${h.session_id}-${h.ordinal}-${i}`}
                   className="cursor-pointer rounded border p-2 text-sm hover:bg-muted/50"
-                  onClick={() => openDetail(h.session_id)}
+                  onClick={() => {
+                    void openDetail(h.session_id)
+                  }}
                 >
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Badge variant="outline" className="text-[10px]">
@@ -420,7 +439,12 @@ export default function UsageView() {
         )}
       </Tabs>
 
-      <Sheet open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
+      <Sheet
+        open={!!detail}
+        onOpenChange={(o) => {
+          if (!o) setDetail(null)
+        }}
+      >
         <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
           {detail && (
             <>
@@ -450,7 +474,7 @@ export default function UsageView() {
                     <div className="flex flex-wrap gap-1">
                       {detail.tool_calls.map((tc, i) => (
                         <Badge key={i} variant="outline" className="text-[10px]">
-                          {tc.skill_name || tc.tool_name} ({tc.category})
+                          {tc.skill_name ?? tc.tool_name} ({tc.category})
                         </Badge>
                       ))}
                     </div>
