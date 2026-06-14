@@ -73,7 +73,7 @@ interface ToolsData {
 interface LiveMCPTool {
   name: string
   description: string
-  input_schema: any
+  input_schema: Record<string, unknown>
   enabled: boolean
 }
 
@@ -90,9 +90,9 @@ export default function SkillsView() {
   const [activeTab, setActiveTab] = useState<'mcp' | 'builtin' | 'cognitive'>('mcp')
 
   // Track expanded MCP servers and their loaded tools
-  const [expandedMcp, setExpandedMcp] = useState<Record<string, boolean>>({})
-  const [mcpTools, setMcpTools] = useState<Record<string, LiveMCPTool[]>>({})
-  const [loadingMcpTools, setLoadingMcpTools] = useState<Record<string, boolean>>({})
+  const [expandedMcp, setExpandedMcp] = useState<Record<string, boolean | undefined>>({})
+  const [mcpTools, setMcpTools] = useState<Record<string, LiveMCPTool[] | undefined>>({})
+  const [loadingMcpTools, setLoadingMcpTools] = useState<Record<string, boolean | undefined>>({})
 
   useEffect(() => {
     void fetchTools()
@@ -108,7 +108,7 @@ export default function SkillsView() {
       }
       const json = (await res.json()) as ToolsData
       setData(json)
-    } catch (err) {
+    } catch {
       toast.error('Failed to connect to backend tools registry')
     } finally {
       setLoading(false)
@@ -262,7 +262,9 @@ export default function SkillsView() {
                 <Input
                   placeholder="Search catalog..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value)
+                  }}
                   className="pl-9 h-9 bg-muted/20"
                 />
               </div>
@@ -270,7 +272,9 @@ export default function SkillsView() {
                 variant="outline"
                 size="icon"
                 className="h-9 w-9 shrink-0"
-                onClick={() => void fetchTools()}
+                onClick={() => {
+                  void fetchTools()
+                }}
                 disabled={loading}
               >
                 <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
@@ -292,7 +296,9 @@ export default function SkillsView() {
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => {
+                  setActiveTab(tab.id as 'mcp' | 'builtin' | 'cognitive')
+                }}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all border ${
                   activeTab === tab.id
                     ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold'
@@ -326,7 +332,7 @@ export default function SkillsView() {
                       <div className="grid grid-cols-1 gap-4">
                         {filteredMcp.map((server) => {
                           const isExpanded = !!expandedMcp[server.name]
-                          const serverTools = mcpTools[server.name] || []
+                          const serverTools = mcpTools[server.name] ?? []
                           const isLoadingTools = !!loadingMcpTools[server.name]
 
                           return (
@@ -348,7 +354,9 @@ export default function SkillsView() {
                                       {server.enabled ? 'Active' : 'Disabled'}
                                     </Badge>
                                     <button
-                                      onClick={() => void handleToggleMcpServer(server.name, server.enabled)}
+                                      onClick={() => {
+                                        void handleToggleMcpServer(server.name, server.enabled)
+                                      }}
                                       className={`px-2.5 py-1 rounded text-xs font-bold transition-all border ${
                                         server.enabled
                                           ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
@@ -381,7 +389,9 @@ export default function SkillsView() {
                               {server.enabled && (
                                 <div className="mt-4 border-t border-border/20 pt-3">
                                   <button
-                                    onClick={() => toggleMcpExpansion(server.name)}
+                                    onClick={() => {
+                                      toggleMcpExpansion(server.name)
+                                    }}
                                     className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground transition-all"
                                   >
                                     <Sliders className="size-3.5 text-teal-400" />
@@ -424,9 +434,9 @@ export default function SkillsView() {
                                                 )}
                                               </div>
                                               <button
-                                                onClick={() =>
+                                                onClick={() => {
                                                   void handleToggleMcpTool(server.name, tool.name, tool.enabled)
-                                                }
+                                                }}
                                                 className={`px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 border transition-all ${
                                                   tool.enabled
                                                     ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
@@ -477,7 +487,9 @@ export default function SkillsView() {
                                   <h4 className="font-bold text-sm text-foreground">{tool.name}</h4>
                                 </div>
                                 <button
-                                  onClick={() => void handleToggleBuiltin(tool.name, tool.enabled)}
+                                  onClick={() => {
+                                    void handleToggleBuiltin(tool.name, tool.enabled)
+                                  }}
                                   className={`px-2 py-0.75 rounded text-[10px] font-bold border transition-all ${
                                     tool.enabled
                                       ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
@@ -540,7 +552,9 @@ export default function SkillsView() {
                                 <div className="flex items-start justify-between gap-2">
                                   <span className="font-bold text-xs text-foreground">{skill.name}</span>
                                   <button
-                                    onClick={() => void handleToggleCognitive('skill', skill.id, skill.enabled)}
+                                    onClick={() => {
+                                      void handleToggleCognitive('skill', skill.id, skill.enabled)
+                                    }}
                                     className={`px-1.5 py-0.5 rounded text-[9px] font-bold border shrink-0 transition-all ${
                                       skill.enabled
                                         ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
@@ -551,9 +565,9 @@ export default function SkillsView() {
                                   </button>
                                 </div>
                                 <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">
-                                  {skill.description || 'No description available.'}
+                                  {skill.description ?? 'No description available.'}
                                 </p>
-                                {skill.tags && skill.tags.length > 0 && (
+                                {skill.tags.length > 0 && (
                                   <div className="flex flex-wrap gap-1">
                                     {skill.tags.slice(0, 3).map((t) => (
                                       <Badge
@@ -601,7 +615,9 @@ export default function SkillsView() {
                                 <div className="flex items-start justify-between gap-2">
                                   <span className="font-bold text-xs text-foreground">{graph.name}</span>
                                   <button
-                                    onClick={() => void handleToggleCognitive('skill_graph', graph.id, graph.enabled)}
+                                    onClick={() => {
+                                      void handleToggleCognitive('skill_graph', graph.id, graph.enabled)
+                                    }}
                                     className={`px-1.5 py-0.5 rounded text-[9px] font-bold border shrink-0 transition-all ${
                                       graph.enabled
                                         ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
@@ -649,7 +665,9 @@ export default function SkillsView() {
                                 <div className="flex items-start justify-between gap-2">
                                   <span className="font-bold text-xs text-foreground">{wf.name}</span>
                                   <button
-                                    onClick={() => void handleToggleCognitive('skill_workflow', wf.id, wf.enabled)}
+                                    onClick={() => {
+                                      void handleToggleCognitive('skill_workflow', wf.id, wf.enabled)
+                                    }}
                                     className={`px-1.5 py-0.5 rounded text-[9px] font-bold border shrink-0 transition-all ${
                                       wf.enabled
                                         ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
