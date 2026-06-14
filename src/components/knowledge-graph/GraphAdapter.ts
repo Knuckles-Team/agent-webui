@@ -3,7 +3,7 @@ import Graph from 'graphology'
 export interface GraphNode {
   id: string
   labels: string[]
-  properties: Record<string, any>
+  properties: Record<string, unknown>
 }
 
 export interface GraphRelationship {
@@ -90,7 +90,7 @@ export const knowledgeGraphToGraphology = (
       y,
       size: 15,
       color: getNodeColor(mainLabel),
-      label: node.properties.name || node.id.substring(0, 10),
+      label: typeof node.properties.name === 'string' ? node.properties.name : node.id.substring(0, 10),
       nodeType: mainLabel,
       mass: getNodeMass(mainLabel),
     })
@@ -104,7 +104,7 @@ export const knowledgeGraphToGraphology = (
       y: (Math.random() - 0.5) * spread * 0.5,
       size: 8,
       color: getNodeColor(mainLabel),
-      label: node.properties.name || node.id.substring(0, 10),
+      label: typeof node.properties.name === 'string' ? node.properties.name : node.id.substring(0, 10),
       nodeType: mainLabel,
       mass: getNodeMass(mainLabel),
     })

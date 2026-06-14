@@ -43,7 +43,12 @@ const SweView = () => {
     sourceRef.current = null
   }, [])
 
-  useEffect(() => () => closeStream(), [closeStream])
+  useEffect(
+    () => () => {
+      closeStream()
+    },
+    [closeStream],
+  )
 
   const startSession = async () => {
     setBusy(true)
@@ -56,7 +61,7 @@ const SweView = () => {
       const es = new EventSource(api.sweEventsUrl(res.session_id))
       es.onmessage = (e) => {
         try {
-          setEvents((prev) => [...prev, JSON.parse(e.data) as StreamEvent])
+          setEvents((prev) => [...prev, JSON.parse(e.data as string) as StreamEvent])
         } catch {
           /* ignore malformed frames */
         }
@@ -126,15 +131,33 @@ const SweView = () => {
             <>
               <Badge variant="secondary">session {sessionId}</Badge>
               <Badge>{backend}</Badge>
-              <Button variant="destructive" size="sm" onClick={() => void stopSession()}>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => {
+                  void stopSession()
+                }}
+              >
                 <Square className="mr-1 h-4 w-4" /> Stop
               </Button>
-              <Button variant="outline" size="sm" onClick={() => void loadProvenance()}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void loadProvenance()
+                }}
+              >
                 <GitBranch className="mr-1 h-4 w-4" /> Load provenance
               </Button>
             </>
           ) : (
-            <Button size="sm" onClick={() => void startSession()} disabled={busy}>
+            <Button
+              size="sm"
+              onClick={() => {
+                void startSession()
+              }}
+              disabled={busy}
+            >
               {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Play className="mr-1 h-4 w-4" />}
               Start session
             </Button>
@@ -154,7 +177,13 @@ const SweView = () => {
             }}
             placeholder="shell command, e.g. git clone … && pytest -q"
           />
-          <Button size="sm" onClick={() => void sendCommand()} disabled={busy || !command.trim()}>
+          <Button
+            size="sm"
+            onClick={() => {
+              void sendCommand()
+            }}
+            disabled={busy || !command.trim()}
+          >
             <Send className="mr-1 h-4 w-4" /> Run
           </Button>
         </div>

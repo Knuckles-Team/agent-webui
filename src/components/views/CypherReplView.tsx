@@ -71,7 +71,9 @@ function CypherResultRow({ row, index }: CypherResultRowProps) {
     <div className="rounded border">
       <button
         type="button"
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => {
+          setExpanded(!expanded)
+        }}
         className="w-full flex items-center justify-between p-2 text-left text-sm hover:bg-muted/50"
       >
         <span className="flex items-center gap-2 min-w-0">
@@ -136,10 +138,10 @@ export default function CypherReplView() {
         return
       }
 
-      const data = await res.json()
+      const data: unknown = await res.json()
       const rows: Record<string, unknown>[] = Array.isArray(data)
         ? (data as Record<string, unknown>[])
-        : Array.isArray((data as { results?: unknown })?.results)
+        : Array.isArray((data as { results?: unknown }).results)
           ? (data as { results: Record<string, unknown>[] }).results
           : []
       setResults(rows)
@@ -225,7 +227,12 @@ export default function CypherReplView() {
                   Default: <span className="font-mono text-xs">{DEFAULT_QUERY}</span>
                 </CardDescription>
               </div>
-              <Button onClick={() => void runQuery()} disabled={loading}>
+              <Button
+                onClick={() => {
+                  void runQuery()
+                }}
+                disabled={loading}
+              >
                 {loading ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Play className="size-4 mr-2" />}
                 Run
               </Button>
@@ -234,7 +241,9 @@ export default function CypherReplView() {
               <Textarea
                 aria-label="Cypher query"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                }}
                 rows={8}
                 className="font-mono text-sm"
                 spellCheck={false}
@@ -308,7 +317,9 @@ export default function CypherReplView() {
                     <button
                       type="button"
                       key={`${entry.timestamp}-${idx}`}
-                      onClick={() => loadHistoryEntry(entry)}
+                      onClick={() => {
+                        loadHistoryEntry(entry)
+                      }}
                       className={'w-full text-left rounded border p-2 ' + 'hover:bg-muted/50 transition-colors'}
                     >
                       <div className={'flex items-center justify-between ' + 'text-xs text-muted-foreground mb-1'}>

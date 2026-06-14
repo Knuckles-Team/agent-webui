@@ -49,7 +49,9 @@ export default function DashboardSettings({
 }: DashboardSettingsProps) {
   const [isOpen, setIsOpen] = useState(false)
 
-  const toggle = useCallback(() => setIsOpen((p) => !p), [])
+  const toggle = useCallback(() => {
+    setIsOpen((p) => !p)
+  }, [])
 
   return (
     <>
@@ -106,7 +108,9 @@ export default function DashboardSettings({
                     return (
                       <button
                         key={t.id}
-                        onClick={() => onThemeChange(t.id)}
+                        onClick={() => {
+                          onThemeChange(t.id)
+                        }}
                         className={cn(
                           'flex flex-col items-center gap-1.5 p-3 rounded-xl',
                           'border transition-all duration-200',
@@ -130,7 +134,9 @@ export default function DashboardSettings({
                   {COLUMN_OPTIONS.map((n) => (
                     <button
                       key={n}
-                      onClick={() => onColumnsChange(n)}
+                      onClick={() => {
+                        onColumnsChange(n)
+                      }}
                       className={cn(
                         'flex-1 py-2 rounded-lg text-sm font-medium',
                         'border transition-all duration-200',
@@ -152,7 +158,9 @@ export default function DashboardSettings({
                   {CARD_SIZES.map((s) => (
                     <button
                       key={s.id}
-                      onClick={() => onCardSizeChange(s.id)}
+                      onClick={() => {
+                        onCardSizeChange(s.id)
+                      }}
                       className={cn(
                         'flex-1 py-2 rounded-lg text-sm font-medium',
                         'border transition-all duration-200',
@@ -174,7 +182,9 @@ export default function DashboardSettings({
                   {REFRESH_OPTIONS.map((sec) => (
                     <button
                       key={sec}
-                      onClick={() => onRefreshIntervalChange(sec)}
+                      onClick={() => {
+                        onRefreshIntervalChange(sec)
+                      }}
                       className={cn(
                         'flex-1 py-2 rounded-lg text-sm font-medium',
                         'border transition-all duration-200',

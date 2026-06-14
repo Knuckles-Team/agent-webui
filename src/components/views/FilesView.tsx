@@ -119,7 +119,7 @@ function normalizeFiles(raw: unknown): FileEntry[] {
 async function extractErrorMessage(res: Response, fallback: string): Promise<string> {
   try {
     const body = (await res.json()) as ErrorResponse
-    if (body && typeof body.detail === 'string') return body.detail
+    if (typeof body.detail === 'string') return body.detail
   } catch {
     // ignore — response wasn't JSON
   }
@@ -324,7 +324,15 @@ export default function FilesView() {
               <CardDescription>Managed files in your agent workspace</CardDescription>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => void fetchFiles()} disabled={loading} title="Refresh">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void fetchFiles()
+                }}
+                disabled={loading}
+                title="Refresh"
+              >
                 <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
               </Button>
               <Button variant="outline" size="sm" onClick={() => uploadInputRef.current?.click()} disabled={uploading}>
@@ -385,7 +393,9 @@ export default function FilesView() {
                         <button
                           type="button"
                           className="flex items-center gap-2 text-left hover:text-primary transition-colors w-full"
-                          onClick={() => void handlePreview(file.name)}
+                          onClick={() => {
+                            void handlePreview(file.name)
+                          }}
                         >
                           <FileText className="size-4 shrink-0 text-muted-foreground" />
                           <span className="truncate font-medium">{file.name}</span>
@@ -403,7 +413,9 @@ export default function FilesView() {
                             variant="ghost"
                             size="icon"
                             className="size-8"
-                            onClick={() => void handlePreview(file.name)}
+                            onClick={() => {
+                              void handlePreview(file.name)
+                            }}
                             title="Preview"
                           >
                             <Eye className="size-4" />
@@ -472,7 +484,13 @@ export default function FilesView() {
                       <X className="size-4 mr-1" />
                       Cancel
                     </Button>
-                    <Button size="sm" onClick={() => void handleSaveEdit()} disabled={saving}>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        void handleSaveEdit()
+                      }}
+                      disabled={saving}
+                    >
                       <Save className="size-4 mr-1" />
                       {saving ? 'Saving…' : 'Save'}
                     </Button>
@@ -585,7 +603,12 @@ export default function FilesView() {
             >
               Cancel
             </Button>
-            <Button onClick={() => void handleCreateFile()} disabled={saving}>
+            <Button
+              onClick={() => {
+                void handleCreateFile()
+              }}
+              disabled={saving}
+            >
               {saving ? 'Saving…' : 'Create'}
             </Button>
           </DialogFooter>

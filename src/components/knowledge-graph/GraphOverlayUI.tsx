@@ -4,9 +4,9 @@ import type { GraphNode } from './GraphAdapter'
 interface GraphOverlayUIProps {
   selectedNode: GraphNode | null
   onClose: () => void
-  onSave: (properties: any) => void
+  onSave: (properties: Record<string, unknown>) => void
   onDelete: () => void
-  onAddNode: (labels: string[], properties: any) => void
+  onAddNode: (labels: string[], properties: Record<string, unknown>) => void
 }
 
 export const GraphOverlayUI: React.FC<GraphOverlayUIProps> = ({
@@ -22,7 +22,7 @@ export const GraphOverlayUI: React.FC<GraphOverlayUIProps> = ({
 
   useEffect(() => {
     if (selectedNode) {
-      setEditName(selectedNode.properties.name || selectedNode.id)
+      setEditName(typeof selectedNode.properties.name === 'string' ? selectedNode.properties.name : selectedNode.id)
       setEditLabel(selectedNode.labels[0] || 'KnowledgeBase')
       setIsAdding(false)
     }
@@ -64,7 +64,9 @@ export const GraphOverlayUI: React.FC<GraphOverlayUIProps> = ({
         <label className="text-xs text-slate-400 uppercase tracking-wider">Node Type (Label)</label>
         <select
           value={editLabel}
-          onChange={(e) => setEditLabel(e.target.value)}
+          onChange={(e) => {
+            setEditLabel(e.target.value)
+          }}
           disabled={!isAdding}
           className="bg-slate-900 border border-slate-700 rounded px-3 py-2 disabled:opacity-50"
         >
@@ -84,7 +86,9 @@ export const GraphOverlayUI: React.FC<GraphOverlayUIProps> = ({
         <input
           type="text"
           value={editName}
-          onChange={(e) => setEditName(e.target.value)}
+          onChange={(e) => {
+            setEditName(e.target.value)
+          }}
           className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white"
         />
       </div>
