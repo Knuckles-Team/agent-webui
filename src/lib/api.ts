@@ -307,6 +307,18 @@ export interface SweProvenanceAction {
   obs_summary?: string
 }
 
+/** A GPU-slot fact-extraction job row from /api/enhanced/extract/* (KG-2.65). */
+export interface ExtractionJob {
+  job_id: string
+  state: string
+  kind?: string
+  total_facts?: number
+  unique_facts?: number
+  duplicate_facts?: number
+  preempted?: boolean
+  user_held?: boolean
+}
+
 /** A (workspace-action -> Code symbol) MUTATED edge from the provenance graph (KG-2.64). */
 export interface SweMutatedEdge {
   action_id: string
@@ -427,10 +439,13 @@ class ApiClient {
     dedup_field?: string
     dedup_threshold?: number
   }) => this.post<{ status: string; job_id?: string; message?: string }>('/api/enhanced/extract/submit', payload)
-  listExtractionJobs = () => this.get<{ status: string; jobs: any[] }>('/api/enhanced/extract/jobs')
-  getExtractionStatus = (jobId: string) => this.get<any>(`/api/enhanced/extract/status/${encodeURIComponent(jobId)}`)
-  pauseExtraction = (jobId: string) => this.post<any>(`/api/enhanced/extract/pause/${encodeURIComponent(jobId)}`, {})
-  resumeExtraction = (jobId: string) => this.post<any>(`/api/enhanced/extract/resume/${encodeURIComponent(jobId)}`, {})
+  listExtractionJobs = () => this.get<{ status: string; jobs: ExtractionJob[] }>('/api/enhanced/extract/jobs')
+  getExtractionStatus = (jobId: string) =>
+    this.get<ExtractionJob>(`/api/enhanced/extract/status/${encodeURIComponent(jobId)}`)
+  pauseExtraction = (jobId: string) =>
+    this.post<{ status: string; job_id: string }>(`/api/enhanced/extract/pause/${encodeURIComponent(jobId)}`, {})
+  resumeExtraction = (jobId: string) =>
+    this.post<{ status: string; job_id: string }>(`/api/enhanced/extract/resume/${encodeURIComponent(jobId)}`, {})
   /** SSE URL for streaming a job's extraction events (round_start|fact|…|job_done). */
   extractionStreamUrl = (jobId: string) => `${this.baseUrl}/api/enhanced/extract/stream/${encodeURIComponent(jobId)}`
   /** Download URL for a job's facts as JSONL (upstream parity). */
