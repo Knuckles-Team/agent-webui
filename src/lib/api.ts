@@ -446,21 +446,26 @@ class ApiClient {
     this.post<{ run_id: string; report: SweBenchReport; remediation: unknown }>('/api/swebench/run', body)
 
   // Memory Methods
-  getGraphNodes = (type?: string) => this.get<any[]>(`/api/enhanced/graph/nodes${type ? `?node_type=${type}` : ''}`)
-  addMemory = (data: any) => this.post<any>('/api/enhanced/graph/memory', data)
-  updateMemory = (id: string, data: any) => this.post<any>(`/api/enhanced/graph/memory/${id}`, data) // Using POST for update based on test mock or component? Actually component uses PUT.
+  getGraphNodes = (type?: string) =>
+    this.get<unknown[]>(`/api/enhanced/graph/nodes${type ? `?node_type=${type}` : ''}`)
+  addMemory = (data: unknown) => this.post<unknown>('/api/enhanced/graph/memory', data)
+  updateMemory = (id: string, data: unknown) => this.post<unknown>(`/api/enhanced/graph/memory/${id}`, data) // Using POST for update based on test mock or component? Actually component uses PUT.
   deleteMemory = (id: string) => this.delete(`/api/enhanced/graph/memory/${id}`)
 
   // Knowledge Base Methods
-  listKnowledgeBases = () => this.get<any[]>('/api/enhanced/kb')
-  searchKnowledgeBase = (id: string, query: string) => this.get<any[]>(`/api/enhanced/kb/${id}/search?q=${query}`)
-  getKBArticle = (kbId: string, articleId: string) => this.get<any>(`/api/enhanced/kb/${kbId}/article/${articleId}`)
-  ingestKnowledgeBase = (data: any) => this.post<any>('/api/enhanced/kb/ingest', data)
-  runKBHealthCheck = (id: string) => this.get<any>(`/api/enhanced/kb/${id}/health`)
+  listKnowledgeBases = () => this.get<unknown[]>('/api/enhanced/kb')
+  searchKnowledgeBase = (id: string, query: string) => this.get<unknown[]>(`/api/enhanced/kb/${id}/search?q=${query}`)
+  getKBArticle = (kbId: string, articleId: string) =>
+    this.get<unknown>(`/api/enhanced/kb/${kbId}/article/${articleId}`)
+  ingestKnowledgeBase = (data: unknown) => this.post<unknown>('/api/enhanced/kb/ingest', data)
+  runKBHealthCheck = (id: string) => this.get<unknown>(`/api/enhanced/kb/${id}/health`)
 
   // Graph Methods
-  getGraphStats = () => this.get<any>('/api/enhanced/graph/stats')
-  getGraphRelationships = () => this.get<any[]>('/api/enhanced/graph/relationships')
+  getGraphStats = () =>
+    this.get<{ total_nodes: number; total_relationships: number; by_type: Record<string, number> }>(
+      '/api/enhanced/graph/stats',
+    )
+  getGraphRelationships = () => this.get<unknown[]>('/api/enhanced/graph/relationships')
 
   // Document → knowledge-graph fact extraction (ECO-4.43; KG-2.64/2.65/2.66)
   submitExtraction = (payload: {
@@ -703,8 +708,8 @@ class ApiClient {
   killFleet = (target: { domain?: string; session_ids?: string[] }) =>
     this.post<FleetActionResult>('/api/fleet/kill', target)
   getFleetApprovals = () => this.get<{ pending: unknown[] }>('/api/fleet/approvals')
-  grantFleetApproval = (job_id: string, decision: string) =>
-    this.post<unknown>('/api/fleet/approvals/grant', { job_id, decision })
+  grantFleetApproval = (jobId: string, decision: string) =>
+    this.post<unknown>('/api/fleet/approvals/grant', { job_id: jobId, decision })
 
   // Usage / cost / observability (CONCEPT:ECO-4.41) — assimilated agentsview.
   // One surface over both ingested agent logs and our own runtime telemetry.
@@ -794,7 +799,7 @@ export interface UsageSessionRow {
 }
 export interface UsageSessionDetail {
   session: UsageSessionRow
-  messages: Array<{
+  messages: {
     ordinal: number
     role: string
     content: string
@@ -802,15 +807,15 @@ export interface UsageSessionDetail {
     context_tokens: number
     output_tokens: number
     has_tool_use: boolean
-  }>
-  tool_calls: Array<{
+  }[]
+  tool_calls: {
     message_ordinal?: number
     tool_name: string
     category: string
     skill_name?: string
     status: string
-  }>
-  usage_events: Array<{ model: string; input_tokens: number; output_tokens: number; cost_usd?: number }>
+  }[]
+  usage_events: { model: string; input_tokens: number; output_tokens: number; cost_usd?: number }[]
 }
 export interface UsageSearchHit {
   session_id: string
@@ -823,7 +828,7 @@ export interface UsageSearchHit {
 export interface UsageTraces {
   enabled: boolean
   host: string
-  traces: Array<{ session_id: string; project: string; url: string }>
+  traces: { session_id: string; project: string; url: string }[]
 }
 
 export interface FleetDomainHealth {
