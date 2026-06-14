@@ -18,9 +18,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { toast } from 'sonner'
 
-type MagmaView = 'semantic' | 'temporal' | 'causal' | 'entity' | 'place' | 'epistemic'
+type MagmaViewKind = 'semantic' | 'temporal' | 'causal' | 'entity' | 'place' | 'epistemic'
 
-const MAGMA_VIEWS: { value: MagmaView; label: string; description: string }[] = [
+const MAGMA_VIEWS: { value: MagmaViewKind; label: string; description: string }[] = [
   { value: 'semantic', label: 'Semantic', description: 'Vector similarity search.' },
   { value: 'temporal', label: 'Temporal', description: 'Episodic memory over time.' },
   { value: 'causal', label: 'Causal', description: 'Reasoning traces and "why" links.' },
@@ -49,7 +49,7 @@ interface MagmaGrouped {
 function groupByView(results: MagmaResult[], fallbackView: string): MagmaGrouped[] {
   const buckets = new Map<string, MagmaResult[]>()
   for (const item of results) {
-    const view = String(item.view ?? fallbackView)
+    const view = item.view ?? fallbackView
     const existing = buckets.get(view) ?? []
     existing.push(item)
     buckets.set(view, existing)
@@ -59,7 +59,7 @@ function groupByView(results: MagmaResult[], fallbackView: string): MagmaGrouped
 
 export default function MagmaView() {
   const [query, setQuery] = useState('')
-  const [viewType, setViewType] = useState<MagmaView>('semantic')
+  const [viewType, setViewType] = useState<MagmaViewKind>('semantic')
   const [limit, setLimit] = useState(10)
   const [loading, setLoading] = useState(false)
   const [grouped, setGrouped] = useState<MagmaGrouped[]>([])
@@ -92,7 +92,7 @@ export default function MagmaView() {
         throw new Error(`HTTP ${res.status}: ${text}`)
       }
       const data = (await res.json()) as MagmaResult[] | { results?: MagmaResult[] }
-      const flat: MagmaResult[] = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : []
+      const flat: MagmaResult[] = Array.isArray(data) ? data : Array.isArray(data.results) ? data.results : []
       setGrouped(groupByView(flat, viewType))
       setLastQuery(trimmed)
       if (flat.length === 0) {
@@ -132,7 +132,9 @@ export default function MagmaView() {
             <Textarea
               id="magma-query"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value)
+              }}
               placeholder="e.g. Find all reasoning traces about authentication failures"
               rows={4}
             />
@@ -143,7 +145,12 @@ export default function MagmaView() {
               <label className="text-sm font-medium" htmlFor="magma-view-type">
                 View Type
               </label>
-              <Select value={viewType} onValueChange={(v) => setViewType(v as MagmaView)}>
+              <Select
+                value={viewType}
+                onValueChange={(v) => {
+                  setViewType(v as MagmaViewKind)
+                }}
+              >
                 <SelectTrigger id="magma-view-type" aria-label="Perspective view type">
                   <SelectValue placeholder="Select a view" />
                 </SelectTrigger>
@@ -170,13 +177,20 @@ export default function MagmaView() {
                 min={1}
                 max={200}
                 value={limit}
-                onChange={(e) => setLimit(Number(e.target.value))}
+                onChange={(e) => {
+                  setLimit(Number(e.target.value))
+                }}
               />
             </div>
           </div>
 
           <div className="flex justify-end">
-            <Button onClick={() => void runQuery()} disabled={loading}>
+            <Button
+              onClick={() => {
+                void runQuery()
+              }}
+              disabled={loading}
+            >
               {loading ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Play className="size-4 mr-2" />}
               Run Query
             </Button>
@@ -216,7 +230,7 @@ export default function MagmaView() {
                       return (
                         <div key={itemId} className="rounded border p-3 text-sm space-y-1">
                           <div className="flex items-center justify-between">
-                            <span className="font-mono text-xs text-muted-foreground">{String(item.id ?? '-')}</span>
+                            <span className="font-mono text-xs text-muted-foreground">{item.id ?? '-'}</span>
                             {typeof item.score === 'number' && (
                               <Badge variant="outline">{item.score.toFixed(3)}</Badge>
                             )}
