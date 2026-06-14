@@ -7,7 +7,7 @@
  * fetching, WebSocket streaming, and full customization support.
  */
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
@@ -75,7 +75,7 @@ interface DashboardLayout {
 
 /* ── Icon Map ────────────────────────────────────────────────────── */
 
-const ICON_MAP: Record<string, React.ReactNode> = {
+const ICON_MAP: Record<string, ReactNode | undefined> = {
   container: <Container className="size-5" />,
   activity: <Activity className="size-5" />,
   globe: <Globe className="size-5" />,
@@ -161,8 +161,8 @@ function WidgetBlock({
 /* ── Widget Card Component ───────────────────────────────────────── */
 
 function WidgetCard({ service, data, isLoading }: { service: ServiceConfig; data?: WidgetData; isLoading: boolean }) {
-  const icon = ICON_MAP[service.icon] || <LayoutGrid className="size-5" />
-  const status = data?.status || 'unknown'
+  const icon = ICON_MAP[service.icon] ?? <LayoutGrid className="size-5" />
+  const status = data?.status ?? 'unknown'
 
   const statusColor = {
     ok: 'bg-emerald-500',
@@ -204,7 +204,9 @@ function WidgetCard({ service, data, isLoading }: { service: ServiceConfig; data
               target="_blank"
               rel="noopener noreferrer"
               className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+              }}
             >
               <ExternalLink className="size-3.5" />
             </a>
@@ -224,14 +226,14 @@ function WidgetCard({ service, data, isLoading }: { service: ServiceConfig; data
           </div>
         ) : data?.status === 'error' ? (
           <div className="flex items-center justify-center py-3 w-full text-xs text-red-400/80">
-            {data.error || 'Connection failed'}
+            {data.error ?? 'Connection failed'}
           </div>
         ) : data ? (
           Object.entries(data.fields).map(([key, value]) => (
             <WidgetBlock
               key={key}
               label={key.replace(/_/g, ' ')}
-              value={value as number | string | boolean}
+              value={value}
               highlight={key === 'running' || key === 'stopped' || key === 'up' || key === 'down' || key === 'failed'}
             />
           ))
@@ -268,13 +270,15 @@ function ServiceGroupSection({
 }) {
   const [collapsed, setCollapsed] = useState(group.collapsed)
 
-  const visibleServices = group.services.filter((s) => s.visible !== false)
+  const visibleServices = group.services.filter((s) => s.visible)
 
   return (
     <div className="mb-6">
       <button
         className="flex items-center gap-2 mb-3 group/header cursor-pointer"
-        onClick={() => setCollapsed(!collapsed)}
+        onClick={() => {
+          setCollapsed(!collapsed)
+        }}
       >
         {collapsed ? (
           <ChevronRight className="size-4 text-muted-foreground" />
@@ -347,7 +351,7 @@ export default function DashboardView() {
 
         ws.onmessage = (event) => {
           try {
-            const msg = JSON.parse(event.data)
+            const msg = JSON.parse(event.data as string) as { type?: string; data?: Record<string, WidgetData> }
             if (msg.type === 'update' || msg.type === 'snapshot') {
               queryClient.setQueryData(
                 ['dashboard-full'],
@@ -355,7 +359,7 @@ export default function DashboardView() {
                   if (!old) return old
                   return {
                     ...old,
-                    data: { ...old.data, ...msg.data },
+                    data: { ...old.data, ...(msg.data ?? {}) },
                   }
                 },
               )
@@ -403,7 +407,7 @@ export default function DashboardView() {
             s.category.toLowerCase().includes(searchQuery.toLowerCase()),
         ),
       }))
-      .filter((g) => g.services.length > 0) || []
+      .filter((g) => g.services.length > 0) ?? []
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -422,7 +426,9 @@ export default function DashboardView() {
               type="text"
               placeholder="Search services..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+              }}
               className="h-8 w-56 rounded-lg border border-border/50 bg-background/50 pl-8 pr-3 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-all"
             />
           </div>
@@ -444,7 +450,9 @@ export default function DashboardView() {
 
           {/* Refresh */}
           <button
-            onClick={() => refetch()}
+            onClick={() => {
+              void refetch()
+            }}
             className="p-1.5 rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
             title="Refresh all"
           >
@@ -467,7 +475,7 @@ export default function DashboardView() {
 
       {/* Dashboard Content */}
       <div className="flex-1 overflow-auto p-6">
-        {isLoading && !dashboardData ? (
+        {isLoading ? (
           <div className="flex flex-col items-center justify-center h-full gap-4">
             <div className="relative">
               <div className="size-12 rounded-full border-2 border-primary/20 animate-pulse" />
@@ -486,7 +494,7 @@ export default function DashboardView() {
             <ServiceGroupSection
               key={group.name}
               group={group}
-              data={dashboardData?.data || {}}
+              data={dashboardData?.data ?? {}}
               isLoading={isLoading}
             />
           ))
