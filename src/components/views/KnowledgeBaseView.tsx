@@ -19,6 +19,12 @@ interface KnowledgeBase {
   last_updated: string
 }
 
+interface KbHealthResult {
+  health_status?: string
+  issues?: string[]
+  recommendations?: string[]
+}
+
 interface Article {
   id: string
   title: string
@@ -38,7 +44,7 @@ export default function KnowledgeBaseView() {
   const [isIngestDialogOpen, setIsIngestDialogOpen] = useState(false)
   const [ingestForm, setIngestForm] = useState({ kb_id: '', source: '', name: '' })
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null)
-  const [healthResults, setHealthResults] = useState<any>(null)
+  const [healthResults, setHealthResults] = useState<KbHealthResult | null>(null)
 
   useEffect(() => {
     void fetchKnowledgeBases()
@@ -59,7 +65,7 @@ export default function KnowledgeBaseView() {
       if (data.length > 0 && !selectedKB) {
         setSelectedKB(data[0])
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to load knowledge bases')
     } finally {
       setLoading(false)
@@ -71,7 +77,7 @@ export default function KnowledgeBaseView() {
       const res = await fetch(`/api/enhanced/kb/search?query=&kb_id=${kbId}`)
       const data = (await res.json()) as Article[]
       setArticles(data)
-    } catch (err) {
+    } catch {
       toast.error('Failed to load articles')
     }
   }
@@ -91,7 +97,7 @@ export default function KnowledgeBaseView() {
       } else {
         toast.error('Failed to start ingestion')
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to ingest knowledge base')
     }
   }
@@ -103,10 +109,10 @@ export default function KnowledgeBaseView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kb_id: kbId }),
       })
-      const data = await res.json()
+      const data = (await res.json()) as KbHealthResult
       setHealthResults(data)
       setActiveTab('health')
-    } catch (err) {
+    } catch {
       toast.error('Failed to run health check')
     }
   }
@@ -136,7 +142,12 @@ export default function KnowledgeBaseView() {
           <p className="text-muted-foreground text-sm">Manage knowledge bases and articles</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void fetchKnowledgeBases()}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              void fetchKnowledgeBases()
+            }}
+          >
             <RefreshCw className="size-4" />
           </Button>
           <Dialog open={isIngestDialogOpen} onOpenChange={setIsIngestDialogOpen}>
@@ -155,7 +166,9 @@ export default function KnowledgeBaseView() {
                   <label className="text-sm font-medium">Knowledge Base ID</label>
                   <Input
                     value={ingestForm.kb_id}
-                    onChange={(e) => setIngestForm({ ...ingestForm, kb_id: e.target.value })}
+                    onChange={(e) => {
+                      setIngestForm({ ...ingestForm, kb_id: e.target.value })
+                    }}
                     placeholder="e.g., pydantic-ai-docs"
                   />
                 </div>
@@ -163,7 +176,9 @@ export default function KnowledgeBaseView() {
                   <label className="text-sm font-medium">Name</label>
                   <Input
                     value={ingestForm.name}
-                    onChange={(e) => setIngestForm({ ...ingestForm, name: e.target.value })}
+                    onChange={(e) => {
+                      setIngestForm({ ...ingestForm, name: e.target.value })
+                    }}
                     placeholder="Knowledge Base Name"
                   />
                 </div>
@@ -171,11 +186,18 @@ export default function KnowledgeBaseView() {
                   <label className="text-sm font-medium">Source Path</label>
                   <Input
                     value={ingestForm.source}
-                    onChange={(e) => setIngestForm({ ...ingestForm, source: e.target.value })}
+                    onChange={(e) => {
+                      setIngestForm({ ...ingestForm, source: e.target.value })
+                    }}
                     placeholder="/path/to/docs"
                   />
                 </div>
-                <Button onClick={handleIngest} className="w-full">
+                <Button
+                  onClick={() => {
+                    void handleIngest()
+                  }}
+                  className="w-full"
+                >
                   Start Ingestion
                 </Button>
               </div>
@@ -201,7 +223,9 @@ export default function KnowledgeBaseView() {
                 placeholder="Search knowledge bases..."
                 className="pl-9"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                }}
               />
             </div>
           </div>
@@ -219,7 +243,9 @@ export default function KnowledgeBaseView() {
                     'cursor-pointer transition-all hover:shadow-md',
                     selectedKB?.id === kb.id ? 'ring-2 ring-primary' : '',
                   )}
-                  onClick={() => setSelectedKB(kb)}
+                  onClick={() => {
+                    setSelectedKB(kb)
+                  }}
                 >
                   <CardHeader>
                     <div className="flex items-start justify-between">
@@ -304,7 +330,9 @@ export default function KnowledgeBaseView() {
                     placeholder="Search articles..."
                     className="pl-9"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value)
+                    }}
                   />
                 </div>
                 <Badge variant="outline">{selectedKB.name}</Badge>
@@ -320,7 +348,9 @@ export default function KnowledgeBaseView() {
                     <Card
                       key={article.id}
                       className="cursor-pointer hover:shadow-md transition-all"
-                      onClick={() => setSelectedArticle(article)}
+                      onClick={() => {
+                        setSelectedArticle(article)
+                      }}
                     >
                       <CardHeader>
                         <div className="flex items-start justify-between">
@@ -416,7 +446,13 @@ export default function KnowledgeBaseView() {
             </Card>
           ) : (
             <div className="text-center">
-              <Button onClick={() => void handleHealthCheck(selectedKB.id)}>Run Health Check</Button>
+              <Button
+                onClick={() => {
+                  void handleHealthCheck(selectedKB.id)
+                }}
+              >
+                Run Health Check
+              </Button>
             </div>
           )}
         </TabsContent>
@@ -424,7 +460,12 @@ export default function KnowledgeBaseView() {
 
       {/* Article Detail Dialog */}
       {selectedArticle && (
-        <Dialog open={!!selectedArticle} onOpenChange={() => setSelectedArticle(null)}>
+        <Dialog
+          open={!!selectedArticle}
+          onOpenChange={() => {
+            setSelectedArticle(null)
+          }}
+        >
           <DialogContent className="max-w-2xl max-h-[80vh]">
             <DialogHeader>
               <DialogTitle>{selectedArticle.title}</DialogTitle>

@@ -12,7 +12,7 @@ import { GraphCanvas } from '../knowledge-graph/GraphCanvas'
 interface GraphNode {
   id: string
   labels: string[]
-  properties: Record<string, any>
+  properties: Record<string, unknown>
 }
 
 interface GraphRelationship {
@@ -37,13 +37,13 @@ export default function GraphView() {
 
   // Cypher states
   const [cypherQuery, setCypherQuery] = useState('MATCH (n) RETURN n LIMIT 15')
-  const [cypherResults, setCypherResults] = useState<any[] | null>(null)
+  const [cypherResults, setCypherResults] = useState<unknown[] | null>(null)
   const [executingCypher, setExecutingCypher] = useState(false)
 
   // MAGMA states
   const [magmaQuery, setMagmaQuery] = useState('')
   const [magmaView, setMagmaView] = useState<'semantic' | 'structural' | 'temporal' | 'hybrid'>('semantic')
-  const [magmaResults, setMagmaResults] = useState<any[] | null>(null)
+  const [magmaResults, setMagmaResults] = useState<unknown[] | null>(null)
   const [retrievingMagma, setRetrievingMagma] = useState(false)
 
   useEffect(() => {
@@ -74,7 +74,7 @@ export default function GraphView() {
     }
   }
 
-  const handleUpdateNode = (id: string, properties: any) => {
+  const handleUpdateNode = (id: string, properties: Record<string, unknown>) => {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, properties: { ...n.properties, ...properties } } : n)))
   }
 
@@ -83,7 +83,7 @@ export default function GraphView() {
     setRelationships((prev) => prev.filter((e) => e.source !== id && e.target !== id))
   }
 
-  const handleAddNode = (labels: string[], properties: any) => {
+  const handleAddNode = (labels: string[], properties: Record<string, unknown>) => {
     const newNode: GraphNode = {
       id: `node_${Date.now()}`,
       labels,
@@ -106,7 +106,7 @@ export default function GraphView() {
         toast.error(`Cypher Execution Failed: ${errorText}`)
         return
       }
-      const data = await res.json()
+      const data = (await res.json()) as unknown[]
       setCypherResults(data)
       toast.success('Cypher query completed')
     } catch {
@@ -132,7 +132,7 @@ export default function GraphView() {
         toast.error('Failed orthogonal view MAGMA retrieval')
         return
       }
-      const data = await res.json()
+      const data = (await res.json()) as unknown[]
       setMagmaResults(data)
       toast.success('MAGMA orthogonal context retrieved')
     } catch {
@@ -162,7 +162,14 @@ export default function GraphView() {
           <Badge variant="outline" className="h-7 bg-muted/20 border-border/40 text-xs">
             Edges: {stats.total_relationships}
           </Badge>
-          <Button variant="outline" size="sm" onClick={() => void fetchData()} disabled={loading}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void fetchData()
+            }}
+            disabled={loading}
+          >
             <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
         </div>
@@ -217,12 +224,16 @@ export default function GraphView() {
             <CardContent className="flex-1 flex flex-col p-4 gap-4">
               <Textarea
                 value={cypherQuery}
-                onChange={(e) => setCypherQuery(e.target.value)}
+                onChange={(e) => {
+                  setCypherQuery(e.target.value)
+                }}
                 className="flex-1 font-mono text-xs bg-muted/10 border-border/40 p-3 resize-none h-[250px] lg:h-auto"
                 placeholder="MATCH (n) RETURN n LIMIT 10"
               />
               <Button
-                onClick={() => void runCypherQuery()}
+                onClick={() => {
+                  void runCypherQuery()
+                }}
                 disabled={executingCypher}
                 className="bg-emerald-600 hover:bg-emerald-700 w-full"
               >
@@ -276,7 +287,9 @@ export default function GraphView() {
                 <label className="text-xs font-semibold text-muted-foreground">Orthogonal Perspective View</label>
                 <select
                   value={magmaView}
-                  onChange={(e) => setMagmaView(e.target.value as any)}
+                  onChange={(e) => {
+                    setMagmaView(e.target.value as 'semantic' | 'structural' | 'temporal' | 'hybrid')
+                  }}
                   className="w-full h-10 px-3 rounded-md border border-input bg-muted/20 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
                   <option value="semantic" className="bg-background text-foreground">
@@ -297,13 +310,17 @@ export default function GraphView() {
                 <label className="text-xs font-semibold text-muted-foreground">Target Prompt Context / Seed</label>
                 <Textarea
                   value={magmaQuery}
-                  onChange={(e) => setMagmaQuery(e.target.value)}
+                  onChange={(e) => {
+                    setMagmaQuery(e.target.value)
+                  }}
                   className="flex-1 font-mono text-xs bg-muted/10 border-border/40 p-3 resize-none h-[180px] lg:h-auto"
                   placeholder="Enter retrieval keywords or context snippet..."
                 />
               </div>
               <Button
-                onClick={() => void runMagmaRetrieve()}
+                onClick={() => {
+                  void runMagmaRetrieve()
+                }}
                 disabled={retrievingMagma}
                 className="bg-emerald-600 hover:bg-emerald-700 w-full shrink-0"
               >
