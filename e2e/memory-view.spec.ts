@@ -129,7 +129,7 @@ test.describe('MemoryView E2E Tests', () => {
       const deleteButton = memoryCard.locator('button[aria-label*="delete"], button:has-text("Delete")').first()
       if (await deleteButton.isVisible()) {
         // Accept dialog if it appears
-        page.on('dialog', dialog => dialog.accept())
+        page.on('dialog', (dialog) => dialog.accept())
 
         await deleteButton.click()
 

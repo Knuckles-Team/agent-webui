@@ -40,7 +40,9 @@ export default function ChatPanel({ currentView }: ChatPanelProps) {
       }
     }
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
   }, [isOpen])
 
   return (

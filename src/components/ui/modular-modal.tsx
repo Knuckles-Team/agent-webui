@@ -34,7 +34,7 @@ export function ModularModal({ title, description, footer, children, contentClas
           contentClassName,
         )}
       >
-        {(title || description) && (
+        {(title ?? description) && (
           <DialogHeader>
             {title && <DialogTitle>{title}</DialogTitle>}
             {description && <DialogDescription>{description}</DialogDescription>}

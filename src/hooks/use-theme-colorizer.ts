@@ -5,9 +5,9 @@ import { useState, useEffect } from 'react'
  * We store the user's preferred hue and chroma, and apply them to the :root variables
  * ensuring both light and dark modes adapt seamlessly.
  */
-export function useThemeColorizer(defaultBaseColor: string = '0.52 0.18 260') {
+export function useThemeColorizer(defaultBaseColor = '0.52 0.18 260') {
   const [baseColor, setBaseColor] = useState<string>(() => {
-    return localStorage.getItem('pydantic-brand-color') || defaultBaseColor
+    return localStorage.getItem('pydantic-brand-color') ?? defaultBaseColor
   })
 
   useEffect(() => {
