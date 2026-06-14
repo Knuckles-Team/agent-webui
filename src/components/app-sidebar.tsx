@@ -317,7 +317,10 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Swarm supervisor: fleet health, topology & emergency containment (OS-5.10)">
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Swarm supervisor: fleet health, topology & emergency containment (OS-5.10)"
+                >
                   <a
                     href="/fleet"
                     onClick={(e) => {
@@ -509,7 +512,10 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Token usage, cost, and metrics across every agent + our own runtime">
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Token usage, cost, and metrics across every agent + our own runtime"
+                >
                   <a
                     href="/usage"
                     onClick={(e) => {
@@ -518,6 +524,22 @@ export function AppSidebar() {
                   >
                     <Coins className="text-primary" />
                     <span>Usage &amp; Cost</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="KG-grounded SWE agent: workspace runtime, action/observation stream, code-symbol provenance"
+                >
+                  <a
+                    href="/swe"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Wrench className="text-primary" />
+                    <span>SWE Agent</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>

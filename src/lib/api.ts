@@ -297,6 +297,32 @@ export class ApiError extends Error {
   }
 }
 
+/** One action+observation step in a SWE run's KG provenance (OS-5.34). */
+export interface SweProvenanceAction {
+  id: string
+  kind: string
+  step: number
+  summary: string
+  obs_kind?: string
+  obs_summary?: string
+}
+
+/** A (workspace-action -> Code symbol) MUTATED edge from the provenance graph (KG-2.64). */
+export interface SweMutatedEdge {
+  action_id: string
+  symbol_id: string
+}
+
+/** Aggregate SWE-bench report (AHE-3.22). */
+export interface SweBenchReport {
+  total: number
+  resolved: number
+  unresolved: number
+  resolved_rate: number
+  by_repo: Record<string, { total: number; resolved: number }>
+  instances: { instance_id: string; repo: string; resolved: boolean; error: string }[]
+}
+
 /**
  * Internal API client implementation
  */
@@ -357,6 +383,23 @@ class ApiClient {
   listPlans = () => this.get<any[]>('/api/enhanced/sdd/plans')
   getTasks = (planId: string) => this.get<{ tasks: any[] }>(`/api/enhanced/sdd/tasks?plan_id=${planId}`)
   syncSDDToMemory = (data: any) => this.post<any>('/api/enhanced/sdd/sync', data)
+
+  // SWE Developer-Workspace Runtime (OS-5.33 / ORCH-1.46) + SWE-bench (AHE-3.22)
+  createSweSession = (body?: { prefer_docker?: boolean; image?: string; actor?: string }) =>
+    this.post<{ session_id: string; backend: string; workdir: string }>('/api/runtime/sessions', body ?? {})
+  sweAct = (sid: string, action: Record<string, unknown>) =>
+    this.post<Record<string, unknown>>(`/api/runtime/sessions/${sid}/act`, action)
+  sweStatus = (sid: string) =>
+    this.get<{ session_id: string; backend: string; cwd: string; steps: number }>(`/api/runtime/sessions/${sid}`)
+  sweProvenance = (sid: string) =>
+    this.get<{ run_id: string; actions: SweProvenanceAction[]; mutated: SweMutatedEdge[] }>(
+      `/api/runtime/sessions/${sid}/provenance`,
+    )
+  stopSweSession = (sid: string) => this.delete(`/api/runtime/sessions/${sid}`)
+  /** SSE endpoint for the live action/observation event log (consumed via EventSource). */
+  sweEventsUrl = (sid: string) => `${this.baseUrl}/api/runtime/sessions/${sid}/events`
+  runSweBench = (body: { instances: unknown[]; ingest?: boolean; remediate?: boolean }) =>
+    this.post<{ run_id: string; report: SweBenchReport; remediation: unknown }>('/api/swebench/run', body)
 
   // Memory Methods
   getGraphNodes = (type?: string) => this.get<any[]>(`/api/enhanced/graph/nodes${type ? `?node_type=${type}` : ''}`)
@@ -641,17 +684,13 @@ class ApiClient {
   getUsageByProject = (f?: UsageFilters) => this.obs<UsageBreakdown[]>('/by-project', f)
   getUsageByAgent = (f?: UsageFilters) => this.obs<UsageBreakdown[]>('/by-agent', f)
   getUsageTools = (f?: UsageFilters) => this.obs<UsageToolStat[]>('/analytics/tools', f)
-  getUsageActivity = (f?: UsageFilters) =>
-    this.obs<UsageActivityCell[]>('/analytics/activity', f)
-  getUsageSessionShape = (f?: UsageFilters) =>
-    this.obs<UsageSessionShape>('/analytics/session-shape', f)
-  getUsageTopSessions = (f?: UsageFilters) =>
-    this.obs<UsageSessionRow[]>('/top-sessions', f)
+  getUsageActivity = (f?: UsageFilters) => this.obs<UsageActivityCell[]>('/analytics/activity', f)
+  getUsageSessionShape = (f?: UsageFilters) => this.obs<UsageSessionShape>('/analytics/session-shape', f)
+  getUsageTopSessions = (f?: UsageFilters) => this.obs<UsageSessionRow[]>('/top-sessions', f)
   getUsageSessions = (f?: UsageFilters) => this.obs<UsageSessionRow[]>('/sessions', f)
   getUsageSessionDetail = (id: string) =>
     this.get<UsageSessionDetail>(`/api/observability/sessions/${encodeURIComponent(id)}`)
-  getUsageSearch = (q: string) =>
-    this.get<UsageSearchHit[]>(`/api/observability/search?q=${encodeURIComponent(q)}`)
+  getUsageSearch = (q: string) => this.get<UsageSearchHit[]>(`/api/observability/search?q=${encodeURIComponent(q)}`)
   getUsageTraces = () => this.get<UsageTraces>('/api/observability/traces')
 }
 
