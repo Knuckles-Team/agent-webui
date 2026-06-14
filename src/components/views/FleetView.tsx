@@ -36,16 +36,20 @@ export default function FleetView() {
       ])
       if (h) setHealth(h)
       if (t) setTopology(t)
-      setApprovals((a as { pending: unknown[] })?.pending ?? [])
+      setApprovals(a.pending)
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    refresh()
-    const id = setInterval(refresh, REFRESH_MS)
-    return () => clearInterval(id)
+    void refresh()
+    const id = setInterval(() => {
+      void refresh()
+    }, REFRESH_MS)
+    return () => {
+      clearInterval(id)
+    }
   }, [refresh])
 
   const containDomain = async (domain: string, action: 'pause' | 'kill') => {
@@ -53,7 +57,7 @@ export default function FleetView() {
       const fn = action === 'pause' ? api.pauseFleet : api.killFleet
       const res = await fn({ domain })
       toast.success(`${action === 'pause' ? 'Paused' : 'Killed'} ${res.count} session(s) in "${domain}"`)
-      refresh()
+      void refresh()
     } catch (e) {
       toast.error(`Failed to ${action} domain: ${String(e)}`)
     }
@@ -63,7 +67,7 @@ export default function FleetView() {
     try {
       await api.grantFleetApproval(jobId, decision)
       toast.success(`Approval ${decision}`)
-      refresh()
+      void refresh()
     } catch (e) {
       toast.error(`Failed to ${decision}: ${String(e)}`)
     }
@@ -82,7 +86,14 @@ export default function FleetView() {
             Live swarm health, topology, and emergency containment across the enterprise.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            void refresh()
+          }}
+          disabled={loading}
+        >
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </Button>
       </div>
@@ -127,10 +138,22 @@ export default function FleetView() {
                     <span className="text-xs text-muted-foreground">{d.total} total</span>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => containDomain(domain, 'pause')}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        void containDomain(domain, 'pause')
+                      }}
+                    >
                       <PauseCircle className="h-4 w-4 mr-1" /> Pause
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={() => containDomain(domain, 'kill')}>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => {
+                        void containDomain(domain, 'kill')
+                      }}
+                    >
                       <Ban className="h-4 w-4 mr-1" /> Kill
                     </Button>
                   </div>
@@ -164,7 +187,7 @@ export default function FleetView() {
                         }
                         title={`${s.id} · ${s.status}`}
                       >
-                        {s.id?.slice(0, 8)} · {s.status}
+                        {s.id.slice(0, 8)} · {s.status}
                       </Badge>
                     ))}
                   </div>
@@ -191,19 +214,34 @@ export default function FleetView() {
               )}
               {approvals.map((raw, i) => {
                 const item = raw as Record<string, unknown>
-                const jobId = String(item.id ?? item.job_id ?? `job-${i}`)
+                const idVal = item.id ?? item.job_id
+                const jobId = typeof idVal === 'string' ? idVal : `job-${i}`
                 return (
                   <div key={jobId} className="flex items-center justify-between border rounded-md px-3 py-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
                       <span className="font-mono text-xs truncate">{jobId}</span>
-                      <span className="text-sm text-muted-foreground truncate">{String(item.description ?? '')}</span>
+                      <span className="text-sm text-muted-foreground truncate">
+                        {typeof item.description === 'string' ? item.description : ''}
+                      </span>
                     </div>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => grant(jobId, 'approved')}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          void grant(jobId, 'approved')
+                        }}
+                      >
                         Approve
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => grant(jobId, 'denied')}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          void grant(jobId, 'denied')
+                        }}
+                      >
                         Deny
                       </Button>
                     </div>
