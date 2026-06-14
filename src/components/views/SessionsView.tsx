@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type MouseEvent } from 'react'
 import { Trash2, Terminal, Loader2, Send, XCircle, RefreshCw, Database, Cpu, Layers, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
@@ -55,7 +55,9 @@ export default function SessionsView() {
     const interval = setInterval(() => {
       void fetchSessions(true)
     }, 4000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+    }
   }, [])
 
   useEffect(() => {
@@ -64,7 +66,9 @@ export default function SessionsView() {
       const interval = setInterval(() => {
         void fetchSessionDetails(selectedSessionId, true)
       }, 2000)
-      return () => clearInterval(interval)
+      return () => {
+        clearInterval(interval)
+      }
     }
   }, [selectedSessionId, drawerOpen])
 
@@ -100,7 +104,7 @@ export default function SessionsView() {
       if (res.ok) {
         const data = (await res.json()) as Session & { turns: Turn[] }
         setSelectedSession(data)
-        setTurns(data.turns || [])
+        setTurns(data.turns)
       }
     } catch (_err) {
       if (!silent) toast.error('Failed to load session execution turns')
@@ -109,9 +113,9 @@ export default function SessionsView() {
     }
   }
 
-  const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
+  const handleDeleteSession = async (sessionId: string, e: MouseEvent) => {
     e.stopPropagation()
-    if (!confirm('Are you sure you want to permanently delete this agent session from storage?')) return
+    if (!window.confirm('Are you sure you want to permanently delete this agent session from storage?')) return
 
     try {
       const res = await fetch(`/api/enhanced/sessions/${sessionId}`, { method: 'DELETE' })
@@ -130,7 +134,7 @@ export default function SessionsView() {
     }
   }
 
-  const handleCancelSession = async (sessionId: string, e: React.MouseEvent) => {
+  const handleCancelSession = async (sessionId: string, e: MouseEvent) => {
     e.stopPropagation()
     try {
       const res = await fetch(`/api/enhanced/sessions/${sessionId}/cancel`, { method: 'POST' })
@@ -188,7 +192,9 @@ export default function SessionsView() {
         </div>
         <Button
           variant="outline"
-          onClick={() => void fetchSessions()}
+          onClick={() => {
+            void fetchSessions()
+          }}
           disabled={loading}
           className="gap-2 h-9 border-border/40 hover:bg-muted/50"
         >
@@ -274,7 +280,9 @@ export default function SessionsView() {
                     size="sm"
                     variant="ghost"
                     className="size-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/5"
-                    onClick={(e) => handleDeleteSession(sess.id, e)}
+                    onClick={(e) => {
+                      void handleDeleteSession(sess.id, e)
+                    }}
                   >
                     <Trash2 className="size-4" />
                   </Button>
@@ -284,7 +292,9 @@ export default function SessionsView() {
                       size="sm"
                       variant="ghost"
                       className="size-8 p-0 text-muted-foreground hover:text-amber-600 hover:bg-amber-500/5"
-                      onClick={(e) => handleCancelSession(sess.id, e)}
+                      onClick={(e) => {
+                        void handleCancelSession(sess.id, e)
+                      }}
                     >
                       <XCircle className="size-4" />
                     </Button>
@@ -298,7 +308,9 @@ export default function SessionsView() {
                     'gap-1 px-3 shadow-none border border-border/10',
                     sess.needs_input && 'bg-amber-600 hover:bg-amber-700 text-white',
                   )}
-                  onClick={() => handleOpenDrawer(sess)}
+                  onClick={() => {
+                    handleOpenDrawer(sess)
+                  }}
                 >
                   <Terminal className="size-3.5" />
                   <span>Attach Console</span>
@@ -317,7 +329,7 @@ export default function SessionsView() {
             <div className="space-y-1">
               <SheetTitle className="flex items-center gap-2 font-mono text-base font-semibold">
                 <Terminal className="size-5 text-primary" />
-                <span>Console Session: {selectedSession?.title || 'Logs'}</span>
+                <span>Console Session: {selectedSession?.title ?? 'Logs'}</span>
               </SheetTitle>
               <SheetDescription className="text-xs font-mono truncate">ID: {selectedSession?.id}</SheetDescription>
             </div>
@@ -397,7 +409,9 @@ export default function SessionsView() {
                   <Textarea
                     placeholder="Enter reply instructions..."
                     value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
+                    onChange={(e) => {
+                      setReplyText(e.target.value)
+                    }}
                     className="flex-1 min-h-[60px] max-h-[140px] text-xs font-mono bg-muted/40 border-border/40"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
@@ -407,7 +421,9 @@ export default function SessionsView() {
                     }}
                   />
                   <Button
-                    onClick={() => void handleSendReply()}
+                    onClick={() => {
+                      void handleSendReply()
+                    }}
                     disabled={submittingReply || !replyText.trim()}
                     className="bg-amber-600 hover:bg-amber-700 text-white gap-1.5 self-end h-10 px-4"
                   >
