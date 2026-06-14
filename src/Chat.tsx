@@ -40,7 +40,16 @@ import { ApprovalCard } from '@/components/ApprovalCard'
 import { Switch } from '@/components/ui/switch'
 import { useChat, type UIMessage } from '@ai-sdk/react'
 import type { UIDataTypes, UIMessagePart, UITools, ChatStatus } from 'ai'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type SyntheticEvent, type ChangeEvent } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type SyntheticEvent,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from 'react'
 
 import { useQuery } from '@tanstack/react-query'
 import { useThrottle } from '@uidotdev/usehooks'
@@ -160,8 +169,6 @@ interface ModelRegistryPayload {
   default_id: string | null
 }
 
-const ZERO_RATE: ModelRate = { input: 0, output: 0 }
-
 /**
  * Resolve the per-1M-token cost rate for `modelId` by consulting the
  * backend registry. Returns `null` when the id is unknown to the
@@ -172,14 +179,14 @@ const ZERO_RATE: ModelRate = { input: 0, output: 0 }
 function lookupModelRate(modelId: string | undefined, registry: ModelRegistryPayload | undefined): ModelRate | null {
   if (!modelId || !registry) return null
   const byId = registry.models.find((m) => m.id === modelId)
-  if (byId) return byId.cost ?? ZERO_RATE
+  if (byId) return byId.cost
 
   const lowered = modelId.toLowerCase()
   const byProviderModel = registry.models.find((m) => `${m.provider}:${m.model_id}`.toLowerCase() === lowered)
-  if (byProviderModel) return byProviderModel.cost ?? ZERO_RATE
+  if (byProviderModel) return byProviderModel.cost
 
   const byModelId = registry.models.find((m) => m.model_id.toLowerCase() === lowered)
-  if (byModelId) return byModelId.cost ?? ZERO_RATE
+  if (byModelId) return byModelId.cost
 
   return null
 }
@@ -472,20 +479,22 @@ const Chat = () => {
         signal: controller.signal,
       })
         .then((res) => (res.ok ? res.json() : { suggestions: [] }))
-        .then((data) => {
-          if (data && Array.isArray(data.suggestions)) {
+        .then((data: { suggestions?: string[] }) => {
+          if (Array.isArray(data.suggestions)) {
             setSuggestions(data.suggestions)
             setActiveSuggestionIndex(0)
           } else {
             setSuggestions([])
           }
         })
-        .catch((err) => {
-          if (err.name !== 'AbortError') {
+        .catch((err: unknown) => {
+          if (err instanceof Error && err.name !== 'AbortError') {
             console.error('Error fetching autocomplete:', err)
           }
         })
-      return () => controller.abort()
+      return () => {
+        controller.abort()
+      }
     } else {
       setSuggestions([])
     }
@@ -668,7 +677,7 @@ Available commands:
         const newConversationId = `/${nanoid()}`
         let modelMsg = ''
         if (arg) {
-          const list = modelRegistry?.models || configQuery.data?.models || []
+          const list = modelRegistry?.models ?? configQuery.data?.models ?? []
           const matched = list.find(
             (m) => m.id.toLowerCase().includes(arg.toLowerCase()) || m.name.toLowerCase().includes(arg.toLowerCase()),
           )
@@ -701,14 +710,14 @@ Available commands:
 
       case '/model':
         if (!arg) {
-          const currentModelName = modelRegistry?.models.find((m) => m.id === model)?.name || model
+          const currentModelName = modelRegistry?.models.find((m) => m.id === model)?.name ?? model
           const modelsList =
-            (modelRegistry?.models || configQuery.data?.models || [])
+            (modelRegistry?.models ?? configQuery.data?.models ?? [])
               .map((m) => `- \`${m.id}\` (${m.name})`)
               .join('\n') || ''
           assistantReply = `**Active Model:** \`${currentModelName}\` (\`${model}\`)\n\n**Available Models:**\n${modelsList}`
         } else {
-          const list = modelRegistry?.models || configQuery.data?.models || []
+          const list = modelRegistry?.models ?? configQuery.data?.models ?? []
           const matched = list.find(
             (m) => m.id.toLowerCase().includes(arg.toLowerCase()) || m.name.toLowerCase().includes(arg.toLowerCase()),
           )
@@ -729,7 +738,7 @@ Available commands:
         } else {
           const normalized = arg.toLowerCase()
           if (normalized === 'ask' || normalized === 'plan' || normalized === 'code') {
-            setMode(normalized as AgentMode)
+            setMode(normalized)
             assistantReply = `🔄 Interaction mode switched to **${normalized}**.`
           } else {
             assistantReply = `❌ Invalid mode \`${arg}\`. Valid options are: \`ask\`, \`plan\`, \`code\`.`
@@ -741,15 +750,15 @@ Available commands:
         try {
           const res = await fetch('/api/enhanced/system')
           if (res.ok) {
-            const data = await res.json()
+            const data = (await res.json()) as { system_prompt?: string }
             assistantReply = `### 🤖 Active Agent System Prompt\n\n\`\`\`markdown\n${
-              data.system_prompt || 'No system prompt found.'
+              data.system_prompt ?? 'No system prompt found.'
             }\n\`\`\``
           } else {
             assistantReply = `❌ Failed to fetch active system prompt from agent server.`
           }
-        } catch (e: any) {
-          assistantReply = `❌ Error retrieving system prompt: ${e.message}`
+        } catch (e) {
+          assistantReply = `❌ Error retrieving system prompt: ${e instanceof Error ? e.message : String(e)}`
         }
         break
 
@@ -758,31 +767,31 @@ Available commands:
           try {
             const res = await fetch('/api/enhanced/prompts')
             if (res.ok) {
-              const list = await res.json()
-              const items = list.map((p: any) => `- \`${p.name}\`: **${p.title}**`).join('\n')
+              const list = (await res.json()) as { name: string; title: string }[]
+              const items = list.map((p) => `- \`${p.name}\`: **${p.title}**`).join('\n')
               assistantReply = `### 📝 Registered Prompt Profiles\n\n${
                 items || 'No prompt profiles found.'
               }\n\n*Use \`/prompt [name]\` to view a specific profile.*`
             } else {
               assistantReply = `❌ Failed to load prompts list.`
             }
-          } catch (e: any) {
-            assistantReply = `❌ Error loading prompts: ${e.message}`
+          } catch (e) {
+            assistantReply = `❌ Error loading prompts: ${e instanceof Error ? e.message : String(e)}`
           }
         } else {
           try {
             const res = await fetch(`/api/enhanced/prompts/${arg}`)
             if (res.ok) {
-              const data = await res.json()
+              const data = (await res.json()) as { title?: string; goal?: string; core_directive?: string }
               assistantReply =
-                `### 📝 Prompt Profile: **${data.title || arg}** (\`${arg}.json\`)\n\n` +
-                `**Goal:** ${data.goal || 'No goal specified.'}\n\n` +
-                `#### Core Directive:\n\`\`\`markdown\n${data.core_directive || 'No directive.'}\n\`\`\``
+                `### 📝 Prompt Profile: **${data.title ?? arg}** (\`${arg}.json\`)\n\n` +
+                `**Goal:** ${data.goal ?? 'No goal specified.'}\n\n` +
+                `#### Core Directive:\n\`\`\`markdown\n${data.core_directive ?? 'No directive.'}\n\`\`\``
             } else {
               assistantReply = `❌ Prompt profile \`${arg}\` not found.`
             }
-          } catch (e: any) {
-            assistantReply = `❌ Error loading prompt: ${e.message}`
+          } catch (e) {
+            assistantReply = `❌ Error loading prompt: ${e instanceof Error ? e.message : String(e)}`
           }
         }
         break
@@ -795,11 +804,14 @@ Available commands:
             body: JSON.stringify({ command: trimmed }),
           })
           if (res.ok) {
-            const data = await res.json()
-            assistantReply = data.response_markdown || ''
+            const data = (await res.json()) as {
+              response_markdown?: string
+              client_actions?: { action?: string; value?: string }[]
+            }
+            assistantReply = data.response_markdown ?? ''
 
             // Handle client actions if returned
-            if (data.client_actions && Array.isArray(data.client_actions)) {
+            if (data.client_actions) {
               for (const act of data.client_actions) {
                 if (act.action === 'clear_chat') {
                   setMessages([])
@@ -815,8 +827,8 @@ Available commands:
           } else {
             assistantReply = `❌ Failed to execute slash command \`${command}\` on the gateway server.`
           }
-        } catch (e: any) {
-          assistantReply = `❌ Error executing slash command: ${e.message}`
+        } catch (e) {
+          assistantReply = `❌ Error executing slash command: ${e instanceof Error ? e.message : String(e)}`
         }
         break
       }
@@ -833,7 +845,7 @@ Available commands:
     return true
   }
 
-  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleInputKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (suggestions.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
