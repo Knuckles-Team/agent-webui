@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import type { GraphNode } from './GraphAdapter';
+import React, { useState, useEffect } from 'react'
+import type { GraphNode } from './GraphAdapter'
 
 interface GraphOverlayUIProps {
-  selectedNode: GraphNode | null;
-  onClose: () => void;
-  onSave: (properties: any) => void;
-  onDelete: () => void;
-  onAddNode: (labels: string[], properties: any) => void;
+  selectedNode: GraphNode | null
+  onClose: () => void
+  onSave: (properties: any) => void
+  onDelete: () => void
+  onAddNode: (labels: string[], properties: any) => void
 }
 
 export const GraphOverlayUI: React.FC<GraphOverlayUIProps> = ({
@@ -16,42 +16,46 @@ export const GraphOverlayUI: React.FC<GraphOverlayUIProps> = ({
   onDelete,
   onAddNode,
 }) => {
-  const [isAdding, setIsAdding] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editLabel, setEditLabel] = useState('KnowledgeBase');
+  const [isAdding, setIsAdding] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editLabel, setEditLabel] = useState('KnowledgeBase')
 
   useEffect(() => {
     if (selectedNode) {
-      setEditName(selectedNode.properties.name || selectedNode.id);
-      setEditLabel(selectedNode.labels[0] || 'KnowledgeBase');
-      setIsAdding(false);
+      setEditName(selectedNode.properties.name || selectedNode.id)
+      setEditLabel(selectedNode.labels[0] || 'KnowledgeBase')
+      setIsAdding(false)
     }
-  }, [selectedNode]);
+  }, [selectedNode])
 
   if (!selectedNode && !isAdding) {
     return (
       <div className="absolute top-4 left-4 z-50">
         <button
           onClick={() => {
-            setIsAdding(true);
-            setEditName('New Node');
-            setEditLabel('KnowledgeBase');
+            setIsAdding(true)
+            setEditName('New Node')
+            setEditLabel('KnowledgeBase')
           }}
           className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-500"
         >
           + Add Node
         </button>
       </div>
-    );
+    )
   }
 
   return (
     <div className="absolute top-4 left-4 w-80 bg-slate-800 text-slate-200 border border-slate-700 rounded-lg shadow-xl p-4 flex flex-col gap-4 z-50">
       <div className="flex justify-between items-center border-b border-slate-700 pb-2">
-        <h3 className="font-semibold text-lg">
-          {isAdding ? 'Add Node' : 'Edit Node'}
-        </h3>
-        <button onClick={() => { onClose(); setIsAdding(false); }} className="text-slate-400 hover:text-white">
+        <h3 className="font-semibold text-lg">{isAdding ? 'Add Node' : 'Edit Node'}</h3>
+        <button
+          onClick={() => {
+            onClose()
+            setIsAdding(false)
+          }}
+          className="text-slate-400 hover:text-white"
+        >
           ✕
         </button>
       </div>
@@ -96,7 +100,10 @@ export const GraphOverlayUI: React.FC<GraphOverlayUIProps> = ({
         )}
         <div className="flex gap-2 ml-auto">
           <button
-            onClick={() => { onClose(); setIsAdding(false); }}
+            onClick={() => {
+              onClose()
+              setIsAdding(false)
+            }}
             className="text-slate-400 hover:text-white px-3 py-1.5"
           >
             Cancel
@@ -104,10 +111,10 @@ export const GraphOverlayUI: React.FC<GraphOverlayUIProps> = ({
           <button
             onClick={() => {
               if (isAdding) {
-                onAddNode([editLabel], { name: editName });
-                setIsAdding(false);
+                onAddNode([editLabel], { name: editName })
+                setIsAdding(false)
               } else {
-                onSave({ name: editName });
+                onSave({ name: editName })
               }
             }}
             className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded"
@@ -117,5 +124,5 @@ export const GraphOverlayUI: React.FC<GraphOverlayUIProps> = ({
         </div>
       </div>
     </div>
-  );
-};
+  )
+}

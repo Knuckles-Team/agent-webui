@@ -1,16 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import {
-  Trash2,
-  Terminal,
-  Loader2,
-  Send,
-  XCircle,
-  RefreshCw,
-  Database,
-  Cpu,
-  Layers,
-  ArrowRight
-} from 'lucide-react'
+import { Trash2, Terminal, Loader2, Send, XCircle, RefreshCw, Database, Cpu, Layers, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -203,7 +192,7 @@ export default function SessionsView() {
           disabled={loading}
           className="gap-2 h-9 border-border/40 hover:bg-muted/50"
         >
-          <RefreshCw className={cn("size-4", loading && "animate-spin")} />
+          <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
           Reload
         </Button>
       </div>
@@ -223,7 +212,8 @@ export default function SessionsView() {
             </div>
             <h3 className="font-semibold text-lg">No Durable Sessions Found</h3>
             <p className="text-muted-foreground text-sm max-w-sm mt-1 mb-6">
-              Start an agent execution loop in the terminal UI or spin up an autonomous goal to view session history and attachment handles here.
+              Start an agent execution loop in the terminal UI or spin up an autonomous goal to view session history
+              and attachment handles here.
             </p>
           </CardContent>
         </Card>
@@ -233,15 +223,15 @@ export default function SessionsView() {
             <Card
               key={sess.id}
               className={cn(
-                "group relative border-border/40 backdrop-blur-md bg-card/65 transition-all duration-300 hover:shadow-lg hover:border-primary/20",
-                sess.needs_input && "border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.05)]"
+                'group relative border-border/40 backdrop-blur-md bg-card/65 transition-all duration-300 hover:shadow-lg hover:border-primary/20',
+                sess.needs_input && 'border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.05)]',
               )}
             >
               <CardHeader className="pb-3">
                 <div className="flex justify-between items-start gap-3">
                   <div className="min-w-0">
                     <CardTitle className="text-base truncate group-hover:text-primary transition-colors">
-                      {sess.title || "Untitled Session"}
+                      {sess.title || 'Untitled Session'}
                     </CardTitle>
                     <CardDescription className="text-xs truncate font-mono mt-0.5">
                       ID: {sess.id.slice(0, 8)}...
@@ -249,27 +239,27 @@ export default function SessionsView() {
                   </div>
                   <Badge
                     className={cn(
-                      "capitalize shrink-0 border shadow-none font-medium px-2 py-0.5 text-[10px]",
-                      sess.status === "running" && "bg-blue-500/10 text-blue-500 border-blue-500/20 animate-pulse",
-                      sess.needs_input && "bg-amber-500/10 text-amber-600 border-amber-500/20 animate-pulse",
-                      sess.status === "completed" && "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-                      sess.status === "failed" && "bg-destructive/10 text-destructive border-destructive/20"
+                      'capitalize shrink-0 border shadow-none font-medium px-2 py-0.5 text-[10px]',
+                      sess.status === 'running' && 'bg-blue-500/10 text-blue-500 border-blue-500/20 animate-pulse',
+                      sess.needs_input && 'bg-amber-500/10 text-amber-600 border-amber-500/20 animate-pulse',
+                      sess.status === 'completed' && 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
+                      sess.status === 'failed' && 'bg-destructive/10 text-destructive border-destructive/20',
                     )}
                   >
-                    {sess.needs_input ? "Awaiting Reply" : sess.status}
+                    {sess.needs_input ? 'Awaiting Reply' : sess.status}
                   </Badge>
                 </div>
               </CardHeader>
 
               <CardContent className="pb-3 text-xs space-y-2.5">
                 <div className="p-2 rounded bg-muted/30 border border-border/20 text-muted-foreground font-mono line-clamp-2 min-h-[2.5rem]">
-                  {sess.last_response_preview || "No preview logs available."}
+                  {sess.last_response_preview || 'No preview logs available.'}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 text-[11px] text-muted-foreground pt-1">
                   <div className="flex items-center gap-1.5 font-mono">
                     <Cpu className="size-3.5 text-primary/60" />
-                    <span className="truncate">{sess.model || "n/a"}</span>
+                    <span className="truncate">{sess.model || 'n/a'}</span>
                   </div>
                   <div className="flex items-center gap-1.5 font-mono">
                     <Layers className="size-3.5 text-primary/60" />
@@ -289,7 +279,7 @@ export default function SessionsView() {
                     <Trash2 className="size-4" />
                   </Button>
 
-                  {sess.status === "running" && (
+                  {sess.status === 'running' && (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -303,10 +293,10 @@ export default function SessionsView() {
 
                 <Button
                   size="sm"
-                  variant={sess.needs_input ? "default" : "secondary"}
+                  variant={sess.needs_input ? 'default' : 'secondary'}
                   className={cn(
-                    "gap-1 px-3 shadow-none border border-border/10",
-                    sess.needs_input && "bg-amber-600 hover:bg-amber-700 text-white"
+                    'gap-1 px-3 shadow-none border border-border/10',
+                    sess.needs_input && 'bg-amber-600 hover:bg-amber-700 text-white',
                   )}
                   onClick={() => handleOpenDrawer(sess)}
                 >
@@ -327,15 +317,13 @@ export default function SessionsView() {
             <div className="space-y-1">
               <SheetTitle className="flex items-center gap-2 font-mono text-base font-semibold">
                 <Terminal className="size-5 text-primary" />
-                <span>Console Session: {selectedSession?.title || "Logs"}</span>
+                <span>Console Session: {selectedSession?.title || 'Logs'}</span>
               </SheetTitle>
-              <SheetDescription className="text-xs font-mono truncate">
-                ID: {selectedSession?.id}
-              </SheetDescription>
+              <SheetDescription className="text-xs font-mono truncate">ID: {selectedSession?.id}</SheetDescription>
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {selectedSession?.status === "running" && (
+              {selectedSession?.status === 'running' && (
                 <Badge className="bg-blue-500/10 text-blue-500 border border-blue-500/20 shadow-none px-2 py-0.5 text-[10px] animate-pulse">
                   Connected Live
                 </Badge>
@@ -345,7 +333,10 @@ export default function SessionsView() {
           </SheetHeader>
 
           {/* Logs Area */}
-          <ScrollArea ref={scrollAreaRef} className="flex-1 p-6 bg-[#030712] text-[#f3f4f6] font-mono selection:bg-primary/30">
+          <ScrollArea
+            ref={scrollAreaRef}
+            className="flex-1 p-6 bg-[#030712] text-[#f3f4f6] font-mono selection:bg-primary/30"
+          >
             <div className="space-y-6">
               <div className="text-[11px] text-muted-foreground/60 border-b border-border/10 pb-4">
                 *** DURABLE LOG PERSISTENCE INITIALIZED ON SQLite SHIELD ***
@@ -364,8 +355,8 @@ export default function SessionsView() {
                   <div
                     key={turn.id || index}
                     className={cn(
-                      "flex flex-col gap-1.5 max-w-[90%] transition-opacity duration-300",
-                      turn.role === 'user' ? "ml-auto items-end" : "mr-auto items-start"
+                      'flex flex-col gap-1.5 max-w-[90%] transition-opacity duration-300',
+                      turn.role === 'user' ? 'ml-auto items-end' : 'mr-auto items-start',
                     )}
                   >
                     <span className="text-[10px] text-muted-foreground/50 px-1 font-mono">
@@ -373,10 +364,10 @@ export default function SessionsView() {
                     </span>
                     <div
                       className={cn(
-                        "rounded-lg px-4 py-3 text-xs leading-relaxed border shadow-sm",
+                        'rounded-lg px-4 py-3 text-xs leading-relaxed border shadow-sm',
                         turn.role === 'user'
-                          ? "bg-secondary text-secondary-foreground border-border/40 font-sans"
-                          : "bg-muted/15 border-border/10 prose prose-invert max-w-none prose-sm"
+                          ? 'bg-secondary text-secondary-foreground border-border/40 font-sans'
+                          : 'bg-muted/15 border-border/10 prose prose-invert max-w-none prose-sm',
                       )}
                     >
                       {turn.role === 'user' ? (

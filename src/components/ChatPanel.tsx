@@ -63,10 +63,7 @@ export default function ChatPanel({ currentView }: ChatPanelProps) {
         <MessageCircle className="w-6 h-6" />
         {/* Pulse ring */}
         <span
-          className={cn(
-            'absolute inset-0 rounded-full',
-            'bg-violet-500/30 animate-ping',
-          )}
+          className={cn('absolute inset-0 rounded-full', 'bg-violet-500/30 animate-ping')}
           style={{ animationDuration: '3s' }}
         />
       </button>
@@ -74,11 +71,7 @@ export default function ChatPanel({ currentView }: ChatPanelProps) {
       {/* Backdrop overlay — subtle darkening when panel is open */}
       {isOpen && (
         <div
-          className={cn(
-            'fixed inset-0 z-40',
-            'bg-black/20 backdrop-blur-[2px]',
-            'transition-opacity duration-300',
-          )}
+          className={cn('fixed inset-0 z-40', 'bg-black/20 backdrop-blur-[2px]', 'transition-opacity duration-300')}
           onClick={toggle}
           aria-hidden
         />
@@ -101,12 +94,8 @@ export default function ChatPanel({ currentView }: ChatPanelProps) {
         <div className="flex items-center justify-between h-14 px-4 border-b border-border/50 shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-sm font-semibold text-foreground/80">
-              Agent Chat
-            </span>
-            <span className="text-xs text-muted-foreground px-1.5 py-0.5 rounded-md bg-muted/50">
-              {currentView}
-            </span>
+            <span className="text-sm font-semibold text-foreground/80">Agent Chat</span>
+            <span className="text-xs text-muted-foreground px-1.5 py-0.5 rounded-md bg-muted/50">{currentView}</span>
           </div>
           <div className="flex items-center gap-1">
             <button
@@ -114,11 +103,7 @@ export default function ChatPanel({ currentView }: ChatPanelProps) {
               className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
               aria-label={isExpanded ? 'Minimize' : 'Maximize'}
             >
-              {isExpanded ? (
-                <Minimize2 className="w-4 h-4" />
-              ) : (
-                <Maximize2 className="w-4 h-4" />
-              )}
+              {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </button>
             <button
               onClick={toggle}

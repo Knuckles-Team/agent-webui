@@ -73,9 +73,7 @@ function longestPathEdges(facts: Fact[]): Set<number> {
       seen.delete(to)
     }
   }
-  const starts = [...adj.keys()]
-    .sort((a, b) => (adj.get(b)!.length) - (adj.get(a)!.length))
-    .slice(0, 40)
+  const starts = [...adj.keys()].sort((a, b) => adj.get(b)!.length - adj.get(a)!.length).slice(0, 40)
   for (const s of starts) dfs(s, new Set([s]), [])
   return new Set(best)
 }
@@ -97,10 +95,7 @@ export default function ExtractionView() {
   const graphRef = useRef<Graph | null>(null)
   const esRef = useRef<EventSource | null>(null)
 
-  const pathEdges = useMemo(
-    () => (showPath ? longestPathEdges(facts) : new Set<number>()),
-    [facts, showPath],
-  )
+  const pathEdges = useMemo(() => (showPath ? longestPathEdges(facts) : new Set<number>()), [facts, showPath])
 
   // ---- live job queue polling --------------------------------------------
   useEffect(() => {
@@ -161,8 +156,16 @@ export default function ExtractionView() {
     // recolor for longest-path highlight
     g.forEachEdge((ek, attrs) => {
       const onPath = pathEdges.has(attrs.factIndex as number)
-      g.setEdgeAttribute(ek, 'color', onPath ? '#1a1a1a' : (facts[attrs.factIndex as number]?.is_duplicate ? 'rgba(180,60,60,0.35)' : 'rgba(26,26,26,0.35)'))
-      g.setEdgeAttribute(ek, 'size', onPath ? 2.8 : (facts[attrs.factIndex as number]?.is_duplicate ? 0.6 : 1.2))
+      g.setEdgeAttribute(
+        ek,
+        'color',
+        onPath
+          ? '#1a1a1a'
+          : facts[attrs.factIndex as number]?.is_duplicate
+            ? 'rgba(180,60,60,0.35)'
+            : 'rgba(26,26,26,0.35)',
+      )
+      g.setEdgeAttribute(ek, 'size', onPath ? 2.8 : facts[attrs.factIndex as number]?.is_duplicate ? 0.6 : 1.2)
     })
 
     if (g.order > 1) {
@@ -267,11 +270,7 @@ export default function ExtractionView() {
               onChange={(e) => setText(e.target.value)}
               rows={6}
             />
-            <Input
-              placeholder="…or a URL (readability)"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
+            <Input placeholder="…or a URL (readability)" value={url} onChange={(e) => setUrl(e.target.value)} />
             <div className="flex items-center gap-2 text-sm">
               <label className="flex items-center gap-1">
                 rounds
@@ -285,11 +284,7 @@ export default function ExtractionView() {
                 />
               </label>
               <label className="flex items-center gap-1">
-                <input
-                  type="checkbox"
-                  checked={dedup}
-                  onChange={(e) => setDedup(e.target.checked)}
-                />
+                <input type="checkbox" checked={dedup} onChange={(e) => setDedup(e.target.checked)} />
                 dedup
               </label>
             </div>
@@ -325,9 +320,7 @@ export default function ExtractionView() {
           <CardContent className="p-0">
             <ScrollArea className="h-64">
               <div className="space-y-1 p-2">
-                {jobs.length === 0 && (
-                  <div className="p-2 text-xs text-muted-foreground">no jobs</div>
-                )}
+                {jobs.length === 0 && <div className="p-2 text-xs text-muted-foreground">no jobs</div>}
                 {jobs.map((j) => (
                   <div key={j.job_id} className="flex items-center justify-between rounded border p-2 text-xs">
                     <div className="truncate">

@@ -153,24 +153,14 @@ function WidgetBlock({
       >
         {displayValue}
       </span>
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mt-0.5">
-        {label}
-      </span>
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mt-0.5">{label}</span>
     </div>
   )
 }
 
 /* ── Widget Card Component ───────────────────────────────────────── */
 
-function WidgetCard({
-  service,
-  data,
-  isLoading,
-}: {
-  service: ServiceConfig
-  data?: WidgetData
-  isLoading: boolean
-}) {
+function WidgetCard({ service, data, isLoading }: { service: ServiceConfig; data?: WidgetData; isLoading: boolean }) {
   const icon = ICON_MAP[service.icon] || <LayoutGrid className="size-5" />
   const status = data?.status || 'unknown'
 
@@ -200,9 +190,7 @@ function WidgetCard({
           <div className="flex flex-col">
             <span className="text-sm font-semibold">{service.name}</span>
             {service.description && (
-              <span className="text-[10px] text-muted-foreground/60 line-clamp-1">
-                {service.description}
-              </span>
+              <span className="text-[10px] text-muted-foreground/60 line-clamp-1">{service.description}</span>
             )}
           </div>
         </div>
@@ -244,13 +232,7 @@ function WidgetCard({
               key={key}
               label={key.replace(/_/g, ' ')}
               value={value as number | string | boolean}
-              highlight={
-                key === 'running' ||
-                key === 'stopped' ||
-                key === 'up' ||
-                key === 'down' ||
-                key === 'failed'
-              }
+              highlight={key === 'running' || key === 'stopped' || key === 'up' || key === 'down' || key === 'failed'}
             />
           ))
         ) : (
@@ -310,12 +292,7 @@ function ServiceGroupSection({
       {!collapsed && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {visibleServices.map((service) => (
-            <WidgetCard
-              key={service.id}
-              service={service}
-              data={data[service.id]}
-              isLoading={isLoading}
-            />
+            <WidgetCard key={service.id} service={service} data={data[service.id]} isLoading={isLoading} />
           ))}
         </div>
       )}
@@ -502,9 +479,7 @@ export default function DashboardView() {
           <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
             <LayoutGrid className="size-12 opacity-20" />
             <p className="text-sm">No services configured</p>
-            <p className="text-xs opacity-50">
-              Add services via services.yaml or auto-discover from mcp_config.json
-            </p>
+            <p className="text-xs opacity-50">Add services via services.yaml or auto-discover from mcp_config.json</p>
           </div>
         ) : (
           filteredGroups.map((group) => (

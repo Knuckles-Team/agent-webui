@@ -28,12 +28,8 @@ describe('GraphView Component', () => {
     renderWithProviders(<GraphView />)
 
     await waitFor(() => {
-      expect(
-        screen.getByText(new RegExp(`^Nodes:\\s*${mockGraphStats.total_nodes}$`)),
-      ).toBeInTheDocument()
-      expect(
-        screen.getByText(new RegExp(`^Edges:\\s*${mockGraphStats.total_relationships}$`)),
-      ).toBeInTheDocument()
+      expect(screen.getByText(new RegExp(`^Nodes:\\s*${mockGraphStats.total_nodes}$`))).toBeInTheDocument()
+      expect(screen.getByText(new RegExp(`^Edges:\\s*${mockGraphStats.total_relationships}$`))).toBeInTheDocument()
     })
   })
 
@@ -102,9 +98,7 @@ describe('GraphView Component', () => {
     })
 
     // The refresh control is the icon-only button carrying the lucide refresh icon.
-    const refreshButton = screen
-      .getAllByRole('button')
-      .find(btn => btn.querySelector('svg.lucide-refresh-cw'))
+    const refreshButton = screen.getAllByRole('button').find((btn) => btn.querySelector('svg.lucide-refresh-cw'))
     expect(refreshButton).toBeDefined()
     await user.click(refreshButton as HTMLElement)
 
@@ -123,9 +117,7 @@ describe('GraphView Component', () => {
     })
     global.fetch = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
-      const body = url.includes('/graph/stats')
-        ? { total_nodes: 0, total_relationships: 0, by_type: {} }
-        : [] // nodes + relationships are empty arrays
+      const body = url.includes('/graph/stats') ? { total_nodes: 0, total_relationships: 0, by_type: {} } : [] // nodes + relationships are empty arrays
       return Promise.resolve({
         ok: true,
         status: 200,

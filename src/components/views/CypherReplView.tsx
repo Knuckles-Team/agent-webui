@@ -9,23 +9,8 @@
  */
 
 import { useEffect, useState } from 'react'
-import {
-  AlertTriangle,
-  ChevronDown,
-  ChevronRight,
-  History,
-  Loader2,
-  Play,
-  Terminal,
-  Trash2,
-} from 'lucide-react'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { AlertTriangle, ChevronDown, ChevronRight, History, Loader2, Play, Terminal, Trash2 } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
@@ -63,10 +48,7 @@ function loadHistory(): HistoryEntry[] {
 
 function saveHistory(entries: HistoryEntry[]): void {
   try {
-    window.localStorage.setItem(
-      HISTORY_KEY,
-      JSON.stringify(entries.slice(0, HISTORY_LIMIT)),
-    )
+    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, HISTORY_LIMIT)))
   } catch {
     // localStorage can fail (quota, private mode); history remains in-memory.
   }
@@ -79,8 +61,7 @@ function CypherResultRow({ row, index }: CypherResultRowProps) {
     .slice(0, 3)
     .map((k) => {
       const v = row[k]
-      const formatted =
-        typeof v === 'string' ? v : v === null ? 'null' : JSON.stringify(v)
+      const formatted = typeof v === 'string' ? v : v === null ? 'null' : JSON.stringify(v)
       const truncated = formatted.length > 48 ? `${formatted.slice(0, 48)}…` : formatted
       return `${k}: ${truncated}`
     })
@@ -94,29 +75,16 @@ function CypherResultRow({ row, index }: CypherResultRowProps) {
         className="w-full flex items-center justify-between p-2 text-left text-sm hover:bg-muted/50"
       >
         <span className="flex items-center gap-2 min-w-0">
-          {expanded ? (
-            <ChevronDown className="size-3 shrink-0" />
-          ) : (
-            <ChevronRight className="size-3 shrink-0" />
-          )}
-          <span className="font-mono text-xs text-muted-foreground shrink-0">
-            #{index + 1}
-          </span>
-          <span className="truncate font-mono text-xs">
-            {preview || '(empty row)'}
-          </span>
+          {expanded ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
+          <span className="font-mono text-xs text-muted-foreground shrink-0">#{index + 1}</span>
+          <span className="truncate font-mono text-xs">{preview || '(empty row)'}</span>
         </span>
         <Badge variant="outline" className="shrink-0">
           {keys.length} cols
         </Badge>
       </button>
       {expanded && (
-        <pre
-          className={
-            'border-t bg-muted/30 p-2 text-xs overflow-x-auto ' +
-            'whitespace-pre-wrap break-words'
-          }
-        >
+        <pre className={'border-t bg-muted/30 p-2 text-xs overflow-x-auto ' + 'whitespace-pre-wrap break-words'}>
           {JSON.stringify(row, null, 2)}
         </pre>
       )}
@@ -172,7 +140,7 @@ export default function CypherReplView() {
       const rows: Record<string, unknown>[] = Array.isArray(data)
         ? (data as Record<string, unknown>[])
         : Array.isArray((data as { results?: unknown })?.results)
-          ? ((data as { results: Record<string, unknown>[] }).results)
+          ? (data as { results: Record<string, unknown>[] }).results
           : []
       setResults(rows)
       appendHistory({
@@ -231,9 +199,7 @@ export default function CypherReplView() {
             <Terminal className="size-6" />
             Cypher REPL
           </h1>
-          <p className="text-muted-foreground text-sm">
-            Execute ad-hoc Cypher queries against the knowledge graph.
-          </p>
+          <p className="text-muted-foreground text-sm">Execute ad-hoc Cypher queries against the knowledge graph.</p>
         </div>
       </div>
 
@@ -256,16 +222,11 @@ export default function CypherReplView() {
               <div>
                 <CardTitle>Query</CardTitle>
                 <CardDescription>
-                  Default:{' '}
-                  <span className="font-mono text-xs">{DEFAULT_QUERY}</span>
+                  Default: <span className="font-mono text-xs">{DEFAULT_QUERY}</span>
                 </CardDescription>
               </div>
               <Button onClick={() => void runQuery()} disabled={loading}>
-                {loading ? (
-                  <Loader2 className="size-4 mr-2 animate-spin" />
-                ) : (
-                  <Play className="size-4 mr-2" />
-                )}
+                {loading ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Play className="size-4 mr-2" />}
                 Run
               </Button>
             </CardHeader>
@@ -281,10 +242,7 @@ export default function CypherReplView() {
               {isDestructive && (
                 <div className="flex items-center gap-2 text-sm text-destructive">
                   <AlertTriangle className="size-4" />
-                  <span>
-                    This query appears to be destructive. Double-check before
-                    running.
-                  </span>
+                  <span>This query appears to be destructive. Double-check before running.</span>
                 </div>
               )}
             </CardContent>
@@ -342,9 +300,7 @@ export default function CypherReplView() {
           </CardHeader>
           <CardContent>
             {history.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                No queries yet. Run a query to populate history.
-              </p>
+              <p className="text-muted-foreground text-sm">No queries yet. Run a query to populate history.</p>
             ) : (
               <ScrollArea className="max-h-[60vh]">
                 <div className="space-y-2">
@@ -353,20 +309,10 @@ export default function CypherReplView() {
                       type="button"
                       key={`${entry.timestamp}-${idx}`}
                       onClick={() => loadHistoryEntry(entry)}
-                      className={
-                        'w-full text-left rounded border p-2 ' +
-                        'hover:bg-muted/50 transition-colors'
-                      }
+                      className={'w-full text-left rounded border p-2 ' + 'hover:bg-muted/50 transition-colors'}
                     >
-                      <div
-                        className={
-                          'flex items-center justify-between ' +
-                          'text-xs text-muted-foreground mb-1'
-                        }
-                      >
-                        <span>
-                          {new Date(entry.timestamp).toLocaleTimeString()}
-                        </span>
+                      <div className={'flex items-center justify-between ' + 'text-xs text-muted-foreground mb-1'}>
+                        <span>{new Date(entry.timestamp).toLocaleTimeString()}</span>
                         <span>
                           {entry.error ? (
                             <Badge variant="destructive">error</Badge>
@@ -375,9 +321,7 @@ export default function CypherReplView() {
                           )}
                         </span>
                       </div>
-                      <p className="font-mono text-xs line-clamp-2 break-words">
-                        {entry.query}
-                      </p>
+                      <p className="font-mono text-xs line-clamp-2 break-words">{entry.query}</p>
                     </button>
                   ))}
                 </div>

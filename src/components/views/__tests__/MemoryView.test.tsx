@@ -96,9 +96,7 @@ describe('MemoryView Component', () => {
     // "Advanced Search" appears both as the card title and the action button,
     // so scope the assertion to the heading to stay unambiguous.
     await waitFor(() => {
-      expect(
-        screen.getByText('Advanced Search', { selector: '[data-slot="card-title"]' }),
-      ).toBeInTheDocument()
+      expect(screen.getByText('Advanced Search', { selector: '[data-slot="card-title"]' })).toBeInTheDocument()
     })
   })
 
@@ -112,9 +110,7 @@ describe('MemoryView Component', () => {
 
     // The delete affordance on each memory card is the icon button carrying the
     // lucide trash icon; click it directly rather than guessing button order.
-    const trashButton = screen
-      .getAllByRole('button')
-      .find(btn => btn.querySelector('svg.lucide-trash-2'))
+    const trashButton = screen.getAllByRole('button').find((btn) => btn.querySelector('svg.lucide-trash-2'))
     expect(trashButton).toBeDefined()
     await user.click(trashButton as HTMLElement)
 
@@ -131,9 +127,9 @@ describe('MemoryView Component', () => {
     })
 
     // Find and click edit button
-    const editButtons = screen.getAllByRole('button').filter(btn =>
-      btn.textContent === '' || btn.querySelector('svg')
-    )
+    const editButtons = screen
+      .getAllByRole('button')
+      .filter((btn) => btn.textContent === '' || btn.querySelector('svg'))
 
     if (editButtons.length > 1) {
       await user.click(editButtons[1]) // Second button should be edit

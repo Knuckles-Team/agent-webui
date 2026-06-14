@@ -1,14 +1,5 @@
 import { useState, useEffect } from 'react'
-import {
-  Network,
-  Terminal,
-  Brain,
-  RefreshCw,
-  Database,
-  Play,
-  Layers,
-  Sparkles
-} from 'lucide-react'
+import { Network, Terminal, Brain, RefreshCw, Database, Play, Layers, Sparkles } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -84,21 +75,21 @@ export default function GraphView() {
   }
 
   const handleUpdateNode = (id: string, properties: any) => {
-    setNodes(prev => prev.map(n => n.id === id ? { ...n, properties: { ...n.properties, ...properties } } : n))
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, properties: { ...n.properties, ...properties } } : n)))
   }
 
   const handleDeleteNode = (id: string) => {
-    setNodes(prev => prev.filter(n => n.id !== id))
-    setRelationships(prev => prev.filter(e => e.source !== id && e.target !== id))
+    setNodes((prev) => prev.filter((n) => n.id !== id))
+    setRelationships((prev) => prev.filter((e) => e.source !== id && e.target !== id))
   }
 
   const handleAddNode = (labels: string[], properties: any) => {
     const newNode: GraphNode = {
       id: `node_${Date.now()}`,
       labels,
-      properties
+      properties,
     }
-    setNodes(prev => [...prev, newNode])
+    setNodes((prev) => [...prev, newNode])
   }
 
   const runCypherQuery = async () => {
@@ -108,7 +99,7 @@ export default function GraphView() {
       const res = await fetch('/api/enhanced/graph/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: cypherQuery })
+        body: JSON.stringify({ query: cypherQuery }),
       })
       if (!res.ok) {
         const errorText = await res.text()
@@ -134,8 +125,8 @@ export default function GraphView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query: magmaQuery,
-          view_type: magmaView
-        })
+          view_type: magmaView,
+        }),
       })
       if (!res.ok) {
         toast.error('Failed orthogonal view MAGMA retrieval')
@@ -230,7 +221,11 @@ export default function GraphView() {
                 className="flex-1 font-mono text-xs bg-muted/10 border-border/40 p-3 resize-none h-[250px] lg:h-auto"
                 placeholder="MATCH (n) RETURN n LIMIT 10"
               />
-              <Button onClick={() => void runCypherQuery()} disabled={executingCypher} className="bg-emerald-600 hover:bg-emerald-700 w-full">
+              <Button
+                onClick={() => void runCypherQuery()}
+                disabled={executingCypher}
+                className="bg-emerald-600 hover:bg-emerald-700 w-full"
+              >
                 <Play className="size-4 mr-2" />
                 {executingCypher ? 'Executing...' : 'Run Query'}
               </Button>
@@ -284,10 +279,18 @@ export default function GraphView() {
                   onChange={(e) => setMagmaView(e.target.value as any)}
                   className="w-full h-10 px-3 rounded-md border border-input bg-muted/20 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
-                  <option value="semantic" className="bg-background text-foreground">Semantic View (NL concepts)</option>
-                  <option value="structural" className="bg-background text-foreground">Structural View (Code inheritance)</option>
-                  <option value="temporal" className="bg-background text-foreground">Temporal View (Execution logs/crons)</option>
-                  <option value="hybrid" className="bg-background text-foreground">Hybrid Synthesized View</option>
+                  <option value="semantic" className="bg-background text-foreground">
+                    Semantic View (NL concepts)
+                  </option>
+                  <option value="structural" className="bg-background text-foreground">
+                    Structural View (Code inheritance)
+                  </option>
+                  <option value="temporal" className="bg-background text-foreground">
+                    Temporal View (Execution logs/crons)
+                  </option>
+                  <option value="hybrid" className="bg-background text-foreground">
+                    Hybrid Synthesized View
+                  </option>
                 </select>
               </div>
               <div className="space-y-1.5 flex-1 flex flex-col">
@@ -299,7 +302,11 @@ export default function GraphView() {
                   placeholder="Enter retrieval keywords or context snippet..."
                 />
               </div>
-              <Button onClick={() => void runMagmaRetrieve()} disabled={retrievingMagma} className="bg-emerald-600 hover:bg-emerald-700 w-full shrink-0">
+              <Button
+                onClick={() => void runMagmaRetrieve()}
+                disabled={retrievingMagma}
+                className="bg-emerald-600 hover:bg-emerald-700 w-full shrink-0"
+              >
                 <Sparkles className="size-4 mr-2" />
                 {retrievingMagma ? 'Scanning...' : 'Retrieve MAGMA Context'}
               </Button>
@@ -327,7 +334,9 @@ export default function GraphView() {
                 ) : (
                   <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground">
                     <Layers className="size-10 text-muted-foreground/30 mb-2" />
-                    <p className="text-xs">No active MAGMA orthogonal context slices retrieved. Submit keywords above.</p>
+                    <p className="text-xs">
+                      No active MAGMA orthogonal context slices retrieved. Submit keywords above.
+                    </p>
                   </div>
                 )}
               </ScrollArea>

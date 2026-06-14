@@ -81,7 +81,7 @@ export default function KnowledgeBaseView() {
       const res = await fetch('/api/enhanced/kb/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ingestForm)
+        body: JSON.stringify(ingestForm),
       })
       if (res.ok) {
         toast.success('Knowledge base ingestion started')
@@ -101,7 +101,7 @@ export default function KnowledgeBaseView() {
       const res = await fetch('/api/enhanced/kb/health', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kb_id: kbId })
+        body: JSON.stringify({ kb_id: kbId }),
       })
       const data = await res.json()
       setHealthResults(data)
@@ -112,16 +112,16 @@ export default function KnowledgeBaseView() {
   }
 
   const filteredKBs = knowledgeBases.filter(
-    kb =>
+    (kb) =>
       kb.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       kb.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      kb.topics.some(topic => topic.toLowerCase().includes(searchQuery.toLowerCase()))
+      kb.topics.some((topic) => topic.toLowerCase().includes(searchQuery.toLowerCase())),
   )
 
   const filteredArticles = articles.filter(
-    article =>
+    (article) =>
       article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      article.content.toLowerCase().includes(searchQuery.toLowerCase())
+      article.content.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
   return (
@@ -217,22 +217,30 @@ export default function KnowledgeBaseView() {
                   key={kb.id}
                   className={cn(
                     'cursor-pointer transition-all hover:shadow-md',
-                    selectedKB?.id === kb.id ? 'ring-2 ring-primary' : ''
+                    selectedKB?.id === kb.id ? 'ring-2 ring-primary' : '',
                   )}
                   onClick={() => setSelectedKB(kb)}
                 >
                   <CardHeader>
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2">
-                        <div className={cn(
-                          'p-2 rounded-lg',
-                          kb.health_status === 'healthy' ? 'bg-green-500/10 text-green-500' :
-                          kb.health_status === 'warning' ? 'bg-yellow-500/10 text-yellow-500' :
-                          'bg-red-500/10 text-red-500'
-                        )}>
-                          {kb.health_status === 'healthy' ? <CheckCircle className="size-4" /> :
-                           kb.health_status === 'warning' ? <AlertCircle className="size-4" /> :
-                           <AlertCircle className="size-4" />}
+                        <div
+                          className={cn(
+                            'p-2 rounded-lg',
+                            kb.health_status === 'healthy'
+                              ? 'bg-green-500/10 text-green-500'
+                              : kb.health_status === 'warning'
+                                ? 'bg-yellow-500/10 text-yellow-500'
+                                : 'bg-red-500/10 text-red-500',
+                          )}
+                        >
+                          {kb.health_status === 'healthy' ? (
+                            <CheckCircle className="size-4" />
+                          ) : kb.health_status === 'warning' ? (
+                            <AlertCircle className="size-4" />
+                          ) : (
+                            <AlertCircle className="size-4" />
+                          )}
                         </div>
                         <div>
                           <CardTitle className="text-lg">{kb.name}</CardTitle>
@@ -347,7 +355,7 @@ export default function KnowledgeBaseView() {
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {Array.from(new Set(articles.flatMap(a => a.concepts))).map((concept) => (
+              {Array.from(new Set(articles.flatMap((a) => a.concepts))).map((concept) => (
                 <Card key={concept} className="p-4 hover:shadow-md transition-all cursor-pointer">
                   <div className="flex items-center gap-2">
                     <Brain className="size-4 text-primary" />
@@ -375,9 +383,7 @@ export default function KnowledgeBaseView() {
               <CardContent>
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
-                    <Badge
-                      variant={healthResults.health_status === 'healthy' ? 'default' : 'destructive'}
-                    >
+                    <Badge variant={healthResults.health_status === 'healthy' ? 'default' : 'destructive'}>
                       {healthResults.health_status}
                     </Badge>
                   </div>
@@ -386,7 +392,9 @@ export default function KnowledgeBaseView() {
                       <h4 className="font-medium mb-2">Issues Found</h4>
                       <ul className="space-y-1">
                         {healthResults.issues.map((issue: string, index: number) => (
-                          <li key={index} className="text-sm text-muted-foreground">• {issue}</li>
+                          <li key={index} className="text-sm text-muted-foreground">
+                            • {issue}
+                          </li>
                         ))}
                       </ul>
                     </div>
@@ -396,7 +404,9 @@ export default function KnowledgeBaseView() {
                       <h4 className="font-medium mb-2">Recommendations</h4>
                       <ul className="space-y-1">
                         {healthResults.recommendations.map((rec: string, index: number) => (
-                          <li key={index} className="text-sm text-muted-foreground">• {rec}</li>
+                          <li key={index} className="text-sm text-muted-foreground">
+                            • {rec}
+                          </li>
                         ))}
                       </ul>
                     </div>
@@ -406,9 +416,7 @@ export default function KnowledgeBaseView() {
             </Card>
           ) : (
             <div className="text-center">
-              <Button onClick={() => void handleHealthCheck(selectedKB.id)}>
-                Run Health Check
-              </Button>
+              <Button onClick={() => void handleHealthCheck(selectedKB.id)}>Run Health Check</Button>
             </div>
           )}
         </TabsContent>
@@ -422,9 +430,7 @@ export default function KnowledgeBaseView() {
               <DialogTitle>{selectedArticle.title}</DialogTitle>
             </DialogHeader>
             <ScrollArea className="h-full max-h-[60vh]">
-              <div className="prose prose-sm dark:prose-invert p-4">
-                {selectedArticle.content}
-              </div>
+              <div className="prose prose-sm dark:prose-invert p-4">{selectedArticle.content}</div>
             </ScrollArea>
           </DialogContent>
         </Dialog>

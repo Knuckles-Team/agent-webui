@@ -58,7 +58,7 @@ export default function SDDView() {
     title: '',
     description: '',
     user_stories: [''],
-    acceptance_criteria: ['']
+    acceptance_criteria: [''],
   })
 
   useEffect(() => {
@@ -122,7 +122,7 @@ export default function SDDView() {
       const res = await fetch('/api/enhanced/sdd/spec', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(specForm)
+        body: JSON.stringify(specForm),
       })
       if (res.ok) {
         toast.success('Specification created successfully')
@@ -143,7 +143,7 @@ export default function SDDView() {
       const res = await fetch('/api/enhanced/sdd/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan_id: selectedPlan.id })
+        body: JSON.stringify({ plan_id: selectedPlan.id }),
       })
       if (res.ok) {
         toast.success('SDD data synced to knowledge graph')
@@ -243,11 +243,7 @@ export default function SDDView() {
                           placeholder="As a user, I want..."
                           rows={2}
                         />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeUserStory(index)}
-                        >
+                        <Button variant="ghost" size="sm" onClick={() => removeUserStory(index)}>
                           ×
                         </Button>
                       </div>
@@ -270,11 +266,7 @@ export default function SDDView() {
                           placeholder="Given... When... Then..."
                           rows={2}
                         />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeAcceptanceCriteria(index)}
-                        >
+                        <Button variant="ghost" size="sm" onClick={() => removeAcceptanceCriteria(index)}>
                           ×
                         </Button>
                       </div>
@@ -315,7 +307,9 @@ export default function SDDView() {
                     </h4>
                     <ul className="space-y-1">
                       {constitution.governance_rules.map((rule, index) => (
-                        <li key={index} className="text-sm text-muted-foreground">• {rule}</li>
+                        <li key={index} className="text-sm text-muted-foreground">
+                          • {rule}
+                        </li>
                       ))}
                     </ul>
                   </div>
@@ -336,7 +330,9 @@ export default function SDDView() {
                     </h4>
                     <ul className="space-y-1">
                       {constitution.quality_gates.map((gate, index) => (
-                        <li key={index} className="text-sm text-muted-foreground">• {gate}</li>
+                        <li key={index} className="text-sm text-muted-foreground">
+                          • {gate}
+                        </li>
                       ))}
                     </ul>
                   </div>
@@ -363,7 +359,7 @@ export default function SDDView() {
                   key={spec.id}
                   className={cn(
                     'cursor-pointer transition-all hover:shadow-md',
-                    selectedSpec?.id === spec.id ? 'ring-2 ring-primary' : ''
+                    selectedSpec?.id === spec.id ? 'ring-2 ring-primary' : '',
                   )}
                   onClick={() => setSelectedSpec(spec)}
                 >
@@ -375,11 +371,7 @@ export default function SDDView() {
                           {new Date(spec.created_at).toLocaleDateString()}
                         </CardDescription>
                       </div>
-                      <Badge
-                        variant={spec.status === 'completed' ? 'default' : 'outline'}
-                      >
-                        {spec.status}
-                      </Badge>
+                      <Badge variant={spec.status === 'completed' ? 'default' : 'outline'}>{spec.status}</Badge>
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -412,7 +404,7 @@ export default function SDDView() {
                   key={plan.id}
                   className={cn(
                     'cursor-pointer transition-all hover:shadow-md',
-                    selectedPlan?.id === plan.id ? 'ring-2 ring-primary' : ''
+                    selectedPlan?.id === plan.id ? 'ring-2 ring-primary' : '',
                   )}
                   onClick={() => setSelectedPlan(plan)}
                 >
@@ -420,15 +412,9 @@ export default function SDDView() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <CardTitle className="text-base">Plan {plan.id.substring(0, 8)}</CardTitle>
-                        <CardDescription className="text-xs">
-                          Spec: {plan.spec_id}
-                        </CardDescription>
+                        <CardDescription className="text-xs">Spec: {plan.spec_id}</CardDescription>
                       </div>
-                      <Badge
-                        variant={plan.status === 'completed' ? 'default' : 'outline'}
-                      >
-                        {plan.status}
-                      </Badge>
+                      <Badge variant={plan.status === 'completed' ? 'default' : 'outline'}>{plan.status}</Badge>
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -470,10 +456,7 @@ export default function SDDView() {
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
-                              <Badge
-                                variant={task.status === 'completed' ? 'default' : 'outline'}
-                                className="text-xs"
-                              >
+                              <Badge variant={task.status === 'completed' ? 'default' : 'outline'} className="text-xs">
                                 {task.status}
                               </Badge>
                               {task.parallel && (

@@ -71,10 +71,7 @@ export default function DashboardSettings({
       {/* Modal Overlay */}
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            onClick={toggle}
-          />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={toggle} />
           <div
             className={cn(
               'relative z-10 w-full max-w-lg mx-4',
@@ -88,9 +85,7 @@ export default function DashboardSettings({
             <div className="flex items-center justify-between px-6 py-4 border-b border-border/30">
               <div>
                 <h2 className="text-lg font-semibold">Dashboard Settings</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Customize your Agent-OS desktop experience
-                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">Customize your Agent-OS desktop experience</p>
               </div>
               <button
                 onClick={toggle}
@@ -130,9 +125,7 @@ export default function DashboardSettings({
 
               {/* Grid Columns */}
               <div>
-                <label className="text-sm font-medium mb-2 block">
-                  Grid Columns
-                </label>
+                <label className="text-sm font-medium mb-2 block">Grid Columns</label>
                 <div className="flex gap-2">
                   {COLUMN_OPTIONS.map((n) => (
                     <button
@@ -154,9 +147,7 @@ export default function DashboardSettings({
 
               {/* Card Size */}
               <div>
-                <label className="text-sm font-medium mb-2 block">
-                  Card Size
-                </label>
+                <label className="text-sm font-medium mb-2 block">Card Size</label>
                 <div className="flex gap-2">
                   {CARD_SIZES.map((s) => (
                     <button
@@ -178,9 +169,7 @@ export default function DashboardSettings({
 
               {/* Refresh Interval */}
               <div>
-                <label className="text-sm font-medium mb-2 block">
-                  Refresh Interval
-                </label>
+                <label className="text-sm font-medium mb-2 block">Refresh Interval</label>
                 <div className="flex gap-2">
                   {REFRESH_OPTIONS.map((sec) => (
                     <button

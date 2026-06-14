@@ -169,18 +169,13 @@ const ZERO_RATE: ModelRate = { input: 0, output: 0 }
  * `{ input: 0, output: 0 }` for configured zero-cost / local models so
  * they display as `$0.00` rather than "unavailable".
  */
-function lookupModelRate(
-  modelId: string | undefined,
-  registry: ModelRegistryPayload | undefined,
-): ModelRate | null {
+function lookupModelRate(modelId: string | undefined, registry: ModelRegistryPayload | undefined): ModelRate | null {
   if (!modelId || !registry) return null
   const byId = registry.models.find((m) => m.id === modelId)
   if (byId) return byId.cost ?? ZERO_RATE
 
   const lowered = modelId.toLowerCase()
-  const byProviderModel = registry.models.find(
-    (m) => `${m.provider}:${m.model_id}`.toLowerCase() === lowered,
-  )
+  const byProviderModel = registry.models.find((m) => `${m.provider}:${m.model_id}`.toLowerCase() === lowered)
   if (byProviderModel) return byProviderModel.cost ?? ZERO_RATE
 
   const byModelId = registry.models.find((m) => m.model_id.toLowerCase() === lowered)
@@ -199,8 +194,7 @@ function parseUsage(source: unknown): TokenUsage | null {
   const rec = source as Record<string, unknown>
   const total = toNumber(rec.total_tokens) ?? toNumber(rec.totalTokens)
   const prompt = toNumber(rec.prompt_tokens) ?? toNumber(rec.inputTokens) ?? toNumber(rec.promptTokens)
-  const completion =
-    toNumber(rec.completion_tokens) ?? toNumber(rec.outputTokens) ?? toNumber(rec.completionTokens)
+  const completion = toNumber(rec.completion_tokens) ?? toNumber(rec.outputTokens) ?? toNumber(rec.completionTokens)
   if (total === null && prompt === null && completion === null) return null
   const resolvedPrompt = prompt ?? 0
   const resolvedCompletion = completion ?? 0
@@ -265,8 +259,7 @@ function sumSessionUsage(messages: readonly UIMessage[]): TokenUsage {
         const type = typeof ann.type === 'string' ? ann.type : ''
         const isUsageEvent =
           event === 'usage' || event === 'TokenUsageUpdate' || type === 'usage' || type === 'TokenUsageUpdate'
-        const candidate =
-          parseUsage(ann.data) ?? parseUsage(ann.usage) ?? (isUsageEvent ? parseUsage(ann) : null)
+        const candidate = parseUsage(ann.data) ?? parseUsage(ann.usage) ?? (isUsageEvent ? parseUsage(ann) : null)
         if (candidate) addUsage(totals, candidate)
       }
     }
@@ -391,17 +384,9 @@ function exportConversation(
 ): void {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   if (format === 'json') {
-    downloadTextFile(
-      conversationToJson(messages, conversationId),
-      `conversation-${stamp}.json`,
-      'application/json',
-    )
+    downloadTextFile(conversationToJson(messages, conversationId), `conversation-${stamp}.json`, 'application/json')
   } else {
-    downloadTextFile(
-      conversationToMarkdown(messages, conversationId),
-      `conversation-${stamp}.md`,
-      'text/markdown',
-    )
+    downloadTextFile(conversationToMarkdown(messages, conversationId), `conversation-${stamp}.md`, 'text/markdown')
   }
 }
 
@@ -629,7 +614,7 @@ const Chat = () => {
     setAttachments((prev) => prev.filter((_, i) => i !== index))
   }
 
-    /**
+  /**
    * Processes a client-side slash command and appends the result to the chat.
    */
   const handleSlashCommand = async (rawInput: string) => {
@@ -685,9 +670,7 @@ Available commands:
         if (arg) {
           const list = modelRegistry?.models || configQuery.data?.models || []
           const matched = list.find(
-            (m) =>
-              m.id.toLowerCase().includes(arg.toLowerCase()) ||
-              m.name.toLowerCase().includes(arg.toLowerCase()),
+            (m) => m.id.toLowerCase().includes(arg.toLowerCase()) || m.name.toLowerCase().includes(arg.toLowerCase()),
           )
           if (matched) {
             setModel(matched.id)
@@ -727,9 +710,7 @@ Available commands:
         } else {
           const list = modelRegistry?.models || configQuery.data?.models || []
           const matched = list.find(
-            (m) =>
-              m.id.toLowerCase().includes(arg.toLowerCase()) ||
-              m.name.toLowerCase().includes(arg.toLowerCase()),
+            (m) => m.id.toLowerCase().includes(arg.toLowerCase()) || m.name.toLowerCase().includes(arg.toLowerCase()),
           )
           if (matched) {
             setModel(matched.id)
@@ -1248,8 +1229,7 @@ Available commands:
                         <strong>Prompt:</strong> {TOKEN_FORMATTER.format(sessionUsage.prompt_tokens)} tokens
                       </div>
                       <div>
-                        <strong>Completion:</strong>{' '}
-                        {TOKEN_FORMATTER.format(sessionUsage.completion_tokens)} tokens
+                        <strong>Completion:</strong> {TOKEN_FORMATTER.format(sessionUsage.completion_tokens)} tokens
                       </div>
                       <div>
                         <strong>Total:</strong> {TOKEN_FORMATTER.format(sessionUsage.total_tokens)} tokens

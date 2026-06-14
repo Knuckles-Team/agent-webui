@@ -85,7 +85,16 @@ interface GraphActivityProps {
 
 /* ── Color scheme by event category ────────────────────────────────── */
 
-type EventCategory = 'routing' | 'tool' | 'text' | 'error' | 'elicitation' | 'transition' | 'snapshot' | 'complete' | 'default'
+type EventCategory =
+  | 'routing'
+  | 'tool'
+  | 'text'
+  | 'error'
+  | 'elicitation'
+  | 'transition'
+  | 'snapshot'
+  | 'complete'
+  | 'default'
 
 function getEventCategory(event: string): EventCategory {
   if (event.includes('routing')) return 'routing'
@@ -185,8 +194,10 @@ export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) 
     const color = categoryColors[category]
     if (event.includes('routing')) return <NetworkIcon className={cn('size-3.5', color)} />
     if (event.includes('tool')) return <CpuIcon className={cn('size-3.5', color)} />
-    if (event.includes('completed') || event.includes('complete')) return <CheckCircle2Icon className={cn('size-3.5', color)} />
-    if (event.includes('warning') || event.includes('error')) return <AlertTriangleIcon className={cn('size-3.5', color)} />
+    if (event.includes('completed') || event.includes('complete'))
+      return <CheckCircle2Icon className={cn('size-3.5', color)} />
+    if (event.includes('warning') || event.includes('error'))
+      return <AlertTriangleIcon className={cn('size-3.5', color)} />
     if (event.includes('elicitation')) return <MessageSquareIcon className={cn('size-3.5', color)} />
     if (event.includes('node_transition')) return <GitBranchIcon className={cn('size-3.5', color)} />
     if (event.includes('state_snapshot')) return <CameraIcon className={cn('size-3.5', color)} />
@@ -250,9 +261,7 @@ export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) 
       <CollapsibleTrigger className="flex items-center justify-between w-full gap-2 text-xs font-medium text-muted-foreground hover:text-foreground px-3 py-2">
         <div className="flex items-center gap-2">
           {getIcon(lastEvent.event)}
-          <span className={cn('transition-colors', categoryColors[lastCategory])}>
-            {getEventLabel(lastEvent)}
-          </span>
+          <span className={cn('transition-colors', categoryColors[lastCategory])}>{getEventLabel(lastEvent)}</span>
           {isStreaming && (
             <Badge variant="outline" className="h-4 text-[9px] gap-1 border-blue-500/30 text-blue-400 animate-pulse">
               <Loader2Icon className="size-2.5 animate-spin" />
@@ -293,7 +302,13 @@ export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) 
                     )}
                   >
                     {/* Timeline dot */}
-                    <div className={cn('absolute left-[-5px] top-2.5 size-2 rounded-full', categoryDotColors[category], isLast && isStreaming && 'animate-pulse')} />
+                    <div
+                      className={cn(
+                        'absolute left-[-5px] top-2.5 size-2 rounded-full',
+                        categoryDotColors[category],
+                        isLast && isStreaming && 'animate-pulse',
+                      )}
+                    />
                     <span className="text-muted-foreground/50 tabular-nums shrink-0 mt-0.5 w-14">
                       {ev.timestamp
                         ? new Date(ev.timestamp * 1000).toLocaleTimeString([], {
@@ -305,7 +320,9 @@ export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) 
                         : '--:--:--'}
                     </span>
                     <div className="flex flex-col min-w-0">
-                      <span className={cn('font-semibold uppercase tracking-tight text-[8px]', categoryColors[category])}>
+                      <span
+                        className={cn('font-semibold uppercase tracking-tight text-[8px]', categoryColors[category])}
+                      >
                         {domainName} Response DELTA
                       </span>
                       <p className="text-foreground/70 font-mono text-[10px] break-all whitespace-pre-wrap line-clamp-3">
@@ -319,7 +336,13 @@ export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) 
               return (
                 <div key={i} className="relative flex gap-3 text-[11px] leading-tight py-1.5 ml-[-9px] pl-4">
                   {/* Timeline dot */}
-                  <div className={cn('absolute left-[-5px] top-2.5 size-2 rounded-full', categoryDotColors[category], isLast && isStreaming && 'animate-pulse')} />
+                  <div
+                    className={cn(
+                      'absolute left-[-5px] top-2.5 size-2 rounded-full',
+                      categoryDotColors[category],
+                      isLast && isStreaming && 'animate-pulse',
+                    )}
+                  />
                   <span className="text-muted-foreground/50 tabular-nums shrink-0 mt-0.5 w-14">
                     {ev.timestamp
                       ? new Date(ev.timestamp * 1000).toLocaleTimeString([], {
@@ -333,7 +356,9 @@ export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) 
                   <div className="flex flex-col min-w-0">
                     <div className="flex items-center gap-1.5">
                       {getIcon(ev.event)}
-                      <span className={cn('font-semibold uppercase tracking-tight text-[9px]', categoryColors[category])}>
+                      <span
+                        className={cn('font-semibold uppercase tracking-tight text-[9px]', categoryColors[category])}
+                      >
                         {ev.event}
                       </span>
                       {ev.duration && (

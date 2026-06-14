@@ -11,7 +11,7 @@ import {
   ChevronDown,
   ChevronUp,
   Sliders,
-  Layers
+  Layers,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -83,7 +83,7 @@ export default function SkillsView() {
     builtin_tools: [],
     skills: [],
     skill_graphs: [],
-    skill_workflows: []
+    skill_workflows: [],
   })
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -106,7 +106,7 @@ export default function SkillsView() {
         toast.error('Failed to load tools catalog')
         return
       }
-      const json = await res.json() as ToolsData
+      const json = (await res.json()) as ToolsData
       setData(json)
     } catch (err) {
       toast.error('Failed to connect to backend tools registry')
@@ -123,8 +123,8 @@ export default function SkillsView() {
         body: JSON.stringify({
           type: 'mcp_server',
           id: name,
-          enabled: !currentVal
-        })
+          enabled: !currentVal,
+        }),
       })
       if (res.ok) {
         toast.success(`MCP Server '${name}' ${!currentVal ? 'enabled' : 'disabled'}`)
@@ -145,8 +145,8 @@ export default function SkillsView() {
         body: JSON.stringify({
           type: 'builtin_tool',
           id: name,
-          enabled: !currentVal
-        })
+          enabled: !currentVal,
+        }),
       })
       if (res.ok) {
         toast.success(`Built-in tool '${name}' ${!currentVal ? 'enabled' : 'disabled'}`)
@@ -159,7 +159,11 @@ export default function SkillsView() {
     }
   }
 
-  const handleToggleCognitive = async (type: 'skill' | 'skill_graph' | 'skill_workflow', id: string, currentVal: boolean) => {
+  const handleToggleCognitive = async (
+    type: 'skill' | 'skill_graph' | 'skill_workflow',
+    id: string,
+    currentVal: boolean,
+  ) => {
     try {
       const res = await fetch('/api/enhanced/tools/toggle', {
         method: 'POST',
@@ -167,8 +171,8 @@ export default function SkillsView() {
         body: JSON.stringify({
           type,
           id,
-          enabled: !currentVal
-        })
+          enabled: !currentVal,
+        }),
       })
       if (res.ok) {
         toast.success(`Cognitive asset updated successfully`)
@@ -189,8 +193,8 @@ export default function SkillsView() {
         body: JSON.stringify({
           type: 'mcp_tool',
           id: `${serverName}:${toolName}`,
-          enabled: !currentVal
-        })
+          enabled: !currentVal,
+        }),
       })
       if (res.ok) {
         toast.success(`Tool '${toolName}' ${!currentVal ? 'enabled' : 'disabled'}`)
@@ -206,35 +210,37 @@ export default function SkillsView() {
 
   const loadMcpTools = async (serverName: string) => {
     try {
-      setLoadingMcpTools(prev => ({ ...prev, [serverName]: true }))
+      setLoadingMcpTools((prev) => ({ ...prev, [serverName]: true }))
       const res = await fetch(`/api/enhanced/mcp/servers/${encodeURIComponent(serverName)}/tools`)
       if (res.ok) {
-        const toolsList = await res.json() as LiveMCPTool[]
-        setMcpTools(prev => ({ ...prev, [serverName]: toolsList }))
+        const toolsList = (await res.json()) as LiveMCPTool[]
+        setMcpTools((prev) => ({ ...prev, [serverName]: toolsList }))
       } else {
         toast.error(`Could not load tools for server '${serverName}'`)
       }
     } catch {
       toast.error(`Error loading tools for '${serverName}'`)
     } finally {
-      setLoadingMcpTools(prev => ({ ...prev, [serverName]: false }))
+      setLoadingMcpTools((prev) => ({ ...prev, [serverName]: false }))
     }
   }
 
   const toggleMcpExpansion = (serverName: string) => {
     const isExpanded = !expandedMcp[serverName]
-    setExpandedMcp(prev => ({ ...prev, [serverName]: isExpanded }))
+    setExpandedMcp((prev) => ({ ...prev, [serverName]: isExpanded }))
     if (isExpanded && !mcpTools[serverName]) {
       void loadMcpTools(serverName)
     }
   }
 
   // Filters
-  const filteredMcp = data.mcp_tools.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  const filteredBuiltin = data.builtin_tools.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  const filteredSkills = data.skills.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  const filteredGraphs = data.skill_graphs.filter(g => g.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  const filteredWorkflows = data.skill_workflows.filter(w => w.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredMcp = data.mcp_tools.filter((t) => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredBuiltin = data.builtin_tools.filter((t) => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredSkills = data.skills.filter((s) => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredGraphs = data.skill_graphs.filter((g) => g.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredWorkflows = data.skill_workflows.filter((w) =>
+    w.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  )
 
   return (
     <div className="space-y-6">
@@ -246,7 +252,8 @@ export default function SkillsView() {
                 Tools & Cognitive Registry
               </CardTitle>
               <CardDescription>
-                Unified control plane to discover, monitor, and dynamically toggle MCP servers, built-in operations, and dynamic cognitive assets.
+                Unified control plane to discover, monitor, and dynamically toggle MCP servers, built-in operations,
+                and dynamic cognitive assets.
               </CardDescription>
             </div>
             <div className="flex items-center gap-2 w-full md:w-auto">
@@ -259,7 +266,13 @@ export default function SkillsView() {
                   className="pl-9 h-9 bg-muted/20"
                 />
               </div>
-              <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => void fetchTools()} disabled={loading}>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                onClick={() => void fetchTools()}
+                disabled={loading}
+              >
                 <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
             </div>
@@ -270,8 +283,13 @@ export default function SkillsView() {
             {[
               { id: 'mcp', label: 'MCP Servers', icon: Wrench, count: data.mcp_tools.length },
               { id: 'builtin', label: 'Built-in Tools', icon: Code, count: data.builtin_tools.length },
-              { id: 'cognitive', label: 'Cognitive Skills', icon: Layers, count: data.skills.length + data.skill_graphs.length + data.skill_workflows.length }
-            ].map(tab => (
+              {
+                id: 'cognitive',
+                label: 'Cognitive Skills',
+                icon: Layers,
+                count: data.skills.length + data.skill_graphs.length + data.skill_workflows.length,
+              },
+            ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
@@ -306,13 +324,16 @@ export default function SkillsView() {
                       <div className="text-center py-12 text-muted-foreground text-sm">No MCP servers registered.</div>
                     ) : (
                       <div className="grid grid-cols-1 gap-4">
-                        {filteredMcp.map(server => {
+                        {filteredMcp.map((server) => {
                           const isExpanded = !!expandedMcp[server.name]
                           const serverTools = mcpTools[server.name] || []
                           const isLoadingTools = !!loadingMcpTools[server.name]
 
                           return (
-                            <div key={server.name} className="p-4 rounded-xl border border-border/40 bg-muted/10 backdrop-blur-sm hover:border-emerald-500/30 transition-all flex flex-col justify-between">
+                            <div
+                              key={server.name}
+                              className="p-4 rounded-xl border border-border/40 bg-muted/10 backdrop-blur-sm hover:border-emerald-500/30 transition-all flex flex-col justify-between"
+                            >
                               <div>
                                 <div className="flex items-center justify-between gap-2 mb-2">
                                   <div className="flex items-center gap-2">
@@ -320,7 +341,10 @@ export default function SkillsView() {
                                     <h4 className="font-bold text-sm text-foreground">{server.name}</h4>
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    <Badge variant="outline" className={`text-[10px] font-semibold ${server.enabled ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-[10px] font-semibold ${server.enabled ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}
+                                    >
                                       {server.enabled ? 'Active' : 'Disabled'}
                                     </Badge>
                                     <button
@@ -338,12 +362,16 @@ export default function SkillsView() {
                                 <div className="space-y-1.5 mt-2">
                                   <div className="text-xs text-muted-foreground">
                                     <span className="font-semibold text-foreground">Command: </span>
-                                    <code className="font-mono bg-muted/40 px-1 py-0.5 rounded text-[10px]">{server.command}</code>
+                                    <code className="font-mono bg-muted/40 px-1 py-0.5 rounded text-[10px]">
+                                      {server.command}
+                                    </code>
                                   </div>
                                   {server.args.length > 0 && (
                                     <div className="text-xs text-muted-foreground">
                                       <span className="font-semibold text-foreground">Args: </span>
-                                      <code className="font-mono bg-muted/40 px-1 py-0.5 rounded text-[10px]">{server.args.join(' ')}</code>
+                                      <code className="font-mono bg-muted/40 px-1 py-0.5 rounded text-[10px]">
+                                        {server.args.join(' ')}
+                                      </code>
                                     </div>
                                   )}
                                 </div>
@@ -358,7 +386,11 @@ export default function SkillsView() {
                                   >
                                     <Sliders className="size-3.5 text-teal-400" />
                                     <span>Manage MCP Tools</span>
-                                    {isExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                                    {isExpanded ? (
+                                      <ChevronUp className="size-3.5" />
+                                    ) : (
+                                      <ChevronDown className="size-3.5" />
+                                    )}
                                   </button>
 
                                   {isExpanded && (
@@ -369,21 +401,32 @@ export default function SkillsView() {
                                           <span>Discovering tools via stdio handshake...</span>
                                         </div>
                                       ) : serverTools.length === 0 ? (
-                                        <div className="text-xs text-muted-foreground py-2">No tools exposed by this MCP server.</div>
+                                        <div className="text-xs text-muted-foreground py-2">
+                                          No tools exposed by this MCP server.
+                                        </div>
                                       ) : (
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                          {serverTools.map(tool => (
-                                            <div key={tool.name} className="flex items-start justify-between p-2.5 rounded-md border border-border/20 bg-muted/10">
+                                          {serverTools.map((tool) => (
+                                            <div
+                                              key={tool.name}
+                                              className="flex items-start justify-between p-2.5 rounded-md border border-border/20 bg-muted/10"
+                                            >
                                               <div className="space-y-1 pr-2">
                                                 <div className="flex items-center gap-1.5">
-                                                  <span className="font-mono font-bold text-xs text-foreground">{tool.name}</span>
+                                                  <span className="font-mono font-bold text-xs text-foreground">
+                                                    {tool.name}
+                                                  </span>
                                                 </div>
                                                 {tool.description && (
-                                                  <p className="text-[10px] text-muted-foreground leading-normal line-clamp-2">{tool.description}</p>
+                                                  <p className="text-[10px] text-muted-foreground leading-normal line-clamp-2">
+                                                    {tool.description}
+                                                  </p>
                                                 )}
                                               </div>
                                               <button
-                                                onClick={() => void handleToggleMcpTool(server.name, tool.name, tool.enabled)}
+                                                onClick={() =>
+                                                  void handleToggleMcpTool(server.name, tool.name, tool.enabled)
+                                                }
                                                 className={`px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 border transition-all ${
                                                   tool.enabled
                                                     ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
@@ -422,8 +465,11 @@ export default function SkillsView() {
                       <div className="text-center py-12 text-muted-foreground text-sm">No built-in tools found.</div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {filteredBuiltin.map(tool => (
-                          <div key={tool.name} className="p-4 rounded-xl border border-border/40 bg-muted/10 backdrop-blur-sm hover:border-emerald-500/30 transition-all flex flex-col justify-between">
+                        {filteredBuiltin.map((tool) => (
+                          <div
+                            key={tool.name}
+                            className="p-4 rounded-xl border border-border/40 bg-muted/10 backdrop-blur-sm hover:border-emerald-500/30 transition-all flex flex-col justify-between"
+                          >
                             <div>
                               <div className="flex items-center justify-between gap-2 mb-2">
                                 <div className="flex items-center gap-2">
@@ -444,7 +490,9 @@ export default function SkillsView() {
                               <div className="space-y-1.5 mt-2">
                                 <div className="text-xs text-muted-foreground">
                                   <span className="font-semibold text-foreground">File Path: </span>
-                                  <span className="font-mono text-muted-foreground text-[10px] break-all">{tool.file_path}</span>
+                                  <span className="font-mono text-muted-foreground text-[10px] break-all">
+                                    {tool.file_path}
+                                  </span>
                                 </div>
                               </div>
                             </div>
@@ -464,7 +512,6 @@ export default function SkillsView() {
                 {/* 3. Cognitive Registry - 3 Separate Side-by-Side boxes */}
                 {activeTab === 'cognitive' && (
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
                     {/* Box 1: Agent Skills */}
                     <div className="space-y-4 border border-border/40 rounded-xl bg-card/40 p-4">
                       <div className="flex items-center gap-2 border-b border-border/20 pb-3 mb-2">
@@ -481,10 +528,15 @@ export default function SkillsView() {
                       <ScrollArea className="h-[calc(100vh-27rem)] pr-2">
                         <div className="space-y-3">
                           {filteredSkills.length === 0 ? (
-                            <div className="text-center py-6 text-xs text-muted-foreground">No matching skills found.</div>
+                            <div className="text-center py-6 text-xs text-muted-foreground">
+                              No matching skills found.
+                            </div>
                           ) : (
-                            filteredSkills.map(skill => (
-                              <div key={skill.id} className="p-3.5 rounded-lg border border-border/30 bg-muted/5 hover:border-emerald-500/20 transition-all flex flex-col justify-between space-y-2">
+                            filteredSkills.map((skill) => (
+                              <div
+                                key={skill.id}
+                                className="p-3.5 rounded-lg border border-border/30 bg-muted/5 hover:border-emerald-500/20 transition-all flex flex-col justify-between space-y-2"
+                              >
                                 <div className="flex items-start justify-between gap-2">
                                   <span className="font-bold text-xs text-foreground">{skill.name}</span>
                                   <button
@@ -503,8 +555,12 @@ export default function SkillsView() {
                                 </p>
                                 {skill.tags && skill.tags.length > 0 && (
                                   <div className="flex flex-wrap gap-1">
-                                    {skill.tags.slice(0, 3).map(t => (
-                                      <Badge key={t} variant="secondary" className="text-[8px] bg-muted/40 font-semibold scale-90 origin-left">
+                                    {skill.tags.slice(0, 3).map((t) => (
+                                      <Badge
+                                        key={t}
+                                        variant="secondary"
+                                        className="text-[8px] bg-muted/40 font-semibold scale-90 origin-left"
+                                      >
                                         {t}
                                       </Badge>
                                     ))}
@@ -533,10 +589,15 @@ export default function SkillsView() {
                       <ScrollArea className="h-[calc(100vh-27rem)] pr-2">
                         <div className="space-y-3">
                           {filteredGraphs.length === 0 ? (
-                            <div className="text-center py-6 text-xs text-muted-foreground">No matching graphs found.</div>
+                            <div className="text-center py-6 text-xs text-muted-foreground">
+                              No matching graphs found.
+                            </div>
                           ) : (
-                            filteredGraphs.map(graph => (
-                              <div key={graph.id} className="p-3.5 rounded-lg border border-border/30 bg-muted/5 hover:border-emerald-500/20 transition-all flex flex-col justify-between space-y-2">
+                            filteredGraphs.map((graph) => (
+                              <div
+                                key={graph.id}
+                                className="p-3.5 rounded-lg border border-border/30 bg-muted/5 hover:border-emerald-500/20 transition-all flex flex-col justify-between space-y-2"
+                              >
                                 <div className="flex items-start justify-between gap-2">
                                   <span className="font-bold text-xs text-foreground">{graph.name}</span>
                                   <button
@@ -576,10 +637,15 @@ export default function SkillsView() {
                       <ScrollArea className="h-[calc(100vh-27rem)] pr-2">
                         <div className="space-y-3">
                           {filteredWorkflows.length === 0 ? (
-                            <div className="text-center py-6 text-xs text-muted-foreground">No matching workflows found.</div>
+                            <div className="text-center py-6 text-xs text-muted-foreground">
+                              No matching workflows found.
+                            </div>
                           ) : (
-                            filteredWorkflows.map(wf => (
-                              <div key={wf.id} className="p-3.5 rounded-lg border border-border/30 bg-muted/5 hover:border-emerald-500/20 transition-all flex flex-col justify-between space-y-2">
+                            filteredWorkflows.map((wf) => (
+                              <div
+                                key={wf.id}
+                                className="p-3.5 rounded-lg border border-border/30 bg-muted/5 hover:border-emerald-500/20 transition-all flex flex-col justify-between space-y-2"
+                              >
                                 <div className="flex items-start justify-between gap-2">
                                   <span className="font-bold text-xs text-foreground">{wf.name}</span>
                                   <button
@@ -602,7 +668,6 @@ export default function SkillsView() {
                         </div>
                       </ScrollArea>
                     </div>
-
                   </div>
                 )}
               </>

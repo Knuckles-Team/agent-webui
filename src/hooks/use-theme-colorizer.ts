@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react'
 
 /**
  * Hook to dynamically change the theme's brand and primary colors at runtime.
@@ -7,29 +7,29 @@ import { useState, useEffect } from 'react';
  */
 export function useThemeColorizer(defaultBaseColor: string = '0.52 0.18 260') {
   const [baseColor, setBaseColor] = useState<string>(() => {
-    return localStorage.getItem('pydantic-brand-color') || defaultBaseColor;
-  });
+    return localStorage.getItem('pydantic-brand-color') || defaultBaseColor
+  })
 
   useEffect(() => {
-    localStorage.setItem('pydantic-brand-color', baseColor);
+    localStorage.setItem('pydantic-brand-color', baseColor)
 
     // Parse the base OKLCH string (e.g., "0.52 0.18 260")
     // We can assume it's valid for now or fallback to default
-    const [l, c, h] = baseColor.split(' ');
+    const [l, c, h] = baseColor.split(' ')
 
-    const root = document.documentElement;
+    const root = document.documentElement
 
-    if (!l || !c || !h) return;
+    if (!l || !c || !h) return
 
     // Apply primary brand colors
-    root.style.setProperty('--pydantic-brand', `oklch(${baseColor})`);
+    root.style.setProperty('--pydantic-brand', `oklch(${baseColor})`)
 
     // Light mode dynamic adjustments
     // We adjust primary to be similar to brand
-    root.style.setProperty('--primary', `oklch(${baseColor})`);
-    root.style.setProperty('--sidebar-primary', `oklch(${baseColor})`);
-    root.style.setProperty('--ring', `oklch(${baseColor})`);
-    root.style.setProperty('--sidebar-ring', `oklch(${baseColor})`);
+    root.style.setProperty('--primary', `oklch(${baseColor})`)
+    root.style.setProperty('--sidebar-primary', `oklch(${baseColor})`)
+    root.style.setProperty('--ring', `oklch(${baseColor})`)
+    root.style.setProperty('--sidebar-ring', `oklch(${baseColor})`)
 
     // Dark mode often needs a slightly lighter/more vibrant primary for contrast.
     // However, since we're using CSS custom properties globally, if we set them on :root
@@ -66,7 +66,7 @@ export function useThemeColorizer(defaultBaseColor: string = '0.52 0.18 260') {
     }
     // Note: theme-color expects a hex, rgb, or hsl, but modern browsers often support oklch here too.
     metaTheme.content = svgColor
-  }, [baseColor]);
+  }, [baseColor])
 
-  return { baseColor, setBaseColor };
+  return { baseColor, setBaseColor }
 }

@@ -1,14 +1,5 @@
 import { useState, useEffect } from 'react'
-import {
-  Save,
-  RefreshCw,
-  Eye,
-  EyeOff,
-  Settings,
-  Shield,
-  Sliders,
-  Variable
-} from 'lucide-react'
+import { Save, RefreshCw, Eye, EyeOff, Settings, Shield, Sliders, Variable } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -50,7 +41,7 @@ export default function ConfigurationView() {
       const res = await fetch('/api/enhanced/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
+        body: JSON.stringify(config),
       })
       if (res.ok) {
         toast.success('Central config.json updated successfully')
@@ -81,28 +72,33 @@ export default function ConfigurationView() {
   }
 
   const handleFieldChange = (key: string, value: any) => {
-    setConfig(prev => ({ ...prev, [key]: value }))
+    setConfig((prev) => ({ ...prev, [key]: value }))
   }
 
   const toggleShowKey = (key: string) => {
-    setShowKeys(prev => ({ ...prev, [key]: !prev[key] }))
+    setShowKeys((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
   const apiKeyFields = [
     { key: 'openai_api_key', label: 'OpenAI API Key', placeholder: 'sk-proj-...' },
     { key: 'anthropic_api_key', label: 'Anthropic API Key', placeholder: 'sk-ant-...' },
     { key: 'gemini_api_key', label: 'Gemini API Key', placeholder: 'AIzaSy...' },
-    { key: 'github_token', label: 'GitHub Personal Access Token', placeholder: 'ghp_...' }
+    { key: 'github_token', label: 'GitHub Personal Access Token', placeholder: 'ghp_...' },
   ]
 
   const operationalFields = [
     { key: 'graph_timeout', label: 'Knowledge Graph Request Timeout (ms)', type: 'number' },
-    { key: 'log_level', label: 'System Log Level Verbosity', type: 'select', options: ['DEBUG', 'INFO', 'WARNING', 'ERROR'] }
+    {
+      key: 'log_level',
+      label: 'System Log Level Verbosity',
+      type: 'select',
+      options: ['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+    },
   ]
 
   // Filter other custom/arbitrary variables not in standard fields
   const customKeys = Object.keys(config).filter(
-    key => !apiKeyFields.some(f => f.key === key) && !operationalFields.some(f => f.key === key)
+    (key) => !apiKeyFields.some((f) => f.key === key) && !operationalFields.some((f) => f.key === key),
   )
 
   return (
@@ -118,11 +114,22 @@ export default function ConfigurationView() {
           </p>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Button variant="outline" size="sm" onClick={() => void handleReload()} disabled={reloading} className="border-emerald-500/20 hover:bg-emerald-500/5 text-emerald-400">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void handleReload()}
+            disabled={reloading}
+            className="border-emerald-500/20 hover:bg-emerald-500/5 text-emerald-400"
+          >
             <RefreshCw className={`size-4 mr-1.5 ${reloading ? 'animate-spin' : ''}`} />
             Reload Engine
           </Button>
-          <Button size="sm" onClick={() => void handleSave()} disabled={saving || loading} className="bg-emerald-600 hover:bg-emerald-700">
+          <Button
+            size="sm"
+            onClick={() => void handleSave()}
+            disabled={saving || loading}
+            className="bg-emerald-600 hover:bg-emerald-700"
+          >
             <Save className="size-4 mr-1.5" />
             {saving ? 'Saving...' : 'Save Settings'}
           </Button>
@@ -150,7 +157,7 @@ export default function ConfigurationView() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {apiKeyFields.map(field => (
+                  {apiKeyFields.map((field) => (
                     <div key={field.key} className="space-y-1.5">
                       <label className="text-xs font-semibold text-muted-foreground">{field.label}</label>
                       <div className="relative">
@@ -188,7 +195,7 @@ export default function ConfigurationView() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {operationalFields.map(field => (
+                  {operationalFields.map((field) => (
                     <div key={field.key} className="space-y-1.5">
                       <label className="text-xs font-semibold text-muted-foreground">{field.label}</label>
                       {field.type === 'select' ? (
@@ -197,7 +204,7 @@ export default function ConfigurationView() {
                           onChange={(e) => handleFieldChange(field.key, e.target.value)}
                           className="w-full h-10 px-3 rounded-md border border-input bg-muted/20 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         >
-                          {field.options?.map(opt => (
+                          {field.options?.map((opt) => (
                             <option key={opt} value={opt} className="bg-background text-foreground">
                               {opt}
                             </option>
@@ -231,11 +238,13 @@ export default function ConfigurationView() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {customKeys.map(key => (
+                    {customKeys.map((key) => (
                       <div key={key} className="space-y-1.5">
                         <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
                           {key}
-                          <Badge variant="outline" className="text-[8px] px-1 py-0.25">env</Badge>
+                          <Badge variant="outline" className="text-[8px] px-1 py-0.25">
+                            env
+                          </Badge>
                         </label>
                         <Input
                           value={config[key] !== null ? String(config[key]) : ''}

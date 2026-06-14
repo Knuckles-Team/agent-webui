@@ -103,7 +103,7 @@ describe('KnowledgeBaseView Component', () => {
     })
 
     // Click on health check button
-    const healthButton = screen.getAllByRole('button').find(btn => btn.textContent === '')
+    const healthButton = screen.getAllByRole('button').find((btn) => btn.textContent === '')
     if (healthButton) {
       await user.click(healthButton)
 

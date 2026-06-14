@@ -6,25 +6,10 @@
  * Provides parity with the terminal-UI `/help` and `/keybindings` commands.
  */
 
-import {
-  Book,
-  Brain,
-  Calendar,
-  Files,
-  Network,
-  Settings,
-  Sparkles,
-  Zap,
-} from 'lucide-react'
+import { Book, Brain, Calendar, Files, Network, Settings, Sparkles, Zap } from 'lucide-react'
 import type { ComponentType, ReactNode, SVGProps } from 'react'
 
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 interface HelpOverlayProps {
   open: boolean
@@ -64,13 +49,9 @@ const FEATURES: FeatureEntry[] = [
 
 function ShortcutRow({ shortcut }: { shortcut: Shortcut }): ReactNode {
   return (
-    <div className='flex items-start justify-between gap-4 py-1.5'>
-      <kbd className='rounded border bg-muted px-2 py-0.5 font-mono text-xs'>
-        {shortcut.keys}
-      </kbd>
-      <span className='text-sm text-muted-foreground text-right'>
-        {shortcut.description}
-      </span>
+    <div className="flex items-start justify-between gap-4 py-1.5">
+      <kbd className="rounded border bg-muted px-2 py-0.5 font-mono text-xs">{shortcut.keys}</kbd>
+      <span className="text-sm text-muted-foreground text-right">{shortcut.description}</span>
     </div>
   )
 }
@@ -78,11 +59,11 @@ function ShortcutRow({ shortcut }: { shortcut: Shortcut }): ReactNode {
 function FeatureRow({ entry }: { entry: FeatureEntry }): ReactNode {
   const Icon = entry.icon
   return (
-    <div className='flex items-start gap-3 py-1.5'>
-      <Icon className='mt-0.5 size-4 text-muted-foreground shrink-0' />
-      <div className='flex flex-col'>
-        <span className='text-sm font-medium'>{entry.label}</span>
-        <span className='text-xs text-muted-foreground'>{entry.description}</span>
+    <div className="flex items-start gap-3 py-1.5">
+      <Icon className="mt-0.5 size-4 text-muted-foreground shrink-0" />
+      <div className="flex flex-col">
+        <span className="text-sm font-medium">{entry.label}</span>
+        <span className="text-xs text-muted-foreground">{entry.description}</span>
       </div>
     </div>
   )
@@ -94,29 +75,27 @@ function FeatureRow({ entry }: { entry: FeatureEntry }): ReactNode {
 export function HelpOverlay({ open, onOpenChange }: HelpOverlayProps): ReactNode {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='sm:max-w-2xl'>
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Help</DialogTitle>
-          <DialogDescription>
-            Keyboard shortcuts and feature summary. Press Esc to close.
-          </DialogDescription>
+          <DialogDescription>Keyboard shortcuts and feature summary. Press Esc to close.</DialogDescription>
         </DialogHeader>
-        <div className='grid gap-6 sm:grid-cols-2'>
+        <div className="grid gap-6 sm:grid-cols-2">
           <section>
-            <h3 className='mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground'>
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Keyboard shortcuts
             </h3>
-            <div className='divide-y divide-border'>
+            <div className="divide-y divide-border">
               {SHORTCUTS.map((shortcut) => (
                 <ShortcutRow key={shortcut.keys} shortcut={shortcut} />
               ))}
             </div>
           </section>
           <section>
-            <h3 className='mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground'>
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Features / Commands
             </h3>
-            <div className='divide-y divide-border'>
+            <div className="divide-y divide-border">
               {FEATURES.map((entry) => (
                 <FeatureRow key={entry.label} entry={entry} />
               ))}

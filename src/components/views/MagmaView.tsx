@@ -9,24 +9,12 @@
 
 import { useState } from 'react'
 import { Compass, Loader2, Play } from 'lucide-react'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { toast } from 'sonner'
 
@@ -104,11 +92,7 @@ export default function MagmaView() {
         throw new Error(`HTTP ${res.status}: ${text}`)
       }
       const data = (await res.json()) as MagmaResult[] | { results?: MagmaResult[] }
-      const flat: MagmaResult[] = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.results)
-          ? data.results
-          : []
+      const flat: MagmaResult[] = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : []
       setGrouped(groupByView(flat, viewType))
       setLastQuery(trimmed)
       if (flat.length === 0) {
@@ -130,8 +114,7 @@ export default function MagmaView() {
             Perspective Views
           </h1>
           <p className="text-muted-foreground text-sm">
-            Orthogonal retrieval across semantic, temporal, causal, entity, place,
-            and epistemic views.
+            Orthogonal retrieval across semantic, temporal, causal, entity, place, and epistemic views.
           </p>
         </div>
       </div>
@@ -139,9 +122,7 @@ export default function MagmaView() {
       <Card>
         <CardHeader>
           <CardTitle>Query</CardTitle>
-          <CardDescription>
-            Compose a query and pick the perspective view to retrieve against.
-          </CardDescription>
+          <CardDescription>Compose a query and pick the perspective view to retrieve against.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
@@ -162,10 +143,7 @@ export default function MagmaView() {
               <label className="text-sm font-medium" htmlFor="magma-view-type">
                 View Type
               </label>
-              <Select
-                value={viewType}
-                onValueChange={(v) => setViewType(v as MagmaView)}
-              >
+              <Select value={viewType} onValueChange={(v) => setViewType(v as MagmaView)}>
                 <SelectTrigger id="magma-view-type" aria-label="Perspective view type">
                   <SelectValue placeholder="Select a view" />
                 </SelectTrigger>
@@ -199,11 +177,7 @@ export default function MagmaView() {
 
           <div className="flex justify-end">
             <Button onClick={() => void runQuery()} disabled={loading}>
-              {loading ? (
-                <Loader2 className="size-4 mr-2 animate-spin" />
-              ) : (
-                <Play className="size-4 mr-2" />
-              )}
+              {loading ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Play className="size-4 mr-2" />}
               Run Query
             </Button>
           </div>
@@ -213,8 +187,7 @@ export default function MagmaView() {
       <div className="space-y-4">
         {lastQuery && (
           <p className="text-xs text-muted-foreground">
-            Results for:{' '}
-            <span className="font-mono">{lastQuery}</span>
+            Results for: <span className="font-mono">{lastQuery}</span>
           </p>
         )}
 
@@ -238,29 +211,17 @@ export default function MagmaView() {
                 <ScrollArea className="max-h-[50vh]">
                   <div className="space-y-2">
                     {items.map((item, idx) => {
-                      const content =
-                        typeof item.content === 'string'
-                          ? item.content
-                          : JSON.stringify(item, null, 2)
+                      const content = typeof item.content === 'string' ? item.content : JSON.stringify(item, null, 2)
                       const itemId = item.id ?? `${view}-${idx}`
                       return (
-                        <div
-                          key={itemId}
-                          className="rounded border p-3 text-sm space-y-1"
-                        >
+                        <div key={itemId} className="rounded border p-3 text-sm space-y-1">
                           <div className="flex items-center justify-between">
-                            <span className="font-mono text-xs text-muted-foreground">
-                              {String(item.id ?? '-')}
-                            </span>
+                            <span className="font-mono text-xs text-muted-foreground">{String(item.id ?? '-')}</span>
                             {typeof item.score === 'number' && (
-                              <Badge variant="outline">
-                                {item.score.toFixed(3)}
-                              </Badge>
+                              <Badge variant="outline">{item.score.toFixed(3)}</Badge>
                             )}
                           </div>
-                          <pre className="whitespace-pre-wrap break-words font-sans">
-                            {content}
-                          </pre>
+                          <pre className="whitespace-pre-wrap break-words font-sans">{content}</pre>
                         </div>
                       )
                     })}

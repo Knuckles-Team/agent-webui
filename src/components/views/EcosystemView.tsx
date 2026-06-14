@@ -1,16 +1,48 @@
 import React, { useState, useEffect } from 'react'
 import {
-  Network, Server, Cpu, HardDrive, Play, Square, RotateCcw,
-  Terminal, X, GitPullRequest, RefreshCw, BarChart2,
-  Flame, Heart, Plus, Check, Calendar, Activity, Database,
-  LayoutGrid, Layers, GitBranch, GitMerge, Sliders,
-  Mail, Download, Compass, Search, FileText
+  Network,
+  Server,
+  Cpu,
+  HardDrive,
+  Play,
+  Square,
+  RotateCcw,
+  Terminal,
+  X,
+  GitPullRequest,
+  RefreshCw,
+  BarChart2,
+  Flame,
+  Heart,
+  Plus,
+  Check,
+  Calendar,
+  Activity,
+  Database,
+  LayoutGrid,
+  Layers,
+  GitBranch,
+  GitMerge,
+  Sliders,
+  Mail,
+  Download,
+  Compass,
+  Search,
+  FileText,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -273,7 +305,7 @@ export default function EcosystemView() {
     { day: 'Tuesday', meal: 'Avocado Cobb Salad with Turkey', cal: 520, protein: '38g' },
     { day: 'Wednesday', meal: 'Garlic Butter Grass-fed Ribeye', cal: 850, protein: '55g' },
     { day: 'Thursday', meal: 'Lemon Zest Chicken Breast & Asparagus', cal: 490, protein: '42g' },
-    { day: 'Friday', meal: 'Spicy Baked Cod with Roasted Sweets', cal: 580, protein: '39g' }
+    { day: 'Friday', meal: 'Spicy Baked Cod with Roasted Sweets', cal: 580, protein: '39g' },
   ])
   const [workoutRoutines] = useState([
     { name: 'Dumbbell Incline Bench Press', muscle: 'Chest', sets: 4, reps: '8-10' },
@@ -281,16 +313,51 @@ export default function EcosystemView() {
     { name: 'Alternating Hammer Dumbbell Curls', muscle: 'Biceps', sets: 4, reps: '10' },
     { name: 'Concentrated Barbell Spider Curls', muscle: 'Biceps', sets: 3, reps: '12' },
     { name: 'Standard Barbell Back Squats', muscle: 'Quads', sets: 4, reps: '8' },
-    { name: 'Barbell Romanian Deadlifts', muscle: 'Hamstrings', sets: 4, reps: '10' }
+    { name: 'Barbell Romanian Deadlifts', muscle: 'Hamstrings', sets: 4, reps: '10' },
   ])
 
   // Latency analytics static model representation
   const [latencyData] = useState([
-    { id: 'tr-9a1b', route: 'POST /api/enhanced/agent/chat', agent: 'ECO-Agent', latency: 450, tokens: 1204, status: 'success' },
-    { id: 'tr-7f2e', route: 'GET /api/enhanced/graph/magma', agent: 'KG-Orchestrator', latency: 180, tokens: 450, status: 'success' },
-    { id: 'tr-3d5c', route: 'POST /api/enhanced/tunnel-manager/remote', agent: 'Tunnel-Server', latency: 980, tokens: 890, status: 'success' },
-    { id: 'tr-1e8b', route: 'PUT /api/enhanced/config', agent: 'Settings-Agent', latency: 120, tokens: 120, status: 'success' },
-    { id: 'tr-8d4a', route: 'POST /api/enhanced/voice/transcribe', agent: 'Speech-Agent', latency: 1200, tokens: 2100, status: 'success' }
+    {
+      id: 'tr-9a1b',
+      route: 'POST /api/enhanced/agent/chat',
+      agent: 'ECO-Agent',
+      latency: 450,
+      tokens: 1204,
+      status: 'success',
+    },
+    {
+      id: 'tr-7f2e',
+      route: 'GET /api/enhanced/graph/magma',
+      agent: 'KG-Orchestrator',
+      latency: 180,
+      tokens: 450,
+      status: 'success',
+    },
+    {
+      id: 'tr-3d5c',
+      route: 'POST /api/enhanced/tunnel-manager/remote',
+      agent: 'Tunnel-Server',
+      latency: 980,
+      tokens: 890,
+      status: 'success',
+    },
+    {
+      id: 'tr-1e8b',
+      route: 'PUT /api/enhanced/config',
+      agent: 'Settings-Agent',
+      latency: 120,
+      tokens: 120,
+      status: 'success',
+    },
+    {
+      id: 'tr-8d4a',
+      route: 'POST /api/enhanced/voice/transcribe',
+      agent: 'Speech-Agent',
+      latency: 1200,
+      tokens: 2100,
+      status: 'success',
+    },
   ])
 
   // Core functions
@@ -319,7 +386,7 @@ export default function EcosystemView() {
       const res = await fetch('/api/enhanced/tunnel-manager/hosts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newHost)
+        body: JSON.stringify(newHost),
       })
       if (res.ok) {
         toast.success(`Host ${newHost.alias} added successfully`)
@@ -336,26 +403,26 @@ export default function EcosystemView() {
   const runSshCommand = async () => {
     if (!selectedHost || !remoteCommand.trim()) return
     setRunningRemote(true)
-    setTerminalOutput(prev => [...prev, `genius@antigravity:~$ ssh ${selectedHost} "${remoteCommand}"`])
+    setTerminalOutput((prev) => [...prev, `genius@antigravity:~$ ssh ${selectedHost} "${remoteCommand}"`])
     try {
       const res = await fetch('/api/enhanced/tunnel-manager/remote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host: selectedHost, cmd: remoteCommand })
+        body: JSON.stringify({ host: selectedHost, cmd: remoteCommand }),
       })
       if (res.ok) {
         const data = await res.json()
         if (data.stdout) {
-          setTerminalOutput(prev => [...prev, data.stdout])
+          setTerminalOutput((prev) => [...prev, data.stdout])
         }
         if (data.stderr) {
-          setTerminalOutput(prev => [...prev, `[stderr]: ${data.stderr}`])
+          setTerminalOutput((prev) => [...prev, `[stderr]: ${data.stderr}`])
         }
         setRemoteCommand('')
       }
     } catch (err) {
       console.error(err)
-      setTerminalOutput(prev => [...prev, `ssh connection failed to ${selectedHost}`])
+      setTerminalOutput((prev) => [...prev, `ssh connection failed to ${selectedHost}`])
     } finally {
       setRunningRemote(false)
     }
@@ -365,7 +432,7 @@ export default function EcosystemView() {
     try {
       const [resRes, procRes] = await Promise.all([
         fetch('/api/enhanced/systems-manager/resources'),
-        fetch('/api/enhanced/systems-manager/processes')
+        fetch('/api/enhanced/systems-manager/processes'),
       ])
       if (resRes.ok) {
         setResources(await resRes.json())
@@ -383,7 +450,7 @@ export default function EcosystemView() {
       const res = await fetch('/api/enhanced/systems-manager/processes/kill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pid })
+        body: JSON.stringify({ pid }),
       })
       if (res.ok) {
         toast.success(`Sent SIGKILL to process ${pid}`)
@@ -411,7 +478,7 @@ export default function EcosystemView() {
       const res = await fetch(`/api/enhanced/container-manager/containers/${id}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action })
+        body: JSON.stringify({ action }),
       })
       if (res.ok) {
         toast.success(`Container ${id} action '${action}' completed`)
@@ -446,7 +513,7 @@ export default function EcosystemView() {
       const res = await fetch('/api/enhanced/repository-manager/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, targets: selectedRepos })
+        body: JSON.stringify({ action, targets: selectedRepos }),
       })
       if (res.ok) {
         toast.success(`Bulk ${action} triggered successfully across ${selectedRepos.length} repos`)
@@ -470,7 +537,7 @@ export default function EcosystemView() {
         fetch('/api/enhanced/ecosystem/atlassian/kanban'),
         fetch('/api/enhanced/ecosystem/github/prs'),
         fetch('/api/enhanced/ecosystem/gitlab/mrs'),
-        fetch('/api/enhanced/ecosystem/portainer/stacks')
+        fetch('/api/enhanced/ecosystem/portainer/stacks'),
       ])
 
       if (atlassianRes.ok) {
@@ -495,7 +562,7 @@ export default function EcosystemView() {
       // 2. Data & Research Services
       const [dsRes, scholarRes] = await Promise.all([
         fetch('/api/enhanced/ecosystem/datascience/training'),
-        fetch('/api/enhanced/ecosystem/scholarx/papers')
+        fetch('/api/enhanced/ecosystem/scholarx/papers'),
       ])
 
       if (dsRes.ok) {
@@ -517,7 +584,7 @@ export default function EcosystemView() {
       const [haRes, ncRes, msRes] = await Promise.all([
         fetch('/api/enhanced/ecosystem/homeassistant/devices'),
         fetch('/api/enhanced/ecosystem/nextcloud/events'),
-        fetch('/api/enhanced/ecosystem/microsoft/emails')
+        fetch('/api/enhanced/ecosystem/microsoft/emails'),
       ])
 
       if (haRes.ok) {
@@ -538,7 +605,7 @@ export default function EcosystemView() {
       const [dlRes, qbtRes, stirlingRes] = await Promise.all([
         fetch('/api/enhanced/ecosystem/mediadownloader/downloads'),
         fetch('/api/enhanced/ecosystem/qbittorrent/torrents'),
-        fetch('/api/enhanced/ecosystem/stirlingpdf/jobs')
+        fetch('/api/enhanced/ecosystem/stirlingpdf/jobs'),
       ])
 
       if (dlRes.ok) {
@@ -553,9 +620,8 @@ export default function EcosystemView() {
         const d = await stirlingRes.json()
         setStirlingJobs(d.jobs || [])
       }
-
     } catch (err) {
-      console.error("Failed to load full ecosystem payloads", err)
+      console.error('Failed to load full ecosystem payloads', err)
     } finally {
       setLoading(false)
     }
@@ -574,7 +640,7 @@ export default function EcosystemView() {
       }
     } catch (err) {
       console.error(err)
-      toast.error("SearXNG lookup failed")
+      toast.error('SearXNG lookup failed')
     } finally {
       setSearxngLoading(false)
     }
@@ -582,26 +648,30 @@ export default function EcosystemView() {
 
   // IoT Dimmer and switch actions simulated
   const updateDeviceState = (entityId: string, value: string | number) => {
-    setHaDevices(prev => prev.map(d => {
-      if (d.entity_id === entityId) {
-        if (typeof value === 'number') {
-          return { ...d, brightness: value, state: value > 0 ? 'on' : 'off' }
+    setHaDevices((prev) =>
+      prev.map((d) => {
+        if (d.entity_id === entityId) {
+          if (typeof value === 'number') {
+            return { ...d, brightness: value, state: value > 0 ? 'on' : 'off' }
+          }
+          return { ...d, state: value }
         }
-        return { ...d, state: value }
-      }
-      return d
-    }))
+        return d
+      }),
+    )
     toast.success(`IoT command dispatched to ${entityId}`)
   }
 
   const updateThermostatTemp = (entityId: string, diff: number) => {
-    setHaDevices(prev => prev.map(d => {
-      if (d.entity_id === entityId && d.target_temp !== undefined) {
-        const n = parseFloat((d.target_temp + diff).toFixed(1))
-        return { ...d, target_temp: n }
-      }
-      return d
-    }))
+    setHaDevices((prev) =>
+      prev.map((d) => {
+        if (d.entity_id === entityId && d.target_temp !== undefined) {
+          const n = parseFloat((d.target_temp + diff).toFixed(1))
+          return { ...d, target_temp: n }
+        }
+        return d
+      }),
+    )
   }
 
   // Stirling PDF simulated job dispatch
@@ -611,12 +681,12 @@ export default function EcosystemView() {
       filename: `processed_${action}_doc.pdf`,
       action: action,
       status: 'running',
-      timestamp: 'Just now'
+      timestamp: 'Just now',
     }
-    setStirlingJobs(prev => [newJob, ...prev])
+    setStirlingJobs((prev) => [newJob, ...prev])
     toast.success(`Stirling PDF job launched successfully`)
     setTimeout(() => {
-      setStirlingJobs(prev => prev.map(j => j.id === newJob.id ? { ...j, status: 'completed' } : j))
+      setStirlingJobs((prev) => prev.map((j) => (j.id === newJob.id ? { ...j, status: 'completed' } : j)))
       toast.info(`PDF Action ${action} successfully completed.`)
     }, 3000)
   }
@@ -628,16 +698,28 @@ export default function EcosystemView() {
     const newDl: MediaDownload = {
       id: `dl-${Math.floor(Math.random() * 1000)}`,
       url: mediaUrl,
-      title: "Parsing target streaming metadata...",
+      title: 'Parsing target streaming metadata...',
       progress: 0,
-      speed: "0 B/s",
-      status: "queued"
+      speed: '0 B/s',
+      status: 'queued',
     }
-    setMediaDownloads(prev => [newDl, ...prev])
+    setMediaDownloads((prev) => [newDl, ...prev])
     setMediaUrl('')
-    toast.success("yt-dlp stream queued")
+    toast.success('yt-dlp stream queued')
     setTimeout(() => {
-      setMediaDownloads(prev => prev.map(d => d.id === newDl.id ? { ...d, title: "Self-driven coding agents presentation", progress: 45.2, speed: "5.8 MB/s", status: "downloading" } : d))
+      setMediaDownloads((prev) =>
+        prev.map((d) =>
+          d.id === newDl.id
+            ? {
+                ...d,
+                title: 'Self-driven coding agents presentation',
+                progress: 45.2,
+                speed: '5.8 MB/s',
+                status: 'downloading',
+              }
+            : d,
+        ),
+      )
     }, 2000)
   }
 
@@ -655,9 +737,8 @@ export default function EcosystemView() {
     return () => clearInterval(interval)
   }, [])
 
-  const filteredProcesses = processes.filter(p =>
-    p.name.toLowerCase().includes(searchProcess.toLowerCase()) ||
-    p.pid.toString().includes(searchProcess)
+  const filteredProcesses = processes.filter(
+    (p) => p.name.toLowerCase().includes(searchProcess.toLowerCase()) || p.pid.toString().includes(searchProcess),
   )
 
   return (
@@ -735,14 +816,13 @@ export default function EcosystemView() {
           disabled={loading}
           className="gap-1.5"
         >
-          <RefreshCw className={cn("size-3.5", { "animate-spin": loading })} />
+          <RefreshCw className={cn('size-3.5', { 'animate-spin': loading })} />
           Refresh
         </Button>
       </div>
 
       {/* Primary content areas rendering */}
       <div className="flex-1 min-h-[600px] space-y-6">
-
         {/* 1. DEVOPS & TASKS DOMAIN */}
         {activeDomain === 'devops' && (
           <div className="space-y-6 animate-in fade-in-50 duration-200">
@@ -756,25 +836,36 @@ export default function EcosystemView() {
                     </CardTitle>
                     <CardDescription>Visual Sprint logs and backlog mapping inside Atlassian APIs</CardDescription>
                   </div>
-                  <Badge variant="outline" className="text-xs bg-primary/5 text-primary border-primary/20">Active Sprint</Badge>
+                  <Badge variant="outline" className="text-xs bg-primary/5 text-primary border-primary/20">
+                    Active Sprint
+                  </Badge>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {kanbanColumns.map(col => (
+                  {kanbanColumns.map((col) => (
                     <div key={col.id} className="bg-accent/15 p-4 rounded-lg border border-border/40 space-y-3">
                       <div className="flex justify-between items-center border-b pb-2">
-                        <span className="font-bold text-xs uppercase tracking-wide text-muted-foreground">{col.title}</span>
-                        <Badge variant="secondary" className="font-mono text-xs">{col.issues.length}</Badge>
+                        <span className="font-bold text-xs uppercase tracking-wide text-muted-foreground">
+                          {col.title}
+                        </span>
+                        <Badge variant="secondary" className="font-mono text-xs">
+                          {col.issues.length}
+                        </Badge>
                       </div>
                       <div className="space-y-2">
-                        {col.issues.map(iss => (
-                          <div key={iss.id} className="p-3 bg-background border rounded-md hover:border-primary/30 transition-all shadow-sm space-y-2">
+                        {col.issues.map((iss) => (
+                          <div
+                            key={iss.id}
+                            className="p-3 bg-background border rounded-md hover:border-primary/30 transition-all shadow-sm space-y-2"
+                          >
                             <div className="flex justify-between items-center">
                               <span className="font-mono text-[10px] font-bold text-primary">{iss.id}</span>
                               <Badge
                                 className="text-[9px] uppercase tracking-wide scale-90"
-                                variant={iss.priority === 'Highest' || iss.priority === 'High' ? 'destructive' : 'secondary'}
+                                variant={
+                                  iss.priority === 'Highest' || iss.priority === 'High' ? 'destructive' : 'secondary'
+                                }
                               >
                                 {iss.priority}
                               </Badge>
@@ -782,7 +873,7 @@ export default function EcosystemView() {
                             <h4 className="text-xs font-semibold text-foreground leading-snug">{iss.title}</h4>
                             <div className="flex justify-end pt-1">
                               <span className="size-5 rounded-full bg-accent text-[9px] font-extrabold flex items-center justify-center border uppercase text-muted-foreground">
-                                {iss.assignee.substring(0,2)}
+                                {iss.assignee.substring(0, 2)}
                               </span>
                             </div>
                           </div>
@@ -808,8 +899,11 @@ export default function EcosystemView() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2.5">
-                    {githubPrs.map(pr => (
-                      <div key={pr.id} className="flex items-center justify-between p-2.5 border rounded-md bg-accent/5">
+                    {githubPrs.map((pr) => (
+                      <div
+                        key={pr.id}
+                        className="flex items-center justify-between p-2.5 border rounded-md bg-accent/5"
+                      >
                         <div className="space-y-1 truncate pr-2">
                           <h4 className="text-xs font-bold text-foreground truncate flex items-center gap-1.5">
                             #{pr.id} {pr.title}
@@ -819,20 +913,33 @@ export default function EcosystemView() {
                           </p>
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <Badge variant="outline" className="capitalize text-[10px] bg-emerald-500/5 text-emerald-600 border-emerald-500/20">{pr.status}</Badge>
-                          <Badge variant="secondary" className="text-[9px] uppercase">{pr.checks}</Badge>
+                          <Badge
+                            variant="outline"
+                            className="capitalize text-[10px] bg-emerald-500/5 text-emerald-600 border-emerald-500/20"
+                          >
+                            {pr.status}
+                          </Badge>
+                          <Badge variant="secondary" className="text-[9px] uppercase">
+                            {pr.checks}
+                          </Badge>
                         </div>
                       </div>
                     ))}
                   </div>
 
                   <div className="border-t pt-4 space-y-2">
-                    <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">CI Actions Runs</h5>
+                    <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
+                      CI Actions Runs
+                    </h5>
                     <div className="space-y-1.5 text-xs">
                       {githubWorkflows.map((wf, idx) => (
                         <div key={idx} className="flex justify-between items-center font-mono">
-                          <span className="text-foreground">Run #{wf.run_number} - {wf.name}</span>
-                          <Badge variant="default" className="text-[9px] px-1 py-0">{wf.conclusion}</Badge>
+                          <span className="text-foreground">
+                            Run #{wf.run_number} - {wf.name}
+                          </span>
+                          <Badge variant="default" className="text-[9px] px-1 py-0">
+                            {wf.conclusion}
+                          </Badge>
                         </div>
                       ))}
                     </div>
@@ -849,8 +956,11 @@ export default function EcosystemView() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2.5">
-                    {gitlabMrs.map(mr => (
-                      <div key={mr.id} className="flex items-center justify-between p-2.5 border rounded-md bg-accent/5">
+                    {gitlabMrs.map((mr) => (
+                      <div
+                        key={mr.id}
+                        className="flex items-center justify-between p-2.5 border rounded-md bg-accent/5"
+                      >
                         <div className="space-y-1 truncate pr-2">
                           <h4 className="text-xs font-bold text-foreground truncate">
                             !{mr.id} {mr.title}
@@ -867,11 +977,15 @@ export default function EcosystemView() {
                   <div className="border-t pt-4 space-y-2">
                     <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Pipelines Runs</h5>
                     <div className="space-y-1.5 text-xs">
-                      {gitlabPipelines.map(p => (
+                      {gitlabPipelines.map((p) => (
                         <div key={p.id} className="flex justify-between items-center font-mono">
-                          <span className="text-foreground">Pipeline #{p.id} ({p.ref})</span>
+                          <span className="text-foreground">
+                            Pipeline #{p.id} ({p.ref})
+                          </span>
                           <span className="text-muted-foreground text-[10px]">{p.duration}</span>
-                          <Badge variant="secondary" className="text-[9px]">{p.status}</Badge>
+                          <Badge variant="secondary" className="text-[9px]">
+                            {p.status}
+                          </Badge>
                         </div>
                       ))}
                     </div>
@@ -886,18 +1000,26 @@ export default function EcosystemView() {
                 <CardTitle className="flex items-center gap-2">
                   <Layers className="text-primary size-5" /> Docker Compose Stacks (Portainer-Agent)
                 </CardTitle>
-                <CardDescription>Multi-host service stacks loaded dynamically from Portainer environments</CardDescription>
+                <CardDescription>
+                  Multi-host service stacks loaded dynamically from Portainer environments
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {portainerStacks.map(stack => (
-                    <Card key={stack.name} className="p-4 bg-accent/5 hover:border-primary/30 transition-all flex flex-col justify-between">
+                  {portainerStacks.map((stack) => (
+                    <Card
+                      key={stack.name}
+                      className="p-4 bg-accent/5 hover:border-primary/30 transition-all flex flex-col justify-between"
+                    >
                       <div className="flex justify-between items-start">
                         <div>
                           <h4 className="font-bold text-sm text-foreground leading-snug">{stack.name}</h4>
                           <p className="text-xs text-muted-foreground pt-1">{stack.services} services configured</p>
                         </div>
-                        <Badge variant="outline" className="capitalize scale-90 bg-emerald-500/10 text-emerald-600 border-emerald-500/25">
+                        <Badge
+                          variant="outline"
+                          className="capitalize scale-90 bg-emerald-500/10 text-emerald-600 border-emerald-500/25"
+                        >
                           {stack.status}
                         </Badge>
                       </div>
@@ -928,9 +1050,7 @@ export default function EcosystemView() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-extrabold tracking-tight mb-2">
-                    {resources?.cpu_percent || 24.5}%
-                  </div>
+                  <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.cpu_percent || 24.5}%</div>
                   <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden">
                     <div
                       className="bg-primary h-full transition-all duration-500"
@@ -970,9 +1090,7 @@ export default function EcosystemView() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-extrabold tracking-tight mb-2">
-                    {resources?.disk.percent || 68.3}%
-                  </div>
+                  <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.disk.percent || 68.3}%</div>
                   <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden mb-1">
                     <div
                       className="bg-blue-500 h-full transition-all duration-500"
@@ -1000,15 +1118,21 @@ export default function EcosystemView() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Hyperparameters Card */}
                     <div className="space-y-3 p-4 bg-accent/5 rounded-lg border">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Model Parameters: {trainingData.model_name}</h4>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                        Model Parameters: {trainingData.model_name}
+                      </h4>
                       <div className="grid grid-cols-2 gap-3 text-xs pt-1.5">
                         <div>
                           <span className="text-muted-foreground">Learning Rate:</span>
-                          <p className="font-mono font-bold text-primary">{trainingData.hyperparameters.learning_rate}</p>
+                          <p className="font-mono font-bold text-primary">
+                            {trainingData.hyperparameters.learning_rate}
+                          </p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Batch Size:</span>
-                          <p className="font-mono font-bold text-foreground">{trainingData.hyperparameters.batch_size}</p>
+                          <p className="font-mono font-bold text-foreground">
+                            {trainingData.hyperparameters.batch_size}
+                          </p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Epochs Target:</span>
@@ -1016,7 +1140,9 @@ export default function EcosystemView() {
                         </div>
                         <div>
                           <span className="text-muted-foreground">Optimizer:</span>
-                          <p className="font-mono font-bold text-foreground">{trainingData.hyperparameters.optimizer}</p>
+                          <p className="font-mono font-bold text-foreground">
+                            {trainingData.hyperparameters.optimizer}
+                          </p>
                         </div>
                       </div>
                       <div className="border-t pt-3 space-y-1.5">
@@ -1025,7 +1151,10 @@ export default function EcosystemView() {
                           <span className="font-bold text-emerald-500">{trainingData.metrics.accuracy}%</span>
                         </div>
                         <div className="w-full bg-accent h-1.5 rounded-full overflow-hidden">
-                          <div className="bg-emerald-500 h-full" style={{ width: `${trainingData.metrics.accuracy}%` }} />
+                          <div
+                            className="bg-emerald-500 h-full"
+                            style={{ width: `${trainingData.metrics.accuracy}%` }}
+                          />
                         </div>
                       </div>
                     </div>
@@ -1033,12 +1162,19 @@ export default function EcosystemView() {
                     {/* Mini SVG Loss Curve */}
                     <div className="flex flex-col justify-between p-4 bg-accent/5 rounded-lg border">
                       <div className="flex justify-between items-center">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Epoch Loss Curves (Simulated Convergence)</h4>
-                        <Badge variant="secondary" className="text-[10px] font-mono">Epoch {trainingData.metrics.current_epoch} / {trainingData.hyperparameters.epochs}</Badge>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                          Epoch Loss Curves (Simulated Convergence)
+                        </h4>
+                        <Badge variant="secondary" className="text-[10px] font-mono">
+                          Epoch {trainingData.metrics.current_epoch} / {trainingData.hyperparameters.epochs}
+                        </Badge>
                       </div>
                       <div className="h-28 w-full flex items-end gap-1.5 pt-4">
                         {trainingData.loss_curve.map((l, idx) => (
-                          <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+                          <div
+                            key={idx}
+                            className="flex-1 flex flex-col items-center justify-end h-full group relative"
+                          >
                             {/* Bar representing val_loss */}
                             <div
                               className="w-full bg-red-500/25 rounded-t group-hover:bg-red-500/40 transition-colors"
@@ -1065,16 +1201,23 @@ export default function EcosystemView() {
                 <CardTitle className="flex items-center gap-2">
                   <Compass className="text-primary size-5" /> Scientific Publications database (ScholarX)
                 </CardTitle>
-                <CardDescription>Scientific paper metadata registries downloaded locally for Offline Graph training</CardDescription>
+                <CardDescription>
+                  Scientific paper metadata registries downloaded locally for Offline Graph training
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {scholarxPapers.map(paper => (
-                    <Card key={paper.id} className="p-4 bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between">
+                  {scholarxPapers.map((paper) => (
+                    <Card
+                      key={paper.id}
+                      className="p-4 bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between"
+                    >
                       <div>
                         <div className="flex justify-between items-center">
                           <span className="text-[10px] font-bold font-mono text-primary uppercase">{paper.id}</span>
-                          <Badge variant="secondary" className="text-[9px] uppercase">{paper.category}</Badge>
+                          <Badge variant="secondary" className="text-[9px] uppercase">
+                            {paper.category}
+                          </Badge>
                         </div>
                         <h4 className="font-bold text-xs text-foreground tracking-tight pt-2 leading-snug line-clamp-2">
                           {paper.title}
@@ -1082,8 +1225,15 @@ export default function EcosystemView() {
                         <p className="text-[10px] text-muted-foreground pt-1">Author: {paper.author}</p>
                       </div>
                       <div className="pt-3 border-t mt-3 flex justify-between items-center text-[10px] text-emerald-500 font-bold">
-                        <span className="flex items-center gap-1"><Check className="size-3" /> Ready</span>
-                        <Badge variant="outline" className="text-[9px] bg-emerald-500/5 text-emerald-600 border-emerald-500/20">{paper.status}</Badge>
+                        <span className="flex items-center gap-1">
+                          <Check className="size-3" /> Ready
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] bg-emerald-500/5 text-emerald-600 border-emerald-500/20"
+                        >
+                          {paper.status}
+                        </Badge>
                       </div>
                     </Card>
                   ))}
@@ -1112,7 +1262,7 @@ export default function EcosystemView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y font-mono">
-                    {latencyData.map(trace => (
+                    {latencyData.map((trace) => (
                       <tr key={trace.id} className="hover:bg-accent/10 transition-colors">
                         <td className="p-3.5 font-bold text-primary">{trace.id}</td>
                         <td className="p-3.5 text-foreground font-semibold">{trace.route}</td>
@@ -1120,7 +1270,12 @@ export default function EcosystemView() {
                         <td className="p-3.5 text-right text-orange-500 font-bold">{trace.latency} ms</td>
                         <td className="p-3.5 text-right text-foreground">{trace.tokens}</td>
                         <td className="p-3.5 text-center">
-                          <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20">{trace.status}</Badge>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                          >
+                            {trace.status}
+                          </Badge>
                         </td>
                       </tr>
                     ))}
@@ -1138,14 +1293,18 @@ export default function EcosystemView() {
             <Card className="border border-border/80 shadow-md">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Activity className="text-emerald-500 size-5 animate-pulse" /> Service Uptime timelines (Uptime-Kuma-Agent)
+                  <Activity className="text-emerald-500 size-5 animate-pulse" /> Service Uptime timelines
+                  (Uptime-Kuma-Agent)
                 </CardTitle>
                 <CardDescription>Active health checks on gateways, DNS databases and storage streams</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                  {uptimeMonitors.map(m => (
-                    <Card key={m.name} className="p-4 bg-accent/5 hover:border-primary/20 transition-all flex flex-col justify-between">
+                  {uptimeMonitors.map((m) => (
+                    <Card
+                      key={m.name}
+                      className="p-4 bg-accent/5 hover:border-primary/20 transition-all flex flex-col justify-between"
+                    >
                       <div className="flex justify-between items-start">
                         <div>
                           <h4 className="font-bold text-xs text-foreground truncate">{m.name}</h4>
@@ -1153,9 +1312,9 @@ export default function EcosystemView() {
                         </div>
                         <Badge
                           variant="outline"
-                          className={cn("capitalize scale-90 font-semibold px-2 py-0.5 rounded-full border", {
-                            "bg-emerald-500/10 border-emerald-500/25 text-emerald-600": m.status === 'up',
-                            "bg-red-500/10 border-red-500/25 text-red-600": m.status === 'down'
+                          className={cn('capitalize scale-90 font-semibold px-2 py-0.5 rounded-full border', {
+                            'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': m.status === 'up',
+                            'bg-red-500/10 border-red-500/25 text-red-600': m.status === 'down',
                           })}
                         >
                           {m.status}
@@ -1184,14 +1343,16 @@ export default function EcosystemView() {
                   <CardTitle className="flex items-center gap-2">
                     <Search className="text-primary size-5" /> Metasearch Aggregation & Ranks (SearXNG-MCP)
                   </CardTitle>
-                  <CardDescription>Aggregate web query rankings parsed across google, duckduckgo and github engines</CardDescription>
+                  <CardDescription>
+                    Aggregate web query rankings parsed across google, duckduckgo and github engines
+                  </CardDescription>
                 </div>
                 <div className="flex gap-2 max-w-sm w-full">
                   <Input
                     placeholder="Search keywords..."
                     value={searxngQuery}
-                    onChange={e => setSearxngQuery(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && void runSearxngSearch()}
+                    onChange={(e) => setSearxngQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && void runSearxngSearch()}
                   />
                   <Button onClick={() => void runSearxngSearch()} disabled={searxngLoading}>
                     {searxngLoading ? <RefreshCw className="size-4 animate-spin" /> : 'Search'}
@@ -1200,18 +1361,30 @@ export default function EcosystemView() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {searxngResults.length === 0 ? (
-                  <div className="text-center py-6 text-xs text-muted-foreground font-mono border rounded-md">Search something to load results</div>
+                  <div className="text-center py-6 text-xs text-muted-foreground font-mono border rounded-md">
+                    Search something to load results
+                  </div>
                 ) : (
                   <div className="space-y-2.5">
                     {searxngResults.map((r, idx) => (
-                      <div key={idx} className="flex justify-between items-center p-3 border rounded-md bg-accent/5 hover:border-primary/30 transition-all">
+                      <div
+                        key={idx}
+                        className="flex justify-between items-center p-3 border rounded-md bg-accent/5 hover:border-primary/30 transition-all"
+                      >
                         <div className="space-y-0.5 truncate pr-2">
                           <h4 className="text-xs font-bold text-foreground truncate">{r.title}</h4>
                           <span className="text-[10px] font-mono text-muted-foreground truncate block">{r.url}</span>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
-                          <Badge variant="outline" className="font-mono text-[9px] uppercase tracking-wide bg-primary/5 text-primary border-primary/20">{r.engine}</Badge>
-                          <Badge variant="secondary" className="font-mono text-xs font-bold">Score: {r.score}</Badge>
+                          <Badge
+                            variant="outline"
+                            className="font-mono text-[9px] uppercase tracking-wide bg-primary/5 text-primary border-primary/20"
+                          >
+                            {r.engine}
+                          </Badge>
+                          <Badge variant="secondary" className="font-mono text-xs font-bold">
+                            Score: {r.score}
+                          </Badge>
                         </div>
                       </div>
                     ))}
@@ -1235,8 +1408,11 @@ export default function EcosystemView() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {containers.map(c => (
-                    <Card key={c.id} className="bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between">
+                  {containers.map((c) => (
+                    <Card
+                      key={c.id}
+                      className="bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between"
+                    >
                       <CardHeader className="pb-3">
                         <div className="flex items-center justify-between gap-2">
                           <CardTitle className="text-sm font-bold truncate tracking-tight text-primary">
@@ -1244,10 +1420,10 @@ export default function EcosystemView() {
                           </CardTitle>
                           <Badge
                             variant="outline"
-                            className={cn("capitalize px-2 py-0.5 text-xs font-semibold rounded-full border", {
-                              "bg-emerald-500/10 border-emerald-500/25 text-emerald-600": c.state === 'running',
-                              "bg-red-500/10 border-red-500/25 text-red-600": c.state === 'exited',
-                              "bg-amber-500/10 border-amber-500/25 text-amber-600": c.state === 'paused'
+                            className={cn('capitalize px-2 py-0.5 text-xs font-semibold rounded-full border', {
+                              'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': c.state === 'running',
+                              'bg-red-500/10 border-red-500/25 text-red-600': c.state === 'exited',
+                              'bg-amber-500/10 border-amber-500/25 text-amber-600': c.state === 'paused',
                             })}
                           >
                             {c.state}
@@ -1258,7 +1434,9 @@ export default function EcosystemView() {
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="pb-3 text-xs leading-relaxed text-muted-foreground flex-1 flex flex-col justify-end">
-                        <p><strong className="text-foreground">Status:</strong> {c.status}</p>
+                        <p>
+                          <strong className="text-foreground">Status:</strong> {c.status}
+                        </p>
                       </CardContent>
                       <CardFooter className="pt-2 pb-4 flex justify-between gap-2 border-t bg-muted/20">
                         {c.state !== 'running' ? (
@@ -1319,7 +1497,9 @@ export default function EcosystemView() {
                         <form onSubmit={handleAddHost}>
                           <DialogHeader>
                             <DialogTitle>Add SSH Host Alias</DialogTitle>
-                            <DialogDescription>Input new node configurations for SSH command forwarding.</DialogDescription>
+                            <DialogDescription>
+                              Input new node configurations for SSH command forwarding.
+                            </DialogDescription>
                           </DialogHeader>
                           <div className="grid gap-4 py-4">
                             <div className="grid grid-cols-4 items-center gap-4">
@@ -1328,7 +1508,7 @@ export default function EcosystemView() {
                                 className="col-span-3"
                                 placeholder="production-node"
                                 value={newHost.alias}
-                                onChange={e => setNewHost({...newHost, alias: e.target.value})}
+                                onChange={(e) => setNewHost({ ...newHost, alias: e.target.value })}
                               />
                             </div>
                             <div className="grid grid-cols-4 items-center gap-4">
@@ -1337,7 +1517,7 @@ export default function EcosystemView() {
                                 className="col-span-3"
                                 placeholder="10.0.0.12"
                                 value={newHost.hostname}
-                                onChange={e => setNewHost({...newHost, hostname: e.target.value})}
+                                onChange={(e) => setNewHost({ ...newHost, hostname: e.target.value })}
                               />
                             </div>
                             <div className="grid grid-cols-4 items-center gap-4">
@@ -1346,7 +1526,7 @@ export default function EcosystemView() {
                                 className="col-span-3"
                                 placeholder="ubuntu"
                                 value={newHost.user}
-                                onChange={e => setNewHost({...newHost, user: e.target.value})}
+                                onChange={(e) => setNewHost({ ...newHost, user: e.target.value })}
                               />
                             </div>
                             <div className="grid grid-cols-4 items-center gap-4">
@@ -1355,7 +1535,7 @@ export default function EcosystemView() {
                                 type="number"
                                 className="col-span-3"
                                 value={newHost.port}
-                                onChange={e => setNewHost({...newHost, port: parseInt(e.target.value) || 22})}
+                                onChange={(e) => setNewHost({ ...newHost, port: parseInt(e.target.value) || 22 })}
                               />
                             </div>
                           </div>
@@ -1368,8 +1548,11 @@ export default function EcosystemView() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {hosts.map(h => (
-                        <div key={h.alias} className="flex flex-col gap-3 p-4 bg-accent/10 border rounded-lg hover:border-primary/40 transition-colors">
+                      {hosts.map((h) => (
+                        <div
+                          key={h.alias}
+                          className="flex flex-col gap-3 p-4 bg-accent/10 border rounded-lg hover:border-primary/40 transition-colors"
+                        >
                           <div className="flex items-center justify-between">
                             <h3 className="font-bold text-sm tracking-wide text-primary">{h.alias}</h3>
                             <Badge variant={h.status === 'active' ? 'default' : 'secondary'} className="capitalize">
@@ -1377,9 +1560,17 @@ export default function EcosystemView() {
                             </Badge>
                           </div>
                           <div className="text-xs text-muted-foreground space-y-1">
-                            <p><strong className="text-foreground">Hostname:</strong> {h.hostname}</p>
-                            <p><strong className="text-foreground">Credential:</strong> {h.user}@{h.port}</p>
-                            {h.identity_file && <p><strong className="text-foreground">Identity:</strong> {h.identity_file}</p>}
+                            <p>
+                              <strong className="text-foreground">Hostname:</strong> {h.hostname}
+                            </p>
+                            <p>
+                              <strong className="text-foreground">Credential:</strong> {h.user}@{h.port}
+                            </p>
+                            {h.identity_file && (
+                              <p>
+                                <strong className="text-foreground">Identity:</strong> {h.identity_file}
+                              </p>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -1400,11 +1591,13 @@ export default function EcosystemView() {
                       <div className="w-1/3">
                         <select
                           value={selectedHost}
-                          onChange={e => setSelectedHost(e.target.value)}
+                          onChange={(e) => setSelectedHost(e.target.value)}
                           className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                         >
-                          {hosts.map(h => (
-                            <option key={h.alias} value={h.alias}>{h.alias}</option>
+                          {hosts.map((h) => (
+                            <option key={h.alias} value={h.alias}>
+                              {h.alias}
+                            </option>
                           ))}
                         </select>
                       </div>
@@ -1412,8 +1605,8 @@ export default function EcosystemView() {
                         <Input
                           placeholder="Type remote shell command (e.g. docker ps, uname -a)..."
                           value={remoteCommand}
-                          onChange={e => setRemoteCommand(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && void runSshCommand()}
+                          onChange={(e) => setRemoteCommand(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && void runSshCommand()}
                         />
                         <Button onClick={() => void runSshCommand()} disabled={runningRemote || !remoteCommand.trim()}>
                           {runningRemote ? <RefreshCw className="size-4 animate-spin" /> : 'Run Command'}
@@ -1422,10 +1615,18 @@ export default function EcosystemView() {
                     </div>
                     <div className="bg-zinc-950 text-green-400 font-mono text-xs p-4 rounded-md border h-60 overflow-y-auto space-y-2.5">
                       {terminalOutput.map((line, idx) => (
-                        <div key={idx} className="whitespace-pre-wrap leading-relaxed">{line}</div>
+                        <div key={idx} className="whitespace-pre-wrap leading-relaxed">
+                          {line}
+                        </div>
                       ))}
-                      {runningRemote && <div className="text-muted-foreground animate-pulse">Running secure remote tunnel connection...</div>}
-                      {terminalOutput.length === 0 && <div className="text-muted-foreground">Terminal ready. Output will stream here.</div>}
+                      {runningRemote && (
+                        <div className="text-muted-foreground animate-pulse">
+                          Running secure remote tunnel connection...
+                        </div>
+                      )}
+                      {terminalOutput.length === 0 && (
+                        <div className="text-muted-foreground">Terminal ready. Output will stream here.</div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -1446,7 +1647,7 @@ export default function EcosystemView() {
                     placeholder="Search process..."
                     className="h-8 text-xs mt-2"
                     value={searchProcess}
-                    onChange={e => setSearchProcess(e.target.value)}
+                    onChange={(e) => setSearchProcess(e.target.value)}
                   />
                 </CardHeader>
                 <CardContent className="p-0 border-t max-h-[380px] overflow-y-auto">
@@ -1460,10 +1661,12 @@ export default function EcosystemView() {
                       </tr>
                     </thead>
                     <tbody className="divide-y font-mono">
-                      {filteredProcesses.map(p => (
+                      {filteredProcesses.map((p) => (
                         <tr key={p.pid} className="hover:bg-accent/10 transition-colors">
                           <td className="p-2 text-muted-foreground font-bold">{p.pid}</td>
-                          <td className="p-2 truncate max-w-[100px] font-semibold text-foreground" title={p.name}>{p.name}</td>
+                          <td className="p-2 truncate max-w-[100px] font-semibold text-foreground" title={p.name}>
+                            {p.name}
+                          </td>
                           <td className="p-2 text-right text-green-500 font-bold">{p.cpu}%</td>
                           <td className="p-2 text-right">
                             <Button
@@ -1493,16 +1696,24 @@ export default function EcosystemView() {
                 <CardTitle className="flex items-center gap-2">
                   <Sliders className="text-primary size-5" /> IoT Home automation controls (Home-Assistant-Agent)
                 </CardTitle>
-                <CardDescription>Visual dials, thermostats, and lights controls loaded from local Home Assistant server</CardDescription>
+                <CardDescription>
+                  Visual dials, thermostats, and lights controls loaded from local Home Assistant server
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                  {haDevices.map(d => (
-                    <Card key={d.entity_id} className="p-4 bg-accent/5 flex flex-col justify-between hover:border-primary/20 transition-all">
+                  {haDevices.map((d) => (
+                    <Card
+                      key={d.entity_id}
+                      className="p-4 bg-accent/5 flex flex-col justify-between hover:border-primary/20 transition-all"
+                    >
                       <div className="space-y-1">
                         <div className="flex justify-between items-center">
                           <h4 className="font-bold text-xs text-foreground truncate">{d.friendly_name}</h4>
-                          <Badge variant={d.state === 'on' || d.state === 'heat' ? 'default' : 'secondary'} className="capitalize text-[9px]">
+                          <Badge
+                            variant={d.state === 'on' || d.state === 'heat' ? 'default' : 'secondary'}
+                            className="capitalize text-[9px]"
+                          >
                             {d.state}
                           </Badge>
                         </div>
@@ -1521,7 +1732,7 @@ export default function EcosystemView() {
                             min="0"
                             max="100"
                             value={d.brightness}
-                            onChange={e => updateDeviceState(d.entity_id, parseInt(e.target.value))}
+                            onChange={(e) => updateDeviceState(d.entity_id, parseInt(e.target.value))}
                             className="w-full accent-primary h-1.5 bg-accent rounded-lg cursor-pointer"
                           />
                         </div>
@@ -1531,8 +1742,12 @@ export default function EcosystemView() {
                       {d.temperature !== undefined && d.target_temp !== undefined && (
                         <div className="pt-4 space-y-3">
                           <div className="flex justify-between text-xs font-mono">
-                            <span>Room: <strong className="text-foreground">{d.temperature}°C</strong></span>
-                            <span>Target: <strong className="text-primary">{d.target_temp}°C</strong></span>
+                            <span>
+                              Room: <strong className="text-foreground">{d.temperature}°C</strong>
+                            </span>
+                            <span>
+                              Target: <strong className="text-primary">{d.target_temp}°C</strong>
+                            </span>
                           </div>
                           <div className="flex gap-2">
                             <Button
@@ -1582,19 +1797,30 @@ export default function EcosystemView() {
                   <CardTitle className="flex items-center gap-2">
                     <Calendar className="text-primary size-5" /> Calendar & Tasks Agenda (Nextcloud-Agent)
                   </CardTitle>
-                  <CardDescription>Productivity synchronizer wiring personal schedule with CalDAV servers</CardDescription>
+                  <CardDescription>
+                    Productivity synchronizer wiring personal schedule with CalDAV servers
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Upcoming Calendars</h5>
+                    <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
+                      Upcoming Calendars
+                    </h5>
                     <div className="space-y-2">
-                      {nextcloudEvents.map(ev => (
-                        <div key={ev.id} className="flex items-center justify-between p-2 border rounded-md bg-accent/5">
+                      {nextcloudEvents.map((ev) => (
+                        <div
+                          key={ev.id}
+                          className="flex items-center justify-between p-2 border rounded-md bg-accent/5"
+                        >
                           <div className="space-y-0.5">
                             <h4 className="text-xs font-semibold text-foreground">{ev.title}</h4>
-                            <span className="text-[10px] font-mono text-muted-foreground">{new Date(ev.start).toLocaleString()}</span>
+                            <span className="text-[10px] font-mono text-muted-foreground">
+                              {new Date(ev.start).toLocaleString()}
+                            </span>
                           </div>
-                          <Badge variant="secondary" className="text-[9px] uppercase tracking-wide">{ev.type}</Badge>
+                          <Badge variant="secondary" className="text-[9px] uppercase tracking-wide">
+                            {ev.type}
+                          </Badge>
                         </div>
                       ))}
                     </div>
@@ -1603,15 +1829,22 @@ export default function EcosystemView() {
                   <div className="border-t pt-4 space-y-2">
                     <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Pending Tasks</h5>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                      {nextcloudTasks.map(t => (
+                      {nextcloudTasks.map((t) => (
                         <div key={t.id} className="flex items-center gap-2 p-2 border rounded-md bg-accent/5">
-                          <div className={cn("size-4 rounded-full border flex items-center justify-center flex-shrink-0", {
-                            "bg-emerald-500 border-emerald-500 text-white": t.completed,
-                            "border-input": !t.completed
-                          })}>
+                          <div
+                            className={cn(
+                              'size-4 rounded-full border flex items-center justify-center flex-shrink-0',
+                              {
+                                'bg-emerald-500 border-emerald-500 text-white': t.completed,
+                                'border-input': !t.completed,
+                              },
+                            )}
+                          >
                             {t.completed && <Check className="size-3" />}
                           </div>
-                          <span className={cn("truncate", { "line-through text-muted-foreground": t.completed })}>{t.title}</span>
+                          <span className={cn('truncate', { 'line-through text-muted-foreground': t.completed })}>
+                            {t.title}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -1629,15 +1862,27 @@ export default function EcosystemView() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2.5">
-                    {microsoftEmails.map(mail => (
-                      <div key={mail.id} className="p-3 border rounded-md hover:border-primary/20 transition-all bg-accent/5 space-y-1 relative">
+                    {microsoftEmails.map((mail) => (
+                      <div
+                        key={mail.id}
+                        className="p-3 border rounded-md hover:border-primary/20 transition-all bg-accent/5 space-y-1 relative"
+                      >
                         <div className="flex justify-between items-center">
-                          <span className="text-[10px] font-bold text-primary truncate max-w-[120px]">{mail.from}</span>
+                          <span className="text-[10px] font-bold text-primary truncate max-w-[120px]">
+                            {mail.from}
+                          </span>
                           <span className="text-[9px] font-mono text-muted-foreground">{mail.received}</span>
                         </div>
-                        <h4 className="text-xs font-bold text-foreground leading-snug truncate pr-6">{mail.subject}</h4>
+                        <h4 className="text-xs font-bold text-foreground leading-snug truncate pr-6">
+                          {mail.subject}
+                        </h4>
                         {mail.importance === 'high' && (
-                          <span className="absolute top-3 right-3 text-red-500 font-extrabold text-[10px]" title="High Importance">!</span>
+                          <span
+                            className="absolute top-3 right-3 text-red-500 font-extrabold text-[10px]"
+                            title="High Importance"
+                          >
+                            !
+                          </span>
                         )}
                       </div>
                     ))}
@@ -1678,19 +1923,31 @@ export default function EcosystemView() {
                     <table className="w-full text-left border-collapse text-sm">
                       <thead className="bg-accent/40 border-b">
                         <tr>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground w-28">Day</th>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Planned Recipe</th>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground text-right w-24">Calories</th>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground text-right w-24">Protein</th>
+                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground w-28">
+                            Day
+                          </th>
+                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                            Planned Recipe
+                          </th>
+                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground text-right w-24">
+                            Calories
+                          </th>
+                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground text-right w-24">
+                            Protein
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {mealPlan.map(m => (
+                        {mealPlan.map((m) => (
                           <tr key={m.day} className="hover:bg-accent/10 transition-colors">
                             <td className="p-3.5 font-bold text-xs text-muted-foreground uppercase">{m.day}</td>
                             <td className="p-3.5 font-semibold text-foreground tracking-tight">{m.meal}</td>
-                            <td className="p-3.5 text-right font-mono font-bold text-xs text-orange-500">{m.cal * mealMultiplier} kcal</td>
-                            <td className="p-3.5 text-right font-mono font-bold text-xs text-blue-500">{parseInt(m.protein) * mealMultiplier}g</td>
+                            <td className="p-3.5 text-right font-mono font-bold text-xs text-orange-500">
+                              {m.cal * mealMultiplier} kcal
+                            </td>
+                            <td className="p-3.5 text-right font-mono font-bold text-xs text-blue-500">
+                              {parseInt(m.protein) * mealMultiplier}g
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1707,7 +1964,7 @@ export default function EcosystemView() {
                       <CardDescription>Tailor strength splits and reps counters</CardDescription>
                     </div>
                     <div className="flex gap-2">
-                      {['All', 'Chest', 'Biceps', 'Quads'].map(muscle => (
+                      {['All', 'Chest', 'Biceps', 'Quads'].map((muscle) => (
                         <Button
                           key={muscle}
                           variant={workoutMuscle === muscle ? 'default' : 'outline'}
@@ -1723,23 +1980,35 @@ export default function EcosystemView() {
                     <table className="w-full text-left border-collapse text-sm">
                       <thead className="bg-accent/40 border-b">
                         <tr>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Exercise Name</th>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground w-32">Target Muscle</th>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground text-center w-24">Sets</th>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground text-center w-24">Reps Split</th>
+                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                            Exercise Name
+                          </th>
+                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground w-32">
+                            Target Muscle
+                          </th>
+                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground text-center w-24">
+                            Sets
+                          </th>
+                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground text-center w-24">
+                            Reps Split
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
                         {workoutRoutines
-                          .filter(w => workoutMuscle === 'All' || w.muscle === workoutMuscle)
-                          .map(w => (
+                          .filter((w) => workoutMuscle === 'All' || w.muscle === workoutMuscle)
+                          .map((w) => (
                             <tr key={w.name} className="hover:bg-accent/10 transition-colors">
                               <td className="p-3.5 font-semibold text-foreground tracking-tight">{w.name}</td>
                               <td className="p-3.5 font-semibold text-xs">
                                 <Badge variant="secondary">{w.muscle}</Badge>
                               </td>
-                              <td className="p-3.5 text-center font-mono font-bold text-xs text-primary">{w.sets} sets</td>
-                              <td className="p-3.5 text-center font-mono text-xs text-muted-foreground">{w.reps} reps</td>
+                              <td className="p-3.5 text-center font-mono font-bold text-xs text-primary">
+                                {w.sets} sets
+                              </td>
+                              <td className="p-3.5 text-center font-mono text-xs text-muted-foreground">
+                                {w.reps} reps
+                              </td>
                             </tr>
                           ))}
                       </tbody>
@@ -1756,8 +2025,14 @@ export default function EcosystemView() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3.5 text-xs text-muted-foreground leading-relaxed">
-                    <p>Connecting Mealie and Wger directly allows dynamic ingredient calculations based on target daily caloric expenditure.</p>
-                    <p>When you complete a chest and biceps session, the recipe serving weights scale up automatically to guarantee optimal protein synthesis.</p>
+                    <p>
+                      Connecting Mealie and Wger directly allows dynamic ingredient calculations based on target daily
+                      caloric expenditure.
+                    </p>
+                    <p>
+                      When you complete a chest and biceps session, the recipe serving weights scale up automatically
+                      to guarantee optimal protein synthesis.
+                    </p>
                   </CardContent>
                 </Card>
               </div>
@@ -1772,31 +2047,46 @@ export default function EcosystemView() {
             <Card className="border border-border/80 shadow-md">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Activity className="text-primary size-5" /> Active Torrents Download speedometers (qBittorrent-Agent)
+                  <Activity className="text-primary size-5" /> Active Torrents Download speedometers
+                  (qBittorrent-Agent)
                 </CardTitle>
                 <CardDescription>Network traffic speed limiters and seed ratio checks</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {qbittorrentTorrents.map(t => (
+                  {qbittorrentTorrents.map((t) => (
                     <Card key={t.name} className="p-4 bg-accent/5 hover:border-primary/20 transition-all space-y-4">
                       <div className="flex justify-between items-start gap-2">
                         <div className="truncate">
-                          <h4 className="font-bold text-xs text-foreground truncate" title={t.name}>{t.name}</h4>
-                          <span className="text-[10px] font-mono text-muted-foreground">Size: {t.size} | Status: <strong className="capitalize">{t.status}</strong></span>
+                          <h4 className="font-bold text-xs text-foreground truncate" title={t.name}>
+                            {t.name}
+                          </h4>
+                          <span className="text-[10px] font-mono text-muted-foreground">
+                            Size: {t.size} | Status: <strong className="capitalize">{t.status}</strong>
+                          </span>
                         </div>
-                        <Badge variant="outline" className="text-[9px] uppercase tracking-wide bg-primary/5 text-primary border-primary/20">
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] uppercase tracking-wide bg-primary/5 text-primary border-primary/20"
+                        >
                           {t.progress}%
                         </Badge>
                       </div>
 
                       <div className="space-y-1.5">
                         <div className="w-full bg-accent h-2 rounded-full overflow-hidden">
-                          <div className="bg-primary h-full transition-all duration-300" style={{ width: `${t.progress}%` }} />
+                          <div
+                            className="bg-primary h-full transition-all duration-300"
+                            style={{ width: `${t.progress}%` }}
+                          />
                         </div>
                         <div className="grid grid-cols-2 text-[10px] font-mono text-muted-foreground pt-0.5">
-                          <div>DL Speed: <span className="font-bold text-green-500">{t.dl_speed}</span></div>
-                          <div className="text-right">UL Speed: <span className="font-bold text-blue-500">{t.ul_speed}</span></div>
+                          <div>
+                            DL Speed: <span className="font-bold text-green-500">{t.dl_speed}</span>
+                          </div>
+                          <div className="text-right">
+                            UL Speed: <span className="font-bold text-blue-500">{t.ul_speed}</span>
+                          </div>
                         </div>
                       </div>
                     </Card>
@@ -1819,7 +2109,7 @@ export default function EcosystemView() {
                     <Input
                       placeholder="Enter streaming video URL (YouTube, Vimeo, etc)..."
                       value={mediaUrl}
-                      onChange={e => setMediaUrl(e.target.value)}
+                      onChange={(e) => setMediaUrl(e.target.value)}
                     />
                     <Button type="submit" className="gap-1.5">
                       <Plus className="size-4" /> Queue Download
@@ -1829,17 +2119,24 @@ export default function EcosystemView() {
                   <div className="border-t pt-4 space-y-2">
                     <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Queue Status</h5>
                     <div className="space-y-2.5">
-                      {mediaDownloads.map(dl => (
-                        <div key={dl.id} className="p-3 border rounded-md bg-accent/5 hover:border-primary/20 transition-all space-y-2">
+                      {mediaDownloads.map((dl) => (
+                        <div
+                          key={dl.id}
+                          className="p-3 border rounded-md bg-accent/5 hover:border-primary/20 transition-all space-y-2"
+                        >
                           <div className="flex justify-between items-center text-xs">
-                            <h4 className="font-bold text-foreground truncate max-w-[280px]" title={dl.title}>{dl.title}</h4>
+                            <h4 className="font-bold text-foreground truncate max-w-[280px]" title={dl.title}>
+                              {dl.title}
+                            </h4>
                             <span className="font-mono font-bold text-primary">{dl.progress}%</span>
                           </div>
                           <div className="w-full bg-accent h-1.5 rounded-full overflow-hidden">
                             <div className="bg-primary h-full transition-all" style={{ width: `${dl.progress}%` }} />
                           </div>
                           <div className="flex justify-between text-[10px] font-mono text-muted-foreground pt-0.5">
-                            <span>Status: <strong className="capitalize text-foreground">{dl.status}</strong></span>
+                            <span>
+                              Status: <strong className="capitalize text-foreground">{dl.status}</strong>
+                            </span>
                             <span>Speed: {dl.speed}</span>
                           </div>
                         </div>
@@ -1859,16 +2156,36 @@ export default function EcosystemView() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-2">
-                    <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => submitStirlingPdf('merge')}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 text-xs"
+                      onClick={() => submitStirlingPdf('merge')}
+                    >
                       <Plus className="size-3 text-red-500" /> Merge PDFs
                     </Button>
-                    <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => submitStirlingPdf('split')}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 text-xs"
+                      onClick={() => submitStirlingPdf('split')}
+                    >
                       <X className="size-3 text-red-500" /> Split PDF
                     </Button>
-                    <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => submitStirlingPdf('compress')}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 text-xs"
+                      onClick={() => submitStirlingPdf('compress')}
+                    >
                       <BarChart2 className="size-3 text-red-500" /> Compress PDF
                     </Button>
-                    <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => submitStirlingPdf('ocr')}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 text-xs"
+                      onClick={() => submitStirlingPdf('ocr')}
+                    >
                       <Search className="size-3 text-red-500" /> OCR PDF
                     </Button>
                   </div>
@@ -1876,17 +2193,24 @@ export default function EcosystemView() {
                   <div className="border-t pt-4 space-y-2">
                     <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Jobs Status</h5>
                     <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {stirlingJobs.map(job => (
-                        <div key={job.id} className="flex justify-between items-center p-2 border rounded-md text-xs bg-accent/5">
+                      {stirlingJobs.map((job) => (
+                        <div
+                          key={job.id}
+                          className="flex justify-between items-center p-2 border rounded-md text-xs bg-accent/5"
+                        >
                           <div className="truncate max-w-[120px] pr-2">
-                            <span className="font-bold block truncate" title={job.filename}>{job.filename}</span>
-                            <span className="text-[9px] font-mono text-muted-foreground uppercase">{job.action} | {job.timestamp}</span>
+                            <span className="font-bold block truncate" title={job.filename}>
+                              {job.filename}
+                            </span>
+                            <span className="text-[9px] font-mono text-muted-foreground uppercase">
+                              {job.action} | {job.timestamp}
+                            </span>
                           </div>
                           <Badge
                             variant="outline"
-                            className={cn("capitalize scale-90", {
-                              "bg-emerald-500/10 text-emerald-600 border-emerald-500/25": job.status === 'completed',
-                              "bg-amber-500/10 text-amber-600 border-amber-500/25": job.status === 'running'
+                            className={cn('capitalize scale-90', {
+                              'bg-emerald-500/10 text-emerald-600 border-emerald-500/25': job.status === 'completed',
+                              'bg-amber-500/10 text-amber-600 border-amber-500/25': job.status === 'running',
                             })}
                           >
                             {job.status}
@@ -1915,7 +2239,7 @@ export default function EcosystemView() {
                     onClick={() => void runBulkRepoAction('pull')}
                     disabled={bulkActionRunning || selectedRepos.length === 0}
                   >
-                    <RefreshCw className={cn("size-4", { "animate-spin": bulkActionRunning })} />
+                    <RefreshCw className={cn('size-4', { 'animate-spin': bulkActionRunning })} />
                     Bulk Pull ({selectedRepos.length})
                   </Button>
                   <Button
@@ -1937,9 +2261,9 @@ export default function EcosystemView() {
                         <input
                           type="checkbox"
                           checked={selectedRepos.length === repos.length}
-                          onChange={e => {
+                          onChange={(e) => {
                             if (e.target.checked) {
-                              setSelectedRepos(repos.map(r => r.name))
+                              setSelectedRepos(repos.map((r) => r.name))
                             } else {
                               setSelectedRepos([])
                             }
@@ -1947,24 +2271,32 @@ export default function EcosystemView() {
                           className="rounded border-gray-300 focus:ring-primary size-4 cursor-pointer"
                         />
                       </th>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Repository Name</th>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Active Branch</th>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Local Drift</th>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Sync status</th>
+                      <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                        Repository Name
+                      </th>
+                      <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                        Active Branch
+                      </th>
+                      <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                        Local Drift
+                      </th>
+                      <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                        Sync status
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {repos.map(r => (
+                    {repos.map((r) => (
                       <tr key={r.name} className="hover:bg-accent/10 transition-colors">
                         <td className="p-4 text-center">
                           <input
                             type="checkbox"
                             checked={selectedRepos.includes(r.name)}
-                            onChange={e => {
+                            onChange={(e) => {
                               if (e.target.checked) {
-                                setSelectedRepos(prev => [...prev, r.name])
+                                setSelectedRepos((prev) => [...prev, r.name])
                               } else {
-                                setSelectedRepos(prev => prev.filter(n => n !== r.name))
+                                setSelectedRepos((prev) => prev.filter((n) => n !== r.name))
                               }
                             }}
                             className="rounded border-gray-300 focus:ring-primary size-4 cursor-pointer"
@@ -1975,7 +2307,9 @@ export default function EcosystemView() {
                           <span className="text-xs font-mono text-muted-foreground pt-0.5">{r.path}</span>
                         </td>
                         <td className="p-4 font-semibold text-muted-foreground">
-                          <Badge variant="secondary" className="font-mono text-xs">{r.branch}</Badge>
+                          <Badge variant="secondary" className="font-mono text-xs">
+                            {r.branch}
+                          </Badge>
                         </td>
                         <td className="p-4 font-mono font-bold text-xs text-amber-500">
                           {r.modified_count > 0 ? `${r.modified_count} changes` : '0 modifications'}
@@ -1983,9 +2317,9 @@ export default function EcosystemView() {
                         <td className="p-4">
                           <Badge
                             variant="outline"
-                            className={cn("capitalize px-2 py-0.5 text-xs font-semibold rounded-full border", {
-                              "bg-emerald-500/10 border-emerald-500/25 text-emerald-600": r.status === 'clean',
-                              "bg-amber-500/10 border-amber-500/25 text-amber-600": r.status === 'modified'
+                            className={cn('capitalize px-2 py-0.5 text-xs font-semibold rounded-full border', {
+                              'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': r.status === 'clean',
+                              'bg-amber-500/10 border-amber-500/25 text-amber-600': r.status === 'modified',
                             })}
                           >
                             {r.status}

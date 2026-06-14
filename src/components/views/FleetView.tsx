@@ -11,13 +11,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Activity, AlertTriangle, Ban, PauseCircle, RefreshCw, ShieldCheck } from 'lucide-react'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -100,11 +94,7 @@ export default function FleetView() {
         <SummaryCard label="Domains" value={topology?.totals.domains ?? '—'} />
         <SummaryCard
           label="Failed / cancelled"
-          value={
-            health
-              ? Object.values(health.domains).reduce((n, d) => n + d.errored, 0)
-              : '—'
-          }
+          value={health ? Object.values(health.domains).reduce((n, d) => n + d.errored, 0) : '—'}
         />
       </div>
 
@@ -112,9 +102,7 @@ export default function FleetView() {
         <TabsList>
           <TabsTrigger value="health">Domain Health</TabsTrigger>
           <TabsTrigger value="topology">Topology</TabsTrigger>
-          <TabsTrigger value="approvals">
-            Approvals{approvals.length ? ` (${approvals.length})` : ''}
-          </TabsTrigger>
+          <TabsTrigger value="approvals">Approvals{approvals.length ? ` (${approvals.length})` : ''}</TabsTrigger>
         </TabsList>
 
         {/* Per-domain health + containment */}
@@ -127,14 +115,9 @@ export default function FleetView() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              {domains.length === 0 && (
-                <p className="text-sm text-muted-foreground">No active sessions.</p>
-              )}
+              {domains.length === 0 && <p className="text-sm text-muted-foreground">No active sessions.</p>}
               {domains.map(([domain, d]) => (
-                <div
-                  key={domain}
-                  className="flex items-center justify-between border rounded-md px-3 py-2"
-                >
+                <div key={domain} className="flex items-center justify-between border rounded-md px-3 py-2">
                   <div className="flex items-center gap-3">
                     <span className="font-medium">{domain}</span>
                     <Badge variant="secondary">{d.active} active</Badge>
@@ -210,16 +193,11 @@ export default function FleetView() {
                 const item = raw as Record<string, unknown>
                 const jobId = String(item.id ?? item.job_id ?? `job-${i}`)
                 return (
-                  <div
-                    key={jobId}
-                    className="flex items-center justify-between border rounded-md px-3 py-2"
-                  >
+                  <div key={jobId} className="flex items-center justify-between border rounded-md px-3 py-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
                       <span className="font-mono text-xs truncate">{jobId}</span>
-                      <span className="text-sm text-muted-foreground truncate">
-                        {String(item.description ?? '')}
-                      </span>
+                      <span className="text-sm text-muted-foreground truncate">{String(item.description ?? '')}</span>
                     </div>
                     <div className="flex gap-2">
                       <Button size="sm" variant="outline" onClick={() => grant(jobId, 'approved')}>

@@ -12,33 +12,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import {
-  Activity,
-  BarChart3,
-  Coins,
-  Cpu,
-  RefreshCw,
-  Search,
-  Wrench,
-} from 'lucide-react'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Activity, BarChart3, Coins, Cpu, RefreshCw, Search, Wrench } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
   api,
   type UsageActivityCell,
@@ -53,8 +33,7 @@ import {
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const fmtUsd = (n: number) => `$${(n ?? 0).toFixed(2)}`
-const fmtNum = (n: number) =>
-  (n ?? 0) >= 1000 ? `${((n ?? 0) / 1000).toFixed(1)}k` : String(n ?? 0)
+const fmtNum = (n: number) => ((n ?? 0) >= 1000 ? `${((n ?? 0) / 1000).toFixed(1)}k` : String(n ?? 0))
 
 function Kpi({ label, value, icon: Icon }: { label: string; value: string; icon: typeof Coins }) {
   return (
@@ -84,10 +63,7 @@ function BarRows({ rows }: { rows: UsageBreakdown[] }) {
             {r.key}
           </div>
           <div className="h-3 flex-1 overflow-hidden rounded bg-muted">
-            <div
-              className="h-full bg-primary"
-              style={{ width: `${(r.cost_usd / max) * 100}%` }}
-            />
+            <div className="h-full bg-primary" style={{ width: `${(r.cost_usd / max) * 100}%` }} />
           </div>
           <div className="w-20 shrink-0 text-right tabular-nums">{fmtUsd(r.cost_usd)}</div>
           <div className="w-24 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
@@ -224,11 +200,7 @@ export default function UsageView() {
           value={`${fmtNum(totals?.input_tokens ?? 0)} / ${fmtNum(totals?.output_tokens ?? 0)}`}
           icon={Cpu}
         />
-        <Kpi
-          label="Cache hit rate"
-          value={`${Math.round((summary?.cache_hit_rate ?? 0) * 100)}%`}
-          icon={Activity}
-        />
+        <Kpi label="Cache hit rate" value={`${Math.round((summary?.cache_hit_rate ?? 0) * 100)}%`} icon={Activity} />
         <Kpi label="Sessions" value={fmtNum(summary?.session_count ?? 0)} icon={BarChart3} />
       </div>
 
@@ -305,7 +277,9 @@ export default function UsageView() {
                       </div>
                       <span className="w-12 text-right tabular-nums">{t.calls}</span>
                       <Badge
-                        variant={t.success_rate >= 0.9 ? 'default' : t.success_rate >= 0.5 ? 'secondary' : 'destructive'}
+                        variant={
+                          t.success_rate >= 0.9 ? 'default' : t.success_rate >= 0.5 ? 'secondary' : 'destructive'
+                        }
                         className="w-14 shrink-0 justify-center text-[10px]"
                       >
                         {Math.round(t.success_rate * 100)}%
@@ -453,8 +427,7 @@ export default function UsageView() {
               <SheetHeader>
                 <SheetTitle>{detail.session.project || detail.session.id}</SheetTitle>
                 <SheetDescription>
-                  {detail.session.agent} · {detail.session.message_count} messages ·{' '}
-                  {fmtUsd(detail.session.cost_usd)}
+                  {detail.session.agent} · {detail.session.message_count} messages · {fmtUsd(detail.session.cost_usd)}
                 </SheetDescription>
               </SheetHeader>
               <div className="mt-4 space-y-2">

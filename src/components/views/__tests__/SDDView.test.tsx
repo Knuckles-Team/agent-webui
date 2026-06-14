@@ -8,11 +8,13 @@ import { renderWithProviders, mockSpec, mockPlan, mockTask } from '@/__tests__/f
 // so the factory must expose an `api` object carrying the spied methods.
 vi.mock('@/lib/api', () => ({
   api: {
-    getConstitution: vi.fn(() => Promise.resolve({
-      governance_rules: ['Rule 1', 'Rule 2'],
-      tech_stack: { language: 'Python' },
-      quality_gates: ['Gate 1']
-    })),
+    getConstitution: vi.fn(() =>
+      Promise.resolve({
+        governance_rules: ['Rule 1', 'Rule 2'],
+        tech_stack: { language: 'Python' },
+        quality_gates: ['Gate 1'],
+      }),
+    ),
     saveConstitution: vi.fn(() => Promise.resolve({ status: 'success' })),
     listSpecs: vi.fn(() => Promise.resolve([mockSpec])),
     createSpec: vi.fn(() => Promise.resolve({ ...mockSpec, id: 'new_spec' })),
@@ -54,9 +56,7 @@ describe('SDDView Component', () => {
       // "Create Specification" is both the dialog title and the submit button;
       // assert the dialog itself is open plus its title.
       expect(screen.getByRole('dialog')).toBeInTheDocument()
-      expect(
-        screen.getByText('Create Specification', { selector: '[data-slot="dialog-title"]' }),
-      ).toBeInTheDocument()
+      expect(screen.getByText('Create Specification', { selector: '[data-slot="dialog-title"]' })).toBeInTheDocument()
       expect(screen.getByPlaceholderText(/feature title/i)).toBeInTheDocument()
     })
   })
@@ -79,9 +79,7 @@ describe('SDDView Component', () => {
     await user.type(screen.getByPlaceholderText(/feature description/i), 'Test feature description')
 
     // The dialog's submit button is labelled "Create Specification".
-    const submit = screen
-      .getAllByRole('button', { name: /create specification/i })
-      .pop() as HTMLElement
+    const submit = screen.getAllByRole('button', { name: /create specification/i }).pop() as HTMLElement
     await user.click(submit)
 
     await waitFor(() => {
@@ -114,9 +112,7 @@ describe('SDDView Component', () => {
 
     // Plan cards are titled "Plan <id-prefix>".
     await waitFor(() => {
-      expect(
-        screen.getByText(`Plan ${mockPlan.id.substring(0, 8)}`),
-      ).toBeInTheDocument()
+      expect(screen.getByText(`Plan ${mockPlan.id.substring(0, 8)}`)).toBeInTheDocument()
     })
   })
 

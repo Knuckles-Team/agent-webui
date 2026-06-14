@@ -22,14 +22,7 @@ interface ModularModalProps extends React.ComponentProps<typeof Dialog> {
  * A glassmorphic modal pattern inspired by the odysseus library.
  * Useful for settings, configuration, or skill auditing overlays.
  */
-export function ModularModal({
-  title,
-  description,
-  footer,
-  children,
-  contentClassName,
-  ...props
-}: ModularModalProps) {
+export function ModularModal({ title, description, footer, children, contentClassName, ...props }: ModularModalProps) {
   return (
     <Dialog {...props}>
       <DialogContent
@@ -38,7 +31,7 @@ export function ModularModal({
           'backdrop-blur-xl bg-background/80 supports-[backdrop-filter]:bg-background/60',
           'border border-border/50 shadow-2xl',
           'max-w-3xl w-full',
-          contentClassName
+          contentClassName,
         )}
       >
         {(title || description) && (
@@ -48,9 +41,7 @@ export function ModularModal({
           </DialogHeader>
         )}
 
-        <div className="py-4">
-          {children}
-        </div>
+        <div className="py-4">{children}</div>
 
         {footer && <DialogFooter>{footer}</DialogFooter>}
       </DialogContent>

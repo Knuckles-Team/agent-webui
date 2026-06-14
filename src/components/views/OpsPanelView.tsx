@@ -9,24 +9,8 @@
  */
 
 import { useEffect, useState } from 'react'
-import {
-  Activity,
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  Play,
-  RefreshCw,
-  Server,
-  Sparkles,
-  Wrench,
-} from 'lucide-react'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Activity, AlertCircle, CheckCircle2, Clock, Play, RefreshCw, Server, Sparkles, Wrench } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -73,9 +57,7 @@ interface CallableResource {
 
 const MAINTENANCE_OPERATIONS = ['prune', 'reindex', 'consolidate'] as const
 
-function normalizePhases(
-  phases: PipelineStatus['phases'],
-): PipelinePhase[] {
+function normalizePhases(phases: PipelineStatus['phases']): PipelinePhase[] {
   if (!phases) return []
   if (Array.isArray(phases)) return phases
   return Object.entries(phases).map(([name, info]) => ({
@@ -84,9 +66,7 @@ function normalizePhases(
   }))
 }
 
-function normalizeOperations(
-  operations: MaintenanceStatus['operations'],
-): MaintenanceOp[] {
+function normalizeOperations(operations: MaintenanceStatus['operations']): MaintenanceOp[] {
   if (!operations) return []
   if (Array.isArray(operations)) return operations
   return Object.entries(operations).map(([name, info]) => ({
@@ -124,9 +104,7 @@ function StateBadge({ state }: { state?: string }) {
 }
 
 export default function OpsPanelView() {
-  const [activeTab, setActiveTab] = useState<'pipeline' | 'maintenance' | 'resources'>(
-    'pipeline',
-  )
+  const [activeTab, setActiveTab] = useState<'pipeline' | 'maintenance' | 'resources'>('pipeline')
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus>({})
   const [maintenanceStatus, setMaintenanceStatus] = useState<MaintenanceStatus>({})
   const [resources, setResources] = useState<CallableResource[]>([])
@@ -268,9 +246,7 @@ export default function OpsPanelView() {
             <Wrench className="size-6" />
             Operations
           </h1>
-          <p className="text-muted-foreground text-sm">
-            Pipeline, maintenance, and callable resources
-          </p>
+          <p className="text-muted-foreground text-sm">Pipeline, maintenance, and callable resources</p>
         </div>
       </div>
 
@@ -296,25 +272,15 @@ export default function OpsPanelView() {
               <div>
                 <CardTitle>Pipeline Phases</CardTitle>
                 <CardDescription>
-                  Status:{' '}
-                  <StateBadge state={pipelineStatus.status} />
+                  Status: <StateBadge state={pipelineStatus.status} />
                 </CardDescription>
               </div>
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void fetchPipeline()}
-                  disabled={loadingPipeline}
-                >
+                <Button variant="outline" size="sm" onClick={() => void fetchPipeline()} disabled={loadingPipeline}>
                   <RefreshCw className={loadingPipeline ? 'size-4 animate-spin' : 'size-4'} />
                   <span className="ml-2">Refresh</span>
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={() => void triggerPipelinePhase()}
-                  disabled={pendingTrigger !== null}
-                >
+                <Button size="sm" onClick={() => void triggerPipelinePhase()} disabled={pendingTrigger !== null}>
                   <Play className="size-4 mr-2" />
                   Run All
                 </Button>
@@ -438,9 +404,7 @@ export default function OpsPanelView() {
                         return (
                           <tr key={`row-${opName}`} className="border-t">
                             <td className="p-2 font-medium">{opName}</td>
-                            <td className="p-2 text-muted-foreground">
-                              {op.last_run || '-'}
-                            </td>
+                            <td className="p-2 text-muted-foreground">{op.last_run || '-'}</td>
                             <td className="p-2">{op.items_pruned ?? '-'}</td>
                             <td className="p-2">{op.items_updated ?? '-'}</td>
                           </tr>
@@ -459,17 +423,10 @@ export default function OpsPanelView() {
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <div>
                 <CardTitle>Callable Resources</CardTitle>
-                <CardDescription>
-                  MCP tools, A2A agents, skills, and spawned specialists
-                </CardDescription>
+                <CardDescription>MCP tools, A2A agents, skills, and spawned specialists</CardDescription>
               </div>
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void fetchResources()}
-                  disabled={loadingResources}
-                >
+                <Button variant="outline" size="sm" onClick={() => void fetchResources()} disabled={loadingResources}>
                   <RefreshCw className={loadingResources ? 'size-4 animate-spin' : 'size-4'} />
                   <span className="ml-2">Refresh</span>
                 </Button>
@@ -505,12 +462,8 @@ export default function OpsPanelView() {
                                 {resource.type || resource.resource_type || 'unknown'}
                               </Badge>
                             </td>
-                            <td className="p-2 font-medium">
-                              {resource.name || resource.id || '-'}
-                            </td>
-                            <td className="p-2 text-muted-foreground">
-                              {resource.description || '-'}
-                            </td>
+                            <td className="p-2 font-medium">{resource.name || resource.id || '-'}</td>
+                            <td className="p-2 text-muted-foreground">{resource.description || '-'}</td>
                           </tr>
                         )
                       })}
@@ -531,9 +484,7 @@ export default function OpsPanelView() {
                   <label className="text-sm font-medium">Name (optional)</label>
                   <Input
                     value={spawnForm.name}
-                    onChange={(e) =>
-                      setSpawnForm({ ...spawnForm, name: e.target.value })
-                    }
+                    onChange={(e) => setSpawnForm({ ...spawnForm, name: e.target.value })}
                     placeholder="research-specialist"
                   />
                 </div>
@@ -541,9 +492,7 @@ export default function OpsPanelView() {
                   <label className="text-sm font-medium">Agent Type</label>
                   <Input
                     value={spawnForm.agent_type}
-                    onChange={(e) =>
-                      setSpawnForm({ ...spawnForm, agent_type: e.target.value })
-                    }
+                    onChange={(e) => setSpawnForm({ ...spawnForm, agent_type: e.target.value })}
                     placeholder="specialist"
                   />
                 </div>
@@ -551,25 +500,16 @@ export default function OpsPanelView() {
                   <label className="text-sm font-medium">Task</label>
                   <Textarea
                     value={spawnForm.task}
-                    onChange={(e) =>
-                      setSpawnForm({ ...spawnForm, task: e.target.value })
-                    }
+                    onChange={(e) => setSpawnForm({ ...spawnForm, task: e.target.value })}
                     placeholder="Describe the task this agent should handle"
                     rows={4}
                   />
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsSpawnOpen(false)}
-                    disabled={spawnSubmitting}
-                  >
+                  <Button variant="outline" onClick={() => setIsSpawnOpen(false)} disabled={spawnSubmitting}>
                     Cancel
                   </Button>
-                  <Button
-                    onClick={() => void spawnAgent()}
-                    disabled={spawnSubmitting || !spawnForm.task.trim()}
-                  >
+                  <Button onClick={() => void spawnAgent()} disabled={spawnSubmitting || !spawnForm.task.trim()}>
                     <Sparkles className="size-4 mr-2" />
                     Spawn
                   </Button>

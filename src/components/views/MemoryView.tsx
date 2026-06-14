@@ -34,7 +34,7 @@ export default function MemoryView() {
     id: '',
     content: '',
     importance: 0.5,
-    tags: [] as string[]
+    tags: [] as string[],
   })
   const [tagInput, setTagInput] = useState('')
 
@@ -64,8 +64,8 @@ export default function MemoryView() {
           ...memoryForm,
           id: memoryForm.id || `mem_${Date.now()}`,
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
+          updated_at: new Date().toISOString(),
+        }),
       })
       if (res.ok) {
         toast.success('Memory created successfully')
@@ -89,8 +89,8 @@ export default function MemoryView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...memoryForm,
-          updated_at: new Date().toISOString()
-        })
+          updated_at: new Date().toISOString(),
+        }),
       })
       if (res.ok) {
         toast.success('Memory updated successfully')
@@ -109,7 +109,7 @@ export default function MemoryView() {
   const handleDeleteMemory = async (id: string) => {
     try {
       const res = await fetch(`/api/enhanced/graph/memory/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
       })
       if (res.ok) {
         toast.success('Memory deleted successfully')
@@ -133,7 +133,7 @@ export default function MemoryView() {
   }
 
   const handleRemoveTag = (tag: string) => {
-    setMemoryForm({ ...memoryForm, tags: memoryForm.tags.filter(t => t !== tag) })
+    setMemoryForm({ ...memoryForm, tags: memoryForm.tags.filter((t) => t !== tag) })
   }
 
   const openEditDialog = (memory: MemoryNode) => {
@@ -142,16 +142,16 @@ export default function MemoryView() {
       id: memory.id,
       content: memory.content,
       importance: memory.importance,
-      tags: memory.tags || []
+      tags: memory.tags || [],
     })
     setIsEditDialogOpen(true)
   }
 
   const filteredMemories = memories.filter(
-    memory =>
+    (memory) =>
       memory.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
       memory.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (memory.tags || []).some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+      (memory.tags || []).some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase())),
   )
 
   const sortedMemories = [...filteredMemories].sort((a, b) => {
@@ -235,7 +235,7 @@ export default function MemoryView() {
                   key={memory.id}
                   className={cn(
                     'cursor-pointer transition-all hover:shadow-md',
-                    selectedMemory?.id === memory.id ? 'ring-2 ring-primary' : ''
+                    selectedMemory?.id === memory.id ? 'ring-2 ring-primary' : '',
                   )}
                   onClick={() => setSelectedMemory(memory)}
                 >
@@ -278,10 +278,7 @@ export default function MemoryView() {
                         <span className="text-xs text-muted-foreground">Importance:</span>
                         <div className="flex-1">
                           <div className="h-2 bg-muted rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-primary"
-                              style={{ width: `${memory.importance * 100}%` }}
-                            />
+                            <div className="h-full bg-primary" style={{ width: `${memory.importance * 100}%` }} />
                           </div>
                         </div>
                         <span className="text-xs font-medium">{(memory.importance * 100).toFixed(0)}%</span>
@@ -328,7 +325,9 @@ export default function MemoryView() {
                               {new Date(memory.created_at).toLocaleString()}
                             </span>
                           </div>
-                          <CardTitle className="text-base line-clamp-2">{memory.content.substring(0, 100)}...</CardTitle>
+                          <CardTitle className="text-base line-clamp-2">
+                            {memory.content.substring(0, 100)}...
+                          </CardTitle>
                         </div>
                         <Badge variant="outline" className="text-xs">
                           {(memory.importance * 100).toFixed(0)}%
@@ -364,13 +363,15 @@ export default function MemoryView() {
                   <Button variant="outline" onClick={() => setSearchQuery('')}>
                     Clear
                   </Button>
-                  <Button onClick={() => {/* Advanced search logic */}}>
+                  <Button
+                    onClick={() => {
+                      /* Advanced search logic */
+                    }}
+                  >
                     Advanced Search
                   </Button>
                 </div>
-                <div className="text-sm text-muted-foreground">
-                  Found {sortedMemories.length} memories
-                </div>
+                <div className="text-sm text-muted-foreground">Found {sortedMemories.length} memories</div>
               </div>
             </CardContent>
           </Card>
@@ -426,10 +427,7 @@ export default function MemoryView() {
                     <label className="text-sm font-medium">Importance</label>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary"
-                          style={{ width: `${selectedMemory.importance * 100}%` }}
-                        />
+                        <div className="h-full bg-primary" style={{ width: `${selectedMemory.importance * 100}%` }} />
                       </div>
                       <span className="text-sm">{(selectedMemory.importance * 100).toFixed(0)}%</span>
                     </div>
@@ -451,7 +449,12 @@ export default function MemoryView() {
                   </div>
                 </div>
                 <div className="flex gap-2 pt-4">
-                  <Button onClick={() => { setSelectedMemory(null); openEditDialog(selectedMemory) }}>
+                  <Button
+                    onClick={() => {
+                      setSelectedMemory(null)
+                      openEditDialog(selectedMemory)
+                    }}
+                  >
                     <Edit2 className="size-4 mr-2" />
                     Edit
                   </Button>
@@ -502,7 +505,7 @@ function MemoryForm({
   onAddTag,
   onRemoveTag,
   onSubmit,
-  submitLabel
+  submitLabel,
 }: {
   form: { id: string; content: string; importance: number; tags: string[] }
   setForm: (form: any) => void
@@ -565,11 +568,7 @@ function MemoryForm({
           {form.tags.map((tag) => (
             <Badge key={tag} variant="secondary" className="gap-1">
               {tag}
-              <button
-                type="button"
-                onClick={() => onRemoveTag(tag)}
-                className="hover:text-destructive"
-              >
+              <button type="button" onClick={() => onRemoveTag(tag)} className="hover:text-destructive">
                 ×
               </button>
             </Badge>
