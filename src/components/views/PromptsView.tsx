@@ -16,10 +16,24 @@ interface PromptSummary {
   file_path: string
 }
 
+interface PromptDetail {
+  title?: string
+  task?: string
+  type?: string
+  version?: string
+  identity?: { role?: string; goal?: string }
+  goal?: string
+  core_directive?: string
+  instructions?: { core_directive?: string }
+  tools?: string[]
+  metadata?: { topic?: string; tone?: string; style?: string; [k: string]: unknown }
+  [key: string]: unknown
+}
+
 export default function PromptsView() {
   const [prompts, setPrompts] = useState<PromptSummary[]>([])
   const [selectedName, setSelectedName] = useState<string | null>(null)
-  const [promptDetail, setPromptDetail] = useState<any>(null)
+  const [promptDetail, setPromptDetail] = useState<PromptDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -59,7 +73,7 @@ export default function PromptsView() {
         toast.error('Failed to load prompt details')
         return
       }
-      const data = await res.json()
+      const data = (await res.json()) as PromptDetail
       setPromptDetail(data)
       setRawJsonText(JSON.stringify(data, null, 4))
     } catch {
@@ -73,11 +87,12 @@ export default function PromptsView() {
     setRawJsonText(JSON.stringify(updated, null, 4))
   }
 
-  const handleNestedFieldChange = (section: string, key: string, val: any) => {
+  const handleNestedFieldChange = (section: string, key: string, val: string) => {
+    if (!promptDetail) return
     const updated = {
       ...promptDetail,
       [section]: {
-        ...(promptDetail[section] || {}),
+        ...((promptDetail[section] as Record<string, unknown> | undefined) ?? {}),
         [key]: val,
       },
     }
@@ -91,8 +106,8 @@ export default function PromptsView() {
   }
 
   const handleAddTool = () => {
-    if (!newTool.trim()) return
-    const currentTools = promptDetail.tools || []
+    if (!newTool.trim() || !promptDetail) return
+    const currentTools = promptDetail.tools ?? []
     if (currentTools.includes(newTool.trim())) {
       toast.error('Tool already added')
       return
@@ -105,7 +120,8 @@ export default function PromptsView() {
   }
 
   const handleRemoveTool = (toolName: string) => {
-    const currentTools = promptDetail.tools || []
+    if (!promptDetail) return
+    const currentTools = promptDetail.tools ?? []
     const updatedTools = currentTools.filter((t: string) => t !== toolName)
     const updated = { ...promptDetail, tools: updatedTools }
     setPromptDetail(updated)
@@ -119,9 +135,9 @@ export default function PromptsView() {
       let payload = promptDetail
       if (editMode === 'json') {
         try {
-          payload = JSON.parse(rawJsonText)
-        } catch (e: any) {
-          toast.error(`Invalid JSON syntax: ${e.message}`)
+          payload = JSON.parse(rawJsonText) as PromptDetail
+        } catch (e) {
+          toast.error(`Invalid JSON syntax: ${e instanceof Error ? e.message : String(e)}`)
           setSaving(false)
           return
         }
@@ -159,7 +175,14 @@ export default function PromptsView() {
             <CardTitle className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-teal-400">
               Prompt Profiles
             </CardTitle>
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => void loadPrompts()}>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => {
+                void loadPrompts()
+              }}
+            >
               <RefreshCw className="size-3.5" />
             </Button>
           </div>
@@ -169,7 +192,9 @@ export default function PromptsView() {
             <Input
               placeholder="Search prompts..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+              }}
               className="pl-9 h-8 bg-muted/20"
             />
           </div>
@@ -185,7 +210,9 @@ export default function PromptsView() {
                 filteredPrompts.map((p) => (
                   <button
                     key={p.name}
-                    onClick={() => void loadPromptDetail(p.name)}
+                    onClick={() => {
+                      void loadPromptDetail(p.name)
+                    }}
                     className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-3 ${
                       selectedName === p.name
                         ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-semibold'
@@ -211,7 +238,7 @@ export default function PromptsView() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-lg font-bold text-foreground">
-                {promptDetail?.title || selectedName || 'Prompt Editor'}
+                {promptDetail?.title ?? selectedName ?? 'Prompt Editor'}
               </CardTitle>
               <CardDescription>Customize behavior directives, goals, and role specifications.</CardDescription>
             </div>
@@ -220,7 +247,9 @@ export default function PromptsView() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setEditMode('form')}
+                  onClick={() => {
+                    setEditMode('form')
+                  }}
                   className={`h-7 px-2.5 text-xs font-semibold ${editMode === 'form' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : ''}`}
                 >
                   Form
@@ -228,7 +257,9 @@ export default function PromptsView() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setEditMode('json')}
+                  onClick={() => {
+                    setEditMode('json')
+                  }}
                   className={`h-7 px-2.5 text-xs font-semibold ${editMode === 'json' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : ''}`}
                 >
                   Raw JSON
@@ -236,7 +267,9 @@ export default function PromptsView() {
               </div>
               <Button
                 size="sm"
-                onClick={() => void handleSave()}
+                onClick={() => {
+                  void handleSave()
+                }}
                 disabled={saving || !promptDetail}
                 className="bg-emerald-600 hover:bg-emerald-700"
               >
@@ -258,8 +291,10 @@ export default function PromptsView() {
                         Task ID
                       </label>
                       <Input
-                        value={promptDetail.task || ''}
-                        onChange={(e) => handleFieldChange('task', e.target.value)}
+                        value={promptDetail.task ?? ''}
+                        onChange={(e) => {
+                          handleFieldChange('task', e.target.value)
+                        }}
                         className="mt-1 h-8 bg-muted/20 text-xs font-semibold"
                       />
                     </div>
@@ -268,8 +303,10 @@ export default function PromptsView() {
                         Profile Type
                       </label>
                       <Input
-                        value={promptDetail.type || ''}
-                        onChange={(e) => handleFieldChange('type', e.target.value)}
+                        value={promptDetail.type ?? ''}
+                        onChange={(e) => {
+                          handleFieldChange('type', e.target.value)
+                        }}
                         className="mt-1 h-8 bg-muted/20 text-xs font-semibold"
                       />
                     </div>
@@ -278,8 +315,10 @@ export default function PromptsView() {
                         Version
                       </label>
                       <Input
-                        value={promptDetail.version || ''}
-                        onChange={(e) => handleFieldChange('version', e.target.value)}
+                        value={promptDetail.version ?? ''}
+                        onChange={(e) => {
+                          handleFieldChange('version', e.target.value)
+                        }}
                         className="mt-1 h-8 bg-muted/20 text-xs font-semibold"
                       />
                     </div>
@@ -298,8 +337,10 @@ export default function PromptsView() {
                         Role / Title
                       </label>
                       <Input
-                        value={promptDetail.identity?.role || promptDetail.title || ''}
-                        onChange={(e) => handleNestedFieldChange('identity', 'role', e.target.value)}
+                        value={promptDetail.identity?.role ?? promptDetail.title ?? ''}
+                        onChange={(e) => {
+                          handleNestedFieldChange('identity', 'role', e.target.value)
+                        }}
                         className="mt-1.5 bg-muted/20 text-xs font-medium"
                       />
                     </div>
@@ -308,8 +349,10 @@ export default function PromptsView() {
                         Goal / Core Intent
                       </label>
                       <Textarea
-                        value={promptDetail.identity?.goal || promptDetail.goal || ''}
-                        onChange={(e) => handleNestedFieldChange('identity', 'goal', e.target.value)}
+                        value={promptDetail.identity?.goal ?? promptDetail.goal ?? ''}
+                        onChange={(e) => {
+                          handleNestedFieldChange('identity', 'goal', e.target.value)
+                        }}
                         className="mt-1.5 bg-muted/20 text-xs leading-relaxed"
                         rows={3}
                       />
@@ -323,8 +366,10 @@ export default function PromptsView() {
                         Topic
                       </label>
                       <Input
-                        value={promptDetail.metadata?.topic || ''}
-                        onChange={(e) => handleNestedFieldChange('metadata', 'topic', e.target.value)}
+                        value={promptDetail.metadata?.topic ?? ''}
+                        onChange={(e) => {
+                          handleNestedFieldChange('metadata', 'topic', e.target.value)
+                        }}
                         className="mt-1 h-8 bg-muted/20 text-xs"
                       />
                     </div>
@@ -333,8 +378,10 @@ export default function PromptsView() {
                         Tone
                       </label>
                       <Input
-                        value={promptDetail.metadata?.tone || ''}
-                        onChange={(e) => handleNestedFieldChange('metadata', 'tone', e.target.value)}
+                        value={promptDetail.metadata?.tone ?? ''}
+                        onChange={(e) => {
+                          handleNestedFieldChange('metadata', 'tone', e.target.value)
+                        }}
                         className="mt-1 h-8 bg-muted/20 text-xs"
                       />
                     </div>
@@ -343,8 +390,10 @@ export default function PromptsView() {
                         Style
                       </label>
                       <Input
-                        value={promptDetail.metadata?.style || ''}
-                        onChange={(e) => handleNestedFieldChange('metadata', 'style', e.target.value)}
+                        value={promptDetail.metadata?.style ?? ''}
+                        onChange={(e) => {
+                          handleNestedFieldChange('metadata', 'style', e.target.value)
+                        }}
                         className="mt-1 h-8 bg-muted/20 text-xs"
                       />
                     </div>
@@ -363,8 +412,10 @@ export default function PromptsView() {
                         System Prompt Directive
                       </label>
                       <Textarea
-                        value={promptDetail.instructions?.core_directive || promptDetail.core_directive || ''}
-                        onChange={(e) => handleNestedFieldChange('instructions', 'core_directive', e.target.value)}
+                        value={promptDetail.instructions?.core_directive ?? promptDetail.core_directive ?? ''}
+                        onChange={(e) => {
+                          handleNestedFieldChange('instructions', 'core_directive', e.target.value)
+                        }}
                         className="mt-1.5 bg-muted/20 font-mono text-xs leading-relaxed"
                         rows={12}
                       />
@@ -384,12 +435,12 @@ export default function PromptsView() {
                         Active Skill & Tool Tokens
                       </label>
                       <div className="flex flex-wrap gap-1.5 mt-2 p-2 border border-border/20 rounded-lg min-h-[4rem] bg-muted/10 items-start">
-                        {(promptDetail.tools || []).length === 0 ? (
+                        {(promptDetail.tools ?? []).length === 0 ? (
                           <span className="text-xs text-muted-foreground italic p-1">
                             No tools bound to this profile.
                           </span>
                         ) : (
-                          (promptDetail.tools || []).map((tool: string) => (
+                          (promptDetail.tools ?? []).map((tool: string) => (
                             <Badge
                               key={tool}
                               variant="secondary"
@@ -397,7 +448,9 @@ export default function PromptsView() {
                             >
                               {tool}
                               <button
-                                onClick={() => handleRemoveTool(tool)}
+                                onClick={() => {
+                                  handleRemoveTool(tool)
+                                }}
                                 className="hover:text-red-400 transition-colors ml-0.5 shrink-0"
                               >
                                 <X className="size-3" />
@@ -410,7 +463,9 @@ export default function PromptsView() {
                         <Input
                           placeholder="Enter tool or skill name (e.g. react-docs)..."
                           value={newTool}
-                          onChange={(e) => setNewTool(e.target.value)}
+                          onChange={(e) => {
+                            setNewTool(e.target.value)
+                          }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault()
@@ -434,7 +489,9 @@ export default function PromptsView() {
                 <div className="h-full flex flex-col pb-4">
                   <Textarea
                     value={rawJsonText}
-                    onChange={(e) => setRawJsonText(e.target.value)}
+                    onChange={(e) => {
+                      setRawJsonText(e.target.value)
+                    }}
                     className="flex-1 font-mono text-xs bg-muted/10 border-border/40 p-4 resize-none h-[calc(100vh-22rem)]"
                     placeholder="Enter valid configuration JSON..."
                   />
