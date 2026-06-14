@@ -10,39 +10,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
-interface Spec {
-  id: string
-  title: string
-  description: string
-  user_stories: string[]
-  acceptance_criteria: string[]
-  status: 'draft' | 'active' | 'completed'
-  created_at: string
-}
-
-interface ImplementationPlan {
-  id: string
-  spec_id: string
-  technical_approach: string
-  status: 'draft' | 'in_progress' | 'completed'
-  created_at: string
-}
-
-interface Task {
-  id: string
-  plan_id: string
-  title: string
-  description: string
-  dependencies: string[]
-  status: 'pending' | 'in_progress' | 'completed'
-  parallel: boolean
-}
-
-interface Constitution {
-  governance_rules: string[]
-  tech_stack: Record<string, string>
-  quality_gates: string[]
-}
+import {
+  api,
+  type SddSpec as Spec,
+  type SddPlan as ImplementationPlan,
+  type SddTask as Task,
+  type SddConstitution as Constitution,
+} from '@/lib/api'
 
 export default function SDDView() {
   const [activeTab, setActiveTab] = useState('constitution')
@@ -75,9 +49,8 @@ export default function SDDView() {
 
   const fetchConstitution = async () => {
     try {
-      const res = await fetch('/api/enhanced/sdd/constitution')
-      const data = await res.json()
-      if (data && Object.keys(data).length > 0) {
+      const data = await api.getConstitution()
+      if (Object.keys(data).length > 0) {
         setConstitution(data)
       }
     } catch (err) {
@@ -87,20 +60,16 @@ export default function SDDView() {
 
   const fetchSpecs = async () => {
     try {
-      const res = await fetch('/api/enhanced/sdd/specs')
-      const data = await res.json()
-      setSpecs(data)
-    } catch (err) {
+      setSpecs(await api.listSpecs())
+    } catch {
       toast.error('Failed to fetch specifications')
     }
   }
 
   const fetchPlans = async () => {
     try {
-      const res = await fetch('/api/enhanced/sdd/plans')
-      const data = await res.json()
-      setPlans(data)
-    } catch (err) {
+      setPlans(await api.listPlans())
+    } catch {
       toast.error('Failed to fetch plans')
     } finally {
       setLoading(false)
@@ -109,30 +78,21 @@ export default function SDDView() {
 
   const fetchTasks = async (planId: string) => {
     try {
-      const res = await fetch(`/api/enhanced/sdd/tasks?plan_id=${planId}`)
-      const data = await res.json()
-      setTasks(data.tasks || [])
-    } catch (err) {
+      const data = await api.getTasks(planId)
+      setTasks(data.tasks)
+    } catch {
       toast.error('Failed to fetch tasks')
     }
   }
 
   const handleCreateSpec = async () => {
     try {
-      const res = await fetch('/api/enhanced/sdd/spec', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(specForm),
-      })
-      if (res.ok) {
-        toast.success('Specification created successfully')
-        setIsSpecDialogOpen(false)
-        setSpecForm({ title: '', description: '', user_stories: [''], acceptance_criteria: [''] })
-        void fetchSpecs()
-      } else {
-        toast.error('Failed to create specification')
-      }
-    } catch (err) {
+      await api.createSpec(specForm)
+      toast.success('Specification created successfully')
+      setIsSpecDialogOpen(false)
+      setSpecForm({ title: '', description: '', user_stories: [''], acceptance_criteria: [''] })
+      void fetchSpecs()
+    } catch {
       toast.error('Failed to create specification')
     }
   }
@@ -140,17 +100,9 @@ export default function SDDView() {
   const handleSyncToMemory = async () => {
     if (!selectedPlan) return
     try {
-      const res = await fetch('/api/enhanced/sdd/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan_id: selectedPlan.id }),
-      })
-      if (res.ok) {
-        toast.success('SDD data synced to knowledge graph')
-      } else {
-        toast.error('Failed to sync to memory')
-      }
-    } catch (err) {
+      await api.syncSDDToMemory({ plan_id: selectedPlan.id })
+      toast.success('SDD data synced to knowledge graph')
+    } catch {
       toast.error('Failed to sync to memory')
     }
   }
@@ -195,7 +147,12 @@ export default function SDDView() {
           <p className="text-muted-foreground text-sm">Manage specifications, plans, and tasks</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void fetchConstitution()}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              void fetchConstitution()
+            }}
+          >
             <RefreshCw className="size-4" />
           </Button>
           <Dialog open={isSpecDialogOpen} onOpenChange={setIsSpecDialogOpen}>
@@ -214,7 +171,9 @@ export default function SDDView() {
                   <label className="text-sm font-medium">Title</label>
                   <Input
                     value={specForm.title}
-                    onChange={(e) => setSpecForm({ ...specForm, title: e.target.value })}
+                    onChange={(e) => {
+                      setSpecForm({ ...specForm, title: e.target.value })
+                    }}
                     placeholder="Feature title"
                   />
                 </div>
@@ -222,7 +181,9 @@ export default function SDDView() {
                   <label className="text-sm font-medium">Description</label>
                   <Textarea
                     value={specForm.description}
-                    onChange={(e) => setSpecForm({ ...specForm, description: e.target.value })}
+                    onChange={(e) => {
+                      setSpecForm({ ...specForm, description: e.target.value })
+                    }}
                     placeholder="Feature description"
                     rows={3}
                   />
@@ -239,11 +200,19 @@ export default function SDDView() {
                       <div key={index} className="flex gap-2">
                         <Textarea
                           value={story}
-                          onChange={(e) => updateUserStory(index, e.target.value)}
+                          onChange={(e) => {
+                            updateUserStory(index, e.target.value)
+                          }}
                           placeholder="As a user, I want..."
                           rows={2}
                         />
-                        <Button variant="ghost" size="sm" onClick={() => removeUserStory(index)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            removeUserStory(index)
+                          }}
+                        >
                           ×
                         </Button>
                       </div>
@@ -262,18 +231,31 @@ export default function SDDView() {
                       <div key={index} className="flex gap-2">
                         <Textarea
                           value={criteria}
-                          onChange={(e) => updateAcceptanceCriteria(index, e.target.value)}
+                          onChange={(e) => {
+                            updateAcceptanceCriteria(index, e.target.value)
+                          }}
                           placeholder="Given... When... Then..."
                           rows={2}
                         />
-                        <Button variant="ghost" size="sm" onClick={() => removeAcceptanceCriteria(index)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            removeAcceptanceCriteria(index)
+                          }}
+                        >
                           ×
                         </Button>
                       </div>
                     ))}
                   </div>
                 </div>
-                <Button onClick={handleCreateSpec} className="w-full">
+                <Button
+                  onClick={() => {
+                    void handleCreateSpec()
+                  }}
+                  className="w-full"
+                >
                   Create Specification
                 </Button>
               </div>
@@ -361,7 +343,9 @@ export default function SDDView() {
                     'cursor-pointer transition-all hover:shadow-md',
                     selectedSpec?.id === spec.id ? 'ring-2 ring-primary' : '',
                   )}
-                  onClick={() => setSelectedSpec(spec)}
+                  onClick={() => {
+                    setSelectedSpec(spec)
+                  }}
                 >
                   <CardHeader>
                     <div className="flex items-start justify-between">
@@ -406,7 +390,9 @@ export default function SDDView() {
                     'cursor-pointer transition-all hover:shadow-md',
                     selectedPlan?.id === plan.id ? 'ring-2 ring-primary' : '',
                   )}
-                  onClick={() => setSelectedPlan(plan)}
+                  onClick={() => {
+                    setSelectedPlan(plan)
+                  }}
                 >
                   <CardHeader>
                     <div className="flex items-start justify-between">
@@ -440,7 +426,11 @@ export default function SDDView() {
                   <h3 className="text-lg font-semibold">Tasks for Plan {selectedPlan.id.substring(0, 8)}</h3>
                   <p className="text-sm text-muted-foreground">{tasks.length} tasks</p>
                 </div>
-                <Button onClick={handleSyncToMemory}>
+                <Button
+                  onClick={() => {
+                    void handleSyncToMemory()
+                  }}
+                >
                   <Play className="size-4 mr-2" />
                   Sync to Memory
                 </Button>

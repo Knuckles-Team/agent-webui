@@ -307,6 +307,38 @@ export interface SweProvenanceAction {
   obs_summary?: string
 }
 
+/** Spec-Driven-Development contracts (/api/enhanced/sdd/*). */
+export interface SddSpec {
+  id: string
+  title: string
+  description: string
+  user_stories: string[]
+  acceptance_criteria: string[]
+  status: 'draft' | 'active' | 'completed'
+  created_at: string
+}
+export interface SddPlan {
+  id: string
+  spec_id: string
+  technical_approach: string
+  status: 'draft' | 'in_progress' | 'completed'
+  created_at: string
+}
+export interface SddTask {
+  id: string
+  plan_id: string
+  title: string
+  description: string
+  dependencies: string[]
+  status: 'pending' | 'in_progress' | 'completed'
+  parallel: boolean
+}
+export interface SddConstitution {
+  governance_rules: string[]
+  tech_stack: Record<string, string>
+  quality_gates: string[]
+}
+
 /** A GPU-slot fact-extraction job row from /api/enhanced/extract/* (KG-2.65). */
 export interface ExtractionJob {
   job_id: string
@@ -388,13 +420,13 @@ class ApiClient {
   }
 
   // SDD Methods
-  getConstitution = () => this.get<any>('/api/enhanced/sdd/constitution')
-  saveConstitution = (data: any) => this.post<any>('/api/enhanced/sdd/constitution', data)
-  listSpecs = () => this.get<any[]>('/api/enhanced/sdd/specs')
-  createSpec = (data: any) => this.post<any>('/api/enhanced/sdd/spec', data)
-  listPlans = () => this.get<any[]>('/api/enhanced/sdd/plans')
-  getTasks = (planId: string) => this.get<{ tasks: any[] }>(`/api/enhanced/sdd/tasks?plan_id=${planId}`)
-  syncSDDToMemory = (data: any) => this.post<any>('/api/enhanced/sdd/sync', data)
+  getConstitution = () => this.get<SddConstitution>('/api/enhanced/sdd/constitution')
+  saveConstitution = (data: unknown) => this.post<unknown>('/api/enhanced/sdd/constitution', data)
+  listSpecs = () => this.get<SddSpec[]>('/api/enhanced/sdd/specs')
+  createSpec = (data: unknown) => this.post<unknown>('/api/enhanced/sdd/spec', data)
+  listPlans = () => this.get<SddPlan[]>('/api/enhanced/sdd/plans')
+  getTasks = (planId: string) => this.get<{ tasks: SddTask[] }>(`/api/enhanced/sdd/tasks?plan_id=${planId}`)
+  syncSDDToMemory = (data: unknown) => this.post<unknown>('/api/enhanced/sdd/sync', data)
 
   // SWE Developer-Workspace Runtime (OS-5.33 / ORCH-1.46) + SWE-bench (AHE-3.22)
   createSweSession = (body?: { prefer_docker?: boolean; image?: string; actor?: string }) =>

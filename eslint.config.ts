@@ -25,6 +25,7 @@ export default defineConfig(
       '**/build/**',
       'server/**',
       'node_modules/**',
+      '**/.venv/**',
       'scratch/**',
       'agent/**',
       'commitlint.config.js',
