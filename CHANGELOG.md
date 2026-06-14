@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SWE Agent view (OS-5.34)** — `SweView.tsx`, a new sidebar view (`/swe`) for the KG-grounded
+  software-engineering agent. Creates a developer-workspace runtime session
+  (`POST /api/runtime/sessions`), sends shell actions (`/act`), and renders the **live
+  action/observation event stream** over SSE (`/events`) beside a **KG-provenance panel** that
+  shows the `WorkspaceAction` steps and the `Code` symbols each edit mutated
+  (`/provenance`, KG-2.64) — the differentiator over a flat log. Adds typed client methods +
+  DTOs (`SweProvenanceAction`/`SweMutatedEdge`/`SweBenchReport`) to `lib/api.ts`.
 - **Ontology Operator UI** — Three operator views surfacing the `agent-utilities` ontology system (`kg.ontology`) over live `/api/enhanced/ontology/*` routes (no fixtures), resolved against the same `IntelligenceGraphEngine` backend and gated by `kg.ontology.permissioning.enforce`.
   - `ObjectExplorerView.tsx` — faceted/full-text object-set search with property filters, results table, pivot across a link type, search-around (N-hop related objects), aggregate metrics (count/sum/avg/min/max, optionally grouped), bulk Actions on a row selection through the governed `ActionExecutor` (Edit-Ledger writeback, HITL approve for high-risk verbs), and save/list of object sets.
   - `ObjectView.tsx` — single-object hub renderer: value-type-aware properties, computed derived properties, in/out links grouped by link type, marking/permission badges, bitemporal edit-history timeline, inline edit/revert; `variant` (full/panel) and `layout` (standard schema-derived / configured stored widget composition).
