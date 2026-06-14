@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect, type SyntheticEvent } from 'react'
 import {
   Network,
   Server,
@@ -365,8 +365,8 @@ export default function EcosystemView() {
     try {
       const res = await fetch('/api/enhanced/tunnel-manager/hosts')
       if (res.ok) {
-        const data = await res.json()
-        setHosts(data.hosts || [])
+        const data = (await res.json()) as { hosts?: Host[] }
+        setHosts(data.hosts ?? [])
         if (data.hosts && data.hosts.length > 0) {
           setSelectedHost(data.hosts[0].alias)
         }
@@ -376,7 +376,7 @@ export default function EcosystemView() {
     }
   }
 
-  const handleAddHost = async (e: React.FormEvent) => {
+  const handleAddHost = async (e: SyntheticEvent) => {
     e.preventDefault()
     if (!newHost.alias || !newHost.hostname || !newHost.user) {
       toast.error('Please complete all required host parameters')
@@ -392,7 +392,7 @@ export default function EcosystemView() {
         toast.success(`Host ${newHost.alias} added successfully`)
         setNewHost({ alias: '', hostname: '', user: '', port: 22 })
         setAddHostOpen(false)
-        fetchHosts()
+        void fetchHosts()
       }
     } catch (err) {
       console.error(err)
@@ -411,9 +411,10 @@ export default function EcosystemView() {
         body: JSON.stringify({ host: selectedHost, cmd: remoteCommand }),
       })
       if (res.ok) {
-        const data = await res.json()
+        const data = (await res.json()) as { stdout?: string; stderr?: string }
         if (data.stdout) {
-          setTerminalOutput((prev) => [...prev, data.stdout])
+          const out = data.stdout
+          setTerminalOutput((prev) => [...prev, out])
         }
         if (data.stderr) {
           setTerminalOutput((prev) => [...prev, `[stderr]: ${data.stderr}`])
@@ -435,10 +436,10 @@ export default function EcosystemView() {
         fetch('/api/enhanced/systems-manager/processes'),
       ])
       if (resRes.ok) {
-        setResources(await resRes.json())
+        setResources((await resRes.json()) as SystemResources)
       }
       if (procRes.ok) {
-        setProcesses(await procRes.json())
+        setProcesses((await procRes.json()) as ProcessInfo[])
       }
     } catch (err) {
       console.error(err)
@@ -454,7 +455,7 @@ export default function EcosystemView() {
       })
       if (res.ok) {
         toast.success(`Sent SIGKILL to process ${pid}`)
-        fetchSystems()
+        void fetchSystems()
       }
     } catch (err) {
       console.error(err)
@@ -465,7 +466,7 @@ export default function EcosystemView() {
     try {
       const res = await fetch('/api/enhanced/container-manager/containers')
       if (res.ok) {
-        setContainers(await res.json())
+        setContainers((await res.json()) as ContainerInfo[])
       }
     } catch (err) {
       console.error(err)
@@ -482,7 +483,7 @@ export default function EcosystemView() {
       })
       if (res.ok) {
         toast.success(`Container ${id} action '${action}' completed`)
-        fetchContainers()
+        void fetchContainers()
       }
     } catch (err) {
       console.error(err)
@@ -496,7 +497,7 @@ export default function EcosystemView() {
     try {
       const res = await fetch('/api/enhanced/repository-manager/repos')
       if (res.ok) {
-        setRepos(await res.json())
+        setRepos((await res.json()) as RepoInfo[])
       }
     } catch (err) {
       console.error(err)
@@ -519,7 +520,7 @@ export default function EcosystemView() {
         toast.success(`Bulk ${action} triggered successfully across ${selectedRepos.length} repos`)
         setTimeout(() => {
           setBulkActionRunning(false)
-          fetchRepos()
+          void fetchRepos()
         }, 2000)
       }
     } catch (err) {
@@ -541,22 +542,22 @@ export default function EcosystemView() {
       ])
 
       if (atlassianRes.ok) {
-        const d = await atlassianRes.json()
-        setKanbanColumns(d.columns || [])
+        const d = (await atlassianRes.json()) as { columns?: KanbanColumn[] }
+        setKanbanColumns(d.columns ?? [])
       }
       if (githubRes.ok) {
-        const d = await githubRes.json()
-        setGithubPrs(d.prs || [])
-        setGithubWorkflows(d.workflows || [])
+        const d = (await githubRes.json()) as { prs?: GithubPr[]; workflows?: GithubWorkflow[] }
+        setGithubPrs(d.prs ?? [])
+        setGithubWorkflows(d.workflows ?? [])
       }
       if (gitlabRes.ok) {
-        const d = await gitlabRes.json()
-        setGitlabMrs(d.mrs || [])
-        setGitlabPipelines(d.pipelines || [])
+        const d = (await gitlabRes.json()) as { mrs?: GitlabMr[]; pipelines?: GitlabPipeline[] }
+        setGitlabMrs(d.mrs ?? [])
+        setGitlabPipelines(d.pipelines ?? [])
       }
       if (portainerRes.ok) {
-        const d = await portainerRes.json()
-        setPortainerStacks(d.stacks || [])
+        const d = (await portainerRes.json()) as { stacks?: PortainerStack[] }
+        setPortainerStacks(d.stacks ?? [])
       }
 
       // 2. Data & Research Services
@@ -566,18 +567,18 @@ export default function EcosystemView() {
       ])
 
       if (dsRes.ok) {
-        setTrainingData(await dsRes.json())
+        setTrainingData((await dsRes.json()) as TrainingMetrics)
       }
       if (scholarRes.ok) {
-        const d = await scholarRes.json()
-        setScholarxPapers(d.papers || [])
+        const d = (await scholarRes.json()) as { papers?: ScholarxPaper[] }
+        setScholarxPapers(d.papers ?? [])
       }
 
       // 3. Infrastructure Hub Services
       const uptimeRes = await fetch('/api/enhanced/ecosystem/uptime/status')
       if (uptimeRes.ok) {
-        const d = await uptimeRes.json()
-        setUptimeMonitors(d.monitors || [])
+        const d = (await uptimeRes.json()) as { monitors?: UptimeMonitor[] }
+        setUptimeMonitors(d.monitors ?? [])
       }
 
       // 4. Lifestyle & Productivity Services
@@ -588,17 +589,17 @@ export default function EcosystemView() {
       ])
 
       if (haRes.ok) {
-        const d = await haRes.json()
-        setHaDevices(d.devices || [])
+        const d = (await haRes.json()) as { devices?: HaDevice[] }
+        setHaDevices(d.devices ?? [])
       }
       if (ncRes.ok) {
-        const d = await ncRes.json()
-        setNextcloudEvents(d.events || [])
-        setNextcloudTasks(d.tasks || [])
+        const d = (await ncRes.json()) as { events?: NextcloudEvent[]; tasks?: NextcloudTask[] }
+        setNextcloudEvents(d.events ?? [])
+        setNextcloudTasks(d.tasks ?? [])
       }
       if (msRes.ok) {
-        const d = await msRes.json()
-        setMicrosoftEmails(d.emails || [])
+        const d = (await msRes.json()) as { emails?: MicrosoftEmail[] }
+        setMicrosoftEmails(d.emails ?? [])
       }
 
       // 5. Media & Utilities Services
@@ -609,16 +610,16 @@ export default function EcosystemView() {
       ])
 
       if (dlRes.ok) {
-        const d = await dlRes.json()
-        setMediaDownloads(d.queue || [])
+        const d = (await dlRes.json()) as { queue?: MediaDownload[] }
+        setMediaDownloads(d.queue ?? [])
       }
       if (qbtRes.ok) {
-        const d = await qbtRes.json()
-        setQbittorrentTorrents(d.torrents || [])
+        const d = (await qbtRes.json()) as { torrents?: QbittorrentTorrent[] }
+        setQbittorrentTorrents(d.torrents ?? [])
       }
       if (stirlingRes.ok) {
-        const d = await stirlingRes.json()
-        setStirlingJobs(d.jobs || [])
+        const d = (await stirlingRes.json()) as { jobs?: StirlingJob[] }
+        setStirlingJobs(d.jobs ?? [])
       }
     } catch (err) {
       console.error('Failed to load full ecosystem payloads', err)
@@ -634,9 +635,9 @@ export default function EcosystemView() {
     try {
       const res = await fetch(`/api/enhanced/ecosystem/searxng/search?q=${encodeURIComponent(searxngQuery)}`)
       if (res.ok) {
-        const data = await res.json()
-        setSearxngResults(data.results || [])
-        toast.success(`Retrieved ${data.results?.length || 0} search rankings from SearXNG`)
+        const data = (await res.json()) as { results?: SearxngResult[] }
+        setSearxngResults(data.results ?? [])
+        toast.success(`Retrieved ${data.results?.length ?? 0} search rankings from SearXNG`)
       }
     } catch (err) {
       console.error(err)
@@ -679,7 +680,7 @@ export default function EcosystemView() {
     const newJob: StirlingJob = {
       id: `pdf-${Math.floor(Math.random() * 1000)}`,
       filename: `processed_${action}_doc.pdf`,
-      action: action,
+      action,
       status: 'running',
       timestamp: 'Just now',
     }
@@ -692,7 +693,7 @@ export default function EcosystemView() {
   }
 
   // yt-dlp submit
-  const addMediaDownload = (e: React.FormEvent) => {
+  const addMediaDownload = (e: SyntheticEvent) => {
     e.preventDefault()
     if (!mediaUrl.trim()) return
     const newDl: MediaDownload = {
@@ -724,17 +725,19 @@ export default function EcosystemView() {
   }
 
   useEffect(() => {
-    fetchHosts()
-    fetchSystems()
-    fetchContainers()
-    fetchRepos()
-    loadEcosystemData()
+    void fetchHosts()
+    void fetchSystems()
+    void fetchContainers()
+    void fetchRepos()
+    void loadEcosystemData()
     // Periodic refresh
     const interval = setInterval(() => {
-      fetchSystems()
-      fetchContainers()
+      void fetchSystems()
+      void fetchContainers()
     }, 15000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+    }
   }, [])
 
   const filteredProcesses = processes.filter(
@@ -747,7 +750,9 @@ export default function EcosystemView() {
       <div className="flex flex-wrap gap-2 p-1.5 bg-accent/30 rounded-lg border border-border shadow-sm items-center justify-between">
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => setActiveDomain('devops')}
+            onClick={() => {
+              setActiveDomain('devops')
+            }}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
               activeDomain === 'devops'
                 ? 'bg-primary text-primary-foreground shadow-md'
@@ -758,7 +763,9 @@ export default function EcosystemView() {
             DevOps & Tasks
           </button>
           <button
-            onClick={() => setActiveDomain('research')}
+            onClick={() => {
+              setActiveDomain('research')
+            }}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
               activeDomain === 'research'
                 ? 'bg-primary text-primary-foreground shadow-md'
@@ -769,7 +776,9 @@ export default function EcosystemView() {
             Data & Research
           </button>
           <button
-            onClick={() => setActiveDomain('infra')}
+            onClick={() => {
+              setActiveDomain('infra')
+            }}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
               activeDomain === 'infra'
                 ? 'bg-primary text-primary-foreground shadow-md'
@@ -780,7 +789,9 @@ export default function EcosystemView() {
             Infrastructure Hub
           </button>
           <button
-            onClick={() => setActiveDomain('lifestyle')}
+            onClick={() => {
+              setActiveDomain('lifestyle')
+            }}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
               activeDomain === 'lifestyle'
                 ? 'bg-primary text-primary-foreground shadow-md'
@@ -791,7 +802,9 @@ export default function EcosystemView() {
             Lifestyle & Home
           </button>
           <button
-            onClick={() => setActiveDomain('media')}
+            onClick={() => {
+              setActiveDomain('media')
+            }}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
               activeDomain === 'media'
                 ? 'bg-primary text-primary-foreground shadow-md'
@@ -1050,11 +1063,11 @@ export default function EcosystemView() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.cpu_percent || 24.5}%</div>
+                  <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.cpu_percent ?? 24.5}%</div>
                   <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden">
                     <div
                       className="bg-primary h-full transition-all duration-500"
-                      style={{ width: `${resources?.cpu_percent || 24.5}%` }}
+                      style={{ width: `${resources?.cpu_percent ?? 24.5}%` }}
                     />
                   </div>
                 </CardContent>
@@ -1068,17 +1081,17 @@ export default function EcosystemView() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-extrabold tracking-tight mb-2">
-                    {resources?.memory.percent || 42.1}%
+                    {resources?.memory.percent ?? 42.1}%
                   </div>
                   <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden mb-1">
                     <div
                       className="bg-purple-500 h-full transition-all duration-500"
-                      style={{ width: `${resources?.memory.percent || 42.1}%` }}
+                      style={{ width: `${resources?.memory.percent ?? 42.1}%` }}
                     />
                   </div>
                   <div className="text-xs text-muted-foreground flex justify-between">
-                    <span>Used: {resources?.memory.used_gb || 6.7} GB</span>
-                    <span>Total: {resources?.memory.total_gb || 16.0} GB</span>
+                    <span>Used: {resources?.memory.used_gb ?? 6.7} GB</span>
+                    <span>Total: {resources?.memory.total_gb ?? 16.0} GB</span>
                   </div>
                 </CardContent>
               </Card>
@@ -1090,16 +1103,16 @@ export default function EcosystemView() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.disk.percent || 68.3}%</div>
+                  <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.disk.percent ?? 68.3}%</div>
                   <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden mb-1">
                     <div
                       className="bg-blue-500 h-full transition-all duration-500"
-                      style={{ width: `${resources?.disk.percent || 68.3}%` }}
+                      style={{ width: `${resources?.disk.percent ?? 68.3}%` }}
                     />
                   </div>
                   <div className="text-xs text-muted-foreground flex justify-between">
-                    <span>Used: {resources?.disk.used_gb || 341.5} GB</span>
-                    <span>Total: {resources?.disk.total_gb || 500.0} GB</span>
+                    <span>Used: {resources?.disk.used_gb ?? 341.5} GB</span>
+                    <span>Total: {resources?.disk.total_gb ?? 500.0} GB</span>
                   </div>
                 </CardContent>
               </Card>
@@ -1351,10 +1364,19 @@ export default function EcosystemView() {
                   <Input
                     placeholder="Search keywords..."
                     value={searxngQuery}
-                    onChange={(e) => setSearxngQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && void runSearxngSearch()}
+                    onChange={(e) => {
+                      setSearxngQuery(e.target.value)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void runSearxngSearch()
+                    }}
                   />
-                  <Button onClick={() => void runSearxngSearch()} disabled={searxngLoading}>
+                  <Button
+                    onClick={() => {
+                      void runSearxngSearch()
+                    }}
+                    disabled={searxngLoading}
+                  >
                     {searxngLoading ? <RefreshCw className="size-4 animate-spin" /> : 'Search'}
                   </Button>
                 </div>
@@ -1402,7 +1424,13 @@ export default function EcosystemView() {
                   </CardTitle>
                   <CardDescription>Direct unix-socket queries to /var/run/docker.sock</CardDescription>
                 </div>
-                <Button variant="outline" size="icon" onClick={fetchContainers}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    void fetchContainers()
+                  }}
+                >
                   <RefreshCw className="size-4" />
                 </Button>
               </CardHeader>
@@ -1444,7 +1472,9 @@ export default function EcosystemView() {
                             variant="outline"
                             size="sm"
                             className="flex-1 text-xs gap-1.5"
-                            onClick={() => triggerContainerAction(c.id, 'start')}
+                            onClick={() => {
+                              void triggerContainerAction(c.id, 'start')
+                            }}
                             disabled={containerActionId === c.id}
                           >
                             <Play className="size-3 text-emerald-600" /> Start
@@ -1454,7 +1484,9 @@ export default function EcosystemView() {
                             variant="outline"
                             size="sm"
                             className="flex-1 text-xs gap-1.5"
-                            onClick={() => triggerContainerAction(c.id, 'stop')}
+                            onClick={() => {
+                              void triggerContainerAction(c.id, 'stop')
+                            }}
                             disabled={containerActionId === c.id}
                           >
                             <Square className="size-3 text-red-600" /> Stop
@@ -1464,7 +1496,9 @@ export default function EcosystemView() {
                           variant="outline"
                           size="sm"
                           className="flex-1 text-xs gap-1.5"
-                          onClick={() => triggerContainerAction(c.id, 'restart')}
+                          onClick={() => {
+                            void triggerContainerAction(c.id, 'restart')
+                          }}
                           disabled={containerActionId === c.id}
                         >
                           <RotateCcw className="size-3 text-blue-600" /> Restart
@@ -1494,7 +1528,11 @@ export default function EcosystemView() {
                         </Button>
                       </DialogTrigger>
                       <DialogContent>
-                        <form onSubmit={handleAddHost}>
+                        <form
+                          onSubmit={(e) => {
+                            void handleAddHost(e)
+                          }}
+                        >
                           <DialogHeader>
                             <DialogTitle>Add SSH Host Alias</DialogTitle>
                             <DialogDescription>
@@ -1508,7 +1546,9 @@ export default function EcosystemView() {
                                 className="col-span-3"
                                 placeholder="production-node"
                                 value={newHost.alias}
-                                onChange={(e) => setNewHost({ ...newHost, alias: e.target.value })}
+                                onChange={(e) => {
+                                  setNewHost({ ...newHost, alias: e.target.value })
+                                }}
                               />
                             </div>
                             <div className="grid grid-cols-4 items-center gap-4">
@@ -1517,7 +1557,9 @@ export default function EcosystemView() {
                                 className="col-span-3"
                                 placeholder="10.0.0.12"
                                 value={newHost.hostname}
-                                onChange={(e) => setNewHost({ ...newHost, hostname: e.target.value })}
+                                onChange={(e) => {
+                                  setNewHost({ ...newHost, hostname: e.target.value })
+                                }}
                               />
                             </div>
                             <div className="grid grid-cols-4 items-center gap-4">
@@ -1526,7 +1568,9 @@ export default function EcosystemView() {
                                 className="col-span-3"
                                 placeholder="ubuntu"
                                 value={newHost.user}
-                                onChange={(e) => setNewHost({ ...newHost, user: e.target.value })}
+                                onChange={(e) => {
+                                  setNewHost({ ...newHost, user: e.target.value })
+                                }}
                               />
                             </div>
                             <div className="grid grid-cols-4 items-center gap-4">
@@ -1535,7 +1579,9 @@ export default function EcosystemView() {
                                 type="number"
                                 className="col-span-3"
                                 value={newHost.port}
-                                onChange={(e) => setNewHost({ ...newHost, port: parseInt(e.target.value) || 22 })}
+                                onChange={(e) => {
+                                  setNewHost({ ...newHost, port: parseInt(e.target.value) || 22 })
+                                }}
                               />
                             </div>
                           </div>
@@ -1591,7 +1637,9 @@ export default function EcosystemView() {
                       <div className="w-1/3">
                         <select
                           value={selectedHost}
-                          onChange={(e) => setSelectedHost(e.target.value)}
+                          onChange={(e) => {
+                            setSelectedHost(e.target.value)
+                          }}
                           className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                         >
                           {hosts.map((h) => (
@@ -1605,10 +1653,19 @@ export default function EcosystemView() {
                         <Input
                           placeholder="Type remote shell command (e.g. docker ps, uname -a)..."
                           value={remoteCommand}
-                          onChange={(e) => setRemoteCommand(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && void runSshCommand()}
+                          onChange={(e) => {
+                            setRemoteCommand(e.target.value)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void runSshCommand()
+                          }}
                         />
-                        <Button onClick={() => void runSshCommand()} disabled={runningRemote || !remoteCommand.trim()}>
+                        <Button
+                          onClick={() => {
+                            void runSshCommand()
+                          }}
+                          disabled={runningRemote || !remoteCommand.trim()}
+                        >
                           {runningRemote ? <RefreshCw className="size-4 animate-spin" /> : 'Run Command'}
                         </Button>
                       </div>
@@ -1639,7 +1696,14 @@ export default function EcosystemView() {
                     <CardTitle className="text-sm font-bold flex items-center gap-1.5">
                       <Terminal className="text-primary size-4.5" /> Process Workloads
                     </CardTitle>
-                    <Button variant="outline" size="icon" className="size-8" onClick={fetchSystems}>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="size-8"
+                      onClick={() => {
+                        void fetchSystems()
+                      }}
+                    >
                       <RefreshCw className="size-3.5" />
                     </Button>
                   </div>
@@ -1647,7 +1711,9 @@ export default function EcosystemView() {
                     placeholder="Search process..."
                     className="h-8 text-xs mt-2"
                     value={searchProcess}
-                    onChange={(e) => setSearchProcess(e.target.value)}
+                    onChange={(e) => {
+                      setSearchProcess(e.target.value)
+                    }}
                   />
                 </CardHeader>
                 <CardContent className="p-0 border-t max-h-[380px] overflow-y-auto">
@@ -1672,7 +1738,9 @@ export default function EcosystemView() {
                             <Button
                               variant="ghost"
                               className="h-5 px-1.5 text-[10px] text-red-500 hover:text-red-700 hover:bg-red-500/10 font-sans"
-                              onClick={() => killProcess(p.pid)}
+                              onClick={() => {
+                                void killProcess(p.pid)
+                              }}
                             >
                               Kill
                             </Button>
@@ -1732,7 +1800,9 @@ export default function EcosystemView() {
                             min="0"
                             max="100"
                             value={d.brightness}
-                            onChange={(e) => updateDeviceState(d.entity_id, parseInt(e.target.value))}
+                            onChange={(e) => {
+                              updateDeviceState(d.entity_id, parseInt(e.target.value))
+                            }}
                             className="w-full accent-primary h-1.5 bg-accent rounded-lg cursor-pointer"
                           />
                         </div>
@@ -1754,7 +1824,9 @@ export default function EcosystemView() {
                               variant="outline"
                               size="sm"
                               className="h-7 px-2 font-bold flex-1"
-                              onClick={() => updateThermostatTemp(d.entity_id, -0.5)}
+                              onClick={() => {
+                                updateThermostatTemp(d.entity_id, -0.5)
+                              }}
                             >
                               -0.5°
                             </Button>
@@ -1762,7 +1834,9 @@ export default function EcosystemView() {
                               variant="outline"
                               size="sm"
                               className="h-7 px-2 font-bold flex-1"
-                              onClick={() => updateThermostatTemp(d.entity_id, 0.5)}
+                              onClick={() => {
+                                updateThermostatTemp(d.entity_id, 0.5)
+                              }}
                             >
                               +0.5°
                             </Button>
@@ -1777,7 +1851,9 @@ export default function EcosystemView() {
                             variant={d.state === 'on' ? 'destructive' : 'default'}
                             size="sm"
                             className="w-full text-xs h-8"
-                            onClick={() => updateDeviceState(d.entity_id, d.state === 'on' ? 'off' : 'on')}
+                            onClick={() => {
+                              updateDeviceState(d.entity_id, d.state === 'on' ? 'off' : 'on')
+                            }}
                           >
                             {d.state === 'on' ? 'Power OFF' : 'Power ON'}
                           </Button>
@@ -1906,14 +1982,18 @@ export default function EcosystemView() {
                       <span className="font-bold text-muted-foreground px-2">Servings:</span>
                       <button
                         className="size-7 flex items-center justify-center font-bold bg-background border rounded hover:bg-accent"
-                        onClick={() => setMealMultiplier(Math.max(1, mealMultiplier - 1))}
+                        onClick={() => {
+                          setMealMultiplier(Math.max(1, mealMultiplier - 1))
+                        }}
                       >
                         -
                       </button>
                       <span className="font-extrabold w-4 text-center">{mealMultiplier}</span>
                       <button
                         className="size-7 flex items-center justify-center font-bold bg-background border rounded hover:bg-accent"
-                        onClick={() => setMealMultiplier(mealMultiplier + 1)}
+                        onClick={() => {
+                          setMealMultiplier(mealMultiplier + 1)
+                        }}
                       >
                         +
                       </button>
@@ -1969,7 +2049,9 @@ export default function EcosystemView() {
                           key={muscle}
                           variant={workoutMuscle === muscle ? 'default' : 'outline'}
                           size="sm"
-                          onClick={() => setWorkoutMuscle(muscle)}
+                          onClick={() => {
+                            setWorkoutMuscle(muscle)
+                          }}
                         >
                           {muscle}
                         </Button>
@@ -2109,7 +2191,9 @@ export default function EcosystemView() {
                     <Input
                       placeholder="Enter streaming video URL (YouTube, Vimeo, etc)..."
                       value={mediaUrl}
-                      onChange={(e) => setMediaUrl(e.target.value)}
+                      onChange={(e) => {
+                        setMediaUrl(e.target.value)
+                      }}
                     />
                     <Button type="submit" className="gap-1.5">
                       <Plus className="size-4" /> Queue Download
@@ -2160,7 +2244,9 @@ export default function EcosystemView() {
                       variant="outline"
                       size="sm"
                       className="gap-1 text-xs"
-                      onClick={() => submitStirlingPdf('merge')}
+                      onClick={() => {
+                        submitStirlingPdf('merge')
+                      }}
                     >
                       <Plus className="size-3 text-red-500" /> Merge PDFs
                     </Button>
@@ -2168,7 +2254,9 @@ export default function EcosystemView() {
                       variant="outline"
                       size="sm"
                       className="gap-1 text-xs"
-                      onClick={() => submitStirlingPdf('split')}
+                      onClick={() => {
+                        submitStirlingPdf('split')
+                      }}
                     >
                       <X className="size-3 text-red-500" /> Split PDF
                     </Button>
@@ -2176,7 +2264,9 @@ export default function EcosystemView() {
                       variant="outline"
                       size="sm"
                       className="gap-1 text-xs"
-                      onClick={() => submitStirlingPdf('compress')}
+                      onClick={() => {
+                        submitStirlingPdf('compress')
+                      }}
                     >
                       <BarChart2 className="size-3 text-red-500" /> Compress PDF
                     </Button>
@@ -2184,7 +2274,9 @@ export default function EcosystemView() {
                       variant="outline"
                       size="sm"
                       className="gap-1 text-xs"
-                      onClick={() => submitStirlingPdf('ocr')}
+                      onClick={() => {
+                        submitStirlingPdf('ocr')
+                      }}
                     >
                       <Search className="size-3 text-red-500" /> OCR PDF
                     </Button>
@@ -2236,7 +2328,9 @@ export default function EcosystemView() {
                   <Button
                     variant="outline"
                     className="gap-1.5"
-                    onClick={() => void runBulkRepoAction('pull')}
+                    onClick={() => {
+                      void runBulkRepoAction('pull')
+                    }}
                     disabled={bulkActionRunning || selectedRepos.length === 0}
                   >
                     <RefreshCw className={cn('size-4', { 'animate-spin': bulkActionRunning })} />
@@ -2245,7 +2339,9 @@ export default function EcosystemView() {
                   <Button
                     variant="default"
                     className="gap-1.5"
-                    onClick={() => void runBulkRepoAction('build')}
+                    onClick={() => {
+                      void runBulkRepoAction('build')
+                    }}
                     disabled={bulkActionRunning || selectedRepos.length === 0}
                   >
                     <Plus className="size-4" />
