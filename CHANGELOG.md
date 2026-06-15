@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Interactive KG extraction view (CONCEPT:ECO-4.43)** — `ExtractionView.tsx`, an SSE-streamed
+  fact-extraction cockpit over `/api/enhanced/extract/*` with Sigma.js edge-cards and longest-path
+  surfacing. Includes a feature guide in `docs/`.
+- **Usage & Cost view (CONCEPT:ECO-4.41)** — agentsview-parity dashboard surfacing per-model usage
+  and cost over the backend `/api/observability` store.
+
+### Changed
+- **Infra & ecosystem handlers fail honestly** — infra handlers no longer fabricate success, and the
+  ecosystem dashboards are de-stubbed onto the live MCP fleet (verified, no simulated success).
+
+### Added
 - **SWE Agent view (OS-5.34)** — `SweView.tsx`, a new sidebar view (`/swe`) for the KG-grounded
   software-engineering agent. Creates a developer-workspace runtime session
   (`POST /api/runtime/sessions`), sends shell actions (`/act`), and renders the **live
