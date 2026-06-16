@@ -11,6 +11,7 @@ import {
   Check,
   X,
   Network,
+  Code2,
   Wrench,
   Compass,
   Terminal,
@@ -362,6 +363,22 @@ export function AppSidebar() {
                   >
                     <Network />
                     <span>Knowledge Graph</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Navigate the resolved code graph: definitions, references, call graph, impact (per GitLab instance)"
+                >
+                  <a
+                    href="/code-graph"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Code2 />
+                    <span>Code Graph</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>

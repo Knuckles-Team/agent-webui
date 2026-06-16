@@ -73,6 +73,12 @@ Agent WebUI is a highly interactive, responsive chat interface designed specific
   - Zoom/pan controls and PNG export
   - Node type filtering and detailed node inspection
   - Real-time graph statistics and relationship explorer
+- **Code Graph Navigator** (`CodeGraphView.tsx`, CONCEPT:KG-2.9g) -- navigate the
+  resolved code-symbol graph built from your indexed GitLab instances: find a
+  symbol's **definition**, its **references** (callers), trace the transitive
+  **call graph**, or compute the **impact** (blast radius) of a change — scoped to
+  one `source_system` (a GitLab tenant) or unioned across all. Backed by the
+  `/api/enhanced/code/nav` route over the canonical `graph_code_nav` query contract.
 - **Human-in-the-loop tool approval** -- security-sensitive tool calls are intercepted and require explicit user permission via an inline approval card (`ApprovalCard.tsx`)
 
 ### Knowledge Management

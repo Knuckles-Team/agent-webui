@@ -23,6 +23,7 @@ import SchedulingView from './components/views/SchedulingView'
 import ConfigurationView from './components/views/ConfigurationView'
 import KnowledgeBaseView from './components/views/KnowledgeBaseView'
 import GraphView from './components/views/GraphView'
+import CodeGraphView from './components/views/CodeGraphView'
 import ExtractionView from './components/views/ExtractionView'
 import OpsPanelView from './components/views/OpsPanelView'
 import MagmaView from './components/views/MagmaView'
@@ -73,6 +74,7 @@ export default function App() {
       else if (path === '/configuration') setCurrentView('configuration')
       else if (path === '/knowledge') setCurrentView('knowledge')
       else if (path === '/graph') setCurrentView('graph')
+      else if (path === '/code-graph') setCurrentView('codegraph')
       else if (path === '/extraction') setCurrentView('extraction')
       else if (path === '/ops') setCurrentView('ops')
       else if (path === '/magma') setCurrentView('magma')
@@ -175,6 +177,7 @@ export default function App() {
                         </>
                       )}
                       {currentView === 'graph' && <GraphView />}
+                      {currentView === 'codegraph' && <CodeGraphView />}
                       {currentView === 'extraction' && <ExtractionView />}
                       {currentView === 'workflows' && <WorkflowEditorView />}
                       {currentView === 'ops' && <OpsPanelView />}
