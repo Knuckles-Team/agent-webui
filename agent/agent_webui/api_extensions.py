@@ -1440,6 +1440,59 @@ async def execute_cypher(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Code Graph Navigation (CONCEPT:KG-2.9g) — the Phase 5 lens over the resolved
+# :Code symbol graph (find definition / references / call graph / impact). Reuses
+# the canonical `build_code_nav_query` so the UI and the graph_code_nav MCP tool
+# share one query contract; scoped by source_system (e.g. 'gitlab:gitlab.arpa').
+# ---------------------------------------------------------------------------
+@router.post('/code/nav')
+async def code_nav(data: dict[str, Any]) -> dict[str, Any]:
+    """Navigate the resolved code graph.
+
+    Body: ``{action, symbol|node_id, source_system?, depth?, limit?}`` where
+    ``action`` is find_definition | find_references | trace_call_graph |
+    impact_of_change.
+    """
+    try:
+        from agent_utilities.mcp.tools.query_tools import build_code_nav_query
+
+        action = str(data.get('action', 'find_definition'))
+        cypher, params = build_code_nav_query(
+            action=action,
+            symbol=str(data.get('symbol', '')),
+            node_id=str(data.get('node_id', '')),
+            source_system=str(data.get('source_system', '')),
+            depth=int(data.get('depth', 3) or 3),
+            limit=int(data.get('limit', 200) or 200),
+        )
+        engine = get_engine()
+        rows = engine.query_cypher(cypher, params)
+        return {'action': action, 'results': rows, 'count': len(rows or [])}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f'code_nav failed: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get('/code/instances')
+async def code_instances() -> dict[str, Any]:
+    """List source_systems that have code in the graph (the indexed GitLab tenants)."""
+    try:
+        engine = get_engine()
+        rows = engine.query_cypher(
+            'MATCH (c:Code) WHERE c.source_system IS NOT NULL '
+            'RETURN DISTINCT c.source_system AS source_system '
+            'ORDER BY source_system LIMIT 200',
+            {},
+        )
+        return {'source_systems': [r.get('source_system') for r in (rows or [])]}
+    except Exception as e:
+        logger.error(f'code_instances failed: {e}')
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# ---------------------------------------------------------------------------
 # Knowledge Base Endpoints
 # ---------------------------------------------------------------------------
 
