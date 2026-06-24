@@ -17,7 +17,7 @@ requires-python = ">=3.11,<3.15"
 dependencies = [
     "fastapi>=0.117.1",
     "langfuse>=4.5.1",
-    "pydantic-ai>=1.88.0",
+    "pydantic-ai-slim[ui]>=2.0.0,<3.0.0",
     "sse-starlette>=3.4.1",
     "starlette>=1.0.0",
     "uvicorn>=0.46.0",
