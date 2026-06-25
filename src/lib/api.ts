@@ -367,6 +367,41 @@ export interface SweBenchReport {
   instances: { instance_id: string; repo: string; resolved: boolean; error: string }[]
 }
 
+// Code-graph analytics payload (CONCEPT:KG-2.210/2.214) returned by code_metrics.
+export interface CodeMetricsNodeView {
+  id: string
+  label: string | null
+  file_path: string | null
+  degree: number
+  community: number | null
+}
+export interface CodeMetricsResult {
+  status: string
+  scope: string | null
+  nodes: number
+  edges: number
+  by_language?: Record<string, number>
+  by_relation?: Record<string, number>
+  by_confidence?: Record<string, number>
+  god_nodes: CodeMetricsNodeView[]
+  community_count: number
+  communities: { id: number; size: number; members: string[] }[]
+  surprising_connections: {
+    src: string
+    dst: string
+    rel: string | null
+    from_community: number
+    to_community: number
+    bridge_score: number
+  }[]
+  graph: {
+    nodes: CodeMetricsNodeView[]
+    edges: { source: string; target: string; rel: string | null }[]
+    truncated: boolean
+  }
+  message?: string
+}
+
 /**
  * Internal API client implementation
  */
@@ -466,6 +501,17 @@ class ApiClient {
       '/api/enhanced/graph/stats',
     )
   getGraphRelationships = () => this.get<unknown[]>('/api/enhanced/graph/relationships')
+
+  // Code-graph analytics (CONCEPT:KG-2.210/2.214): Graphify-style god nodes,
+  // communities, surprising connections + a render payload for the canvas. Routes
+  // to the canonical action core POST /api/graph/analyze {action:'code_metrics'},
+  // which wraps the result as {status, result}.
+  getCodeMetrics = (scope = '', topK = 12) =>
+    this.post<{ status: string; result: CodeMetricsResult }>('/api/graph/analyze', {
+      action: 'code_metrics',
+      target: scope,
+      top_k: topK,
+    }).then((r) => r.result)
 
   // Document → knowledge-graph fact extraction (ECO-4.43; KG-2.64/2.65/2.66)
   submitExtraction = (payload: {

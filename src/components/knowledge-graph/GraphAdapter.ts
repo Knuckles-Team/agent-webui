@@ -44,8 +44,63 @@ const getNodeColor = (type: string): string => {
     Client: '#10b981', // emerald
     Heartbeat: '#f43f5e', // rose
     Message: '#8b5cf6', // violet
+    Code: '#60a5fa', // light blue
+    DatabaseTable: '#f59e0b', // amber
+    DatabaseColumn: '#fbbf24', // amber-light
+    DatabaseView: '#fb923c', // orange-light
   }
   return colors[type] || '#64748b' // default slate
+}
+
+// Community-indexed palette for the code-graph canvas (CONCEPT:KG-2.214): color a
+// node by its detected community so clusters are visually distinct.
+const COMMUNITY_PALETTE = [
+  '#e6194B',
+  '#3cb44b',
+  '#4363d8',
+  '#f58231',
+  '#911eb4',
+  '#42d4f4',
+  '#f032e6',
+  '#bfef45',
+  '#fabed4',
+  '#469990',
+  '#9A6324',
+  '#800000',
+  '#808000',
+  '#000075',
+  '#a9a9a9',
+]
+
+export const communityColor = (community: number | null | undefined): string => {
+  if (community == null || Number.isNaN(community)) return '#64748b'
+  const n = COMMUNITY_PALETTE.length
+  return COMMUNITY_PALETTE[((community % n) + n) % n]
+}
+
+// Scale a node's size by its centrality (degree) so "god nodes" read as hubs.
+export const degreeToSize = (degree: number, maxDegree: number): number => {
+  const min = 4
+  const max = 26
+  if (!maxDegree || maxDegree <= 0) return min
+  return min + (max - min) * Math.sqrt(Math.max(0, degree) / maxDegree)
+}
+
+// Visual attributes for a node: size=centrality + color=community when those
+// properties are present (the code-graph canvas), else the type-based defaults
+// (the general KG). Keeps the general KG path byte-for-byte unchanged.
+const nodeVisual = (
+  node: GraphNode,
+  mainLabel: string,
+  fallbackSize: number,
+  maxDegree: number,
+): { size: number; color: string } => {
+  const degree = node.properties.degree
+  const community = node.properties.community
+  return {
+    size: typeof degree === 'number' ? degreeToSize(degree, maxDegree) : fallbackSize,
+    color: typeof community === 'number' ? communityColor(community) : getNodeColor(mainLabel),
+  }
 }
 
 const getNodeMass = (type: string): number => {
@@ -78,6 +133,13 @@ export const knowledgeGraphToGraphology = (
 
   const spread = Math.sqrt(nodes.length) * 50
 
+  // Max degree across nodes that carry one (drives centrality sizing on the
+  // code-graph canvas; 0 for general-KG nodes so they keep constant sizes).
+  const maxDegree = nodes.reduce(
+    (m, n) => (typeof n.properties.degree === 'number' ? Math.max(m, n.properties.degree) : m),
+    0,
+  )
+
   // Place structural nodes in a circle
   structuralNodes.forEach((node, idx) => {
     const angle = (idx / Math.max(structuralNodes.length, 1)) * Math.PI * 2
@@ -85,11 +147,12 @@ export const knowledgeGraphToGraphology = (
     const y = Math.sin(angle) * spread
 
     const mainLabel = node.labels[0] || 'Unknown'
+    const { size, color } = nodeVisual(node, mainLabel, 15, maxDegree)
     graph.addNode(node.id, {
       x,
       y,
-      size: 15,
-      color: getNodeColor(mainLabel),
+      size,
+      color,
       label: typeof node.properties.name === 'string' ? node.properties.name : node.id.substring(0, 10),
       nodeType: mainLabel,
       mass: getNodeMass(mainLabel),
@@ -99,11 +162,12 @@ export const knowledgeGraphToGraphology = (
   // Place other nodes randomly
   otherNodes.forEach((node) => {
     const mainLabel = node.labels[0] || 'Unknown'
+    const { size, color } = nodeVisual(node, mainLabel, 8, maxDegree)
     graph.addNode(node.id, {
       x: (Math.random() - 0.5) * spread * 0.5,
       y: (Math.random() - 0.5) * spread * 0.5,
-      size: 8,
-      color: getNodeColor(mainLabel),
+      size,
+      color,
       label: typeof node.properties.name === 'string' ? node.properties.name : node.id.substring(0, 10),
       nodeType: mainLabel,
       mass: getNodeMass(mainLabel),
@@ -125,3 +189,47 @@ export const knowledgeGraphToGraphology = (
 
   return graph
 }
+
+// ── Code-graph canvas mapping (CONCEPT:KG-2.214) ────────────────────────────
+// The /graph/analyze code_metrics action returns a render payload of :Code nodes
+// (each with degree + community) and the edges among them. Map it into the same
+// GraphNode/GraphRelationship shape GraphCanvas already consumes, stashing degree
+// and community under `properties` so the adapter sizes by centrality and colors
+// by community — no GraphCanvas change needed.
+export interface CodeMetricsNode {
+  id: string
+  label?: string | null
+  file_path?: string | null
+  degree: number
+  community: number | null
+}
+export interface CodeMetricsEdge {
+  source: string
+  target: string
+  rel?: string | null
+}
+export interface CodeMetricsGraph {
+  nodes: CodeMetricsNode[]
+  edges: CodeMetricsEdge[]
+  truncated?: boolean
+}
+
+export const codeMetricsToGraphNodes = (
+  g: CodeMetricsGraph,
+): { nodes: GraphNode[]; relationships: GraphRelationship[] } => ({
+  nodes: g.nodes.map((n) => ({
+    id: n.id,
+    labels: ['Code'],
+    properties: {
+      name: n.label ?? n.id,
+      degree: n.degree,
+      community: n.community,
+      file_path: n.file_path ?? '',
+    },
+  })),
+  relationships: g.edges.map((e) => ({
+    source: e.source,
+    type: e.rel ?? 'calls',
+    target: e.target,
+  })),
+})
