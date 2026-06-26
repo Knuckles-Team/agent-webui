@@ -23,6 +23,7 @@ import {
   Waypoints,
   Activity,
   Coins,
+  History,
 } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
@@ -363,6 +364,19 @@ export function AppSidebar() {
                   >
                     <Network />
                     <span>Knowledge Graph</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Scrub the knowledge graph through time (bi-temporal AS OF view)">
+                  <a
+                    href="/temporal-graph"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <History />
+                    <span>Temporal Graph</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>

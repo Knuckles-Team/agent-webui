@@ -23,6 +23,7 @@ import SchedulingView from './components/views/SchedulingView'
 import ConfigurationView from './components/views/ConfigurationView'
 import KnowledgeBaseView from './components/views/KnowledgeBaseView'
 import GraphView from './components/views/GraphView'
+import TemporalGraphView from './components/views/TemporalGraphView'
 import CodeGraphView from './components/views/CodeGraphView'
 import ExtractionView from './components/views/ExtractionView'
 import OpsPanelView from './components/views/OpsPanelView'
@@ -74,6 +75,7 @@ export default function App() {
       else if (path === '/configuration') setCurrentView('configuration')
       else if (path === '/knowledge') setCurrentView('knowledge')
       else if (path === '/graph') setCurrentView('graph')
+      else if (path === '/temporal-graph') setCurrentView('temporalgraph')
       else if (path === '/code-graph') setCurrentView('codegraph')
       else if (path === '/extraction') setCurrentView('extraction')
       else if (path === '/ops') setCurrentView('ops')
@@ -177,6 +179,7 @@ export default function App() {
                         </>
                       )}
                       {currentView === 'graph' && <GraphView />}
+                      {currentView === 'temporalgraph' && <TemporalGraphView />}
                       {currentView === 'codegraph' && <CodeGraphView />}
                       {currentView === 'extraction' && <ExtractionView />}
                       {currentView === 'workflows' && <WorkflowEditorView />}

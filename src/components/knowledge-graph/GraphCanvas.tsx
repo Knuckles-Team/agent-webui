@@ -14,7 +14,18 @@ interface GraphCanvasProps {
   onAddNode: (labels: string[], properties: Record<string, unknown>) => void
   selectedNodeExternally?: GraphNode | null
   onSelectNode: (node: GraphNode | null) => void
+  /**
+   * Edge keys (`${source}|${target}`) that are expired at the current view.
+   * Used by the temporal scrubber: matching edges render greyed + dashed via a
+   * Sigma edge reducer. Optional — omitting it leaves edges rendered normally.
+   */
+  expiredEdges?: ReadonlySet<string>
+  /** Render color for expired edges (defaults to the design-system grey). */
+  expiredEdgeColor?: string
 }
+
+/** Stable key for an edge, matching graphology's source/target ordering. */
+export const edgeKey = (source: string, target: string): string => `${source}|${target}`
 
 export const GraphCanvas: React.FC<GraphCanvasProps> = ({
   nodes,
@@ -24,11 +35,20 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
   onAddNode,
   selectedNodeExternally,
   onSelectNode,
+  expiredEdges,
+  expiredEdgeColor = '#4b5563',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const sigmaRef = useRef<Sigma<SigmaNodeAttributes, SigmaEdgeAttributes> | null>(null)
   const [graph, setGraph] = useState<Graph<SigmaNodeAttributes, SigmaEdgeAttributes> | null>(null)
   const [isLayoutRunning, setIsLayoutRunning] = useState(false)
+  // Keep the expired-edge set in a ref so the Sigma edge reducer (registered
+  // once at construction) always reads the latest scrubber position without
+  // re-creating the renderer.
+  const expiredEdgesRef = useRef<ReadonlySet<string> | undefined>(expiredEdges)
+  const expiredEdgeColorRef = useRef<string>(expiredEdgeColor)
+  expiredEdgesRef.current = expiredEdges
+  expiredEdgeColorRef.current = expiredEdgeColor
 
   // Initialize graph data
   useEffect(() => {
@@ -47,6 +67,18 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
       sigmaRef.current = new Sigma<SigmaNodeAttributes, SigmaEdgeAttributes>(graph, containerRef.current, {
         renderEdgeLabels: true,
         allowInvalidContainer: true,
+        // Grey + dash edges that are expired at the current scrubber instant.
+        edgeReducer: (edge, data) => {
+          const expired = expiredEdgesRef.current
+          if (!expired || expired.size === 0) return data
+          const g = sigmaRef.current?.getGraph()
+          if (!g) return data
+          const key = edgeKey(g.source(edge), g.target(edge))
+          if (expired.has(key)) {
+            return { ...data, color: expiredEdgeColorRef.current, type: 'dashed' }
+          }
+          return data
+        },
       })
 
       // Register click events
@@ -69,6 +101,13 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
       // Don't kill sigma on re-render, only on unmount
     }
   }, [graph, nodes, onSelectNode])
+
+  // Re-run the edge reducer when the expired-edge set changes (scrubber moved).
+  useEffect(() => {
+    if (sigmaRef.current) {
+      sigmaRef.current.refresh()
+    }
+  }, [expiredEdges, expiredEdgeColor])
 
   // Cleanup Sigma entirely only when component unmounts
   useEffect(() => {
