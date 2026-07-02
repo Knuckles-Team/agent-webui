@@ -40,6 +40,10 @@ import ObjectView from './components/views/ObjectView'
 import VertexView from './components/views/VertexView'
 import UsageView from './components/views/UsageView'
 import SweView from './components/views/SweView'
+import ObservabilityView from './components/views/ObservabilityView'
+import DataAnalystView from './components/views/DataAnalystView'
+import BrokerView from './components/views/BrokerView'
+import SystemStatusView from './components/views/SystemStatusView'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
@@ -56,7 +60,7 @@ const queryClient = new QueryClient()
  * providers for theme, sidebar, MCP tools, and data fetching.
  */
 export default function App() {
-  /** Possible views: 'dashboard', 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'workflows', 'ops', 'magma', 'cypher', 'prompts', 'sessions', 'goals', 'ecosystem', 'explorer', 'object', 'vertex' */
+  /** Possible views: 'dashboard', 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'workflows', 'ops', 'magma', 'cypher', 'prompts', 'sessions', 'goals', 'ecosystem', 'explorer', 'object', 'vertex', 'observability', 'dataanalyst', 'broker', 'systemstatus' */
   const [currentView, setCurrentView] = useState('dashboard')
   /** Selected ontology object id, parsed from the `/object/:id` path. */
   const [objectId, setObjectId] = useState('')
@@ -88,6 +92,10 @@ export default function App() {
       else if (path === '/ecosystem') setCurrentView('ecosystem')
       else if (path === '/usage') setCurrentView('usage')
       else if (path === '/swe') setCurrentView('swe')
+      else if (path === '/observability') setCurrentView('observability')
+      else if (path === '/data-analyst') setCurrentView('dataanalyst')
+      else if (path === '/broker') setCurrentView('broker')
+      else if (path === '/system-status') setCurrentView('systemstatus')
       else if (path === '/workflows') setCurrentView('workflows')
       else if (path === '/explorer') setCurrentView('explorer')
       else if (path === '/vertex') setCurrentView('vertex')
@@ -198,6 +206,10 @@ export default function App() {
                       {currentView === 'ecosystem' && <EcosystemView />}
                       {currentView === 'usage' && <UsageView />}
                       {currentView === 'swe' && <SweView />}
+                      {currentView === 'observability' && <ObservabilityView />}
+                      {currentView === 'dataanalyst' && <DataAnalystView />}
+                      {currentView === 'broker' && <BrokerView />}
+                      {currentView === 'systemstatus' && <SystemStatusView />}
                       {currentView === 'explorer' && <ObjectExplorerView />}
                       {currentView === 'vertex' && <VertexView />}
                       {currentView === 'object' && (

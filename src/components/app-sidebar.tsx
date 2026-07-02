@@ -24,6 +24,9 @@ import {
   Activity,
   Coins,
   History,
+  Database,
+  Inbox,
+  Gauge,
 } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
@@ -584,6 +587,77 @@ export function AppSidebar() {
                   >
                     <Wrench />
                     <span>Ops Panel</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroup>
+
+          {/* Section: Observability & Data (gateway /graph/* capabilities) */}
+          <SidebarGroup>
+            <SidebarGroupLabel>Observability & Data</SidebarGroupLabel>
+            <SidebarMenu className="mb-2">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="PromQL metrics and distributed traces (gateway /graph/promql, /graph/traces)"
+                >
+                  <a
+                    href="/observability"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Activity className="text-primary" />
+                    <span>Observability</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Ask in natural language → generated query + results (gateway /graph/nl-query, /graph/ask-data)"
+                >
+                  <a
+                    href="/data-analyst"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Database className="text-primary" />
+                    <span>Data Analyst</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Message broker: topics, queue depth, publish (gateway /graph/broker, /graph/bus)"
+                >
+                  <a
+                    href="/broker"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Inbox className="text-primary" />
+                    <span>Message Broker</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="KV-cache stats + gateway capability availability board (gateway /graph/kvcache)"
+                >
+                  <a
+                    href="/system-status"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Gauge className="text-primary" />
+                    <span>System Status</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
