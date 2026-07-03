@@ -44,6 +44,7 @@ import ObservabilityView from './components/views/ObservabilityView'
 import DataAnalystView from './components/views/DataAnalystView'
 import BrokerView from './components/views/BrokerView'
 import SystemStatusView from './components/views/SystemStatusView'
+import AdminView from './components/views/AdminView'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
@@ -96,6 +97,7 @@ export default function App() {
       else if (path === '/data-analyst') setCurrentView('dataanalyst')
       else if (path === '/broker') setCurrentView('broker')
       else if (path === '/system-status') setCurrentView('systemstatus')
+      else if (path === '/admin') setCurrentView('admin')
       else if (path === '/workflows') setCurrentView('workflows')
       else if (path === '/explorer') setCurrentView('explorer')
       else if (path === '/vertex') setCurrentView('vertex')
@@ -210,6 +212,7 @@ export default function App() {
                       {currentView === 'dataanalyst' && <DataAnalystView />}
                       {currentView === 'broker' && <BrokerView />}
                       {currentView === 'systemstatus' && <SystemStatusView />}
+                      {currentView === 'admin' && <AdminView />}
                       {currentView === 'explorer' && <ObjectExplorerView />}
                       {currentView === 'vertex' && <VertexView />}
                       {currentView === 'object' && (
