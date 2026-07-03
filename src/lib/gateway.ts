@@ -22,6 +22,14 @@
 /** Base path for the canonical KG REST surface as mounted in the webui backend. */
 export const GRAPH_BASE = '/api/graph'
 
+/**
+ * Base path for the webui backend API surface as a whole — the dashboard plane
+ * (`/api/dashboard/*`, e.g. shard topology + daemon status) and the enhanced
+ * plane (`/api/enhanced/*`, e.g. graph stats). Distinct from {@link GRAPH_BASE}
+ * which targets only the canonical `/graph/*` action-twin routes.
+ */
+export const API_BASE = '/api'
+
 /** Result envelope returned by every gateway helper. */
 export interface GatewayResult<T> {
   /** True when the request succeeded and `data` is populated. */
@@ -71,6 +79,35 @@ export async function gatewayGet<T>(path: string): Promise<GatewayResult<T>> {
 export async function gatewayPost<T>(path: string, body?: unknown): Promise<GatewayResult<T>> {
   try {
     const res = await fetch(`${GRAPH_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+    return await toResult<T>(res)
+  } catch (err) {
+    return { ok: false, data: null, unavailable: false, error: String(err) }
+  }
+}
+
+/**
+ * GET an arbitrary `/api/...` route (relative to {@link API_BASE}) — e.g.
+ * `/dashboard/daemon/shards` or `/enhanced/graph/stats`. Shares the same
+ * envelope-unwrapping + graceful `unavailable` handling as {@link gatewayGet},
+ * so the Admin console reads the dashboard/enhanced planes with one mechanism.
+ */
+export async function apiGet<T>(path: string): Promise<GatewayResult<T>> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`)
+    return await toResult<T>(res)
+  } catch (err) {
+    return { ok: false, data: null, unavailable: false, error: String(err) }
+  }
+}
+
+/** POST a JSON body to an arbitrary `/api/...` route (relative to {@link API_BASE}). */
+export async function apiPost<T>(path: string, body?: unknown): Promise<GatewayResult<T>> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,

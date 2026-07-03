@@ -27,6 +27,7 @@ import {
   Database,
   Inbox,
   Gauge,
+  ShieldCheck,
 } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
@@ -587,6 +588,22 @@ export function AppSidebar() {
                   >
                     <Wrench />
                     <span>Ops Panel</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Admin console: tenants, shard topology, RBAC, backup/PITR (epistemic-graph engine)"
+                >
+                  <a
+                    href="/admin"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <ShieldCheck className="text-primary" />
+                    <span>Admin Console</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>

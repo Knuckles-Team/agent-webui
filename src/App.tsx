@@ -45,6 +45,7 @@ import DataAnalystView from './components/views/DataAnalystView'
 import BrokerView from './components/views/BrokerView'
 import SystemStatusView from './components/views/SystemStatusView'
 import LiveDashboardsView from './components/views/dashboards/LiveDashboardsView'
+import AdminView from './components/views/AdminView'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
@@ -98,6 +99,7 @@ export default function App() {
       else if (path === '/broker') setCurrentView('broker')
       else if (path === '/system-status') setCurrentView('systemstatus')
       else if (path === '/dashboards') setCurrentView('dashboards')
+      else if (path === '/admin') setCurrentView('admin')
       else if (path === '/workflows') setCurrentView('workflows')
       else if (path === '/explorer') setCurrentView('explorer')
       else if (path === '/vertex') setCurrentView('vertex')
@@ -213,6 +215,7 @@ export default function App() {
                       {currentView === 'broker' && <BrokerView />}
                       {currentView === 'systemstatus' && <SystemStatusView />}
                       {currentView === 'dashboards' && <LiveDashboardsView />}
+                      {currentView === 'admin' && <AdminView />}
                       {currentView === 'explorer' && <ObjectExplorerView />}
                       {currentView === 'vertex' && <VertexView />}
                       {currentView === 'object' && (
