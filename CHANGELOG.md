@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-03
+
+### Added
+- **Admin console view** (`AdminView.tsx` + `admin/` panels) — tenants, shard topology/health,
+  RBAC, and backup/PITR over the engine admin APIs. Shards fully wired; RBAC/backup surfaced as
+  clearly-labeled read-only panels where only the UDS engine op exists (no REST twin) — no fabricated data.
+- **Live dashboards view** (`dashboards/` — PromQL, logs, traces panels + a composable shell with
+  time-range + auto-refresh). PromQL + traces wired to `/graph/promql` + `/graph/traces`; logs marked
+  placeholder until `/graph/logs` REST twin lands. Dependency-free inline SVG line chart.
+
 ## [Unreleased]
 
 ### Added
