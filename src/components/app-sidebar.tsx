@@ -661,6 +661,22 @@ export function AppSidebar() {
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Grafana-style live dashboards: PromQL, logs, traces (gateway /graph/promql, /graph/logs, /graph/traces)"
+                >
+                  <a
+                    href="/dashboards"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <LayoutDashboard className="text-primary" />
+                    <span>Live Dashboards</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroup>
 
