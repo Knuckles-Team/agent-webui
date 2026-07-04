@@ -1,4 +1,4 @@
-"""CONCEPT:OS-5.81 — agent-webui skill provider.
+"""CONCEPT:WU-OS.deployment.agent-webui-skill-provider — agent-webui skill provider.
 
 Data-only subpackage that contributes the ``kg-webui-*`` skills (graphviz,
 ontology-operator, admin, dashboards, extraction, swe) to the agent-utilities hub via

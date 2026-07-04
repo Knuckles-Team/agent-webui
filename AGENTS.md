@@ -9,10 +9,10 @@
 > This file (`AGENTS.md`) is for system-prompt context; the SDD directory is the source of truth for architecture and new features.
 
 <!-- Ecosystem Concepts (cross-project, from agent-utilities kernel) -->
-<!-- CONCEPT:ECO-4.7 Ecosystem Topology Map — classified as FrontendPackage -->
-<!-- CONCEPT:KG-2.18 Topological Graph Visualization — owned by this project -->
-<!-- CONCEPT:KG-2.14 Project-Aware Context — AGENTS.md auto-loaded by kernel -->
-<!-- CONCEPT:KG-2.19 Cross-Pillar Synergy Engine — topology consumer -->
+<!-- CONCEPT:AU-OS.deployment.infra-orchestration Ecosystem Topology Map — classified as FrontendPackage -->
+<!-- CONCEPT:AU-KG.retrieval.evidence-weighted-memory Topological Graph Visualization — owned by this project -->
+<!-- CONCEPT:AU-KG.memory.ground-truth-preamble-declaring Project-Aware Context — AGENTS.md auto-loaded by kernel -->
+<!-- CONCEPT:EG-KG.query.wire-protocol Cross-Pillar Synergy Engine — topology consumer -->
 
 ## Tech Stack
 
@@ -345,7 +345,7 @@ alone).
 Working in parallel with other sessions/worktrees? **Reserve a concept id before you write its `CONCEPT:` marker** so two sessions never collide:
 
 ```bash
-agent-utilities --json concept reserve --ns KG-2   # or a package prefix, e.g. KEY
+agent-utilities --json concept reserve --ns EG-KG.compute.backend   # or a package prefix, e.g. KEY
 ```
 
 Full protocol (ledger, merge=union, reconcile, MCP/REST): <https://knuckles-team.github.io/agent-utilities/concept_coordination/>

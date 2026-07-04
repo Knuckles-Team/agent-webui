@@ -16,7 +16,7 @@ metadata:
 # kg-webui-swe (surface)
 
 Documents the software-engineering UI: the developer-workspace runtime
-(OS-5.33/ORCH-1.46) where an agent creates a sandboxed session and streams
+(AU-OS.scaling.bridge-developer-workspace-mutating/ORCH-1.46) where an agent creates a sandboxed session and streams
 action/observation steps with KG provenance, the SWE-bench harness (AHE-3.22),
 and the code call-graph / symbol-navigation views (KG-2.210/2.214).
 

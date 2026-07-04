@@ -92,10 +92,10 @@ def create_agent_web_app(
         app.include_router(ws_router)
         logger.info('Service Dashboard API mounted at /api/dashboard')
 
-        # Canonical Knowledge Graph REST surface (CONCEPT:ECO-4.0): mount the
+        # Canonical Knowledge Graph REST surface (CONCEPT:AU-ECO.messaging.native-backend-abstraction): mount the
         # SAME route table the API gateway serves — /api/graph/*, /api/ontology/*,
         # /api/object/*, /api/sessions, /api/goals, /api/tools, plus the fleet
-        # supervisory plane (CONCEPT:OS-5.10) and the /cypher fast path — via
+        # supervisory plane (CONCEPT:AU-OS.safety.ontological-guardrail) and the /cypher fast path — via
         # the single canonical registrar. WebUI clients and gateway clients are
         # served by one route implementation, so the two surfaces cannot drift.
         try:
@@ -112,7 +112,7 @@ def create_agent_web_app(
         # consolidated background daemon (queue drain + graph writer + task
         # workers + maintenance scheduler + file-watch) that all
         # KG_DAEMON_ROLE=client processes (MCP server / CLI / scripts) rely on.
-        # (CONCEPT:KG-2.8 / OS-5.9)
+        # (CONCEPT:EG-KG.storage.nonblocking-checkpoint / OS-5.9)
         #
         # Thin, horizontally-scalable instances opt out with KG_DAEMON_ROLE=client:
         # they reach a SHARED KG host over the engine socket instead of each

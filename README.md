@@ -73,7 +73,7 @@ Agent WebUI is a highly interactive, responsive chat interface designed specific
   - Zoom/pan controls and PNG export
   - Node type filtering and detailed node inspection
   - Real-time graph statistics and relationship explorer
-- **Code Graph Navigator** (`CodeGraphView.tsx`, CONCEPT:KG-2.9g) -- navigate the
+- **Code Graph Navigator** (`CodeGraphView.tsx`, CONCEPT:AU-KG.backend.declared-columns-so-schema) -- navigate the
   resolved code-symbol graph built from your indexed GitLab instances: find a
   symbol's **definition**, its **references** (callers), trace the transitive
   **call graph**, or compute the **impact** (blast radius) of a change — scoped to
@@ -127,7 +127,7 @@ Defined in `agent/agent_webui/api_extensions.py`:
 | `GET /ontology/object/{object_id}` | Full object view: properties, links, derived, markings, history, layout |
 | `POST /ontology/object/{object_id}/edit` | Record a durable edit (property_set / link_add / link_remove) |
 | `POST /ontology/object/{object_id}/revert` | Revert an edit via a compensating edit |
-| `POST /ontology/function/invoke` | Invoke a typed, versioned ontology function (audited runtime, KG-2.41) |
+| `POST /ontology/function/invoke` | Invoke a typed, versioned ontology function (audited runtime, AU-KG.ontology.default-runtime-bound-import) |
 | `POST /ontology/derive` | Compute a single derived property for an object (KG-2.40) |
 | `POST /ontology/document/process` | Process a document into Document + Chunk objects (KG-2.48) |
 | `GET /ontology/object-view/{object_type}` | Get a type's ObjectView: stored (configured) else standard (schema) |

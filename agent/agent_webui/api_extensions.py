@@ -109,7 +109,7 @@ def get_engine() -> IntelligenceGraphEngine:
 async def get_info() -> dict[str, str]:
     """Retrieve agent identity and user personalization metadata.
 
-    CONCEPT:KG-001 — Identity Management
+    CONCEPT:WU-KG.compute.identity-management — Identity Management
 
     Returns:
         A dictionary containing agent name, description, and emojis.
@@ -758,7 +758,7 @@ async def toggle_tool_status(data: dict[str, Any]) -> dict[str, Any]:
 async def list_skills() -> list[dict[str, Any]]:
     """Retrieve the catalog of dynamic agent skills.
 
-    CONCEPT:KG-003 — Granular Resource Queries
+    CONCEPT:WU-KG.compute.granular-resource-queries — Granular Resource Queries
 
     Returns:
         A list of skill definitions sorted alphabetically.
@@ -797,7 +797,7 @@ async def list_skills() -> list[dict[str, Any]]:
 async def toggle_skill(skill_id: str) -> dict[str, Any]:
     """Enable or disable a specific agent skill.
 
-    CONCEPT:KG-003 — Granular Resource Queries
+    CONCEPT:WU-KG.compute.granular-resource-queries — Granular Resource Queries
 
     Args:
         skill_id: The identifier of the skill to toggle.
@@ -826,7 +826,7 @@ async def toggle_skill(skill_id: str) -> dict[str, Any]:
 async def reload_agent(request: Request) -> dict[str, Any]:
     """Trigger a KG-first reload of the agent's configuration.
 
-    CONCEPT:KG-004 — Workspace Reload
+    CONCEPT:WU-KG.compute.workspace-reload — Workspace Reload
 
     Args:
         request: The current FastAPI Request object.
@@ -1440,7 +1440,7 @@ async def execute_cypher(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Code Graph Navigation (CONCEPT:KG-2.9g) — the Phase 5 lens over the resolved
+# Code Graph Navigation (CONCEPT:AU-KG.backend.declared-columns-so-schema) — the Phase 5 lens over the resolved
 # :Code symbol graph (find definition / references / call graph / impact). Reuses
 # the canonical `build_code_nav_query` so the UI and the graph_code_nav MCP tool
 # share one query contract; scoped by source_system (e.g. 'gitlab:gitlab.arpa').
@@ -2050,7 +2050,7 @@ async def update_backend_config(data: dict[str, Any]) -> dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-#  Prompt Management (CONCEPT:KG-002)
+#  Prompt Management (CONCEPT:WU-KG.compute.prompt-management-ahe-rollback)
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -2088,7 +2088,7 @@ def _extract_system_prompt(agent: Any) -> str:
 async def list_graph_prompts(request: Request) -> list[dict[str, Any]]:
     """List all prompts from the Knowledge Graph.
 
-    CONCEPT:KG-002 — Prompt Management
+    CONCEPT:WU-KG.compute.prompt-management-ahe-rollback — Prompt Management
 
     Returns:
         A list of prompt dicts with id, name, content, and metadata.
@@ -2126,7 +2126,7 @@ async def list_graph_prompts(request: Request) -> list[dict[str, Any]]:
 async def get_graph_prompt(prompt_id: str, request: Request) -> dict[str, Any]:
     """Retrieve a single prompt by ID.
 
-    CONCEPT:KG-002 — Prompt Management
+    CONCEPT:WU-KG.compute.prompt-management-ahe-rollback — Prompt Management
 
     Args:
         prompt_id: The unique identifier of the prompt.
@@ -2164,7 +2164,7 @@ async def get_graph_prompt(prompt_id: str, request: Request) -> dict[str, Any]:
 async def create_graph_prompt(data: dict[str, Any]) -> dict[str, Any]:
     """Create a new prompt in the Knowledge Graph.
 
-    CONCEPT:KG-002 — Prompt Management
+    CONCEPT:WU-KG.compute.prompt-management-ahe-rollback — Prompt Management
 
     Args:
         data: Dict with 'name', 'content', and optional 'description', 'author'.
@@ -2189,7 +2189,7 @@ async def create_graph_prompt(data: dict[str, Any]) -> dict[str, Any]:
 async def update_graph_prompt(prompt_id: str, data: dict[str, Any]) -> dict[str, Any]:
     """Update a prompt, creating a new version via SUPERSEDES.
 
-    CONCEPT:KG-002 — Prompt Management
+    CONCEPT:WU-KG.compute.prompt-management-ahe-rollback — Prompt Management
 
     Args:
         prompt_id: The identifier of the prompt to update.
@@ -2216,7 +2216,7 @@ async def update_graph_prompt(prompt_id: str, data: dict[str, Any]) -> dict[str,
 async def get_graph_prompt_versions(prompt_id: str) -> list[dict[str, Any]]:
     """Get version history for a prompt.
 
-    CONCEPT:KG-002 — Prompt Management
+    CONCEPT:WU-KG.compute.prompt-management-ahe-rollback — Prompt Management
 
     Args:
         prompt_id: The identifier of the prompt.
@@ -2232,7 +2232,7 @@ async def get_graph_prompt_versions(prompt_id: str) -> list[dict[str, Any]]:
 async def rollback_graph_prompt(prompt_id: str, version_id: str) -> dict[str, Any]:
     """Rollback a prompt to a previous version.
 
-    CONCEPT:KG-002 — Prompt Management (AHE Rollback)
+    CONCEPT:WU-KG.compute.prompt-management-ahe-rollback — Prompt Management (AHE Rollback)
 
     Creates a new version that copies the target's content.
     Always forward, never destructive.
@@ -2257,7 +2257,7 @@ async def diff_graph_prompt_versions(
 ) -> dict[str, Any]:
     """Get a unified diff between two prompt versions.
 
-    CONCEPT:KG-002 — Prompt Management
+    CONCEPT:WU-KG.compute.prompt-management-ahe-rollback — Prompt Management
 
     Args:
         prompt_id: The prompt family identifier (unused, for URL structure).
@@ -2295,7 +2295,7 @@ async def diff_graph_prompt_versions(
 
 
 # ─────────────────────────────────────────────────────────────────────────
-#  Tools Management (CONCEPT:KG-003)
+#  Tools Management (CONCEPT:WU-KG.compute.granular-resource-queries)
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -2303,7 +2303,7 @@ async def diff_graph_prompt_versions(
 async def list_graph_tools(request: Request) -> list[dict[str, Any]]:
     """List MCP tools from the Knowledge Graph.
 
-    CONCEPT:KG-003 — Granular Resource Queries
+    CONCEPT:WU-KG.compute.granular-resource-queries — Granular Resource Queries
 
     Returns:
         A list of MCP tool dicts sorted alphabetically.
@@ -2335,7 +2335,7 @@ async def list_graph_tools(request: Request) -> list[dict[str, Any]]:
 async def toggle_graph_tool(tool_id: str, request: Request) -> dict[str, Any]:
     """Toggle the enabled/disabled KG flag on an MCP tool.
 
-    CONCEPT:KG-003 — Granular Resource Queries
+    CONCEPT:WU-KG.compute.granular-resource-queries — Granular Resource Queries
 
     Args:
         tool_id: The identifier of the tool to toggle.
@@ -6139,7 +6139,7 @@ async def ontology_object_set_action(
         executor = ActionExecutor(DEFAULT_REGISTRY, ledger=ontology.edits)
 
         # A mutating bulk action is a HIGH-risk verb that the HITL escalation
-        # gate (CONCEPT:OS-5.12) pauses for human approval — without a decision
+        # gate (CONCEPT:AU-OS.observability.empty-derive-from-effect) pauses for human approval — without a decision
         # it auto-denies, never silently writes. When the caller supplies an
         # explicit ``approve`` payload (the operator pressing 'approve' in the
         # bulk-action dialog), wire it as the gate's decision_provider so the
