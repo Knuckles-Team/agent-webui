@@ -59,7 +59,7 @@ agent_webui = ["dist/**", "icon.png", "skills/**/*"]
 [tool.setuptools.packages.find]
 where = ["agent"]
 
-# CONCEPT:OS-5.81 — contribute the kg-webui-* skills to the agent-utilities hub via
+# CONCEPT:AU-ECO.ui.agent-webui-skill-provider — contribute the kg-webui-* skills to the agent-utilities hub via
 # the shared skill-provider entry-point group (resolved by core/providers.py).
 [project.entry-points."agent_utilities.skill_providers"]
 agent-webui = "agent_webui.skills"
