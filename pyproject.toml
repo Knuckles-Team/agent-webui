@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-webui"
-version = "1.1.0"
+version = "1.2.0"
 description = "Agent Web Interface for Pydantic AI Agents"
 readme = "README.md"
 classifiers = [
@@ -36,7 +36,7 @@ test = [
     "opentelemetry-instrumentation-starlette",
     "opentelemetry-instrumentation-fastapi",
     "opentelemetry-instrumentation-asgi",
-    "agent-utilities[agent,graph]"
+    "agent-utilities[agent,graph]>=1.4.0"
 ]
 
 [[project.authors]]
