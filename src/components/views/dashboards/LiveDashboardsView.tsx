@@ -10,6 +10,11 @@
  *   - Traces:           POST /graph/traces — LIVE (EG-163, KG-2.310)
  *   - Logs:             POST /graph/logs   — PLACEHOLDER / read-only until the
  *                       engine log-query surface (EG-162) is exposed as a REST twin.
+ *
+ * Default metric panels query the engine's OWN telemetry (`src/metrics.rs`):
+ * `epistemic_graph_requests_total{op}` (counter) and
+ * `epistemic_graph_request_duration_seconds{op}` (histogram) — the "op rate" and
+ * "p50/p99 latency" panels the Admin/Dashboards MVP calls for.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -40,18 +45,25 @@ const REFRESH_INTERVALS: { id: string; label: string; seconds: number }[] = [
   { id: '60s', label: '60s', seconds: 60 },
 ]
 
-const DEFAULT_PROMQL = 'rate(kg_requests_total[5m])'
+// Real engine metric names (src/metrics.rs in epistemic-graph) — NOT placeholders.
+const DEFAULT_OP_RATE_QUERY = 'sum(rate(epistemic_graph_requests_total[5m]))'
+const DEFAULT_P50_QUERY =
+  'histogram_quantile(0.50, sum(rate(epistemic_graph_request_duration_seconds_bucket[5m])) by (le))'
+const DEFAULT_P99_QUERY =
+  'histogram_quantile(0.99, sum(rate(epistemic_graph_request_duration_seconds_bucket[5m])) by (le))'
 
 function defaultPanels(): PanelSpec[] {
   return [
-    { id: nanoid(6), type: 'promql', title: 'Request rate', query: DEFAULT_PROMQL },
+    { id: nanoid(6), type: 'promql', title: 'Engine op rate', query: DEFAULT_OP_RATE_QUERY },
+    { id: nanoid(6), type: 'promql', title: 'p50 latency', query: DEFAULT_P50_QUERY },
+    { id: nanoid(6), type: 'promql', title: 'p99 latency', query: DEFAULT_P99_QUERY },
     { id: nanoid(6), type: 'logs', title: 'Logs', query: '' },
     { id: nanoid(6), type: 'traces', title: 'Recent traces', query: '' },
   ]
 }
 
 const ADD_OPTIONS: { type: PanelType; label: string; icon: typeof LineChartIcon; title: string; query: string }[] = [
-  { type: 'promql', label: 'Metrics', icon: LineChartIcon, title: 'New metric', query: DEFAULT_PROMQL },
+  { type: 'promql', label: 'Metrics', icon: LineChartIcon, title: 'New metric', query: DEFAULT_OP_RATE_QUERY },
   { type: 'logs', label: 'Logs', icon: ScrollTextIcon, title: 'New logs', query: '' },
   { type: 'traces', label: 'Traces', icon: GitBranchIcon, title: 'New traces', query: '' },
 ]
