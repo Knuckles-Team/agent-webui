@@ -1,14 +1,43 @@
 import { useState, useEffect } from 'react'
 
+const DEFAULT_BASE_COLOR = '0.52 0.18 260'
+const DECIMAL_COMPONENT = /^-?(?:\d+(?:\.\d*)?|\.\d+)$/
+
+/** Accept only three finite OKLCH numeric components from local persistence. */
+export function normalizeBaseColor(value: string): string | null {
+  const components = value.trim().split(/\s+/)
+  if (components.length !== 3 || components.some((component) => !DECIMAL_COMPONENT.test(component))) return null
+
+  const [lightness, chroma, hue] = components.map(Number)
+  if (
+    !Number.isFinite(lightness) ||
+    !Number.isFinite(chroma) ||
+    !Number.isFinite(hue) ||
+    lightness < 0 ||
+    lightness > 1 ||
+    chroma < 0 ||
+    chroma > 0.5 ||
+    hue < -360 ||
+    hue > 360
+  ) {
+    return null
+  }
+  return `${lightness} ${chroma} ${hue}`
+}
+
 /**
  * Hook to dynamically change the theme's brand and primary colors at runtime.
  * We store the user's preferred hue and chroma, and apply them to the :root variables
  * ensuring both light and dark modes adapt seamlessly.
  */
-export function useThemeColorizer(defaultBaseColor = '0.52 0.18 260') {
-  const [baseColor, setBaseColor] = useState<string>(() => {
-    return localStorage.getItem('pydantic-brand-color') ?? defaultBaseColor
+export function useThemeColorizer(defaultBaseColor = DEFAULT_BASE_COLOR) {
+  const fallbackColor = normalizeBaseColor(defaultBaseColor) ?? DEFAULT_BASE_COLOR
+  const [baseColor, setStoredBaseColor] = useState<string>(() => {
+    return normalizeBaseColor(localStorage.getItem('pydantic-brand-color') ?? '') ?? fallbackColor
   })
+  const setBaseColor = (color: string) => {
+    setStoredBaseColor(normalizeBaseColor(color) ?? fallbackColor)
+  }
 
   useEffect(() => {
     localStorage.setItem('pydantic-brand-color', baseColor)

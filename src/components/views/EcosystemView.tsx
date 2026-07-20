@@ -4,9 +4,6 @@ import {
   Server,
   Cpu,
   HardDrive,
-  Play,
-  Square,
-  RotateCcw,
   Terminal,
   X,
   GitPullRequest,
@@ -47,12 +44,11 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
 interface Host {
-  alias: string
-  hostname: string
-  user: string
-  port: number
-  identity_file?: string
+  reference: string
   status: string
+  port_configured: boolean
+  identity_configured: boolean
+  password_configured: boolean
 }
 
 interface SystemResources {
@@ -70,26 +66,21 @@ interface SystemResources {
 }
 
 interface ProcessInfo {
-  pid: number
-  name: string
-  user: string
+  reference: string
   cpu: number
   memory: number
 }
 
 interface ContainerInfo {
-  id: string
-  name: string
+  reference: string
   state: string
-  status: string
-  image: string
 }
 
 interface RepoInfo {
-  name: string
-  branch: string
+  reference: string
+  label: string
+  branch_state: string
   modified_count: number
-  path: string
   status: string
 }
 
@@ -254,11 +245,7 @@ export default function EcosystemView() {
 
   // Core Hosts & Systems States
   const [hosts, setHosts] = useState<Host[]>([])
-  const [newHost, setNewHost] = useState({ alias: '', hostname: '', user: '', port: 22 })
-  const [selectedHost, setSelectedHost] = useState('')
-  const [remoteCommand, setRemoteCommand] = useState('')
-  const [terminalOutput, setTerminalOutput] = useState<string[]>([])
-  const [runningRemote, setRunningRemote] = useState(false)
+  const [newHost, setNewHost] = useState({ alias: '', hostname: '', user: '', port: 22, password_ref: '' })
   const [addHostOpen, setAddHostOpen] = useState(false)
 
   const [resources, setResources] = useState<SystemResources | null>(null)
@@ -266,11 +253,12 @@ export default function EcosystemView() {
   const [searchProcess, setSearchProcess] = useState('')
 
   const [containers, setContainers] = useState<ContainerInfo[]>([])
-  const [containerActionId, setContainerActionId] = useState<string | null>(null)
+  const [containerInventoryError, setContainerInventoryError] = useState<string | null>(null)
 
   const [repos, setRepos] = useState<RepoInfo[]>([])
   const [selectedRepos, setSelectedRepos] = useState<string[]>([])
   const [bulkActionRunning, setBulkActionRunning] = useState(false)
+  const [repoInventoryError, setRepoInventoryError] = useState<string | null>(null)
 
   // 14 Services States
   const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([])
@@ -336,8 +324,8 @@ export default function EcosystemView() {
     },
     {
       id: 'tr-3d5c',
-      route: 'POST /api/enhanced/tunnel-manager/remote',
-      agent: 'Tunnel-Server',
+      route: 'POST /api/enhanced/graph/delegate',
+      agent: 'GraphOS-Policy',
       latency: 980,
       tokens: 890,
       status: 'success',
@@ -367,12 +355,9 @@ export default function EcosystemView() {
       if (res.ok) {
         const data = (await res.json()) as { hosts?: Host[] }
         setHosts(data.hosts ?? [])
-        if (data.hosts && data.hosts.length > 0) {
-          setSelectedHost(data.hosts[0].alias)
-        }
       }
-    } catch (err) {
-      console.error(err)
+    } catch {
+      console.error('Failed to load configured hosts')
     }
   }
 
@@ -389,43 +374,14 @@ export default function EcosystemView() {
         body: JSON.stringify(newHost),
       })
       if (res.ok) {
-        toast.success(`Host ${newHost.alias} added successfully`)
-        setNewHost({ alias: '', hostname: '', user: '', port: 22 })
+        toast.success('Host added successfully')
+        setNewHost({ alias: '', hostname: '', user: '', port: 22, password_ref: '' })
         setAddHostOpen(false)
         void fetchHosts()
       }
-    } catch (err) {
-      console.error(err)
+    } catch {
+      console.error('Failed to save host configuration')
       toast.error('Failed to save host configuration')
-    }
-  }
-
-  const runSshCommand = async () => {
-    if (!selectedHost || !remoteCommand.trim()) return
-    setRunningRemote(true)
-    setTerminalOutput((prev) => [...prev, `genius@antigravity:~$ ssh ${selectedHost} "${remoteCommand}"`])
-    try {
-      const res = await fetch('/api/enhanced/tunnel-manager/remote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host: selectedHost, cmd: remoteCommand }),
-      })
-      if (res.ok) {
-        const data = (await res.json()) as { stdout?: string; stderr?: string }
-        if (data.stdout) {
-          const out = data.stdout
-          setTerminalOutput((prev) => [...prev, out])
-        }
-        if (data.stderr) {
-          setTerminalOutput((prev) => [...prev, `[stderr]: ${data.stderr}`])
-        }
-        setRemoteCommand('')
-      }
-    } catch (err) {
-      console.error(err)
-      setTerminalOutput((prev) => [...prev, `ssh connection failed to ${selectedHost}`])
-    } finally {
-      setRunningRemote(false)
     }
   }
 
@@ -446,50 +402,21 @@ export default function EcosystemView() {
     }
   }
 
-  const killProcess = async (pid: number) => {
-    try {
-      const res = await fetch('/api/enhanced/systems-manager/processes/kill', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pid }),
-      })
-      if (res.ok) {
-        toast.success(`Sent SIGKILL to process ${pid}`)
-        void fetchSystems()
-      }
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
   const fetchContainers = async () => {
     try {
       const res = await fetch('/api/enhanced/container-manager/containers')
       if (res.ok) {
         setContainers((await res.json()) as ContainerInfo[])
+        setContainerInventoryError(null)
+      } else {
+        const body = (await res.json().catch(() => ({}))) as { detail?: string }
+        setContainers([])
+        setContainerInventoryError(body.detail ?? `Docker inventory unavailable (${res.status})`)
       }
     } catch (err) {
       console.error(err)
-    }
-  }
-
-  const triggerContainerAction = async (id: string, action: 'start' | 'stop' | 'restart') => {
-    setContainerActionId(id)
-    try {
-      const res = await fetch(`/api/enhanced/container-manager/containers/${id}/action`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      })
-      if (res.ok) {
-        toast.success(`Container ${id} action '${action}' completed`)
-        void fetchContainers()
-      }
-    } catch (err) {
-      console.error(err)
-      toast.error('Docker socket command failed')
-    } finally {
-      setContainerActionId(null)
+      setContainers([])
+      setContainerInventoryError('Docker inventory unavailable: the API could not be reached')
     }
   }
 
@@ -498,13 +425,20 @@ export default function EcosystemView() {
       const res = await fetch('/api/enhanced/repository-manager/repos')
       if (res.ok) {
         setRepos((await res.json()) as RepoInfo[])
+        setRepoInventoryError(null)
+      } else {
+        const body = (await res.json().catch(() => ({}))) as { detail?: string }
+        setRepos([])
+        setRepoInventoryError(body.detail ?? `Repository inventory unavailable (${res.status})`)
       }
     } catch (err) {
       console.error(err)
+      setRepos([])
+      setRepoInventoryError('Repository inventory unavailable: the API could not be reached')
     }
   }
 
-  const runBulkRepoAction = async (action: 'pull' | 'build') => {
+  const runBulkRepoAction = async (action: 'status') => {
     if (selectedRepos.length === 0) {
       toast.warning('Please select at least one target repository')
       return
@@ -740,9 +674,7 @@ export default function EcosystemView() {
     }
   }, [])
 
-  const filteredProcesses = processes.filter(
-    (p) => p.name.toLowerCase().includes(searchProcess.toLowerCase()) || p.pid.toString().includes(searchProcess),
-  )
+  const filteredProcesses = processes.filter((p) => p.reference.toLowerCase().includes(searchProcess.toLowerCase()))
 
   return (
     <div className="w-full h-full flex flex-col gap-6 text-foreground bg-background">
@@ -1435,78 +1367,53 @@ export default function EcosystemView() {
                 </Button>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {containers.map((c) => (
-                    <Card
-                      key={c.id}
-                      className="bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between"
-                    >
-                      <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <CardTitle className="text-sm font-bold truncate tracking-tight text-primary">
-                            {c.name}
-                          </CardTitle>
-                          <Badge
-                            variant="outline"
-                            className={cn('capitalize px-2 py-0.5 text-xs font-semibold rounded-full border', {
-                              'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': c.state === 'running',
-                              'bg-red-500/10 border-red-500/25 text-red-600': c.state === 'exited',
-                              'bg-amber-500/10 border-amber-500/25 text-amber-600': c.state === 'paused',
-                            })}
-                          >
-                            {c.state}
-                          </Badge>
-                        </div>
-                        <CardDescription className="text-xs truncate font-mono text-muted-foreground pt-1">
-                          ID: {c.id} | Image: {c.image}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="pb-3 text-xs leading-relaxed text-muted-foreground flex-1 flex flex-col justify-end">
-                        <p>
-                          <strong className="text-foreground">Status:</strong> {c.status}
-                        </p>
-                      </CardContent>
-                      <CardFooter className="pt-2 pb-4 flex justify-between gap-2 border-t bg-muted/20">
-                        {c.state !== 'running' ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1 text-xs gap-1.5"
-                            onClick={() => {
-                              void triggerContainerAction(c.id, 'start')
-                            }}
-                            disabled={containerActionId === c.id}
-                          >
-                            <Play className="size-3 text-emerald-600" /> Start
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1 text-xs gap-1.5"
-                            onClick={() => {
-                              void triggerContainerAction(c.id, 'stop')
-                            }}
-                            disabled={containerActionId === c.id}
-                          >
-                            <Square className="size-3 text-red-600" /> Stop
-                          </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 text-xs gap-1.5"
-                          onClick={() => {
-                            void triggerContainerAction(c.id, 'restart')
-                          }}
-                          disabled={containerActionId === c.id}
-                        >
-                          <RotateCcw className="size-3 text-blue-600" /> Restart
-                        </Button>
-                      </CardFooter>
-                    </Card>
-                  ))}
-                </div>
+                {containerInventoryError ? (
+                  <div
+                    role="status"
+                    className="rounded-md border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-300"
+                  >
+                    <strong>Live Docker inventory unavailable.</strong> {containerInventoryError} No simulated
+                    containers are shown.
+                  </div>
+                ) : containers.length === 0 ? (
+                  <div className="rounded-md border p-4 text-sm text-muted-foreground">No containers reported.</div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {containers.map((c, index) => (
+                      <Card
+                        key={c.reference}
+                        className="bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between"
+                      >
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <CardTitle className="text-sm font-bold truncate tracking-tight text-primary">
+                              Container workload {index + 1}
+                            </CardTitle>
+                            <Badge
+                              variant="outline"
+                              className={cn('capitalize px-2 py-0.5 text-xs font-semibold rounded-full border', {
+                                'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': c.state === 'running',
+                                'bg-red-500/10 border-red-500/25 text-red-600': c.state === 'exited',
+                                'bg-amber-500/10 border-amber-500/25 text-amber-600': c.state === 'paused',
+                              })}
+                            >
+                              {c.state}
+                            </Badge>
+                          </div>
+                          <CardDescription className="text-xs truncate font-mono text-muted-foreground pt-1">
+                            Opaque operational reference
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="pb-3 text-xs leading-relaxed text-muted-foreground flex-1 flex flex-col justify-end">
+                          <p>
+                            Direct container mutation is disabled. Submit lifecycle changes through governed GraphOS
+                            delegation.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -1555,7 +1462,7 @@ export default function EcosystemView() {
                               <label className="text-right text-sm font-medium">IP/Host</label>
                               <Input
                                 className="col-span-3"
-                                placeholder="10.0.0.12"
+                                placeholder="192.0.2.12"
                                 value={newHost.hostname}
                                 onChange={(e) => {
                                   setNewHost({ ...newHost, hostname: e.target.value })
@@ -1584,6 +1491,17 @@ export default function EcosystemView() {
                                 }}
                               />
                             </div>
+                            <div className="grid grid-cols-4 items-center gap-4">
+                              <label className="text-right text-sm font-medium">Password ref</label>
+                              <Input
+                                className="col-span-3"
+                                placeholder="secret-provider://reference"
+                                value={newHost.password_ref}
+                                onChange={(e) => {
+                                  setNewHost({ ...newHost, password_ref: e.target.value })
+                                }}
+                              />
+                            </div>
                           </div>
                           <DialogFooter>
                             <Button type="submit">Register Host</Button>
@@ -1594,29 +1512,32 @@ export default function EcosystemView() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {hosts.map((h) => (
+                      {hosts.map((h, index) => (
                         <div
-                          key={h.alias}
+                          key={h.reference}
                           className="flex flex-col gap-3 p-4 bg-accent/10 border rounded-lg hover:border-primary/40 transition-colors"
                         >
                           <div className="flex items-center justify-between">
-                            <h3 className="font-bold text-sm tracking-wide text-primary">{h.alias}</h3>
+                            <h3 className="font-bold text-sm tracking-wide text-primary">
+                              Configured host {index + 1}
+                            </h3>
                             <Badge variant={h.status === 'active' ? 'default' : 'secondary'} className="capitalize">
                               {h.status}
                             </Badge>
                           </div>
                           <div className="text-xs text-muted-foreground space-y-1">
                             <p>
-                              <strong className="text-foreground">Hostname:</strong> {h.hostname}
+                              <strong className="text-foreground">Port:</strong>{' '}
+                              {h.port_configured ? 'configured' : 'default'}
                             </p>
                             <p>
-                              <strong className="text-foreground">Credential:</strong> {h.user}@{h.port}
+                              <strong className="text-foreground">Identity:</strong>{' '}
+                              {h.identity_configured ? 'configured' : 'default'}
                             </p>
-                            {h.identity_file && (
-                              <p>
-                                <strong className="text-foreground">Identity:</strong> {h.identity_file}
-                              </p>
-                            )}
+                            <p>
+                              <strong className="text-foreground">Password:</strong>{' '}
+                              {h.password_configured ? 'secret reference configured' : 'not configured'}
+                            </p>
                           </div>
                         </div>
                       ))}
@@ -1624,66 +1545,19 @@ export default function EcosystemView() {
                   </CardContent>
                 </Card>
 
-                {/* SSH Remote Command shell */}
+                {/* Governed remote execution boundary */}
                 <Card className="border border-border/80 shadow-md">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Terminal className="text-green-500 size-5" /> Interactive Remote Executor
+                      <Terminal className="text-green-500 size-5" /> Governed Remote Operations
                     </CardTitle>
-                    <CardDescription>Dispatch secure remote shell scripts on selected inventory node</CardDescription>
+                    <CardDescription>Remote execution is mediated by GraphOS ActionPolicy.</CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex gap-4">
-                      <div className="w-1/3">
-                        <select
-                          value={selectedHost}
-                          onChange={(e) => {
-                            setSelectedHost(e.target.value)
-                          }}
-                          className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                        >
-                          {hosts.map((h) => (
-                            <option key={h.alias} value={h.alias}>
-                              {h.alias}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="flex-1 flex gap-2">
-                        <Input
-                          placeholder="Type remote shell command (e.g. docker ps, uname -a)..."
-                          value={remoteCommand}
-                          onChange={(e) => {
-                            setRemoteCommand(e.target.value)
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') void runSshCommand()
-                          }}
-                        />
-                        <Button
-                          onClick={() => {
-                            void runSshCommand()
-                          }}
-                          disabled={runningRemote || !remoteCommand.trim()}
-                        >
-                          {runningRemote ? <RefreshCw className="size-4 animate-spin" /> : 'Run Command'}
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="bg-zinc-950 text-green-400 font-mono text-xs p-4 rounded-md border h-60 overflow-y-auto space-y-2.5">
-                      {terminalOutput.map((line, idx) => (
-                        <div key={idx} className="whitespace-pre-wrap leading-relaxed">
-                          {line}
-                        </div>
-                      ))}
-                      {runningRemote && (
-                        <div className="text-muted-foreground animate-pulse">
-                          Running secure remote tunnel connection...
-                        </div>
-                      )}
-                      {terminalOutput.length === 0 && (
-                        <div className="text-muted-foreground">Terminal ready. Output will stream here.</div>
-                      )}
+                  <CardContent>
+                    <div className="rounded-md border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
+                      Raw shell commands are not accepted by this UI. Use a typed GraphOS delegation action; it will
+                      apply authorization, approval, argument validation, timeouts, audit references, and redacted
+                      results before dispatch.
                     </div>
                   </CardContent>
                 </Card>
@@ -1708,7 +1582,7 @@ export default function EcosystemView() {
                     </Button>
                   </div>
                   <Input
-                    placeholder="Search process..."
+                    placeholder="Filter opaque workload reference..."
                     className="h-8 text-xs mt-2"
                     value={searchProcess}
                     onChange={(e) => {
@@ -1720,31 +1594,17 @@ export default function EcosystemView() {
                   <table className="w-full text-left border-collapse text-xs">
                     <thead className="bg-accent/40 sticky top-0 border-b">
                       <tr>
-                        <th className="p-2 font-semibold text-muted-foreground">PID</th>
-                        <th className="p-2 font-semibold text-muted-foreground">Name</th>
+                        <th className="p-2 font-semibold text-muted-foreground">Workload</th>
                         <th className="p-2 font-semibold text-muted-foreground text-right">CPU</th>
-                        <th className="p-2 font-semibold text-muted-foreground text-right w-16">Action</th>
+                        <th className="p-2 font-semibold text-muted-foreground text-right">Memory</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y font-mono">
                       {filteredProcesses.map((p) => (
-                        <tr key={p.pid} className="hover:bg-accent/10 transition-colors">
-                          <td className="p-2 text-muted-foreground font-bold">{p.pid}</td>
-                          <td className="p-2 truncate max-w-[100px] font-semibold text-foreground" title={p.name}>
-                            {p.name}
-                          </td>
+                        <tr key={p.reference} className="hover:bg-accent/10 transition-colors">
+                          <td className="p-2 text-muted-foreground font-bold">Opaque reference</td>
                           <td className="p-2 text-right text-green-500 font-bold">{p.cpu}%</td>
-                          <td className="p-2 text-right">
-                            <Button
-                              variant="ghost"
-                              className="h-5 px-1.5 text-[10px] text-red-500 hover:text-red-700 hover:bg-red-500/10 font-sans"
-                              onClick={() => {
-                                void killProcess(p.pid)
-                              }}
-                            >
-                              Kill
-                            </Button>
-                          </td>
+                          <td className="p-2 text-right text-blue-500 font-bold">{p.memory}%</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2329,23 +2189,12 @@ export default function EcosystemView() {
                     variant="outline"
                     className="gap-1.5"
                     onClick={() => {
-                      void runBulkRepoAction('pull')
+                      void runBulkRepoAction('status')
                     }}
                     disabled={bulkActionRunning || selectedRepos.length === 0}
                   >
                     <RefreshCw className={cn('size-4', { 'animate-spin': bulkActionRunning })} />
-                    Bulk Pull ({selectedRepos.length})
-                  </Button>
-                  <Button
-                    variant="default"
-                    className="gap-1.5"
-                    onClick={() => {
-                      void runBulkRepoAction('build')
-                    }}
-                    disabled={bulkActionRunning || selectedRepos.length === 0}
-                  >
-                    <Plus className="size-4" />
-                    Bulk Build ({selectedRepos.length})
+                    Check Status ({selectedRepos.length})
                   </Button>
                 </div>
               </CardHeader>
@@ -2356,10 +2205,11 @@ export default function EcosystemView() {
                       <th className="p-4 w-12 text-center">
                         <input
                           type="checkbox"
-                          checked={selectedRepos.length === repos.length}
+                          checked={repos.length > 0 && selectedRepos.length === repos.length}
+                          disabled={repos.length === 0}
                           onChange={(e) => {
                             if (e.target.checked) {
-                              setSelectedRepos(repos.map((r) => r.name))
+                              setSelectedRepos(repos.map((r) => r.reference))
                             } else {
                               setSelectedRepos([])
                             }
@@ -2368,10 +2218,10 @@ export default function EcosystemView() {
                         />
                       </th>
                       <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                        Repository Name
+                        Repository
                       </th>
                       <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                        Active Branch
+                        Branch State
                       </th>
                       <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
                         Local Drift
@@ -2382,33 +2232,51 @@ export default function EcosystemView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
+                    {repoInventoryError && (
+                      <tr>
+                        <td colSpan={5} className="p-4 text-sm text-amber-700 dark:text-amber-300">
+                          <strong>Live repository inventory unavailable.</strong> {repoInventoryError} No simulated
+                          repositories are shown.
+                        </td>
+                      </tr>
+                    )}
+                    {!repoInventoryError && repos.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="p-4 text-sm text-muted-foreground">
+                          No Git repositories were discovered in the configured workspace.
+                        </td>
+                      </tr>
+                    )}
                     {repos.map((r) => (
-                      <tr key={r.name} className="hover:bg-accent/10 transition-colors">
+                      <tr key={r.reference} className="hover:bg-accent/10 transition-colors">
                         <td className="p-4 text-center">
                           <input
                             type="checkbox"
-                            checked={selectedRepos.includes(r.name)}
+                            checked={selectedRepos.includes(r.reference)}
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setSelectedRepos((prev) => [...prev, r.name])
+                                setSelectedRepos((prev) => [...prev, r.reference])
                               } else {
-                                setSelectedRepos((prev) => prev.filter((n) => n !== r.name))
+                                setSelectedRepos((prev) => prev.filter((n) => n !== r.reference))
                               }
                             }}
                             className="rounded border-gray-300 focus:ring-primary size-4 cursor-pointer"
                           />
                         </td>
                         <td className="p-4 font-bold text-foreground tracking-tight flex flex-col pt-3 pb-3">
-                          <span>{r.name}</span>
-                          <span className="text-xs font-mono text-muted-foreground pt-0.5">{r.path}</span>
+                          <span>{r.label}</span>
                         </td>
                         <td className="p-4 font-semibold text-muted-foreground">
                           <Badge variant="secondary" className="font-mono text-xs">
-                            {r.branch}
+                            {r.branch_state}
                           </Badge>
                         </td>
                         <td className="p-4 font-mono font-bold text-xs text-amber-500">
-                          {r.modified_count > 0 ? `${r.modified_count} changes` : '0 modifications'}
+                          {r.modified_count < 0
+                            ? 'unavailable'
+                            : r.modified_count > 0
+                              ? 'tracked drift detected'
+                              : 'no tracked drift'}
                         </td>
                         <td className="p-4">
                           <Badge
@@ -2416,6 +2284,7 @@ export default function EcosystemView() {
                             className={cn('capitalize px-2 py-0.5 text-xs font-semibold rounded-full border', {
                               'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': r.status === 'clean',
                               'bg-amber-500/10 border-amber-500/25 text-amber-600': r.status === 'modified',
+                              'bg-red-500/10 border-red-500/25 text-red-600': r.status === 'unavailable',
                             })}
                           >
                             {r.status}

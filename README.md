@@ -73,7 +73,7 @@ Agent WebUI is a highly interactive, responsive chat interface designed specific
   - Zoom/pan controls and PNG export
   - Node type filtering and detailed node inspection
   - Real-time graph statistics and relationship explorer
-- **Code Graph Navigator** (`CodeGraphView.tsx`, CONCEPT:KG-2.9g) -- navigate the
+- **Code Graph Navigator** (`CodeGraphView.tsx`, CONCEPT:AU-KG.backend.declared-columns-so-schema) -- navigate the
   resolved code-symbol graph built from your indexed GitLab instances: find a
   symbol's **definition**, its **references** (callers), trace the transitive
   **call graph**, or compute the **impact** (blast radius) of a change — scoped to
@@ -83,7 +83,7 @@ Agent WebUI is a highly interactive, responsive chat interface designed specific
 
 ### Knowledge Management
 - **Knowledge Base Management** -- comprehensive KB system with:
-  - Document ingestion from multiple sources (PDF, DOCX, EPUB, Markdown, URLs)
+  - Document ingestion from workspace-confined sources; remote URLs require a governed ingestion connector
   - Article CRUD with concept extraction and fact indexing
   - Health check monitoring with contradiction detection
   - Hybrid search across knowledge bases
@@ -127,7 +127,7 @@ Defined in `agent/agent_webui/api_extensions.py`:
 | `GET /ontology/object/{object_id}` | Full object view: properties, links, derived, markings, history, layout |
 | `POST /ontology/object/{object_id}/edit` | Record a durable edit (property_set / link_add / link_remove) |
 | `POST /ontology/object/{object_id}/revert` | Revert an edit via a compensating edit |
-| `POST /ontology/function/invoke` | Invoke a typed, versioned ontology function (audited runtime, KG-2.41) |
+| `POST /ontology/function/invoke` | Invoke a typed, versioned ontology function (audited runtime, AU-KG.ontology.default-runtime-bound-import) |
 | `POST /ontology/derive` | Compute a single derived property for an object (KG-2.40) |
 | `POST /ontology/document/process` | Process a document into Document + Chunk objects (KG-2.48) |
 | `GET /ontology/object-view/{object_type}` | Get a type's ObjectView: stored (configured) else standard (schema) |
@@ -138,7 +138,7 @@ Defined in `agent/agent_webui/api_extensions.py`:
 - **5-Domain Navigation Layout**:
   - **DevOps & Workspace**: Workspace Matrix code status, branch operations, and git pulling.
   - **Brain & Knowledge**: Visual SVG graph nodes, Cypher console, scientific literature papers explorer, and Prompts visual configurator.
-  - **Infrastructure Hub**: SSH tunnels drawer, remote terminal commands, CPU/RAM/Disk dials, active process trees, and Docker registry boards.
+  - **Infrastructure Hub**: governed SSH/container inventory, CPU/RAM/Disk dials, opaque process utilization, and delegated infrastructure actions.
   - **Lifestyle & Automation**: SmartHome device dimmers, Calendar tasks, qBittorrent torrent speedometers, and MealieScaled grocery trackers.
   - **System Config**: Scheduled crons timeline and Global settings configurator forms.
 
@@ -294,6 +294,61 @@ pnpm run dev
 
 Navigate to `http://localhost:5173` to interact with the agent.
 
+### Served security boundary
+
+The backend defaults to a loopback-only development boundary. A non-loopback
+listener fails closed unless JWT verification has a JWKS URI, issuer, and
+audience, and an explicit `ALLOWED_HOSTS` allowlist is configured. Browser
+origins are exact `http`/`https` origins; wildcard origins are rejected.
+
+All authenticated routes enforce `kg:read`, `kg:write`, or `kg:admin` from the
+server-minted graph session. State-changing tool and skill configuration
+requires `kg:admin`; the enhanced raw graph, code, KB, agent, and supervisory
+dashboard surfaces are admin-only. API responses are non-cacheable, WebSocket messages and
+HTTP request bodies are bounded, and remote KB URLs are not fetched directly
+by the WebUI. Route remote ingestion through a host connector that enforces its
+own URL, DNS, redirect, credential, timeout, and response-size policy.
+
+Startup also requires a callable
+`agent_utilities.security.request_identity.mint_graph_session`; the server will
+not fall back to an unscoped identity. Synchronous graph/backend adapters share
+a fixed four-worker, eight-slot budget. A request deadline does not release a
+slot while an underlying Python call is still running, so repeated timeouts
+cannot create unbounded threads or queued work. Saturated and timed-out calls
+return `503`; each worker receives the server-minted request identity context.
+A backend that can hang indefinitely must additionally enforce a
+native operation/socket timeout: its charged slot intentionally remains
+unavailable until that backend call exits.
+
+The browser policy defaults to `default-src 'none'`, self-hosted scripts and
+styles, no script attributes, no frames, and exact source lists. The only
+built-in exceptions are inline React **style attributes** and local
+`data:`/`blob:` image sources; the security doctor reports
+these explicitly. External previews are disabled until their exact origins are
+listed in `AGENT_WEBUI_CSP_FRAME_SOURCES`. Other exact-origin additions use the
+corresponding `AGENT_WEBUI_CSP_*_SOURCES` variables below. Wildcards, paths,
+credentials, and directive injection are rejected. Custom `html_source`
+rendering fails startup unless `AGENT_WEBUI_CSP_CUSTOM_RENDERING=1`; inline
+script/style keywords must then be separately and explicitly configured.
+
+The bundled CLI disables Uvicorn access logging because raw query strings can
+contain searches, graph symbols, or other sensitive text. A non-loopback app
+factory deployment must set `AGENT_WEBUI_ACCESS_LOG_POLICY=disabled` or
+`redacted`. `redacted` is an operator attestation, not a logger implementation:
+the embedding ASGI server or proxy must remove raw query strings and credentials
+before writing access records. Check the active contract with
+`python -m agent_webui.server --security-doctor` or the admin-only
+`GET /api/enhanced/security/doctor` endpoint. The latter also exposes bounded
+sync-work utilization and reports `degraded` while timed-out work still occupies
+capacity.
+
+The bundled browser client does not store bearer credentials and the native
+WebSocket API cannot attach an `Authorization` header. A remote deployment
+therefore needs an authentication-aware same-origin proxy that injects the
+verified upstream identity for page, API, and WebSocket requests. Configured
+allowed origins authorize request origins; they do not enable CORS response
+headers for a separately hosted frontend.
+
 ## Development
 
 ```sh
@@ -318,9 +373,20 @@ pytest agent/agent_webui/__tests__/ --cov        # With coverage
 
 ### Environment Variables
 
-| Variable          | Default | Description                                 |
-| ----------------- | ------- | ------------------------------------------- |
+| Variable | Default | Description |
+| --- | --- | --- |
 | `VITE_ENABLE_ACP` | `false` | Enable ACP protocol support alongside AG-UI |
+| `PERSISTENCE_IDENTITY_HMAC_KEY_REF` | — | Runtime secret reference used for stable, opaque durable identities |
+| `AGENT_WEBUI_ACCESS_LOG_POLICY` | loopback-only | Required as `disabled` or `redacted` for a non-loopback listener |
+| `AGENT_WEBUI_CSP_CUSTOM_RENDERING` | `false` | Explicitly acknowledge use of a custom `html_source` |
+| `AGENT_WEBUI_CSP_SCRIPT_SOURCES` | — | Extra exact script origins or CSP hashes; unsafe keywords also require the custom-rendering acknowledgement |
+| `AGENT_WEBUI_CSP_STYLE_SOURCES` | — | Extra exact style origins or CSP hashes, applied to both the fallback and element directives |
+| `AGENT_WEBUI_CSP_IMAGE_SOURCES` | — | Extra exact image origins |
+| `AGENT_WEBUI_CSP_FONT_SOURCES` | — | Extra exact font origins |
+| `AGENT_WEBUI_CSP_CONNECT_SOURCES` | — | Extra exact HTTP(S) or WebSocket API origins |
+| `AGENT_WEBUI_CSP_MEDIA_SOURCES` | — | Extra exact media origins |
+| `AGENT_WEBUI_CSP_WORKER_SOURCES` | — | Extra exact worker origins |
+| `AGENT_WEBUI_CSP_FRAME_SOURCES` | — | Exact origins allowed in the Web Preview iframe; frames are denied when unset |
 
 ## Documentation
 

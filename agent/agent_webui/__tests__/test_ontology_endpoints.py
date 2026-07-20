@@ -356,14 +356,10 @@ def test_object_set_bulk_action_records_edits(client, patched_engine):
             'ids': ['c-alpha', 'c-beta'],
             'action_name': 'kg.annotate_concept',
             'params': {'note': 'reviewed by ops', 'reviewer': 'tester'},
-            'actor': 'tester',
-            # ActorContext roles are the capability set the executor authorizes
-            # against; kg.annotate_concept requires kg_write.
-            'roles': ['kg_write'],
             # A mutating bulk verb is HIGH-risk; the HITL gate auto-denies
-            # without an explicit operator approval. Supply one so the governed
-            # writeback proceeds (and is recorded as an approved escalation).
-            'approve': {'approver': 'tester', 'approver_role': 'admin'},
+            # without an explicit operator approval. The approver identity and
+            # role come from the server-minted ambient actor.
+            'approve': {'reason': 'approved in test'},
         },
     )
     assert resp.status_code == 200
@@ -384,25 +380,31 @@ def test_object_set_bulk_action_records_edits(client, patched_engine):
     assert len(view.json()['history']) >= 1
 
 
-def test_object_set_bulk_action_denied_without_capability(client, patched_engine):
+def test_object_set_bulk_action_rejects_body_forged_capability(client, patched_engine):
+    from agent_utilities.security.brain_context import ActorContext
+
     patched_engine.backend.execute(
         "CREATE (n:concept {id: 'c-denied', name: 'D', type: 'concept'})"
     )
-    resp = client.post(
-        '/api/enhanced/ontology/object-set/action',
-        json={
-            'ids': ['c-denied'],
-            'action_name': 'kg.annotate_concept',
-            'params': {'note': 'x'},
-            'actor': 'nobody',
-            'roles': [],  # lacks kg_write
-        },
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data['applied'] == 0
-    assert len(data['errors']) == 1
-    assert data['results'][0]['status'].lower().endswith('denied')
+    with patch(
+        'agent_webui.api_extensions._actor_context',
+        return_value=ActorContext(actor_id='verified-user', roles=()),
+    ):
+        resp = client.post(
+            '/api/enhanced/ontology/object-set/action',
+            json={
+                'ids': ['c-denied'],
+                'action_name': 'kg.annotate_concept',
+                'params': {'note': 'x'},
+                'actor': 'forged-admin',
+                'roles': ['admin', 'kg:admin', 'kg_write'],
+                'approve': {
+                    'approver': 'forged-admin',
+                    'approver_role': 'admin',
+                },
+            },
+        )
+    assert resp.status_code == 403
 
 
 def test_object_set_bulk_action_requires_action_name(client, patched_engine):

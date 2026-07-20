@@ -1,0 +1,141 @@
+{
+  "schema_version": "1.0",
+  "surface": "agent-webui",
+  "catalog_schema_version": "2.0",
+  "event_schema_version": "1.0",
+  "default_support": "generated",
+  "overrides": {
+    "ask_data": {
+      "support": "native",
+      "entrypoint": "/data-analyst"
+    },
+    "document_process": {
+      "support": "native",
+      "entrypoint": "/extraction"
+    },
+    "engine_admin": {
+      "support": "native",
+      "entrypoint": "/admin"
+    },
+    "engine_broker": {
+      "support": "native",
+      "entrypoint": "/broker"
+    },
+    "engine_graph": {
+      "support": "native",
+      "entrypoint": "/graph"
+    },
+    "engine_rbac": {
+      "support": "native",
+      "entrypoint": "/admin"
+    },
+    "engine_resharding": {
+      "support": "native",
+      "entrypoint": "/admin"
+    },
+    "engine_timeseries": {
+      "support": "native",
+      "entrypoint": "/dashboards"
+    },
+    "graph_analyze": {
+      "support": "native",
+      "entrypoint": "/code-graph"
+    },
+    "graph_broker": {
+      "support": "native",
+      "entrypoint": "/broker"
+    },
+    "graph_code": {
+      "support": "native",
+      "entrypoint": "/code-graph"
+    },
+    "graph_code_nav": {
+      "support": "native",
+      "entrypoint": "/code-graph"
+    },
+    "graph_configure": {
+      "support": "native",
+      "entrypoint": "/configuration"
+    },
+    "graph_goals": {
+      "support": "native",
+      "entrypoint": "/goals"
+    },
+    "graph_memory": {
+      "support": "native",
+      "entrypoint": "/knowledge"
+    },
+    "graph_observe": {
+      "support": "native",
+      "entrypoint": "/observability"
+    },
+    "graph_ontology": {
+      "support": "native",
+      "entrypoint": "/explorer"
+    },
+    "graph_ops_causal": {
+      "support": "native",
+      "entrypoint": "/ops"
+    },
+    "graph_promql": {
+      "support": "native",
+      "entrypoint": "/dashboards"
+    },
+    "graph_query": {
+      "support": "native",
+      "entrypoint": "/cypher"
+    },
+    "graph_schedules": {
+      "support": "native",
+      "entrypoint": "/scheduling"
+    },
+    "graph_sessions": {
+      "support": "native",
+      "entrypoint": "/sessions"
+    },
+    "graph_table": {
+      "support": "native",
+      "entrypoint": "/data-analyst"
+    },
+    "graph_traces": {
+      "support": "native",
+      "entrypoint": "/dashboards"
+    },
+    "object_edits": {
+      "support": "native",
+      "entrypoint": "/object/:id"
+    },
+    "object_index": {
+      "support": "native",
+      "entrypoint": "/explorer"
+    },
+    "object_set": {
+      "support": "native",
+      "entrypoint": "/explorer"
+    },
+    "ontology_derive": {
+      "support": "native",
+      "entrypoint": "/explorer"
+    },
+    "ontology_function": {
+      "support": "native",
+      "entrypoint": "/object/:id"
+    },
+    "ontology_interface": {
+      "support": "native",
+      "entrypoint": "/explorer"
+    },
+    "ontology_property_types": {
+      "support": "native",
+      "entrypoint": "/explorer"
+    },
+    "ontology_value_types": {
+      "support": "native",
+      "entrypoint": "/explorer"
+    },
+    "usage_query": {
+      "support": "native",
+      "entrypoint": "/usage"
+    }
+  }
+}

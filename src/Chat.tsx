@@ -39,7 +39,7 @@ import { Badge } from '@/components/ui/badge'
 import { ApprovalCard } from '@/components/ApprovalCard'
 import { Switch } from '@/components/ui/switch'
 import { useChat, type UIMessage } from '@ai-sdk/react'
-import type { UIDataTypes, UIMessagePart, UITools, ChatStatus } from 'ai'
+import { DefaultChatTransport, type UIDataTypes, type UIMessagePart, type UITools } from 'ai'
 import {
   useEffect,
   useLayoutEffect,
@@ -59,6 +59,7 @@ import { Part } from './Part'
 import type { ConversationEntry } from './types'
 import { getToolIcon } from '@/lib/tool-icons'
 import { GraphActivity, type GraphEvent } from '@/components/ai-elements/graph-activity'
+import { pageContextSystemPrompt, type PageContextEnvelope } from '@/lib/page-context'
 
 /**
  * Interface for specialized message parts (sources, images, etc.)
@@ -444,21 +445,8 @@ interface AppAnnotation {
  * Locally defined interfaces to satisfy strict typing requirements
  * while working around complex generic constraints in the AI SDK.
  */
-interface LocalUseChatOptions {
-  api: string
-}
-
-interface LocalUseChatHelpers {
-  messages: UIMessage[]
-  append: (
-    message: { role: 'user' | 'assistant'; content: string },
-    options?: { body?: Record<string, unknown> },
-  ) => Promise<string | undefined>
-  status: ChatStatus
-  setMessages: (messages: UIMessage[]) => void
-  reload: () => Promise<string | undefined>
-  addToolOutput: (output: { tool: string; toolCallId: string; output: unknown }) => Promise<void>
-  error: Error | undefined
+interface ChatProps {
+  pageContext: PageContextEnvelope
 }
 
 /**
@@ -467,7 +455,7 @@ interface LocalUseChatHelpers {
  * Orchestrates the chat lifecycle including message history management,
  * streaming response handling, and tool interaction flows.
  */
-const Chat = () => {
+const Chat = ({ pageContext }: ChatProps) => {
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number>(0)
@@ -514,11 +502,34 @@ const Chat = () => {
   const [attachments, setAttachments] = useState<{ url: string; base64: string; type: string }[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const { messages, append, status, setMessages, reload, addToolOutput, error } = (
-    useChat as unknown as (options: LocalUseChatOptions) => LocalUseChatHelpers
-  )({
-    api: '/acp',
-  })
+  const pageContextRef = useRef(pageContext)
+  pageContextRef.current = pageContext
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport<UIMessage>({
+        api: '/api/chat',
+        prepareSendMessagesRequest: ({ id, messages, body, trigger, messageId }) => {
+          const context = pageContextRef.current
+          const contextMessage: UIMessage = {
+            id: 'agent-webui-page-context',
+            role: 'system',
+            parts: [{ type: 'text', text: pageContextSystemPrompt(context) }],
+          }
+          return {
+            body: {
+              ...body,
+              id,
+              trigger,
+              messages: [contextMessage, ...messages],
+              ...(messageId ? { messageId } : {}),
+              pageContext: context,
+            },
+          }
+        },
+      }),
+    [],
+  )
+  const { messages, sendMessage, status, setMessages, regenerate, addToolOutput, error } = useChat({ transport })
   const throttledMessages = useThrottle<UIMessage[]>(messages, 500)
   const [conversationId, setConversationId] = useConversationIdFromUrl()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -886,37 +897,33 @@ Available commands:
         return
       }
 
-      const theCurrentUrl = new URL(window.location.toString())
-
-      if (theCurrentUrl.pathname === '/') {
+      if (conversationId === '/') {
         const newConversationId = `/${nanoid()}`
         setConversationId(newConversationId)
 
         saveConversationEntryInLocalStorage(newConversationId, input)
-
-        theCurrentUrl.pathname = newConversationId
-        window.history.pushState({}, '', theCurrentUrl.toString())
       }
 
-      const parts = attachments.map((a) => ({
-        image: a.base64,
-        media_type: a.type,
-      }))
+      const message: UIMessage = {
+        id: nanoid(),
+        role: 'user',
+        parts: [
+          { type: 'text', text: input },
+          ...attachments.map((attachment) => ({
+            type: 'file' as const,
+            mediaType: attachment.type,
+            url: attachment.base64,
+          })),
+        ],
+      }
 
-      void append(
-        {
-          role: 'user',
-          content: input,
+      void sendMessage(message, {
+        body: {
+          model,
+          builtinTools: enabledTools,
+          mode,
         },
-        {
-          body: {
-            model,
-            builtinTools: enabledTools,
-            mode,
-            parts: parts.length > 0 ? [...parts, { text: input }] : [],
-          },
-        },
-      ).catch((error: unknown) => {
+      }).catch((error: unknown) => {
         console.error('Error sending message:', error)
       })
 
@@ -941,7 +948,7 @@ Available commands:
    * Triggers a message regeneration for the specified ID
    */
   function regen(_messageId: string) {
-    void reload().catch((error: unknown) => {
+    void regenerate({ messageId: _messageId }).catch((error: unknown) => {
       console.error('Error regenerating message:', error)
     })
   }

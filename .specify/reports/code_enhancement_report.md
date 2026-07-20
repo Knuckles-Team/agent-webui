@@ -49,13 +49,13 @@ xychart-beta
 |-----------|--------|----------|-----------|
 | has_pyproject | 10 | `pyproject.toml and requirements.txt` | Both pyproject.toml and requirements.txt exist, fulfilling mandatory Python proj |
 | project_type_detected | 10 | `Pydantic-AI Agent, Pydantic-AI Agent, Web Agent / API, Agent` | Identified 4 ecosystem marker(s) in dependencies |
-| externalized_prompts | 0 | `/home/apps/workspace/agent-packages/agent-webui` | No prompts/ directory found. Prompts may be hardcoded in source. |
+| externalized_prompts | 0 | `${WORKSPACE_ROOT}/agent-packages/agent-webui` | No prompts/ directory found. Prompts may be hardcoded in source. |
 | observability | 10 | `logfire, opentelemetry` | Observability/telemetry dependencies detected |
 | testing_suite | 10 | `tests dir: True, pytest dep: True` | Tests directory exists, pytest in dependencies |
-| agents_md | 10 | `/home/apps/workspace/agent-packages/agent-webui/AGENTS.md (7` | AGENTS.md exists with comprehensive content |
-| pre_commit_hooks | 10 | `/home/apps/workspace/agent-packages/agent-webui/.pre-commit-` | Pre-commit configuration found for automated code quality checks |
-| gitignore | 10 | `/home/apps/workspace/agent-packages/agent-webui/.gitignore` | .gitignore exists to prevent committing build artifacts and secrets |
-| env_template | 10 | `/home/apps/workspace/agent-packages/agent-webui/.env.example` | Environment template exists for onboarding and secret management |
+| agents_md | 10 | `${WORKSPACE_ROOT}/agent-packages/agent-webui/AGENTS.md (7` | AGENTS.md exists with comprehensive content |
+| pre_commit_hooks | 10 | `${WORKSPACE_ROOT}/agent-packages/agent-webui/.pre-commit-` | Pre-commit configuration found for automated code quality checks |
+| gitignore | 10 | `${WORKSPACE_ROOT}/agent-packages/agent-webui/.gitignore` | .gitignore exists to prevent committing build artifacts and secrets |
+| env_template | 10 | `${WORKSPACE_ROOT}/agent-packages/agent-webui/.env.example` | Environment template exists for onboarding and secret management |
 | protocol_support | 4 | `MCP` | 1 communication protocol(s) detected |
 
 **Findings:**
@@ -75,7 +75,7 @@ xychart-beta
 
 | Criterion | Points | Evidence | Reasoning |
 |-----------|--------|----------|-----------|
-| dependency_freshness | 70 | `source=/home/apps/workspace/agent-packages/agent-webui/pypro` | Audited 17 deps (17 installed, 0 constraint-only). 1 major, 6 minor, 2 patch upd |
+| dependency_freshness | 70 | `source=${WORKSPACE_ROOT}/agent-packages/agent-webui/pypro` | Audited 17 deps (17 installed, 0 constraint-only). 1 major, 6 minor, 2 patch upd |
 
 **Findings:**
 - Minor update: sse-starlette 3.0.3 (installed) -> 3.4.1
@@ -254,7 +254,7 @@ xychart-beta
 
 | Criterion | Points | Evidence | Reasoning |
 |-----------|--------|----------|-----------|
-| bumpversion_exists | 20 | `/home/apps/workspace/agent-packages/agent-webui/.bumpversion` | .bumpversion.cfg found |
+| bumpversion_exists | 20 | `${WORKSPACE_ROOT}/agent-packages/agent-webui/.bumpversion` | .bumpversion.cfg found |
 | current_version_defined | 20 | `0.2.0` | Current version tracked is 0.2.0 |
 | files_tracked | 20 | `4 files tracked` | Found 4 files tracked in .bumpversion.cfg |
 | version_drift_check | 0 | `2 untracked files` | Version definitions found in codebase that are missing from .bumpversion.cfg |

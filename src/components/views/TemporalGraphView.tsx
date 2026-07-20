@@ -7,6 +7,7 @@ import { Slider } from '@/components/ui/slider'
 import { toast } from 'sonner'
 import { GraphCanvas, edgeKey } from '../knowledge-graph/GraphCanvas'
 import type { GraphNode, GraphRelationship } from '../knowledge-graph/GraphAdapter'
+import { usePageContextPublisher, type PageContextContribution } from '@/lib/page-context'
 
 /**
  * Temporal graph scrubber (Graphiti+Opik Track D / D1).
@@ -82,6 +83,37 @@ export default function TemporalGraphView() {
   )
 
   const currentTs = tsForPos(sliderPos)
+
+  const pageContext = useMemo<PageContextContribution>(
+    () => ({
+      selection: selectedNode
+        ? [
+            {
+              kind: 'graph-node',
+              id: selectedNode.id,
+              label:
+                typeof selectedNode.properties.name === 'string'
+                  ? selectedNode.properties.name
+                  : selectedNode.labels.join(', ') || selectedNode.id,
+            },
+          ]
+        : [],
+      filters: { expiredEdges: expiredEdges.size },
+      timeRange: {
+        start: new Date(range.start).toISOString(),
+        end: new Date(range.end).toISOString(),
+        asOf: currentTs,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+      allowedActions: [
+        { id: 'query-as-of', label: 'Query the graph at the selected time', kind: 'read' },
+        { id: 'refresh-graph', label: 'Refresh temporal graph data', kind: 'read' },
+        ...(selectedNode ? [{ id: 'inspect-node', label: 'Inspect the selected node', kind: 'read' as const }] : []),
+      ],
+    }),
+    [currentTs, expiredEdges.size, range.end, range.start, selectedNode],
+  )
+  usePageContextPublisher(pageContext)
 
   useEffect(() => {
     void fetchGraph()

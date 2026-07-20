@@ -352,7 +352,7 @@ export default function ExtractionView() {
                 variant="outline"
                 disabled={!jobId}
                 onClick={() => {
-                  if (jobId) window.open(api.extractionJsonlUrl(jobId), '_blank')
+                  if (jobId) window.open(api.extractionJsonlUrl(jobId), '_blank', 'noopener,noreferrer')
                 }}
               >
                 JSONL

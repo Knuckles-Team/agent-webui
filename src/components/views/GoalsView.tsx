@@ -55,7 +55,7 @@ export default function GoalsView() {
 
   // Builder form state
   const [objective, setObjective] = useState('')
-  const [validationCmd, setValidationCmd] = useState('')
+  const [validationAction, setValidationAction] = useState('none')
   const [maxIterations, setMaxIterations] = useState(20)
   const [newConstraint, setNewConstraint] = useState('')
   const [constraints, setConstraints] = useState<string[]>([
@@ -137,7 +137,7 @@ export default function GoalsView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           objective,
-          validation_cmd: validationCmd,
+          validation_action: validationAction,
           max_iterations: maxIterations,
           constraints,
         }),
@@ -146,7 +146,7 @@ export default function GoalsView() {
         const data = (await res.json()) as { goal_id: string }
         toast.success('Autonomous goal loop successfully dispatched')
         setObjective('')
-        setValidationCmd('')
+        setValidationAction('none')
         setSelectedGoalId(data.goal_id)
         void fetchGoals()
       } else {
@@ -234,7 +234,7 @@ export default function GoalsView() {
               className="w-full justify-between px-2 text-xs border border-border/20 hover:bg-muted/40 h-8"
             >
               <span className="flex items-center gap-1 text-muted-foreground font-mono">
-                <Settings2 className="size-3.5" /> Configure Limits & Commands
+                <Settings2 className="size-3.5" /> Configure Limits & Validation
               </span>
               {showConfig ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
             </Button>
@@ -274,15 +274,18 @@ export default function GoalsView() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold text-muted-foreground uppercase">Verify Command</label>
-                    <Input
-                      placeholder="e.g. pytest"
-                      value={validationCmd}
+                    <label className="text-[11px] font-semibold text-muted-foreground uppercase">Validation Action</label>
+                    <select
+                      value={validationAction}
                       onChange={(e) => {
-                        setValidationCmd(e.target.value)
+                        setValidationAction(e.target.value)
                       }}
-                      className="text-xs bg-muted/20 border-border/40 font-mono h-9"
-                    />
+                      className="w-full rounded-md border px-2 text-xs bg-muted/20 border-border/40 font-mono h-9"
+                    >
+                      <option value="none">None</option>
+                      <option value="workspace-present">Workspace present</option>
+                      <option value="repository-present">Repository present</option>
+                    </select>
                   </div>
                 </div>
 
@@ -523,7 +526,7 @@ export default function GoalsView() {
                             <div className="rounded-lg overflow-hidden border border-border/10 bg-black font-mono">
                               <div className="bg-muted/10 border-b border-border/10 px-3 py-1.5 flex items-center gap-2 justify-between text-[9px] text-muted-foreground">
                                 <span className="flex items-center gap-1.5">
-                                  <Terminal className="size-3" /> CLI Verifier Console
+                                  <Terminal className="size-3" /> Validation Status
                                 </span>
                                 <span>Output</span>
                               </div>

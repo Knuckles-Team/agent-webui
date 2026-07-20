@@ -17,6 +17,8 @@ with the wider agent platform.
   orchestrator, specialist discovery, and telemetry.
 - **[Features](features.md)** — The API endpoints, frontend environment variables, and
   the most recent architecture changes.
+- **[Capability Workbench](capability-workbench.md)** — Live capability discovery,
+  contextual schema forms, policy preflight, renderer fallbacks, and run replay/follow.
 - **[Ecosystem Integration](ecosystem.md)** — The Unified Agent Homelab model, layout
   taxonomy, and the REST interfaces that expose installed agent packages and MCP
   servers.

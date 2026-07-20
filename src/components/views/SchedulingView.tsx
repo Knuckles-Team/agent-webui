@@ -436,7 +436,14 @@ export default function SchedulingView() {
                                 size="sm"
                                 className="h-6 px-2 text-[10px] gap-1 text-primary hover:text-primary hover:bg-primary/10"
                                 onClick={() => {
-                                  window.history.pushState({}, '', `/${log.chat_id}`)
+                                  const chatId = log.chat_id
+                                  if (!chatId) return
+                                  const conversationId = chatId.startsWith('/') ? chatId : `/${chatId}`
+                                  window.history.pushState(
+                                    {},
+                                    '',
+                                    `/chat?conversation=${encodeURIComponent(conversationId)}`,
+                                  )
                                   window.dispatchEvent(new Event('history-state-changed'))
                                 }}
                               >

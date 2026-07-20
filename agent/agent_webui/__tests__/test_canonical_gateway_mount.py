@@ -85,6 +85,32 @@ def test_canonical_sessions_goals_tools_routes_are_mounted(app):
         assert path in paths, f'canonical route {path} not mounted'
 
 
+def test_frontend_capability_and_run_contracts_are_mounted_when_available(app):
+    """The shared registrar exposes discovery, preflight, and run replay.
+
+    Older agent-utilities installations do not yet contain the frontend-platform
+    contract modules, so they skip this forward-compatible assertion. Once the
+    shared contract is present, every route is required on the WebUI host.
+    """
+    try:
+        from agent_utilities.gateway import capabilities_api, events_api  # noqa: F401
+    except ImportError:
+        pytest.skip('frontend capability platform not installed')
+
+    paths = _app_paths(app)
+    for path in (
+        '/api/capabilities',
+        '/api/capabilities/{capability_id}',
+        '/api/capabilities/{capability_id}/preflight',
+        '/api/capabilities/{capability_id}/invoke',
+        '/api/events/schema',
+        '/api/runs',
+        '/api/runs/{run_id}',
+        '/api/runs/{run_id}/events',
+    ):
+        assert path in paths, f'frontend platform route {path} not mounted'
+
+
 def test_canonical_ontology_route_serves_live_requests(client, patched_engine):
     """POST /api/ontology/property-types answers through the canonical handler.
 

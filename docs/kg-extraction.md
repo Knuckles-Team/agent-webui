@@ -1,4 +1,4 @@
-# KG Extraction view (ECO-4.43)
+# KG Extraction view (AU-ECO.connector.git-task-resolver)
 
 `ExtractionView` (`src/components/views/ExtractionView.tsx`, route `/extraction`,
 sidebar **KG Extraction**) turns a document or URL into an interactive knowledge

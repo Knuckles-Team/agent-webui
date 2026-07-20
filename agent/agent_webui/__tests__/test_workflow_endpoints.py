@@ -31,7 +31,7 @@ def mock_engine():
 
 
 def test_list_workflows_returns_records(client, mock_engine):
-    def execute(query):
+    def execute(query, _params=None):
         if 'MATCH (w:Workflow) RETURN w' in query:
             return [{'w': {'id': 'workflow:demo', 'name': 'Demo', 'steps': 'a,b'}}]
         if 'ORCHESTRATES' in query:
@@ -151,4 +151,5 @@ def test_run_workflow_error_returns_payload_not_500(client, mock_engine):
         assert res.status_code == 200
         data = res.json()
         assert data['status'] == 'error'
-        assert 'boom' in data['error']
+        assert data['error'] == 'Exception'
+        assert 'boom' not in res.text

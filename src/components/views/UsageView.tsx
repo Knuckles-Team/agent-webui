@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { safeExternalUrl } from '@/lib/safe-url'
 import {
   api,
   type UsageActivityCell,
@@ -421,18 +422,22 @@ export default function UsageView() {
                 <CardDescription>{traces.host}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-1">
-                {traces.traces.map((t) => (
-                  <a
-                    key={t.session_id}
-                    href={t.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block rounded border p-2 text-sm hover:bg-muted/50"
-                  >
-                    <span className="font-mono text-xs">{t.session_id}</span>
-                    <span className="ml-2 text-muted-foreground">{t.project}</span>
-                  </a>
-                ))}
+                {traces.traces.map((t) => {
+                  const traceUrl = safeExternalUrl(t.url)
+                  if (!traceUrl) return null
+                  return (
+                    <a
+                      key={t.session_id}
+                      href={traceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block rounded border p-2 text-sm hover:bg-muted/50"
+                    >
+                      <span className="font-mono text-xs">{t.session_id}</span>
+                      <span className="ml-2 text-muted-foreground">{t.project}</span>
+                    </a>
+                  )
+                })}
               </CardContent>
             </Card>
           </TabsContent>
