@@ -183,3 +183,58 @@ def test_delete_file_without_helper_returns_error(mock_agent):
     body = response.json()
     assert body['status'] == 'error'
     assert 'workspace helper' in body['detail']
+
+
+def test_upload_and_download_stay_inside_workspace(workspace_client):
+    """A normal upload is stored and served from the configured workspace."""
+    client, tmp_path, _helpers = workspace_client
+
+    upload = client.post(
+        '/api/enhanced/upload',
+        files={'file': ('evidence.txt', b'grounded', 'text/plain')},
+    )
+    assert upload.status_code == 200
+    assert upload.json() == {'filename': 'evidence.txt'}
+    assert (tmp_path / 'evidence.txt').read_bytes() == b'grounded'
+
+    download = client.get('/api/enhanced/download/evidence.txt')
+    assert download.status_code == 200
+    assert download.content == b'grounded'
+
+
+@pytest.mark.parametrize(
+    'filename', ['../escaped.txt', '/tmp/escaped.txt', r'..\escaped.txt']
+)
+def test_upload_rejects_path_bearing_filename(workspace_client, filename):
+    client, tmp_path, _helpers = workspace_client
+    outside = tmp_path.parent / 'escaped.txt'
+    outside.unlink(missing_ok=True)
+
+    response = client.post(
+        '/api/enhanced/upload',
+        files={'file': (filename, b'should-not-write', 'text/plain')},
+    )
+
+    assert response.status_code == 400
+    assert not outside.exists()
+
+
+def test_download_rejects_traversal_at_handler_boundary(mock_agent, tmp_path):
+    """The resolved download target may never escape through ``..`` or a symlink."""
+    import asyncio
+
+    from agent_webui.api_extensions import download_file, set_workspace_helpers
+    from fastapi import HTTPException
+
+    outside = tmp_path.parent / 'download_secret.txt'
+    outside.write_text('classified', encoding='utf-8')
+    try:
+        set_workspace_helpers({'get_workspace_path': lambda p='': tmp_path / p})
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(download_file('../download_secret.txt'))
+        assert exc_info.value.status_code == 400
+        assert 'download_secret.txt' not in str(exc_info.value.detail)
+        assert outside.exists()
+    finally:
+        set_workspace_helpers({})
+        outside.unlink(missing_ok=True)

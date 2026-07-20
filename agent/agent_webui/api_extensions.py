@@ -1,11 +1,24 @@
+import contextvars
+import hashlib
+import inspect
+import json
 import logging
+import math
 import os
 import re
-import shutil
+import secrets
+import stat
+import threading
+from concurrent import futures as _futures
+from dataclasses import replace
 from datetime import datetime, timezone
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import quote, urlsplit
 
+from agent_utilities.core.config import config
+from agent_utilities.core.paths import config_dir, data_dir
 from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
 from agent_utilities.knowledge_graph.core.maintainer import GraphMaintainer
 from agent_utilities.knowledge_graph.kb.ingestion import KBIngestionEngine
@@ -14,17 +27,690 @@ from agent_utilities.knowledge_graph.pipeline.runner import PipelineRunner
 from agent_utilities.knowledge_graph.pipeline.types import PipelineContext
 from agent_utilities.models.knowledge_graph import PipelineConfig
 from agent_utilities.sdd import SDDManager
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from agent_utilities.security.persistence_privacy import (
+    persistence_reference,
+    sanitize_for_persistence,
+)
+from fastapi import (
+    APIRouter,
+    File,
+    Request,
+    UploadFile,
+)
+from fastapi import (
+    HTTPException as FastAPIHTTPException,
+)
+from fastapi.responses import Response
 
 # Global constant for agent directory
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+_REFERENCE_KEY = secrets.token_bytes(32)
+_MAX_CONTAINER_RECORDS = 256
+_MAX_EXTERNAL_RESULT_BYTES = 2 * 1024 * 1024
+_MAX_EXTERNAL_ARGUMENT_BYTES = 256 * 1024
+_MAX_EXTERNAL_COLLECTION_ITEMS = 256
+_MAX_EXTERNAL_DEPTH = 10
+_MAX_EXTERNAL_NODES = 4096
+_MAX_EXTERNAL_STRING_BYTES = 64 * 1024
+_MAX_UPLOAD_HARD_LIMIT = 50 * 1024 * 1024
+_SAFE_INVENTORY_TOKEN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+_SAFE_HOSTNAME = re.compile(r'^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$')
+_SAFE_DELEGATION_TOKEN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$')
+_MAX_SESSION_RECORDS = 256
+_MAX_SESSION_TURNS = 256
+_MAX_SESSION_REPLY_BYTES = 64 * 1024
+_MAX_GRAPH_QUERY_BYTES = 64 * 1024
+_MAX_GRAPH_QUERY_ROWS = 1000
+_MAX_LIST_FILES = 5000
+_MAX_WORKFLOW_RECORDS = 256
+_MAX_WORKFLOW_ID_BYTES = 512
+_MAX_DELEGATION_FANOUT = 20
+_SAFE_GRAPH_LABEL = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$')
+_MAX_SYNC_WORKERS = 4
+_MAX_SYNC_PENDING = 8
 
-# Directory where agent stores its workspace data
-DEFAULT_AGENT_DIR = Path(os.getenv('AGENT_WORKSPACE', 'workspace'))
-DEFAULT_AGENT_DIR.mkdir(parents=True, exist_ok=True)
+
+class SyncWorkCapacityError(RuntimeError):
+    """The fixed synchronous-work budget is already fully occupied."""
+
+
+class _BoundedSyncWorkExecutor:
+    """Run blocking adapters without an unbounded thread or queue escape hatch.
+
+    A caller timeout does not release capacity for work that Python cannot
+    cancel. The slot remains charged until the underlying function exits, so a
+    stuck backend can degrade this pool but can never cause thread growth.
+    """
+
+    def __init__(self, *, max_workers: int, max_pending: int) -> None:
+        if max_workers < 1 or max_pending < max_workers:
+            raise ValueError('Invalid synchronous-work capacity')
+        self.max_workers = max_workers
+        self.max_pending = max_pending
+        self._capacity = threading.BoundedSemaphore(max_pending)
+        self._executor = _futures.ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix='agent-webui-bounded',
+        )
+        self._lock = threading.Lock()
+        self._in_flight = 0
+        self._timed_out: set[_futures.Future[Any]] = set()
+        self._timeouts_total = 0
+        self._rejections_total = 0
+
+    def submit(self, function: Any, /, *args: Any, **kwargs: Any) -> Any:
+        if not self._capacity.acquire(blocking=False):
+            with self._lock:
+                self._rejections_total += 1
+            raise SyncWorkCapacityError('Synchronous-work capacity is exhausted')
+        with self._lock:
+            self._in_flight += 1
+        try:
+            request_context = contextvars.copy_context()
+            future = self._executor.submit(
+                request_context.run,
+                function,
+                *args,
+                **kwargs,
+            )
+        except BaseException:
+            with self._lock:
+                self._in_flight -= 1
+            self._capacity.release()
+            raise
+        future.add_done_callback(self._complete)
+        return future
+
+    def mark_timed_out(self, future: Any) -> None:
+        with self._lock:
+            self._timeouts_total += 1
+            if future.done():
+                return
+            self._timed_out.add(future)
+
+    def _complete(self, future: Any) -> None:
+        with self._lock:
+            self._timed_out.discard(future)
+            self._in_flight -= 1
+        self._capacity.release()
+
+    def status(self) -> dict[str, int]:
+        with self._lock:
+            return {
+                'max_workers': self.max_workers,
+                'max_pending': self.max_pending,
+                'in_flight': self._in_flight,
+                'timed_out_in_flight': len(self._timed_out),
+                'timeouts_total': self._timeouts_total,
+                'rejections_total': self._rejections_total,
+            }
+
+    def shutdown(self, *, wait: bool = True) -> None:
+        self._executor.shutdown(wait=wait, cancel_futures=True)
+
+
+_SYNC_WORK_EXECUTOR = _BoundedSyncWorkExecutor(
+    max_workers=_MAX_SYNC_WORKERS,
+    max_pending=_MAX_SYNC_PENDING,
+)
+
+
+def sync_work_status() -> dict[str, int]:
+    """Return a non-sensitive snapshot for the security doctor."""
+
+    return _SYNC_WORK_EXECUTOR.status()
+
+
+def _opaque_reference(namespace: str, value: str) -> str:
+    digest = hashlib.blake2b(
+        value.encode('utf-8'), key=_REFERENCE_KEY, digest_size=16
+    ).hexdigest()
+    return f'{namespace}:{digest}'
+
+
+_PUBLIC_HTTP_ERRORS = {
+    400: 'Invalid request',
+    401: 'Authentication required',
+    403: 'Request forbidden',
+    404: 'Resource not found',
+    409: 'Request conflict',
+    422: 'Request could not be processed',
+    500: 'Internal request failed',
+    501: 'Capability is not available',
+    503: 'Service unavailable',
+}
+
+
+class HTTPException(FastAPIHTTPException):
+    """HTTP error boundary that never reflects internal data to API clients."""
+
+    def __init__(
+        self,
+        status_code: int,
+        detail: Any = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        del detail
+        super().__init__(
+            status_code=status_code,
+            detail=_PUBLIC_HTTP_ERRORS.get(status_code, 'Request failed'),
+            headers=headers,
+        )
+
+
+def _log_failure(
+    operation: str, error: BaseException, *, level: int = logging.ERROR
+) -> None:
+    """Log only a stable operation label and exception type."""
+
+    safe_operation = re.sub(r'[^a-z0-9_.-]+', '_', operation.lower())[:64]
+    logger.log(
+        level,
+        '%s failed: error_type=%s',
+        safe_operation or 'operation',
+        type(error).__name__,
+    )
+
+
+def _atomic_private_write(target: Path, payload: bytes) -> None:
+    """Atomically write through a pinned directory without following links."""
+
+    dir_fd_capable = all(
+        function in os.supports_dir_fd for function in (os.open, os.stat, os.unlink)
+    )
+    if not dir_fd_capable:
+        # Native Windows lacks openat-style directory descriptors. Preserve an
+        # atomic, no-follow final-component boundary with the platform APIs.
+        if target.is_symlink() or target.parent.is_symlink():
+            raise OSError('Refusing symbolic-link write target')
+        temp_path = target.parent / f'.{target.name}.{secrets.token_hex(8)}.tmp'
+        write_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, 'O_NOFOLLOW'):
+            write_flags |= os.O_NOFOLLOW
+        fd = -1
+        try:
+            fd = os.open(temp_path, write_flags, 0o600)
+            remaining = memoryview(payload)
+            while remaining:
+                written = os.write(fd, remaining)
+                if written <= 0:
+                    raise OSError('Unable to complete private write')
+                remaining = remaining[written:]
+            os.fsync(fd)
+            os.close(fd)
+            fd = -1
+            if target.is_symlink() or target.parent.is_symlink():
+                raise OSError('Write target changed during persistence')
+            os.replace(temp_path, target)
+            try:
+                os.chmod(target, 0o600)
+            except OSError:
+                pass
+            return
+        finally:
+            if fd >= 0:
+                os.close(fd)
+            temp_path.unlink(missing_ok=True)
+
+    parent_flags = os.O_RDONLY
+    if hasattr(os, 'O_DIRECTORY'):
+        parent_flags |= os.O_DIRECTORY
+    if hasattr(os, 'O_NOFOLLOW'):
+        parent_flags |= os.O_NOFOLLOW
+    parent_fd = os.open(target.parent, parent_flags)
+    parent_stat = os.fstat(parent_fd)
+    if not stat.S_ISDIR(parent_stat.st_mode):
+        os.close(parent_fd)
+        raise OSError('Write parent is not a directory')
+
+    temp_name = f'.{target.name}.{secrets.token_hex(8)}.tmp'
+    write_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, 'O_NOFOLLOW'):
+        write_flags |= os.O_NOFOLLOW
+    fd = -1
+    try:
+        try:
+            destination_stat = os.stat(
+                target.name,
+                dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            destination_stat = None
+        if destination_stat is not None and not stat.S_ISREG(destination_stat.st_mode):
+            raise OSError('Refusing non-regular write target')
+
+        fd = os.open(temp_name, write_flags, 0o600, dir_fd=parent_fd)
+        remaining = memoryview(payload)
+        while remaining:
+            written = os.write(fd, remaining)
+            if written <= 0:
+                raise OSError('Unable to complete private write')
+            remaining = remaining[written:]
+        os.fsync(fd)
+        os.close(fd)
+        fd = -1
+        os.replace(
+            temp_name,
+            target.name,
+            src_dir_fd=parent_fd,
+            dst_dir_fd=parent_fd,
+        )
+        try:
+            os.chmod(
+                target.name,
+                0o600,
+                dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+        except (NotImplementedError, OSError, ValueError):
+            # The temporary file was already created private. Some mounted or
+            # non-POSIX filesystems do not implement descriptor-relative chmod.
+            pass
+        try:
+            os.fsync(parent_fd)
+        except OSError:
+            pass
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        try:
+            os.unlink(temp_name, dir_fd=parent_fd)
+        except OSError:
+            pass
+        os.close(parent_fd)
+
+
+def _unlink_regular_file(target: Path) -> None:
+    """Unlink one regular file through a pinned, no-follow parent directory."""
+
+    dir_fd_capable = all(
+        function in os.supports_dir_fd for function in (os.open, os.stat, os.unlink)
+    )
+    if not dir_fd_capable:
+        if target.is_symlink() or target.parent.is_symlink() or not target.is_file():
+            raise OSError('Refusing unsafe delete target')
+        target.unlink()
+        return
+
+    parent_flags = os.O_RDONLY
+    if hasattr(os, 'O_DIRECTORY'):
+        parent_flags |= os.O_DIRECTORY
+    if hasattr(os, 'O_NOFOLLOW'):
+        parent_flags |= os.O_NOFOLLOW
+    parent_fd = os.open(target.parent, parent_flags)
+    try:
+        target_stat = os.stat(
+            target.name,
+            dir_fd=parent_fd,
+            follow_symlinks=False,
+        )
+        if not stat.S_ISREG(target_stat.st_mode):
+            raise OSError('Refusing non-regular delete target')
+        os.unlink(target.name, dir_fd=parent_fd)
+        try:
+            os.fsync(parent_fd)
+        except OSError:
+            pass
+    finally:
+        os.close(parent_fd)
+
+
+def _private_directory(path: Path) -> Path:
+    """Create an application-owned directory without accepting a link target."""
+
+    if path.is_symlink():
+        raise RuntimeError('Refusing symbolic-link application data directory')
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if path.is_symlink() or not path.is_dir():
+        raise RuntimeError('Application data directory is not a private directory')
+    try:
+        path.chmod(0o700)
+    except OSError:
+        # Some non-POSIX filesystems do not expose meaningful Unix modes. Link
+        # and confinement checks remain active there.
+        pass
+    return path.resolve()
+
+
+def _upload_limit() -> int:
+    """Return the AgentConfig upload limit under an absolute safety ceiling."""
+
+    try:
+        configured = int(config.max_upload_size)
+    except (TypeError, ValueError):
+        configured = 10 * 1024 * 1024
+    return max(1, min(configured, _MAX_UPLOAD_HARD_LIMIT))
+
+
+def _git_probe_environment() -> dict[str, str]:
+    """Return a secret-free environment for bounded, read-only Git probes."""
+
+    child_env = {
+        key: value
+        for key in ('PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'TMPDIR', 'TEMP', 'TMP')
+        if (value := os.environ.get(key))
+    }
+    child_env.update(
+        {
+            'GIT_CONFIG_NOSYSTEM': '1',
+            'GIT_CONFIG_GLOBAL': os.devnull,
+            'GIT_OPTIONAL_LOCKS': '0',
+            'GIT_TERMINAL_PROMPT': '0',
+            'LC_ALL': 'C',
+        }
+    )
+    return child_env
+
+
+def _loopback_gateway_url(path: str) -> str:
+    """Build the legacy local-gateway URL without permitting an SSRF target."""
+
+    host = str(os.getenv('KG_SERVER_HOST', '127.0.0.1')).strip().lower()
+    if host == 'localhost':
+        host = '127.0.0.1'
+    try:
+        address = ip_address(host)
+    except ValueError as exc:
+        raise ValueError('Knowledge gateway host must be a loopback address') from exc
+    if not address.is_loopback:
+        raise ValueError('Knowledge gateway host must be a loopback address')
+    try:
+        port = int(os.getenv('KG_SERVER_PORT', '8100'))
+    except ValueError as exc:
+        raise ValueError('Knowledge gateway port is invalid') from exc
+    if not 1 <= port <= 65535:
+        raise ValueError('Knowledge gateway port is invalid')
+    if not re.fullmatch(r'/[A-Za-z0-9_./-]{0,1023}', path) or '..' in path:
+        raise ValueError('Knowledge gateway path is invalid')
+    authority = f'[{address}]' if address.version == 6 else str(address)
+    return f'http://{authority}:{port}{path}'
+
+
+def _is_inline_secret_key(key: str) -> bool:
+    """Return whether a config key denotes secret material rather than a ref."""
+
+    normalized = key.lower().replace('-', '_')
+    if normalized.endswith(('_ref', '_reference')):
+        return False
+    return normalized in {
+        'password',
+        'token',
+        'access_token',
+        'auth_token',
+        'bearer_token',
+        'api_token',
+        'api_key',
+        'secret',
+        'secret_key',
+        'client_secret',
+        'credential',
+        'credentials',
+        'private_key',
+        'authorization',
+        'cookie',
+        'session_cookie',
+    } or normalized.endswith(
+        (
+            '_password',
+            '_token',
+            '_access_token',
+            '_api_key',
+            '_secret',
+            '_secret_key',
+            '_credential',
+            '_credentials',
+        )
+    )
+
+
+def _redact_inline_secrets(value: Any, key: str = '') -> Any:
+    """Produce a browser-safe config view without reflecting stored secrets."""
+
+    if _is_inline_secret_key(key) and value not in (None, ''):
+        return ''
+    if isinstance(value, dict):
+        return {str(k): _redact_inline_secrets(v, str(k)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_inline_secrets(item, key) for item in value]
+    return value
+
+
+def _bounded_external_value(
+    value: Any,
+    *,
+    depth: int = 0,
+    budget: list[int] | None = None,
+) -> Any:
+    """Copy an untrusted delegated result under deterministic shape limits."""
+
+    if budget is None:
+        budget = [0]
+    budget[0] += 1
+    if budget[0] > _MAX_EXTERNAL_NODES or depth > _MAX_EXTERNAL_DEPTH:
+        raise ValueError('Delegated result exceeds its structural safety bound')
+
+    if value is None or isinstance(value, (bool, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError('Delegated result contains a non-finite number')
+        return value
+    if isinstance(value, str):
+        encoded = value.encode('utf-8')
+        if len(encoded) > _MAX_EXTERNAL_STRING_BYTES:
+            raise ValueError('Delegated result contains an oversized string')
+        return value
+    if isinstance(value, dict):
+        if len(value) > _MAX_EXTERNAL_COLLECTION_ITEMS:
+            raise ValueError('Delegated result contains an oversized mapping')
+        clean: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str) or len(key.encode('utf-8')) > 128:
+                raise ValueError('Delegated result contains an invalid mapping key')
+            clean[key] = _bounded_external_value(
+                item,
+                depth=depth + 1,
+                budget=budget,
+            )
+        return clean
+    if isinstance(value, (list, tuple, set, frozenset)):
+        if len(value) > _MAX_EXTERNAL_COLLECTION_ITEMS:
+            raise ValueError('Delegated result contains an oversized collection')
+        return [
+            _bounded_external_value(item, depth=depth + 1, budget=budget)
+            for item in value
+        ]
+    raise ValueError('Delegated result contains an unsupported value')
+
+
+def _public_external_result(value: Any) -> Any:
+    """Bound and privacy-sanitize data returned by an external delegation."""
+
+    bounded = _bounded_external_value(value)
+    clean, _privacy_report = sanitize_for_persistence(bounded)
+    encoded = json.dumps(
+        clean,
+        separators=(',', ':'),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode('utf-8')
+    if len(encoded) > _MAX_EXTERNAL_RESULT_BYTES:
+        raise ValueError('Delegated result exceeds its serialized safety bound')
+    return clean
+
+
+def _validate_delegation_call(
+    server_name: str, tool_name: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Validate a governed MCP delegation without interpreting launch config."""
+
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
+        raise ValueError('Invalid delegated server name')
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(tool_name):
+        raise ValueError('Invalid delegated tool name')
+    if not isinstance(arguments, dict):
+        raise ValueError('Delegated arguments must be an object')
+    try:
+        bounded_arguments = _bounded_external_value(arguments)
+        rendered = json.dumps(
+            bounded_arguments,
+            separators=(',', ':'),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError('Delegated arguments must be JSON-compatible') from exc
+    if len(rendered.encode('utf-8')) > _MAX_EXTERNAL_ARGUMENT_BYTES:
+        raise ValueError('Delegated arguments exceed their safety bound')
+    if not isinstance(bounded_arguments, dict):  # defensive type narrowing
+        raise ValueError('Delegated arguments must be an object')
+    return bounded_arguments
+
+
+def _validate_runtime_id(value: str) -> str:
+    """Validate a session/goal identifier before storage or proxy routing."""
+
+    if not isinstance(value, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(value):
+        raise HTTPException(status_code=400, detail='Invalid runtime identifier')
+    return value
+
+
+def _bounded_identifier_list(value: Any, *, required: bool = False) -> list[str]:
+    """Validate a small identifier collection before materializing graph work."""
+
+    if value is None:
+        identifiers: list[Any] = []
+    elif isinstance(value, list):
+        identifiers = value
+    else:
+        raise HTTPException(status_code=400, detail='Identifiers must be a list')
+    if len(identifiers) > _MAX_EXTERNAL_COLLECTION_ITEMS:
+        raise HTTPException(status_code=400, detail='Identifier set exceeds its limit')
+    clean: list[str] = []
+    for item in identifiers:
+        if not isinstance(item, str) or not item or len(item.encode('utf-8')) > 512:
+            raise HTTPException(status_code=400, detail='Invalid identifier')
+        clean.append(item)
+    if required and not clean:
+        raise HTTPException(status_code=422, detail='Identifiers are required')
+    return clean
+
+
+def _validate_read_only_cypher(query: Any) -> str:
+    """Accept one bounded Cypher read while denying mutation/procedure clauses."""
+
+    if not isinstance(query, str) or not query.strip():
+        raise HTTPException(status_code=400, detail='Cypher query is required')
+    if len(query.encode('utf-8')) > _MAX_GRAPH_QUERY_BYTES:
+        raise HTTPException(status_code=400, detail='Cypher query exceeds its limit')
+
+    scrubbed = re.sub(
+        r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|`(?:``|[^`])*`|"
+        r'//[^\n]*(?:\n|$)|/\*.*?\*/',
+        ' ',
+        query,
+        flags=re.DOTALL,
+    )
+    namespace_surface = re.sub(
+        r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|"
+        r'//[^\n]*(?:\n|$)|/\*.*?\*/',
+        ' ',
+        query,
+        flags=re.DOTALL,
+    )
+    mutation = re.search(
+        r'\b(CREATE|MERGE|DELETE|DETACH|SET|REMOVE|DROP|FOREACH|CALL|'
+        r'INSERT|UPDATE|ALTER|GRANT|DENY|REVOKE|TERMINATE|LOAD\s+CSV)\b',
+        scrubbed,
+        flags=re.IGNORECASE,
+    )
+    unsafe_namespace = re.search(
+        r'\b(?:APOC|DB|GDS|ALGO|GENAI)\s*\.',
+        scrubbed,
+        flags=re.IGNORECASE,
+    ) or re.search(
+        r'`?\s*(?:APOC|DB|GDS|ALGO|GENAI)\s*`?\s*\.',
+        namespace_surface,
+        flags=re.IGNORECASE,
+    )
+    supported_start = re.match(
+        r'^\s*(?:EXPLAIN\s+)?'
+        r'(?:OPTIONAL\s+MATCH|MATCH|WITH|UNWIND|RETURN)\b',
+        scrubbed,
+        flags=re.IGNORECASE,
+    )
+    if mutation or unsafe_namespace or not supported_start or ';' in scrubbed:
+        raise HTTPException(status_code=400, detail='Only one read query is allowed')
+    return query
+
+
+def _bounded_query_params(value: Any) -> dict[str, Any]:
+    """Validate Cypher parameters as one small JSON-compatible object."""
+
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=400, detail='Query params must be an object')
+    try:
+        bounded = _bounded_external_value(value)
+        encoded = json.dumps(
+            bounded,
+            separators=(',', ':'),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode('utf-8')
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail='Query params are invalid') from exc
+    if len(encoded) > _MAX_EXTERNAL_ARGUMENT_BYTES or not isinstance(bounded, dict):
+        raise HTTPException(status_code=400, detail='Query params exceed their limit')
+    return bounded
+
+
+def _workspace_ingestion_source(source: Any) -> str:
+    """Confine direct KB ingestion to a relative path in the workspace.
+
+    Network sources need a separately governed fetch connector so redirects,
+    DNS changes, address ranges, response size, and credentials can be checked
+    at the transport boundary. This WebUI route deliberately does not fetch
+    caller-selected URLs itself.
+    """
+
+    if not isinstance(source, str) or not source.strip():
+        raise HTTPException(status_code=400, detail='KB source is required')
+    candidate = source.strip()
+    if len(candidate.encode('utf-8')) > 2048:
+        raise HTTPException(status_code=400, detail='KB source exceeds its limit')
+    parsed = urlsplit(candidate)
+    if parsed.scheme or parsed.netloc:
+        raise HTTPException(
+            status_code=400,
+            detail='Remote KB sources require a governed ingestion connector',
+        )
+    target = resolve_workspace_file(candidate)
+    if target.exists() and target.is_dir():
+        entries_seen = 0
+        for root, dirs, files in os.walk(target, followlinks=False):
+            for name in [*dirs, *files]:
+                entries_seen += 1
+                if entries_seen > _MAX_LIST_FILES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail='KB source tree exceeds its file limit',
+                    )
+                if (Path(root) / name).is_symlink():
+                    raise HTTPException(
+                        status_code=400,
+                        detail='KB source tree cannot contain symbolic links',
+                    )
+    elif target.exists() and not target.is_file():
+        raise HTTPException(status_code=400, detail='KB source type is unsupported')
+    return str(target)
+
+
+# Application-owned state never falls back to the process current directory.
+_WEBUI_DATA_DIR = _private_directory(data_dir() / 'webui')
+DEFAULT_AGENT_DIR = _private_directory(_WEBUI_DATA_DIR / 'workspace')
 
 # Global registry for operational helpers (set during agent initialization)
 workspace_helpers: dict[str, Any] = {}
@@ -42,12 +728,72 @@ def get_helper(name: str, fallback: Any = None) -> Any:
     """
     helper = workspace_helpers.get(name)
     if not helper:
-        logger.warning(
-            f"Helper '{name}' not found in workspace_helpers. "
-            f'Available: {list(workspace_helpers.keys())}'
-        )
+        logger.warning('Requested workspace helper was not found')
         return fallback
     return helper
+
+
+async def _invoke_governed_helper(
+    helper: Any,
+    /,
+    *args: Any,
+    deadline: float,
+    **kwargs: Any,
+) -> Any:
+    """Invoke an adapter under one end-to-end deadline and fixed thread budget."""
+
+    import asyncio
+
+    bounded_timeout = max(0.1, min(float(deadline), 120.0))
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    try:
+        if inspect.iscoroutinefunction(helper):
+            return await asyncio.wait_for(
+                helper(*args, **kwargs), timeout=bounded_timeout
+            )
+
+        try:
+            concurrent_future = _SYNC_WORK_EXECUTOR.submit(helper, *args, **kwargs)
+        except SyncWorkCapacityError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail='Synchronous backend capacity is exhausted',
+            ) from exc
+
+        try:
+            result = await asyncio.wait_for(
+                asyncio.wrap_future(concurrent_future),
+                timeout=bounded_timeout,
+            )
+        except TimeoutError as exc:
+            _SYNC_WORK_EXECUTOR.mark_timed_out(concurrent_future)
+            # This succeeds only while work is still queued. Running Python
+            # calls cannot be killed safely and retain their charged slot.
+            concurrent_future.cancel()
+            raise HTTPException(
+                status_code=503,
+                detail='Synchronous backend deadline exceeded',
+            ) from exc
+
+        if not inspect.isawaitable(result):
+            return result
+        remaining = bounded_timeout - (loop.time() - started)
+        if remaining <= 0:
+            if hasattr(result, 'close'):
+                result.close()
+            raise HTTPException(
+                status_code=503,
+                detail='Backend deadline exceeded',
+            )
+        return await asyncio.wait_for(result, timeout=remaining)
+    except HTTPException:
+        raise
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=503, detail='Backend deadline exceeded'
+        ) from exc
 
 
 def set_workspace_helpers(helpers: dict[str, Any]) -> None:
@@ -57,7 +803,7 @@ def set_workspace_helpers(helpers: dict[str, Any]) -> None:
         helpers: Mapping of helper names to implementation functions.
     """
     global workspace_helpers
-    logger.info(f'Setting workspace helpers. Keys: {list(helpers.keys())}')
+    logger.info('Setting workspace helpers: helper_count=%d', len(helpers))
     workspace_helpers = helpers
 
 
@@ -97,12 +843,18 @@ def get_engine() -> IntelligenceGraphEngine:
                 'Successfully auto-initialized IntelligenceGraphEngine with LadybugDB backend.'
             )
         except Exception as e:
-            logger.error(f'Failed to auto-initialize IntelligenceGraphEngine: {e}')
+            _log_failure('api_extension', e)
             raise HTTPException(
                 status_code=501,
-                detail=f'Intelligence Graph Engine not initialized: {e}',
+                detail='Intelligence Graph Engine not initialized',
             )
     return engine
+
+
+async def _get_engine_bounded() -> IntelligenceGraphEngine:
+    """Resolve or initialize the active engine under the shared sync budget."""
+
+    return await _invoke_governed_helper(get_engine, deadline=10.0)
 
 
 @router.get('/info')
@@ -115,11 +867,17 @@ async def get_info() -> dict[str, str]:
         A dictionary containing agent name, description, and emojis.
     """
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise
+        engine = None
     except Exception:
         engine = None
     if engine:
-        identity = engine.get_agent_identity()
+        identity = await _invoke_governed_helper(
+            engine.get_agent_identity, deadline=5.0
+        )
         return {
             'name': identity.get('name', 'Agent'),
             'description': identity.get('description', 'AI Agent'),
@@ -141,6 +899,8 @@ async def get_info() -> dict[str, str]:
 
 
 def get_workspace_dir() -> Path:
+    """Resolve the explicit workspace or an application-owned XDG fallback."""
+
     get_path_helper = get_helper('get_workspace_path')
     if get_path_helper:
         try:
@@ -152,10 +912,166 @@ def get_workspace_dir() -> Path:
 
         data = load_workspace_yml()
         if data and 'path' in data:
-            return Path(data['path'])
+            return Path(data['path']).expanduser().resolve()
     except Exception:
         pass
-    return Path('/home/apps/workspace')
+    configured = config.workspace_path or os.getenv('AGENT_WORKSPACE')
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return DEFAULT_AGENT_DIR
+
+
+def get_agent_packages_dir() -> Path:
+    """Resolve the ecosystem package root without a machine-specific path."""
+
+    configured = os.getenv('AGENT_PACKAGES_ROOT')
+    if configured:
+        return Path(configured).expanduser().resolve()
+    source_checkout = Path(__file__).resolve().parents[3]
+    if source_checkout.name == 'agent-packages':
+        return source_checkout
+    return get_workspace_dir() / 'agent-packages'
+
+
+def get_agent_utilities_dir() -> Path:
+    """Resolve the installed agent-utilities package directory."""
+
+    import agent_utilities
+
+    return Path(agent_utilities.__file__).resolve().parent
+
+
+def get_skills_packages_dir() -> Path:
+    configured = os.getenv('AGENT_SKILLS_ROOT')
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return get_agent_packages_dir() / 'skills'
+
+
+def get_prompts_dir() -> Path:
+    configured = os.getenv('AGENT_PROMPTS_ROOT')
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return get_agent_utilities_dir() / 'prompts'
+
+
+def _read_bounded_bytes(path: Path, *, limit: int) -> bytes:
+    """Read a regular file through a no-follow descriptor under a hard cap."""
+
+    safe_limit = max(1, min(int(limit), _MAX_UPLOAD_HARD_LIMIT))
+    flags = os.O_RDONLY
+    if hasattr(os, 'O_NOFOLLOW'):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError('Configuration source must be a regular file') from exc
+    try:
+        file_stat = os.fstat(fd)
+        if not stat.S_ISREG(file_stat.st_mode):
+            raise ValueError('Source must be a regular file')
+        if file_stat.st_size > safe_limit:
+            raise ValueError('Source exceeds its safety bound')
+        payload = bytearray()
+        while chunk := os.read(fd, 64 * 1024):
+            payload.extend(chunk)
+            if len(payload) > safe_limit:
+                raise ValueError('Source exceeds its safety bound')
+    finally:
+        os.close(fd)
+    return bytes(payload)
+
+
+def _read_bounded_text(path: Path, *, limit: int) -> str:
+    """Read strict UTF-8 text through the bounded regular-file helper."""
+
+    return _read_bounded_bytes(path, limit=limit).decode('utf-8')
+
+
+def _read_bounded_json(path: Path) -> Any:
+    """Read a small JSON document without following a file link."""
+
+    return json.loads(_read_bounded_bytes(path, limit=_MAX_EXTERNAL_RESULT_BYTES))
+
+
+def _mcp_inventory_path() -> Path | None:
+    """Locate a registry for read-only inventory; never interpret commands."""
+
+    candidates = (
+        config_dir() / 'mcp_config.json',
+        config_dir() / 'config.json',
+        get_workspace_dir() / 'mcp_config.json',
+    )
+    return next(
+        (path for path in candidates if path.is_file() and not path.is_symlink()), None
+    )
+
+
+def resolve_prompt_file(name: str) -> Path:
+    """Resolve one prompt name inside the configured prompt directory."""
+
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', name):
+        raise HTTPException(status_code=400, detail='Invalid prompt name')
+    base = get_prompts_dir().resolve()
+    target = (base / f'{name}.json').resolve()
+    try:
+        target.relative_to(base)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail='Invalid prompt name') from exc
+    return target
+
+
+def resolve_workspace_file(
+    relative_path: str, *, allow_workspace_root: bool = False
+) -> Path:
+    """Resolve an untrusted relative path inside the configured workspace.
+
+    ``Path.resolve`` closes both ``..`` traversal and symlink escapes. Absolute
+    paths and the workspace root itself are rejected before a caller performs
+    any read or write.
+    """
+    if not relative_path or '\x00' in relative_path:
+        raise HTTPException(status_code=400, detail='Invalid workspace path')
+    if '\\' in relative_path:
+        raise HTTPException(status_code=400, detail='Path traversal not allowed')
+    supplied = Path(relative_path)
+    if supplied.is_absolute() or '..' in supplied.parts:
+        raise HTTPException(status_code=400, detail='Path traversal not allowed')
+
+    base = get_workspace_dir().resolve()
+    lexical_target = base / supplied
+    cursor = base
+    for part in supplied.parts:
+        cursor /= part
+        if cursor.is_symlink():
+            raise HTTPException(
+                status_code=400, detail='Symbolic links are not allowed'
+            )
+    target = lexical_target.resolve()
+    try:
+        target.relative_to(base)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail='Path traversal not allowed'
+        ) from exc
+    if target == base and not allow_workspace_root:
+        raise HTTPException(status_code=400, detail='Workspace root is not a file')
+    return target
+
+
+def _confine_stored_workspace_path(value: Any) -> Path:
+    """Revalidate a persisted KB source path against the current workspace."""
+
+    if not isinstance(value, str) or not value.strip() or '\x00' in value:
+        raise HTTPException(status_code=400, detail='Invalid stored KB source')
+    base = get_workspace_dir().resolve()
+    supplied = Path(value).expanduser()
+    target = (supplied if supplied.is_absolute() else base / supplied).resolve()
+    try:
+        relative = target.relative_to(base)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail='Stored KB source escaped') from exc
+    return resolve_workspace_file(relative.as_posix())
 
 
 @router.get('/files')
@@ -164,12 +1080,28 @@ async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
 
     Excludes .git, node_modules, .venv, venv, and other build/binary directories.
     """
+    import itertools
     import os
+
+    limit = max(1, min(limit, _MAX_LIST_FILES))
 
     # 1. Check if a detailed listing helper is registered
     detailed_helper = get_helper('list_workspace_files_detailed')
     if detailed_helper:
-        return detailed_helper()
+        safe_records = []
+        for record in itertools.islice(detailed_helper() or (), limit):
+            if not isinstance(record, dict):
+                continue
+            safe_record = {
+                key: value
+                for key, value in record.items()
+                if key not in {'absolute_path', 'local_path', 'workspace_path'}
+            }
+            name = safe_record.get('name')
+            if isinstance(name, str) and Path(name).is_absolute():
+                safe_record['name'] = Path(name).name
+            safe_records.append(safe_record)
+        return safe_records
 
     results: list[dict[str, Any]] = []
     allowed_suffixes = (
@@ -228,7 +1160,6 @@ async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
                                         st.st_mtime, tz=timezone.utc
                                     ).isoformat(),
                                     'is_dir': True,
-                                    'absolute_path': str(dir_path),
                                 }
                             )
                         except Exception:
@@ -250,7 +1181,6 @@ async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
                                             st.st_mtime, tz=timezone.utc
                                         ).isoformat(),
                                         'is_dir': False,
-                                        'absolute_path': str(path),
                                     }
                                 )
                             except Exception:
@@ -259,7 +1189,7 @@ async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
                         break
                 return results
         except Exception as e:
-            logger.error(f'Failed to scan via get_workspace_path: {e}')
+            _log_failure('scan_workspace_files', e)
 
     # 3. Main path: Scan loaded workspace repositories from config
     try:
@@ -270,7 +1200,7 @@ async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
 
         data = load_workspace_yml()
         if data:
-            base_path = Path(data.get('path', '/home/apps/workspace'))
+            base_path = Path(data.get('path') or get_workspace_dir())
             repos = _extract_repositories(data, base_path)
             for repo_path, _ in repos:
                 if len(results) >= limit:
@@ -296,7 +1226,6 @@ async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
                                             st.st_mtime, tz=timezone.utc
                                         ).isoformat(),
                                         'is_dir': True,
-                                        'absolute_path': str(dir_path),
                                     }
                                 )
                             except Exception:
@@ -318,7 +1247,6 @@ async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
                                                 st.st_mtime, tz=timezone.utc
                                             ).isoformat(),
                                             'is_dir': False,
-                                            'absolute_path': str(path),
                                         }
                                     )
                                 except Exception:
@@ -326,8 +1254,7 @@ async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
                         if len(results) >= limit:
                             break
     except Exception as e:
-        logger.error(f'Failed to scan workspace files via workspace_config: {e}')
-
+        _log_failure('api_extension', e)
     # 4. Fallback scan if no files found
     if not results:
         base = get_workspace_dir()
@@ -349,7 +1276,6 @@ async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
                                     st.st_mtime, tz=timezone.utc
                                 ).isoformat(),
                                 'is_dir': True,
-                                'absolute_path': str(dir_path),
                             }
                         )
                     except Exception:
@@ -370,7 +1296,6 @@ async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
                                         st.st_mtime, tz=timezone.utc
                                     ).isoformat(),
                                     'is_dir': False,
-                                    'absolute_path': str(path),
                                 }
                             )
                         except Exception:
@@ -378,21 +1303,22 @@ async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
                 if len(results) >= limit:
                     break
         except Exception as e:
-            logger.error(f'Fallback scan failed: {e}')
-
+            _log_failure('api_extension', e)
     return results
 
 
 @router.get('/files/{filename:path}')
 async def get_file(filename: str) -> dict[str, str]:
     """Retrieve the content of a specific workspace file."""
-    base = get_workspace_dir().resolve()
-    target = (base / filename).resolve()
-    if base not in target.parents and target != base:
-        raise HTTPException(status_code=400, detail='Path traversal not allowed')
-    if not target.exists():
+    target = resolve_workspace_file(filename)
+    if not target.exists() or not target.is_file():
         raise HTTPException(status_code=404, detail='File not found')
-    content = target.read_text(encoding='utf-8')
+    try:
+        content = _read_bounded_text(target, limit=_upload_limit())
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400, detail='File cannot be read safely'
+        ) from exc
     return {'content': content}
 
 
@@ -401,12 +1327,24 @@ async def update_file(filename: str, data: dict[str, str]) -> dict[str, str]:
     """Create or update a file in the workspace."""
     if not filename.endswith('.md') and not filename.endswith('.json'):
         raise HTTPException(status_code=400, detail='Only .md and .json files allowed')
-    base = get_workspace_dir().resolve()
-    target = (base / filename).resolve()
-    if base not in target.parents and target != base:
-        raise HTTPException(status_code=400, detail='Path traversal not allowed')
+    content = data.get('content', '')
+    if not isinstance(content, str):
+        raise HTTPException(status_code=400, detail='File content must be text')
+    payload = content.encode('utf-8')
+    if len(payload) > _upload_limit():
+        raise HTTPException(status_code=400, detail='File exceeds the write limit')
+    _safe_content, privacy_report = sanitize_for_persistence(content)
+    if privacy_report.changed:
+        raise HTTPException(
+            status_code=400,
+            detail='File content violates the persistence privacy boundary',
+        )
+    target = resolve_workspace_file(filename)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(data.get('content', ''), encoding='utf-8')
+    # Re-resolve after creating parents to detect a concurrent link insertion.
+    if resolve_workspace_file(filename) != target:
+        raise HTTPException(status_code=409, detail='Workspace path changed')
+    _atomic_private_write(target, payload)
     return {'status': 'success'}
 
 
@@ -417,21 +1355,19 @@ async def delete_workspace_file(filename: str) -> dict[str, Any]:
     if not get_path_helper:
         return {'status': 'error', 'detail': 'workspace helper is not configured'}
 
-    base = get_workspace_dir().resolve()
-    target = (base / filename).resolve()
-    if base not in target.parents and target != base:
+    try:
+        target = resolve_workspace_file(filename)
+    except HTTPException:
         return {'status': 'error', 'detail': 'path outside workspace'}
-    if target == base:
-        return {'status': 'error', 'detail': 'refusing to delete workspace root'}
     if not target.exists():
         return {'status': 'error', 'detail': 'not found'}
     if target.is_dir():
         return {'status': 'error', 'detail': 'refusing to delete directory'}
     try:
-        target.unlink()
+        _unlink_regular_file(target)
     except OSError as e:
-        logger.error(f'Failed to delete workspace file {filename}: {e}')
-        return {'status': 'error', 'detail': str(e)}
+        _log_failure('delete_workspace_file', e)
+        return {'status': 'error', 'detail': type(e).__name__}
     return {'status': 'ok', 'deleted': filename}
 
 
@@ -456,17 +1392,21 @@ async def list_config_files() -> list[str]:
 async def list_agents() -> list[dict[str, Any]]:
     """List all agents registered in the Knowledge Graph."""
     try:
-        engine = get_engine()
-        query = 'MATCH (a:Agent) RETURN a'
-        result = engine.backend.execute(query)
+        engine = await _get_engine_bounded()
+        query = f'MATCH (a:Agent) RETURN a LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+        result = await _invoke_governed_helper(
+            engine.backend.execute, query, deadline=10.0
+        )
         agents = []
         for row in result:
             agent_data = row.get('a', {})
             if isinstance(agent_data, dict):
                 agents.append(agent_data)
         return agents
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to list agents: {e}')
+        _log_failure('api_extension', e)
         return []
 
 
@@ -477,7 +1417,7 @@ def _parse_skill_md(path: Path) -> dict[str, Any]:
     import yaml
 
     try:
-        content = path.read_text(encoding='utf-8', errors='ignore')
+        content = _read_bounded_text(path, limit=256 * 1024)
         match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
         metadata: dict[str, Any] = {}
         if match:
@@ -505,10 +1445,10 @@ def _parse_skill_md(path: Path) -> dict[str, Any]:
             'domain': domain,
             'tags': tags,
             'enabled': True,
-            'file_path': str(path),
+            'file_path': f'skill://{name}',
         }
     except Exception as e:
-        logger.error(f'Failed to parse SKILL.md at {path}: {e}')
+        _log_failure('parse_skill_metadata', e)
         return {
             'id': path.parent.name,
             'name': path.parent.name,
@@ -516,27 +1456,35 @@ def _parse_skill_md(path: Path) -> dict[str, Any]:
             'domain': '',
             'tags': [],
             'enabled': True,
-            'file_path': str(path),
+            'file_path': f'skill://{path.parent.name}',
         }
 
 
-def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
+async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
     """Check if an item is enabled or disabled in the KG."""
     if not engine:
         return True
     pref_id = f'preference:toggle:{item_type}:{item_id}'
     try:
-        res = engine.query_cypher(
-            f"MATCH (p:Preference) WHERE p.id = '{pref_id}' RETURN p.value as value"
+        res = await _invoke_governed_helper(
+            engine.query_cypher,
+            'MATCH (p:Preference) WHERE p.id = $pref_id RETURN p.value as value',
+            {'pref_id': pref_id},
+            deadline=5.0,
         )
         if res and len(res) > 0:
             return res[0]['value'] == 'enabled'
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to query toggle state for {pref_id}: {e}')
-    return True  # Enabled by default
+        _log_failure('query_toggle_state', e)
+        raise HTTPException(status_code=500, detail='Unable to read toggle') from e
+    return True  # Enabled by default only when the preference does not exist.
 
 
-def set_toggle_state(engine: Any, item_type: str, item_id: str, enabled: bool):
+async def set_toggle_state(
+    engine: Any, item_type: str, item_id: str, enabled: bool
+) -> None:
     """Set the toggle state of an item in the KG."""
     if not engine:
         return
@@ -544,7 +1492,8 @@ def set_toggle_state(engine: Any, item_type: str, item_id: str, enabled: bool):
     try:
         from datetime import datetime
 
-        engine.add_node(
+        await _invoke_governed_helper(
+            engine.add_node,
             pref_id,
             'Preference',
             {
@@ -553,31 +1502,33 @@ def set_toggle_state(engine: Any, item_type: str, item_id: str, enabled: bool):
                 'timestamp': datetime.now().isoformat(),
                 'is_permanent': True,
             },
+            deadline=10.0,
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to save toggle state for {pref_id}: {e}')
+        _log_failure('save_toggle_state', e)
+        raise HTTPException(status_code=500, detail='Unable to persist toggle') from e
 
 
 @router.get('/tools')
 async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
     """Retrieve all MCP tools, built-in tools, skills, skill graphs, and workflows categorized."""
-    import json
-
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise
+        engine = None
     except Exception:
         engine = None
 
     # 1. MCP Tools
     mcp_tools = []
-    config_path = Path.home() / '.config' / 'agent-utilities' / 'mcp_config.json'
-    if not config_path.exists():
-        config_path = Path.home() / '.config' / 'agent-utilities' / 'config.json'
-    if not config_path.exists():
-        config_path = get_workspace_dir() / 'mcp_config.json'
-    if config_path.exists():
+    config_path = _mcp_inventory_path()
+    if config_path is not None:
         try:
-            mcp_data = json.loads(config_path.read_text(encoding='utf-8'))
+            mcp_data = _read_bounded_json(config_path)
             mcp_servers = mcp_data.get('mcpServers', {})
             if (
                 not mcp_servers
@@ -585,8 +1536,12 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
                 and isinstance(mcp_data['mcp_config'], dict)
             ):
                 mcp_servers = mcp_data['mcp_config'].get('mcpServers', {})
-            for name, cfg in mcp_servers.items():
-                mcp_enabled = get_toggle_state(engine, 'mcp_server', name)
+            for name, cfg in list(mcp_servers.items())[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+                if not isinstance(name, str) or not isinstance(cfg, dict):
+                    continue
+                if not _SAFE_DELEGATION_TOKEN.fullmatch(name):
+                    continue
+                mcp_enabled = await get_toggle_state(engine, 'mcp_server', name)
                 # If configured as disabled in json, keep it disabled
                 if cfg.get('disabled', False):
                     mcp_enabled = False
@@ -594,30 +1549,27 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
                     {
                         'name': name,
                         'type': 'MCP Server',
-                        'command': cfg.get('command', ''),
-                        'args': cfg.get('args', []),
                         'status': 'active' if mcp_enabled else 'disabled',
                         'enabled': mcp_enabled,
                     }
                 )
         except Exception as e:
-            logger.error(f'Failed to parse mcp config: {e}')
-
+            _log_failure('api_extension', e)
     # 2. Built-in Agent Tools
     builtin_tools = []
-    tools_dir = Path(
-        '/home/apps/workspace/agent-packages/agent-utilities/agent_utilities/tools'
-    )
+    tools_dir = get_agent_utilities_dir() / 'tools'
     if tools_dir.exists() and tools_dir.is_dir():
-        for f in tools_dir.glob('*.py'):
+        for index, f in enumerate(tools_dir.glob('*.py')):
+            if index >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                break
             if f.name.startswith('_'):
                 continue
-            builtin_enabled = get_toggle_state(engine, 'builtin_tool', f.stem)
+            builtin_enabled = await get_toggle_state(engine, 'builtin_tool', f.stem)
             builtin_tools.append(
                 {
                     'name': f.stem,
                     'type': 'Built-in Tool',
-                    'file_path': str(f),
+                    'file_path': f'builtin://{f.stem}',
                     'status': 'enabled' if builtin_enabled else 'disabled',
                     'enabled': builtin_enabled,
                 }
@@ -626,98 +1578,89 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
     # 3. Skills & Workflows from installed packages
     skills = []
     workflows = []
-    univ_skills_dir = Path(
-        '/home/apps/workspace/agent-packages/skills/universal-skills/universal_skills'
+    univ_skills_dir = (
+        get_skills_packages_dir() / 'universal-skills' / 'universal_skills'
     )
     if univ_skills_dir.exists():
-        for p in univ_skills_dir.glob('**/SKILL.md'):
+        for index, p in enumerate(univ_skills_dir.glob('**/SKILL.md')):
+            if index >= _MAX_LIST_FILES:
+                break
             skill_info = _parse_skill_md(p)
             if 'workflows' in p.parts:
+                if len(workflows) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                    continue
                 skill_info['type'] = 'Skill Workflow'
-                skill_info['enabled'] = get_toggle_state(
+                skill_info['enabled'] = await get_toggle_state(
                     engine, 'skill_workflow', skill_info['id']
                 )
                 workflows.append(skill_info)
             else:
+                if len(skills) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                    continue
                 skill_info['type'] = 'Agent Skill'
-                skill_info['enabled'] = get_toggle_state(
+                skill_info['enabled'] = await get_toggle_state(
                     engine, 'skill', skill_info['id']
                 )
                 skills.append(skill_info)
 
     # 4. Skill Graphs
     graphs = []
-    graphs_dir = Path(
-        '/home/apps/workspace/agent-packages/skills/skill-graphs/skill_graphs'
-    )
+    graphs_dir = get_skills_packages_dir() / 'skill-graphs' / 'skill_graphs'
     if graphs_dir.exists():
-        for p in graphs_dir.glob('**/SKILL.md'):
+        for index, p in enumerate(graphs_dir.glob('**/SKILL.md')):
+            if index >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                break
             skill_info = _parse_skill_md(p)
             skill_info['type'] = 'Skill Graph'
-            skill_info['enabled'] = get_toggle_state(
+            skill_info['enabled'] = await get_toggle_state(
                 engine, 'skill_graph', skill_info['id']
             )
             graphs.append(skill_info)
 
-    return {
+    result = {
         'mcp_tools': mcp_tools,
         'builtin_tools': builtin_tools,
         'skills': sorted(skills, key=lambda x: x.get('name', '').lower()),
         'skill_graphs': sorted(graphs, key=lambda x: x.get('name', '').lower()),
         'skill_workflows': sorted(workflows, key=lambda x: x.get('name', '').lower()),
     }
+    bounded = _public_external_result(result)
+    return bounded if isinstance(bounded, dict) else {}
 
 
 @router.get('/mcp/servers/{server_name}/tools')
 async def list_mcp_server_tools(server_name: str) -> list[dict[str, Any]]:
-    """Query available tools of a registered MCP server by spawning it via stdio."""
-    import json
+    """Query tools through a host-injected, governed GraphOS delegation seam."""
 
-    engine = get_engine()
-
-    # 1. Locate server config in mcp_config.json
-    config_path = Path.home() / '.config' / 'agent-utilities' / 'mcp_config.json'
-    if not config_path.exists():
-        config_path = Path.home() / '.config' / 'agent-utilities' / 'config.json'
-    if not config_path.exists():
-        config_path = get_workspace_dir() / 'mcp_config.json'
-
-    if not config_path.exists():
-        raise HTTPException(status_code=404, detail='mcp_config.json not found')
+    engine = await _get_engine_bounded()
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
+        raise HTTPException(status_code=400, detail='Invalid MCP server name')
+    delegated_inventory = get_helper('list_mcp_server_tools')
+    if delegated_inventory is None:
+        raise HTTPException(
+            status_code=501,
+            detail='Governed MCP inventory delegation is not configured',
+        )
 
     try:
-        mcp_data = json.loads(config_path.read_text(encoding='utf-8'))
-        mcp_servers = mcp_data.get('mcpServers', {})
-        if (
-            not mcp_servers
-            and 'mcp_config' in mcp_data
-            and isinstance(mcp_data['mcp_config'], dict)
-        ):
-            mcp_servers = mcp_data['mcp_config'].get('mcpServers', {})
-
-        if server_name not in mcp_servers:
-            raise HTTPException(
-                status_code=404, detail=f'Server {server_name} not found in config'
-            )
-
-        cfg = mcp_servers[server_name]
-
-        # Build normalized server dict for engine's discover_mcp_tools method
-        server_config = {
-            'name': server_name,
-            'command': cfg.get('command', ''),
-            'args': cfg.get('args', []),
-            'env': cfg.get('env', {}),
-        }
-
-        # Live-discover the tools!
-        tools = await engine.discover_mcp_tools(server_config, timeout=15.0)
+        tools = await _invoke_governed_helper(
+            delegated_inventory,
+            deadline=15.0,
+            server_name=server_name,
+        )
+        tools = _public_external_result(tools)
+        if not isinstance(tools, list):
+            raise ValueError('Governed MCP inventory returned an invalid shape')
 
         # Map each discovered tool to include its toggled enable status
         enriched_tools = []
-        for t in tools:
-            tool_name = t['name']
-            tool_enabled = get_toggle_state(
+        for t in tools[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+            if not isinstance(t, dict):
+                continue
+            tool_name = str(t.get('name') or '')
+            if not _SAFE_DELEGATION_TOKEN.fullmatch(tool_name):
+                continue
+            tool_enabled = await get_toggle_state(
                 engine, 'mcp_tool', f'{server_name}:{tool_name}'
             )
             enriched_tools.append(
@@ -733,8 +1676,8 @@ async def list_mcp_server_tools(server_name: str) -> list[dict[str, Any]]:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f'Failed to query MCP tools for {server_name}: {e}')
-        raise HTTPException(status_code=500, detail=str(e))
+        _log_failure('mcp_inventory_delegation', e)
+        raise HTTPException(status_code=503, detail='MCP inventory unavailable')
 
 
 @router.post('/tools/toggle')
@@ -744,13 +1687,17 @@ async def toggle_tool_status(data: dict[str, Any]) -> dict[str, Any]:
     item_id = data.get('id')
     enabled = data.get('enabled', True)
 
-    if not item_type or not item_id:
-        raise HTTPException(
-            status_code=400, detail="Missing 'type' or 'id' in request body"
-        )
+    if (
+        not isinstance(item_type, str)
+        or not _SAFE_DELEGATION_TOKEN.fullmatch(item_type)
+        or not isinstance(item_id, str)
+        or not _SAFE_DELEGATION_TOKEN.fullmatch(item_id)
+        or not isinstance(enabled, bool)
+    ):
+        raise HTTPException(status_code=400, detail='Invalid toggle request')
 
-    engine = get_engine()
-    set_toggle_state(engine, item_type, item_id, enabled)
+    engine = await _get_engine_bounded()
+    await set_toggle_state(engine, item_type, item_id, enabled)
     return {'status': 'success', 'type': item_type, 'id': item_id, 'enabled': enabled}
 
 
@@ -767,30 +1714,51 @@ async def list_skills() -> list[dict[str, Any]]:
     import sys
 
     is_testing = 'pytest' in sys.modules or 'unittest' in sys.modules
-    univ_skills_dir = Path(
-        '/home/apps/workspace/agent-packages/skills/universal-skills/universal_skills'
+    univ_skills_dir = (
+        get_skills_packages_dir() / 'universal-skills' / 'universal_skills'
     )
     if not is_testing and univ_skills_dir.exists():
-        for p in univ_skills_dir.glob('**/SKILL.md'):
+        for index, p in enumerate(univ_skills_dir.glob('**/SKILL.md')):
+            if (
+                index >= _MAX_LIST_FILES
+                or len(skills) >= _MAX_EXTERNAL_COLLECTION_ITEMS
+            ):
+                break
             if 'workflows' not in p.parts:
                 skill_info = _parse_skill_md(p)
                 skill_info['type'] = 'Agent Skill'
                 skills.append(skill_info)
     if not skills:
         try:
-            engine = get_engine()
+            engine = await _get_engine_bounded()
+        except HTTPException:
+            raise
         except Exception:
             engine = None
         if engine:
-            return engine.get_skills()
-        list_skills_helper = get_helper('list_skills')
-        if list_skills_helper:
-            skills = list_skills_helper()
-        else:
-            raise HTTPException(
-                status_code=501, detail='Intelligence Graph Engine not initialized'
+            skills_result = await _invoke_governed_helper(
+                engine.get_skills,
+                deadline=10.0,
             )
-    return sorted(skills, key=lambda x: x.get('name', '').lower())
+            skills = list(skills_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        if not skills:
+            list_skills_helper = get_helper('list_skills')
+            if list_skills_helper:
+                skills_result = await _invoke_governed_helper(
+                    list_skills_helper,
+                    deadline=10.0,
+                )
+                skills = list(skills_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+            else:
+                raise HTTPException(
+                    status_code=501, detail='Intelligence Graph Engine not initialized'
+                )
+    bounded = _public_external_result(
+        sorted(skills, key=lambda x: x.get('name', '').lower())[
+            :_MAX_EXTERNAL_COLLECTION_ITEMS
+        ]
+    )
+    return bounded if isinstance(bounded, list) else []
 
 
 @router.post('/skills/{skill_id}/toggle')
@@ -805,21 +1773,29 @@ async def toggle_skill(skill_id: str) -> dict[str, Any]:
     Returns:
         The resulting state of the toggled skill.
     """
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(skill_id):
+        raise HTTPException(status_code=400, detail='Invalid skill identifier')
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
+    except HTTPException:
+        raise
     except Exception:
         engine = None
     if engine:
         # Check current toggle status
-        current = get_toggle_state(engine, 'skill', skill_id)
+        current = await get_toggle_state(engine, 'skill', skill_id)
         target = not current
-        set_toggle_state(engine, 'skill', skill_id, target)
+        await set_toggle_state(engine, 'skill', skill_id, target)
         return {'status': 'success', 'enabled': target}
 
     toggle_helper = get_helper('toggle_skill')
     if not toggle_helper:
         return {'status': 'disabled', 'detail': 'Skill helper not initialized'}
-    return toggle_helper(skill_id)
+    return await _invoke_governed_helper(
+        toggle_helper,
+        skill_id,
+        deadline=10.0,
+    )
 
 
 @router.post('/reload')
@@ -836,11 +1812,16 @@ async def reload_agent(request: Request) -> dict[str, Any]:
     """
     try:
         try:
-            engine = get_engine()
+            engine = await _get_engine_bounded()
+        except HTTPException:
+            raise
         except Exception:
             engine = None
         if engine:
-            changes = engine.reload_from_workspace()
+            changes = await _invoke_governed_helper(
+                engine.reload_from_workspace,
+                deadline=30.0,
+            )
             return {
                 'status': 'success',
                 'message': 'Agent reloaded via Knowledge Graph',
@@ -848,17 +1829,22 @@ async def reload_agent(request: Request) -> dict[str, Any]:
             }
 
         # Legacy fallback
-        workspace_helpers['initialize_workspace']()
+        await _invoke_governed_helper(
+            workspace_helpers['initialize_workspace'],
+            deadline=30.0,
+        )
         reloadable = getattr(request.app.state, 'reload_app', None)
         if not reloadable:
             raise HTTPException(
                 status_code=501, detail='Reloadable wrapper not found in app state'
             )
-        reloadable.reload()
+        await _invoke_governed_helper(reloadable.reload, deadline=30.0)
         return {'status': 'success', 'message': 'Agent reloaded successfully'}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Reload failed: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('reload', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 def parse_cron_table(content: str) -> list[dict[str, Any]]:
@@ -912,6 +1898,7 @@ def parse_cron_logs(content: str) -> list[dict[str, Any]]:
 
                 body = part.split('\n\n', 1)[1] if '\n\n' in part else ''
                 output = body.split('\n---')[0].strip()
+                safe_output, _privacy_report = sanitize_for_persistence(output)
 
                 logs.append(
                     {
@@ -919,12 +1906,11 @@ def parse_cron_logs(content: str) -> list[dict[str, Any]]:
                         'task_id': tid,
                         'task_name': name,
                         'status': 'success',
-                        'output': output,
+                        'output': safe_output,
                     }
                 )
         except Exception as e:
-            logger.debug(f'Error parsing log entry: {e}')
-
+            _log_failure('api_extension', e, level=logging.DEBUG)
     return logs[::-1]
 
 
@@ -936,7 +1922,7 @@ async def get_cron_calendar() -> list[dict[str, Any]]:
 
         registry = get_cron_tasks()
         results = []
-        for t in registry.tasks:
+        for t in list(registry.tasks or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
             results.append(
                 {
                     'id': t.id,
@@ -947,9 +1933,10 @@ async def get_cron_calendar() -> list[dict[str, Any]]:
                     'status': 'idle',
                 }
             )
-        return results
+        bounded = _public_external_result(results)
+        return bounded if isinstance(bounded, list) else []
     except Exception as e:
-        logger.error(f'Failed to fetch cron tasks: {e}')
+        _log_failure('api_extension', e)
         return []
 
 
@@ -961,26 +1948,30 @@ async def get_cron_logs() -> list[dict[str, Any]]:
 
         logs = get_cron_logs()
         results = []
-        for entry in logs.entries:
+        for entry in list(logs.entries or [])[-_MAX_EXTERNAL_COLLECTION_ITEMS:]:
+            safe_output, _privacy_report = sanitize_for_persistence(entry.message)
             results.append(
                 {
                     'timestamp': entry.timestamp,
                     'task_id': entry.task_id,
                     'task_name': entry.task_name or entry.task_id,
-                    'output': entry.message,
+                    'output': safe_output,
                     'status': 'success' if entry.status == 'success' else 'error',
-                    'chat_id': entry.chat_id,
+                    'chat_id': persistence_reference(
+                        'conversation', entry.chat_id, namespace='webui'
+                    ),
                 }
             )
-        return results
+        bounded = _public_external_result(results)
+        return bounded if isinstance(bounded, list) else []
     except Exception as e:
-        logger.error(f'Failed to fetch cron logs: {e}')
+        _log_failure('api_extension', e)
         return []
 
 
 @router.post('/upload')
 async def upload_file(file: Annotated[UploadFile, File()]) -> dict[str, str]:
-    """Upload a file to the agent's workspace directly.
+    """Store one bounded upload atomically inside the configured workspace.
 
     Args:
         file: The UploadFile object from the request.
@@ -988,54 +1979,110 @@ async def upload_file(file: Annotated[UploadFile, File()]) -> dict[str, str]:
     Returns:
         Confirmation containing the saved filename.
     """
-    get_workspace = get_helper('get_workspace_path')
-    workspace_dir = Path(str(get_workspace(''))) if get_workspace else DEFAULT_AGENT_DIR
-    if file.filename is None:
+    if file.filename is None or not file.filename.strip():
         raise HTTPException(status_code=400, detail='Filename is missing')
-    file_path = workspace_dir / file.filename
-    with open(file_path, 'wb') as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    return {'filename': file.filename}
+    filename = file.filename.strip()
+    # Browser uploads are single files. Reject path-bearing names instead of
+    # silently rewriting them, including Windows separators on POSIX hosts.
+    if Path(filename).name != filename or '\\' in filename or filename in {'.', '..'}:
+        raise HTTPException(
+            status_code=400, detail='Upload filename must be a basename'
+        )
+    file_path = resolve_workspace_file(filename)
+    limit = _upload_limit()
+    payload = bytearray()
+    try:
+        while chunk := await file.read(64 * 1024):
+            payload.extend(chunk)
+            if len(payload) > limit:
+                raise HTTPException(status_code=400, detail='Upload exceeds size limit')
+    finally:
+        await file.close()
+
+    # Apply the persistence guard to textual uploads. Binary formats require a
+    # format-aware ingestion connector and remain opaque here.
+    media_type = (file.content_type or '').split(';', 1)[0].strip().lower()
+    if media_type.startswith('text/') or file_path.suffix.lower() in {
+        '.csv',
+        '.json',
+        '.md',
+        '.rst',
+        '.txt',
+        '.yaml',
+        '.yml',
+    }:
+        try:
+            decoded = payload.decode('utf-8')
+        except UnicodeDecodeError as exc:
+            raise HTTPException(
+                status_code=400, detail='Text upload is not UTF-8'
+            ) from exc
+        _safe_content, privacy_report = sanitize_for_persistence(decoded)
+        if privacy_report.changed:
+            raise HTTPException(
+                status_code=400,
+                detail='Upload violates the persistence privacy boundary',
+            )
+
+    _atomic_private_write(file_path, bytes(payload))
+    return {'filename': filename}
 
 
 @router.get('/agent-icon')
-async def get_agent_icon() -> FileResponse:
+async def get_agent_icon() -> Response:
     """Retrieve the agent's avatar icon, falling back to repository defaults.
 
     Returns:
-        A FileResponse containing the image data.
+        A response containing bounded image data.
     """
-    get_path = workspace_helpers.get('get_workspace_path')
-    if get_path:
-        workspace_icon = get_path('icon.png')
-        if workspace_icon.exists():
-            return FileResponse(path=workspace_icon)
+    workspace_icon = resolve_workspace_file('icon.png')
+    if workspace_icon.is_file() and not workspace_icon.is_symlink():
+        try:
+            return Response(
+                content=_read_bounded_bytes(
+                    workspace_icon,
+                    limit=min(_upload_limit(), 5 * 1024 * 1024),
+                ),
+                media_type='image/png',
+            )
+        except (OSError, ValueError):
+            pass
 
-    get_icon_p = workspace_helpers.get('get_agent_icon_path')
-    icon_path = get_icon_p() if get_icon_p else None
-    if not icon_path or not Path(icon_path).exists():
+    packaged_icon = Path(__file__).with_name('icon.png')
+    if not packaged_icon.is_file() or packaged_icon.is_symlink():
         raise HTTPException(status_code=404, detail='Icon not found')
-    return FileResponse(path=icon_path)
+    try:
+        content = _read_bounded_bytes(packaged_icon, limit=5 * 1024 * 1024)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail='Icon not found') from exc
+    return Response(content=content, media_type='image/png')
 
 
-@router.get('/download/{filename}')
-async def download_file(filename: str) -> FileResponse:
+@router.get('/download/{filename:path}')
+async def download_file(filename: str) -> Response:
     """Download a specific file from the agent's workspace.
 
     Args:
         filename: The relative path of the file to download.
 
     Returns:
-        A FileResponse with attachment headers.
+        A bounded response with safe attachment headers.
     """
-    get_workspace = get_helper('get_workspace_path')
-    if not get_workspace:
-        raise HTTPException(status_code=501, detail='Workspace helper not initialized')
-    workspace_dir = get_workspace('')
-    file_path = workspace_dir / filename
-    if not file_path.exists():
+    file_path = resolve_workspace_file(filename)
+    if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail='File not found')
-    return FileResponse(path=file_path, filename=filename)
+    try:
+        content = _read_bounded_bytes(file_path, limit=_upload_limit())
+    except (OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400, detail='File cannot be read safely'
+        ) from exc
+    disposition = f"attachment; filename*=UTF-8''{quote(file_path.name, safe='')}"
+    return Response(
+        content=content,
+        media_type='application/octet-stream',
+        headers={'content-disposition': disposition},
+    )
 
 
 @router.get('/chats')
@@ -1046,7 +2093,13 @@ async def list_chats() -> list[dict[str, Any]]:
         List of chat metadata summaries.
     """
     h = get_helper('list_chats')
-    return h() if h else []
+    result = h() if h else []
+    if not isinstance(result, list):
+        return []
+    bounded = _public_external_result(
+        [item for item in result if isinstance(item, dict)][:_MAX_SESSION_RECORDS]
+    )
+    return bounded if isinstance(bounded, list) else []
 
 
 @router.get('/chats/{chat_id}')
@@ -1059,11 +2112,15 @@ async def get_chat(chat_id: str) -> dict[str, Any]:
     Returns:
         The full chat session object.
     """
+    chat_id = _validate_runtime_id(chat_id)
     h = get_helper('get_chat')
     result = h(chat_id) if h else None
     if not result:
         return {'id': chat_id, 'title': 'Chat', 'messages': []}
-    return result
+    bounded = _public_external_result(result)
+    if not isinstance(bounded, dict):
+        raise HTTPException(status_code=422, detail='Invalid chat record')
+    return bounded
 
 
 @router.post('/chats')
@@ -1076,8 +2133,17 @@ async def save_chat(data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Acknowledgment or error summary.
     """
+    bounded_data = _bounded_query_params(data)
+    safe_data, _privacy_report = sanitize_for_persistence(bounded_data)
+    if not isinstance(safe_data, dict):
+        raise HTTPException(status_code=400, detail='Invalid chat record')
+    candidate_id = safe_data.get('id') or safe_data.get('chat_id')
+    if candidate_id is not None:
+        _validate_runtime_id(candidate_id)
     h = get_helper('save_chat')
-    return h(data) if h else {'status': 'error'}
+    result = h(safe_data) if h else {'status': 'error'}
+    bounded_result = _public_external_result(result)
+    return bounded_result if isinstance(bounded_result, dict) else {'status': 'error'}
 
 
 @router.put('/chats/{chat_id}/title')
@@ -1091,8 +2157,12 @@ async def update_chat_title(chat_id: str, data: dict[str, Any]) -> dict[str, Any
     Returns:
         Acknowledgment or error summary.
     """
+    chat_id = _validate_runtime_id(chat_id)
+    title = data.get('title')
+    if not isinstance(title, str) or len(title.encode('utf-8')) > 1024:
+        raise HTTPException(status_code=400, detail='Invalid chat title')
     h = get_helper('update_chat_title')
-    return h(chat_id, data) if h else {'status': 'error'}
+    return h(chat_id, {'title': title}) if h else {'status': 'error'}
 
 
 @router.delete('/chats/{chat_id}')
@@ -1110,6 +2180,7 @@ async def delete_chat(chat_id: str) -> dict[str, Any]:
     Returns:
         Acknowledgment or error summary.
     """
+    chat_id = _validate_runtime_id(chat_id)
     h = get_helper('delete_chat')
     return h(chat_id) if h else {'status': 'error'}
 
@@ -1125,16 +2196,22 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
     Returns:
         List of node dictionaries with properties.
     """
+    if node_type and not _SAFE_GRAPH_LABEL.fullmatch(node_type):
+        raise HTTPException(status_code=400, detail='Invalid graph node type')
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
 
         if node_type:
             # Identifier is validated against schema or trusted source before use
-            query = f'MATCH (n:{node_type}) RETURN n'  # nosec B608
+            query = (
+                f'MATCH (n:{node_type}) RETURN n LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+            )
         else:
-            query = 'MATCH (n) RETURN n LIMIT 1000'
+            query = f'MATCH (n) RETURN n LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
 
-        result = engine.backend.execute(query)
+        result = await _invoke_governed_helper(
+            engine.backend.execute, query, deadline=10.0
+        )
         nodes = []
         for row in result:
             node_data = row.get('n', {})
@@ -1150,9 +2227,11 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                         },
                     }
                 )
-        return nodes
+        return _public_external_result(nodes)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to query graph nodes: {e}')
+        _log_failure('api_extension', e)
         return []
 
 
@@ -1164,13 +2243,15 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
         List of relationship dictionaries with source, target, and type.
     """
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
 
         query = (
             'MATCH (a)-[r]->(b) RETURN a.id as source, '
-            'type(r) as type, b.id as target LIMIT 1000'
+            f'type(r) as type, b.id as target LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
         )
-        result = engine.backend.execute(query)
+        result = await _invoke_governed_helper(
+            engine.backend.execute, query, deadline=10.0
+        )
         relationships = []
         for row in result:
             relationships.append(
@@ -1180,9 +2261,11 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
                     'target': row.get('target', ''),
                 }
             )
-        return relationships
+        return _public_external_result(relationships)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to query graph relationships: {e}')
+        _log_failure('api_extension', e)
         return []
 
 
@@ -1194,18 +2277,22 @@ async def get_graph_stats() -> dict[str, Any]:
         Dictionary with node counts by type and total counts.
     """
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
         if not engine or not engine.backend:
             return {'total_nodes': 0, 'total_relationships': 0, 'by_type': {}}
 
         # Get total counts (Test expects these first)
-        total_nodes_result = engine.backend.execute(
-            'MATCH (n) RETURN count(n) as count'
+        total_nodes_result = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (n) RETURN count(n) as count',
+            deadline=10.0,
         )
         total_nodes = total_nodes_result[0].get('count', 0) if total_nodes_result else 0
 
-        total_rels_result = engine.backend.execute(
-            'MATCH ()-[r]->() RETURN count(r) as count'
+        total_rels_result = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH ()-[r]->() RETURN count(r) as count',
+            deadline=10.0,
         )
         total_relationships = (
             total_rels_result[0].get('count', 0) if total_rels_result else 0
@@ -1215,22 +2302,27 @@ async def get_graph_stats() -> dict[str, Any]:
         type_counts = {}
         for node_type in ['Memory', 'Article']:
             try:
-                result = engine.backend.execute(
-                    f'MATCH (n:{node_type}) RETURN count(n) as count'
+                result = await _invoke_governed_helper(
+                    engine.backend.execute,
+                    f'MATCH (n:{node_type}) RETURN count(n) as count',
+                    deadline=10.0,
                 )
                 count = result[0].get('count', 0) if result else 0
                 if count > 0:
                     type_counts[node_type] = count
+            except HTTPException:
+                raise
             except Exception as e:
-                logger.debug(f'Skipping stats for node type {node_type}: {e}')
-
+                _log_failure('api_extension', e, level=logging.DEBUG)
         return {
             'total_nodes': total_nodes,
             'total_relationships': total_relationships,
             'by_type': type_counts,
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to get graph stats: {e}')
+        _log_failure('get_graph_stats', e)
         return {'total_nodes': 0, 'total_relationships': 0, 'by_type': {}}
 
 
@@ -1252,20 +2344,24 @@ async def add_memory(data: dict[str, Any]) -> dict[str, Any]:
     try:
         from agent_utilities.models.knowledge_graph import MemoryNode
 
-        engine = get_engine()
+        engine = await _get_engine_bounded()
 
-        data_copy = data.copy()
+        data_copy = _bounded_query_params(data)
+        safe_copy, _privacy_report = sanitize_for_persistence(data_copy)
+        if not isinstance(safe_copy, dict):
+            raise HTTPException(status_code=400, detail='Invalid memory record')
+        data_copy = safe_copy
         if 'name' not in data_copy:
             data_copy['name'] = data_copy.get('content', 'Memory Node')[:50]
 
         memory = MemoryNode(**data_copy)
-        engine.add_memory_node(memory)
+        await _invoke_governed_helper(engine.add_memory_node, memory, deadline=10.0)
         return {'status': 'success', 'id': memory.id}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f'Failed to add memory: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('add_memory', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.get('/graph/memory/{memory_id}')
@@ -1279,18 +2375,24 @@ async def get_memory(memory_id: str) -> dict[str, Any]:
         Memory node data or 404 if not found.
     """
     try:
-        engine = get_engine()
+        memory_id = _validate_runtime_id(memory_id)
+        engine = await _get_engine_bounded()
 
-        memory = engine.get_memory_node(memory_id)
+        memory = await _invoke_governed_helper(
+            engine.get_memory_node, memory_id, deadline=10.0
+        )
         if not memory:
             raise HTTPException(status_code=404, detail='Memory not found')
 
-        return memory.model_dump()
+        bounded = _public_external_result(memory.model_dump())
+        if not isinstance(bounded, dict):
+            raise HTTPException(status_code=422, detail='Invalid memory record')
+        return bounded
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f'Failed to get memory: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('get_memory', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.put('/graph/memory/{memory_id}')
@@ -1307,20 +2409,29 @@ async def update_memory(memory_id: str, data: dict[str, Any]) -> dict[str, Any]:
     try:
         from agent_utilities.models.knowledge_graph import MemoryNode
 
-        engine = get_engine()
+        memory_id = _validate_runtime_id(memory_id)
+        engine = await _get_engine_bounded()
 
-        data_copy = data.copy()
+        data_copy = _bounded_query_params(data)
+        safe_copy, _privacy_report = sanitize_for_persistence(data_copy)
+        if not isinstance(safe_copy, dict):
+            raise HTTPException(status_code=400, detail='Invalid memory record')
+        data_copy = safe_copy
         data_copy['id'] = memory_id
         # Also ensure name is present as it's required in RegistryNode
         if 'name' not in data_copy:
             data_copy['name'] = data_copy.get('content', 'Memory Node')[:50]
 
         updated_memory = MemoryNode(**data_copy)
-        engine.update_memory_node(memory_id, updated_memory)
+        await _invoke_governed_helper(
+            engine.update_memory_node, memory_id, updated_memory, deadline=10.0
+        )
         return {'status': 'success'}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to update memory: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('update_memory', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.delete('/graph/memory/{memory_id}')
@@ -1334,13 +2445,18 @@ async def delete_memory(memory_id: str) -> dict[str, Any]:
         Success status.
     """
     try:
-        engine = get_engine()
+        memory_id = _validate_runtime_id(memory_id)
+        engine = await _get_engine_bounded()
 
-        engine.delete_memory_node(memory_id)
+        await _invoke_governed_helper(
+            engine.delete_memory_node, memory_id, deadline=10.0
+        )
         return {'status': 'success'}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to delete memory: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('delete_memory', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.post('/graph/link')
@@ -1354,18 +2470,34 @@ async def link_nodes(data: dict[str, Any]) -> dict[str, Any]:
         Success status.
     """
     try:
-        engine = get_engine()
+        source = _validate_runtime_id(data.get('source'))
+        target = _validate_runtime_id(data.get('target'))
+        relationship_type = data.get('relationship_type')
+        if not isinstance(relationship_type, str) or not _SAFE_GRAPH_LABEL.fullmatch(
+            relationship_type
+        ):
+            raise HTTPException(status_code=400, detail='Invalid relationship type')
+        properties = _bounded_query_params(data.get('properties', {}))
+        safe_properties, _privacy_report = sanitize_for_persistence(properties)
+        if not isinstance(safe_properties, dict):
+            raise HTTPException(status_code=400, detail='Invalid link properties')
 
-        engine.link_nodes(
-            data['source'],
-            data['target'],
-            data['relationship_type'],
-            data.get('properties', {}),
+        engine = await _get_engine_bounded()
+
+        await _invoke_governed_helper(
+            engine.link_nodes,
+            source,
+            target,
+            relationship_type,
+            safe_properties,
+            deadline=10.0,
         )
         return {'status': 'success'}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to link nodes: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.get('/graph/search')
@@ -1379,13 +2511,22 @@ async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
     Returns:
         List of matching nodes with relevance scores.
     """
+    if not query.strip() or len(query.encode('utf-8')) > 8192:
+        raise HTTPException(status_code=400, detail='Invalid search query')
+    if not 1 <= top_k <= 100:
+        raise HTTPException(status_code=400, detail='Invalid result limit')
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
 
-        results = engine.search_hybrid(query, top_k=top_k)
-        return results
+        results = await _invoke_governed_helper(
+            engine.search_hybrid, query, top_k=top_k, deadline=15.0
+        )
+        bounded = _public_external_result(list(results or [])[:top_k])
+        return bounded if isinstance(bounded, list) else []
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to search graph: {e}')
+        _log_failure('search_graph', e)
         return []
 
 
@@ -1399,13 +2540,22 @@ async def get_impact(symbol: str) -> list[dict[str, Any]]:
     Returns:
         List of affected nodes and impact severity.
     """
+    if not symbol.strip() or len(symbol.encode('utf-8')) > 2048:
+        raise HTTPException(status_code=400, detail='Invalid impact symbol')
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
 
-        impact_set = engine.query_impact(symbol)
-        return impact_set
+        impact_set = await _invoke_governed_helper(
+            engine.query_impact, symbol, deadline=15.0
+        )
+        bounded = _public_external_result(
+            list(impact_set or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        )
+        return bounded if isinstance(bounded, list) else []
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to get impact: {e}')
+        _log_failure('get_impact', e)
         return []
 
 
@@ -1420,30 +2570,50 @@ async def execute_cypher(data: dict[str, Any]) -> list[dict[str, Any]]:
         Query results.
     """
     try:
-        query = data.get('query', '')
-        params = data.get('params', {})
+        query = _validate_read_only_cypher(data.get('query'))
+        params = _bounded_query_params(data.get('params', {}))
 
-        # Basic security check
-        dangerous_keywords = ['DELETE', 'DROP', 'REMOVE', 'DETACH']
-        if any(keyword in query.upper() for keyword in dangerous_keywords):
-            raise HTTPException(status_code=400, detail='Dangerous query not allowed')
+        engine = await _get_engine_bounded()
 
-        engine = get_engine()
-
-        result = engine.query_cypher(query, params)
-        return result
+        result = await _invoke_governed_helper(
+            engine.query_cypher,
+            deadline=15.0,
+            query=query,
+            params=params,
+        )
+        if not isinstance(result, list):
+            raise ValueError('Graph query returned an invalid result shape')
+        bounded_result = _bounded_external_value(
+            result[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        )
+        if not isinstance(bounded_result, list):
+            raise HTTPException(status_code=422, detail='Invalid query result')
+        try:
+            response_size = len(
+                json.dumps(
+                    bounded_result,
+                    separators=(',', ':'),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ).encode('utf-8')
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail='Invalid query result') from exc
+        if response_size > _MAX_EXTERNAL_RESULT_BYTES:
+            raise HTTPException(status_code=422, detail='Query result is too large')
+        return bounded_result
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f'Failed to execute query: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('execute_query', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 # ---------------------------------------------------------------------------
 # Code Graph Navigation (CONCEPT:AU-KG.backend.declared-columns-so-schema) — the Phase 5 lens over the resolved
 # :Code symbol graph (find definition / references / call graph / impact). Reuses
 # the canonical `build_code_nav_query` so the UI and the graph_code_nav MCP tool
-# share one query contract; scoped by source_system (e.g. 'gitlab:gitlab.arpa').
+# share one query contract; scoped by source_system (e.g. 'gitlab:gitlab.example').
 # ---------------------------------------------------------------------------
 @router.post('/code/nav')
 async def code_nav(data: dict[str, Any]) -> dict[str, Any]:
@@ -1457,39 +2627,62 @@ async def code_nav(data: dict[str, Any]) -> dict[str, Any]:
         from agent_utilities.mcp.tools.query_tools import build_code_nav_query
 
         action = str(data.get('action', 'find_definition'))
+        depth = int(data.get('depth', 3) or 3)
+        limit = int(data.get('limit', 200) or 200)
+        if not 1 <= depth <= 10 or not 1 <= limit <= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            raise HTTPException(
+                status_code=400, detail='Invalid code navigation bounds'
+            )
+        for field in ('symbol', 'node_id', 'source_system'):
+            value = data.get(field, '')
+            if not isinstance(value, str) or len(value.encode('utf-8')) > 2048:
+                raise HTTPException(
+                    status_code=400, detail='Invalid code navigation input'
+                )
         cypher, params = build_code_nav_query(
             action=action,
             symbol=str(data.get('symbol', '')),
             node_id=str(data.get('node_id', '')),
             source_system=str(data.get('source_system', '')),
-            depth=int(data.get('depth', 3) or 3),
-            limit=int(data.get('limit', 200) or 200),
+            depth=depth,
+            limit=limit,
         )
-        engine = get_engine()
-        rows = engine.query_cypher(cypher, params)
-        return {'action': action, 'results': rows, 'count': len(rows or [])}
+        engine = await _get_engine_bounded()
+        rows = await _invoke_governed_helper(
+            engine.query_cypher, cypher, params, deadline=15.0
+        )
+        bounded_rows = list(rows or [])[:limit]
+        return _public_external_result(
+            {'action': action, 'results': bounded_rows, 'count': len(bounded_rows)}
+        )
+    except HTTPException:
+        raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=type(e).__name__) from e
     except Exception as e:
-        logger.error(f'code_nav failed: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.get('/code/instances')
 async def code_instances() -> dict[str, Any]:
     """List source_systems that have code in the graph (the indexed GitLab tenants)."""
     try:
-        engine = get_engine()
-        rows = engine.query_cypher(
+        engine = await _get_engine_bounded()
+        rows = await _invoke_governed_helper(
+            engine.query_cypher,
             'MATCH (c:Code) WHERE c.source_system IS NOT NULL '
             'RETURN DISTINCT c.source_system AS source_system '
             'ORDER BY source_system LIMIT 200',
             {},
+            deadline=10.0,
         )
         return {'source_systems': [r.get('source_system') for r in (rows or [])]}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'code_instances failed: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 # ---------------------------------------------------------------------------
@@ -1508,23 +2701,36 @@ async def ingest_kb(data: dict[str, Any]) -> dict[str, Any]:
         Success status and ingestion job ID.
     """
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
 
-        kb_engine = KBIngestionEngine(
-            engine.graph if engine else None, engine.backend if engine else None
+        kb_engine = await _invoke_governed_helper(
+            KBIngestionEngine,
+            engine.graph if engine else None,
+            engine.backend if engine else None,
+            deadline=10.0,
         )
-        result = await kb_engine.ingest(
-            kb_id=data['kb_id'],
-            source=data['source'],
-            name=data.get('name', data['kb_id']),
-            **data.get('options', {}),
+        kb_id = data.get('kb_id')
+        if not isinstance(kb_id, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
+            raise HTTPException(status_code=400, detail='Invalid KB identifier')
+        source = _workspace_ingestion_source(data.get('source'))
+        options = _bounded_query_params(data.get('options', {}))
+        name = data.get('name', kb_id)
+        if not isinstance(name, str) or len(name.encode('utf-8')) > 1024:
+            raise HTTPException(status_code=400, detail='Invalid KB name')
+        result = await _invoke_governed_helper(
+            kb_engine.ingest,
+            deadline=120.0,
+            kb_id=kb_id,
+            source=source,
+            name=name,
+            **options,
         )
         return {'status': 'success', 'job_id': result.get('job_id')}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f'Failed to ingest KB: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.get('/kb/list')
@@ -1535,14 +2741,26 @@ async def list_kbs() -> list[dict[str, Any]]:
         List of Knowledge Base metadata.
     """
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
 
-        kb_engine = KBIngestionEngine(
-            engine.graph if engine else None, engine.backend if engine else None
+        kb_engine = await _invoke_governed_helper(
+            KBIngestionEngine,
+            engine.graph if engine else None,
+            engine.backend if engine else None,
+            deadline=10.0,
         )
-        return kb_engine.list_bases()
+        bases = await _invoke_governed_helper(
+            kb_engine.list_bases,
+            deadline=15.0,
+        )
+        bounded = _public_external_result(
+            list(bases or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        )
+        return bounded if isinstance(bounded, list) else []
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to list KBs: {e}')
+        _log_failure('list_knowledge_bases', e)
         return []
 
 
@@ -1557,16 +2775,33 @@ async def search_kb(query: str, kb_id: str | None = None) -> list[dict[str, Any]
     Returns:
         List of matching articles and concepts.
     """
+    if not query.strip() or len(query.encode('utf-8')) > 8192:
+        raise HTTPException(status_code=400, detail='Invalid search query')
+    if kb_id and not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
+        raise HTTPException(status_code=400, detail='Invalid KB identifier')
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
 
-        kb_engine = KBIngestionEngine(
-            engine.graph if engine else None, engine.backend if engine else None
+        kb_engine = await _invoke_governed_helper(
+            KBIngestionEngine,
+            engine.graph if engine else None,
+            engine.backend if engine else None,
+            deadline=10.0,
         )
-        results = kb_engine.search(query, kb_id=kb_id)
-        return results
+        results = await _invoke_governed_helper(
+            kb_engine.search,
+            query,
+            kb_id=kb_id,
+            deadline=30.0,
+        )
+        bounded = _public_external_result(
+            list(results or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        )
+        return bounded if isinstance(bounded, list) else []
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to search KB: {e}')
+        _log_failure('search_knowledge_base', e)
         return []
 
 
@@ -1581,20 +2816,29 @@ async def get_kb_article(article_id: str) -> dict[str, Any]:
         Article data or 404 if not found.
     """
     try:
-        engine = get_engine()
+        article_id = _validate_runtime_id(article_id)
+        engine = await _get_engine_bounded()
 
         query = 'MATCH (a:Article) WHERE a.id = $id RETURN a'
-        result = engine.backend.execute(query, {'id': article_id})
+        result = await _invoke_governed_helper(
+            engine.backend.execute,
+            query,
+            {'id': article_id},
+            deadline=10.0,
+        )
         if not result:
             raise HTTPException(status_code=404, detail='Article not found')
 
         article_data = result[0].get('a', {})
-        return article_data if isinstance(article_data, dict) else {}
+        if not isinstance(article_data, dict):
+            return {}
+        bounded = _public_external_result(article_data)
+        return bounded if isinstance(bounded, dict) else {}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f'Failed to get article: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('get_article', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.post('/kb/health')
@@ -1609,21 +2853,31 @@ async def kb_health_check(data: dict[str, Any]) -> dict[str, Any]:
     """
     try:
         kb_id = data.get('kb_id')
-        if not kb_id:
-            raise HTTPException(status_code=400, detail='kb_id is required')
+        if not isinstance(kb_id, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
+            raise HTTPException(status_code=400, detail='Invalid KB identifier')
 
-        engine = get_engine()
+        engine = await _get_engine_bounded()
 
-        kb_engine = KBIngestionEngine(
-            engine.graph if engine else None, engine.backend if engine else None
+        kb_engine = await _invoke_governed_helper(
+            KBIngestionEngine,
+            engine.graph if engine else None,
+            engine.backend if engine else None,
+            deadline=10.0,
         )
-        health_result = await kb_engine.health_check(kb_id)
-        return health_result
+        health_result = await _invoke_governed_helper(
+            kb_engine.health_check,
+            kb_id,
+            deadline=30.0,
+        )
+        bounded = _public_external_result(health_result)
+        if not isinstance(bounded, dict):
+            raise HTTPException(status_code=422, detail='Invalid KB health result')
+        return bounded
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f'Failed KB health check: {e}')
-        return {'health_status': 'error', 'issues': [str(e)]}
+        _log_failure('knowledge_base_health', e)
+        return {'health_status': 'error', 'issues': [type(e).__name__]}
 
 
 @router.post('/kb/update')
@@ -1637,16 +2891,45 @@ async def update_kb(data: dict[str, Any]) -> dict[str, Any]:
         Success status.
     """
     try:
-        engine = get_engine()
+        kb_id = data.get('kb_id')
+        if not isinstance(kb_id, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
+            raise HTTPException(status_code=400, detail='Invalid KB identifier')
+        engine = await _get_engine_bounded()
 
-        kb_engine = KBIngestionEngine(
-            engine.graph if engine else None, engine.backend if engine else None
+        kb_engine = await _invoke_governed_helper(
+            KBIngestionEngine,
+            engine.graph if engine else None,
+            engine.backend if engine else None,
+            deadline=10.0,
         )
-        await kb_engine.update(data['kb_id'])
+
+        def validate_sources() -> None:
+            graph = getattr(kb_engine, 'graph', None)
+            if graph is None or not hasattr(graph, 'predecessors'):
+                raise HTTPException(
+                    status_code=503, detail='KB source graph unavailable'
+                )
+            source_ids = list(graph.predecessors(kb_id)) if kb_id in graph else []
+            if len(source_ids) > _MAX_LIST_FILES:
+                raise HTTPException(
+                    status_code=400, detail='KB source set is too large'
+                )
+            for source_id in source_ids:
+                source_data = graph.nodes[source_id]
+                if not isinstance(source_data, dict):
+                    continue
+                file_path = source_data.get('file_path')
+                if file_path:
+                    _confine_stored_workspace_path(file_path)
+
+        await _invoke_governed_helper(validate_sources, deadline=15.0)
+        await _invoke_governed_helper(kb_engine.update, kb_id, deadline=120.0)
         return {'status': 'success'}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to update KB: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('update_knowledge_base', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 # ---------------------------------------------------------------------------
@@ -1663,10 +2946,17 @@ async def get_constitution() -> dict[str, Any]:
     """
     try:
         manager = SDDManager(DEFAULT_AGENT_DIR)
-        constitution = manager.get_constitution()
-        return constitution if constitution else {}
+        constitution = await _invoke_governed_helper(
+            manager.get_constitution, deadline=10.0
+        )
+        if not constitution:
+            return {}
+        bounded = _public_external_result(constitution)
+        return bounded if isinstance(bounded, dict) else {}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to get constitution: {e}')
+        _log_failure('api_extension', e)
         return {}
 
 
@@ -1681,12 +2971,20 @@ async def save_constitution(data: dict[str, Any]) -> dict[str, Any]:
         Success status.
     """
     try:
+        bounded_data = _bounded_query_params(data)
+        safe_data, _privacy_report = sanitize_for_persistence(bounded_data)
+        if not isinstance(safe_data, dict):
+            raise HTTPException(status_code=400, detail='Invalid constitution')
         manager = SDDManager(DEFAULT_AGENT_DIR)
-        manager.save_constitution(data)
+        await _invoke_governed_helper(
+            manager.save_constitution, safe_data, deadline=15.0
+        )
         return {'status': 'success'}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to save constitution: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.get('/sdd/specs')
@@ -1698,10 +2996,16 @@ async def list_specs() -> list[dict[str, Any]]:
     """
     try:
         manager = SDDManager(DEFAULT_AGENT_DIR)
-        specs = manager.list_specs()
-        return [s.model_dump() if hasattr(s, 'model_dump') else s for s in specs]
+        specs_result = await _invoke_governed_helper(manager.list_specs, deadline=10.0)
+        specs = list(specs_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        bounded = _public_external_result(
+            [s.model_dump() if hasattr(s, 'model_dump') else s for s in specs]
+        )
+        return bounded if isinstance(bounded, list) else []
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to list specs: {e}')
+        _log_failure('list_specs', e)
         return []
 
 
@@ -1716,12 +3020,23 @@ async def create_spec(data: dict[str, Any]) -> dict[str, Any]:
         Created specification with ID.
     """
     try:
+        bounded_data = _bounded_query_params(data)
+        safe_data, _privacy_report = sanitize_for_persistence(bounded_data)
+        if not isinstance(safe_data, dict):
+            raise HTTPException(status_code=400, detail='Invalid specification')
         manager = SDDManager(DEFAULT_AGENT_DIR)
-        spec = manager.create_spec(data)
-        return spec.model_dump()
+        spec = await _invoke_governed_helper(
+            manager.create_spec, safe_data, deadline=15.0
+        )
+        bounded = _public_external_result(spec.model_dump())
+        if not isinstance(bounded, dict):
+            raise HTTPException(status_code=422, detail='Invalid specification')
+        return bounded
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to create spec: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('create_spec', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.get('/sdd/plans')
@@ -1733,10 +3048,16 @@ async def list_plans() -> list[dict[str, Any]]:
     """
     try:
         manager = SDDManager(DEFAULT_AGENT_DIR)
-        plans = manager.list_plans()
-        return [p.model_dump() if hasattr(p, 'model_dump') else p for p in plans]
+        plans_result = await _invoke_governed_helper(manager.list_plans, deadline=10.0)
+        plans = list(plans_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        bounded = _public_external_result(
+            [p.model_dump() if hasattr(p, 'model_dump') else p for p in plans]
+        )
+        return bounded if isinstance(bounded, list) else []
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to list plans: {e}')
+        _log_failure('api_extension', e)
         return []
 
 
@@ -1751,14 +3072,29 @@ async def get_tasks(plan_id: str | None = None) -> list[Any] | dict[str, Any]:
         Tasks data.
     """
     try:
+        if plan_id:
+            plan_id = _validate_runtime_id(plan_id)
         manager = SDDManager(DEFAULT_AGENT_DIR)
         if plan_id:
-            tasks = manager.get_tasks(plan_id)
+            tasks = await _invoke_governed_helper(
+                manager.get_tasks, plan_id, deadline=10.0
+            )
         else:
-            tasks = manager.get_all_tasks()
-        return tasks.model_dump() if hasattr(tasks, 'model_dump') else tasks
+            tasks = await _invoke_governed_helper(manager.get_all_tasks, deadline=10.0)
+        raw_tasks = tasks.model_dump() if hasattr(tasks, 'model_dump') else tasks
+        if isinstance(raw_tasks, dict) and isinstance(raw_tasks.get('tasks'), list):
+            raw_tasks = {
+                **raw_tasks,
+                'tasks': [
+                    task.model_dump() if hasattr(task, 'model_dump') else task
+                    for task in raw_tasks['tasks'][:_MAX_EXTERNAL_COLLECTION_ITEMS]
+                ],
+            }
+        return _public_external_result(raw_tasks)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to get tasks: {e}')
+        _log_failure('get_tasks', e)
         return {}
 
 
@@ -1773,14 +3109,22 @@ async def sync_sdd_to_memory(data: dict[str, Any]) -> dict[str, Any]:
         Success status.
     """
     try:
-        engine = get_engine()
+        bounded_data = _bounded_query_params(data)
+        safe_data, _privacy_report = sanitize_for_persistence(bounded_data)
+        if not isinstance(safe_data, dict):
+            raise HTTPException(status_code=400, detail='Invalid SDD sync request')
+        engine = await _get_engine_bounded()
 
         manager = SDDManager(DEFAULT_AGENT_DIR)
-        manager.sync_to_memory(engine, **data)
+        await _invoke_governed_helper(
+            manager.sync_to_memory, engine, deadline=30.0, **safe_data
+        )
         return {'status': 'success'}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to sync SDD to memory: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 # ---------------------------------------------------------------------------
@@ -1799,18 +3143,32 @@ async def magma_retrieve(data: dict[str, Any]) -> list[dict[str, Any]]:
         Retrieved context from specified orthogonal view.
     """
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
 
         view_type = data.get('view_type', 'semantic')
         query = data.get('query', '')
-        policy = data.get('policy', {})
+        if not isinstance(view_type, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(
+            view_type
+        ):
+            raise HTTPException(status_code=400, detail='Invalid MAGMA view type')
+        if not isinstance(query, str) or len(query.encode('utf-8')) > 8192:
+            raise HTTPException(status_code=400, detail='Invalid MAGMA query')
+        policy = _bounded_query_params(data.get('policy', {}))
 
-        result = engine.retrieve_orthogonal_context(
-            query=query, view_type=view_type, policy=policy
+        result = await _invoke_governed_helper(
+            engine.retrieve_orthogonal_context,
+            query=query,
+            view_type=view_type,
+            policy=policy,
+            deadline=15.0,
         )
-        return result
+        if not isinstance(result, list):
+            raise HTTPException(status_code=422, detail='Invalid MAGMA result')
+        return _public_external_result(result[:_MAX_EXTERNAL_COLLECTION_ITEMS])
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed MAGMA retrieval: {e}')
+        _log_failure('magma_retrieval', e)
         return []
 
 
@@ -1827,18 +3185,22 @@ async def list_resources() -> list[dict[str, Any]]:
         List of resource metadata.
     """
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
 
-        query = 'MATCH (r:CallableResource) RETURN r'
-        result = engine.backend.execute(query)
+        query = f'MATCH (r:CallableResource) RETURN r LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+        result = await _invoke_governed_helper(
+            engine.backend.execute, query, deadline=10.0
+        )
         resources = []
         for row in result:
             resource_data = row.get('r', {})
             if isinstance(resource_data, dict):
                 resources.append(resource_data)
-        return resources
+        return _public_external_result(resources)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to list resources: {e}')
+        _log_failure('list_resources', e)
         return []
 
 
@@ -1853,13 +3215,18 @@ async def spawn_agent(data: dict[str, Any]) -> dict[str, Any]:
         Spawned agent metadata.
     """
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
 
-        agent = engine.spawn_specialized_agent(**data)
-        return agent.model_dump()
+        bounded_data = _bounded_query_params(data)
+        agent = await _invoke_governed_helper(
+            engine.spawn_specialized_agent, deadline=30.0, **bounded_data
+        )
+        return _public_external_result(agent.model_dump())
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to spawn agent: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 # ---------------------------------------------------------------------------
@@ -1875,15 +3242,18 @@ async def get_maintenance_status() -> dict[str, Any]:
         Maintenance operation status and history.
     """
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
         if not engine or not engine.backend:
             return {'status': 'unavailable', 'operations': {}}
 
         maintainer = GraphMaintainer(engine)
-        status = maintainer.get_status()
-        return status
+        status = await _invoke_governed_helper(maintainer.get_status, deadline=10.0)
+        bounded = _public_external_result(status)
+        return bounded if isinstance(bounded, dict) else {'status': 'unavailable'}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to get maintenance status: {e}')
+        _log_failure('api_extension', e)
         return {'status': 'error', 'operations': {}}
 
 
@@ -1899,18 +3269,23 @@ async def trigger_maintenance(data: dict[str, Any]) -> dict[str, Any]:
     """
     try:
         operation = data.get('operation')
-        if not operation:
-            raise HTTPException(status_code=400, detail='operation is required')
+        if not isinstance(operation, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(
+            operation
+        ):
+            raise HTTPException(status_code=400, detail='Invalid maintenance operation')
 
-        engine = get_engine()
+        engine = await _get_engine_bounded()
         maintainer = GraphMaintainer(engine)
-        result = maintainer.trigger_operation(operation)
-        return {'status': 'success', 'result': result}
+        result = await _invoke_governed_helper(
+            maintainer.trigger_operation, operation, deadline=30.0
+        )
+        bounded = _public_external_result({'status': 'success', 'result': result})
+        return bounded if isinstance(bounded, dict) else {'status': 'error'}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f'Failed to trigger maintenance: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.get('/pipeline/status')
@@ -1921,15 +3296,18 @@ async def get_pipeline_status() -> dict[str, Any]:
         Pipeline status and phase information.
     """
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
         if not engine:
             return {'status': 'unavailable', 'phases': {}}
 
         runner = PipelineRunner(PHASES)
-        status = runner.get_status()
-        return status
+        status = await _invoke_governed_helper(runner.get_status, deadline=10.0)
+        bounded = _public_external_result(status)
+        return bounded if isinstance(bounded, dict) else {'status': 'unavailable'}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to get pipeline status: {e}')
+        _log_failure('api_extension', e)
         return {'status': 'error', 'phases': {}}
 
 
@@ -1944,7 +3322,7 @@ async def trigger_pipeline(data: dict[str, Any]) -> dict[str, Any]:
         Pipeline execution status.
     """
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
 
         config = PipelineConfig(workspace_path=str(DEFAULT_AGENT_DIR))
         ctx = PipelineContext(
@@ -1952,10 +3330,13 @@ async def trigger_pipeline(data: dict[str, Any]) -> dict[str, Any]:
         )
         runner = PipelineRunner(PHASES)
         result = await runner.run(ctx)
-        return {'status': 'success', 'result': result}
+        bounded = _public_external_result({'status': 'success', 'result': result})
+        return bounded if isinstance(bounded, dict) else {'status': 'error'}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to trigger pipeline: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 # ---------------------------------------------------------------------------
@@ -1990,9 +3371,12 @@ async def list_configured_models(request: Request) -> dict[str, Any]:
     if reg is None:
         return {'models': [], 'default_id': None}
     if hasattr(reg, 'to_api_payload'):
-        return reg.to_api_payload()
+        payload = reg.to_api_payload()
+        bounded = _public_external_result(payload)
+        return bounded if isinstance(bounded, dict) else {'models': []}
     # Be forgiving for tests that mock the registry with a plain dict.
-    return reg
+    bounded = _public_external_result(reg)
+    return bounded if isinstance(bounded, dict) else {'models': []}
 
 
 @router.get('/config/backend')
@@ -2015,12 +3399,14 @@ async def get_backend_config() -> dict[str, Any]:
             'backend_type': backend.__class__.__name__,
             'env_vars': {
                 'GRAPH_BACKEND': os.getenv('GRAPH_BACKEND', 'ladybug'),
-                'GRAPH_DB_PATH': os.getenv('GRAPH_DB_PATH', 'knowledge_graph.db'),
+                'GRAPH_DB_PATH': (
+                    'configured' if os.getenv('GRAPH_DB_PATH') else 'default'
+                ),
             },
         }
         return config
     except Exception as e:
-        logger.error(f'Failed to get backend config: {e}')
+        _log_failure('api_extension', e)
         return {'status': 'error'}
 
 
@@ -2045,8 +3431,8 @@ async def update_backend_config(data: dict[str, Any]) -> dict[str, Any]:
             ),
         }
     except Exception as e:
-        logger.error(f'Failed to update backend config: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -2094,31 +3480,44 @@ async def list_graph_prompts(request: Request) -> list[dict[str, Any]]:
         A list of prompt dicts with id, name, content, and metadata.
     """
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise
+        engine = None
     except Exception:
         engine = None
     if engine:
         try:
-            return engine.get_all_prompts()
+            prompt_result = await _invoke_governed_helper(
+                engine.get_all_prompts, deadline=10.0
+            )
+            prompts = list(prompt_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+            bounded = _public_external_result(prompts)
+            return bounded if isinstance(bounded, list) else []
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error(f'Failed to fetch graph prompts from active engine: {e}')
-
+            _log_failure('api_extension', e)
     # Fallback to returning agent's system prompt as a default prompt
     agent = getattr(request.app.state, 'agent', None)
     if agent:
         sys_prompt = _extract_system_prompt(agent)
         if sys_prompt:
-            return [
-                {
-                    'id': 'system_prompt',
-                    'name': 'System Prompt',
-                    'content': sys_prompt,
-                    'description': 'The default system prompt configured for this agent.',
-                    'author': 'System',
-                    'version': 1,
-                    'created_at': datetime.now(timezone.utc).isoformat(),
-                }
-            ]
+            bounded = _public_external_result(
+                [
+                    {
+                        'id': 'system_prompt',
+                        'name': 'System Prompt',
+                        'content': sys_prompt,
+                        'description': 'The default system prompt configured for this agent.',
+                        'author': 'System',
+                        'version': 1,
+                        'created_at': datetime.now(timezone.utc).isoformat(),
+                    }
+                ]
+            )
+            return bounded if isinstance(bounded, list) else []
     return []
 
 
@@ -2134,29 +3533,42 @@ async def get_graph_prompt(prompt_id: str, request: Request) -> dict[str, Any]:
     Returns:
         The prompt dict with full content.
     """
+    prompt_id = _validate_runtime_id(prompt_id)
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise
+        engine = None
     except Exception:
         engine = None
     if engine:
-        result = engine.get_prompt(prompt_id)
+        result = await _invoke_governed_helper(
+            engine.get_prompt, prompt_id, deadline=10.0
+        )
         if not result:
             raise HTTPException(status_code=404, detail=f'Prompt {prompt_id} not found')
-        return result
+        bounded = _public_external_result(result)
+        if not isinstance(bounded, dict):
+            raise HTTPException(status_code=422, detail='Invalid prompt record')
+        return bounded
 
     agent = getattr(request.app.state, 'agent', None)
     if prompt_id == 'system_prompt' and agent:
         sys_prompt = _extract_system_prompt(agent)
         if sys_prompt:
-            return {
-                'id': 'system_prompt',
-                'name': 'System Prompt',
-                'content': sys_prompt,
-                'description': 'The default system prompt configured for this agent.',
-                'author': 'System',
-                'version': 1,
-                'created_at': datetime.now(timezone.utc).isoformat(),
-            }
+            bounded = _public_external_result(
+                {
+                    'id': 'system_prompt',
+                    'name': 'System Prompt',
+                    'content': sys_prompt,
+                    'description': 'The default system prompt configured for this agent.',
+                    'author': 'System',
+                    'version': 1,
+                    'created_at': datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            return bounded if isinstance(bounded, dict) else {}
     raise HTTPException(status_code=404, detail=f'Prompt {prompt_id} not found')
 
 
@@ -2172,17 +3584,33 @@ async def create_graph_prompt(data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         The created prompt dict.
     """
-    engine = get_engine()
-    name = data.get('name', '')
-    content = data.get('content', '')
-    if not name or not content:
+    bounded_data = _bounded_query_params(data)
+    safe_data, _privacy_report = sanitize_for_persistence(bounded_data)
+    if not isinstance(safe_data, dict):
+        raise HTTPException(status_code=400, detail='Invalid prompt record')
+    engine = await _get_engine_bounded()
+    name = safe_data.get('name', '')
+    content = safe_data.get('content', '')
+    if not isinstance(name, str) or not name.strip() or len(name.encode('utf-8')) > 512:
         raise HTTPException(status_code=400, detail='name and content are required')
-    return engine.add_prompt(
+    if (
+        not isinstance(content, str)
+        or not content
+        or len(content.encode('utf-8')) > _MAX_EXTERNAL_STRING_BYTES
+    ):
+        raise HTTPException(status_code=400, detail='name and content are required')
+    result = await _invoke_governed_helper(
+        engine.add_prompt,
         content=content,
         name=name,
-        author=data.get('author', 'user'),
-        description=data.get('description', ''),
+        author=safe_data.get('author', 'user'),
+        description=safe_data.get('description', ''),
+        deadline=15.0,
     )
+    bounded = _public_external_result(result)
+    if not isinstance(bounded, dict):
+        raise HTTPException(status_code=422, detail='Invalid prompt record')
+    return bounded
 
 
 @router.put('/prompts/graph/{prompt_id}')
@@ -2198,18 +3626,33 @@ async def update_graph_prompt(prompt_id: str, data: dict[str, Any]) -> dict[str,
     Returns:
         The new version dict with version number and parent_id.
     """
-    engine = get_engine()
-    content = data.get('content', '')
-    if not content:
+    prompt_id = _validate_runtime_id(prompt_id)
+    bounded_data = _bounded_query_params(data)
+    safe_data, _privacy_report = sanitize_for_persistence(bounded_data)
+    if not isinstance(safe_data, dict):
+        raise HTTPException(status_code=400, detail='Invalid prompt record')
+    engine = await _get_engine_bounded()
+    content = safe_data.get('content', '')
+    if (
+        not isinstance(content, str)
+        or not content
+        or len(content.encode('utf-8')) > _MAX_EXTERNAL_STRING_BYTES
+    ):
         raise HTTPException(status_code=400, detail='content is required')
     try:
-        return engine.update_prompt(
+        result = await _invoke_governed_helper(
+            engine.update_prompt,
             prompt_id=prompt_id,
             content=content,
-            author=data.get('author', 'user'),
+            author=safe_data.get('author', 'user'),
+            deadline=15.0,
         )
+        bounded = _public_external_result(result)
+        if not isinstance(bounded, dict):
+            raise HTTPException(status_code=422, detail='Invalid prompt record')
+        return bounded
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=404, detail=type(e).__name__) from e
 
 
 @router.get('/prompts/graph/{prompt_id}/versions')
@@ -2224,8 +3667,14 @@ async def get_graph_prompt_versions(prompt_id: str) -> list[dict[str, Any]]:
     Returns:
         List of version dicts ordered newest-first.
     """
-    engine = get_engine()
-    return engine.get_prompt_versions(prompt_id)
+    prompt_id = _validate_runtime_id(prompt_id)
+    engine = await _get_engine_bounded()
+    versions_result = await _invoke_governed_helper(
+        engine.get_prompt_versions, prompt_id, deadline=10.0
+    )
+    versions = list(versions_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+    bounded = _public_external_result(versions)
+    return bounded if isinstance(bounded, list) else []
 
 
 @router.post('/prompts/graph/{prompt_id}/rollback/{version_id}')
@@ -2244,11 +3693,19 @@ async def rollback_graph_prompt(prompt_id: str, version_id: str) -> dict[str, An
     Returns:
         The new version dict (a copy of the target).
     """
-    engine = get_engine()
+    prompt_id = _validate_runtime_id(prompt_id)
+    version_id = _validate_runtime_id(version_id)
+    engine = await _get_engine_bounded()
     try:
-        return engine.rollback_prompt(prompt_id, version_id)
+        result = await _invoke_governed_helper(
+            engine.rollback_prompt, prompt_id, version_id, deadline=15.0
+        )
+        bounded = _public_external_result(result)
+        if not isinstance(bounded, dict):
+            raise HTTPException(status_code=422, detail='Invalid prompt record')
+        return bounded
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=404, detail=type(e).__name__) from e
 
 
 @router.get('/prompts/graph/{prompt_id}/diff/{version_a}/{version_b}')
@@ -2269,16 +3726,28 @@ async def diff_graph_prompt_versions(
     """
     import difflib
 
-    engine = get_engine()
-    va = engine.get_prompt(version_a)
-    vb = engine.get_prompt(version_b)
+    _validate_runtime_id(prompt_id)
+    version_a = _validate_runtime_id(version_a)
+    version_b = _validate_runtime_id(version_b)
+    engine = await _get_engine_bounded()
+    va = await _invoke_governed_helper(engine.get_prompt, version_a, deadline=10.0)
+    vb = await _invoke_governed_helper(engine.get_prompt, version_b, deadline=10.0)
     if not va:
         raise HTTPException(status_code=404, detail=f'Version {version_a} not found')
     if not vb:
         raise HTTPException(status_code=404, detail=f'Version {version_b} not found')
 
-    content_a = va.get('content', va.get('system_prompt', '')).splitlines(keepends=True)
-    content_b = vb.get('content', vb.get('system_prompt', '')).splitlines(keepends=True)
+    raw_content_a = va.get('content', va.get('system_prompt', ''))
+    raw_content_b = vb.get('content', vb.get('system_prompt', ''))
+    if not isinstance(raw_content_a, str) or not isinstance(raw_content_b, str):
+        raise HTTPException(status_code=422, detail='Invalid prompt content')
+    if (
+        len(raw_content_a.encode('utf-8')) > _MAX_EXTERNAL_STRING_BYTES
+        or len(raw_content_b.encode('utf-8')) > _MAX_EXTERNAL_STRING_BYTES
+    ):
+        raise HTTPException(status_code=422, detail='Prompt content exceeds its limit')
+    content_a = raw_content_a.splitlines(keepends=True)
+    content_b = raw_content_b.splitlines(keepends=True)
     diff_lines = list(
         difflib.unified_diff(
             content_a,
@@ -2287,11 +3756,14 @@ async def diff_graph_prompt_versions(
             tofile=f'{version_b} ({vb.get("timestamp", "")})',
         )
     )
-    return {
-        'diff': ''.join(diff_lines),
-        'version_a': {'id': version_a, 'timestamp': va.get('timestamp', '')},
-        'version_b': {'id': version_b, 'timestamp': vb.get('timestamp', '')},
-    }
+    bounded = _public_external_result(
+        {
+            'diff': ''.join(diff_lines),
+            'version_a': {'id': version_a, 'timestamp': va.get('timestamp', '')},
+            'version_b': {'id': version_b, 'timestamp': vb.get('timestamp', '')},
+        }
+    )
+    return bounded if isinstance(bounded, dict) else {}
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -2309,16 +3781,23 @@ async def list_graph_tools(request: Request) -> list[dict[str, Any]]:
         A list of MCP tool dicts sorted alphabetically.
     """
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise
+        engine = None
     except Exception:
         engine = None
     if engine:
-        return engine.get_tools()
+        tools_result = await _invoke_governed_helper(engine.get_tools, deadline=10.0)
+        tools = list(tools_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        bounded = _public_external_result(tools)
+        return bounded if isinstance(bounded, list) else []
 
     # Fallback: extract tools from the pydantic-ai agent instance registered on the app state
     agent = getattr(request.app.state, 'agent', None)
     if agent and hasattr(agent, '_function_tools'):
-        return [
+        tools = [
             {
                 'id': name,
                 'name': name,
@@ -2326,8 +3805,12 @@ async def list_graph_tools(request: Request) -> list[dict[str, Any]]:
                 'enabled': True,
                 'type': 'builtin',
             }
-            for name, tool in agent._function_tools.items()
+            for name, tool in list(agent._function_tools.items())[
+                :_MAX_EXTERNAL_COLLECTION_ITEMS
+            ]
         ]
+        bounded = _public_external_result(tools)
+        return bounded if isinstance(bounded, list) else []
     return []
 
 
@@ -2343,15 +3826,26 @@ async def toggle_graph_tool(tool_id: str, request: Request) -> dict[str, Any]:
     Returns:
         The resulting state of the toggled tool.
     """
+    tool_id = _validate_runtime_id(tool_id)
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise
+        engine = None
     except Exception:
         engine = None
     if engine:
         try:
-            return engine.toggle_resource(tool_id)
+            result = await _invoke_governed_helper(
+                engine.toggle_resource, tool_id, deadline=15.0
+            )
+            bounded = _public_external_result(result)
+            if not isinstance(bounded, dict):
+                raise HTTPException(status_code=422, detail='Invalid toggle result')
+            return bounded
         except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e)) from e
+            raise HTTPException(status_code=404, detail=type(e).__name__) from e
     return {'status': 'disabled', 'detail': 'Intelligence Graph Engine not initialized'}
 
 
@@ -2365,14 +3859,20 @@ import time
 import uuid
 
 from agent_utilities.models.goal import GoalIteration, GoalSpec, GoalStatus
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class StartGoalPayload(BaseModel):
-    objective: str
-    max_iterations: int = 20
-    validation_cmd: str = ''
-    constraints: list[str] = []
+    objective: str = Field(min_length=1, max_length=8192)
+    max_iterations: int = Field(default=20, ge=1, le=100)
+    validation_action: str = Field(default='none', max_length=64)
+    validation_cmd: str = Field(default='', max_length=1024, exclude=True)
+    constraints: list[str] = Field(default_factory=list)
+
+
+_GOAL_VALIDATION_ACTIONS = frozenset(
+    {'none', 'workspace-present', 'repository-present'}
+)
 
 
 # Global dictionary to track active/completed goal runs in memory
@@ -2382,64 +3882,70 @@ background_goal_runs: dict[str, dict[str, Any]] = {}
 
 def _is_gateway_active() -> bool:
     """Check if the port 8100 epistemic gateway is up and healthy."""
-    import httpx
-
     try:
-        kg_host = os.getenv('KG_SERVER_HOST', '127.0.0.1')
-        kg_port = int(os.getenv('KG_SERVER_PORT', '8100'))
-        url = f'http://{kg_host}:{kg_port}/sessions'
-        resp = httpx.get(url, timeout=0.2)
-        return resp.status_code == 200
+        from agent_utilities.core.http_client import create_http_client
+
+        with create_http_client(timeout=0.2, follow_redirects=False) as client:
+            with client.stream('GET', _loopback_gateway_url('/sessions')) as response:
+                return response.status_code == 200
     except Exception:
         return False
 
 
 async def _proxy_to_gateway(method: str, path: str, json_data: Any = None) -> Any:
-    """Forward a REST request to the port 8100 epistemic gateway."""
-    import httpx
+    """Forward a bounded request to the loopback epistemic gateway."""
 
-    kg_host = os.getenv('KG_SERVER_HOST', '127.0.0.1')
-    kg_port = int(os.getenv('KG_SERVER_PORT', '8100'))
-    url = f'http://{kg_host}:{kg_port}{path}'
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        if method.upper() == 'GET':
-            resp = await client.get(url)
-        elif method.upper() == 'POST':
-            resp = await client.post(url, json=json_data)
-        elif method.upper() == 'DELETE':
-            resp = await client.delete(url)
-        elif method.upper() == 'PUT':
-            resp = await client.put(url, json=json_data)
-        else:
-            raise ValueError(f'Unsupported method: {method}')
-        resp.raise_for_status()
-        return resp.json()
+    from agent_utilities.core.http_client import create_async_http_client
+
+    verb = method.upper()
+    if verb not in {'GET', 'POST', 'DELETE', 'PUT'}:
+        raise ValueError('Unsupported gateway method')
+    if json_data is not None:
+        encoded_request = json.dumps(json_data, separators=(',', ':')).encode('utf-8')
+        if len(encoded_request) > _MAX_EXTERNAL_ARGUMENT_BYTES:
+            raise ValueError('Gateway request exceeds its safety bound')
+
+    async with create_async_http_client(timeout=30.0, follow_redirects=False) as client:
+        body = bytearray()
+        async with client.stream(
+            verb,
+            _loopback_gateway_url(path),
+            json=json_data if verb in {'POST', 'PUT'} else None,
+        ) as response:
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes():
+                body.extend(chunk)
+                if len(body) > _MAX_EXTERNAL_RESULT_BYTES:
+                    raise ValueError('Gateway response exceeds its safety bound')
+    return _public_external_result(json.loads(body))
 
 
 def _get_db_path() -> Path:
-    # Use standard shared DB resolution from agent_terminal_ui if available, fallback defensively
+    # Use the shared TUI location when available, otherwise the WebUI's XDG data
+    # directory. Never materialize a process-relative database.
     try:
         from agent_terminal_ui.session_manager import DEFAULT_DB_PATH
 
-        db_path = DEFAULT_DB_PATH
+        configured_db_path = Path(DEFAULT_DB_PATH).expanduser()
+        if configured_db_path.is_symlink():
+            raise RuntimeError('Refusing symbolic-link session database')
+        db_path = configured_db_path.resolve()
     except ImportError:
-        db_path = (
-            Path.home()
-            / '.local'
-            / 'share'
-            / 'agent-utilities'
-            / 'agent_terminal_ui.db'
-        )
+        db_path = _WEBUI_DATA_DIR / 'agent_terminal_ui.db'
 
-    # Ensure parent directory exists
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    if db_path.is_symlink():
+        raise RuntimeError('Refusing symbolic-link session database')
+    _private_directory(db_path.parent)
 
-    # Initialize the SQLite schema defensively
+    # Initialize the SQLite schema and privacy migration fail-closed.
+    conn = None
     try:
         import sqlite3
 
         conn = sqlite3.connect(str(db_path))
         conn.executescript("""
+            PRAGMA secure_delete = ON;
+
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 title TEXT DEFAULT '',
@@ -2469,13 +3975,79 @@ def _get_db_path() -> Path:
                 duration_ms INTEGER DEFAULT 0,
                 FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS webui_schema_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
         """)
+        marker = conn.execute(
+            "SELECT value FROM webui_schema_meta WHERE key = 'privacy_version'"
+        ).fetchone()
+        if marker is None or marker[0] != '1':
+            _scrub_existing_session_rows(conn)
+            conn.execute(
+                "INSERT OR REPLACE INTO webui_schema_meta (key, value) VALUES ('privacy_version', '1')"
+            )
         conn.commit()
         conn.close()
+        os.chmod(db_path, 0o600)
     except Exception as e:
-        logger.error(f'Error defensively initializing SQLite database: {e}')
-
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001 - preserve the primary failure
+                pass
+        _log_failure('session_database_initialization', e)
+        raise RuntimeError('Session persistence is unavailable') from e
     return db_path
+
+
+def _privacy_safe_json_text(raw: Any) -> str:
+    """Sanitize JSON text without preserving malformed or opaque values."""
+
+    try:
+        decoded = json.loads(str(raw or '{}'))
+    except (TypeError, ValueError):
+        decoded = {}
+    safe, _privacy_report = sanitize_for_persistence(decoded)
+    return json.dumps(safe, separators=(',', ':'), sort_keys=True)
+
+
+def _scrub_existing_session_rows(conn: Any) -> None:
+    """One-time in-place privacy migration for legacy WebUI session rows."""
+
+    session_cursor = conn.execute(
+        'SELECT id, title, last_response_preview, metadata_json FROM sessions'
+    )
+    while rows := session_cursor.fetchmany(256):
+        for session_id, title, preview, metadata_json in rows:
+            safe_text, _privacy_report = sanitize_for_persistence(
+                {'title': title or '', 'preview': preview or ''}
+            )
+            conn.execute(
+                'UPDATE sessions SET title = ?, last_response_preview = ?, '
+                "workspace = 'workspace://active', metadata_json = ? WHERE id = ?",
+                (
+                    str(safe_text.get('title') or ''),
+                    str(safe_text.get('preview') or ''),
+                    _privacy_safe_json_text(metadata_json),
+                    session_id,
+                ),
+            )
+
+    turn_cursor = conn.execute('SELECT id, content, usage_json FROM turns')
+    while rows := turn_cursor.fetchmany(256):
+        for turn_id, content, usage_json in rows:
+            safe_content, _privacy_report = sanitize_for_persistence(str(content or ''))
+            conn.execute(
+                'UPDATE turns SET content = ?, usage_json = ? WHERE id = ?',
+                (
+                    str(safe_content),
+                    _privacy_safe_json_text(usage_json),
+                    turn_id,
+                ),
+            )
 
 
 @router.get('/sessions')
@@ -2485,9 +4057,7 @@ async def get_all_sessions() -> list[dict[str, Any]]:
         try:
             return await _proxy_to_gateway('GET', '/sessions')
         except Exception as e:
-            logger.warning(
-                f'Failed to proxy get_all_sessions: {e}. Falling back to local execution.'
-            )
+            _log_failure('proxy_get_all_sessions', e, level=logging.WARNING)
 
     db_path = _get_db_path()
     if not db_path.exists():
@@ -2496,7 +4066,10 @@ async def get_all_sessions() -> list[dict[str, Any]]:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM sessions ORDER BY updated_at DESC')
+        cursor.execute(
+            'SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?',
+            (_MAX_SESSION_RECORDS,),
+        )
         rows = cursor.fetchall()
         res = []
         for row in rows:
@@ -2505,22 +4078,22 @@ async def get_all_sessions() -> list[dict[str, Any]]:
             d['needs_input'] = bool(d.get('needs_input', 0))
             res.append(d)
         conn.close()
-        return res
+        safe_sessions, _privacy_report = sanitize_for_persistence(res)
+        return safe_sessions if isinstance(safe_sessions, list) else []
     except Exception as e:
-        logger.error(f'Error querying sessions: {e}')
+        _log_failure('api_extension', e)
         return []
 
 
 @router.get('/sessions/{session_id}')
 async def get_session_details(session_id: str) -> dict[str, Any]:
     """Retrieve details and turn records for a specific session."""
+    session_id = _validate_runtime_id(session_id)
     if _is_gateway_active():
         try:
             return await _proxy_to_gateway('GET', f'/sessions/{session_id}')
         except Exception as e:
-            logger.warning(
-                f'Failed to proxy get_session_details: {e}. Falling back to local execution.'
-            )
+            _log_failure('proxy_get_session_details', e, level=logging.WARNING)
 
     db_path = _get_db_path()
     if not db_path.exists():
@@ -2541,31 +4114,31 @@ async def get_session_details(session_id: str) -> dict[str, Any]:
         sess_dict['needs_input'] = bool(sess_dict.get('needs_input', 0))
 
         cursor.execute(
-            'SELECT * FROM turns WHERE session_id = ? ORDER BY turn_number ASC',
-            (session_id,),
+            'SELECT * FROM turns WHERE session_id = ? ORDER BY turn_number ASC LIMIT ?',
+            (session_id, _MAX_SESSION_TURNS),
         )
         turns = [dict(t) for t in cursor.fetchall()]
         sess_dict['turns'] = turns
 
         conn.close()
-        return sess_dict
+        safe_session, _privacy_report = sanitize_for_persistence(sess_dict)
+        return safe_session if isinstance(safe_session, dict) else {}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f'Error retrieving session details: {e}')
-        raise HTTPException(status_code=500, detail=str(e))
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__)
 
 
 @router.delete('/sessions/{session_id}')
 async def delete_session(session_id: str) -> dict[str, Any]:
     """Permanently remove a session and its turns from durable persistence."""
+    session_id = _validate_runtime_id(session_id)
     if _is_gateway_active():
         try:
             return await _proxy_to_gateway('DELETE', f'/sessions/{session_id}')
         except Exception as e:
-            logger.warning(
-                f'Failed to proxy delete_session: {e}. Falling back to local execution.'
-            )
+            _log_failure('proxy_delete_session', e, level=logging.WARNING)
 
     db_path = _get_db_path()
     if not db_path.exists():
@@ -2579,8 +4152,8 @@ async def delete_session(session_id: str) -> dict[str, Any]:
         conn.close()
         return {'status': 'success', 'message': f'Session {session_id} deleted.'}
     except Exception as e:
-        logger.error(f'Error deleting session: {e}')
-        raise HTTPException(status_code=500, detail=str(e))
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__)
 
 
 @router.post('/sessions/{session_id}/reply')
@@ -2588,22 +4161,29 @@ async def submit_session_reply(
     session_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
     """Submit an interactive user reply turn to a waiting agent session."""
+    session_id = _validate_runtime_id(session_id)
+    raw_content = payload.get('content', '')
+    if not isinstance(raw_content, str):
+        raise HTTPException(status_code=400, detail='Reply content must be text')
+    if len(raw_content.encode('utf-8')) > _MAX_SESSION_REPLY_BYTES:
+        raise HTTPException(status_code=400, detail='Reply content exceeds its limit')
+    safe_content, _privacy_report = sanitize_for_persistence(raw_content)
+    content = str(safe_content).strip()
+    if not content:
+        raise HTTPException(status_code=400, detail='Reply content cannot be empty')
     if _is_gateway_active():
         try:
             return await _proxy_to_gateway(
-                'POST', f'/sessions/{session_id}/reply', payload
+                'POST',
+                f'/sessions/{session_id}/reply',
+                {'content': content},
             )
         except Exception as e:
-            logger.warning(
-                f'Failed to proxy submit_session_reply: {e}. Falling back to local execution.'
-            )
+            _log_failure('proxy_submit_session_reply', e, level=logging.WARNING)
 
     db_path = _get_db_path()
     if not db_path.exists():
         raise HTTPException(status_code=404, detail='Database not found')
-    content = payload.get('content', '').strip()
-    if not content:
-        raise HTTPException(status_code=400, detail='Reply content cannot be empty')
 
     try:
         conn = sqlite3.connect(str(db_path))
@@ -2652,20 +4232,19 @@ async def submit_session_reply(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f'Error submitting session reply: {e}')
-        raise HTTPException(status_code=500, detail=str(e))
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__)
 
 
 @router.post('/sessions/{session_id}/cancel')
 async def cancel_session_run(session_id: str) -> dict[str, Any]:
     """Cancel any active background or goal execution on this session."""
+    session_id = _validate_runtime_id(session_id)
     if _is_gateway_active():
         try:
             return await _proxy_to_gateway('POST', f'/sessions/{session_id}/cancel')
         except Exception as e:
-            logger.warning(
-                f'Failed to proxy cancel_session_run: {e}. Falling back to local execution.'
-            )
+            _log_failure('proxy_cancel_session_run', e, level=logging.WARNING)
 
     cancelled = False
     for goal_id, run in list(background_goal_runs.items()):
@@ -2689,8 +4268,7 @@ async def cancel_session_run(session_id: str) -> dict[str, Any]:
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.error(f'Error updating SQLite session to cancelled: {e}')
-
+        _log_failure('api_extension', e)
     return {'status': 'success', 'cancelled': cancelled}
 
 
@@ -2698,7 +4276,7 @@ async def run_goal_loop(
     session_id: str,
     goal_id: str,
     objective: str,
-    validation_cmd: str,
+    validation_action: str,
     max_iterations: int,
     constraints: list[str],
 ):
@@ -2731,48 +4309,36 @@ async def run_goal_loop(
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.error(f'Error updating session status: {e}')
-
+        _log_failure('api_extension', e)
     while iterations_run < max_iterations and not success:
         iterations_run += 1
         iter_start = time.time()
 
         # Step action description
-        action_desc = f"Analyzing workspace and executing step {iterations_run} for objective: '{objective}'."
-        if validation_cmd:
-            action_desc += f' Preparing to run validation command `{validation_cmd}`.'
+        action_desc = f'Executing bounded goal step {iterations_run}.'
+        if validation_action != 'none':
+            action_desc += ' Applying the configured validation action.'
 
-        tool_calls_count = 2 if validation_cmd else 1
+        tool_calls_count = 2 if validation_action != 'none' else 1
 
-        # Execute validation command in workspace directory
+        # Validation actions are bounded filesystem predicates. Arbitrary shell
+        # commands are intentionally unsupported at this API trust boundary.
         validation_output = ''
         cmd_success = False
-        if validation_cmd:
+        if validation_action != 'none':
             try:
-                proc = await asyncio.create_subprocess_shell(
-                    validation_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=str(DEFAULT_AGENT_DIR.resolve()),
-                )
-                stdout, stderr = await proc.communicate()
-                exit_code = proc.returncode
-
-                output_str = stdout.decode().strip()
-                err_str = stderr.decode().strip()
-
+                workspace = DEFAULT_AGENT_DIR.resolve()
+                if validation_action == 'workspace-present':
+                    cmd_success = workspace.is_dir()
+                elif validation_action == 'repository-present':
+                    cmd_success = workspace.is_dir() and (workspace / '.git').exists()
                 validation_output = (
-                    f'Command: `{validation_cmd}`\nExit Code: {exit_code}\n'
+                    'Validation action passed.'
+                    if cmd_success
+                    else 'Validation action did not pass.'
                 )
-                if output_str:
-                    validation_output += f'Stdout:\n{output_str}\n'
-                if err_str:
-                    validation_output += f'Stderr:\n{err_str}\n'
-
-                if exit_code == 0:
-                    cmd_success = True
             except Exception as e:
-                validation_output = f'Failed to execute command: {e}'
+                validation_output = f'Validation failed: {type(e).__name__}'
         else:
             if iterations_run >= 3:
                 cmd_success = True
@@ -2835,8 +4401,7 @@ async def run_goal_loop(
             conn.commit()
             conn.close()
         except Exception as e:
-            logger.error(f'Error appending turn to SQLite: {e}')
-
+            _log_failure('api_extension', e)
         if cmd_success:
             success = True
             break
@@ -2859,32 +4424,65 @@ async def run_goal_loop(
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.error(f'Error finalizing SQLite session status: {e}')
+        _log_failure('api_extension', e)
 
 
 @router.post('/goals')
 async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, Any]:
     """Launch a new backgrounded autonomous goal execution loop (ORCH-5.0)."""
+    if payload.validation_cmd:
+        raise HTTPException(
+            status_code=400,
+            detail='Arbitrary validation commands are unsupported',
+        )
+    if payload.validation_action not in _GOAL_VALIDATION_ACTIONS:
+        raise HTTPException(status_code=400, detail='Unsupported validation action')
+
+    safe_request, _privacy_report = sanitize_for_persistence(
+        {
+            'objective': payload.objective,
+            'constraints': payload.constraints,
+        }
+    )
+    safe_objective = str(safe_request.get('objective') or '').strip()
+    safe_constraints = [
+        str(value)
+        for value in safe_request.get('constraints', [])
+        if str(value).strip()
+    ]
+    if len(safe_constraints) > 50 or any(
+        len(value) > 1024 for value in safe_constraints
+    ):
+        raise HTTPException(status_code=400, detail='Goal constraints exceed limits')
+    if not safe_objective:
+        raise HTTPException(status_code=400, detail='Goal objective is required')
+
     if _is_gateway_active():
         try:
-            return await _proxy_to_gateway('POST', '/goals', payload.model_dump())
-        except Exception as e:
-            logger.warning(
-                f'Failed to proxy create_goal: {e}. Falling back to local execution.'
+            return await _proxy_to_gateway(
+                'POST',
+                '/goals',
+                {
+                    'objective': safe_objective,
+                    'max_iterations': payload.max_iterations,
+                    'validation_action': payload.validation_action,
+                    'constraints': safe_constraints,
+                },
             )
+        except Exception as e:
+            _log_failure('proxy_create_goal', e, level=logging.WARNING)
 
     session_id = str(uuid.uuid4())
     goal_id = str(uuid.uuid4())
 
-    spec = GoalSpec.parse_goal_input(payload.objective)
+    spec = GoalSpec.parse_goal_input(safe_objective)
     spec.id = goal_id
     spec.session_id = session_id
     if payload.max_iterations:
         spec.max_iterations = payload.max_iterations
-    if payload.validation_cmd:
-        spec.validation_cmd = payload.validation_cmd
-    if payload.constraints:
-        spec.constraints = payload.constraints
+    spec.validation_cmd = ''
+    if safe_constraints:
+        spec.constraints = safe_constraints
 
     db_path = _get_db_path()
 
@@ -2897,12 +4495,12 @@ async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, 
             'INSERT INTO sessions (id, title, created_at, updated_at, model, mode, workspace, turn_count, status, background, needs_input, last_response_preview, goal_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 session_id,
-                f'Goal: {spec.objective}',
+                'Autonomous goal',
                 time.time(),
                 time.time(),
-                'gpt-4o',
+                'configured',
                 'ask',
-                str(DEFAULT_AGENT_DIR),
+                'workspace://active',
                 1,
                 'running',
                 1,
@@ -2932,9 +4530,10 @@ async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, 
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.error(f'Error initializing SQLite goal session: {e}')
+        _log_failure('api_extension', e)
         raise HTTPException(
-            status_code=500, detail=f'Database initialization failed: {e}'
+            status_code=500,
+            detail=f'Database initialization failed: {type(e).__name__}',
         )
 
     task = asyncio.create_task(
@@ -2942,7 +4541,7 @@ async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, 
             session_id=session_id,
             goal_id=goal_id,
             objective=spec.objective,
-            validation_cmd=spec.validation_cmd,
+            validation_action=payload.validation_action,
             max_iterations=spec.max_iterations,
             constraints=spec.constraints,
         )
@@ -2959,8 +4558,7 @@ async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, 
         'status': 'success',
         'goal_id': goal_id,
         'session_id': session_id,
-        'objective': spec.objective,
-        'validation_cmd': spec.validation_cmd,
+        'validation_action': payload.validation_action,
     }
 
 
@@ -2971,39 +4569,39 @@ async def list_goals() -> list[dict[str, Any]]:
         try:
             return await _proxy_to_gateway('GET', '/goals')
         except Exception as e:
-            logger.warning(
-                f'Failed to proxy list_goals: {e}. Falling back to local execution.'
-            )
+            _log_failure('proxy_list_goals', e, level=logging.WARNING)
 
-    return list(active_goals.values())
+    safe_goals, _privacy_report = sanitize_for_persistence(
+        list(active_goals.values())[:_MAX_SESSION_RECORDS]
+    )
+    return safe_goals if isinstance(safe_goals, list) else []
 
 
 @router.get('/goals/{goal_id}/iterations')
 async def get_goal_iterations(goal_id: str) -> dict[str, Any]:
     """Retrieve live-updating iteration steps for a specific goal run."""
+    goal_id = _validate_runtime_id(goal_id)
     if _is_gateway_active():
         try:
             return await _proxy_to_gateway('GET', f'/goals/{goal_id}/iterations')
         except Exception as e:
-            logger.warning(
-                f'Failed to proxy get_goal_iterations: {e}. Falling back to local execution.'
-            )
+            _log_failure('proxy_get_goal_iterations', e, level=logging.WARNING)
 
     if goal_id not in active_goals:
         raise HTTPException(status_code=404, detail='Goal run not found')
-    return active_goals[goal_id]
+    safe_goal, _privacy_report = sanitize_for_persistence(active_goals[goal_id])
+    return safe_goal if isinstance(safe_goal, dict) else {}
 
 
 @router.post('/goals/{goal_id}/cancel')
 async def cancel_goal(goal_id: str) -> dict[str, Any]:
     """Cancel an active autonomous goal loop (ORCH-5.0)."""
+    goal_id = _validate_runtime_id(goal_id)
     if _is_gateway_active():
         try:
             return await _proxy_to_gateway('POST', f'/goals/{goal_id}/cancel')
         except Exception as e:
-            logger.warning(
-                f'Failed to proxy cancel_goal: {e}. Falling back to local execution.'
-            )
+            _log_failure('proxy_cancel_goal', e, level=logging.WARNING)
 
     if goal_id not in background_goal_runs:
         raise HTTPException(status_code=404, detail='Active goal run not found')
@@ -3031,8 +4629,7 @@ async def cancel_goal(goal_id: str) -> dict[str, Any]:
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.error(f'Error cancelling goal session in SQLite: {e}')
-
+        _log_failure('api_extension', e)
     return {'status': 'success', 'message': 'Goal cancelled successfully.'}
 
 
@@ -3043,10 +4640,9 @@ async def cancel_goal(goal_id: str) -> dict[str, Any]:
 
 @router.get('/config')
 async def get_config_file() -> dict[str, Any]:
-    """Read the central config.json from ~/.config/agent-utilities/config.json."""
-    import json
+    """Read the central AgentConfig document from its XDG config directory."""
 
-    config_path = Path.home() / '.config' / 'agent-utilities' / 'config.json'
+    config_path = config_dir() / 'config.json'
     if not config_path.exists():
         return {
             'graph_timeout': '1200000',
@@ -3057,42 +4653,68 @@ async def get_config_file() -> dict[str, Any]:
             'github_token': '',
         }
     try:
-        data = json.loads(config_path.read_text(encoding='utf-8'))
-        return data
+        data = _read_bounded_json(config_path)
+        if not isinstance(data, dict):
+            return {}
+        browser_view, _privacy_report = sanitize_for_persistence(
+            _redact_inline_secrets(data)
+        )
+        return browser_view if isinstance(browser_view, dict) else {}
     except Exception as e:
-        logger.error(f'Failed to read config.json: {e}')
+        _log_failure('api_extension', e)
         return {}
 
 
 @router.put('/config')
 async def update_config_file(data: dict[str, Any]) -> dict[str, Any]:
-    """Write the central config.json back to ~/.config/agent-utilities/config.json."""
+    """Validate and atomically write the central AgentConfig document."""
     import json
 
-    config_dir = Path.home() / '.config' / 'agent-utilities'
-    config_dir.mkdir(parents=True, exist_ok=True)
-    config_path = config_dir / 'config.json'
+    from agent_utilities.core.config import AgentConfig
+    from agent_utilities.core.paths import config_dir
+
+    def contains_inline_secret(value: Any, key: str = '') -> bool:
+        if isinstance(value, dict):
+            return any(contains_inline_secret(v, str(k)) for k, v in value.items())
+        if isinstance(value, list):
+            return any(contains_inline_secret(item, key) for item in value)
+        if not _is_inline_secret_key(key) or value in (None, ''):
+            return False
+        return True
+
+    if contains_inline_secret(data):
+        raise HTTPException(
+            status_code=400,
+            detail='Inline secrets are not accepted; configure secret references',
+        )
     try:
-        config_path.write_text(json.dumps(data, indent=4), encoding='utf-8')
+        AgentConfig.model_validate(data)
+    except Exception as e:
+        _log_failure('validate_agent_config', e)
+        raise HTTPException(status_code=422, detail='Invalid AgentConfig') from e
+
+    target_dir = _private_directory(config_dir())
+    config_path = target_dir / 'config.json'
+    try:
+        payload = json.dumps(data, indent=2, sort_keys=True).encode('utf-8')
+        if len(payload) > _MAX_EXTERNAL_RESULT_BYTES:
+            raise ValueError('AgentConfig document exceeds its safety bound')
+        _atomic_private_write(config_path, payload)
         return {'status': 'success'}
     except Exception as e:
-        logger.error(f'Failed to write config.json: {e}')
-        raise HTTPException(status_code=500, detail=f'Failed to save config: {e}')
+        _log_failure('write_agent_config', e)
+        raise HTTPException(status_code=500, detail='Failed to save config') from e
 
 
 @router.get('/prompts')
 async def list_prompts() -> list[dict[str, Any]]:
     """List all prompting JSON configs from agent_utilities/prompts/."""
-    import json
-
-    prompts_dir = Path(
-        '/home/apps/workspace/agent-packages/agent-utilities/agent_utilities/prompts'
-    )
+    prompts_dir = get_prompts_dir()
     results = []
     if prompts_dir.exists() and prompts_dir.is_dir():
-        for f in prompts_dir.glob('*.json'):
+        for f in list(prompts_dir.glob('*.json'))[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
             try:
-                data = json.loads(f.read_text(encoding='utf-8'))
+                data = _read_bounded_json(f)
                 title = (
                     data.get('identity', {}).get('role')
                     or data.get('title')
@@ -3112,26 +4734,23 @@ async def list_prompts() -> list[dict[str, Any]]:
                         'title': title,
                         'goal': goal,
                         'core_directive': core_directive,
-                        'file_path': str(f),
+                        'file_path': f'prompt://{f.stem}',
                     }
                 )
             except Exception as e:
-                logger.error(f'Failed to parse prompt {f.name}: {e}')
-    return results
+                _log_failure('parse_prompt', e)
+    public_results = _public_external_result(results)
+    return public_results if isinstance(public_results, list) else []
 
 
 @router.get('/prompts/{name}')
 async def get_prompt_by_name(name: str) -> dict[str, Any]:
     """Retrieve details for a single prompt file."""
-    import json
-
-    f = Path(
-        f'/home/apps/workspace/agent-packages/agent-utilities/agent_utilities/prompts/{name}.json'
-    )
+    f = resolve_prompt_file(name)
     if not f.exists():
         raise HTTPException(status_code=404, detail='Prompt not found')
     try:
-        data = json.loads(f.read_text(encoding='utf-8'))
+        data = _read_bounded_json(f)
         # Flat-map nested properties for client-side form editor compatibility
         if 'title' not in data:
             data['title'] = data.get('identity', {}).get('role') or data.get(
@@ -3145,10 +4764,13 @@ async def get_prompt_by_name(name: str) -> dict[str, Any]:
             data['core_directive'] = (
                 data.get('instructions', {}).get('core_directive') or ''
             )
-        return data
+        public_data = _public_external_result(data)
+        if not isinstance(public_data, dict):
+            raise ValueError('Prompt document has an invalid shape')
+        return public_data
     except Exception as e:
-        logger.error(f'Failed to parse prompt {name}: {e}')
-        raise HTTPException(status_code=500, detail=str(e))
+        _log_failure('parse_prompt', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__)
 
 
 @router.put('/prompts/{name}')
@@ -3156,10 +4778,19 @@ async def update_prompt_by_name(name: str, data: dict[str, Any]) -> dict[str, An
     """Update details for a single prompt file."""
     import json
 
-    f = Path(
-        f'/home/apps/workspace/agent-packages/agent-utilities/agent_utilities/prompts/{name}.json'
-    )
+    f = resolve_prompt_file(name)
     try:
+        bounded_data = _bounded_external_value(data)
+        if not isinstance(bounded_data, dict):
+            raise ValueError('Prompt document has an invalid shape')
+        safe_data, privacy_report = sanitize_for_persistence(bounded_data)
+        if privacy_report.changed or not isinstance(safe_data, dict):
+            raise HTTPException(
+                status_code=400,
+                detail='Prompt violates the persistence privacy boundary',
+            )
+        data = safe_data
+
         # Sync flat properties back to standard nested structure
         title = data.get('title')
         goal = data.get('goal')
@@ -3183,12 +4814,21 @@ async def update_prompt_by_name(name: str, data: dict[str, Any]) -> dict[str, An
                 data['instructions'] = {}
             data['instructions']['core_directive'] = core_directive
 
-        # Write clean data back to prompts JSON file
-        f.write_text(json.dumps(data, indent=4), encoding='utf-8')
+        payload = json.dumps(
+            data,
+            indent=2,
+            sort_keys=True,
+            allow_nan=False,
+        ).encode('utf-8')
+        if len(payload) > _MAX_EXTERNAL_RESULT_BYTES:
+            raise ValueError('Prompt document exceeds its safety bound')
+        _atomic_private_write(f, payload)
         return {'status': 'success'}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to save prompt {name}: {e}')
-        raise HTTPException(status_code=500, detail=str(e))
+        _log_failure('save_prompt', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -3201,9 +4841,11 @@ async def list_ecosystem_services() -> list[str]:
     """Dynamically scan installed MCP servers and backend packages."""
     services = []
     # Check directory listings under agent-packages/agents
-    agents_dir = Path('/home/apps/workspace/agent-packages/agents')
+    agents_dir = get_agent_packages_dir() / 'agents'
     if agents_dir.exists() and agents_dir.is_dir():
-        for p in agents_dir.iterdir():
+        for index, p in enumerate(agents_dir.iterdir()):
+            if index >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                break
             if p.is_dir():
                 services.append(p.name)
 
@@ -3221,115 +4863,122 @@ async def list_ecosystem_services() -> list[str]:
         if std not in services:
             services.append(std)
 
-    return services
+    return services[:_MAX_EXTERNAL_COLLECTION_ITEMS]
 
 
 @router.get('/tunnel-manager/hosts')
 async def get_tunnel_hosts() -> dict[str, Any]:
-    """Retrieve ssh inventory host aliases."""
-    import sys
+    """Retrieve opaque SSH inventory through a governed host adapter."""
 
-    tm_path = '/home/apps/workspace/agent-packages/agents/tunnel-manager'
-    if tm_path not in sys.path:
-        sys.path.insert(0, tm_path)
+    delegated_inventory = get_helper('list_tunnel_hosts')
+    if delegated_inventory is None:
+        raise HTTPException(
+            status_code=501,
+            detail='Governed tunnel inventory delegation is not configured',
+        )
     try:
-        from tunnel_manager.tunnel_manager import HostManager
+        raw_hosts = await _invoke_governed_helper(
+            delegated_inventory,
+            deadline=10.0,
+        )
+        raw_hosts = _public_external_result(raw_hosts)
+        if isinstance(raw_hosts, dict):
+            inventory = list(raw_hosts.items())[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        elif isinstance(raw_hosts, list):
+            inventory = list(enumerate(raw_hosts, start=1))[
+                :_MAX_EXTERNAL_COLLECTION_ITEMS
+            ]
+        else:
+            raise ValueError('Governed tunnel inventory returned an invalid shape')
 
-        hm = HostManager()
-        return {'hosts': hm.list_hosts()}
+        hosts = []
+        for inventory_key, record in inventory:
+            public = record if isinstance(record, dict) else {}
+            identity = str(
+                public.get('reference')
+                or public.get('id')
+                or public.get('alias')
+                or inventory_key
+            )
+            hosts.append(
+                {
+                    'reference': _opaque_reference('host', identity),
+                    'status': 'configured',
+                    'port_configured': bool(public.get('port')),
+                    'identity_configured': bool(public.get('identity_file')),
+                    'password_configured': bool(public.get('password_configured')),
+                }
+            )
+        return {'hosts': hosts}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Failed to load HostManager: {e}')
+        _log_failure('load_tunnel_hosts', e)
         raise HTTPException(
             status_code=502,
-            detail=f'tunnel-manager host inventory unavailable: {e}',
+            detail=f'tunnel-manager host inventory unavailable: {type(e).__name__}',
         ) from e
 
 
 @router.post('/tunnel-manager/hosts')
 async def add_tunnel_host(payload: dict[str, Any]) -> dict[str, str]:
-    """Add a new host configuration to the inventory."""
-    import sys
+    """Delegate a bounded host registration containing no inline secrets."""
 
-    tm_path = '/home/apps/workspace/agent-packages/agents/tunnel-manager'
-    if tm_path not in sys.path:
-        sys.path.insert(0, tm_path)
-    try:
-        from tunnel_manager.tunnel_manager import HostManager
-
-        hm = HostManager()
-        hm.add_host(
-            alias=payload['alias'],
-            hostname=payload['hostname'],
-            user=payload['user'],
-            port=payload.get('port', 22),
-            identity_file=payload.get('identity_file') or None,
-            password=payload.get('password') or None,
-            proxy_command=payload.get('proxy_command') or None,
+    delegated_registration = get_helper('configure_tunnel_host')
+    if delegated_registration is None:
+        raise HTTPException(
+            status_code=501,
+            detail='Governed tunnel configuration delegation is not configured',
         )
+    try:
+        forbidden = {'password', 'identity_file', 'proxy_command'} & set(payload)
+        if forbidden:
+            raise HTTPException(status_code=400, detail='Unsafe host fields')
+        alias = str(payload['alias']).strip()
+        hostname = str(payload['hostname']).strip()
+        user = str(payload['user']).strip()
+        password_ref = str(payload.get('password_ref') or '').strip() or None
+        if not _SAFE_INVENTORY_TOKEN.fullmatch(alias):
+            raise HTTPException(status_code=400, detail='Invalid host alias')
+        if not _SAFE_HOSTNAME.fullmatch(hostname):
+            raise HTTPException(status_code=400, detail='Invalid hostname')
+        if not _SAFE_INVENTORY_TOKEN.fullmatch(user):
+            raise HTTPException(status_code=400, detail='Invalid account identifier')
+        if password_ref and (len(password_ref) > 512 or '\x00' in password_ref):
+            raise HTTPException(status_code=400, detail='Invalid secret reference')
+        try:
+            port = int(payload.get('port', 22))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail='Invalid port') from exc
+        if not 1 <= port <= 65535:
+            raise HTTPException(status_code=400, detail='Invalid port')
+
+        result = await _invoke_governed_helper(
+            delegated_registration,
+            deadline=15.0,
+            alias=alias,
+            hostname=hostname,
+            user=user,
+            port=port,
+            password_ref=password_ref,
+        )
+        _public_external_result(result)
         return {
             'status': 'success',
-            'message': f"Host '{payload['alias']}' registered.",
-        }
-    except KeyError as e:
-        raise HTTPException(
-            status_code=400, detail=f'Missing required host field: {e}'
-        ) from e
-    except Exception as e:
-        logger.error(f'Failed to add host configuration: {e}')
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to register host '{payload.get('alias')}': {e}",
-        ) from e
-
-
-@router.post('/tunnel-manager/remote')
-async def run_tunnel_remote(payload: dict[str, Any]) -> dict[str, Any]:
-    """Execute standard shell command on selective host alias."""
-    host = payload.get('host', '')
-    cmd = payload.get('cmd', '')
-    if not host or not cmd:
-        raise HTTPException(status_code=400, detail='Missing host or cmd parameter')
-
-    import sys
-
-    tm_path = '/home/apps/workspace/agent-packages/agents/tunnel-manager'
-    if tm_path not in sys.path:
-        sys.path.insert(0, tm_path)
-    try:
-        from tunnel_manager.tunnel_manager import HostManager, Tunnel
-
-        hm = HostManager()
-        host_config = hm.get_host(host)
-        if not host_config:
-            raise HTTPException(
-                status_code=404, detail=f"Host alias '{host}' not found in inventory"
-            )
-
-        conf = host_config.model_dump()
-        t = Tunnel(
-            remote_host=conf['hostname'],
-            username=conf['user'],
-            password=conf.get('password'),
-            port=conf.get('port', 22),
-            identity_file=conf.get('identity_file'),
-            proxy_command=conf.get('proxy_command'),
-        )
-        t.connect()
-        out, error = t.run_command(cmd)
-        t.close()
-        return {
-            'status_code': 200,
-            'message': f'Command execution completed on {host}',
-            'stdout': out,
-            'stderr': error,
+            'message': 'Host registered',
+            'reference': _opaque_reference('host', alias),
         }
     except HTTPException:
         raise
+    except KeyError as e:
+        raise HTTPException(
+            status_code=400, detail='Missing required host field'
+        ) from e
     except Exception as e:
-        logger.error(f'Remote ssh execution failed: {e}')
+        _log_failure('add_tunnel_host', e)
         raise HTTPException(
             status_code=502,
-            detail=f'Remote SSH execution on {host} failed: {e}',
+            detail='Failed to register host',
         ) from e
 
 
@@ -3356,16 +5005,16 @@ async def get_system_resources() -> dict[str, Any]:
             },
         }
     except Exception as e:
-        logger.error(f'Failed to read system resources: {e}')
+        _log_failure('read_system_resources', e)
         raise HTTPException(
             status_code=503,
-            detail=f'System resource metrics unavailable (psutil): {e}',
+            detail=f'System resource metrics unavailable (psutil): {type(e).__name__}',
         ) from e
 
 
 @router.get('/systems-manager/processes')
 async def list_system_processes() -> list[dict[str, Any]]:
-    """Retrieve active running process lists sorted by usage."""
+    """Return bounded, opaque process utilization without identities or PIDs."""
     try:
         import psutil
 
@@ -3375,11 +5024,10 @@ async def list_system_processes() -> list[dict[str, Any]]:
         ):
             try:
                 info = proc.info
+                identity = f'{info["pid"]}:{info["name"]}:{info["username"]}'
                 processes.append(
                     {
-                        'pid': info['pid'],
-                        'name': info['name'],
-                        'user': info['username'] or 'system',
+                        'reference': _opaque_reference('process', identity),
                         'cpu': round(info['cpu_percent'] or 0.0, 1),
                         'memory': round(info['memory_percent'] or 0.0, 1),
                     }
@@ -3389,239 +5037,157 @@ async def list_system_processes() -> list[dict[str, Any]]:
         # Sort by cpu/memory consumption
         return sorted(processes, key=lambda x: x['cpu'], reverse=True)[:50]
     except Exception as e:
-        logger.error(f'Failed to list system processes: {e}')
+        _log_failure('list_system_processes', e)
         raise HTTPException(
             status_code=503,
-            detail=f'Process listing unavailable (psutil): {e}',
-        ) from e
-
-
-@router.post('/systems-manager/processes/kill')
-async def kill_system_process(payload: dict[str, int]) -> dict[str, str]:
-    """Terminate a running process by its ID."""
-    pid = payload.get('pid')
-    if not pid:
-        raise HTTPException(status_code=400, detail='Missing pid parameter')
-    try:
-        import psutil
-
-        proc = psutil.Process(pid)
-        proc.kill()
-        return {'status': 'success', 'message': f'Process {pid} terminated.'}
-    except Exception as e:
-        logger.error(f'Failed to kill process {pid}: {e}')
-        raise HTTPException(
-            status_code=502,
-            detail=f'Failed to terminate process {pid}: {e}',
+            detail=f'Process listing unavailable (psutil): {type(e).__name__}',
         ) from e
 
 
 @router.get('/container-manager/containers')
 async def list_docker_containers() -> list[dict[str, Any]]:
-    """Query docker socket directly for container configurations."""
-    import json
-    import socket
+    """Return bounded container inventory through a governed host adapter.
 
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    try:
-        sock.settimeout(1.0)
-        sock.connect('/var/run/docker.sock')
-        request = 'GET /containers/json?all=1 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n'
-        sock.sendall(request.encode('utf-8'))
-        response = b''
-        while True:
-            chunk = sock.recv(4096)
-            if not chunk:
-                break
-            response += chunk
+    The WebUI intentionally has no direct access to a Docker/Podman socket.
+    The host adapter owns daemon authorization, transport, credential, and
+    audit policy; only opaque references and a short state cross this boundary.
+    """
 
-        parts = response.split(b'\r\n\r\n', 1)
-        if len(parts) == 2:
-            body = parts[1].decode('utf-8')
-            # Unpack chunked encoding if present
-            if b'Transfer-Encoding: chunked' in parts[0]:
-                parsed_body = ''
-                idx = 0
-                while idx < len(body):
-                    line_end = body.find('\r\n', idx)
-                    if line_end == -1:
-                        break
-                    size_str = body[idx:line_end].strip()
-                    if not size_str:
-                        break
-                    try:
-                        size = int(size_str, 16)
-                    except ValueError:
-                        break
-                    if size == 0:
-                        break
-                    idx = line_end + 2
-                    parsed_body += body[idx : idx + size]
-                    idx += size + 2
-                body = parsed_body
-
-            raw_containers = json.loads(body)
-            results = []
-            for c in raw_containers:
-                results.append(
-                    {
-                        'id': c.get('Id', '')[:12],
-                        'name': c.get('Names', [''])[0].replace('/', ''),
-                        'state': c.get('State', 'unknown'),
-                        'status': c.get('Status', ''),
-                        'image': c.get('Image', ''),
-                    }
-                )
-            return results
-    except Exception as e:
-        logger.debug(f'Direct docker socket check failed: {e}')
-    finally:
-        sock.close()
-
-    # Standard high-fidelity mockup fallback
-    return [
-        {
-            'id': '1a2b3c4d5e6f',
-            'name': 'agent-utilities-core',
-            'state': 'running',
-            'status': 'Up 2 hours',
-            'image': 'agent-utilities:latest',
-        },
-        {
-            'id': '2b3c4d5e6f7g',
-            'name': 'mealie-service',
-            'state': 'running',
-            'status': 'Up 1 day',
-            'image': 'mealie:latest',
-        },
-        {
-            'id': '3c4d5e6f7g8h',
-            'name': 'wger-service',
-            'state': 'running',
-            'status': 'Up 4 hours',
-            'image': 'wger:latest',
-        },
-        {
-            'id': '4d5e6f7g8h9i',
-            'name': 'langfuse-analytics',
-            'state': 'exited',
-            'status': 'Exited (0) 5 mins ago',
-            'image': 'langfuse/langfuse:latest',
-        },
-        {
-            'id': '5e6f7g8h9i0j',
-            'name': 'technitium-dns',
-            'state': 'running',
-            'status': 'Up 3 days',
-            'image': 'technitium/dns-server:latest',
-        },
-    ]
-
-
-@router.post('/container-manager/containers/{id}/action')
-async def trigger_container_action(id: str, payload: dict[str, str]) -> dict[str, str]:
-    """Trigger standard Docker action (start/stop/restart) for a container ID."""
-    action = payload.get('action', '')
-    if action not in ['start', 'stop', 'restart']:
-        raise HTTPException(status_code=400, detail='Invalid docker container action')
-
-    import socket
-
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    try:
-        sock.settimeout(2.0)
-        sock.connect('/var/run/docker.sock')
-        request = f'POST /containers/{id}/{action} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'
-        sock.sendall(request.encode('utf-8'))
-        response = b''
-        while True:
-            chunk = sock.recv(4096)
-            if not chunk:
-                break
-            response += chunk
-    except Exception as e:
-        # The Docker socket is unreachable (not present, permission denied,
-        # timeout). Report the real failure instead of fabricating success.
+    delegated_inventory = get_helper('list_containers')
+    if delegated_inventory is None:
         raise HTTPException(
-            status_code=502,
-            detail=f'Docker socket unreachable for container {id} {action}: {e}',
+            status_code=501,
+            detail='Governed container inventory delegation is not configured',
+        )
+    try:
+        raw_containers = await _invoke_governed_helper(
+            delegated_inventory,
+            deadline=10.0,
+            include_stopped=True,
+        )
+        raw_containers = _public_external_result(raw_containers)
+        if not isinstance(raw_containers, list):
+            raise ValueError('Governed container inventory returned an invalid shape')
+        results = []
+        for index, container in enumerate(
+            raw_containers[:_MAX_CONTAINER_RECORDS], start=1
+        ):
+            if not isinstance(container, dict):
+                continue
+            identity = str(
+                container.get('reference')
+                or container.get('id')
+                or container.get('Id')
+                or index
+            )
+            state = str(container.get('state') or container.get('State') or 'unknown')
+            results.append(
+                {
+                    'reference': _opaque_reference('container', identity),
+                    'state': state[:64],
+                }
+            )
+        return results
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('container_inventory', e, level=logging.DEBUG)
+        raise HTTPException(
+            status_code=503,
+            detail=f'Container inventory unavailable: {type(e).__name__}',
         ) from e
-    finally:
-        sock.close()
 
-    # Parse the real HTTP status line from the daemon's response.
-    status_line = response.split(b'\r\n', 1)[0].decode('latin-1', 'replace')
-    if b'204 No Content' in response or b'200 OK' in response:
-        return {'status': 'success', 'message': f'Container {id} {action}ed.'}
 
-    # Non-2xx: surface the daemon's actual error (e.g. 404 no such container,
-    # 409 already started/stopped) rather than claiming the action succeeded.
-    raise HTTPException(
-        status_code=502,
-        detail=f'Docker daemon rejected {action} on container {id}: {status_line}',
-    )
+def discover_workspace_repositories() -> list[Path]:
+    """Return real git repositories visible under the configured workspace."""
+    workspace = get_workspace_dir().resolve()
+    roots = [workspace / 'agent-packages', workspace]
+    discovered: dict[Path, None] = {}
+    for root in roots:
+        if root.is_symlink() or not root.is_dir():
+            continue
+        if (root / '.git').exists():
+            discovered[root] = None
+        try:
+            for child in root.iterdir():
+                if len(discovered) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                    break
+                if child.is_symlink() or not child.is_dir():
+                    continue
+                resolved = child.resolve()
+                try:
+                    resolved.relative_to(workspace)
+                except ValueError:
+                    continue
+                if (resolved / '.git').exists():
+                    discovered[resolved] = None
+        except OSError as exc:
+            _log_failure('api_extension', exc, level=logging.DEBUG)
+    return sorted(discovered, key=lambda path: path.name.lower())[
+        :_MAX_EXTERNAL_COLLECTION_ITEMS
+    ]
 
 
 @router.get('/repository-manager/repos')
 async def list_workspace_repos() -> list[dict[str, Any]]:
-    """Retrieve cloned repository paths, git branches, and modification states."""
+    """Retrieve privacy-safe repository references and tracked-drift states."""
     import subprocess
 
     repos = []
-    base_dir = Path('/home/apps/workspace/agent-packages')
-    if base_dir.exists():
-        for p in base_dir.iterdir():
-            if p.is_dir() and (p / '.git').exists():
-                try:
-                    branch = (
-                        subprocess.check_output(
-                            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=str(p)
-                        )
-                        .decode('utf-8')
-                        .strip()
-                    )
-                    status_output = subprocess.check_output(
-                        ['git', 'status', '--porcelain'], cwd=str(p)
-                    ).decode('utf-8')
-                    modified_count = len(
-                        [line for line in status_output.split('\n') if line.strip()]
-                    )
-                    repos.append(
-                        {
-                            'name': p.name,
-                            'branch': branch,
-                            'modified_count': modified_count,
-                            'path': str(p),
-                            'status': 'clean' if modified_count == 0 else 'modified',
-                        }
-                    )
-                except Exception:
-                    repos.append(
-                        {
-                            'name': p.name,
-                            'branch': 'main',
-                            'modified_count': 0,
-                            'path': str(p),
-                            'status': 'clean',
-                        }
-                    )
-
-    # Guarantee at least some key packages
-    names = [r['name'] for r in repos]
-    for std in [
-        'agent-utilities',
-        'agent-webui',
-        'agent-terminal-ui',
-        'epistemic-graph',
-    ]:
-        if std not in names:
+    for index, repo_path in enumerate(discover_workspace_repositories(), start=1):
+        reference = _opaque_reference('repo', str(repo_path))
+        try:
+            git_env = _git_probe_environment()
+            branch_probe = subprocess.run(
+                ['git', 'symbolic-ref', '--quiet', 'HEAD'],
+                cwd=str(repo_path),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                env=git_env,
+            )
+            if branch_probe.returncode not in (0, 1):
+                raise RuntimeError('repository branch-state probe failed')
+            unstaged = subprocess.run(
+                ['git', 'diff', '--quiet', '--no-ext-diff'],
+                cwd=str(repo_path),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                env=git_env,
+            )
+            staged = subprocess.run(
+                ['git', 'diff', '--cached', '--quiet', '--no-ext-diff'],
+                cwd=str(repo_path),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                env=git_env,
+            )
+            if unstaged.returncode not in (0, 1) or staged.returncode not in (0, 1):
+                raise RuntimeError('repository state probe failed')
+            modified = unstaged.returncode == 1 or staged.returncode == 1
             repos.append(
                 {
-                    'name': std,
-                    'branch': 'main',
-                    'modified_count': 0,
-                    'path': f'/home/apps/workspace/agent-packages/{std}',
-                    'status': 'clean',
+                    'reference': reference,
+                    'label': f'Repository {index}',
+                    'branch_state': (
+                        'attached' if branch_probe.returncode == 0 else 'detached'
+                    ),
+                    'modified_count': 1 if modified else 0,
+                    'status': 'modified' if modified else 'clean',
+                }
+            )
+        except Exception as exc:
+            _log_failure('api_extension', exc, level=logging.WARNING)
+            repos.append(
+                {
+                    'reference': reference,
+                    'label': f'Repository {index}',
+                    'branch_state': 'unknown',
+                    'modified_count': -1,
+                    'status': 'unavailable',
+                    'detail': type(exc).__name__,
                 }
             )
 
@@ -3630,28 +5196,33 @@ async def list_workspace_repos() -> list[dict[str, Any]]:
 
 @router.post('/repository-manager/bulk')
 async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, Any]:
-    """Run a git/build/test action across the named workspace repos.
+    """Run a bounded read-only status action across referenced workspace repos.
 
-    Executes the requested action against each target repository under
-    ``/home/apps/workspace/agent-packages`` and returns the real per-repo
-    outcome (exit code + captured output). Never reports success for work that
-    did not run: unknown actions and missing repos surface as honest errors.
+    Repository paths, names, commands, and command output never cross the API
+    boundary. Mutating repository operations must use the governed repository
+    manager delegation surface instead.
     """
     import subprocess
 
     action = payload.get('action', '')
     targets = payload.get('targets', [])
-    if not action or not targets:
+    if (
+        not isinstance(action, str)
+        or not isinstance(targets, list)
+        or not action
+        or not targets
+        or len(targets) > 100
+        or any(
+            not isinstance(value, str) or not re.fullmatch(r'repo:[0-9a-f]{32}', value)
+            for value in targets
+        )
+    ):
         raise HTTPException(status_code=400, detail='Missing action or targets list')
 
     # Map the high-level action to a concrete command. Only whitelisted,
     # non-destructive commands are dispatched.
     command_map: dict[str, list[str]] = {
-        'pull': ['git', 'pull', '--ff-only'],
-        'fetch': ['git', 'fetch', '--all', '--prune'],
-        'status': ['git', 'status', '--porcelain'],
-        'build': ['uv', 'sync'],
-        'test': ['uv', 'run', 'pytest', '-q'],
+        'status': ['git', 'diff', '--quiet', '--no-ext-diff'],
     }
     cmd = command_map.get(action)
     if cmd is None:
@@ -3662,34 +5233,45 @@ async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, A
             ),
         )
 
-    base_dir = Path('/home/apps/workspace/agent-packages')
+    repositories = {
+        _opaque_reference('repo', str(path)): path
+        for path in discover_workspace_repositories()
+    }
     results: list[dict[str, Any]] = []
-    for name in targets:
-        repo_path = base_dir / str(name)
-        if not (repo_path / '.git').exists():
-            results.append(
-                {'repo': name, 'status': 'error', 'detail': 'repo not found'}
-            )
+    for reference in targets:
+        repo_path = repositories.get(str(reference))
+        if repo_path is None:
+            results.append({'status': 'error', 'detail': 'repo not found'})
             continue
         try:
+            git_env = _git_probe_environment()
             proc = subprocess.run(
                 cmd,
                 cwd=str(repo_path),
-                capture_output=True,
-                text=True,
-                timeout=600,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                env=git_env,
             )
-            output = (proc.stdout + proc.stderr).strip()
+            staged = subprocess.run(
+                ['git', 'diff', '--cached', '--quiet', '--no-ext-diff'],
+                cwd=str(repo_path),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                env=git_env,
+            )
+            if proc.returncode not in (0, 1) or staged.returncode not in (0, 1):
+                raise RuntimeError('repository state probe failed')
             results.append(
                 {
-                    'repo': name,
-                    'status': 'success' if proc.returncode == 0 else 'error',
-                    'returncode': proc.returncode,
-                    'output': output[-4000:],
+                    'reference': str(reference),
+                    'status': 'success',
+                    'modified': proc.returncode == 1 or staged.returncode == 1,
                 }
             )
         except Exception as e:  # noqa: BLE001 - report per-repo failure
-            results.append({'repo': name, 'status': 'error', 'detail': str(e)})
+            results.append({'status': 'error', 'detail': type(e).__name__})
 
     failures = [r for r in results if r['status'] != 'success']
     logger.info(
@@ -3705,65 +5287,48 @@ async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, A
 
 @router.post('/voice/transcribe')
 async def transcribe_voice_chunk(file: UploadFile = File(...)) -> dict[str, str]:
-    """Capture vocal input files and output transcribed instructions."""
-    import shutil as _shutil
-    import subprocess
-
-    temp_dir = Path('/home/apps/workspace/agent-packages/agent-webui/scratch')
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    out_file = temp_dir / f'voice_{uuid.uuid4().hex}.webm'
+    """Delegate one bounded audio upload to a governed transcription sandbox."""
+    max_upload_bytes = 25 * 1024 * 1024
+    max_transcript_bytes = 2 * 1024 * 1024
     try:
-        with out_file.open('wb') as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        media_type = (file.content_type or '').split(';', 1)[0].strip().lower()
+        if not (media_type.startswith('audio/') or media_type == 'video/webm'):
+            raise HTTPException(status_code=400, detail='Unsupported audio media type')
+        payload = bytearray()
+        while chunk := await file.read(64 * 1024):
+            payload.extend(chunk)
+            if len(payload) > max_upload_bytes:
+                raise HTTPException(status_code=413, detail='Upload too large')
+        if not payload:
+            raise HTTPException(status_code=400, detail='Audio upload is empty')
 
-        # Real speech-to-text. Prefer a locally installed whisper-family CLI
-        # (faster-whisper's ``whisper-ctranslate2`` or openai-whisper's
-        # ``whisper``). If none is installed we return an honest, empty
-        # transcript with an error rather than fabricating an instruction.
-        whisper_bin = _shutil.which('whisper-ctranslate2') or _shutil.which('whisper')
-        if not whisper_bin:
-            return {
-                'text': '',
-                'error': (
-                    'transcription not configured: no whisper CLI '
-                    '(whisper / whisper-ctranslate2) found on PATH'
-                ),
-            }
-
-        model = os.getenv('WHISPER_MODEL', 'base')
-        try:
-            proc = subprocess.run(
-                [
-                    whisper_bin,
-                    str(out_file),
-                    '--model',
-                    model,
-                    '--output_format',
-                    'txt',
-                    '--output_dir',
-                    str(temp_dir),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=300,
+        transcriber = get_helper('transcribe_voice')
+        if transcriber is None:
+            raise HTTPException(
+                status_code=501,
+                detail='Governed transcription delegation is not configured',
             )
-        except Exception as e:  # noqa: BLE001
-            return {'text': '', 'error': f'transcription failed: {e}'}
 
-        if proc.returncode != 0:
-            return {
-                'text': '',
-                'error': f'transcription failed: {proc.stderr.strip()[-500:]}',
-            }
-
-        txt_file = temp_dir / f'{out_file.stem}.txt'
-        if txt_file.exists():
-            return {'text': txt_file.read_text(encoding='utf-8').strip()}
-        # Some whisper builds print the transcript to stdout instead.
-        return {'text': proc.stdout.strip()}
+        result = await _invoke_governed_helper(
+            transcriber,
+            deadline=120.0,
+            content=bytes(payload),
+            content_type=media_type,
+        )
+        text = result.get('text', '') if isinstance(result, dict) else result
+        if not isinstance(text, str):
+            raise ValueError('Transcription result has an invalid shape')
+        if len(text.encode('utf-8')) > max_transcript_bytes:
+            raise ValueError('Transcription result exceeds its safety bound')
+        public_result = _public_external_result({'text': text.strip()})
+        return {'text': str(public_result.get('text') or '')}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f'Voice audio dictation processing failed: {e}')
-        raise HTTPException(status_code=500, detail=str(e))
+        _log_failure('voice_transcription', e)
+        raise HTTPException(status_code=500, detail='Transcription failed') from e
+    finally:
+        await file.close()
 
 
 # ---------------------------------------------------------------------------
@@ -3782,7 +5347,7 @@ def _service_error(exc: Exception, **empty: Any) -> dict[str, Any]:
     return {
         'status': 'error',
         'source': 'unreachable',
-        'detail': str(exc),
+        'detail': type(exc).__name__,
         **empty,
     }
 
@@ -3802,54 +5367,6 @@ def _capability_unavailable(reason: str, **empty: Any) -> dict[str, Any]:
     }
 
 
-def _resolve_fleet_server(server_name: str) -> dict[str, Any] | None:
-    """Resolve a fleet MCP server's launch config from the on-disk registry.
-
-    The ecosystem dashboards talk to the real homelab/SaaS systems through the
-    fleet's ~57 MCP servers (the canonical *external data source* reuse path).
-    Each server carries its OWN credentials (``PORTAINER_URL``/``TOKEN``,
-    ``GITHUB_TOKEN``, ``UPTIME_KUMA_URL``/``TOKEN`` …) in its ``env`` block, so
-    spawning it returns LIVE data without the web-UI process needing any of
-    those secrets redeclared.
-
-    The individual servers live in the multiplexer's *source* registry
-    (``mcp_config_source.json``); the top-level ``mcp_config.json`` only lists
-    the multiplexer itself. We therefore search the source registry first, then
-    fall back to any config that lists the server directly.
-
-    Returns a normalized ``{name, command, args, env}`` dict, or ``None`` when
-    the server is not present in any known registry.
-    """
-    import json
-
-    candidates = [
-        Path.home() / '.config' / 'agent-utilities' / 'mcp_config_source.json',
-        Path.home() / '.config' / 'agent-utilities' / 'mcp_config.json',
-        Path.home() / '.config' / 'agent-utilities' / 'config.json',
-        get_workspace_dir() / 'mcp_config_source.json',
-        get_workspace_dir() / 'mcp_config.json',
-    ]
-    for path in candidates:
-        if not path.exists():
-            continue
-        try:
-            data = json.loads(path.read_text(encoding='utf-8'))
-        except Exception:  # noqa: BLE001
-            continue
-        servers = data.get('mcpServers', {})
-        if not servers and isinstance(data.get('mcp_config'), dict):
-            servers = data['mcp_config'].get('mcpServers', {})
-        cfg = servers.get(server_name)
-        if cfg:
-            return {
-                'name': server_name,
-                'command': cfg.get('command', ''),
-                'args': cfg.get('args', []),
-                'env': cfg.get('env', {}),
-            }
-    return None
-
-
 async def _call_mcp_tool(
     server_name: str,
     tool_name: str,
@@ -3857,85 +5374,28 @@ async def _call_mcp_tool(
     *,
     timeout: float = 30.0,
 ) -> Any:
-    """Spawn a fleet MCP server over stdio, call one tool, return parsed result.
+    """Invoke an MCP tool through the host's governed GraphOS delegation seam.
 
-    This mirrors the engine's live ``discover_mcp_tools`` connection pattern
-    (spawn → ``initialize`` → act) but invokes ``call_tool`` instead of
-    ``list_tools``. The server is resolved from the fleet registry via
-    :func:`_resolve_fleet_server`, so the call hits the *real* external system
-    with the fleet's configured credentials and returns LIVE data.
-
-    JSON text content is decoded to Python; non-JSON text is returned verbatim.
-    Raises ``RuntimeError`` if the server is unknown or the tool reports an
-    error — callers surface that honestly rather than fabricating a result.
+    The WebUI intentionally never reads launch commands, spawns registry
+    entries, or composes child environments. The host injects ``call_mcp_tool``
+    after applying its allowlist, actor policy, credential references, and
+    audit envelope. Results cross a bounded privacy boundary before a route can
+    inspect or return them.
     """
-    import asyncio
-    import json
-    import os
-    import shutil
-
-    server_config = _resolve_fleet_server(server_name)
-    if not server_config:
-        raise RuntimeError(
-            f'MCP server {server_name!r} not found in the fleet registry '
-            '(mcp_config_source.json / mcp_config.json)'
-        )
-
-    command = server_config['command']
-    if not command:
-        raise RuntimeError(f'MCP server {server_name!r} has no launch command')
-
-    from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
-
-    env_vars = os.environ.copy()
-    local_bin = os.path.expanduser('~/.local/bin')
-    if local_bin not in env_vars.get('PATH', ''):
-        env_vars['PATH'] = f'{local_bin}:{env_vars.get("PATH", "")}'.strip(':')
-    for key, value in (server_config.get('env') or {}).items():
-        env_vars[key] = str(value)
-    # Keep the server's stdout clean for JSON-RPC framing.
-    env_vars['FASTMCP_SHOW_SERVER_BANNER'] = 'false'
-    env_vars['FASTMCP_LOG_LEVEL'] = 'WARNING'
-
-    resolved = shutil.which(command, path=env_vars.get('PATH'))
-    if resolved:
-        command = resolved
-
-    server_params = StdioServerParameters(
-        command=command,
-        args=server_config.get('args', []),
-        env=env_vars,
+    bounded_arguments = _validate_delegation_call(server_name, tool_name, arguments)
+    delegated_call = get_helper('call_mcp_tool')
+    if delegated_call is None:
+        raise RuntimeError('Governed MCP delegation is not configured')
+    bounded_timeout = max(0.1, min(float(timeout), 30.0))
+    result = await _invoke_governed_helper(
+        delegated_call,
+        deadline=bounded_timeout,
+        server_name=server_name,
+        tool_name=tool_name,
+        arguments=bounded_arguments,
+        timeout=bounded_timeout,
     )
-
-    async def _spawn_and_call() -> Any:
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                return await session.call_tool(tool_name, arguments)
-
-    result = await asyncio.wait_for(_spawn_and_call(), timeout=timeout)
-
-    texts: list[str] = []
-    for chunk in getattr(result, 'content', []) or []:
-        text = getattr(chunk, 'text', None)
-        if text is not None:
-            texts.append(text)
-    joined = '\n'.join(texts)
-
-    if getattr(result, 'isError', False):
-        raise RuntimeError(joined or f'{server_name}:{tool_name} reported an error')
-
-    if not joined:
-        # Some tools return structured content directly.
-        structured = getattr(result, 'structuredContent', None)
-        if structured is not None:
-            return structured
-        return None
-    try:
-        return json.loads(joined)
-    except (ValueError, TypeError):
-        return joined
+    return _public_external_result(result)
 
 
 @router.get('/ecosystem/atlassian/kanban')
@@ -3949,6 +5409,9 @@ async def get_atlassian_kanban(jql: str = 'ORDER BY updated DESC'):
     server or Jira is unreachable.
     """
     import json as _json
+
+    if not jql.strip() or len(jql.encode('utf-8')) > 8192:
+        raise HTTPException(status_code=400, detail='Invalid JQL query')
 
     try:
         resp = await _call_mcp_tool(
@@ -3974,7 +5437,7 @@ async def get_atlassian_kanban(jql: str = 'ORDER BY updated DESC'):
         payload = resp
     issues = payload.get('issues', []) if isinstance(payload, dict) else []
     columns: dict[str, dict[str, Any]] = {}
-    for issue in issues if isinstance(issues, list) else []:
+    for issue in issues[:100] if isinstance(issues, list) else []:
         if not isinstance(issue, dict):
             continue
         fields = issue.get('fields', {}) or {}
@@ -3990,11 +5453,14 @@ async def get_atlassian_kanban(jql: str = 'ORDER BY updated DESC'):
                 'assignee': (fields.get('assignee') or {}).get('displayName'),
             }
         )
-    return {
-        'status': 'success',
-        'source': 'live',
-        'columns': list(columns.values()),
-    }
+    bounded = _public_external_result(
+        {
+            'status': 'success',
+            'source': 'live',
+            'columns': list(columns.values()),
+        }
+    )
+    return bounded if isinstance(bounded, dict) else {'status': 'error'}
 
 
 @router.get('/ecosystem/github/prs')
@@ -4010,7 +5476,9 @@ async def get_github_prs(repo: str | None = None):
     import json as _json
 
     target_repo = repo or os.getenv('GITHUB_REPO')
-    if not target_repo or '/' not in target_repo:
+    if not target_repo or not re.fullmatch(
+        r'[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}', target_repo
+    ):
         return {
             'status': 'needs_input',
             'source': 'live',
@@ -4042,7 +5510,7 @@ async def get_github_prs(repo: str | None = None):
             'branch': (p.get('head') or {}).get('ref'),
             'status': p.get('state') or 'open',
         }
-        for p in (prs_raw if isinstance(prs_raw, list) else [])
+        for p in (prs_raw[:100] if isinstance(prs_raw, list) else [])
         if isinstance(p, dict)
     ]
     workflows: list[dict[str, Any]] = []
@@ -4067,19 +5535,22 @@ async def get_github_prs(repo: str | None = None):
                 'status': r.get('status'),
                 'conclusion': r.get('conclusion'),
             }
-            for r in (runs_data if isinstance(runs_data, list) else [])
+            for r in (runs_data[:100] if isinstance(runs_data, list) else [])
             if isinstance(r, dict)
         ]
     except Exception:  # noqa: BLE001
         # PRs already succeeded; a runs failure should not blank the response.
         workflows = []
-    return {
-        'status': 'success',
-        'source': 'live',
-        'repo': target_repo,
-        'prs': prs,
-        'workflows': workflows,
-    }
+    bounded = _public_external_result(
+        {
+            'status': 'success',
+            'source': 'live',
+            'repo': target_repo,
+            'prs': prs,
+            'workflows': workflows,
+        }
+    )
+    return bounded if isinstance(bounded, dict) else {'status': 'error'}
 
 
 @router.get('/ecosystem/gitlab/mrs')
@@ -4119,7 +5590,7 @@ async def get_gitlab_mrs():
             'status': m.get('state'),
             'web_url': m.get('web_url'),
         }
-        for m in (mrs_raw if isinstance(mrs_raw, list) else [])
+        for m in (mrs_raw[:30] if isinstance(mrs_raw, list) else [])
         if isinstance(m, dict)
     ]
     # Pull the latest pipeline for each distinct project referenced by an MR.
@@ -4129,6 +5600,10 @@ async def get_gitlab_mrs():
         pid = m.get('project_id')
         if pid is None or pid in seen_projects:
             continue
+        if not str(pid).isdigit() or len(str(pid)) > 20:
+            continue
+        if len(seen_projects) >= _MAX_DELEGATION_FANOUT:
+            break
         seen_projects.add(pid)
         try:
             pipe_resp = await _call_mcp_tool(
@@ -4141,7 +5616,8 @@ async def get_gitlab_mrs():
             )
         except Exception:  # noqa: BLE001
             continue
-        for p in _unwrap(pipe_resp) if isinstance(_unwrap(pipe_resp), list) else []:
+        pipe_rows = _unwrap(pipe_resp)
+        for p in pipe_rows[:5] if isinstance(pipe_rows, list) else []:
             if not isinstance(p, dict):
                 continue
             pipelines.append(
@@ -4152,12 +5628,15 @@ async def get_gitlab_mrs():
                     'status': p.get('status'),
                 }
             )
-    return {
-        'status': 'success',
-        'source': 'live',
-        'mrs': mrs,
-        'pipelines': pipelines,
-    }
+    bounded = _public_external_result(
+        {
+            'status': 'success',
+            'source': 'live',
+            'mrs': mrs,
+            'pipelines': pipelines,
+        }
+    )
+    return bounded if isinstance(bounded, dict) else {'status': 'error'}
 
 
 @router.get('/ecosystem/portainer/stacks')
@@ -4291,6 +5770,8 @@ async def get_searxng_search(q: str = 'agent-utilities'):
     SearXNG metasearch instance. Surfaces an honest error if the server or the
     SearXNG instance is unreachable.
     """
+    if not q.strip() or len(q.encode('utf-8')) > 8192:
+        raise HTTPException(status_code=400, detail='Invalid search query')
     try:
         data = await _call_mcp_tool('searxng-mcp', 'web_search', {'query': q})
     except Exception as e:  # noqa: BLE001
@@ -4308,12 +5789,15 @@ async def get_searxng_search(q: str = 'agent-utilities'):
         for r in (raw_results if isinstance(raw_results, list) else [])
         if isinstance(r, dict)
     ]
-    return {
-        'status': 'success',
-        'source': 'live',
-        'query': q,
-        'results': results,
-    }
+    bounded = _public_external_result(
+        {
+            'status': 'success',
+            'source': 'live',
+            'query': q,
+            'results': results,
+        }
+    )
+    return bounded if isinstance(bounded, dict) else {'status': 'error'}
 
 
 @router.get('/ecosystem/homeassistant/devices')
@@ -4367,14 +5851,22 @@ async def get_nextcloud_events():
     calendars = (
         cals_raw.get('calendars', cals_raw) if isinstance(cals_raw, dict) else cals_raw
     )
-    calendars = calendars if isinstance(calendars, list) else []
+    calendars = (
+        calendars[:_MAX_DELEGATION_FANOUT] if isinstance(calendars, list) else []
+    )
 
     events: list[dict[str, Any]] = []
     for cal in calendars:
+        if len(events) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            break
         if not isinstance(cal, dict):
             continue
         cal_name = cal.get('name') or cal.get('id') or cal.get('display_name')
-        if not cal_name:
+        if (
+            not isinstance(cal_name, str)
+            or not cal_name.strip()
+            or len(cal_name.encode('utf-8')) > 512
+        ):
             continue
         try:
             evs_raw = await _call_mcp_tool(
@@ -4390,6 +5882,8 @@ async def get_nextcloud_events():
             continue
         evs = evs_raw.get('events', evs_raw) if isinstance(evs_raw, dict) else evs_raw
         for ev in evs if isinstance(evs, list) else []:
+            if len(events) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                break
             if not isinstance(ev, dict):
                 continue
             events.append(
@@ -4401,14 +5895,17 @@ async def get_nextcloud_events():
                     'end': ev.get('end') or ev.get('dtend'),
                 }
             )
-    return {
-        'status': 'success',
-        'source': 'live',
-        'calendars': [
-            c.get('name') or c.get('id') for c in calendars if isinstance(c, dict)
-        ],
-        'events': events,
-    }
+    bounded = _public_external_result(
+        {
+            'status': 'success',
+            'source': 'live',
+            'calendars': [
+                c.get('name') or c.get('id') for c in calendars if isinstance(c, dict)
+            ],
+            'events': events,
+        }
+    )
+    return bounded if isinstance(bounded, dict) else {'status': 'error'}
 
 
 @router.get('/ecosystem/microsoft/emails')
@@ -4527,14 +6024,18 @@ async def get_system_prompt(request: Request) -> dict[str, str]:
     agent = getattr(request.app.state, 'agent', None)
     if agent:
         sys_prompt = _extract_system_prompt(agent)
-        return {'system_prompt': sys_prompt}
+        bounded = _public_external_result({'system_prompt': sys_prompt})
+        return bounded if isinstance(bounded, dict) else {'system_prompt': ''}
     return {'system_prompt': 'No active agent loaded.'}
 
 
 @router.post('/commands/execute')
 async def execute_slash_command(payload: dict, request: Request):
     """Execute a slash command centrally inside the backend."""
-    command_str = payload.get('command', '').strip()
+    raw_command = payload.get('command', '')
+    if not isinstance(raw_command, str) or len(raw_command.encode('utf-8')) > 8192:
+        raise HTTPException(status_code=400, detail='Invalid slash command')
+    command_str = raw_command.strip()
 
     if not command_str.startswith('/'):
         return {
@@ -4616,13 +6117,13 @@ async def execute_slash_command(payload: dict, request: Request):
         helpers_list = get_helper('list_skills')
         if helpers_list:
             try:
-                skills_list = helpers_list()
+                skills_list = await _invoke_governed_helper(helpers_list, deadline=10.0)
                 for s in skills_list:
                     skills.append(
                         f'- **{s["name"]}** (`{s["id"]}`): {s["description"]}'
                     )
             except Exception as e:
-                skills.append(f'Error fetching skills: {e}')
+                skills.append(f'Error fetching skills: {type(e).__name__}')
         if not skills:
             response_md = 'No custom skills currently active.'
         else:
@@ -4635,17 +6136,19 @@ async def execute_slash_command(payload: dict, request: Request):
         rest = sub_parts[1] if len(sub_parts) > 1 else ''
 
         try:
-            engine = get_engine()
+            engine = await _get_engine_bounded()
         except Exception as e:
             return {
-                'response_markdown': f'Error: Graph engine not active: {e}',
+                'response_markdown': f'Error: Graph engine not active: {type(e).__name__}',
                 'client_actions': [],
             }
 
         if sub in ('', 'stats'):
             try:
-                num_nodes = len(engine.graph.nodes)
-                num_edges = len(engine.graph.edges)
+                num_nodes, num_edges = await _invoke_governed_helper(
+                    lambda: (len(engine.graph.nodes), len(engine.graph.edges)),
+                    deadline=15.0,
+                )
                 response_md = (
                     '### Knowledge Graph Statistics\n\n'
                     f'- **Total Nodes**: {num_nodes}\n'
@@ -4653,13 +6156,17 @@ async def execute_slash_command(payload: dict, request: Request):
                     f'- **Backend Status**: Online (LadybugDB)\n'
                 )
             except Exception as e:
-                response_md = f'Error querying graph stats: {e}'
+                response_md = f'Error querying graph stats: {type(e).__name__}'
 
         elif sub == 'nodes':
             node_type = rest.strip()
             try:
                 nodes = []
-                for n, attrs in engine.graph.nodes(data=True):
+                graph_nodes = await _invoke_governed_helper(
+                    lambda: list(engine.graph.nodes(data=True)),
+                    deadline=15.0,
+                )
+                for n, attrs in graph_nodes:
                     ntype = attrs.get('type', 'Unknown')
                     if not node_type or ntype.lower() == node_type.lower():
                         nodes.append(
@@ -4673,7 +6180,7 @@ async def execute_slash_command(payload: dict, request: Request):
                         + '\n'.join(nodes[:50])
                     )
             except Exception as e:
-                response_md = f'Error listing nodes: {e}'
+                response_md = f'Error listing nodes: {type(e).__name__}'
 
         elif sub == 'search':
             if not rest:
@@ -4681,7 +6188,11 @@ async def execute_slash_command(payload: dict, request: Request):
             else:
                 try:
                     hits = []
-                    for n, attrs in engine.graph.nodes(data=True):
+                    graph_nodes = await _invoke_governed_helper(
+                        lambda: list(engine.graph.nodes(data=True)),
+                        deadline=15.0,
+                    )
+                    for n, attrs in graph_nodes:
                         if (
                             rest.lower() in n.lower()
                             or rest.lower() in attrs.get('description', '').lower()
@@ -4697,17 +6208,21 @@ async def execute_slash_command(payload: dict, request: Request):
                             + '\n'.join(hits[:10])
                         )
                 except Exception as e:
-                    response_md = f'Error searching graph: {e}'
+                    response_md = f'Error searching graph: {type(e).__name__}'
 
         elif sub == 'impact':
             if not rest:
                 response_md = 'Usage: `/graph impact <symbol>`'
             else:
                 try:
-                    impact_set = engine.query_impact(rest)
+                    impact_set = await _invoke_governed_helper(
+                        engine.query_impact,
+                        rest,
+                        deadline=30.0,
+                    )
                 except Exception as e:  # noqa: BLE001
                     impact_set = None
-                    response_md = f'Error running impact analysis for `{rest}`: {e}'
+                    response_md = f'Error running impact analysis for `{rest}`: {type(e).__name__}'
                 if impact_set is not None:
                     if not impact_set:
                         response_md = (
@@ -4746,26 +6261,34 @@ async def execute_slash_command(payload: dict, request: Request):
         rest = sub_parts[1] if len(sub_parts) > 1 else ''
 
         try:
-            engine = get_engine()
-            kb_engine = KBIngestionEngine(engine.graph, engine.backend)
+            engine = await _get_engine_bounded()
+            kb_engine = await _invoke_governed_helper(
+                KBIngestionEngine,
+                engine.graph,
+                engine.backend,
+                deadline=10.0,
+            )
         except Exception as e:  # noqa: BLE001
             return {
-                'response_markdown': f'KB backend not available: {e}',
+                'response_markdown': (f'KB backend not available: {type(e).__name__}'),
                 'client_actions': [],
             }
 
         if sub == 'list':
             try:
-                bases = kb_engine.list_bases()
+                bases = await _invoke_governed_helper(
+                    kb_engine.list_bases,
+                    deadline=15.0,
+                )
             except Exception as e:  # noqa: BLE001
                 bases = None
-                response_md = f'Error listing knowledge bases: {e}'
+                response_md = f'Error listing knowledge bases: {type(e).__name__}'
             if bases is not None:
                 if not bases:
                     response_md = 'No knowledge bases found.'
                 else:
                     lines = ['### Connected Knowledge Bases:\n']
-                    for b in bases:
+                    for b in list(bases)[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
                         if isinstance(b, dict):
                             name = b.get('id') or b.get('name', 'unknown')
                             desc = b.get('description') or b.get('name', '')
@@ -4780,10 +6303,14 @@ async def execute_slash_command(payload: dict, request: Request):
                 response_md = 'Usage: `/kb search <query>`'
             else:
                 try:
-                    hits = kb_engine.search(rest)
+                    hits = await _invoke_governed_helper(
+                        kb_engine.search,
+                        rest,
+                        deadline=30.0,
+                    )
                 except Exception as e:  # noqa: BLE001
                     hits = None
-                    response_md = f'Error searching knowledge base: {e}'
+                    response_md = f'Error searching knowledge base: {type(e).__name__}'
                 if hits is not None:
                     if not hits:
                         response_md = f'No KB results for `{rest}`.'
@@ -4810,8 +6337,12 @@ async def execute_slash_command(payload: dict, request: Request):
                 response_md = 'Usage: `/kb ingest <url_or_path>`'
             else:
                 try:
-                    result = await kb_engine.ingest(
-                        kb_id='workspace-docs', source=rest, name='workspace-docs'
+                    result = await _invoke_governed_helper(
+                        kb_engine.ingest,
+                        deadline=120.0,
+                        kb_id='workspace-docs',
+                        source=_workspace_ingestion_source(rest),
+                        name='workspace-docs',
                     )
                     job_id = result.get('job_id') if isinstance(result, dict) else None
                     response_md = (
@@ -4819,7 +6350,7 @@ async def execute_slash_command(payload: dict, request: Request):
                         + (f' (job `{job_id}`).' if job_id else '.')
                     )
                 except Exception as e:  # noqa: BLE001
-                    response_md = f'Failed to ingest `{rest}`: {e}'
+                    response_md = f'Failed to ingest `{rest}`: {type(e).__name__}'
         else:
             response_md = f'Unknown `/kb` subcommand: `{sub}`'
 
@@ -4831,7 +6362,7 @@ async def execute_slash_command(payload: dict, request: Request):
             manager = SDDManager(DEFAULT_AGENT_DIR)
         except Exception as e:  # noqa: BLE001
             return {
-                'response_markdown': f'SDD backend not available: {e}',
+                'response_markdown': (f'SDD backend not available: {type(e).__name__}'),
                 'client_actions': [],
             }
 
@@ -4840,13 +6371,13 @@ async def execute_slash_command(payload: dict, request: Request):
                 specs = manager.list_specs()
             except Exception as e:  # noqa: BLE001
                 specs = None
-                response_md = f'Error listing specs: {e}'
+                response_md = f'Error listing specs: {type(e).__name__}'
             if specs is not None:
                 if not specs:
                     response_md = 'No specifications found under `.specify/specs`.'
                 else:
                     lines = ['### Active Spec-Driven Specifications:\n']
-                    for s in specs:
+                    for s in list(specs)[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
                         sd = s.model_dump() if hasattr(s, 'model_dump') else s
                         sid = sd.get('id') if isinstance(sd, dict) else str(s)
                         title = sd.get('title', '') if isinstance(sd, dict) else ''
@@ -4861,7 +6392,7 @@ async def execute_slash_command(payload: dict, request: Request):
                 constitution = manager.get_constitution()
             except Exception as e:  # noqa: BLE001
                 constitution = None
-                response_md = f'Error reading constitution: {e}'
+                response_md = f'Error reading constitution: {type(e).__name__}'
             else:
                 if not constitution:
                     response_md = (
@@ -4878,13 +6409,13 @@ async def execute_slash_command(payload: dict, request: Request):
                     response_md = f'### Project Constitution\n\n{constitution}'
         elif sub == 'sync':
             try:
-                engine = get_engine()
+                engine = await _get_engine_bounded()
                 manager.sync_to_memory(engine)
                 response_md = (
                     'Synchronized local specifications with the Knowledge Graph.'
                 )
             except Exception as e:  # noqa: BLE001
-                response_md = f'SDD sync failed: {e}'
+                response_md = f'SDD sync failed: {type(e).__name__}'
         else:
             response_md = f'Unknown `/sdd` subcommand: `{sub}`'
 
@@ -4900,13 +6431,13 @@ async def execute_slash_command(payload: dict, request: Request):
                 tasks = list(registry.tasks)
             except Exception as e:  # noqa: BLE001
                 tasks = None
-                response_md = f'Cron scheduler not available: {e}'
+                response_md = f'Cron scheduler not available: {type(e).__name__}'
             if tasks is not None:
                 if not tasks:
                     response_md = 'No scheduled background tasks registered.'
                 else:
                     lines = ['### Scheduled Background Tasks:\n']
-                    for t in tasks:
+                    for t in tasks[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
                         lines.append(
                             f'- `{t.name or t.id}`: every '
                             f'{t.interval_minutes} min '
@@ -4920,7 +6451,7 @@ async def execute_slash_command(payload: dict, request: Request):
                 entries = list(get_cron_logs().entries)
             except Exception as e:  # noqa: BLE001
                 entries = None
-                response_md = f'Cron logs not available: {e}'
+                response_md = f'Cron logs not available: {type(e).__name__}'
             if entries is not None:
                 if not entries:
                     response_md = 'No cron execution logs recorded yet.'
@@ -4944,16 +6475,23 @@ async def execute_slash_command(payload: dict, request: Request):
         rest = sub_parts[1] if len(sub_parts) > 1 else ''
 
         try:
-            engine = get_engine()
+            engine = await _get_engine_bounded()
         except Exception as e:  # noqa: BLE001
             return {
-                'response_markdown': f'Resource backend not available: {e}',
+                'response_markdown': (
+                    f'Resource backend not available: {type(e).__name__}'
+                ),
                 'client_actions': [],
             }
 
         if sub in ('', 'list'):
             try:
-                rows = engine.backend.execute('MATCH (r:CallableResource) RETURN r')
+                rows = await _invoke_governed_helper(
+                    engine.backend.execute,
+                    f'MATCH (r:CallableResource) RETURN r '
+                    f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
+                    deadline=15.0,
+                )
                 resources = [
                     row.get('r', {})
                     for row in rows
@@ -4961,7 +6499,7 @@ async def execute_slash_command(payload: dict, request: Request):
                 ]
             except Exception as e:  # noqa: BLE001
                 resources = None
-                response_md = f'Error listing resources: {e}'
+                response_md = f'Error listing resources: {type(e).__name__}'
             if resources is not None:
                 if not resources:
                     response_md = 'No active subagents or callable resources.'
@@ -4980,7 +6518,11 @@ async def execute_slash_command(payload: dict, request: Request):
                 response_md = 'Usage: `/resources spawn <name>`'
             else:
                 try:
-                    agent = engine.spawn_specialized_agent(name=rest)
+                    agent = await _invoke_governed_helper(
+                        engine.spawn_specialized_agent,
+                        deadline=30.0,
+                        name=rest,
+                    )
                     agent_data = (
                         agent.model_dump()
                         if hasattr(agent, 'model_dump')
@@ -4989,7 +6531,9 @@ async def execute_slash_command(payload: dict, request: Request):
                     spawned_id = agent_data.get('id') or agent_data.get('name') or rest
                     response_md = f'Spawned subagent **`{spawned_id}`**.'
                 except Exception as e:  # noqa: BLE001
-                    response_md = f'Failed to spawn subagent `{rest}`: {e}'
+                    response_md = (
+                        f'Failed to spawn subagent `{rest}`: {type(e).__name__}'
+                    )
         else:
             response_md = f'Unknown `/resources` subcommand: `{sub}`'
 
@@ -5005,6 +6549,8 @@ async def execute_slash_command(payload: dict, request: Request):
 @router.get('/commands/autocomplete')
 async def autocomplete_slash_command(query: str = ''):
     """Provide autocomplete dynamic options for client interfaces."""
+    if len(query.encode('utf-8')) > 1024:
+        raise HTTPException(status_code=400, detail='Autocomplete query is too long')
     commands_list = [
         '/help',
         '/clear',
@@ -5062,14 +6608,20 @@ async def list_workflows() -> list[dict[str, Any]]:
     import json
 
     try:
-        engine = get_engine()
-        rows = engine.backend.execute('MATCH (w:Workflow) RETURN w')
+        engine = await _get_engine_bounded()
+        rows = await _invoke_governed_helper(
+            engine.backend.execute,
+            f'MATCH (w:Workflow) RETURN w LIMIT {_MAX_WORKFLOW_RECORDS}',
+            deadline=15.0,
+        )
         workflows: list[dict[str, Any]] = []
         for row in rows:
             wdata = row.get('w', {})
             if not isinstance(wdata, dict):
                 continue
-            wid = wdata.get('id') or f'workflow:{wdata.get("name", "")}'
+            wid = str(wdata.get('id') or f'workflow:{wdata.get("name", "")}')
+            if len(wid.encode('utf-8')) > _MAX_WORKFLOW_ID_BYTES:
+                continue
             name = wdata.get('name', '')
             steps_raw = wdata.get('steps', '')
             steps = (
@@ -5080,30 +6632,45 @@ async def list_workflows() -> list[dict[str, Any]]:
             # Resolve orchestrates via ORCHESTRATES edges.
             orchestrates: list[str] = []
             try:
-                erows = engine.backend.execute(
-                    f'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
-                    f"WHERE w.id = '{wid}' RETURN t"
+                erows = await _invoke_governed_helper(
+                    engine.backend.execute,
+                    'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
+                    'WHERE w.id = $workflow_id RETURN t '
+                    f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
+                    {'workflow_id': wid},
+                    deadline=15.0,
                 )
                 for er in erows:
                     target = er.get('t', {})
                     if isinstance(target, dict) and target.get('id'):
                         orchestrates.append(target['id'])
+            except HTTPException:
+                raise
             except Exception as edge_err:  # noqa: BLE001
-                logger.debug(f'Could not resolve orchestrates for {wid}: {edge_err}')
+                _log_failure(
+                    'resolve_workflow_orchestration', edge_err, level=logging.DEBUG
+                )
 
             # Load persisted canvas sidecar if present.
             canvas: Any = None
             try:
-                crows = engine.backend.execute(
-                    f"MATCH (c:WorkflowCanvas) WHERE c.workflow_id = '{wid}' RETURN c"
+                crows = await _invoke_governed_helper(
+                    engine.backend.execute,
+                    'MATCH (c:WorkflowCanvas) '
+                    'WHERE c.workflow_id = $workflow_id RETURN c LIMIT 1',
+                    {'workflow_id': wid},
+                    deadline=15.0,
                 )
                 if crows:
                     cdata = crows[0].get('c', {})
                     raw = cdata.get('canvas') if isinstance(cdata, dict) else None
-                    if raw:
-                        canvas = json.loads(raw)
+                    if raw and isinstance(raw, str):
+                        if len(raw.encode('utf-8')) <= _MAX_EXTERNAL_RESULT_BYTES:
+                            canvas = _bounded_external_value(json.loads(raw))
+            except HTTPException:
+                raise
             except Exception as canvas_err:  # noqa: BLE001
-                logger.debug(f'Could not load canvas for {wid}: {canvas_err}')
+                _log_failure('load_workflow_canvas', canvas_err, level=logging.DEBUG)
 
             workflows.append(
                 {
@@ -5115,8 +6682,10 @@ async def list_workflows() -> list[dict[str, Any]]:
                 }
             )
         return workflows
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to list workflows: {e}')
+        _log_failure('list_workflows', e)
         return []
 
 
@@ -5134,8 +6703,12 @@ async def workflow_capabilities() -> dict[str, list[dict[str, Any]]]:
 
     # Agents from the KG.
     try:
-        engine = get_engine()
-        rows = engine.backend.execute('MATCH (a:Agent) RETURN a')
+        engine = await _get_engine_bounded()
+        rows = await _invoke_governed_helper(
+            engine.backend.execute,
+            f'MATCH (a:Agent) RETURN a LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
+            deadline=15.0,
+        )
         for row in rows:
             a = row.get('a', {})
             if not isinstance(a, dict):
@@ -5152,9 +6725,10 @@ async def workflow_capabilities() -> dict[str, list[dict[str, Any]]]:
                     ),
                 }
             )
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'workflow_capabilities: failed to load agents: {e}')
-
+        _log_failure('api_extension', e)
     # Tools + skills reuse the categorized /tools catalog.
     try:
         catalog = await list_all_tools()
@@ -5168,8 +6742,10 @@ async def workflow_capabilities() -> dict[str, list[dict[str, Any]]]:
                     'description': s.get('description', ''),
                 }
             )
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'workflow_capabilities: failed to load tools/skills: {e}')
+        _log_failure('workflow_capabilities', e)
 
     return {'agents': agents, 'tools': tools, 'skills': skills}
 
@@ -5187,6 +6763,8 @@ async def save_workflow(request: Request) -> dict[str, Any]:
     import json
 
     body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail='Workflow body must be an object')
     name = body.get('name') or 'Untitled Workflow'
     steps = body.get('steps') or []
     orchestrates = body.get('orchestrates') or []
@@ -5197,6 +6775,39 @@ async def save_workflow(request: Request) -> dict[str, Any]:
             'edges': body.get('edges', []),
             'layout': body.get('layout'),
         }
+    if not isinstance(name, str) or not name.strip() or len(name.encode('utf-8')) > 512:
+        raise HTTPException(status_code=400, detail='Invalid workflow name')
+    if (
+        not isinstance(steps, list)
+        or not isinstance(orchestrates, list)
+        or len(steps) > _MAX_EXTERNAL_COLLECTION_ITEMS
+        or len(orchestrates) > _MAX_EXTERNAL_COLLECTION_ITEMS
+        or not all(
+            isinstance(item, str) and len(item.encode('utf-8')) <= 2048
+            for item in steps
+        )
+        or not all(
+            isinstance(item, str)
+            and len(item.encode('utf-8')) <= _MAX_WORKFLOW_ID_BYTES
+            for item in orchestrates
+        )
+    ):
+        raise HTTPException(status_code=400, detail='Invalid workflow steps')
+    if canvas is not None:
+        try:
+            canvas = _bounded_external_value(canvas)
+            canvas_payload = json.dumps(
+                canvas,
+                separators=(',', ':'),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=400, detail='Invalid workflow canvas'
+            ) from exc
+        if len(canvas_payload.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES:
+            raise HTTPException(status_code=400, detail='Workflow canvas is too large')
 
     try:
         from agent_utilities.knowledge_graph.enrichment.orchestration import (
@@ -5204,46 +6815,56 @@ async def save_workflow(request: Request) -> dict[str, Any]:
             workflow_to_batch,
         )
     except Exception as e:  # noqa: BLE001
-        logger.error(f'save_workflow: orchestration unavailable: {e}')
+        _log_failure('api_extension', e)
         raise HTTPException(
-            status_code=503, detail=f'Workflow orchestration unavailable: {e}'
+            status_code=503,
+            detail=f'Workflow orchestration unavailable: {type(e).__name__}',
         ) from e
 
     spec = WorkflowSpec(name=name, steps=steps, orchestrates=orchestrates)
 
     try:
-        engine = get_engine()
+        engine = await _get_engine_bounded()
+
         # Build the canonical batch, then persist via the engine's node/edge API
         # (the engine exposes add_node/link_nodes rather than a raw write_batch).
-        batch = workflow_to_batch(spec)
-        for node in batch.nodes:
-            engine.add_node(node.id, node.type, dict(node.props or {}))
-        for edge in batch.edges:
-            engine.link_nodes(edge.source, edge.target, edge.rel_type)
+        def persist_workflow() -> None:
+            batch = workflow_to_batch(spec)
+            for node in batch.nodes:
+                engine.add_node(node.id, node.type, dict(node.props or {}))
+            for edge in batch.edges:
+                engine.link_nodes(edge.source, edge.target, edge.rel_type)
+
+        await _invoke_governed_helper(persist_workflow, deadline=30.0)
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'save_workflow: failed to persist spec: {e}')
+        _log_failure('save_workflow', e)
         raise HTTPException(
-            status_code=500, detail=f'Failed to persist workflow: {e}'
+            status_code=500, detail=f'Failed to persist workflow: {type(e).__name__}'
         ) from e
 
     # Persist the canvas sidecar so the editor restores exactly on reload.
     if canvas is not None:
         try:
             canvas_id = _canvas_node_id(spec.id)
-            engine.add_node(
+            await _invoke_governed_helper(
+                engine.add_node,
                 canvas_id,
                 'WorkflowCanvas',
                 {
                     'workflow_id': spec.id,
                     'name': name,
-                    'canvas': json.dumps(canvas),
+                    'canvas': canvas_payload,
                     'updated_at': datetime.now(timezone.utc).isoformat(),
                 },
+                deadline=15.0,
             )
+        except HTTPException:
+            raise
         except Exception as e:  # noqa: BLE001
             # Non-fatal: the spec is saved even if the canvas sidecar fails.
-            logger.warning(f'save_workflow: failed to persist canvas: {e}')
-
+            _log_failure('api_extension', e, level=logging.WARNING)
     return {'id': spec.id, 'saved': True}
 
 
@@ -5258,6 +6879,8 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
     """
     import uuid
 
+    if not wid or '\x00' in wid or len(wid.encode('utf-8')) > _MAX_WORKFLOW_ID_BYTES:
+        raise HTTPException(status_code=400, detail='Invalid workflow identifier')
     run_id = uuid.uuid4().hex[:12]
 
     # Resolve the spec — prefer the live KG record, fall back to request body.
@@ -5265,9 +6888,12 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
     steps: list[str] = []
     orchestrates: list[str] = []
     try:
-        engine = get_engine()
-        rows = engine.backend.execute(
-            f"MATCH (w:Workflow) WHERE w.id = '{wid}' RETURN w"
+        engine = await _get_engine_bounded()
+        rows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (w:Workflow) WHERE w.id = $workflow_id RETURN w LIMIT 1',
+            {'workflow_id': wid},
+            deadline=15.0,
         )
         if rows:
             wdata = rows[0].get('w', {})
@@ -5279,16 +6905,22 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
                     if isinstance(steps_raw, str)
                     else list(steps_raw or [])
                 )
-        erows = engine.backend.execute(
-            f"MATCH (w:Workflow)-[:ORCHESTRATES]->(t) WHERE w.id = '{wid}' RETURN t"
+        erows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
+            'WHERE w.id = $workflow_id RETURN t '
+            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
+            {'workflow_id': wid},
+            deadline=15.0,
         )
         for er in erows:
             target = er.get('t', {})
             if isinstance(target, dict) and target.get('id'):
                 orchestrates.append(target['id'])
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
-        logger.warning(f'run_workflow: could not load workflow {wid}: {e}')
-
+        _log_failure('api_extension', e, level=logging.WARNING)
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
@@ -5304,18 +6936,27 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
         )
         from agent_utilities.orchestration.engine import AgentOrchestrationEngine
     except Exception as e:  # noqa: BLE001
-        logger.error(f'run_workflow: orchestration unavailable: {e}')
+        _log_failure('api_extension', e)
         return {
             'run_id': run_id,
             'status': 'error',
-            'error': f'Workflow orchestration unavailable: {e}',
+            'error': f'Workflow orchestration unavailable: {type(e).__name__}',
         }
 
     spec = WorkflowSpec(name=name, steps=steps, orchestrates=orchestrates)
 
     try:
-        orch = AgentOrchestrationEngine(engine=get_engine())
-        result = await orch.dispatch(task=spec, mode='workflow')
+        orch = await _invoke_governed_helper(
+            AgentOrchestrationEngine,
+            engine=await _get_engine_bounded(),
+            deadline=10.0,
+        )
+        result = await _invoke_governed_helper(
+            orch.dispatch,
+            task=spec,
+            mode='workflow',
+            deadline=120.0,
+        )
         if isinstance(result, dict):
             status = result.get('status', 'completed')
             return {
@@ -5325,9 +6966,11 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
                 'summary': result.get('summary'),
             }
         return {'run_id': run_id, 'status': 'completed', 'result': result}
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'run_workflow: dispatch failed: {e}')
-        return {'run_id': run_id, 'status': 'error', 'error': str(e)}
+        _log_failure('api_extension', e)
+        return {'run_id': run_id, 'status': 'error', 'error': type(e).__name__}
 
 
 # ---------------------------------------------------------------------------
@@ -5403,6 +7046,7 @@ import weakref as _weakref
 _ontology_kg_cache: '_weakref.WeakKeyDictionary[Any, Any]' = (
     _weakref.WeakKeyDictionary()
 )
+_ontology_kg_cache_lock = threading.Lock()
 
 
 def get_ontology_kg() -> Any:
@@ -5422,53 +7066,69 @@ def get_ontology_kg() -> Any:
 
     engine = get_engine()
     backend = engine.backend
-    try:
-        cached = _ontology_kg_cache.get(backend)
-    except TypeError:
-        # Backend not weak-referenceable — fall back to a fresh facade.
-        cached = None
-    if cached is not None:
-        kg = cached
-    else:
-        kg = KnowledgeGraph()
-        # Bind to the live store; the facade derives compute from the store graph.
-        kg._store = backend
+    with _ontology_kg_cache_lock:
         try:
-            _ontology_kg_cache[backend] = kg
+            cached = _ontology_kg_cache.get(backend)
         except TypeError:
-            pass
-    ontology = kg.ontology
+            # Backend not weak-referenceable — fall back to a fresh facade.
+            cached = None
+        if cached is not None:
+            kg = cached
+        else:
+            kg = KnowledgeGraph()
+            # Bind to the live store; the facade derives compute from the store graph.
+            kg._store = backend
+            try:
+                _ontology_kg_cache[backend] = kg
+            except TypeError:
+                pass
+        ontology = kg.ontology
     if ontology is None:
         raise HTTPException(status_code=501, detail='Ontology layer unavailable')
     return kg, ontology
 
 
+async def _get_ontology_kg_bounded() -> Any:
+    """Resolve the live ontology without blocking the event loop unboundedly."""
+
+    return await _invoke_governed_helper(get_ontology_kg, deadline=10.0)
+
+
 def _actor_id_from_request(request: Request | None) -> str:
-    """Best-effort actor id from request context (header/state), else 'system'."""
-    if request is None:
-        return 'system'
-    try:
-        actor = request.headers.get('X-Actor-Id') or getattr(
-            request.state, 'actor_id', None
-        )
-        if actor:
-            return str(actor)
-    except Exception:  # noqa: BLE001
-        pass
-    return 'system'
+    """Return only the server-minted ambient actor, never caller headers/body."""
+
+    del request
+    from agent_utilities.security.brain_context import current_actor
+
+    return _durable_actor_reference(current_actor().actor_id)
+
+
+def _durable_actor_reference(value: Any) -> str:
+    """Normalize durable principal identities to stable opaque references."""
+
+    text = str(value or '').strip()
+    if not text or text in {'system', 'admin'}:
+        return text or 'system'
+    return persistence_reference('principal', text, namespace='webui')
 
 
 def _actor_context(request: Request | None) -> Any:
-    """Construct an ActorContext for permissioning from the request, else default."""
-    from agent_utilities.knowledge_graph.ontology.permissioning import (
-        ActorContext,
-        current_actor,
-    )
+    """Return the server-minted actor with trusted KG capability aliases."""
 
-    actor_id = _actor_id_from_request(request)
-    if actor_id == 'system':
-        return current_actor()
-    return ActorContext(actor_id=actor_id)
+    del request
+    from agent_utilities.security.brain_context import current_actor
+
+    actor = current_actor()
+    roles = set(actor.roles)
+    if 'kg:admin' in roles:
+        roles.update({'admin', 'kg_admin', 'kg_write', 'kg_read'})
+    elif 'kg:write' in roles:
+        roles.update({'kg_write', 'kg_read'})
+    elif 'kg:read' in roles:
+        roles.add('kg_read')
+    if roles == set(actor.roles):
+        return actor
+    return replace(actor, roles=tuple(sorted(roles)))
 
 
 def _serialize_property_type(name: str, pt: Any) -> dict[str, Any]:
@@ -5523,7 +7183,8 @@ def _node_links(backend: Any, object_id: str) -> dict[str, list[dict[str, Any]]]
     try:
         out_rows = backend.execute(
             'MATCH (n {id: $id})-[r]->(m) '
-            'RETURN type(r) as type, m.id as target LIMIT 1000',
+            f'RETURN type(r) as type, m.id as target '
+            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
             {'id': object_id},
         )
         for row in out_rows or []:
@@ -5535,7 +7196,8 @@ def _node_links(backend: Any, object_id: str) -> dict[str, list[dict[str, Any]]]
     try:
         in_rows = backend.execute(
             'MATCH (m)-[r]->(n {id: $id}) '
-            'RETURN type(r) as type, m.id as source LIMIT 1000',
+            f'RETURN type(r) as type, m.id as source '
+            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
             {'id': object_id},
         )
         for row in in_rows or []:
@@ -5556,7 +7218,7 @@ async def list_object_types() -> list[dict[str, Any]]:
     labels present in the store. Each entry carries the interfaces it implements.
     """
     try:
-        kg, ontology = get_ontology_kg()
+        kg, ontology = await _get_ontology_kg_bounded()
         backend = kg.store
 
         # Concrete types declared as interface implementers (programmatic targets).
@@ -5571,8 +7233,10 @@ async def list_object_types() -> list[dict[str, Any]]:
         # Live node labels present in the store.
         live_types: dict[str, int] = {}
         try:
-            rows = backend.execute(
-                'MATCH (n) RETURN labels(n) as labels, count(n) as count'
+            rows = await _invoke_governed_helper(
+                backend.execute,
+                'MATCH (n) RETURN labels(n) as labels, count(n) as count',
+                deadline=15.0,
             )
             for row in rows or []:
                 labels = row.get('labels') or []
@@ -5593,12 +7257,12 @@ async def list_object_types() -> list[dict[str, Any]]:
                 'implements': sorted(implementers_by_type.get(name, [])),
                 'count': int(live_types.get(name, 0)),
             }
-            for name in sorted(names)
+            for name in sorted(names)[:_MAX_EXTERNAL_COLLECTION_ITEMS]
         ]
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to list object types: {e}')
+        _log_failure('list_object_types', e)
         return []
 
 
@@ -5606,15 +7270,15 @@ async def list_object_types() -> list[dict[str, Any]]:
 async def list_ontology_property_types() -> list[dict[str, Any]]:
     """Return the ontology property-type registry (KG-2.47)."""
     try:
-        _kg, ontology = get_ontology_kg()
+        _kg, ontology = await _get_ontology_kg_bounded()
         return [
             _serialize_property_type(name, pt)
             for name, pt in sorted(ontology.property_types.items())
-        ]
+        ][:_MAX_EXTERNAL_COLLECTION_ITEMS]
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to list property types: {e}')
+        _log_failure('list_property_types', e)
         return []
 
 
@@ -5622,12 +7286,16 @@ async def list_ontology_property_types() -> list[dict[str, Any]]:
 async def list_ontology_interfaces() -> list[dict[str, Any]]:
     """List ontology interfaces with their implementers (KG-2.38)."""
     try:
-        _kg, ontology = get_ontology_kg()
+        _kg, ontology = await _get_ontology_kg_bounded()
         out: list[dict[str, Any]] = []
-        for iface in ontology.interfaces.list_interfaces():
+        for iface in ontology.interfaces.list_interfaces()[
+            :_MAX_EXTERNAL_COLLECTION_ITEMS
+        ]:
             data = iface.model_dump(mode='json')
             try:
-                data['implementers'] = ontology.interfaces.find_implementers(iface.name)
+                data['implementers'] = ontology.interfaces.find_implementers(
+                    iface.name
+                )[:_MAX_EXTERNAL_COLLECTION_ITEMS]
             except Exception:  # noqa: BLE001
                 data['implementers'] = []
             out.append(data)
@@ -5635,24 +7303,28 @@ async def list_ontology_interfaces() -> list[dict[str, Any]]:
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to list interfaces: {e}')
+        _log_failure('api_extension', e)
         return []
 
 
 @router.get('/ontology/interfaces/{name}/implementers')
 async def get_interface_implementers(name: str) -> dict[str, Any]:
     """Resolve the concrete object types that implement interface ``name``."""
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(name):
+        raise HTTPException(status_code=400, detail='Invalid interface name')
     try:
-        _kg, ontology = get_ontology_kg()
-        implementers = ontology.interfaces.find_implementers(name)
+        _kg, ontology = await _get_ontology_kg_bounded()
+        implementers = ontology.interfaces.find_implementers(name)[
+            :_MAX_EXTERNAL_COLLECTION_ITEMS
+        ]
         return {'interface': name, 'implementers': implementers}
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=404, detail=type(e).__name__) from e
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to resolve implementers for {name}: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 def _object_set_rows(
@@ -5684,12 +7356,29 @@ async def ontology_object_set_search(
     ``{property, op, value}`` typed predicates; ``query`` is the search string.
     """
     try:
-        _kg, ontology = get_ontology_kg()
+        _kg, ontology = await _get_ontology_kg_bounded()
         actor = _actor_context(request)
         query = str(data.get('query', '') or '')
         kind = data.get('kind')
         limit = int(data.get('limit', 50) or 50)
         raw_filters = data.get('filters') or []
+        if (
+            len(query.encode('utf-8')) > 8192
+            or not 1 <= limit <= _MAX_EXTERNAL_COLLECTION_ITEMS
+        ):
+            raise HTTPException(status_code=400, detail='Invalid object search bounds')
+        if kind is not None and (
+            not isinstance(kind, str) or len(kind.encode('utf-8')) > 128
+        ):
+            raise HTTPException(status_code=400, detail='Invalid object kind')
+        if not isinstance(raw_filters, list) or len(raw_filters) > 64:
+            raise HTTPException(status_code=400, detail='Invalid object filters')
+        try:
+            _bounded_external_value(raw_filters)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail='Invalid object filters'
+            ) from exc
 
         from agent_utilities.knowledge_graph.ontology.object_set import PropertyFilter
 
@@ -5704,27 +7393,36 @@ async def ontology_object_set_search(
                     )
                 )
 
-        if kind:
-            base = ontology.object_set_of_type(str(kind))
-        elif filters:
-            base = ontology.dynamic_object_set(filters=filters)
-            filters = []  # already applied to the base set
-        else:
-            # Graph-wide: a dynamic set over a permissive predicate.
-            base = ontology.dynamic_object_set(lambda props: True)
+        def execute_search() -> list[dict[str, Any]]:
+            remaining_filters = filters
+            if kind:
+                base = ontology.object_set_of_type(str(kind))
+            elif filters:
+                base = ontology.dynamic_object_set(filters=filters)
+                remaining_filters = []  # already applied to the base set
+            else:
+                # Graph-wide: a dynamic set over a permissive predicate.
+                base = ontology.dynamic_object_set(lambda props: True)
+            result = base.search(
+                query,
+                filters=remaining_filters or None,
+                limit=limit,
+            )
+            return _object_set_rows(ontology, result, actor, limit=limit)
 
-        result = base.search(query, filters=filters or None, limit=limit)
-        rows = _object_set_rows(ontology, result, actor, limit=limit)
-        return {
-            'ids': [r.get('id') for r in rows],
-            'rows': rows,
-            'count': len(rows),
-        }
+        rows = await _invoke_governed_helper(execute_search, deadline=30.0)
+        return _public_external_result(
+            {
+                'ids': [r.get('id') for r in rows],
+                'rows': rows,
+                'count': len(rows),
+            }
+        )
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Ontology object-set search failed: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.post('/ontology/object-set/search-around')
@@ -5736,27 +7434,48 @@ async def ontology_object_set_search_around(
     Body: ``{ids, link_type, hops, cap, direction}``.
     """
     try:
-        _kg, ontology = get_ontology_kg()
+        _kg, ontology = await _get_ontology_kg_bounded()
         actor = _actor_context(request)
-        ids = list(data.get('ids') or [])
+        ids = _bounded_identifier_list(data.get('ids'), required=True)
         link_type = data.get('link_type')
         hops = int(data.get('hops', 1) or 1)
-        cap = int(data.get('cap', 10000) or 10000)
+        cap = int(
+            data.get('cap', _MAX_EXTERNAL_COLLECTION_ITEMS)
+            or _MAX_EXTERNAL_COLLECTION_ITEMS
+        )
         direction = str(data.get('direction', 'out') or 'out')
+        if not 1 <= hops <= 10 or not 1 <= cap <= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            raise HTTPException(status_code=400, detail='Invalid traversal bounds')
+        if direction not in {'in', 'out', 'both'}:
+            raise HTTPException(status_code=400, detail='Invalid traversal direction')
+        if link_type is not None and (
+            not isinstance(link_type, str) or len(link_type.encode('utf-8')) > 128
+        ):
+            raise HTTPException(status_code=400, detail='Invalid link type')
 
-        base = ontology.object_set(ids)
-        related = base.search_around(link_type, hops=hops, direction=direction, cap=cap)
-        rows = _object_set_rows(ontology, related, actor, limit=cap)
-        return {
-            'ids': [r.get('id') for r in rows],
-            'rows': rows,
-            'count': len(rows),
-        }
+        def execute_search_around() -> list[dict[str, Any]]:
+            base = ontology.object_set(ids)
+            related = base.search_around(
+                link_type,
+                hops=hops,
+                direction=direction,
+                cap=cap,
+            )
+            return _object_set_rows(ontology, related, actor, limit=cap)
+
+        rows = await _invoke_governed_helper(execute_search_around, deadline=30.0)
+        return _public_external_result(
+            {
+                'ids': [r.get('id') for r in rows],
+                'rows': rows,
+                'count': len(rows),
+            }
+        )
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Ontology search-around failed: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.post('/ontology/object-set/pivot')
@@ -5766,26 +7485,40 @@ async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
     Body: ``{ids, link_type, group_by, direction}``.
     """
     try:
-        _kg, ontology = get_ontology_kg()
-        ids = list(data.get('ids') or [])
+        _kg, ontology = await _get_ontology_kg_bounded()
+        ids = _bounded_identifier_list(data.get('ids'))
         link_type = data.get('link_type')
         group_by = str(data.get('group_by', '') or '')
         direction = str(data.get('direction', 'out') or 'out')
-        if not group_by:
+        if not group_by or len(group_by.encode('utf-8')) > 128:
             raise HTTPException(status_code=422, detail='group_by is required')
+        if direction not in {'in', 'out', 'both'}:
+            raise HTTPException(status_code=400, detail='Invalid pivot direction')
+        if link_type is not None and (
+            not isinstance(link_type, str) or len(link_type.encode('utf-8')) > 128
+        ):
+            raise HTTPException(status_code=400, detail='Invalid link type')
 
-        base = ontology.object_set(ids)
-        pivot = base.pivot(link_type, group_by, direction=direction)
-        return {
-            'link_type': pivot.link_type,
-            'group_by': pivot.group_by,
-            'groups': {str(k): v for k, v in pivot.groups.items()},
-        }
+        pivot = await _invoke_governed_helper(
+            lambda: ontology.object_set(ids).pivot(
+                link_type,
+                group_by,
+                direction=direction,
+            ),
+            deadline=30.0,
+        )
+        return _public_external_result(
+            {
+                'link_type': pivot.link_type,
+                'group_by': pivot.group_by,
+                'groups': {str(k): v for k, v in pivot.groups.items()},
+            }
+        )
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Ontology pivot failed: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.post('/ontology/object-set/aggregate')
@@ -5795,33 +7528,44 @@ async def ontology_object_set_aggregate(data: dict[str, Any]) -> dict[str, Any]:
     Body: ``{ids, group_by, metric, field}``.
     """
     try:
-        _kg, ontology = get_ontology_kg()
-        ids = list(data.get('ids') or [])
+        _kg, ontology = await _get_ontology_kg_bounded()
+        ids = _bounded_identifier_list(data.get('ids'))
         metric = str(data.get('metric', 'count') or 'count')
         group_by = data.get('group_by')
         field = data.get('field')
 
-        base = ontology.object_set(ids)
-        agg = base.aggregate(metric, field=field, group_by=group_by)
-        return {
-            'metric': agg.metric,
-            'field': agg.field,
-            'group_by': agg.group_by,
-            'groups': {str(k): v for k, v in agg.groups.items()},
-            'value': agg.value,
-            'total_objects': agg.total_objects,
-        }
+        agg = await _invoke_governed_helper(
+            lambda: ontology.object_set(ids).aggregate(
+                metric,
+                field=field,
+                group_by=group_by,
+            ),
+            deadline=30.0,
+        )
+        return _public_external_result(
+            {
+                'metric': agg.metric,
+                'field': agg.field,
+                'group_by': agg.group_by,
+                'groups': {str(k): v for k, v in agg.groups.items()},
+                'value': agg.value,
+                'total_objects': agg.total_objects,
+            }
+        )
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise HTTPException(status_code=422, detail=type(e).__name__) from e
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Ontology aggregate failed: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 def _resolve_object_set_ids(
-    ontology: Any, data: dict[str, Any], *, limit: int = 10000
+    ontology: Any,
+    data: dict[str, Any],
+    *,
+    limit: int = _MAX_EXTERNAL_COLLECTION_ITEMS,
 ) -> tuple[list[str], str]:
     """Resolve an ObjectSet spec ``{ids|filter|query, kind}`` to concrete ids.
 
@@ -5833,12 +7577,21 @@ def _resolve_object_set_ids(
     from agent_utilities.knowledge_graph.ontology.object_set import PropertyFilter
 
     kind = str(data.get('kind') or '')
+    if len(kind.encode('utf-8')) > 128:
+        raise HTTPException(status_code=400, detail='Invalid object kind')
+    limit = max(1, min(int(limit), _MAX_EXTERNAL_COLLECTION_ITEMS))
     explicit = data.get('ids')
-    if explicit:
-        ids = [str(x) for x in explicit][:limit]
+    if explicit is not None:
+        ids = _bounded_identifier_list(explicit)[:limit]
         return ids, kind
 
     raw_filters = data.get('filter') or data.get('filters') or []
+    if not isinstance(raw_filters, list) or len(raw_filters) > 64:
+        raise HTTPException(status_code=400, detail='Invalid object filters')
+    try:
+        _bounded_external_value(raw_filters)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail='Invalid object filters') from exc
     filters = []
     for f in raw_filters:
         if isinstance(f, dict) and (f.get('property') or f.get('field')):
@@ -5859,6 +7612,8 @@ def _resolve_object_set_ids(
         base = ontology.dynamic_object_set(lambda props: True)
 
     query = str(data.get('query', '') or '')
+    if len(query.encode('utf-8')) > 8192:
+        raise HTTPException(status_code=400, detail='Invalid object query')
     if query or filters:
         base = base.search(query, filters=filters or None, limit=limit)
     return [str(i) for i in base.ids()[:limit]], kind
@@ -5872,19 +7627,18 @@ def _object_set_store_path() -> Path:
         base = Path(data_dir())
     except Exception:  # noqa: BLE001
         base = DEFAULT_AGENT_DIR
-    base.mkdir(parents=True, exist_ok=True)
+    base = _private_directory(base)
     return base / 'ontology_object_sets.json'
 
 
 def _load_object_sets() -> dict[str, Any]:
     """Load the saved ObjectSet definitions (JSON), keyed by saved-set id."""
-    import json
-
     path = _object_set_store_path()
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text(encoding='utf-8')) or {}
+        value = _read_bounded_json(path)
+        return value if isinstance(value, dict) else {}
     except Exception:  # noqa: BLE001
         return {}
 
@@ -5894,7 +7648,20 @@ def _save_object_sets(sets: dict[str, Any]) -> None:
     import json
 
     path = _object_set_store_path()
-    path.write_text(json.dumps(sets, indent=2), encoding='utf-8')
+    normalized_sets = {
+        key: {
+            **record,
+            'actor': _durable_actor_reference(record.get('actor', 'system')),
+        }
+        if isinstance(record, dict)
+        else record
+        for key, record in sets.items()
+    }
+    safe_sets, _privacy_report = sanitize_for_persistence(normalized_sets)
+    payload = json.dumps(safe_sets, indent=2, sort_keys=True).encode('utf-8')
+    if len(payload) > _MAX_EXTERNAL_RESULT_BYTES:
+        raise ValueError('ObjectSet store exceeds its safety bound')
+    _atomic_private_write(path, payload)
 
 
 def _persist_object_set_node(backend: Any, record: dict[str, Any]) -> bool:
@@ -5909,25 +7676,27 @@ def _persist_object_set_node(backend: Any, record: dict[str, Any]) -> bool:
     if backend is None:
         return False
     try:
+        safe_record, _privacy_report = sanitize_for_persistence(record)
+        safe_record['actor'] = _durable_actor_reference(record.get('actor'))
         backend.execute(
             "MERGE (n {id: $id}) SET n.type = 'object_set', n.name = $name, "
             'n.kind = $kind, n.shared = $shared, n.count = $count, '
             'n.member_ids = $member_ids, n.created_at = $created_at, '
             'n.actor = $actor',
             {
-                'id': record['id'],
-                'name': record['name'],
-                'kind': record.get('kind', ''),
-                'shared': bool(record.get('shared', False)),
-                'count': int(record.get('count', 0)),
-                'member_ids': json.dumps(record.get('ids', [])),
-                'created_at': record.get('created_at', 0.0),
-                'actor': record.get('actor', 'system'),
+                'id': safe_record['id'],
+                'name': safe_record['name'],
+                'kind': safe_record.get('kind', ''),
+                'shared': bool(safe_record.get('shared', False)),
+                'count': int(safe_record.get('count', 0)),
+                'member_ids': json.dumps(safe_record.get('ids', [])),
+                'created_at': safe_record.get('created_at', 0.0),
+                'actor': safe_record.get('actor', 'system'),
             },
         )
         return True
     except Exception as exc:  # noqa: BLE001 — persistence is best-effort
-        logger.debug('Failed to persist object_set node %s: %s', record['id'], exc)
+        logger.debug('Operation failed: error_type=%s', type(exc).__name__)
         return False
 
 
@@ -5947,14 +7716,19 @@ async def ontology_object_set_save(
     import uuid
 
     try:
-        kg, ontology = get_ontology_kg()
+        kg, ontology = await _get_ontology_kg_bounded()
         backend = kg.store
         name = str(data.get('name') or '').strip()
-        if not name:
+        if not name or len(name.encode('utf-8')) > 512:
             raise HTTPException(status_code=422, detail='name is required')
 
-        ids, kind = _resolve_object_set_ids(ontology, data)
-        actor = data.get('actor') or _actor_id_from_request(request)
+        ids, kind = await _invoke_governed_helper(
+            _resolve_object_set_ids,
+            ontology,
+            data,
+            deadline=30.0,
+        )
+        actor = _actor_id_from_request(request)
         set_id = f'object_set:{uuid.uuid4().hex[:12]}'
         record = {
             'id': set_id,
@@ -5967,7 +7741,12 @@ async def ontology_object_set_save(
             'actor': actor,
         }
 
-        record['persisted'] = _persist_object_set_node(backend, record)
+        record['persisted'] = await _invoke_governed_helper(
+            _persist_object_set_node,
+            backend,
+            record,
+            deadline=15.0,
+        )
         sets = _load_object_sets()
         sets[set_id] = record
         _save_object_sets(sets)
@@ -5981,8 +7760,8 @@ async def ontology_object_set_save(
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to save object set: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('save_object_set', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.get('/ontology/object-set/list')
@@ -5996,17 +7775,27 @@ async def ontology_object_set_list(request: Request) -> dict[str, Any]:
     import json
 
     try:
-        kg, _ontology = get_ontology_kg()
+        kg, _ontology = await _get_ontology_kg_bounded()
         backend = kg.store
-        actor_id = _actor_id_from_request(request)
+        actor = _actor_context(request)
+        actor_id = _durable_actor_reference(actor.actor_id)
+        actor_is_admin = bool(
+            set(actor.roles).intersection({'admin', 'system', 'kg:admin'})
+        )
 
         merged: dict[str, dict[str, Any]] = {}
-        for rec in _load_object_sets().values():
+        for rec in list(_load_object_sets().values())[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
             if isinstance(rec, dict) and rec.get('id'):
                 merged[rec['id']] = rec
 
         try:
-            rows = backend.execute("MATCH (n {type: 'object_set'}) RETURN n", {})
+            rows = await _invoke_governed_helper(
+                backend.execute,
+                f"MATCH (n {{type: 'object_set'}}) RETURN n "
+                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
+                {},
+                deadline=15.0,
+            )
         except Exception:  # noqa: BLE001
             rows = []
         for row in rows or []:
@@ -6030,7 +7819,7 @@ async def ontology_object_set_list(request: Request) -> dict[str, Any]:
                     'ids': member_ids,
                     'count': int(node.get('count', len(member_ids))),
                     'created_at': node.get('created_at', 0.0),
-                    'actor': node.get('actor', 'system'),
+                    'actor': _durable_actor_reference(node.get('actor', 'system')),
                 },
             )
 
@@ -6042,20 +7831,21 @@ async def ontology_object_set_list(request: Request) -> dict[str, Any]:
                 'shared': bool(r.get('shared', False)),
                 'count': int(r.get('count', len(r.get('ids', []) or []))),
                 'created_at': r.get('created_at', 0.0),
-                'actor': r.get('actor', 'system'),
+                'actor': _durable_actor_reference(r.get('actor', 'system')),
             }
             for r in merged.values()
             if r.get('shared')
-            or r.get('actor', 'system') == actor_id
-            or actor_id in ('system', 'admin')
+            or _durable_actor_reference(r.get('actor', 'system')) == actor_id
+            or actor_is_admin
         ]
         visible.sort(key=lambda r: r.get('created_at') or 0.0, reverse=True)
+        visible = visible[:_MAX_EXTERNAL_COLLECTION_ITEMS]
         return {'sets': visible, 'count': len(visible)}
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to list object sets: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('list_object_sets', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.get('/ontology/actions')
@@ -6090,10 +7880,10 @@ async def ontology_actions(object_type: str | None = None) -> list[dict[str, Any
                 'required_capability': a.required_capability,
                 'acts_on': list(a.acts_on or []),
             }
-            for a in actions
+            for a in list(actions)[:_MAX_EXTERNAL_COLLECTION_ITEMS]
         ]
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to list ontology actions: {e}')
+        _log_failure('api_extension', e)
         return []
 
 
@@ -6117,22 +7907,17 @@ async def ontology_object_set_action(
             ActionExecutor,
             ActionStatus,
         )
-        from agent_utilities.knowledge_graph.ontology.permissioning import ActorContext
 
-        _kg, ontology = get_ontology_kg()
-        ids = [str(x) for x in (data.get('ids') or [])]
+        _kg, ontology = await _get_ontology_kg_bounded()
+        ids = _bounded_identifier_list(data.get('ids'), required=True)
         action_name = str(data.get('action_name') or '').strip()
-        if not action_name:
+        if not action_name or not _SAFE_DELEGATION_TOKEN.fullmatch(action_name):
             raise HTTPException(status_code=422, detail='action_name is required')
-        if not ids:
-            raise HTTPException(status_code=422, detail='ids is required')
-        params = dict(data.get('params') or {})
+        params = _bounded_query_params(data.get('params') or {})
 
-        actor_id = data.get('actor') or _actor_id_from_request(request)
-        # Capabilities come from the actor's roles (ActorContext treats roles as
-        # the capability set the executor authorizes against).
-        roles = [str(r) for r in (data.get('roles') or [])]
-        actor = ActorContext(actor_id=str(actor_id), roles=roles)
+        ambient_actor = _actor_context(request)
+        actor_id = _durable_actor_reference(ambient_actor.actor_id)
+        actor = replace(ambient_actor, actor_id=actor_id)
 
         # Bind the executor's ledger to the SAME live-store ledger the object
         # view reads, so bulk writeback edits are durable and surface in history.
@@ -6147,15 +7932,16 @@ async def ontology_object_set_action(
         approve = data.get('approve')
         decision_provider = None
         if approve:
-            approver = (
-                approve.get('approver') if isinstance(approve, dict) else None
-            ) or str(actor_id)
-            approver_role = (
-                approve.get('approver_role') if isinstance(approve, dict) else None
-            ) or 'admin'
-            reason = (
-                approve.get('reason') if isinstance(approve, dict) else None
-            ) or 'bulk action approved by operator'
+            if not isinstance(approve, dict):
+                raise HTTPException(status_code=400, detail='Invalid approval payload')
+            if not set(actor.roles).intersection({'admin', 'kg:admin'}):
+                raise HTTPException(status_code=403, detail='Admin approval required')
+            approver = actor_id
+            approver_role = 'admin'
+            reason = (approve.get('reason')) or 'bulk action approved by operator'
+            if not isinstance(reason, str) or len(reason.encode('utf-8')) > 2048:
+                raise HTTPException(status_code=400, detail='Invalid approval reason')
+            reason, _privacy_report = sanitize_for_persistence(reason)
 
             def decision_provider(_request: Any) -> dict[str, Any]:
                 return {
@@ -6191,15 +7977,18 @@ async def ontology_object_set_action(
             call_params = dict(params)
             if id_param:
                 call_params[id_param] = target_id
-            inv = executor.execute(
+            inv = await _invoke_governed_helper(
+                executor.execute,
                 action_name,
                 actor,
                 call_params,
                 target_id=target_id,
                 decision_provider=decision_provider,
+                deadline=120.0,
             )
             status = str(inv.status)
             edit_ids = list(getattr(inv, 'edit_ids', []) or [])
+            edit_ids = edit_ids[:_MAX_EXTERNAL_COLLECTION_ITEMS]
             results.append({'id': target_id, 'status': status, 'edit_ids': edit_ids})
             if inv.status == ActionStatus.SUCCESS:
                 applied += 1
@@ -6213,12 +8002,14 @@ async def ontology_object_set_action(
                     }
                 )
 
-        return {'applied': applied, 'results': results, 'errors': errors}
+        return _public_external_result(
+            {'applied': applied, 'results': results, 'errors': errors}
+        )
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Bulk ontology action failed: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 def _durable_edit_history(backend: Any, object_id: str) -> list[dict[str, Any]]:
@@ -6234,7 +8025,8 @@ def _durable_edit_history(backend: Any, object_id: str) -> list[dict[str, Any]]:
 
     try:
         rows = backend.execute(
-            "MATCH (n {object_id: $id, type: 'object_edit'}) RETURN n",
+            f"MATCH (n {{object_id: $id, type: 'object_edit'}}) RETURN n "
+            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
             {'id': object_id},
         )
     except Exception:  # noqa: BLE001
@@ -6256,7 +8048,7 @@ def _durable_edit_history(backend: Any, object_id: str) -> list[dict[str, Any]]:
         edits.append(
             {
                 'id': node.get('id', ''),
-                'actor': node.get('actor', ''),
+                'actor': _durable_actor_reference(node.get('actor', '')),
                 'edit_type': node.get('edit_type', ''),
                 'object_id': node.get('object_id', object_id),
                 'before': _loads(node.get('before')),
@@ -6290,17 +8082,22 @@ async def get_ontology_object(
     when none exists). The selection is a real change in the returned payload —
     the same affordance the Explorer's layout toggle reaches.
     """
+    object_id = _validate_runtime_id(object_id)
+    if layout not in {'standard', 'configured'}:
+        raise HTTPException(status_code=400, detail='Invalid object layout')
     try:
         from agent_utilities.knowledge_graph.ontology.permissioning import (
             enforce,
             markings_for,
         )
 
-        kg, ontology = get_ontology_kg()
+        kg, ontology = await _get_ontology_kg_bounded()
         backend = kg.store
         actor = _actor_context(request)
 
-        props = _node_properties(backend, object_id)
+        props = await _invoke_governed_helper(
+            _node_properties, backend, object_id, deadline=15.0
+        )
         props.setdefault('id', object_id)
         enforced = enforce([props], actor)
         if not enforced:
@@ -6313,8 +8110,12 @@ async def get_ontology_object(
             or view_props.get('object_type')
         )
         try:
-            derived = ontology.derive_all(
-                view_props, object_type=object_type, actor_id=actor.actor_id
+            derived = await _invoke_governed_helper(
+                ontology.derive_all,
+                view_props,
+                object_type=object_type,
+                actor_id=actor.actor_id,
+                deadline=30.0,
             )
         except Exception:  # noqa: BLE001
             derived = {}
@@ -6324,12 +8125,17 @@ async def get_ontology_object(
             markings = []
         # Prefer the durable, cross-request audit trail from the store; fall
         # back to the in-process ledger mirror when nothing was persisted.
-        history = _durable_edit_history(backend, object_id)
+        history = await _invoke_governed_helper(
+            _durable_edit_history, backend, object_id, deadline=15.0
+        )
         if not history:
             try:
-                history = [
-                    e.model_dump(mode='json') for e in ontology.history(object_id)
-                ]
+                fallback_history = await _invoke_governed_helper(
+                    ontology.history,
+                    object_id,
+                    deadline=15.0,
+                )
+                history = [e.model_dump(mode='json') for e in fallback_history]
             except Exception:  # noqa: BLE001
                 history = []
 
@@ -6354,22 +8160,26 @@ async def get_ontology_object(
             else:
                 view = _standard_object_view(ontology, str(object_type))
 
-        return {
-            'id': object_id,
-            'object_type': object_type,
-            'properties': view_props,
-            'links': _node_links(backend, object_id),
-            'derived': derived,
-            'markings': markings,
-            'history': history,
-            'layout': view.get('view_type', 'standard') if view else layout_choice,
-            'view': view,
-        }
+        return _public_external_result(
+            {
+                'id': object_id,
+                'object_type': object_type,
+                'properties': view_props,
+                'links': await _invoke_governed_helper(
+                    _node_links, backend, object_id, deadline=15.0
+                ),
+                'derived': derived,
+                'markings': markings[:_MAX_EXTERNAL_COLLECTION_ITEMS],
+                'history': history[:_MAX_EXTERNAL_COLLECTION_ITEMS],
+                'layout': view.get('view_type', 'standard') if view else layout_choice,
+                'view': view,
+            }
+        )
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to load ontology object {object_id}: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.post('/ontology/object/{object_id}/edit')
@@ -6381,10 +8191,11 @@ async def edit_ontology_object(
     Body: ``{edit_type, property|properties, value, link_type, target, actor}``.
     ``edit_type`` is one of ``property_set`` / ``link_add`` / ``link_remove``.
     """
+    object_id = _validate_runtime_id(object_id)
     try:
-        kg, ontology = get_ontology_kg()
+        kg, ontology = await _get_ontology_kg_bounded()
         backend = kg.store
-        actor = data.get('actor') or _actor_id_from_request(request)
+        actor = _actor_id_from_request(request)
         edit_type = str(data.get('edit_type', 'property_set') or 'property_set')
 
         if edit_type == 'property_set':
@@ -6397,13 +8208,30 @@ async def edit_ontology_object(
                         detail='property_set requires properties or property+value',
                     )
                 properties = {str(prop): data.get('value')}
-            edit = ontology.set_property_edit(object_id, properties, actor=actor)
+            properties = _bounded_query_params(properties)
+            edit = await _invoke_governed_helper(
+                ontology.set_property_edit,
+                object_id,
+                properties,
+                actor=actor,
+                deadline=30.0,
+            )
         elif edit_type == 'link_add':
             target = data.get('target') or data.get('link_target')
             label = str(data.get('link_type') or data.get('link') or 'related')
             if not target:
                 raise HTTPException(status_code=422, detail='link_add requires target')
-            edit = ontology.edits.add_link(object_id, str(target), label, actor=actor)
+            target = _validate_runtime_id(str(target))
+            if not _SAFE_DELEGATION_TOKEN.fullmatch(label):
+                raise HTTPException(status_code=400, detail='Invalid link type')
+            edit = await _invoke_governed_helper(
+                ontology.edits.add_link,
+                object_id,
+                target,
+                label,
+                actor=actor,
+                deadline=30.0,
+            )
         elif edit_type == 'link_remove':
             target = data.get('target') or data.get('link_target')
             label = str(data.get('link_type') or data.get('link') or 'related')
@@ -6411,27 +8239,41 @@ async def edit_ontology_object(
                 raise HTTPException(
                     status_code=422, detail='link_remove requires target'
                 )
-            edit = ontology.edits.remove_link(
-                object_id, str(target), label, actor=actor
+            target = _validate_runtime_id(str(target))
+            if not _SAFE_DELEGATION_TOKEN.fullmatch(label):
+                raise HTTPException(status_code=400, detail='Invalid link type')
+            edit = await _invoke_governed_helper(
+                ontology.edits.remove_link,
+                object_id,
+                target,
+                label,
+                actor=actor,
+                deadline=30.0,
             )
         else:
             raise HTTPException(
                 status_code=422, detail=f'unsupported edit_type: {edit_type}'
             )
 
-        return {
-            'edit': edit.model_dump(mode='json'),
-            'object': {
-                'id': object_id,
-                'properties': _node_properties(backend, object_id),
-                'links': _node_links(backend, object_id),
-            },
-        }
+        return _public_external_result(
+            {
+                'edit': edit.model_dump(mode='json'),
+                'object': {
+                    'id': object_id,
+                    'properties': await _invoke_governed_helper(
+                        _node_properties, backend, object_id, deadline=15.0
+                    ),
+                    'links': await _invoke_governed_helper(
+                        _node_links, backend, object_id, deadline=15.0
+                    ),
+                },
+            }
+        )
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to edit ontology object {object_id}: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.post('/ontology/object/{object_id}/revert')
@@ -6442,25 +8284,31 @@ async def revert_ontology_edit(
 
     Body: ``{edit_id, actor}``.
     """
+    object_id = _validate_runtime_id(object_id)
     try:
         from agent_utilities.knowledge_graph.ontology.edits import Edit, EditType
 
-        kg, ontology = get_ontology_kg()
+        kg, ontology = await _get_ontology_kg_bounded()
         backend = kg.store
-        actor = data.get('actor') or _actor_id_from_request(request)
+        actor = _actor_id_from_request(request)
         edit_id = data.get('edit_id')
-        if not edit_id:
+        if not isinstance(edit_id, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(
+            edit_id
+        ):
             raise HTTPException(status_code=422, detail='edit_id is required')
 
         # The in-process ledger mirror does not survive across stateless HTTP
         # requests, so rehydrate the original edit from its durable store node
         # and register it on the ledger before reverting.
         if ontology.edits.get(str(edit_id)) is None:
-            for hist in _durable_edit_history(backend, object_id):
+            durable_history = await _invoke_governed_helper(
+                _durable_edit_history, backend, object_id, deadline=15.0
+            )
+            for hist in durable_history:
                 if hist.get('id') == str(edit_id):
                     rehydrated = Edit(
                         id=hist['id'],
-                        actor=hist.get('actor', 'system'),
+                        actor=_durable_actor_reference(hist.get('actor', 'system')),
                         edit_type=EditType(hist['edit_type']),
                         object_id=hist.get('object_id', object_id),
                         before=hist.get('before') or {},
@@ -6472,25 +8320,40 @@ async def revert_ontology_edit(
                         invocation_ref=hist.get('invocation_ref', ''),
                         timestamp=hist.get('timestamp', 0.0) or 0.0,
                     )
-                    ontology.edits.rehydrate(rehydrated)
+                    await _invoke_governed_helper(
+                        ontology.edits.rehydrate,
+                        rehydrated,
+                        deadline=15.0,
+                    )
                     break
 
-        compensating = ontology.revert_edit(str(edit_id), actor=actor)
-        return {
-            'edit': compensating.model_dump(mode='json'),
-            'object': {
-                'id': object_id,
-                'properties': _node_properties(backend, object_id),
-                'links': _node_links(backend, object_id),
-            },
-        }
+        compensating = await _invoke_governed_helper(
+            ontology.revert_edit,
+            str(edit_id),
+            actor=actor,
+            deadline=30.0,
+        )
+        return _public_external_result(
+            {
+                'edit': compensating.model_dump(mode='json'),
+                'object': {
+                    'id': object_id,
+                    'properties': await _invoke_governed_helper(
+                        _node_properties, backend, object_id, deadline=15.0
+                    ),
+                    'links': await _invoke_governed_helper(
+                        _node_links, backend, object_id, deadline=15.0
+                    ),
+                },
+            }
+        )
     except HTTPException:
         raise
     except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=404, detail=type(e).__name__) from e
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to revert edit on {object_id}: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.post('/ontology/function/invoke')
@@ -6507,26 +8370,34 @@ async def invoke_ontology_function(
 
     try:
         name = data.get('name')
-        if not name:
+        if not isinstance(name, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(name):
             raise HTTPException(status_code=422, detail='name is required')
-        params = data.get('params') or {}
-        actor_id = data.get('actor') or _actor_id_from_request(request)
+        params = _bounded_query_params(data.get('params') or {})
+        version = data.get('version') or ''
+        if not isinstance(version, str) or len(version.encode('utf-8')) > 128:
+            raise HTTPException(status_code=400, detail='Invalid function version')
+        actor_id = _actor_id_from_request(request)
 
-        result = await _canonical_kg_tool(
-            'ontology_function',
+        result = await _invoke_governed_helper(
+            _canonical_kg_tool,
+            deadline=30.0,
+            tool_name='ontology_function',
             action='invoke',
-            name=str(name),
-            params=json.dumps(params, default=str),
-            version=str(data.get('version') or ''),
+            name=name,
+            params=json.dumps(params, separators=(',', ':'), allow_nan=False),
+            version=version,
             actor=str(actor_id),
         )
         _raise_canonical_error(result)
-        return result
+        bounded = _public_external_result(result)
+        if not isinstance(bounded, dict):
+            raise HTTPException(status_code=422, detail='Invalid function result')
+        return bounded
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to invoke ontology function: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.post('/ontology/derive')
@@ -6542,16 +8413,21 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
     import json
 
     try:
-        kg, _ontology = get_ontology_kg()
+        kg, _ontology = await _get_ontology_kg_bounded()
         backend = kg.store
         object_id = data.get('object_id')
         derived_name = data.get('derived_name')
-        if not object_id or not derived_name:
+        if not isinstance(object_id, str) or not isinstance(derived_name, str):
             raise HTTPException(
                 status_code=422, detail='object_id and derived_name are required'
             )
+        object_id = _validate_runtime_id(object_id)
+        if not _SAFE_DELEGATION_TOKEN.fullmatch(derived_name):
+            raise HTTPException(status_code=400, detail='Invalid derived property')
 
-        props = _node_properties(backend, str(object_id))
+        props = await _invoke_governed_helper(
+            _node_properties, backend, str(object_id), deadline=15.0
+        )
         props.setdefault('id', str(object_id))
         object_type = (
             data.get('object_type')
@@ -6559,20 +8435,30 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
             or props.get('_type')
             or props.get('object_type')
         )
-        result = await _canonical_kg_tool(
-            'ontology_derive',
+        bounded_props = _bounded_query_params(props)
+        result = await _invoke_governed_helper(
+            _canonical_kg_tool,
+            deadline=30.0,
+            tool_name='ontology_derive',
             action='compute',
-            object_json=json.dumps(props, default=str),
-            name=str(derived_name),
+            object_json=json.dumps(
+                bounded_props,
+                separators=(',', ':'),
+                allow_nan=False,
+            ),
+            name=derived_name,
             object_type=str(object_type or ''),
         )
         _raise_canonical_error(result)
-        return result
+        bounded = _public_external_result(result)
+        if not isinstance(bounded, dict):
+            raise HTTPException(status_code=422, detail='Invalid derived result')
+        return bounded
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to derive property: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('derive_property', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.post('/ontology/document/process')
@@ -6582,35 +8468,71 @@ async def process_ontology_document(data: dict[str, Any]) -> dict[str, Any]:
     Body: ``{text|path, chunk_size, overlap, title, doc_type, source}``.
     """
     try:
-        kg, ontology = get_ontology_kg()
+        kg, ontology = await _get_ontology_kg_bounded()
         text = data.get('text')
         path = data.get('path')
         if not text and not path:
             raise HTTPException(status_code=422, detail='text or path is required')
+        if text is not None:
+            if (
+                not isinstance(text, str)
+                or len(text.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES
+            ):
+                raise HTTPException(
+                    status_code=400, detail='Document text exceeds its limit'
+                )
+        if path is not None:
+            path = _workspace_ingestion_source(path)
 
         chunk_size = int(data.get('chunk_size', 800) or 800)
         overlap = int(data.get('overlap', 120) or 120)
+        if not 64 <= chunk_size <= 16_384 or not 0 <= overlap < chunk_size:
+            raise HTTPException(
+                status_code=400, detail='Invalid document chunking bounds'
+            )
         kwargs: dict[str, Any] = {}
-        for key in ('title', 'doc_type', 'source', 'document_id', 'metadata'):
+        for key in ('title', 'doc_type', 'source', 'document_id'):
             if data.get(key) is not None:
-                kwargs[key] = data[key]
+                value = data[key]
+                if not isinstance(value, str) or len(value.encode('utf-8')) > 2048:
+                    raise HTTPException(
+                        status_code=400, detail='Invalid document metadata'
+                    )
+                kwargs[key] = value
+        if data.get('metadata') is not None:
+            kwargs['metadata'] = _bounded_query_params(data['metadata'])
         if text and path:
             kwargs.setdefault('text', text)
 
         document = path if path else text
-        result = ontology.process_document(
-            document, chunk_size=chunk_size, overlap=overlap, **kwargs
+        result = await _invoke_governed_helper(
+            ontology.process_document,
+            deadline=30.0,
+            document=document,
+            chunk_size=chunk_size,
+            overlap=overlap,
+            **kwargs,
         )
-        return {
+        chunks = list(result.get('chunk_nodes', []) or [])
+        edges = list(result.get('edges', []) or [])
+        if (
+            len(chunks) > _MAX_EXTERNAL_COLLECTION_ITEMS
+            or len(edges) > _MAX_EXTERNAL_COLLECTION_ITEMS
+        ):
+            raise HTTPException(
+                status_code=422, detail='Document result exceeds its limit'
+            )
+        response = {
             'document': result.get('document_node'),
-            'chunks': result.get('chunk_nodes', []),
-            'edges': result.get('edges', []),
+            'chunks': chunks,
+            'edges': edges,
         }
+        return _public_external_result(response)
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to process document: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('api_extension', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 def _object_view_store_path() -> Path:
@@ -6621,29 +8543,32 @@ def _object_view_store_path() -> Path:
         base = Path(data_dir())
     except Exception:  # noqa: BLE001
         base = DEFAULT_AGENT_DIR
-    base.mkdir(parents=True, exist_ok=True)
+    base = _private_directory(base)
     return base / 'ontology_object_views.json'
 
 
 def _load_object_views() -> dict[str, Any]:
     """Load the stored configured ObjectView definitions (JSON)."""
-    import json
-
     path = _object_view_store_path()
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text(encoding='utf-8')) or {}
+        value = _read_bounded_json(path)
+        return value if isinstance(value, dict) else {}
     except Exception:  # noqa: BLE001
         return {}
 
 
 def _save_object_views(views: dict[str, Any]) -> None:
-    """Persist the configured ObjectView definitions (JSON)."""
+    """Persist privacy-safe configured ObjectView definitions atomically."""
     import json
 
     path = _object_view_store_path()
-    path.write_text(json.dumps(views, indent=2), encoding='utf-8')
+    safe_views, _privacy_report = sanitize_for_persistence(views)
+    payload = json.dumps(safe_views, indent=2, sort_keys=True).encode('utf-8')
+    if len(payload) > _MAX_EXTERNAL_RESULT_BYTES:
+        raise ValueError('ObjectView store exceeds its safety bound')
+    _atomic_private_write(path, payload)
 
 
 def _standard_object_view(ontology: Any, object_type: str) -> dict[str, Any]:
@@ -6706,7 +8631,7 @@ def _standard_object_view(ontology: Any, object_type: str) -> dict[str, Any]:
 async def get_ontology_object_view(object_type: str) -> dict[str, Any]:
     """Get the ObjectView for a type: stored (configured) else standard (schema)."""
     try:
-        _kg, ontology = get_ontology_kg()
+        _kg, ontology = await _get_ontology_kg_bounded()
         configured = _load_object_views().get(object_type)
         if configured is not None:
             return {
@@ -6718,8 +8643,8 @@ async def get_ontology_object_view(object_type: str) -> dict[str, Any]:
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to get object view for {object_type}: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('get_object_view', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.post('/ontology/object-view/{object_type}')
@@ -6729,7 +8654,7 @@ async def save_ontology_object_view(
     """Save a configured ObjectView definition (widget composition) for a type."""
     try:
         # Validate the ontology is reachable before persisting.
-        get_ontology_kg()
+        await _get_ontology_kg_bounded()
         views = _load_object_views()
         definition = {
             'widgets': data.get('widgets', []),
@@ -6746,5 +8671,5 @@ async def save_ontology_object_view(
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error(f'Failed to save object view for {object_type}: {e}')
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        _log_failure('save_object_view', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e

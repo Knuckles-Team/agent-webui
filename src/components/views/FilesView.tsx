@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ChangeEvent } from 'react'
+import { useState, useEffect, useMemo, useRef, type ChangeEvent } from 'react'
 import {
   FileIcon,
   FileText,
@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { usePageContextPublisher, type PageContextContribution } from '@/lib/page-context'
 
 /**
  * Metadata about a workspace file.
@@ -143,6 +144,38 @@ export default function FilesView() {
   const [deleting, setDeleting] = useState(false)
   const uploadInputRef = useRef<HTMLInputElement>(null)
 
+  const pageContext = useMemo<PageContextContribution>(
+    () => ({
+      selection: previewFile ? [{ kind: 'workspace-file', id: previewFile, label: previewFile }] : [],
+      filters: { search: searchQuery, editing: isEditing },
+      allowedActions: [
+        { id: 'search-files', label: 'Search workspace files', kind: 'read' },
+        { id: 'upload-file', label: 'Upload a workspace file', kind: 'write', requiresConfirmation: true },
+        { id: 'create-file', label: 'Create a workspace file', kind: 'write', requiresConfirmation: true },
+        ...(previewFile
+          ? [
+              { id: 'read-file', label: 'Read the selected file', kind: 'read' as const },
+              { id: 'download-file', label: 'Download the selected file', kind: 'read' as const },
+              {
+                id: 'update-file',
+                label: 'Update the selected file',
+                kind: 'write' as const,
+                requiresConfirmation: true,
+              },
+              {
+                id: 'delete-file',
+                label: 'Delete the selected file',
+                kind: 'write' as const,
+                requiresConfirmation: true,
+              },
+            ]
+          : []),
+      ],
+    }),
+    [isEditing, previewFile, searchQuery],
+  )
+  usePageContextPublisher(pageContext)
+
   useEffect(() => {
     void fetchFiles()
   }, [])
@@ -182,7 +215,7 @@ export default function FilesView() {
   }
 
   const handleDownload = (filename: string) => {
-    window.open(`/api/enhanced/download/${encodeURIComponent(filename)}`, '_blank')
+    window.open(`/api/enhanced/download/${encodeURIComponent(filename)}`, '_blank', 'noopener,noreferrer')
   }
 
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {

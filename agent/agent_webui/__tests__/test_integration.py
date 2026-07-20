@@ -96,7 +96,7 @@ class TestKnowledgeBaseWorkflowIntegration:
                 # Step 1: Ingest knowledge base
                 kb_data = {
                     'kb_id': 'integration_kb',
-                    'source': '/test/integration',
+                    'source': 'test/integration',
                     'name': 'Integration Test KB',
                     'options': {'chunk_size': 1024},
                 }

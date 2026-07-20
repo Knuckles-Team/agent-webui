@@ -12,12 +12,11 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
+import agent_webui.api_extensions as mod
 import pytest
+from agent_webui.api_extensions import router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-import agent_webui.api_extensions as mod
-from agent_webui.api_extensions import router
 
 
 @pytest.fixture
@@ -344,19 +343,31 @@ def test_bulk_actions_reports_missing_repo(client):
     assert data['results'][0]['detail'] == 'repo not found'
 
 
-def test_container_action_reports_failure_not_simulated(client, monkeypatch):
+def test_container_inventory_reports_unavailable_not_simulated(client, monkeypatch):
     import socket as _socket
 
     def _bad_connect(self, *_a, **_k):
         raise OSError('no docker socket')
 
     monkeypatch.setattr(_socket.socket, 'connect', _bad_connect)
-    resp = client.post(
-        '/container-manager/containers/abc123/action', json={'action': 'restart'}
-    )
-    assert resp.status_code == 502
-    assert 'Simulated' not in resp.text
-    assert 'unreachable' in resp.text.lower()
+    resp = client.get('/container-manager/containers')
+    assert resp.status_code == 503
+    assert 'inventory unavailable' in resp.text.lower()
+    assert 'agent-utilities-core' not in resp.text
+    assert 'mealie-service' not in resp.text
+
+
+def test_repository_inventory_does_not_invent_standard_repos(
+    client, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(mod, 'get_workspace_dir', lambda: tmp_path)
+
+    resp = client.get('/repository-manager/repos')
+
+    assert resp.status_code == 200
+    assert resp.json() == []
+    assert 'agent-webui' not in resp.text
+    assert 'epistemic-graph' not in resp.text
 
 
 def test_voice_transcribe_honest_without_whisper(client, monkeypatch):

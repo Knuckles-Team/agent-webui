@@ -25,6 +25,7 @@ import {
   LayoutGrid,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { safeExternalUrl } from '@/lib/safe-url'
 import DashboardSettings from './DashboardSettings'
 
 /* ── Types ───────────────────────────────────────────────────────── */
@@ -163,6 +164,7 @@ function WidgetBlock({
 function WidgetCard({ service, data, isLoading }: { service: ServiceConfig; data?: WidgetData; isLoading: boolean }) {
   const icon = ICON_MAP[service.icon] ?? <LayoutGrid className="size-5" />
   const status = data?.status ?? 'unknown'
+  const externalHref = safeExternalUrl(service.href)
 
   const statusColor = {
     ok: 'bg-emerald-500',
@@ -198,9 +200,9 @@ function WidgetCard({ service, data, isLoading }: { service: ServiceConfig; data
           {/* Status indicator */}
           <div className={cn('size-2 rounded-full animate-pulse', statusColor)} />
           {/* External link */}
-          {service.href && (
+          {externalHref && (
             <a
-              href={service.href}
+              href={externalHref}
               target="_blank"
               rel="noopener noreferrer"
               className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"

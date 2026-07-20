@@ -68,6 +68,9 @@ def mock_kb_engine():
         return_value={'health_status': 'healthy', 'issues': []}
     )
     engine.update = AsyncMock(return_value=None)
+    import networkx as nx
+
+    engine.graph = nx.MultiDiGraph()
 
     return engine
 
@@ -162,7 +165,7 @@ def sample_kb_data():
     """Sample knowledge base data for testing."""
     return {
         'kb_id': 'test_kb',
-        'source': '/test/path',
+        'source': 'test/path',
         'name': 'Test Knowledge Base',
         'options': {'chunk_size': 1024, 'extract_model': None},
     }

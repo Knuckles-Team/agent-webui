@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Network, Terminal, Brain, RefreshCw, Database, Play, Layers, Sparkles } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import { GraphCanvas } from '../knowledge-graph/GraphCanvas'
+import { usePageContextPublisher, type PageContextContribution } from '@/lib/page-context'
 
 interface GraphNode {
   id: string
@@ -45,6 +46,35 @@ export default function GraphView() {
   const [magmaView, setMagmaView] = useState<'semantic' | 'structural' | 'temporal' | 'hybrid'>('semantic')
   const [magmaResults, setMagmaResults] = useState<unknown[] | null>(null)
   const [retrievingMagma, setRetrievingMagma] = useState(false)
+
+  const pageContext = useMemo<PageContextContribution>(
+    () => ({
+      selection: selectedNode
+        ? [
+            {
+              kind: 'graph-node',
+              id: selectedNode.id,
+              label:
+                typeof selectedNode.properties.name === 'string'
+                  ? selectedNode.properties.name
+                  : selectedNode.labels.join(', ') || selectedNode.id,
+            },
+          ]
+        : [],
+      filters: {
+        workspaceTab: activeTab,
+        ...(activeTab === 'cypher' ? { query: cypherQuery } : {}),
+        ...(activeTab === 'magma' ? { query: magmaQuery, magmaView } : {}),
+      },
+      allowedActions: [
+        { id: 'refresh-graph', label: 'Refresh graph data', kind: 'read' },
+        { id: 'query-graph', label: 'Run the visible graph query', kind: 'read' },
+        ...(selectedNode ? [{ id: 'inspect-node', label: 'Inspect the selected node', kind: 'read' as const }] : []),
+      ],
+    }),
+    [activeTab, cypherQuery, magmaQuery, magmaView, selectedNode],
+  )
+  usePageContextPublisher(pageContext)
 
   useEffect(() => {
     void fetchData()

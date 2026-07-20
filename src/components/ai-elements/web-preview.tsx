@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { safeExternalUrl } from '@/lib/safe-url'
 import { cn } from '@/lib/utils'
 import { ChevronDownIcon } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
@@ -124,17 +125,21 @@ export type WebPreviewBodyProps = ComponentProps<'iframe'> & {
   loading?: ReactNode
 }
 
+export const WEB_PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-presentation'
+
 export const WebPreviewBody = ({ className, loading, src, ...props }: WebPreviewBodyProps) => {
   const { url } = useWebPreview()
+  const safeSrc = safeExternalUrl(src ?? url)
 
   return (
     <div className="flex-1">
       <iframe
-        className={cn('size-full', className)}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
-        src={(src ?? url) || undefined}
-        title="Preview"
         {...props}
+        className={cn('size-full', className)}
+        referrerPolicy="no-referrer"
+        sandbox={WEB_PREVIEW_SANDBOX}
+        src={safeSrc}
+        title="Preview"
       />
       {loading}
     </div>

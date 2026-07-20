@@ -56,7 +56,11 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { useConversationIdFromUrl } from '@/hooks/useConversationIdFromUrl'
+import {
+  ACTIVE_CONVERSATION_CHANGED_EVENT,
+  ACTIVE_CONVERSATION_STORAGE_KEY,
+  useConversationIdFromUrl,
+} from '@/hooks/useConversationIdFromUrl'
 import { cn } from '@/lib/utils'
 import type { ConversationEntry } from '@/types'
 import { ModeToggle } from './mode-toggle'
@@ -130,8 +134,8 @@ function doLocalNavigation(e: React.MouseEvent) {
   if (e.button !== 0 || e.metaKey || e.ctrlKey) {
     return
   }
-  const path = new URL((e.currentTarget as HTMLAnchorElement).href).pathname
-  window.history.pushState({}, '', path)
+  const url = new URL((e.currentTarget as HTMLAnchorElement).href)
+  window.history.pushState({}, '', `${url.pathname}${url.search}${url.hash}`)
 
   window.dispatchEvent(new Event('history-state-changed'))
   e.preventDefault()
@@ -149,9 +153,15 @@ function deleteConversation(conversationId: string) {
 
   window.localStorage.removeItem(conversationId)
 
-  const currentPath = window.location.pathname
-  if (currentPath === conversationId) {
-    window.history.pushState({}, '', '/')
+  if (window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY) === conversationId) {
+    window.localStorage.removeItem(ACTIVE_CONVERSATION_STORAGE_KEY)
+    window.dispatchEvent(new Event(ACTIVE_CONVERSATION_CHANGED_EVENT))
+  }
+
+  const url = new URL(window.location.toString())
+  const requestedConversation = url.searchParams.get('conversation')
+  if (url.pathname === conversationId || (url.pathname === '/chat' && requestedConversation === conversationId)) {
+    window.history.pushState({}, '', '/chat')
     window.dispatchEvent(new Event('history-state-changed'))
   }
 }
@@ -281,7 +291,7 @@ export function AppSidebar() {
                   <a
                     href="/chat"
                     onClick={(e) => {
-                      window.localStorage.removeItem('activeConversationId')
+                      window.localStorage.removeItem(ACTIVE_CONVERSATION_STORAGE_KEY)
                       doLocalNavigation(e)
                     }}
                   >
@@ -792,7 +802,7 @@ export function AppSidebar() {
                           </div>
                         ) : (
                           <a
-                            href={conversation.id}
+                            href={`/chat?conversation=${encodeURIComponent(conversation.id)}`}
                             onClick={(e) => {
                               doLocalNavigation(e)
                             }}

@@ -1,60 +1,126 @@
 /**
  * @file useConversationIdFromUrl.tsx
- * @description React hook for managing the active conversation ID based on the URL path.
- *
- * Provides a synchronized state between the application and the browser's
- * location pathname. Automatically handles popstate and custom history
- * events to enable back/forward navigation within the chat dashboard.
+ * @description Keeps the active assistant session stable while workspace routes change.
  */
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+
+export const ACTIVE_CONVERSATION_STORAGE_KEY = 'activeConversationId'
+export const ACTIVE_CONVERSATION_CHANGED_EVENT = 'active-conversation-changed'
+
+const APPLICATION_ROUTES = new Set([
+  '/',
+  '/admin',
+  '/broker',
+  '/chat',
+  '/code-graph',
+  '/configuration',
+  '/cypher',
+  '/dashboards',
+  '/data-analyst',
+  '/ecosystem',
+  '/explorer',
+  '/extraction',
+  '/files',
+  '/fleet',
+  '/goals',
+  '/graph',
+  '/knowledge',
+  '/magma',
+  '/observability',
+  '/ops',
+  '/prompts',
+  '/scheduling',
+  '/sessions',
+  '/skills',
+  '/swe',
+  '/system-status',
+  '/temporal-graph',
+  '/usage',
+  '/vertex',
+  '/workflows',
+])
+
+export function isApplicationRoute(pathname: string): boolean {
+  return APPLICATION_ROUTES.has(pathname) || pathname.startsWith('/object/')
+}
+
+export function normalizeConversationId(value: string | null | undefined): string {
+  const trimmed = value?.trim()
+  if (!trimmed || trimmed === '/') return '/'
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+}
+
+export function resolveConversationId(pathname: string, search: string, storedId: string | null): string {
+  if (pathname === '/chat') {
+    const requestedId = new URLSearchParams(search).get('conversation')
+    if (requestedId) return normalizeConversationId(requestedId)
+  }
+
+  // Preserve compatibility with historical conversation links such as
+  // `/V1StG...`, while treating every declared application page as a view.
+  if (!isApplicationRoute(pathname)) return normalizeConversationId(pathname)
+  return normalizeConversationId(storedId)
+}
+
+function readActiveConversation(): string {
+  return resolveConversationId(
+    window.location.pathname,
+    window.location.search,
+    window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY),
+  )
+}
+
+function persistActiveConversation(conversationId: string): void {
+  if (conversationId === '/') window.localStorage.removeItem(ACTIVE_CONVERSATION_STORAGE_KEY)
+  else window.localStorage.setItem(ACTIVE_CONVERSATION_STORAGE_KEY, conversationId)
+}
 
 /**
- * Custom hook to retrieve and update the unique ID of the current conversation
- * from the standard URL pathname.
- *
- * @returns A tuple containing the current conversation ID string and a
- * function to update it (which also pushes to the browser history).
+ * Return the active assistant conversation and a setter for switching sessions.
+ * Workspace navigation does not change the session. On `/chat`, the optional
+ * `conversation` query parameter provides a shareable/deep-linkable session URL.
  */
 export function useConversationIdFromUrl(): [string, (id: string) => void] {
-  const [conversationId, setConversationId] = useState(() => {
-    return window.location.pathname
-  })
+  const [conversationId, setConversationId] = useState(readActiveConversation)
 
-  /**
-   * Effect hook to listen for navigation events (browser back/forward or
-   * programmatic pushState) and sync the local React state.
-   */
   useEffect(() => {
-    const handlePopState = () => {
-      const newId = window.location.pathname
-      setConversationId(newId)
+    const handleNavigation = () => {
+      const nextId = readActiveConversation()
+      setConversationId(nextId)
+      if (nextId !== '/') persistActiveConversation(nextId)
     }
 
-    // Standard browser navigation
-    window.addEventListener('popstate', handlePopState)
-
-    // Custom events for internal navigation triggering
-    window.addEventListener('history-state-changed', handlePopState)
-
+    window.addEventListener('popstate', handleNavigation)
+    window.addEventListener('history-state-changed', handleNavigation)
+    window.addEventListener(ACTIVE_CONVERSATION_CHANGED_EVENT, handleNavigation)
     return () => {
-      window.removeEventListener('popstate', handlePopState)
-      window.removeEventListener('history-state-changed', handlePopState)
+      window.removeEventListener('popstate', handleNavigation)
+      window.removeEventListener('history-state-changed', handleNavigation)
+      window.removeEventListener(ACTIVE_CONVERSATION_CHANGED_EVENT, handleNavigation)
     }
   }, [])
 
-  /**
-   * Updates the conversation ID state and synchronizes it with the
-   * browser URL using the History API.
-   *
-   * @param id - The new conversation identifier (e.g., '/chat-123')
-   */
-  const setConversationIdAndUrl = (id: string) => {
-    setConversationId(id)
+  const setConversationIdAndUrl = useCallback((id: string) => {
+    const nextId = normalizeConversationId(id)
+    persistActiveConversation(nextId)
+    setConversationId(nextId)
+    window.dispatchEvent(new Event(ACTIVE_CONVERSATION_CHANGED_EVENT))
+
     const url = new URL(window.location.toString())
-    url.pathname = id || '/'
-    window.history.pushState({}, '', url.toString())
-  }
+    if (url.pathname === '/chat') {
+      if (nextId === '/') url.searchParams.delete('conversation')
+      else url.searchParams.set('conversation', nextId)
+      window.history.pushState({}, '', url.toString())
+      window.dispatchEvent(new Event('history-state-changed'))
+    } else if (!isApplicationRoute(url.pathname)) {
+      // Keep legacy conversation-only routes functional until all external
+      // links have migrated to `/chat?conversation=...`.
+      url.pathname = nextId
+      window.history.pushState({}, '', url.toString())
+      window.dispatchEvent(new Event('history-state-changed'))
+    }
+  }, [])
 
   return [conversationId, setConversationIdAndUrl]
 }

@@ -1,4 +1,5 @@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { safeExternalUrl } from '@/lib/safe-url'
 import { cn } from '@/lib/utils'
 import { BookIcon, ChevronDownIcon } from 'lucide-react'
 import type { ComponentProps } from 'react'
@@ -39,13 +40,24 @@ export const SourcesContent = ({ className, ...props }: SourcesContentProps) => 
 
 export type SourceProps = ComponentProps<'a'>
 
-export const Source = ({ href, title, children, ...props }: SourceProps) => (
-  <a className="flex items-center gap-2" href={href} rel="noreferrer" target="_blank" {...props}>
-    {children ?? (
-      <>
-        <BookIcon className="h-4 w-4" />
-        <span className="block font-medium">{title}</span>
-      </>
-    )}
-  </a>
-)
+export const Source = ({ href, title, children, className, ...props }: SourceProps) => {
+  const safeHref = safeExternalUrl(href)
+  return (
+    <a
+      {...props}
+      aria-disabled={!safeHref}
+      className={cn('flex items-center gap-2', className)}
+      href={safeHref}
+      rel="noopener noreferrer"
+      target={safeHref ? '_blank' : undefined}
+      title={title}
+    >
+      {children ?? (
+        <>
+          <BookIcon className="h-4 w-4" />
+          <span className="block font-medium">{title}</span>
+        </>
+      )}
+    </a>
+  )
+}
