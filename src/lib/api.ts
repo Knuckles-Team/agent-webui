@@ -8,6 +8,7 @@
  */
 
 import type { SavedWorkflow, WorkflowCapabilities, WorkflowCanvas, WorkflowRunResult } from './workflow'
+import type { OntologySchemaGraph } from '@/components/knowledge-graph/GraphAdapter'
 
 /** Body accepted by `POST /workflows`. */
 export interface SaveWorkflowPayload {
@@ -552,6 +553,45 @@ class ApiClient {
     this.get<{ interface: string; implementers: string[] }>(
       `/api/enhanced/ontology/interfaces/${encodeURIComponent(name)}/implementers`,
     )
+
+  // The ontology's own TYPE schema (TBox) as a Cytoscape-elements graph
+  // (SchemaView, CONCEPT:AU-KG.ontology.schema-graph-visualization). Unlike the
+  // routes above this hits the CANONICAL gateway surface directly
+  // (`/api/ontology/*`, mounted onto this same backend by
+  // `register_graph_routes`) rather than the `/api/enhanced/ontology/*`
+  // re-implementation, so it shares the `{status, result}` action-twin
+  // envelope `getCodeMetrics` already unwraps above.
+  getOntologySchemaGraph = (registry: 'structural' | 'enterprise' = 'structural') =>
+    this.get<{ status: string; result: OntologySchemaGraph }>(`/api/ontology/schema-graph?registry=${registry}`).then(
+      (r) => r.result,
+    )
+
+  // -------------------------------------------------------------------------
+  // SPARQL bridge + SHACL validation report (coverage rows #9/#97 frontend
+  // gaps). Both hit the canonical `/api/*` gateway surface directly, like
+  // `getOntologySchemaGraph` above.
+  // -------------------------------------------------------------------------
+  /** POST a SPARQL 1.1 query against the local OWL/RDF bridge (`/api/sparql`). */
+  runSparqlQuery = (query: string) =>
+    this.post<{
+      status: string
+      head?: { vars: string[] }
+      results?: { bindings: Record<string, { type: string; value: string }>[] }
+      message?: string
+    }>('/api/sparql', { query })
+
+  /** Run the valid/connected/SHACL gate on a candidate WITHOUT hosting it. */
+  validateOntologyCandidate = (payload: { source: string; source_type?: string }) =>
+    this.post<{
+      status: string
+      result: {
+        valid: boolean
+        errors: string[]
+        warnings: string[]
+        summary: Record<string, unknown>
+        shacl_report?: { conforms: boolean; text?: string; turtle?: string } | null
+      }
+    }>('/api/ontology/validate', payload).then((r) => r.result)
 
   // -------------------------------------------------------------------------
   // Object-set surface (ObjectExplorerView). Adapts the backend's raw

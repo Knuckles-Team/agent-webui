@@ -48,6 +48,10 @@ const getNodeColor = (type: string): string => {
     DatabaseTable: '#f59e0b', // amber
     DatabaseColumn: '#fbbf24', // amber-light
     DatabaseView: '#fb923c', // orange-light
+    // Ontology schema graph (SchemaView, CONCEPT:AU-KG.ontology.schema-graph-visualization):
+    // abstract interfaces vs. concrete object types.
+    interface: '#0078d4', // blue (matches the backend's own palette anchor color)
+    object_type: '#107c10', // green
   }
   return colors[type] || '#64748b' // default slate
 }
@@ -231,5 +235,62 @@ export const codeMetricsToGraphNodes = (
     source: e.source,
     type: e.rel ?? 'calls',
     target: e.target,
+  })),
+})
+
+// ── Ontology schema-graph mapping (SchemaView, CONCEPT:AU-KG.ontology.schema-graph-visualization) ──
+// GET /api/ontology/schema-graph returns the interface + link-type registries as
+// a Cytoscape.js elements payload ({nodes: [{data}], edges: [{data}]}) — the
+// ontology TYPE schema (TBox), not instance data. Map it into the same
+// GraphNode/GraphRelationship shape GraphCanvas already consumes (kind stashed
+// as the node's sole `labels` entry so `getNodeColor` distinguishes interface
+// vs. object_type; the rest of the payload rides along under `properties` for
+// the inspector panel) — no GraphCanvas change needed.
+export interface OntologySchemaProperty {
+  name: string
+  type: string
+  required: boolean
+  description?: string
+}
+export interface OntologySchemaNodeData {
+  id: string
+  label: string
+  kind: 'interface' | 'object_type'
+  description?: string
+  color?: string
+  properties?: OntologySchemaProperty[]
+}
+export interface OntologySchemaEdgeData {
+  id: string
+  source: string
+  target: string
+  kind: 'implements' | 'extends' | 'relationship'
+  label: string
+  cardinality?: string
+  edge_type?: string
+}
+export interface OntologySchemaGraph {
+  nodes: { data: OntologySchemaNodeData }[]
+  edges: { data: OntologySchemaEdgeData }[]
+  counts: { interfaces: number; object_types: number; edges: number }
+}
+
+export const ontologySchemaGraphToGraphNodes = (
+  g: OntologySchemaGraph,
+): { nodes: GraphNode[]; relationships: GraphRelationship[] } => ({
+  nodes: g.nodes.map((n) => ({
+    id: n.data.id,
+    labels: [n.data.kind],
+    properties: {
+      name: n.data.label,
+      kind: n.data.kind,
+      description: n.data.description ?? '',
+      properties: n.data.properties ?? [],
+    },
+  })),
+  relationships: g.edges.map((e) => ({
+    source: e.data.source,
+    type: e.data.label,
+    target: e.data.target,
   })),
 })

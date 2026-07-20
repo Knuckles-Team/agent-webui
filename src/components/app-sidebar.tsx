@@ -28,6 +28,8 @@ import {
   Inbox,
   Gauge,
   ShieldCheck,
+  Shapes,
+  FileCheck2,
 } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
@@ -465,6 +467,38 @@ export function AppSidebar() {
                   >
                     <Waypoints />
                     <span>Vertex Explorer</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Ontology type schema (TBox): interfaces, object types & relationships as an interactive graph"
+                >
+                  <a
+                    href="/schema"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <Shapes />
+                    <span>Schema View</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="SPARQL 1.1 query panel + SHACL validation-report view over the live ontology"
+                >
+                  <a
+                    href="/sparql"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <FileCheck2 />
+                    <span>SPARQL &amp; SHACL</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
