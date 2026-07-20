@@ -27,6 +27,42 @@ interface GraphCanvasProps {
 /** Stable key for an edge, matching graphology's source/target ordering. */
 export const edgeKey = (source: string, target: string): string => `${source}|${target}`
 
+/**
+ * Composite sigma's layered canvases (edges/nodes/labels/hovers/…, each a
+ * separate `<canvas>` — `Sigma.getCanvases()`) into a single PNG data URL, so
+ * a "Download PNG" button works for ANY view built on this canvas (report
+ * row #31: PNG/screenshot export). Draws each layer 1:1 at its own native
+ * pixel size (no CSS-vs-devicePixelRatio rescaling needed) over an opaque
+ * background matching the canvas's `bg-slate-900` so the export isn't
+ * transparent. Returns `null` when sigma has no layers yet (nothing rendered).
+ */
+export function compositeSigmaCanvasesToPngDataUrl(
+  canvases: Record<string, HTMLCanvasElement>,
+  backgroundColor = '#0f172a',
+): string | null {
+  const keys = Object.keys(canvases)
+  if (keys.length === 0) return null
+  const out = document.createElement('canvas')
+  out.width = canvases[keys[0]].width
+  out.height = canvases[keys[0]].height
+  const ctx = out.getContext('2d')
+  if (!ctx) return null
+  ctx.fillStyle = backgroundColor
+  ctx.fillRect(0, 0, out.width, out.height)
+  // Known back-to-front render order first; any other/future layer key still
+  // gets drawn (just potentially mis-ordered relative to the known layers).
+  // `Object.hasOwn` (not a value-truthiness check) since every layer canvas
+  // is itself always truthy — what varies is whether the key is present.
+  const knownOrder = ['edges', 'edgeLabels', 'nodes', 'labels', 'hovers']
+  for (const key of knownOrder) {
+    if (Object.hasOwn(canvases, key)) ctx.drawImage(canvases[key], 0, 0)
+  }
+  for (const key of keys) {
+    if (!knownOrder.includes(key)) ctx.drawImage(canvases[key], 0, 0)
+  }
+  return out.toDataURL('image/png')
+}
+
 export const GraphCanvas: React.FC<GraphCanvasProps> = ({
   nodes,
   relationships,
@@ -137,6 +173,16 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
     }
   }, [graph, isLayoutRunning])
 
+  const downloadPng = () => {
+    if (!sigmaRef.current) return
+    const dataUrl = compositeSigmaCanvasesToPngDataUrl(sigmaRef.current.getCanvases())
+    if (!dataUrl) return
+    const link = document.createElement('a')
+    link.href = dataUrl
+    link.download = `graph-${String(Date.now())}.png`
+    link.click()
+  }
+
   return (
     <div className="relative w-full h-full bg-slate-900 rounded-lg overflow-hidden z-0">
       <div ref={containerRef} className="absolute inset-0 cursor-grab active:cursor-grabbing" />
@@ -158,6 +204,12 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
           className="bg-slate-800 text-white px-4 py-2 rounded shadow hover:bg-slate-700 text-sm"
         >
           Reset View
+        </button>
+        <button
+          onClick={downloadPng}
+          className="bg-slate-800 text-white px-4 py-2 rounded shadow hover:bg-slate-700 text-sm"
+        >
+          Download PNG
         </button>
       </div>
 
