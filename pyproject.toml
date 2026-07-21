@@ -68,7 +68,7 @@ agent-webui = "agent_webui.skills"
 # the lock cannot silently fall back to an older published security posture.
 # This table is uv-only and is not included in the wheel's dependency metadata.
 [tool.uv.sources]
-agent-utilities = { path = "../agent-utilities", editable = true }
+agent-utilities = { workspace = true }
 
 [tool.ruff]
 line-length = 88
