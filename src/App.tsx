@@ -40,6 +40,8 @@ import ObjectView from './components/views/ObjectView'
 import VertexView from './components/views/VertexView'
 import SchemaView from './components/views/SchemaView'
 import SparqlView from './components/views/SparqlView'
+import CatalogueView from './components/views/CatalogueView'
+import LearnView from './components/views/LearnView'
 import UsageView from './components/views/UsageView'
 import SweView from './components/views/SweView'
 import ObservabilityView from './components/views/ObservabilityView'
@@ -65,7 +67,7 @@ const queryClient = new QueryClient()
  * providers for theme, sidebar, MCP tools, and data fetching.
  */
 export default function App() {
-  /** Possible views: 'dashboard', 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'workflows', 'ops', 'magma', 'cypher', 'prompts', 'sessions', 'goals', 'ecosystem', 'explorer', 'object', 'vertex', 'schema', 'sparql', 'observability', 'dataanalyst', 'broker', 'systemstatus' */
+  /** Possible views: 'dashboard', 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'workflows', 'ops', 'magma', 'cypher', 'prompts', 'sessions', 'goals', 'ecosystem', 'explorer', 'object', 'vertex', 'schema', 'sparql', 'catalogue', 'learn', 'observability', 'dataanalyst', 'broker', 'systemstatus' */
   const [currentView, setCurrentView] = useState('dashboard')
   /** Selected ontology object id, parsed from the `/object/:id` path. */
   const [objectId, setObjectId] = useState('')
@@ -112,6 +114,8 @@ export default function App() {
       else if (path === '/vertex') setCurrentView('vertex')
       else if (path === '/schema') setCurrentView('schema')
       else if (path === '/sparql') setCurrentView('sparql')
+      else if (path === '/catalogue') setCurrentView('catalogue')
+      else if (path === '/learn') setCurrentView('learn')
       else if (path.startsWith('/object/')) {
         setObjectId(decodeURIComponent(path.slice('/object/'.length)))
         setCurrentView('object')
@@ -231,6 +235,8 @@ export default function App() {
                         {currentView === 'vertex' && <VertexView />}
                         {currentView === 'schema' && <SchemaView />}
                         {currentView === 'sparql' && <SparqlView />}
+                        {currentView === 'catalogue' && <CatalogueView />}
+                        {currentView === 'learn' && <LearnView />}
                         {currentView === 'object' && (
                           <ObjectView
                             objectId={objectId}

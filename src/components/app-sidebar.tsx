@@ -30,6 +30,8 @@ import {
   ShieldCheck,
   Shapes,
   FileCheck2,
+  LibraryBig,
+  GraduationCap,
 } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
@@ -499,6 +501,32 @@ export function AppSidebar() {
                   >
                     <FileCheck2 />
                     <span>SPARQL &amp; SHACL</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Browse, search, and import/export hosted ontologies">
+                  <a
+                    href="/catalogue"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <LibraryBig />
+                    <span>Ontology Catalogue</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Ontology School: courses, lessons, presentation mode, and quizzes">
+                  <a
+                    href="/learn"
+                    onClick={(e) => {
+                      doLocalNavigation(e)
+                    }}
+                  >
+                    <GraduationCap />
+                    <span>Ontology School</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>

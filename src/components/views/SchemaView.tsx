@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Shapes, RefreshCw, Loader2, Component, Boxes, Link2, X } from 'lucide-react'
+import { Shapes, RefreshCw, Loader2, Component, Boxes, Link2, X, Upload } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -29,12 +29,14 @@ import { GraphCanvas } from '../knowledge-graph/GraphCanvas'
 import type { GraphNode, OntologySchemaEdgeData, OntologySchemaGraph } from '../knowledge-graph/GraphAdapter'
 import { ontologySchemaGraphToGraphNodes } from '../knowledge-graph/GraphAdapter'
 import { api } from '@/lib/api'
+import { ImportExportModal } from '@/components/ontology/ImportExportModal'
 
 export default function SchemaView() {
   const [schema, setSchema] = useState<OntologySchemaGraph | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
   const [selectedEdge, setSelectedEdge] = useState<OntologySchemaEdgeData | null>(null)
+  const [importExportOpen, setImportExportOpen] = useState(false)
 
   const loadSchema = async () => {
     setLoading(true)
@@ -86,6 +88,16 @@ export default function SchemaView() {
             variant="outline"
             size="sm"
             onClick={() => {
+              setImportExportOpen(true)
+            }}
+          >
+            <Upload className="size-4 mr-1" />
+            Import / Export
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
               void loadSchema()
             }}
             disabled={loading}
@@ -94,6 +106,14 @@ export default function SchemaView() {
           </Button>
         </div>
       </div>
+
+      <ImportExportModal
+        open={importExportOpen}
+        onOpenChange={setImportExportOpen}
+        onImported={() => {
+          void loadSchema()
+        }}
+      />
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
         {/* Graph canvas */}

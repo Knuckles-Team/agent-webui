@@ -280,6 +280,46 @@ const EDIT_TYPE_FROM_KIND: Record<OntologyEditRequestDto['kind'], string> = {
 /**
  * Custom error class for API-related failures
  */
+// ---------------------------------------------------------------------------
+// Import/export + catalogue (coverage rows #23 / #4) — the hosted-ontology
+// record shape returned by `graph_ontology(action='load'|'get'|'list')`.
+// ---------------------------------------------------------------------------
+
+/** A hosted-ontology record (minus its stored turtle, unless serialize=true was requested). */
+export interface OntologyLoadResult {
+  status: 'ok' | 'rejected'
+  idempotent?: boolean
+  ontology?: {
+    iri: string
+    version: string
+    source_type?: string
+    n_axioms?: number
+    n_classes?: number
+    n_properties?: number
+    loaded_at?: string
+    active?: boolean
+    category?: string
+    tags?: string[]
+    turtle?: string
+  }
+  errors?: string[]
+  warnings?: string[]
+}
+
+/** One entry in the `GET /api/ontology/catalogue` listing. */
+export interface OntologyCatalogueEntry {
+  iri: string
+  version: string
+  source_type?: string
+  n_axioms?: number
+  n_classes?: number
+  n_properties?: number
+  loaded_at?: string
+  active?: boolean
+  category?: string
+  tags?: string[]
+}
+
 export class ApiError extends Error {
   /** HTTP status code */
   public status: number
@@ -592,6 +632,36 @@ class ApiClient {
         shacl_report?: { conforms: boolean; text?: string; turtle?: string } | null
       }
     }>('/api/ontology/validate', payload).then((r) => r.result)
+
+  // -------------------------------------------------------------------------
+  // Import / export + catalogue (coverage rows #23 / #4). Both hit the
+  // canonical `/api/*` gateway surface directly, like `getOntologySchemaGraph`
+  // above.
+  // -------------------------------------------------------------------------
+  /** Parse + SHACL-validate + register + activate a hosted ontology (`POST /api/ontology/load`). */
+  loadOntology = (payload: {
+    source: string
+    source_type?: 'auto' | 'file' | 'url' | 'text'
+    iri?: string
+    version?: string
+    category?: string
+    tags?: string[]
+  }) => this.post<{ status: string; result: OntologyLoadResult }>('/api/ontology/load', payload).then((r) => r.result)
+
+  /** Re-serialize a hosted ontology to turtle (`GET /api/ontology/export`). */
+  exportOntology = (iri: string, version = '') =>
+    this.get<{ status: string; result: { ontology: { iri: string; version: string; turtle: string } } }>(
+      `/api/ontology/export?iri=${encodeURIComponent(iri)}${version ? `&version=${encodeURIComponent(version)}` : ''}`,
+    ).then((r) => r.result)
+
+  /** Browsable gallery over the hosted-ontology registry (`GET /api/ontology/catalogue`). */
+  getOntologyCatalogue = (filters?: { search?: string; category?: string; source?: string; tag?: string }) => {
+    const params = Object.entries(filters ?? {}).filter(([, v]) => Boolean(v))
+    const qs = params.length > 0 ? `?${params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}` : ''
+    return this.get<{ status: string; result: { count: number; ontologies: OntologyCatalogueEntry[] } }>(
+      `/api/ontology/catalogue${qs}`,
+    ).then((r) => r.result)
+  }
 
   // -------------------------------------------------------------------------
   // Object-set surface (ObjectExplorerView). Adapts the backend's raw
