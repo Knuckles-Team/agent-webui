@@ -15,27 +15,27 @@ classifiers = [
     "Programming Language :: Python :: 3"]
 requires-python = ">=3.11,<3.15"
 dependencies = [
-    "fastapi>=0.117.1",
-    "langfuse>=4.5.1",
-    "pydantic-ai-slim[ui]>=2.0.0,<3.0.0",
-    "sse-starlette>=3.4.1",
+    "fastapi>=0.139.2",
+    "langfuse>=4.14.1",
+    "pydantic-ai-slim[ui]>=2.14.1",
+    "sse-starlette>=3.4.6",
     "starlette>=1.3.1",
-    "uvicorn>=0.46.0",
-    "watchfiles>=1.1.0",
-    "logfire[fastapi,starlette]"
+    "uvicorn>=0.51.0",
+    "watchfiles>=1.2.0",
+    "logfire[fastapi,starlette]>=4.38.0"
 ]
 
 [project.optional-dependencies]
 test = [
-    "pytest-xdist>=3.6.0",
-    "pytest",
-    "pytest-asyncio", "pytest-cov",
-    "pytest-env",
-    "pytest-timeout",
-    "networkx",
-    "opentelemetry-instrumentation-starlette",
-    "opentelemetry-instrumentation-fastapi",
-    "opentelemetry-instrumentation-asgi",
+    "pytest-xdist>=3.8.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0", "pytest-cov>=7.1.0",
+    "pytest-env>=1.7.0",
+    "pytest-timeout>=2.4.0",
+    "networkx>=3.6.1",
+    "opentelemetry-instrumentation-starlette>=0.65b0",
+    "opentelemetry-instrumentation-fastapi>=0.65b0",
+    "opentelemetry-instrumentation-asgi>=0.65b0",
     "agent-utilities[agent,graph]>=1.4.0"
 ]
 
