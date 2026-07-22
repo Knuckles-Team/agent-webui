@@ -1,5 +1,6 @@
 ---
 name: kg-webui-graphviz
+skill_type: skill
 description: >-
   The agent-webui graph-visualization surface — GraphView, TemporalGraphView,
   CodeGraphView and the single-vertex explorer. Use when you want to visualize

@@ -1,5 +1,6 @@
 ---
 name: kg-webui-ontology-operator
+skill_type: skill
 description: >-
   The agent-webui ontology operator surface — Object Explorer and Object View for
   browsing, filtering, editing and acting on ontology objects, types, interfaces,

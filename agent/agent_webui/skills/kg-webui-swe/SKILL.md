@@ -1,5 +1,6 @@
 ---
 name: kg-webui-swe
+skill_type: skill
 description: >-
   The agent-webui software-engineering surface — the developer-workspace runtime
   (create a session, act, stream events, inspect KG provenance), SWE-bench runs,

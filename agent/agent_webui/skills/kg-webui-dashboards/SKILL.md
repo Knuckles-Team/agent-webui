@@ -1,5 +1,6 @@
 ---
 name: kg-webui-dashboards
+skill_type: skill
 description: >-
   The agent-webui dashboards & analytics surface — composable live panels
   (PromQL metrics, logs, traces) plus usage/cost observability. Use when you want

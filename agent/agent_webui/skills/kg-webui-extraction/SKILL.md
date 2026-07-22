@@ -1,5 +1,6 @@
 ---
 name: kg-webui-extraction
+skill_type: skill
 description: >-
   The agent-webui document / entity extraction surface — submit text or a URL for
   GPU-slot fact extraction, watch jobs stream facts live, pause/resume, and export
