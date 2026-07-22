@@ -1,5 +1,6 @@
 ---
 name: kg-webui-admin
+skill_type: skill
 description: >-
   The agent-webui admin / fleet console — tenants, shards, RBAC, backup/PITR and
   the swarm supervisory plane (health, topology, pause/kill, approvals). Use when
