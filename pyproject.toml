@@ -36,7 +36,7 @@ test = [
     "opentelemetry-instrumentation-starlette>=0.65b0",
     "opentelemetry-instrumentation-fastapi>=0.65b0",
     "opentelemetry-instrumentation-asgi>=0.65b0",
-    "agent-utilities[agent,graph]>=1.4.0"
+    "agent-utilities[agent,graph]>=2.0.0"
 ]
 
 [[project.authors]]
