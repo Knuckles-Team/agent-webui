@@ -16,12 +16,15 @@ describe('LiveDashboardsView', () => {
     ) as unknown as typeof fetch
   })
 
-  it('renders the shell with the three default panels', async () => {
+  it('renders the shell with the default panels (op rate, p50, p99, logs, traces)', async () => {
     render(<LiveDashboardsView />)
     expect(screen.getByText('Live Dashboards')).toBeInTheDocument()
     await waitFor(() => {
-      expect(screen.getAllByTestId('dashboard-panel')).toHaveLength(3)
+      expect(screen.getAllByTestId('dashboard-panel')).toHaveLength(5)
     })
+    expect(screen.getByText('Engine op rate')).toBeInTheDocument()
+    expect(screen.getByText('p50 latency')).toBeInTheDocument()
+    expect(screen.getByText('p99 latency')).toBeInTheDocument()
   })
 
   it('exposes a time-range and auto-refresh selector', () => {
@@ -33,23 +36,23 @@ describe('LiveDashboardsView', () => {
   it('adds a panel via the add-panel toolbar', async () => {
     render(<LiveDashboardsView />)
     await waitFor(() => {
-      expect(screen.getAllByTestId('dashboard-panel')).toHaveLength(3)
+      expect(screen.getAllByTestId('dashboard-panel')).toHaveLength(5)
     })
     fireEvent.click(screen.getByRole('button', { name: /Metrics/i }))
     await waitFor(() => {
-      expect(screen.getAllByTestId('dashboard-panel')).toHaveLength(4)
+      expect(screen.getAllByTestId('dashboard-panel')).toHaveLength(6)
     })
   })
 
   it('removes a panel via its remove control', async () => {
     render(<LiveDashboardsView />)
     await waitFor(() => {
-      expect(screen.getAllByTestId('dashboard-panel')).toHaveLength(3)
+      expect(screen.getAllByTestId('dashboard-panel')).toHaveLength(5)
     })
     const firstPanel = screen.getAllByTestId('dashboard-panel')[0]
     fireEvent.click(within(firstPanel).getByRole('button', { name: /Remove panel/i }))
     await waitFor(() => {
-      expect(screen.getAllByTestId('dashboard-panel')).toHaveLength(2)
+      expect(screen.getAllByTestId('dashboard-panel')).toHaveLength(4)
     })
   })
 })
