@@ -986,7 +986,9 @@ def create_agent_web_app(
         agent: The Pydantic-AI Agent instance to serve.
         workspace_helpers: Metadata and tools for workspace situational awareness.
         models: Optional explicit mapping of provider:model_id to display names.
-        builtin_tools: Optional list of tools to inject into the web interface.
+        builtin_tools: Deprecated compatibility input. Current Pydantic AI discovers
+            native tools from ``Agent.capabilities``; a non-empty value is rejected
+            instead of being silently dropped.
         html_source: Path to custom HTML to serve as the dashboard root.
         listener_host: Intended listener host. Defaults to ``AgentConfig.host``;
             non-loopback listeners require complete JWT authentication.
@@ -1011,7 +1013,7 @@ def create_agent_web_app(
     if os.getenv('OPENAI_API_KEY'):
         default_models['GPT 4o'] = 'openai:gpt-4o'
     if os.getenv('GOOGLE_API_KEY'):
-        default_models['Gemini 2.0 Pro'] = 'google-gla:gemini-2.0-pro'
+        default_models['Gemini 2.0 Pro'] = 'google:gemini-2.0-pro'
 
     # Support for local induction via Ollama/OpenWebUI patterns
     if os.getenv('OLLAMA_BASE_URL') or os.getenv('OLLAMA_HOST'):
@@ -1136,10 +1138,19 @@ def create_agent_web_app(
     except ImportError:
         logger.info('agent-utilities gateway not available — dashboard API unavailable')
 
-    # Delegate to Pydantic-AI's native web wrapper for base functionality
+    # Current Pydantic AI has no ``builtin_tools`` web-adapter argument.
+    # Native tools now belong to the Agent capability contract and are discovered
+    # by ``to_web``.  Silently ignoring an old non-empty list would make the UI
+    # advertise a capability that the execution agent does not actually own.
+    if builtin_tools:
+        raise ValueError(
+            'builtin_tools is no longer accepted by Pydantic AI; configure '
+            'NativeTool capabilities on the Agent before creating the WebUI'
+        )
+
+    # Delegate to Pydantic-AI's native web wrapper for base functionality.
     pydantic_app = agent.to_web(
         models=models or default_models,
-        builtin_tools=builtin_tools,
         html_source=html_source,
     )
 
