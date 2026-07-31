@@ -14,6 +14,7 @@ import {
   Sparkles,
   Wrench,
 } from 'lucide-react'
+import { v4 as uuidv4 } from 'uuid'
 
 import {
   extractRunId,
@@ -65,7 +66,10 @@ function ignorePromise(promise: Promise<unknown>): void {
 function fallbackCapabilitySession(): string {
   const existing = window.localStorage.getItem(CAPABILITY_SESSION_STORAGE_KEY)
   if (existing) return existing
-  const created = `webui-${window.crypto.randomUUID()}`
+  // `crypto.randomUUID` only exists in a secure context (HTTPS or localhost); `uuid`'s v4
+  // prefers it when available and otherwise falls back to `crypto.getRandomValues` (which
+  // works over plain HTTP too), so plain-HTTP deployments never throw here.
+  const created = `webui-${uuidv4()}`
   window.localStorage.setItem(CAPABILITY_SESSION_STORAGE_KEY, created)
   return created
 }
