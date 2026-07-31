@@ -927,9 +927,16 @@ def get_agent_packages_dir() -> Path:
     configured = os.getenv('AGENT_PACKAGES_ROOT')
     if configured:
         return Path(configured).expanduser().resolve()
-    source_checkout = Path(__file__).resolve().parents[3]
-    if source_checkout.name == 'agent-packages':
-        return source_checkout
+    # ``parents[3]`` only exists when this module is imported from a full
+    # ecosystem checkout (``agent-packages/agent-webui/agent/agent_webui/``).
+    # A deployed install has a shallower path — the editable NFS mount at
+    # ``/webui-src/agent_webui/`` has just two — and indexing past the root
+    # raised ``IndexError``, turning every route that resolves a skills or
+    # prompts path into a 500. Fall through to the configured workspace
+    # instead, which is what a deployment is expected to supply.
+    parents = Path(__file__).resolve().parents
+    if len(parents) > 3 and parents[3].name == 'agent-packages':
+        return parents[3]
     return get_workspace_dir() / 'agent-packages'
 
 
