@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 import type { ToolSet } from 'ai'
 import { ElicitationModal } from '../components/ElicitationModal'
 
@@ -31,19 +31,32 @@ interface MCPContextValue {
 
 const MCPContext = createContext<MCPContextValue | undefined>(undefined)
 
+/**
+ * `tools` is honestly always `null` today — there is no wiring to strip out
+ * here, on purpose, not by omission.
+ *
+ * A real browser-side MCP client (`src/lib/mcp-client.ts`) and MCP Apps host
+ * (`src/components/mcp/McpAppHost.tsx`) exist and are tested, but only on the
+ * unmerged `feat/mcp-client-wiring` branch (based on `feat/mcp-apps-host`, off
+ * `main@698ea63`) — neither branch is an ancestor of this repo's current
+ * `main`, and current `main` has no `/api/enhanced/mcp/tools/call` /
+ * `/api/enhanced/mcp/apps/resource` backend routes for it to call. Wiring
+ * `tools` from that client here would either dangle (routes 404) or require
+ * re-landing that whole branch (client + Apps host + two backend routes +
+ * tests) against the auth/identity changes current `main` has since merged —
+ * out of scope for this fix. Do not restore a `useState` setter here without
+ * first landing that reconciliation; until then `tools` stays `null` and
+ * `isLoadingTools` stays `false` (there is nothing to load).
+ */
 export function MCPProvider({ children }: { children: ReactNode }) {
-  const [tools] = useState<ToolSet | null>(null)
-  const [isLoadingTools, setIsLoadingTools] = useState(false)
+  const tools: ToolSet | null = null
+  const isLoadingTools = false
   const [elicitation, setElicitation] = useState<ElicitationState>({
     isOpen: false,
     message: '',
     schema: null,
     resolve: null,
   })
-
-  useEffect(() => {
-    setIsLoadingTools(false)
-  }, [])
 
   const handleElicitationResponse = useCallback(
     (result: { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }) => {
