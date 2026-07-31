@@ -878,6 +878,44 @@ def _ensure_authorization_middleware(app: FastAPI) -> None:
         app.add_middleware(WebUIAuthorizationMiddleware)
 
 
+def _ensure_browser_sso_middleware(app: FastAPI) -> None:
+    """Install the browser authorization-code boundary outside the identity gate.
+
+    ``add_middleware`` prepends, so calling this *after*
+    :func:`_ensure_actor_identity_middleware` places it directly outside the
+    identity gate: it owns ``/auth/*`` (never forwarded, so the gate keeps its
+    shipped ``UNAUTHENTICATED_PATHS``) and, for every other request, may attach
+    the signed-in user's own token before the unmodified gate validates it.
+
+    Unconfigured is a supported state — the WebUI then behaves exactly as it
+    did before, with bearer-only access. A *partial* configuration raises,
+    because a login boundary that silently does nothing is indistinguishable
+    from a broken one.
+    """
+
+    from .oidc_session import OIDCBrowserSessionMiddleware, load_settings
+
+    if any(
+        getattr(middleware, 'cls', None) is OIDCBrowserSessionMiddleware
+        for middleware in app.user_middleware
+    ):
+        return
+    settings = load_settings()
+    if settings is None:
+        logger.info(
+            'Agent WebUI browser SSO is not configured — API clients must '
+            'present their own Bearer credential'
+        )
+        return
+    app.add_middleware(OIDCBrowserSessionMiddleware, settings=settings)
+    logger.info(
+        'Agent WebUI browser SSO active: authorization-code + PKCE against %s '
+        'as client %s',
+        settings.issuer,
+        settings.client_id,
+    )
+
+
 def _ensure_security_headers_middleware(
     app: FastAPI,
     *,
@@ -1230,6 +1268,7 @@ def create_agent_web_app(
         app,
         mint_graph_session=mint_graph_session,
     )
+    _ensure_browser_sso_middleware(app)
     _ensure_security_headers_middleware(
         app,
         content_security_policy=content_security_policy,
