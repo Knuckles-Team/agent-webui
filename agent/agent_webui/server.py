@@ -280,7 +280,21 @@ def _resolve_access_log_policy(listener_host: str) -> str:
 
 
 def _require_graph_session_minter() -> Any:
-    """Fail startup unless request identity can mint a scoped graph session."""
+    """Fail startup unless request identity can mint a scoped graph session.
+
+    The WebUI mints its own **unrouted** session
+    (:func:`agent_webui.graph_identity.mint_frontend_graph_session`): identical
+    verified authority, no engine placement route. See that module for why a
+    thin frontend must not bind one — in short, the engine gates
+    ``PlacementRoute`` behind cluster-administrator capability, so the shared
+    minter would make every authenticated request depend on authority a
+    frontend has no business holding.
+
+    The shared boundary is still required to be importable and to expose its
+    own minter: it owns the unauthenticated path, ``UNAUTHENTICATED_PATHS``,
+    and the actor projection this specialization builds on, and the contract
+    test pins the two minters' authority against each other.
+    """
 
     try:
         module = importlib.import_module('agent_utilities.security.request_identity')
@@ -288,12 +302,13 @@ def _require_graph_session_minter() -> Any:
         raise RuntimeError(
             'Agent WebUI requires agent_utilities request identity support'
         ) from exc
-    minter = getattr(module, 'mint_graph_session', None)
-    if not callable(minter):
+    if not callable(getattr(module, 'mint_graph_session', None)):
         raise RuntimeError(
             'Agent WebUI requires callable request_identity.mint_graph_session'
         )
-    return minter
+    from .graph_identity import mint_frontend_graph_session
+
+    return mint_frontend_graph_session
 
 
 def _startup_security_contract(
@@ -801,15 +816,64 @@ def _ensure_actor_identity_middleware(
 ) -> None:
     """Install the server-minted identity boundary exactly once, app-wide.
 
-    The shared middleware owns HTTP identity. This WebUI specialization also
-    protects websocket routes, which the generic graph middleware deliberately
-    leaves transport-specific callers to handle.
+    The shared middleware owns the **unauthenticated** decision for HTTP —
+    which paths are exempt (``UNAUTHENTICATED_PATHS``), and every 401 shape —
+    and this specialization delegates to it untouched for all of that. What it
+    owns itself is (a) websocket routes, which the generic graph middleware
+    deliberately leaves to transport-specific callers, and (b) the *session
+    mint* for an already-authenticated HTTP request, so both transports mint
+    through the same injected ``mint_graph_session``. The shared HTTP branch
+    would otherwise call the module-level minter, which binds an engine
+    placement route this frontend must not require — see
+    :mod:`agent_webui.graph_identity`.
     """
 
     from agent_utilities.security.request_identity import (
         ActorIdentityMiddleware,
         actor_from_bearer_token,
+        actor_from_claims,
     )
+
+    async def _authenticated_http_actor(scope: Any) -> Any:
+        """Return the verified actor for an HTTP request, or ``None``.
+
+        ``None`` means "this request is not an authenticated one" for ANY
+        reason — absent credential, unusable verifier, or a credential that
+        failed validation. Every such case is handed straight back to the
+        shared middleware, which owns the exempt-path allowance and the exact
+        401 body for each. This mirrors the shared actor projection rather
+        than replacing it: both branches call the shared
+        ``actor_from_claims`` / ``actor_from_bearer_token``.
+        """
+
+        from agent_utilities.core.config import config
+        from agent_utilities.security.auth import parse_bearer_authorization
+
+        state = scope.get('state') or {}
+        prevalidated = state.get('user_claims') if isinstance(state, dict) else None
+        authorization = [
+            value
+            for key, value in scope.get('headers') or []
+            if isinstance(key, bytes) and key.lower() == b'authorization'
+        ]
+        try:
+            token = parse_bearer_authorization(authorization)
+        except PermissionError:
+            return None
+
+        if isinstance(prevalidated, dict) and prevalidated.get('auth_type') == 'jwt':
+            # An outer HTTP authentication boundary already verified this
+            # credential; reuse its claims rather than re-verifying.
+            try:
+                return actor_from_claims(prevalidated)
+            except (TypeError, ValueError):
+                return None
+        if not token or not config.auth_jwt_jwks_uri:
+            return None
+        try:
+            return await actor_from_bearer_token(token)
+        except Exception:  # noqa: BLE001 - any failure = not authenticated here
+            return None
 
     class WebUIActorIdentityMiddleware(ActorIdentityMiddleware):
         async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
@@ -830,7 +894,14 @@ def _ensure_actor_identity_middleware(
                     )
                     await send({'type': 'http.response.body', 'body': body})
                     return
-                await super().__call__(scope, receive, send)
+                actor = await _authenticated_http_actor(scope)
+                if actor is None:
+                    # Unauthenticated, unverifiable, or invalid: the shared
+                    # boundary owns that decision end to end, including which
+                    # paths may proceed without a credential.
+                    await super().__call__(scope, receive, send)
+                    return
+                await self._serve_authenticated_http(actor, scope, receive, send)
                 return
             if scope_type != 'websocket':
                 await self.app(scope, receive, send)
@@ -869,6 +940,65 @@ def _ensure_actor_identity_middleware(
             session_token = set_session(session)
             try:
                 await self.app(scope, receive, send)
+            finally:
+                reset_session(session_token)
+                reset_actor(actor_token)
+
+        async def _serve_authenticated_http(
+            self, actor: Any, scope: Any, receive: Any, send: Any
+        ) -> None:
+            """Bind ``actor`` + its minted session and serve the request.
+
+            Field-for-field the shared middleware's authenticated HTTP leg —
+            same 401/403 mapping, same ambient currencies, same teardown — with
+            the injected minter in place of the module-level one.
+            """
+
+            from agent_utilities.knowledge_graph.core.session import (
+                SessionExpiredError,
+                reset_session,
+                set_session,
+            )
+            from agent_utilities.security.brain_context import (
+                CredentialExpiredError,
+                reset_actor,
+                set_actor,
+            )
+            from agent_utilities.security.request_identity import _send_json
+
+            try:
+                session = mint_graph_session(actor)
+            except SessionExpiredError:
+                await _send_json(send, 401, {'error': 'Bearer credential expired'})
+                return
+            except PermissionError:
+                await _send_json(send, 403, {'error': 'Verified tenant claim required'})
+                return
+            try:
+                actor_token = set_actor(actor)
+                try:
+                    session_token = set_session(session)
+                except Exception:
+                    reset_actor(actor_token)
+                    raise
+            except (CredentialExpiredError, SessionExpiredError):
+                await _send_json(send, 401, {'error': 'Bearer credential expired'})
+                return
+
+            response_started = False
+
+            async def tracked_send(message: Any) -> None:
+                nonlocal response_started
+                if message.get('type') == 'http.response.start':
+                    response_started = True
+                await send(message)
+
+            try:
+                await self.app(scope, receive, tracked_send)
+            except (CredentialExpiredError, SessionExpiredError):
+                if response_started:
+                    raise
+                await _send_json(send, 401, {'error': 'Bearer credential expired'})
             finally:
                 reset_session(session_token)
                 reset_actor(actor_token)
