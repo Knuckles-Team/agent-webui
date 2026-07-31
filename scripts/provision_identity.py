@@ -95,7 +95,8 @@ GRAPH_ROLES = ('kg:read', 'kg:write', 'kg:admin')
 
 NAMESPACE = os.environ.get('WEBUI_NAMESPACE', 'apps')
 DEPLOYMENT = 'agent-webui'
-EXTERNAL_SECRET = 'agent-webui-oidc'
+# Name of BOTH the ExternalSecret and the Kubernetes Secret it owns.
+ES_RESOURCE_NAME = 'agent-webui-oidc'
 BAO_MOUNT = os.environ.get('BAO_MOUNT', 'apps')
 BAO_PATH = os.environ.get('BAO_PATH', 'agent-webui')
 BAO_NAMESPACE = os.environ.get('BAO_K8S_NAMESPACE', 'platform')
@@ -706,11 +707,11 @@ def stage_openbao(values: dict[str, str], dry_run: bool) -> dict[str, str]:
 EXTERNAL_SECRET_MANIFEST = {
     'apiVersion': 'external-secrets.io/v1',
     'kind': 'ExternalSecret',
-    'metadata': {'name': EXTERNAL_SECRET, 'namespace': NAMESPACE},
+    'metadata': {'name': ES_RESOURCE_NAME, 'namespace': NAMESPACE},
     'spec': {
         'refreshInterval': '1h',
         'secretStoreRef': {'kind': 'ClusterSecretStore', 'name': 'openbao'},
-        'target': {'name': EXTERNAL_SECRET, 'creationPolicy': 'Owner'},
+        'target': {'name': ES_RESOURCE_NAME, 'creationPolicy': 'Owner'},
         'dataFrom': [{'extract': {'key': BAO_PATH}}],
         # The engine transport HMAC is fleet-wide, not per-service: it lives at
         # the shared deployment path and every engine client reads the same
@@ -735,7 +736,7 @@ def stage_kubernetes(dry_run: bool) -> None:
 
     log(f'[kubernetes] namespace={NAMESPACE}')
     if dry_run:
-        log(f'  externalsecret/{EXTERNAL_SECRET}: WOULD APPLY')
+        log(f'  externalsecret/{ES_RESOURCE_NAME}: WOULD APPLY')
         log(f'  deploy/{DEPLOYMENT}: WOULD PATCH envFrom + CA bundle mount')
         return
 
@@ -745,7 +746,7 @@ def stage_kubernetes(dry_run: bool) -> None:
         ['kubectl', 'apply', '-f', '-'],
         stdin=json.dumps(EXTERNAL_SECRET_MANIFEST),
     )
-    log(f'  externalsecret/{EXTERNAL_SECRET}: applied')
+    log(f'  externalsecret/{ES_RESOURCE_NAME}: applied')
 
     spec = json.loads(
         _run(['kubectl', '-n', NAMESPACE, 'get', 'deploy', DEPLOYMENT, '-o', 'json'])
@@ -754,10 +755,10 @@ def stage_kubernetes(dry_run: bool) -> None:
 
     env_from = container.get('envFrom') or []
     if not any(
-        (entry.get('secretRef') or {}).get('name') == EXTERNAL_SECRET
+        (entry.get('secretRef') or {}).get('name') == ES_RESOURCE_NAME
         for entry in env_from
     ):
-        env_from = [*env_from, {'secretRef': {'name': EXTERNAL_SECRET}}]
+        env_from = [*env_from, {'secretRef': {'name': ES_RESOURCE_NAME}}]
         _run(
             [
                 'kubectl',
@@ -779,9 +780,9 @@ def stage_kubernetes(dry_run: bool) -> None:
                 ),
             ]
         )
-        log(f'  deploy/{DEPLOYMENT}: envFrom now includes {EXTERNAL_SECRET}')
+        log(f'  deploy/{DEPLOYMENT}: envFrom now includes {ES_RESOURCE_NAME}')
     else:
-        log(f'  deploy/{DEPLOYMENT}: envFrom already includes {EXTERNAL_SECRET}')
+        log(f'  deploy/{DEPLOYMENT}: envFrom already includes {ES_RESOURCE_NAME}')
 
     volumes = spec.get('volumes') or []
     mounts = container.get('volumeMounts') or []

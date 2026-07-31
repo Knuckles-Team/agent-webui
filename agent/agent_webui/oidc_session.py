@@ -235,9 +235,7 @@ def _chunk_name(index: int) -> str:
     return f'{SESSION_COOKIE}{index}'
 
 
-def _session_cookie_headers(
-    value: str, *, secure: bool
-) -> list[tuple[bytes, bytes]]:
+def _session_cookie_headers(value: str, *, secure: bool) -> list[tuple[bytes, bytes]]:
     """Emit the sealed session as numbered cookie chunks, clearing any surplus.
 
     Every write also expires the chunk slots it does not use, so shrinking from
@@ -336,9 +334,7 @@ class OIDCBrowserSessionMiddleware:
             raise OIDCConfigurationError(
                 'Agent WebUI could not read the OpenID provider metadata'
             ) from exc
-        if not isinstance(document, dict) or not document.get(
-            'authorization_endpoint'
-        ):
+        if not isinstance(document, dict) or not document.get('authorization_endpoint'):
             raise OIDCConfigurationError(
                 'Agent WebUI received OpenID provider metadata without an '
                 'authorization endpoint'
@@ -391,9 +387,7 @@ class OIDCBrowserSessionMiddleware:
             (b'cache-control', b'no-store'),
         ]
         raw.extend(headers or [])
-        await send(
-            {'type': 'http.response.start', 'status': status, 'headers': raw}
-        )
+        await send({'type': 'http.response.start', 'status': status, 'headers': raw})
         await send({'type': 'http.response.body', 'body': body})
 
     async def _redirect(
@@ -422,8 +416,7 @@ class OIDCBrowserSessionMiddleware:
         token_endpoint = str(document.get('token_endpoint') or '')
         if not token_endpoint:
             raise OIDCConfigurationError(
-                'Agent WebUI received OpenID provider metadata without a token '
-                'endpoint'
+                'Agent WebUI received OpenID provider metadata without a token endpoint'
             )
         payload = {
             **form,
@@ -487,9 +480,7 @@ class OIDCBrowserSessionMiddleware:
         document = await self._endpoints()
         verifier = secrets.token_urlsafe(64)
         challenge = (
-            base64.urlsafe_b64encode(
-                hashlib.sha256(verifier.encode('ascii')).digest()
-            )
+            base64.urlsafe_b64encode(hashlib.sha256(verifier.encode('ascii')).digest())
             .decode('ascii')
             .rstrip('=')
         )
@@ -548,9 +539,7 @@ class OIDCBrowserSessionMiddleware:
 
         codes = params.get('code') or []
         states = params.get('state') or []
-        flow = self._unseal(
-            _cookies(scope).get(FLOW_COOKIE, ''), max_age=_FLOW_TTL_S
-        )
+        flow = self._unseal(_cookies(scope).get(FLOW_COOKIE, ''), max_age=_FLOW_TTL_S)
         if (
             len(codes) != 1
             or len(states) != 1
@@ -618,9 +607,7 @@ class OIDCBrowserSessionMiddleware:
 
         session = self._unseal(_read_session_cookie(_cookies(scope)))
         if not session or not session.get('access_token'):
-            await self._respond(
-                send, 200, body=b'{"authenticated":false}'
-            )
+            await self._respond(send, 200, body=b'{"authenticated":false}')
             return
         claims = _unverified_claims(str(session['access_token']))
         body = json.dumps(

@@ -790,9 +790,7 @@ def _identity_enforced() -> bool:
     from agent_utilities.core.config import config
 
     return bool(
-        config.auth_jwt_jwks_uri
-        and config.auth_jwt_issuer
-        and config.auth_jwt_audience
+        config.auth_jwt_jwks_uri and config.auth_jwt_issuer and config.auth_jwt_audience
     )
 
 
