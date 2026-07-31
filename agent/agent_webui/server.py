@@ -872,7 +872,11 @@ def _ensure_actor_identity_middleware(
             return None
         try:
             return await actor_from_bearer_token(token)
-        except Exception:  # noqa: BLE001 - any failure = not authenticated here
+        except Exception:
+            # Any verification failure — malformed token, bad signature,
+            # unreachable JWKS — means "not authenticated here". The shared
+            # boundary re-runs the same check and owns the resulting 401, so
+            # nothing is swallowed: the decision is made once, there.
             return None
 
     class WebUIActorIdentityMiddleware(ActorIdentityMiddleware):

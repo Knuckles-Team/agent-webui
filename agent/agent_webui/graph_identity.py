@@ -63,7 +63,6 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from agent_utilities.knowledge_graph.core.session import GraphSession
-    from agent_utilities.security.brain_context import ActorContext
 
 __all__ = ['mint_frontend_graph_session']
 

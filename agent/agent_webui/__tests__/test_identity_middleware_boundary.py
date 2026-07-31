@@ -17,12 +17,9 @@ import json
 from typing import Any
 
 import pytest
-
-pytest.importorskip('agent_utilities.security.request_identity')
-
-from agent_utilities.security import request_identity as _shared  # noqa: E402
-from agent_utilities.security.brain_context import ActorContext  # noqa: E402
-from agent_webui.server import _ensure_actor_identity_middleware  # noqa: E402
+from agent_utilities.security import request_identity as _shared
+from agent_utilities.security.brain_context import ActorContext
+from agent_webui.server import _ensure_actor_identity_middleware
 
 
 class _AppStub:
@@ -53,7 +50,9 @@ class _Recorder:
     @property
     def json_body(self) -> Any:
         body = b''.join(
-            m.get('body', b'') for m in self.messages if m['type'] == 'http.response.body'
+            m.get('body', b'')
+            for m in self.messages
+            if m['type'] == 'http.response.body'
         )
         return json.loads(body)
 
@@ -78,7 +77,7 @@ async def _receive() -> dict:
     return {'type': 'http.request', 'body': b'', 'more_body': False}
 
 
-async def _never_called(scope, receive, send) -> None:  # noqa: ANN001
+async def _never_called(scope: dict, receive: Any, send: Any) -> None:
     raise AssertionError('the inner app must not be reached')
 
 
@@ -143,11 +142,9 @@ async def test_exempt_path_is_still_decided_by_the_shared_boundary() -> None:
 
     served: list[str] = []
 
-    async def _inner(scope, receive, send) -> None:  # noqa: ANN001
+    async def _inner(scope: dict, receive: Any, send: Any) -> None:
         served.append(scope['path'])
-        await send(
-            {'type': 'http.response.start', 'status': 200, 'headers': []}
-        )
+        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
         await send({'type': 'http.response.body', 'body': b'{}'})
 
     exempt = sorted(_shared.UNAUTHENTICATED_PATHS)[0]
@@ -191,7 +188,9 @@ async def test_authenticated_request_binds_the_injected_minters_session(
     )
     monkeypatch.setattr(_shared, 'mint_graph_session', _shared_minter_must_not_run)
 
-    expected = GraphSession(actor=actor, tenant='homelab', scopes=frozenset({'kg:read'}))
+    expected = GraphSession(
+        actor=actor, tenant='homelab', scopes=frozenset({'kg:read'})
+    )
     minted: list[Any] = []
 
     def _injected(candidate: Any) -> GraphSession:
@@ -200,7 +199,7 @@ async def test_authenticated_request_binds_the_injected_minters_session(
 
     observed: list[Any] = []
 
-    async def _inner(scope, receive, send) -> None:  # noqa: ANN001
+    async def _inner(scope: dict, receive: Any, send: Any) -> None:
         observed.append(current_session())
         await send({'type': 'http.response.start', 'status': 200, 'headers': []})
         await send({'type': 'http.response.body', 'body': b'{"ok":true}'})

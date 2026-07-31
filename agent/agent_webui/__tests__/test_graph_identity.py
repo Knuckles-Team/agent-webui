@@ -11,15 +11,10 @@ test below must fail rather than let the two silently diverge.
 from __future__ import annotations
 
 import pytest
-
-pytest.importorskip('agent_utilities.security.request_identity')
-
-from agent_utilities.knowledge_graph.core import (  # noqa: E402
-    placement_catalog as _placement_catalog,
-)
-from agent_utilities.security import request_identity as _shared  # noqa: E402
-from agent_utilities.security.brain_context import ActorContext  # noqa: E402
-from agent_webui.graph_identity import mint_frontend_graph_session  # noqa: E402
+from agent_utilities.knowledge_graph.core import placement_catalog as _placement_catalog
+from agent_utilities.security import request_identity as _shared
+from agent_utilities.security.brain_context import ActorContext
+from agent_webui.graph_identity import mint_frontend_graph_session
 
 AUDIENCE = 'agent-services'
 POLICY = 'homelab-v1'
@@ -42,7 +37,9 @@ def _server_authority(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def _actor(*roles: str, tenant: str = 'homelab', subject: str = 'subject-1') -> ActorContext:
+def _actor(
+    *roles: str, tenant: str = 'homelab', subject: str = 'subject-1'
+) -> ActorContext:
     return ActorContext(
         actor_id=subject,
         tenant_id=tenant,
@@ -67,7 +64,9 @@ def test_authority_matches_the_shared_minter(
 ) -> None:
     """Every authority field is identical; only the route differs."""
 
-    def _fake_resolve_placement(graph, endpoints, config, **kwargs):  # noqa: ANN001, ANN202
+    def _fake_resolve_placement(
+        *_args: object, **_kwargs: object
+    ) -> _placement_catalog.PlacementResult:
         return _placement_catalog.PlacementResult(
             endpoint='tls://engine.invalid:9100',
             epoch=7,
@@ -98,7 +97,7 @@ def test_frontend_session_binds_no_engine_route(
 ) -> None:
     """The whole point: no placement RPC, and no route on the session."""
 
-    def _explode(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+    def _explode(*_args: object, **_kwargs: object) -> None:
         raise AssertionError(
             'a thin frontend must not resolve engine placement to authenticate'
         )
@@ -130,9 +129,7 @@ def test_non_graph_roles_never_become_scopes() -> None:
 
 
 def test_unauthenticated_actor_is_refused() -> None:
-    actor = ActorContext(
-        actor_id='subject-1', tenant_id='homelab', authenticated=False
-    )
+    actor = ActorContext(actor_id='subject-1', tenant_id='homelab', authenticated=False)
     with pytest.raises(PermissionError):
         mint_frontend_graph_session(actor)
 
