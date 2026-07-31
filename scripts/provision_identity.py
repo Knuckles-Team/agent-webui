@@ -332,11 +332,31 @@ def _reconcile_client(
         log(f'  client {client_id}: created')
         return existing
 
-    drift = {
-        key: value
-        for key, value in desired.items()
-        if key not in {'clientId', 'attributes'} and existing.get(key) != value
-    }
+    # Keycloak normalizes and reorders list-valued fields, so an order-sensitive
+    # comparison reports drift on every run and the script stops being
+    # idempotent.  Redirect URIs and web origins are *replaced* with exactly the
+    # desired set — an unexpected callback target is a security defect, so
+    # reconciliation must be able to remove one.  Every other list is treated
+    # additively, so an operator's deliberate extra scope survives a re-run.
+    exact = {'redirectUris', 'webOrigins'}
+
+    def _resolve(key: str, wanted: Any) -> tuple[bool, Any]:
+        current = existing.get(key)
+        if not isinstance(wanted, list):
+            return current != wanted, wanted
+        have = set(map(str, current or []))
+        want = set(map(str, wanted))
+        if key in exact:
+            return have != want, sorted(want)
+        return not have >= want, sorted(have | want)
+
+    drift: dict[str, Any] = {}
+    for key, value in desired.items():
+        if key in {'clientId', 'attributes'}:
+            continue
+        changed, resolved = _resolve(key, value)
+        if changed:
+            drift[key] = resolved
     merged_attributes = {**(existing.get('attributes') or {}), **desired['attributes']}
     if merged_attributes != (existing.get('attributes') or {}):
         drift['attributes'] = merged_attributes
