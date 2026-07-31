@@ -22,7 +22,13 @@ dependencies = [
     "starlette>=1.3.1",
     "uvicorn>=0.51.0",
     "watchfiles>=1.2.0",
-    "logfire[fastapi,starlette]>=4.38.0"
+    "logfire[fastapi,starlette]>=4.38.0",
+    # D-WA-1 (reports/deferred/lane-webui-auth.md): agent_utilities.security.auth._decode_jwt
+    # needs joserfc to verify any bearer JWT; its absence turns into a 401 "Token validation
+    # failed" that reads as a rejected credential rather than a missing dependency. Declared
+    # directly (mirrors requirements.txt) so a fresh image build gets it unconditionally
+    # regardless of which agent-utilities version/extras the image-build step installs.
+    "joserfc>=1.7.4"
 ]
 
 [project.optional-dependencies]
