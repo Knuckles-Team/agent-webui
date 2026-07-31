@@ -656,7 +656,7 @@ export function CapabilityWorkbench() {
 
                     {descriptor.actions.length === 0 ? (
                       <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-                        The live descriptor exposes no invokable actions.
+                        The live descriptor exposes no invocable actions.
                       </div>
                     ) : action ? (
                       <div className="space-y-5">

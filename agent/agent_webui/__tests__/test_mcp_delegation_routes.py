@@ -86,7 +86,10 @@ def served_authority(monkeypatch):
     from agent_utilities.core.config import config
 
     monkeypatch.setattr(
-        config, 'auth_jwt_jwks_uri', 'https://idp.test/.well-known/jwks.json', raising=False
+        config,
+        'auth_jwt_jwks_uri',
+        'https://idp.test/.well-known/jwks.json',
+        raising=False,
     )
     monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.test/', raising=False)
     monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui-test', raising=False)

@@ -373,7 +373,10 @@ def test_repository_inventory_does_not_invent_standard_repos(
 def test_voice_transcribe_honest_without_whisper(client, monkeypatch):
     import shutil as _shutil
 
-    monkeypatch.setattr(mod.shutil, 'which', lambda _name: None, raising=False)
+    # ``api_extensions`` has no ``shutil`` attribute (it never imports one), so
+    # the former ``monkeypatch.setattr(mod.shutil, ...)`` line referenced a
+    # module attribute that does not exist. Patching the real module is what
+    # actually makes the whisper lookup fail.
     monkeypatch.setattr(_shutil, 'which', lambda _name: None)
     resp = client.post(
         '/voice/transcribe',

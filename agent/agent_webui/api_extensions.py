@@ -1581,8 +1581,8 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
             )
 
     # 3. Skills & Workflows from installed packages
-    skills = []
-    workflows = []
+    skills: list[dict[str, Any]] = []
+    workflows: list[dict[str, Any]] = []
     univ_skills_dir = (
         get_skills_packages_dir() / 'universal-skills' / 'universal_skills'
     )
@@ -1819,7 +1819,7 @@ async def list_skills() -> list[dict[str, Any]]:
     Returns:
         A list of skill definitions sorted alphabetically.
     """
-    skills = []
+    skills: list[dict[str, Any]] = []
     import sys
 
     is_testing = 'pytest' in sys.modules or 'unittest' in sys.modules
@@ -2579,8 +2579,8 @@ async def link_nodes(data: dict[str, Any]) -> dict[str, Any]:
         Success status.
     """
     try:
-        source = _validate_runtime_id(data.get('source'))
-        target = _validate_runtime_id(data.get('target'))
+        source = _validate_runtime_id(str(data.get('source') or ''))
+        target = _validate_runtime_id(str(data.get('target') or ''))
         relationship_type = data.get('relationship_type')
         if not isinstance(relationship_type, str) or not _SAFE_GRAPH_LABEL.fullmatch(
             relationship_type

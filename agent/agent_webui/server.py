@@ -662,7 +662,6 @@ class WebUIAuthorizationMiddleware:
             await self.app(scope, receive, send)
             return
 
-        from agent_utilities.core.config import config
         from agent_utilities.knowledge_graph.core.session import current_session
 
         path = str(scope.get('path') or '')
