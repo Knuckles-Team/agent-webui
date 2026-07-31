@@ -4,7 +4,17 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import type { ToolUIPart } from 'ai'
-import { CheckCircleIcon, ChevronDownIcon, CircleIcon, ClockIcon, CopyIcon, XCircleIcon } from 'lucide-react'
+import {
+  CheckCircleIcon,
+  ChevronDownIcon,
+  CircleIcon,
+  ClockIcon,
+  CopyIcon,
+  ShieldAlertIcon,
+  ShieldCheckIcon,
+  ShieldXIcon,
+  XCircleIcon,
+} from 'lucide-react'
 import { useState, type ComponentProps, type ReactNode } from 'react'
 import { CodeBlock } from './code-block'
 import { getToolIcon } from '@/lib/tool-icons'
@@ -25,15 +35,21 @@ const getStatusBadge = (status: ToolUIPart['state']) => {
   const labels = {
     'input-streaming': 'Pending',
     'input-available': 'Running',
+    'approval-requested': 'Needs approval',
+    'approval-responded': 'Approved',
     'output-available': 'Completed',
     'output-error': 'Error',
+    'output-denied': 'Denied',
   } as const
 
   const icons = {
     'input-streaming': <CircleIcon className="size-4" />,
     'input-available': <ClockIcon className="size-4 animate-pulse" />,
+    'approval-requested': <ShieldAlertIcon className="size-4 text-amber-600" />,
+    'approval-responded': <ShieldCheckIcon className="size-4 text-green-600" />,
     'output-available': <CheckCircleIcon className="size-4 text-green-600" />,
     'output-error': <XCircleIcon className="size-4 text-red-600" />,
+    'output-denied': <ShieldXIcon className="size-4 text-red-600" />,
   } as const
 
   return (

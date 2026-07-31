@@ -67,8 +67,35 @@ agent-webui = "agent_webui.skills"
 # Development and ecosystem validation use the co-versioned sibling source so
 # the lock cannot silently fall back to an older published security posture.
 # This table is uv-only and is not included in the wheel's dependency metadata.
+#
+# D-FE-7/D-WD-5: `{ workspace = true }` asks uv to discover the enclosing
+# workspace by walking up ancestor directories looking for a pyproject.toml
+# with `[tool.uv.workspace]`. That root is `/home/apps/workspace/pyproject.toml`
+# (the `genius-ecosystem` workspace, which lists this repo, agent-utilities and
+# epistemic-graph as members) — an ancestor of the canonical checkout
+# (`${WORKSPACE_ROOT}/agent-packages/agent-webui`) but NOT of a `git worktree`
+# for this repo, which is rooted under `${WORKTREE_ROOT}/...` instead. From a
+# worktree the walk never finds it, so uv reports "`agent-utilities` ...
+# is not a workspace member". An explicit `{ path = ..., editable = true }`
+# source is not subject to that ancestor walk at all, so it resolves
+# identically from the canonical checkout and from every worktree. (uv 0.11.7,
+# the version installed here, does not yet support naming an external
+# workspace root by path — `{ workspace = "<path>" }` — which would otherwise
+# be the more idiomatic fix; revisit if/when uv is upgraded workspace-wide.)
 [tool.uv.sources]
-agent-utilities = { workspace = true }
+agent-utilities = { path = "/home/apps/workspace/agent-packages/agent-utilities", editable = true }
+
+[tool.uv]
+# Resolution-only restriction (does not affect what ships): this repo is
+# Linux-only in practice (see the `Operating System :: POSIX :: Linux`
+# classifier above; graph-os/agent-utilities do not target Windows). Without
+# this, `uv lock`'s default multi-platform ("universal") resolution includes a
+# `sys_platform == 'win32'` fork, and — independent of this D-FE-7/D-WD-5 fix
+# — that fork does not honor the local path source above and falls back to
+# the package index, where only an older, unrelated agent-utilities release
+# is published. Restricting to the platform this repo actually runs on avoids
+# resolving that irrelevant fork at all.
+environments = ["sys_platform == 'linux' and python_full_version >= '3.12'"]
 
 [tool.ruff]
 line-length = 88

@@ -91,7 +91,15 @@ repos:
     always_run: true
   - id: pnpm-build
     name: pnpm build
-    entry: pnpm build
+    # D-FE-7/D-WD-5: a `git worktree` checkout gets no `node_modules` of its
+    # own (only `pnpm install` populates one; worktrees don't inherit the
+    # canonical checkout's), so `pnpm build`'s `tsc` step failed outright with
+    # `sh: 1: tsc: not found` in every worktree. Installing once, locally to
+    # this worktree, when `node_modules` is missing makes the hook self-healing
+    # instead of silently unrunnable — pnpm's content-addressable store makes
+    # this a few seconds, not a fresh download, whenever the store is already
+    # warm (e.g. from the canonical checkout's own install).
+    entry: bash -c 'if [ ! -d node_modules ]; then pnpm install --frozen-lockfile; fi && pnpm build'
     language: system
     pass_filenames: false
     always_run: true
