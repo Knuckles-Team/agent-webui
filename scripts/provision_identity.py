@@ -712,6 +712,20 @@ EXTERNAL_SECRET_MANIFEST = {
         'secretStoreRef': {'kind': 'ClusterSecretStore', 'name': 'openbao'},
         'target': {'name': EXTERNAL_SECRET, 'creationPolicy': 'Owner'},
         'dataFrom': [{'extract': {'key': BAO_PATH}}],
+        # The engine transport HMAC is fleet-wide, not per-service: it lives at
+        # the shared deployment path and every engine client reads the same
+        # value (see apps/alert-bridge, which does exactly this).  Without it a
+        # fully authenticated request still dies in placement resolution with
+        # "no configured engine returned an authoritative route".
+        'data': [
+            {
+                'secretKey': 'GRAPH_SERVICE_AUTH_SECRET',
+                'remoteRef': {
+                    'key': 'agent-utilities/deployment',
+                    'property': 'GRAPH_SERVICE_AUTH_SECRET',
+                },
+            }
+        ],
     },
 }
 

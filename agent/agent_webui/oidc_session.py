@@ -87,9 +87,16 @@ _EXPIRY_SKEW_S = 30
 # Discovery documents change rarely; re-read hourly so a rotated endpoint is
 # picked up without a restart.
 _DISCOVERY_TTL_S = 3600
-# A sealed cookie holding two JWTs plus metadata; well under the 4 KiB browser
-# limit but bounded so a forged oversized cookie is cheap to reject.
-_MAX_COOKIE_BYTES = 6 * 1024
+# A sealed session holds two JWTs, so it does NOT fit in one cookie: browsers
+# cap a single cookie at 4 KiB and the ingress' default upstream header buffer
+# is smaller still, which turned an otherwise-successful login into a 502 at the
+# proxy. The sealed value is therefore chunked across numbered cookies. Keep the
+# chunk comfortably under both limits including the name and attributes.
+_COOKIE_CHUNK_CHARS = 3000
+# Refuse to reassemble an implausible number of chunks; a forged cookie set must
+# be cheap to reject.
+_MAX_COOKIE_CHUNKS = 8
+_MAX_COOKIE_BYTES = _COOKIE_CHUNK_CHARS * _MAX_COOKIE_CHUNKS
 _MAX_TOKEN_RESPONSE_BYTES = 1024 * 1024
 
 
@@ -224,6 +231,58 @@ def _set_cookie_header(
     return (b'set-cookie', '; '.join(parts).encode('latin-1'))
 
 
+def _chunk_name(index: int) -> str:
+    return f'{SESSION_COOKIE}{index}'
+
+
+def _session_cookie_headers(
+    value: str, *, secure: bool
+) -> list[tuple[bytes, bytes]]:
+    """Emit the sealed session as numbered cookie chunks, clearing any surplus.
+
+    Every write also expires the chunk slots it does not use, so shrinking from
+    a three-chunk session to a two-chunk one cannot leave a stale third chunk
+    that corrupts the next read.
+    """
+
+    chunks = [
+        value[start : start + _COOKIE_CHUNK_CHARS]
+        for start in range(0, len(value), _COOKIE_CHUNK_CHARS)
+    ] or ['']
+    if len(chunks) > _MAX_COOKIE_CHUNKS:
+        raise OIDCConfigurationError(
+            'The identity provider issued a session too large to store in cookies'
+        )
+    headers = [
+        _set_cookie_header(_chunk_name(index), chunk, secure=secure, max_age=None)
+        for index, chunk in enumerate(chunks)
+    ]
+    headers.extend(
+        _set_cookie_header(_chunk_name(index), '', secure=secure, max_age=0)
+        for index in range(len(chunks), _MAX_COOKIE_CHUNKS)
+    )
+    return headers
+
+
+def _clear_session_cookie_headers(*, secure: bool) -> list[tuple[bytes, bytes]]:
+    return [
+        _set_cookie_header(_chunk_name(index), '', secure=secure, max_age=0)
+        for index in range(_MAX_COOKIE_CHUNKS)
+    ]
+
+
+def _read_session_cookie(jar: dict[str, str]) -> str:
+    """Reassemble the sealed session from its numbered chunks."""
+
+    parts: list[str] = []
+    for index in range(_MAX_COOKIE_CHUNKS):
+        chunk = jar.get(_chunk_name(index))
+        if not chunk:
+            break
+        parts.append(chunk)
+    return ''.join(parts)
+
+
 def _safe_next(raw: str) -> str:
     """Return a same-origin relative continuation target, defaulting to ``/``.
 
@@ -291,9 +350,14 @@ class OIDCBrowserSessionMiddleware:
     # ------------------------------------------------------------------ sealing
 
     def _seal(self, payload: dict[str, Any]) -> str:
-        return self._fernet.encrypt(json.dumps(payload).encode('utf-8')).decode('ascii')
+        import zlib
+
+        packed = zlib.compress(json.dumps(payload).encode('utf-8'), 9)
+        return self._fernet.encrypt(packed).decode('ascii')
 
     def _unseal(self, raw: str, *, max_age: int | None = None) -> dict[str, Any] | None:
+        import zlib
+
         if not raw or len(raw) > _MAX_COOKIE_BYTES:
             return None
         from cryptography.fernet import InvalidToken
@@ -305,8 +369,8 @@ class OIDCBrowserSessionMiddleware:
             # error: the key may have rotated or the value may be forged.
             return None
         try:
-            payload = json.loads(opened)
-        except json.JSONDecodeError:
+            payload = json.loads(zlib.decompress(opened))
+        except (zlib.error, json.JSONDecodeError, ValueError):
             return None
         return payload if isinstance(payload, dict) else None
 
@@ -401,10 +465,12 @@ class OIDCBrowserSessionMiddleware:
             lifetime = int(tokens.get('expires_in') or 300)
         except (TypeError, ValueError):
             lifetime = 300
+        # The id_token is deliberately NOT stored: it is only ever an optional
+        # logout hint, and every stored byte is amplified by encryption and
+        # base64 before it has to fit in a browser cookie.
         return {
             'access_token': str(tokens.get('access_token') or ''),
             'refresh_token': str(tokens.get('refresh_token') or ''),
-            'id_token': str(tokens.get('id_token') or ''),
             'expires_at': time.time() + max(30, lifetime),
         }
 
@@ -522,33 +588,27 @@ class OIDCBrowserSessionMiddleware:
             _safe_next(str(flow.get('next') or '/')),
             headers=[
                 clear_flow,
-                _set_cookie_header(
-                    SESSION_COOKIE,
-                    session,
-                    secure=_is_secure(scope),
-                    max_age=None,
-                ),
+                *_session_cookie_headers(session, secure=_is_secure(scope)),
             ],
         )
 
     async def _handle_logout(self, scope: Any, send: Any) -> None:
         secure = _is_secure(scope)
         cleared = [
-            _set_cookie_header(SESSION_COOKIE, '', secure=secure, max_age=0),
+            *_clear_session_cookie_headers(secure=secure),
             _set_cookie_header(FLOW_COOKIE, '', secure=secure, max_age=0),
         ]
-        session = self._unseal(_cookies(scope).get(SESSION_COOKIE, ''))
         document = await self._endpoints()
         end_session = str(document.get('end_session_endpoint') or '')
         if not end_session:
             await self._redirect(send, '/', headers=cleared)
             return
+        # ``client_id`` + ``post_logout_redirect_uri`` is the id_token_hint-free
+        # logout form; the id token is not retained (see _session_from_tokens).
         query: dict[str, str] = {
             'post_logout_redirect_uri': self.settings.post_logout_redirect,
             'client_id': self.settings.client_id,
         }
-        if session and session.get('id_token'):
-            query['id_token_hint'] = str(session['id_token'])
         await self._redirect(
             send, f'{end_session}?{urlencode(query, quote_via=quote)}', headers=cleared
         )
@@ -556,7 +616,7 @@ class OIDCBrowserSessionMiddleware:
     async def _handle_session(self, scope: Any, send: Any) -> None:
         """Report who the browser is, without ever handing back the token."""
 
-        session = self._unseal(_cookies(scope).get(SESSION_COOKIE, ''))
+        session = self._unseal(_read_session_cookie(_cookies(scope)))
         if not session or not session.get('access_token'):
             await self._respond(
                 send, 200, body=b'{"authenticated":false}'
@@ -590,7 +650,7 @@ class OIDCBrowserSessionMiddleware:
         send: Any,
         *,
         token: str,
-        set_cookie: tuple[bytes, bytes] | None,
+        set_cookies: list[tuple[bytes, bytes]] | None,
     ) -> None:
         """Hand the request down with the user's own bearer credential attached."""
 
@@ -601,7 +661,7 @@ class OIDCBrowserSessionMiddleware:
         ]
         headers.append((b'authorization', f'Bearer {token}'.encode('latin-1')))
         forwarded = {**scope, 'headers': headers}
-        if set_cookie is None:
+        if not set_cookies:
             await self.app(forwarded, receive, send)
             return
 
@@ -609,7 +669,7 @@ class OIDCBrowserSessionMiddleware:
             if message.get('type') == 'http.response.start':
                 message = {
                     **message,
-                    'headers': [*(message.get('headers') or []), set_cookie],
+                    'headers': [*(message.get('headers') or []), *set_cookies],
                 }
             await send(message)
 
@@ -667,8 +727,8 @@ class OIDCBrowserSessionMiddleware:
             await self.app(scope, receive, send)
             return
 
-        session = self._unseal(_cookies(scope).get(SESSION_COOKIE, ''))
-        set_cookie: tuple[bytes, bytes] | None = None
+        session = self._unseal(_read_session_cookie(_cookies(scope)))
+        refreshed_cookies: list[tuple[bytes, bytes]] | None = None
         if session is not None:
             expires_at = session.get('expires_at')
             expired = (
@@ -686,11 +746,8 @@ class OIDCBrowserSessionMiddleware:
                     session = None
                 else:
                     session = self._session_from_tokens(refreshed)
-                    set_cookie = _set_cookie_header(
-                        SESSION_COOKIE,
-                        self._seal(session),
-                        secure=_is_secure(scope),
-                        max_age=None,
+                    refreshed_cookies = _session_cookie_headers(
+                        self._seal(session), secure=_is_secure(scope)
                     )
             elif expired:
                 session = None
@@ -701,7 +758,7 @@ class OIDCBrowserSessionMiddleware:
                 receive,
                 send,
                 token=str(session['access_token']),
-                set_cookie=set_cookie,
+                set_cookies=refreshed_cookies,
             )
             return
 
@@ -712,11 +769,7 @@ class OIDCBrowserSessionMiddleware:
             await self._redirect(
                 send,
                 f'{LOGIN_PATH}?next={quote(path or "/", safe="/")}',
-                headers=[
-                    _set_cookie_header(
-                        SESSION_COOKIE, '', secure=_is_secure(scope), max_age=0
-                    )
-                ],
+                headers=_clear_session_cookie_headers(secure=_is_secure(scope)),
             )
             return
 
