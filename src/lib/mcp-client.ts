@@ -140,10 +140,7 @@ export async function callMcpTool(
  * The returned HTML is UNTRUSTED tool output. It must only ever be rendered
  * through `McpAppFrame`, which sandboxes it and applies the host-resolved CSP.
  */
-export async function readMcpAppResource(
-  uri: string,
-  options: McpRequestOptions = {},
-): Promise<McpAppResource> {
+export async function readMcpAppResource(uri: string, options: McpRequestOptions = {}): Promise<McpAppResource> {
   const payload = await postJson(
     MCP_APP_RESOURCE_ROUTE,
     { server: options.server ?? DEFAULT_MCP_SERVER, uri },

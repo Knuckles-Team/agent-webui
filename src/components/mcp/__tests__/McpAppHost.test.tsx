@@ -55,6 +55,26 @@ function mcpFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respons
   return Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve('no route') } as unknown as Response)
 }
 
+/** Capture what the host posts INTO the frame.
+ *
+ * The bridge holds the frame's `Window` and calls `postMessage` on it, so the
+ * recorder replaces that method on the very window the bridge bound to (a
+ * `vi.spyOn` on jsdom's `Window.postMessage` does not intercept it). */
+function recordPosts(frame: HTMLIFrameElement) {
+  const win = frame.contentWindow as Window & { postMessage: (...args: unknown[]) => void }
+  const original = win.postMessage
+  const posted: { message: unknown; targetOrigin: unknown }[] = []
+  win.postMessage = (message: unknown, targetOrigin: unknown) => {
+    posted.push({ message, targetOrigin })
+  }
+  restorers.push(() => {
+    win.postMessage = original
+  })
+  return posted
+}
+
+const restorers: (() => void)[] = []
+
 /** Send a message AS the app's iframe (exact window identity, as the bridge requires). */
 function postFromApp(frame: HTMLIFrameElement, data: unknown): void {
   act(() => {
@@ -71,8 +91,11 @@ async function mountApp(allowedTools: string[]): Promise<HTMLIFrameElement> {
       title="Task Progress"
     />,
   )
+  // Wait for the bridge to be live, not merely for the element to exist:
+  // `data-mcp-app-attached` flips only once `attachMcpAppBridge` has bound to
+  // the frame's window.
   await waitFor(() => {
-    expect(screen.getByTitle('Task Progress')).toBeInTheDocument()
+    expect(screen.getByTitle('Task Progress')).toHaveAttribute('data-mcp-app-attached', 'true')
   })
   return screen.getByTitle('Task Progress') as HTMLIFrameElement
 }
@@ -85,6 +108,7 @@ describe('McpAppHost (wiring)', () => {
   })
 
   afterEach(() => {
+    while (restorers.length > 0) restorers.pop()?.()
     vi.restoreAllMocks()
   })
 
@@ -102,12 +126,14 @@ describe('McpAppHost (wiring)', () => {
 
   it('turns an app tool-call into a real tools/call request and returns its result', async () => {
     const frame = await mountApp(['graph_jobs'])
-    const contentWindow = frame.contentWindow
-    expect(contentWindow).not.toBeNull()
-    const posted = vi.spyOn(contentWindow as Window, 'postMessage')
+    expect(frame.contentWindow).not.toBeNull()
+    const posted = recordPosts(frame)
 
     postFromApp(frame, { type: 'mcpapp/ready' })
-    expect(posted).toHaveBeenCalledWith({ type: 'mcpapp/init', props: { jobId: 'orch-1' } }, '*')
+    expect(posted).toContainEqual({
+      message: { type: 'mcpapp/init', props: { jobId: 'orch-1' } },
+      targetOrigin: '*',
+    })
 
     postFromApp(frame, {
       type: 'mcpapp/tool-call',
@@ -127,17 +153,20 @@ describe('McpAppHost (wiring)', () => {
     })
 
     await waitFor(() => {
-      expect(posted).toHaveBeenCalledWith(
-        { type: 'mcpapp/tool-result', id: 'call-1', result: { status: 'working', jobId: 'orch-1' } },
-        '*',
-      )
+      expect(posted).toContainEqual({
+        message: {
+          type: 'mcpapp/tool-result',
+          id: 'call-1',
+          result: { status: 'working', jobId: 'orch-1' },
+        },
+        targetOrigin: '*',
+      })
     })
   })
 
   it('never puts a tool the host did not allow on the wire', async () => {
     const frame = await mountApp(['graph_jobs'])
-    const contentWindow = frame.contentWindow
-    const posted = vi.spyOn(contentWindow as Window, 'postMessage')
+    const posted = recordPosts(frame)
 
     postFromApp(frame, {
       type: 'mcpapp/tool-call',
@@ -147,10 +176,10 @@ describe('McpAppHost (wiring)', () => {
     })
 
     await waitFor(() => {
-      expect(posted).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'mcpapp/tool-error', id: 'call-2' }),
-        '*',
-      )
+      expect(posted).toContainEqual({
+        message: expect.objectContaining({ type: 'mcpapp/tool-error', id: 'call-2' }),
+        targetOrigin: '*',
+      })
     })
     expect(calls.some((call) => call.route === MCP_TOOL_CALL_ROUTE)).toBe(false)
     expect(await screen.findByText(/denied by policy: graph_write/)).toBeInTheDocument()
@@ -158,7 +187,7 @@ describe('McpAppHost (wiring)', () => {
 
   it('surfaces a backend failure to the app as a tool-error rather than a silent null', async () => {
     const frame = await mountApp(['graph_jobs'])
-    const posted = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    const posted = recordPosts(frame)
     global.fetch = vi.fn(() =>
       Promise.resolve({
         ok: false,
@@ -175,16 +204,16 @@ describe('McpAppHost (wiring)', () => {
     })
 
     await waitFor(() => {
-      expect(posted).toHaveBeenCalledWith(
-        expect.objectContaining({
+      expect(posted).toContainEqual({
+        message: expect.objectContaining({
           type: 'mcpapp/tool-error',
           id: 'call-3',
           error: expect.objectContaining({
             message: expect.stringContaining('Governed MCP delegation is not configured'),
           }),
         }),
-        '*',
-      )
+        targetOrigin: '*',
+      })
     })
   })
 

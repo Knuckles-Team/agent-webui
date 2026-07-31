@@ -274,7 +274,9 @@ export default function GoalsView() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold text-muted-foreground uppercase">Validation Action</label>
+                    <label className="text-[11px] font-semibold text-muted-foreground uppercase">
+                      Validation Action
+                    </label>
                     <select
                       value={validationAction}
                       onChange={(e) => {

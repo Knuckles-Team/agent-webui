@@ -17,7 +17,7 @@ function localRef(root: JsonSchema, ref: string): JsonSchema | undefined {
     const key = part.replaceAll('~1', '/').replaceAll('~0', '~')
     current = (current as Record<string, unknown>)[key]
   }
-  return current && typeof current === 'object' ? (current as JsonSchema) : undefined
+  return current && typeof current === 'object' ? current : undefined
 }
 
 /** Resolve the useful local schema branch while retaining annotations from the wrapper. */
