@@ -655,7 +655,6 @@ class WebUIAuthorizationMiddleware:
             await self.app(scope, receive, send)
             return
 
-        from agent_utilities.core.config import config
         from agent_utilities.knowledge_graph.core.session import current_session
 
         path = str(scope.get('path') or '')
@@ -690,7 +689,7 @@ class WebUIAuthorizationMiddleware:
                 )
                 await send({'type': 'http.response.body', 'body': body})
             return
-        if not config.kg_auth_required or path in _PUBLIC_LIVENESS_PATHS:
+        if not _identity_enforced() or path in _PUBLIC_LIVENESS_PATHS:
             await self._call_with_transport_bounds(scope, receive, send)
             return
 
@@ -766,13 +765,35 @@ def _configure_served_boundary(listener_host: str | None) -> str:
         config.gateway_rate_burst = _REMOTE_DEFAULT_BURST
 
     if all(jwt_fields):
-        # ActorIdentityMiddleware reads the singleton and the environment-backed
-        # compatibility accessor. Keep both views fail-closed for every route.
-        config.kg_auth_required = True
-        config.kg_brain_enforce = True
+        # ``AgentConfig`` has no ``kg_auth_required``/``kg_brain_enforce`` field
+        # in any shipped agent-utilities, so assigning them raised
+        # ``ValueError: "AgentConfig" object has no field`` and killed startup —
+        # but only once all three JWT fields were present, i.e. only once
+        # authentication was actually configured. Enforcement is derived from
+        # that same configuration instead (see ``_identity_enforced``); the
+        # environment-backed accessors stay, since they are what the graph
+        # enforcement layers read.
         os.environ['KG_AUTH_REQUIRED'] = '1'
         os.environ['KG_BRAIN_ENFORCE'] = '1'
     return host
+
+
+def _identity_enforced() -> bool:
+    """Return whether a complete JWT verifier makes identity mandatory.
+
+    This is the single predicate the WebUI's own authorization and websocket
+    boundaries consult. It is derived, not stored, so an embedder that composes
+    the app without going through :func:`_configure_served_boundary` still gets
+    the fail-closed answer whenever a verifier is configured.
+    """
+
+    from agent_utilities.core.config import config
+
+    return bool(
+        config.auth_jwt_jwks_uri
+        and config.auth_jwt_issuer
+        and config.auth_jwt_audience
+    )
 
 
 def _ensure_actor_identity_middleware(
@@ -827,7 +848,7 @@ def _ensure_actor_identity_middleware(
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
             if not token:
-                if config.kg_auth_required:
+                if _identity_enforced():
                     await send({'type': 'websocket.close', 'code': 4401})
                     return
                 await self.app(scope, receive, send)
