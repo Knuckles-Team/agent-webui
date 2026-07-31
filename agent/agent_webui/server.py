@@ -100,6 +100,13 @@ _ADMIN_ROUTE_PREFIXES = (
     '/ws/dashboard',
 )
 _ADMIN_MUTATION_ROUTE_PREFIXES = (
+    # Invoking an arbitrary MCP tool through the governed delegation seam is at
+    # least as powerful as any other admin mutation (the fleet exposes writes,
+    # configuration and orchestration as tools), so every POST under
+    # ``/api/enhanced/mcp`` requires ``kg:admin``. The GET inventory route
+    # (``/mcp/servers/{name}/tools``) stays a ``kg:read``.
+    # CONCEPT:AU-ECO.mcp.webui-governed-mcp-delegation
+    '/api/enhanced/mcp',
     '/api/enhanced/skills',
     '/api/enhanced/tools',
 )
@@ -690,7 +697,7 @@ class WebUIAuthorizationMiddleware:
                 )
                 await send({'type': 'http.response.body', 'body': body})
             return
-        if not config.kg_auth_required or path in _PUBLIC_LIVENESS_PATHS:
+        if path in _PUBLIC_LIVENESS_PATHS:
             await self._call_with_transport_bounds(scope, receive, send)
             return
 
@@ -765,13 +772,14 @@ def _configure_served_boundary(listener_host: str | None) -> str:
         config.gateway_rate_limit = _REMOTE_DEFAULT_RATE
         config.gateway_rate_burst = _REMOTE_DEFAULT_BURST
 
-    if all(jwt_fields):
-        # ActorIdentityMiddleware reads the singleton and the environment-backed
-        # compatibility accessor. Keep both views fail-closed for every route.
-        config.kg_auth_required = True
-        config.kg_brain_enforce = True
-        os.environ['KG_AUTH_REQUIRED'] = '1'
-        os.environ['KG_BRAIN_ENFORCE'] = '1'
+    # There is no longer an "authentication optional" mode to opt into:
+    # ``ActorIdentityMiddleware`` requires a verified Bearer identity on every
+    # non-liveness route unconditionally, and ``AgentConfig`` no longer carries
+    # ``kg_auth_required`` / ``kg_brain_enforce`` (nor are ``KG_AUTH_REQUIRED``
+    # / ``KG_BRAIN_ENFORCE`` read anywhere). Assigning them here raised
+    # ``ValueError: "AgentConfig" object has no field "kg_auth_required"`` at
+    # app construction for every JWT-configured (i.e. every non-loopback)
+    # listener.
     return host
 
 
@@ -827,10 +835,9 @@ def _ensure_actor_identity_middleware(
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
             if not token:
-                if config.kg_auth_required:
-                    await send({'type': 'websocket.close', 'code': 4401})
-                    return
-                await self.app(scope, receive, send)
+                # Authentication is unconditional (see _configure_served_boundary):
+                # a websocket with no Bearer credential is always refused.
+                await send({'type': 'websocket.close', 'code': 4401})
                 return
 
             try:
