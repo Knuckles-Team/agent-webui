@@ -42,17 +42,22 @@ for (const route of topLevelRoutes) {
     const pageErrors: string[] = []
     page.on('pageerror', (err) => pageErrors.push(String(err)))
 
+    // NOTE (found live, D-WUI-29): this used to listen for `page.on('response', ...)`
+    // and match it against `new URL(route.path, page.url() || 'http://x')`. On a
+    // fresh page (before the first navigation), `page.url()` is `'about:blank'`,
+    // which is truthy — so `|| 'http://x'` never kicked in — and the WHATWG URL
+    // constructor throws `TypeError: Invalid URL` when given `about:blank` as a
+    // base for a relative path. That fired on the very first response of every
+    // single route census, failing all 38 tests with a harness bug rather than a
+    // real app finding, before any of the assertions below ever ran. `page.goto()`
+    // already returns the navigation's own Response — using that directly is both
+    // simpler and correct (each route census test gets a fresh page per Playwright's
+    // default test isolation, so this really is the top-level navigation response).
     let httpStatus: number | null = null
-    const onResponse = (response: import('@playwright/test').Response) => {
-      if (response.url().includes(new URL(route.path, page.url() || 'http://x').pathname)) {
-        httpStatus = response.status()
-      }
-    }
-    page.on('response', onResponse)
-
     let navError: string | null = null
     try {
-      await page.goto(route.path, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+      const response = await page.goto(route.path, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+      httpStatus = response?.status() ?? null
       await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {
         // Some views hold a live/streaming connection open (charts, chat) and will
         // never go idle — not itself a failure signal, so don't fail the test on it.
@@ -133,7 +138,5 @@ for (const route of topLevelRoutes) {
           .toBe(false)
       }
     }
-
-    page.off('response', onResponse)
   })
 }
