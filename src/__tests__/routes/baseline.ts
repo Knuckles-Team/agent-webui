@@ -47,10 +47,13 @@ export interface BaselineEntry {
   registerId: string
 }
 
-// Captured 2026-08-06 against agent-webui @ 1f2f402 (main) + this lane's harness.
-// One row per (routeId, fixture, viewport) that currently trips the
+// Captured 2026-08-06, re-verified against agent-webui @ 98e6886 (main, after
+// w1-webui-api-contract's first two fix batches) + this lane's harness. One
+// row per (routeId, fixture, viewport) that currently trips the
 // ErrorBoundary. Grouped by register id for readability; order is not
-// semantically meaningful.
+// semantically meaningful. A register id with no entries left below means
+// its view was fixed and its comment records that — do not delete the
+// comment, it is the audit trail for why the id disappeared from the list.
 export const KNOWN_BROKEN_ROUTES: readonly BaselineEntry[] = [
   // D-WUI-7 — SkillsView: data.mcp_tools.filter on a non-array response.
   // Also crashes on 'well-formed': src/__tests__/setup.ts's shared shim has
@@ -86,16 +89,11 @@ export const KNOWN_BROKEN_ROUTES: readonly BaselineEntry[] = [
   { routeId: 'integrations.ecosystem', fixture: 'null', viewport: 'mobile', registerId: 'D-WUI-9' },
   { routeId: 'integrations.ecosystem', fixture: 'empty-object', viewport: 'mobile', registerId: 'D-WUI-9' },
 
-  // D-WUI-10 — ObjectExplorerView: (registeredActions ?? []).filter, {} is truthy
-  { routeId: 'knowledge.object-explorer', fixture: 'empty-object', viewport: 'desktop', registerId: 'D-WUI-10' },
-  { routeId: 'knowledge.object-explorer', fixture: 'empty-object', viewport: 'mobile', registerId: 'D-WUI-10' },
+  // D-WUI-10 — ObjectExplorerView: CLOSED by w1-webui-api-contract (verified —
+  // no longer reproduces through this harness on re-sync against main).
 
-  // D-WUI-11 — FleetView: Object.entries(health.domains), `.domains` unguarded
-  // (also crashes on the well-formed fixture — see item for the setup.ts shim gap)
-  { routeId: 'control-plane.fleet', fixture: 'well-formed', viewport: 'desktop', registerId: 'D-WUI-11' },
-  { routeId: 'control-plane.fleet', fixture: 'empty-array', viewport: 'desktop', registerId: 'D-WUI-11' },
-  { routeId: 'control-plane.fleet', fixture: 'empty-object', viewport: 'desktop', registerId: 'D-WUI-11' },
-  { routeId: 'control-plane.fleet', fixture: 'empty-object', viewport: 'mobile', registerId: 'D-WUI-11' },
+  // D-WUI-11 — FleetView: CLOSED by w1-webui-api-contract (verified — no
+  // longer reproduces through this harness on re-sync against main).
 
   // D-WUI-12 — GoalsView: goals.length / goals.map on a non-array response
   { routeId: 'control-plane.goals', fixture: 'null', viewport: 'desktop', registerId: 'D-WUI-12' },
@@ -131,17 +129,13 @@ export const KNOWN_BROKEN_ROUTES: readonly BaselineEntry[] = [
   { routeId: 'control-plane.sessions', fixture: 'null', viewport: 'mobile', registerId: 'D-WUI-16' },
   { routeId: 'control-plane.sessions', fixture: 'empty-object', viewport: 'mobile', registerId: 'D-WUI-16' },
 
-  // D-WUI-17 — UsageView: tools.length / tools.map on a non-array response
-  { routeId: 'observability.usage', fixture: 'null', viewport: 'desktop', registerId: 'D-WUI-17' },
-  { routeId: 'observability.usage', fixture: 'empty-object', viewport: 'desktop', registerId: 'D-WUI-17' },
-  { routeId: 'observability.usage', fixture: 'null', viewport: 'mobile', registerId: 'D-WUI-17' },
-  { routeId: 'observability.usage', fixture: 'empty-object', viewport: 'mobile', registerId: 'D-WUI-17' },
+  // D-WUI-17 — UsageView: CLOSED by w1-webui-api-contract (verified — no
+  // longer reproduces through this harness on re-sync against main; UsageView
+  // now throws a caught ApiShapeError via src/lib/api-validation.ts instead
+  // of crash-rendering).
 
-  // D-WUI-18 — WorkflowEditorView: saved.length / saved.map on a non-array response
-  { routeId: 'control-plane.workflows', fixture: 'null', viewport: 'desktop', registerId: 'D-WUI-18' },
-  { routeId: 'control-plane.workflows', fixture: 'empty-object', viewport: 'desktop', registerId: 'D-WUI-18' },
-  { routeId: 'control-plane.workflows', fixture: 'null', viewport: 'mobile', registerId: 'D-WUI-18' },
-  { routeId: 'control-plane.workflows', fixture: 'empty-object', viewport: 'mobile', registerId: 'D-WUI-18' },
+  // D-WUI-18 — WorkflowEditorView: CLOSED by w1-webui-api-contract (verified
+  // — no longer reproduces through this harness on re-sync against main).
 
   // D-WUI-19 — OpsPanelView: pipelineStatus.phases on a null response (empty-object is guarded)
   { routeId: 'admin.ops', fixture: 'null', viewport: 'desktop', registerId: 'D-WUI-19' },
@@ -163,23 +157,24 @@ export const KNOWN_BROKEN_ROUTES: readonly BaselineEntry[] = [
   { routeId: 'knowledge.extraction', fixture: 'null', viewport: 'mobile', registerId: 'D-WUI-21' },
   { routeId: 'knowledge.extraction', fixture: 'empty-object', viewport: 'mobile', registerId: 'D-WUI-21' },
 
-  // D-WUI-22 — Chat.tsx: configQuery.data?.models.find, `.models` unguarded.
-  // Empirically confirmed at mobile/empty-object only; the desktop variants
-  // this comment speculated from static reading alone did not reproduce
-  // through this harness (Chat.tsx's model-config query has more mount
-  // dependencies than the simple fetch chain assumed) — not claiming those
-  // are safe, just not asserting something this harness cannot back up.
+  // D-WUI-22 — Chat.tsx: configQuery.data?.models.find, `.models` unguarded
+  // (real defect, confirmed by source reading — the leading `?.` only
+  // guards `data` itself, not `.models`). The desktop entries below flip
+  // between reproducing and not across separate whole-suite process runs on
+  // this host (observed both ways multiple times, stable WITHIN one run,
+  // unstable BETWEEN runs — see the lane report). Asserted as known-broken
+  // because the underlying bug is real and confirmed, not because this
+  // harness catches it with certainty every run; if the merge queue's gate
+  // run lands on a 'did not trip' sample here, that is this route's residual
+  // risk, not a sign the bug isn't real.
+  { routeId: 'chat.console', fixture: 'empty-array', viewport: 'desktop', registerId: 'D-WUI-22' },
+  { routeId: 'chat.console', fixture: 'empty-object', viewport: 'desktop', registerId: 'D-WUI-22' },
+  { routeId: 'chat.console', fixture: 'error', viewport: 'desktop', registerId: 'D-WUI-22' },
   { routeId: 'chat.console', fixture: 'empty-object', viewport: 'mobile', registerId: 'D-WUI-22' },
 
-  // D-WUI-23 — AdminView/TenantsPanel: sources.length, gateway `ok && data`
-  // guard gap. Also crashes on 'well-formed': setup.ts's shared shim has no
-  // route for /api/enhanced/code/instances, so it falls through to the
-  // catch-all `[]` — an array has no `.source_systems` either, same crash
-  // class (see D-WUI-11/D-WUI-7 for the same shim-coverage gap elsewhere).
-  { routeId: 'admin.console', fixture: 'well-formed', viewport: 'desktop', registerId: 'D-WUI-23' },
-  { routeId: 'admin.console', fixture: 'empty-array', viewport: 'desktop', registerId: 'D-WUI-23' },
-  { routeId: 'admin.console', fixture: 'empty-object', viewport: 'desktop', registerId: 'D-WUI-23' },
-  { routeId: 'admin.console', fixture: 'empty-object', viewport: 'mobile', registerId: 'D-WUI-23' },
+  // D-WUI-23 — AdminView/TenantsPanel: CLOSED by w1-webui-api-contract
+  // (verified — no longer reproduces through this harness on re-sync against
+  // main).
 
   // D-WUI-24 — MemoryView: memories.filter on a non-array response. Also
   // crashes on 'error' (500 body stored the same way a well-formed body
@@ -190,28 +185,14 @@ export const KNOWN_BROKEN_ROUTES: readonly BaselineEntry[] = [
   { routeId: 'knowledge.memories', fixture: 'null', viewport: 'mobile', registerId: 'D-WUI-24' },
   { routeId: 'knowledge.memories', fixture: 'empty-object', viewport: 'mobile', registerId: 'D-WUI-24' },
 
-  // D-WUI-25 — SDDView: specs.map / plans.map on a non-array response
-  { routeId: 'control-plane.sdd', fixture: 'null', viewport: 'desktop', registerId: 'D-WUI-25' },
-  { routeId: 'control-plane.sdd', fixture: 'empty-object', viewport: 'desktop', registerId: 'D-WUI-25' },
-  { routeId: 'control-plane.sdd', fixture: 'null', viewport: 'mobile', registerId: 'D-WUI-25' },
-  { routeId: 'control-plane.sdd', fixture: 'empty-object', viewport: 'mobile', registerId: 'D-WUI-25' },
+  // D-WUI-25 — SDDView: CLOSED by w1-webui-api-contract (verified — no
+  // longer reproduces through this harness on re-sync against main).
 
-  // D-WUI-6 (update) — GraphView / TemporalGraphView hostile-payload crashes,
-  // additional to the pre-existing PageContextProvider defect that item already
-  // tracked. See the [UPDATE to D-WUI-6] block for the two distinct crash sites.
-  // GraphView also crashes on 'error' (500 body read the same as a good one);
-  // TemporalGraphView also crashes on 'well-formed' at desktop (its own
-  // GraphCanvas dependency shares GraphView's adjacency-building adapter,
-  // src/components/knowledge-graph/GraphAdapter.ts, which is the same
-  // unguarded code path).
-  { routeId: 'knowledge.graph', fixture: 'null', viewport: 'desktop', registerId: 'D-WUI-6' },
-  { routeId: 'knowledge.graph', fixture: 'empty-object', viewport: 'desktop', registerId: 'D-WUI-6' },
-  { routeId: 'knowledge.graph', fixture: 'error', viewport: 'desktop', registerId: 'D-WUI-6' },
-  { routeId: 'knowledge.graph', fixture: 'null', viewport: 'mobile', registerId: 'D-WUI-6' },
-  { routeId: 'knowledge.graph', fixture: 'empty-object', viewport: 'mobile', registerId: 'D-WUI-6' },
-  { routeId: 'knowledge.temporal-graph', fixture: 'null', viewport: 'desktop', registerId: 'D-WUI-6' },
+  // D-WUI-6 — GraphView: CLOSED (commit 98a6d09). TemporalGraphView mostly
+  // closed too (null/empty-object no longer reproduce) but 'well-formed'
+  // still trips at desktop — residual finding, see [UPDATE to D-WUI-6]
+  // post-close 2026-08-06 in lane-webui-unification.md.
   { routeId: 'knowledge.temporal-graph', fixture: 'well-formed', viewport: 'desktop', registerId: 'D-WUI-6' },
-  { routeId: 'knowledge.temporal-graph', fixture: 'null', viewport: 'mobile', registerId: 'D-WUI-6' },
 ]
 
 /** Fast lookup used by the test generator. */
