@@ -4,7 +4,17 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import type { ToolUIPart } from 'ai'
-import { CheckCircleIcon, ChevronDownIcon, CircleIcon, ClockIcon, CopyIcon, XCircleIcon } from 'lucide-react'
+import {
+  BanIcon,
+  CheckCircleIcon,
+  ChevronDownIcon,
+  CircleIcon,
+  ClockIcon,
+  CopyIcon,
+  ShieldQuestionIcon,
+  ThumbsUpIcon,
+  XCircleIcon,
+} from 'lucide-react'
 import { useState, type ComponentProps, type ReactNode } from 'react'
 import { CodeBlock } from './code-block'
 import { getToolIcon } from '@/lib/tool-icons'
@@ -22,19 +32,32 @@ export interface ToolHeaderProps {
 }
 
 const getStatusBadge = (status: ToolUIPart['state']) => {
-  const labels = {
+  // Typed as Record<ToolUIPart['state'], …> ON PURPOSE (D-R820-1). These tables
+  // previously covered 4 of the union's 7 states; when `ai` grew
+  // approval-requested / approval-responded / output-denied, the gap surfaced as
+  // TS7053 at the *index* site below rather than here, and it broke `pnpm build`
+  // in pre-commit (D-WD-5). An explicit Record makes the next union growth a
+  // compile error at the table itself — the omission becomes unrepresentable
+  // instead of merely detected.
+  const labels: Record<ToolUIPart['state'], string> = {
     'input-streaming': 'Pending',
     'input-available': 'Running',
+    'approval-requested': 'Needs approval',
+    'approval-responded': 'Approval sent',
     'output-available': 'Completed',
     'output-error': 'Error',
-  } as const
+    'output-denied': 'Denied',
+  }
 
-  const icons = {
+  const icons: Record<ToolUIPart['state'], ReactNode> = {
     'input-streaming': <CircleIcon className="size-4" />,
     'input-available': <ClockIcon className="size-4 animate-pulse" />,
+    'approval-requested': <ShieldQuestionIcon className="size-4 text-amber-600" />,
+    'approval-responded': <ThumbsUpIcon className="size-4 text-blue-600" />,
     'output-available': <CheckCircleIcon className="size-4 text-green-600" />,
     'output-error': <XCircleIcon className="size-4 text-red-600" />,
-  } as const
+    'output-denied': <BanIcon className="size-4 text-red-600" />,
+  }
 
   return (
     <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
