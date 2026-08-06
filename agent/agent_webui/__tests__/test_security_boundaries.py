@@ -520,3 +520,138 @@ def test_supervisory_routes_require_admin_scope() -> None:
     )
     assert WebUIAuthorizationMiddleware._is_admin_route('/ws/dashboard')
     assert not WebUIAuthorizationMiddleware._is_admin_route('/api/graph/write')
+
+
+# ------------------------------------------------------------- R9: WebUI roles
+
+
+class _Recorder:
+    """Minimal ASGI `send` collector — records status + body for an assertion."""
+
+    def __init__(self) -> None:
+        self.messages: list[dict] = []
+
+    async def __call__(self, message: dict) -> None:
+        self.messages.append(message)
+
+    @property
+    def status(self) -> int:
+        return next(m['status'] for m in self.messages if m['type'] == 'http.response.start')
+
+
+def test_role_requirement_is_admin_whenever_the_kg_admin_scope_is_required() -> None:
+    """Every route that already demands `kg:admin` additionally demands the
+    WebUI `admin` role — a hidden nav item is not a permission, so the same
+    ladder `src/lib/nav-registry.ts` declares is enforced here too."""
+
+    assert (
+        WebUIAuthorizationMiddleware._role_requirement(
+            required_scope='kg:admin', method='GET', path='/api/enhanced/prompts'
+        )
+        == 'admin'
+    )
+
+
+def test_role_requirement_is_maintainer_for_a_non_admin_mutation_route() -> None:
+    """A websocket write to a `_ADMIN_MUTATION_ROUTE_PREFIXES` path that is not
+    also an `_ADMIN_ROUTE_PREFIXES` admin route only needs `kg:write` at the
+    scope layer (websockets never consult `_is_admin_mutation_route` when
+    computing `required`), so the role floor for it is `maintainer`, not
+    `admin`."""
+
+    assert (
+        WebUIAuthorizationMiddleware._role_requirement(
+            required_scope='kg:write', method='', path='/api/enhanced/skills/demo/toggle'
+        )
+        == 'maintainer'
+    )
+
+
+def test_role_requirement_is_none_for_an_ordinary_read() -> None:
+    assert (
+        WebUIAuthorizationMiddleware._role_requirement(
+            required_scope='kg:read', method='GET', path='/api/graph/query'
+        )
+        is None
+    )
+
+
+def _graph_session(*, roles: frozenset[str], scopes: frozenset[str]):
+    from agent_utilities.knowledge_graph.core.session import GraphSession
+    from agent_utilities.security.brain_context import ActorContext
+
+    actor = ActorContext(
+        actor_id='subject-1', tenant_id='homelab', roles=tuple(roles), authenticated=True
+    )
+    return GraphSession(actor=actor, tenant='homelab', scopes=scopes)
+
+
+def test_admin_route_rejects_a_verified_kg_admin_caller_explicitly_demoted_to_reader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The scope check alone (`kg:admin` in scopes) is not sufficient once an
+    explicit `webui:reader` realm role has demoted this caller's WebUI reach —
+    the additive role gate must still reject it."""
+
+    from agent_utilities.core.config import config
+    from agent_utilities.knowledge_graph.core.session import use_session
+
+    monkeypatch.setattr(config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False)
+    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False)
+    monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
+
+    session = _graph_session(
+        roles=frozenset({'kg:admin', 'webui:reader'}), scopes=frozenset({'kg:admin'})
+    )
+
+    async def _inner(_scope, _receive, _send) -> None:  # pragma: no cover
+        raise AssertionError('the demoted caller must never reach the inner app')
+
+    middleware = WebUIAuthorizationMiddleware(_inner)
+    scope = {'type': 'http', 'method': 'GET', 'path': '/api/enhanced/prompts', 'headers': []}
+    send = _Recorder()
+
+    async def receive() -> dict:
+        return {'type': 'http.request'}
+
+    with use_session(session):
+        asyncio.run(middleware(scope, receive, send))
+
+    assert send.status == 403
+
+
+def test_admin_route_admits_a_verified_kg_admin_caller_with_no_webui_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """By default (no explicit `webui:*` claim) a `kg:admin` scope holder
+    resolves to the WebUI `admin` role too, so nothing that worked before this
+    ladder existed is newly rejected."""
+
+    from agent_utilities.core.config import config
+    from agent_utilities.knowledge_graph.core.session import use_session
+
+    monkeypatch.setattr(config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False)
+    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False)
+    monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
+
+    session = _graph_session(roles=frozenset({'kg:admin'}), scopes=frozenset({'kg:admin'}))
+
+    reached: list[bool] = []
+
+    async def _inner(_scope, _receive, send) -> None:
+        reached.append(True)
+        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
+        await send({'type': 'http.response.body', 'body': b'{}'})
+
+    middleware = WebUIAuthorizationMiddleware(_inner)
+    scope = {'type': 'http', 'method': 'GET', 'path': '/api/enhanced/prompts', 'headers': []}
+    send = _Recorder()
+
+    async def receive() -> dict:
+        return {'type': 'http.request'}
+
+    with use_session(session):
+        asyncio.run(middleware(scope, receive, send))
+
+    assert reached == [True]
+    assert send.status == 200

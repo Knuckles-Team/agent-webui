@@ -579,6 +579,33 @@ class WebUIAuthorizationMiddleware:
         )
 
     @staticmethod
+    def _role_requirement(*, required_scope: str, method: str, path: str) -> str | None:
+        """The additional WebUI role (R9: reader < user < maintainer < admin)
+        required for this request, layered ON TOP OF the `required_scope` KG
+        scope check the caller already had to pass.
+
+        It is evaluated only after the scope check already succeeded, and by
+        DEFAULT is non-breaking: `rbac.resolve_webui_role` maps ``kg:admin`` ->
+        ``admin`` and ``kg:write`` -> ``maintainer`` whenever no explicit
+        ``webui:*`` realm role is assigned, so nobody who depended on a scope
+        alone loses access the day this ladder is introduced. An operator MAY
+        assign an explicit lower ``webui:*`` role to deliberately restrict a
+        principal's WebUI reach below what its ``kg:*`` scope alone would
+        otherwise imply here (e.g. a service account with `kg:admin` API access
+        but no business reaching the WebUI's admin console) — that is the
+        intended escape hatch, not a bug.
+        """
+
+        if required_scope == 'kg:admin':
+            return 'admin'
+        if (
+            method not in {'GET', 'HEAD', 'OPTIONS'}
+            and WebUIAuthorizationMiddleware._is_admin_mutation_route(path)
+        ):
+            return 'maintainer'
+        return None
+
+    @staticmethod
     def _origin_allowed(scope: Any) -> bool:
         origins: list[str] = []
         hosts: list[str] = []
@@ -711,6 +738,34 @@ class WebUIAuthorizationMiddleware:
         session = current_session()
         scopes = session.scopes if session is not None else frozenset()
         if required in scopes:
+            role_requirement = self._role_requirement(
+                required_scope=required, method=method, path=path
+            )
+            if role_requirement is not None:
+                from .rbac import resolve_webui_role, role_at_least
+
+                actor = getattr(session, 'actor', None)
+                webui_role = resolve_webui_role(
+                    tuple(getattr(actor, 'roles', ()) or ()),
+                    authenticated=bool(getattr(actor, 'authenticated', False)),
+                )
+                if not role_at_least(webui_role, role_requirement):
+                    if scope_type == 'websocket':
+                        await send({'type': 'websocket.close', 'code': 4403})
+                        return
+                    body = b'{"detail":"Request forbidden"}'
+                    await send(
+                        {
+                            'type': 'http.response.start',
+                            'status': 403,
+                            'headers': [
+                                (b'content-type', b'application/json'),
+                                (b'content-length', str(len(body)).encode('ascii')),
+                            ],
+                        }
+                    )
+                    await send({'type': 'http.response.body', 'body': body})
+                    return
             await self._call_with_transport_bounds(scope, receive, send)
             return
 

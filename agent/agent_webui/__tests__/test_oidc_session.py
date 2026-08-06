@@ -281,8 +281,41 @@ async def test_session_endpoint_never_returns_the_token():
     body = json.loads(send.body)
     assert body['authenticated'] is True
     assert body['subject'] == 'user-1'
-    assert body['roles'] == ['kg:read'], 'only graph capabilities are reported'
+    assert body['roles'] == ['kg:read'], 'only graph/webui capabilities are reported'
+    assert body['webui_role'] == 'user', 'kg:read falls back to the WebUI user role (R9)'
     assert token not in send.body.decode('utf-8')
+
+
+@pytest.mark.anyio
+async def test_session_endpoint_reports_an_explicit_webui_role():
+    """An explicit `webui:*` realm role wins over the kg:* scope fallback."""
+
+    settings = _settings()
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=settings)
+    claims = {
+        'sub': 'user-2',
+        'realm_access': {'roles': ['kg:read', 'webui:maintainer']},
+    }
+    import base64
+
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip('=')
+    token = f'header.{payload}.signature'
+    sealed = middleware._seal(
+        {'access_token': token, 'refresh_token': '', 'expires_at': time.time() + 300}
+    )
+    cookie = '; '.join(
+        raw.decode('latin-1').split(';', 1)[0]
+        for _n, raw in _session_cookie_headers(sealed, secure=False)
+    )
+    send = _Recorder()
+    await middleware(
+        _scope(SESSION_PATH, headers=[(b'cookie', cookie.encode('latin-1'))]),
+        None,
+        send,
+    )
+    body = json.loads(send.body)
+    assert sorted(body['roles']) == ['kg:read', 'webui:maintainer']
+    assert body['webui_role'] == 'maintainer'
 
 
 # ------------------------------------------------------------------ forwarding
