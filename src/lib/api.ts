@@ -7,8 +7,22 @@
  * uniform error handling via the ApiError class.
  */
 
-import type { SavedWorkflow, WorkflowCapabilities, WorkflowCanvas, WorkflowRunResult } from './workflow'
+import { z } from 'zod'
+import type {
+  CapabilityItem,
+  SavedWorkflow,
+  WorkflowCapabilities,
+  WorkflowCanvas,
+  WorkflowRunResult,
+} from './workflow'
 import type { OntologySchemaGraph } from '@/components/knowledge-graph/GraphAdapter'
+import { ApiError, validateShape, looseArray } from './api-validation'
+
+// Re-exported for backward compatibility — every existing `import { ApiError }
+// from '@/lib/api'` call site keeps working unchanged. The class now lives in
+// api-validation.ts so that module (the shared validation boundary used by
+// gateway.ts/capabilities-api.ts too) never has to import back from here.
+export { ApiError }
 
 /** Body accepted by `POST /workflows`. */
 export interface SaveWorkflowPayload {
@@ -277,9 +291,6 @@ const EDIT_TYPE_FROM_KIND: Record<OntologyEditRequestDto['kind'], string> = {
   remove_link: 'link_remove',
 }
 
-/**
- * Custom error class for API-related failures
- */
 // ---------------------------------------------------------------------------
 // Import/export + catalogue (coverage rows #23 / #4) — the hosted-ontology
 // record shape returned by `graph_ontology(action='load'|'get'|'list')`.
@@ -318,24 +329,6 @@ export interface OntologyCatalogueEntry {
   active?: boolean
   category?: string
   tags?: string[]
-}
-
-export class ApiError extends Error {
-  /** HTTP status code */
-  public status: number
-  /** Raw response body text */
-  public body: string
-
-  /**
-   * @param status - HTTP response status code
-   * @param body - Diagnostic message or raw body content from the server
-   */
-  constructor(status: number, body: string) {
-    super(`API ${status}: ${body}`)
-    this.status = status
-    this.body = body
-    this.name = 'ApiError'
-  }
 }
 
 /** One action+observation step in a SWE run's KG provenance (OS-5.34). */
@@ -485,6 +478,25 @@ class ApiClient {
   }
 
   /**
+   * Performs a GET request and validates the parsed JSON body against
+   * `schema` before returning it — the chokepoint every "make the bad state
+   * unrepresentable" fix on this client routes through (PROGRAM.md R2). A
+   * shape violation throws {@link ApiShapeError} naming this endpoint and
+   * what was expected, instead of handing a view an `unknown` it will
+   * `.filter()`/`.map()` and crash on.
+   */
+  async getValidated<T>(path: string, schema: z.ZodType<T>): Promise<T> {
+    const raw = await this.get<unknown>(path)
+    return validateShape(schema, raw, path)
+  }
+
+  /** POST counterpart of {@link getValidated}. */
+  async postValidated<T>(path: string, schema: z.ZodType<T>, body?: unknown): Promise<T> {
+    const raw = await this.post<unknown>(path, body)
+    return validateShape(schema, raw, path)
+  }
+
+  /**
    * Performs a DELETE request
    */
   async delete(path: string): Promise<void> {
@@ -495,13 +507,15 @@ class ApiClient {
     }
   }
 
-  // SDD Methods
-  getConstitution = () => this.get<SddConstitution>('/api/enhanced/sdd/constitution')
+  // SDD Methods (D-WUI-25 — validated so a non-array response throws here rather
+  // than becoming a `specs`/`plans`/`tasks` the view unconditionally `.map()`s)
+  getConstitution = () => this.getValidated('/api/enhanced/sdd/constitution', sddConstitutionSchema)
   saveConstitution = (data: unknown) => this.post<unknown>('/api/enhanced/sdd/constitution', data)
-  listSpecs = () => this.get<SddSpec[]>('/api/enhanced/sdd/specs')
+  listSpecs = () => this.getValidated('/api/enhanced/sdd/specs', looseArray(sddSpecSchema))
   createSpec = (data: unknown) => this.post<unknown>('/api/enhanced/sdd/spec', data)
-  listPlans = () => this.get<SddPlan[]>('/api/enhanced/sdd/plans')
-  getTasks = (planId: string) => this.get<{ tasks: SddTask[] }>(`/api/enhanced/sdd/tasks?plan_id=${planId}`)
+  listPlans = () => this.getValidated('/api/enhanced/sdd/plans', looseArray(sddPlanSchema))
+  getTasks = (planId: string) =>
+    this.getValidated(`/api/enhanced/sdd/tasks?plan_id=${planId}`, z.object({ tasks: looseArray(sddTaskSchema) }))
   syncSDDToMemory = (data: unknown) => this.post<unknown>('/api/enhanced/sdd/sync', data)
 
   // SWE Developer-Workspace Runtime (OS-5.33 / ORCH-1.46) + SWE-bench (AHE-3.22)
@@ -575,9 +589,11 @@ class ApiClient {
   /** Download URL for a job's facts as JSONL (upstream parity). */
   extractionJsonlUrl = (jobId: string) => `${this.baseUrl}/api/enhanced/extract/jsonl/${encodeURIComponent(jobId)}`
 
-  // Workflow Editor Methods (D9 — visual workflow editor)
-  listWorkflowCapabilities = () => this.get<WorkflowCapabilities>('/api/enhanced/workflows/capabilities')
-  listWorkflows = () => this.get<SavedWorkflow[]>('/api/enhanced/workflows')
+  // Workflow Editor Methods (D9 — visual workflow editor; D-WUI-18 — WorkflowEditorView:
+  // saved.length / saved.map on a non-array response)
+  listWorkflowCapabilities = () =>
+    this.getValidated('/api/enhanced/workflows/capabilities', workflowCapabilitiesSchema)
+  listWorkflows = () => this.getValidated('/api/enhanced/workflows', looseArray(savedWorkflowSchema))
   saveWorkflow = (payload: SaveWorkflowPayload) =>
     this.post<{ id: string; saved: boolean }>('/api/enhanced/workflows', payload)
   runWorkflow = (id: string) => this.post<WorkflowRunResult>(`/api/enhanced/workflows/${encodeURIComponent(id)}/run`)
@@ -778,16 +794,10 @@ class ApiClient {
    * list to actions whose `acts_on` covers that type.
    */
   listOntologyActions = (objectType?: string) =>
-    this.get<
-      {
-        name: string
-        verb: string
-        description: string
-        produces_effect: string
-        required_capability: string
-        acts_on: string[]
-      }[]
-    >(`/api/enhanced/ontology/actions${objectType ? `?object_type=${encodeURIComponent(objectType)}` : ''}`)
+    this.getValidated(
+      `/api/enhanced/ontology/actions${objectType ? `?object_type=${encodeURIComponent(objectType)}` : ''}`,
+      looseArray(ontologyActionSchema),
+    )
 
   /**
    * Run a governed bulk action over a set of object ids. `payload`:
@@ -857,13 +867,13 @@ class ApiClient {
 
   // Fleet supervisory plane (CONCEPT:OS-5.10) — swarm health, topology,
   // emergency containment, and the mutation/risk approval queue.
-  getFleetHealth = () => this.get<FleetHealth>('/api/fleet/health')
-  getFleetTopology = () => this.get<FleetTopology>('/api/fleet/topology')
+  getFleetHealth = () => this.getValidated('/api/fleet/health', fleetHealthSchema)
+  getFleetTopology = () => this.getValidated('/api/fleet/topology', fleetTopologySchema)
   pauseFleet = (target: { domain?: string; session_ids?: string[] }) =>
     this.post<FleetActionResult>('/api/fleet/pause', target)
   killFleet = (target: { domain?: string; session_ids?: string[] }) =>
     this.post<FleetActionResult>('/api/fleet/kill', target)
-  getFleetApprovals = () => this.get<{ pending: unknown[] }>('/api/fleet/approvals')
+  getFleetApprovals = () => this.getValidated('/api/fleet/approvals', fleetApprovalsSchema)
   grantFleetApproval = (jobId: string, decision: string) =>
     this.post<unknown>('/api/fleet/approvals/grant', { job_id: jobId, decision })
 
@@ -879,19 +889,31 @@ class ApiClient {
       : ''
     return this.get<T>(`/api/observability${path}${qs}`)
   }
-  getUsageSummary = (f?: UsageFilters) => this.obs<UsageSummary>('/summary', f)
-  getUsageByModel = (f?: UsageFilters) => this.obs<UsageBreakdown[]>('/by-model', f)
-  getUsageByProject = (f?: UsageFilters) => this.obs<UsageBreakdown[]>('/by-project', f)
-  getUsageByAgent = (f?: UsageFilters) => this.obs<UsageBreakdown[]>('/by-agent', f)
-  getUsageTools = (f?: UsageFilters) => this.obs<UsageToolStat[]>('/analytics/tools', f)
-  getUsageActivity = (f?: UsageFilters) => this.obs<UsageActivityCell[]>('/analytics/activity', f)
+  // D-WUI-17 — UsageView: tools.length / tools.map (and siblings) on a non-array response.
+  private obsValidated<T>(path: string, schema: z.ZodType<T>, filters?: UsageFilters): Promise<T> {
+    const qs = filters
+      ? '?' +
+        Object.entries(filters)
+          .filter(([, v]) => v !== undefined && v !== '' && v !== null)
+          .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+          .join('&')
+      : ''
+    return this.getValidated(`/api/observability${path}${qs}`, schema)
+  }
+  getUsageSummary = (f?: UsageFilters) => this.obsValidated('/summary', usageSummarySchema, f)
+  getUsageByModel = (f?: UsageFilters) => this.obsValidated('/by-model', looseArray(usageBreakdownSchema), f)
+  getUsageByProject = (f?: UsageFilters) => this.obsValidated('/by-project', looseArray(usageBreakdownSchema), f)
+  getUsageByAgent = (f?: UsageFilters) => this.obsValidated('/by-agent', looseArray(usageBreakdownSchema), f)
+  getUsageTools = (f?: UsageFilters) => this.obsValidated('/analytics/tools', looseArray(usageToolStatSchema), f)
+  getUsageActivity = (f?: UsageFilters) =>
+    this.obsValidated('/analytics/activity', looseArray(usageActivityCellSchema), f)
   getUsageSessionShape = (f?: UsageFilters) => this.obs<UsageSessionShape>('/analytics/session-shape', f)
-  getUsageTopSessions = (f?: UsageFilters) => this.obs<UsageSessionRow[]>('/top-sessions', f)
-  getUsageSessions = (f?: UsageFilters) => this.obs<UsageSessionRow[]>('/sessions', f)
+  getUsageTopSessions = (f?: UsageFilters) => this.obsValidated('/top-sessions', looseArray(usageSessionRowSchema), f)
+  getUsageSessions = (f?: UsageFilters) => this.obsValidated('/sessions', looseArray(usageSessionRowSchema), f)
   getUsageSessionDetail = (id: string) =>
     this.get<UsageSessionDetail>(`/api/observability/sessions/${encodeURIComponent(id)}`)
   getUsageSearch = (q: string) => this.get<UsageSearchHit[]>(`/api/observability/search?q=${encodeURIComponent(q)}`)
-  getUsageTraces = () => this.get<UsageTraces>('/api/observability/traces')
+  getUsageTraces = () => this.getValidated('/api/observability/traces', usageTracesSchema)
 }
 
 export interface UsageFilters {
@@ -1017,6 +1039,164 @@ export interface FleetActionResult {
   affected: string[]
   count: number
 }
+
+// ---------------------------------------------------------------------------
+// Validated-method schemas (PROGRAM.md R2 / D-WUI-7..25). One zod schema per
+// endpoint actually implicated in a hostile-payload crash, structurally
+// matching the hand-written interface it backs (kept loose on fields the
+// views only ever read optionally, strict on the ones an unguarded
+// `.filter`/`.map`/`Object.entries` depends on). Declared here, after every
+// interface above, and consumed by the `getValidated`/`postValidated` calls
+// below — this is the "make the bad state unrepresentable" half of the fix;
+// a response that fails one of these throws instead of becoming a `T` that
+// isn't actually shaped like one.
+// ---------------------------------------------------------------------------
+
+// SDD (D-WUI-25 — SDDView: specs.map / plans.map / tasks.map on a non-array response)
+const sddSpecSchema: z.ZodType<SddSpec> = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  user_stories: looseArray(z.string()),
+  acceptance_criteria: looseArray(z.string()),
+  status: z.enum(['draft', 'active', 'completed']),
+  created_at: z.string(),
+})
+const sddPlanSchema: z.ZodType<SddPlan> = z.object({
+  id: z.string(),
+  spec_id: z.string(),
+  technical_approach: z.string(),
+  status: z.enum(['draft', 'in_progress', 'completed']),
+  created_at: z.string(),
+})
+const sddTaskSchema: z.ZodType<SddTask> = z.object({
+  id: z.string(),
+  plan_id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  dependencies: looseArray(z.string()),
+  status: z.enum(['pending', 'in_progress', 'completed']),
+  parallel: z.boolean(),
+})
+const sddConstitutionSchema: z.ZodType<SddConstitution> = z.object({
+  governance_rules: looseArray(z.string()),
+  tech_stack: z.record(z.string(), z.string()),
+  quality_gates: looseArray(z.string()),
+})
+
+// Workflows (D-WUI-18 — WorkflowEditorView: saved.length / saved.map, capabilities panels)
+const capabilityItemSchema: z.ZodType<CapabilityItem> = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: z.enum(['agent', 'tool', 'skill', 'step', 'team', 'router']),
+  system_prompt: z.string().optional(),
+  tools: looseArray(z.string()).optional(),
+  description: z.string().optional(),
+})
+const workflowCapabilitiesSchema: z.ZodType<WorkflowCapabilities> = z.object({
+  agents: looseArray(capabilityItemSchema),
+  tools: looseArray(capabilityItemSchema),
+  skills: looseArray(capabilityItemSchema),
+})
+const savedWorkflowSchema: z.ZodType<SavedWorkflow> = z.object({
+  id: z.string(),
+  name: z.string(),
+  steps: looseArray(z.string()),
+  orchestrates: looseArray(z.string()),
+  canvas: z.unknown().optional().nullable() as z.ZodType<WorkflowCanvas | null | undefined>,
+})
+
+// Fleet supervisory plane (D-WUI-11 — FleetView: Object.entries(health.domains) on an
+// unguarded `.domains`; also crashes on the well-formed fixture via a test-shim gap, see
+// the register item — validating here means an unexpected shape throws inside the
+// existing `.catch(() => null)` at the call site instead of becoming a bad `health`.)
+const fleetDomainHealthSchema: z.ZodType<FleetDomainHealth> = z.object({
+  total: z.number(),
+  active: z.number(),
+  errored: z.number(),
+  error_rate: z.number(),
+})
+const fleetHealthSchema: z.ZodType<FleetHealth> = z.object({
+  generated_at: z.number(),
+  sessions: z.object({ total: z.number(), by_status: z.record(z.string(), z.number()) }),
+  goals: z.object({ active: z.number(), tracked: z.number() }),
+  domains: z.record(z.string(), fleetDomainHealthSchema),
+})
+const fleetTopologySessionSchema: z.ZodType<FleetTopologySession> = z.object({
+  id: z.string(),
+  status: z.string(),
+  background: z.boolean(),
+  needs_input: z.boolean(),
+  updated_at: z.number(),
+})
+const fleetTopologySchema: z.ZodType<FleetTopology> = z.object({
+  domains: looseArray(z.object({ domain: z.string(), sessions: looseArray(fleetTopologySessionSchema) })),
+  goals: looseArray(z.unknown()),
+  totals: z.object({ domains: z.number(), sessions: z.number() }),
+})
+const fleetApprovalsSchema = z.object({ pending: looseArray(z.unknown()) })
+
+// Usage / cost / observability (D-WUI-17 — UsageView: tools.length / tools.map, etc.)
+const usageSummarySchema: z.ZodType<UsageSummary> = z.object({
+  session_count: z.number(),
+  totals: z.object({
+    input_tokens: z.number(),
+    output_tokens: z.number(),
+    cache_creation_tokens: z.number(),
+    cache_read_tokens: z.number(),
+    reasoning_tokens: z.number(),
+    cost_usd: z.number(),
+  }),
+  cache_hit_rate: z.number(),
+})
+const usageBreakdownSchema: z.ZodType<UsageBreakdown> = z.object({
+  key: z.string(),
+  session_count: z.number(),
+  input_tokens: z.number(),
+  output_tokens: z.number(),
+  cost_usd: z.number(),
+})
+const usageToolStatSchema: z.ZodType<UsageToolStat> = z.object({
+  name: z.string(),
+  category: z.string(),
+  calls: z.number(),
+  success: z.number(),
+  success_rate: z.number(),
+})
+const usageActivityCellSchema: z.ZodType<UsageActivityCell> = z.object({
+  day_of_week: z.number(),
+  hour: z.number(),
+  sessions: z.number(),
+  cost_usd: z.number(),
+})
+const usageSessionRowSchema: z.ZodType<UsageSessionRow> = z.object({
+  id: z.string(),
+  project: z.string(),
+  agent: z.string(),
+  started_at: z.string().optional(),
+  ended_at: z.string().optional(),
+  message_count: z.number(),
+  total_output_tokens: z.number(),
+  cost_usd: z.number(),
+  health_grade: z.string().optional(),
+  outcome: z.string(),
+  origin: z.string(),
+})
+const usageTracesSchema: z.ZodType<UsageTraces> = z.object({
+  enabled: z.boolean(),
+  host: z.string(),
+  traces: looseArray(z.object({ session_id: z.string(), project: z.string(), url: z.string() })),
+})
+
+// Ontology actions (feeds ObjectExplorerView's bulk-action menu — D-WUI-10 territory)
+const ontologyActionSchema = z.object({
+  name: z.string(),
+  verb: z.string(),
+  description: z.string(),
+  produces_effect: z.string(),
+  required_capability: z.string(),
+  acts_on: looseArray(z.string()),
+})
 
 /**
  * Singleton API client instance for application-wide use

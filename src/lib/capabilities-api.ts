@@ -1,4 +1,18 @@
-/** Typed client for the canonical frontend capability and run-event contracts. */
+/**
+ * Typed client for the canonical frontend capability and run-event contracts.
+ *
+ * A third chokepoint into the same backend (PROGRAM.md R2): `requestJson`
+ * below is this module's one fetch+parse primitive — every exported function
+ * in this file goes through it, the same way api.ts's `get`/`post` and
+ * gateway.ts's `toResult` are the one primitive for their modules. It now
+ * accepts an optional zod schema and validates through the shared
+ * `./api-validation` boundary (`validateShape`) before returning, so a
+ * response that doesn't match `T` throws {@link ApiShapeError} here instead
+ * of silently becoming a `T` a caller `.filter()`/`.map()`s over.
+ */
+import { validateShape } from './api-validation'
+import type { z } from 'zod'
+export { ApiShapeError } from './api-validation'
 
 export type CapabilityAvailabilityStatus = 'available' | 'degraded' | 'unavailable'
 export type CapabilityRenderer = 'timeseries' | 'trace' | 'map' | 'code' | 'evidence' | 'graph' | 'table' | 'json'
@@ -248,13 +262,14 @@ function errorMessage(body: unknown, fallback: string): string {
   return fallback
 }
 
-async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+async function requestJson<T>(url: string, init?: RequestInit, schema?: z.ZodType<T>): Promise<T> {
   const response = await fetch(url, { credentials: 'same-origin', ...init })
   const body = await responseBody(response)
   if (!response.ok) {
     throw new CapabilityApiError(errorMessage(body, `Request failed (${response.status})`), response.status, body)
   }
-  return body as T
+  if (!schema) return body as T
+  return validateShape(schema, body, url)
 }
 
 export function fetchCapabilityCatalog(signal?: AbortSignal): Promise<CapabilityCatalog> {
