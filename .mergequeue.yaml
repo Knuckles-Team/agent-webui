@@ -1,0 +1,177 @@
+# Merge-queue gate declaration for `agent-webui` (a pnpm/TypeScript + Python HYBRID
+# repository).
+#
+# Bootstrapped directly onto `main` the same way `agent-utilities/.mergequeue.yaml` and
+# `epistemic-graph/.mergequeue.yaml` were (D-MQR-1's "chore(merge-queue): bootstrap
+# .mergequeue.yaml" pattern) — a direct commit, not landed through the queue itself,
+# because a repo with no queue declaration cannot enqueue the declaration through its own
+# queue. Every change to this file AFTER this bootstrap goes through the queue like any
+# other candidate.
+#
+# Read side by side with agent-utilities' and epistemic-graph's own presets — same
+# mechanism (`repository_manager/merge_queue.py`, the GENERIC driver: this repo has no
+# `agent_utilities/governance/` package of its own, so `merge_queue_runner.sh` picks the
+# generic driver for it, not agent-utilities' bespoke one), different gates.
+#
+# ── Why every gate below runs a BARE toolchain command, never `uv run` / relies on a
+# per-worktree `.venv` ─────────────────────────────────────────────────────────────────
+# The queue verifies each candidate in a THROWAWAY, freshly `git worktree add --detach`'d
+# checkout (`repository_manager.merge_queue.materialized`) — proven empirically here to
+# carry neither `.venv` nor `node_modules`, and (unlike agent-utilities' own bespoke
+# driver) the generic driver has no fallback that resolves a gate's `.venv/bin/python`
+# against the CANONICAL checkout's `.venv` when the worktree's own is missing. Two
+# register defects describe exactly this shape for this repo:
+#
+#   * D-FE-7 (agent-webui's uv workspace cannot resolve from a worktree): `uv run` asks
+#     uv to discover the ecosystem-wide workspace root by walking up ancestor
+#     directories for a `pyproject.toml` declaring `[tool.uv.workspace]`
+#     (`/home/apps/workspace/pyproject.toml`) — an ancestor of the canonical checkout but
+#     NEVER of a `git worktree`, which is rooted under `${WORKTREE_ROOT}/...` instead.
+#   * D-WD-5 (`pnpm build` / the `pytest` pre-commit hook cannot run in a worktree): a
+#     worktree gets no `node_modules` of its own (only `pnpm install` populates one).
+#
+# A real code fix for both exists (commit 902f0ed, branch agent-webui-lane-sweep-fe) but
+# is NOT YET merged to `main` — and this task's mandate is to add ONLY `.mergequeue.yaml`
+# to the canonical checkout, not that fix. So every gate below is written to be correct
+# WITHOUT that fix landing first:
+#   - Python gate: invoke bare `python3` (PATH search, no `uv`, no relative `.venv`
+#     lookup). This host's `python3` already carries `agent-utilities` editable-installed
+#     at the user site-packages level (`~/.local/lib/python3.14/site-packages`) —
+#     independent of cwd — while `pytest.ini`'s `pythonpath = agent` still makes pytest
+#     import the MERGED TREE's own `agent/agent_webui` package, not a stale installed
+#     copy (the ini file says so explicitly). Verified byte-for-byte: `python3 -m pytest`
+#     from a disposable detached worktree reproduces the SAME failing-id set as running
+#     it in the canonical checkout.
+#   - JS/TS gates: self-provision. `pnpm install --frozen-lockfile` against this host's
+#     warm pnpm content-addressable store takes ~6-10s from nothing (not a network
+#     fetch), so each gate does `test -d node_modules || pnpm install ...` before its
+#     real command. Only the FIRST fast gate in a run pays that cost — every fast gate
+#     shares the same materialized `tree`, so `node_modules` created by gate 1 is still
+#     there for gates 2-4.
+# This makes D-FE-7/D-WD-5 a non-issue for the QUEUE specifically, without editing
+# anything but this file. The underlying repo-tooling defects (the pre-commit hooks
+# themselves, run by a human/agent directly) are unchanged and still tracked open at
+# D-FE-7 / D-WD-5 pending commit 902f0ed landing for real.
+
+base: main
+batch_size: 8
+
+# Fingerprints all three toolchains every gate below depends on. Folded into the
+# baseline cache key so an in-place upgrade of any one of them busts the cache instead of
+# silently serving a baseline computed against a toolchain that no longer exists
+# (D-MQD-1, same reasoning as epistemic-graph's `cargo --version && rustc --version`).
+environment_signature: ["bash", "-c", "python3 --version && node --version && pnpm --version"]
+
+gates:
+  # ── Python: FastAPI backend + Pydantic AI agent glue ─────────────────────────────────
+  # Full `pytest.ini` `testpaths` (`agent/agent_webui/__tests__ tests`), matching the
+  # ALREADY-VERIFIED baseline in the register (D-FE-7's closure evidence: "71 failed / 73
+  # errors, all pre-existing, byte-identical between canonical and worktree"; reproduced
+  # freshly here as 69 failed / 121 passed / 2 skipped / 73 errors — the small drift from
+  # 71->69 failed is other lanes' incremental fixes landing since, not this gate). `main`
+  # is legitimately red here — `compare: pytest-ids` is the ID-level differential: a
+  # failing/erroring id is permitted ONLY when that EXACT id already fails on `main`.
+  # Never by file, module, pattern or count.
+  - name: pytest
+    command: ["python3", "-m", "pytest", "-q", "--tb=short", "-rfE",
+              "-m", "not slow", "--timeout", "60"]
+    tier: fast
+    timeout: 180
+    baseline_timeout: 300
+    compare: pytest-ids
+    on_timeout: defer
+    when_changed: ["agent/**/*.py", "*.py", "tests/*.py", "tests/**/*.py",
+                   "pyproject.toml", "pytest.ini"]
+
+  # ── TypeScript: typecheck ─────────────────────────────────────────────────────────────
+  # `main` is ALSO legitimately red here: 2 pre-existing `tsc` errors in
+  # `src/components/ai-elements/tool.tsx` (missing `approval-requested`/
+  # `approval-responded` branches — tracked elsewhere as D-TLS-1). `compare: lines`
+  # reproduces the per-diagnostic diff so a candidate that adds a NEW type error is
+  # caught even though the base was already non-clean.
+  - name: typecheck
+    command: ["bash", "-c",
+      "test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm exec tsc --noEmit"]
+    tier: fast
+    timeout: 90
+    baseline_timeout: 150
+    compare: lines
+    when_changed: ["src/**/*.ts", "src/**/*.tsx", "*.ts", "*.tsx",
+                   "tsconfig*.json", "vite.config.ts"]
+
+  # ── TypeScript: lint ──────────────────────────────────────────────────────────────────
+  # `main` is red here too: 4 pre-existing eslint errors (a prettier-format diff in
+  # GraphActivity.tsx/GoalsView.tsx, an unnecessary-assertion in capability-forms.ts, an
+  # unnecessary-conditional in page-context.tsx). No `keep_lines` filter: eslint's default
+  # stylish output is a file-header line followed by `line:col  error  message  rule`
+  # lines, both stable and comparable once the tree's absolute path is substituted out
+  # (the driver does this for every `lines`-compare gate) — same pattern as
+  # agent-utilities' own `ruff` gate, which also declares no `keep_lines`.
+  - name: lint
+    command: ["bash", "-c",
+      "test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm exec eslint"]
+    tier: fast
+    timeout: 150
+    baseline_timeout: 240
+    compare: lines
+    on_timeout: defer
+    when_changed: ["src/**/*.ts", "src/**/*.tsx", "src/**/*.js",
+                   "eslint.config.ts"]
+
+  # ── TypeScript: unit/component tests (Vitest) ────────────────────────────────────────
+  # `main` is red here too: 10 pre-existing failures, all in GraphView.test.tsx (8) and
+  # TemporalGraphView.test.tsx (2) — both render the view directly with no
+  # PageContextProvider wrapper, so usePageContextPublisher throws on mount (tracked as
+  # D-WUI-6). `compare: lines` with `keep_lines: ['^FAIL ']` is the closest JS analogue
+  # to pytest's id-level compare available to this driver (`compare` supports only
+  # `exit | lines | pytest-ids` — there is no `vitest-ids`): vitest's own `FAIL <file> >
+  # <describe> > <test>` line is the stable, itemized failing-test identifier: keeping
+  # ONLY those lines (dropping stack traces, per-run durations, and the aggregate
+  # "X failed | Y passed" summary, all of which change every run regardless of outcome)
+  # makes the compare exact instead of noisy.
+  - name: vitest
+    command: ["bash", "-c",
+      "test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm exec vitest run"]
+    tier: fast
+    timeout: 90
+    baseline_timeout: 150
+    compare: lines
+    keep_lines: ["^FAIL "]
+    when_changed: ["src/**/*.ts", "src/**/*.tsx", "vitest.config.ts"]
+
+  # ── Deliberately outside the fast tier ────────────────────────────────────────────────
+  # `pnpm build` (`tsc -b && vite build`): declared so this file stays the single
+  # description of what guards the repo, but NOT run inside the queue's lease. It fails
+  # on `main` for the SAME 2 pre-existing `tsc` errors the `typecheck` gate above already
+  # catches (verified: identical diagnostics, `tsc -b` is a superset of `tsc --noEmit`
+  # here) — running both would double the fast tier's cost for zero additional signal
+  # beyond the `vite build` bundling step, which is a deploy-time concern, not a
+  # per-candidate one.
+  - name: build
+    command: ["bash", "-c",
+      "test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm run build"]
+    tier: slow
+    timeout: 180
+    compare: lines
+
+  # Playwright e2e: declared for the same "single description" reason, NOT run inside the
+  # queue. `e2e/*.spec.ts` all target `baseURL: http://localhost:5173` (playwright.config.ts)
+  # — a live `pnpm run dev` server the queue does not (and should not) provision per
+  # candidate. Without a server, EVERY spec fails identically on both the candidate and
+  # the base ref with a bare connection refusal, which `compare: lines` would then read as
+  # "100% pre-existing, always clean" no matter what the candidate changed — a gate that
+  # can never produce a NEW signal is a gate with no teeth (the exact failure mode three
+  # other gates in this program were caught in). Wiring a real e2e gate needs the queue (or
+  # this file) to first start/stop a dev server around the run; out of scope here.
+  - name: e2e
+    command: ["bash", "-c",
+      "test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm run test:e2e"]
+    tier: slow
+    timeout: 600
+    compare: lines
+
+# No generated files are regenerated on land for this repo yet — nothing here is
+# purely-derived in the sense agent-utilities' docs/concepts.yaml is. If one starts
+# conflicting across candidates, declare it here together with its generator.
+generated_files: []
+regenerate: []
