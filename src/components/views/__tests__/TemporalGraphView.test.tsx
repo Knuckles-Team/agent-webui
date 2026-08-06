@@ -1,7 +1,20 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
 import TemporalGraphView, { withAsOf, computeExpiredEdges } from '@/components/views/TemporalGraphView'
+import { PageContextProvider } from '@/lib/page-context'
 import { renderWithProviders } from '@/__tests__/fixtures'
+
+// D-WUI-6 (pre-existing, distinct from the hostile-payload update also filed
+// under this id) — see GraphView.test.tsx's identical helper for the full
+// rationale: usePageContextPublisher throws without a PageContextProvider
+// ancestor, which neither render call here supplied.
+function renderTemporalGraphView() {
+  return renderWithProviders(
+    <PageContextProvider route="/temporal-graph" view="temporalgraph">
+      <TemporalGraphView />
+    </PageContextProvider>,
+  )
+}
 
 describe('TemporalGraphView helpers', () => {
   it('withAsOf appends the bi-temporal operator', () => {
@@ -37,7 +50,7 @@ describe('TemporalGraphView component', () => {
   })
 
   it('renders the temporal scrubber header and slider', async () => {
-    renderWithProviders(<TemporalGraphView />)
+    renderTemporalGraphView()
     await waitFor(() => {
       expect(screen.getByText('Temporal Graph')).toBeInTheDocument()
       expect(screen.getByRole('slider', { name: 'temporal-scrubber' })).toBeInTheDocument()
@@ -78,7 +91,7 @@ describe('TemporalGraphView component', () => {
       } as unknown as Response)
     }) as unknown as typeof fetch
 
-    renderWithProviders(<TemporalGraphView />)
+    renderTemporalGraphView()
 
     const slider = await screen.findByRole('slider', { name: 'temporal-scrubber' })
     // Move the scrubber back in time; this re-issues the AS OF query.

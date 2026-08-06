@@ -2,7 +2,23 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import GraphView from '@/components/views/GraphView'
 import { api } from '@/lib/api'
+import { PageContextProvider } from '@/lib/page-context'
 import { renderWithProviders, mockGraphStats, mockGraphNodes, mockGraphRelationships } from '@/__tests__/fixtures'
+
+// D-WUI-6 (pre-existing, distinct from the hostile-payload update also filed
+// under this id) — GraphView calls usePageContextPublisher, which throws
+// synchronously without a PageContextProvider ancestor. This file's own
+// render calls never supplied one, so all 10 tests here (+ TemporalGraphView's)
+// crashed on mount regardless of fetch data. Wrapping locally here (not in
+// the shared `renderWithProviders`, which ~35 other test files also use and
+// whose components mostly don't touch page-context) is the surgical fix.
+function renderGraphView(ui = <GraphView />) {
+  return renderWithProviders(
+    <PageContextProvider route="/graph" view="graph">
+      {ui}
+    </PageContextProvider>,
+  )
+}
 
 // Mock API calls. The component imports the `api` instance from '@/lib/api',
 // so the factory must expose an `api` object carrying the spied methods.
@@ -25,7 +41,7 @@ describe('GraphView Component', () => {
   })
 
   it('renders graph statistics correctly', async () => {
-    renderWithProviders(<GraphView />)
+    renderGraphView()
 
     await waitFor(() => {
       expect(screen.getByText(new RegExp(`^Nodes:\\s*${mockGraphStats.total_nodes}$`))).toBeInTheDocument()
@@ -34,7 +50,7 @@ describe('GraphView Component', () => {
   })
 
   it('renders the workspace header', async () => {
-    renderWithProviders(<GraphView />)
+    renderGraphView()
 
     await waitFor(() => {
       expect(screen.getByText('Unified Graph Workspace')).toBeInTheDocument()
@@ -42,7 +58,7 @@ describe('GraphView Component', () => {
   })
 
   it('renders the three workspace tabs', async () => {
-    renderWithProviders(<GraphView />)
+    renderGraphView()
 
     await waitFor(() => {
       expect(screen.getByRole('tab', { name: /visual canvas/i })).toBeInTheDocument()
@@ -52,7 +68,7 @@ describe('GraphView Component', () => {
   })
 
   it('switches to the cypher console tab', async () => {
-    const { user } = renderWithProviders(<GraphView />)
+    const { user } = renderGraphView()
 
     await waitFor(() => {
       expect(screen.getByRole('tab', { name: /cypher console/i })).toBeInTheDocument()
@@ -67,7 +83,7 @@ describe('GraphView Component', () => {
   })
 
   it('switches to the MAGMA context tab', async () => {
-    const { user } = renderWithProviders(<GraphView />)
+    const { user } = renderGraphView()
 
     await waitFor(() => {
       expect(screen.getByRole('tab', { name: /magma context/i })).toBeInTheDocument()
@@ -81,7 +97,7 @@ describe('GraphView Component', () => {
   })
 
   it('defaults to the visual canvas tab', async () => {
-    renderWithProviders(<GraphView />)
+    renderGraphView()
 
     await waitFor(() => {
       const canvasTab = screen.getByRole('tab', { name: /visual canvas/i })
@@ -90,7 +106,7 @@ describe('GraphView Component', () => {
   })
 
   it('handles refresh button click', async () => {
-    const { user } = renderWithProviders(<GraphView />)
+    const { user } = renderGraphView()
 
     const nodesBadge = new RegExp(`^Nodes:\\s*${mockGraphStats.total_nodes}$`)
     await waitFor(() => {
@@ -126,7 +142,7 @@ describe('GraphView Component', () => {
       } as unknown as Response)
     }) as unknown as typeof fetch
 
-    renderWithProviders(<GraphView />)
+    renderGraphView()
 
     await waitFor(() => {
       expect(screen.getByText(/^Nodes:\s*0$/)).toBeInTheDocument()

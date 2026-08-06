@@ -5,9 +5,30 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Slider } from '@/components/ui/slider'
 import { toast } from 'sonner'
+import { z } from 'zod'
+import { fetchValidated, looseArray } from '@/lib/api-validation'
 import { GraphCanvas, edgeKey } from '../knowledge-graph/GraphCanvas'
 import type { GraphNode, GraphRelationship } from '../knowledge-graph/GraphAdapter'
 import { usePageContextPublisher, type PageContextContribution } from '@/lib/page-context'
+
+// D-WUI-6 (hostile-payload update) — TemporalGraphView shares GraphView's
+// crash class: `(await res.json()) as GraphNode[]` / `as GraphRelationship[]`
+// asserted the shape without checking it, and neither fetch checked `res.ok`.
+const graphNodeSchema: z.ZodType<GraphNode> = z.object({
+  id: z.string(),
+  labels: looseArray(z.string()),
+  properties: z.record(z.string(), z.unknown()),
+})
+const graphRelationshipSchema: z.ZodType<GraphRelationship> = z.object({
+  source: z.string(),
+  type: z.string(),
+  target: z.string(),
+})
+const asOfRowSchema = z.looseObject({
+  source: z.string().optional(),
+  target: z.string().optional(),
+  valid_until: z.string().nullable().optional(),
+})
 
 /**
  * Temporal graph scrubber (Graphiti+Opik Track D / D1).
@@ -120,19 +141,15 @@ export default function TemporalGraphView() {
   }, [])
 
   const fetchGraph = async () => {
+    setLoading(true)
     try {
-      setLoading(true)
-      const [nodesRes, relsRes] = await Promise.all([
-        fetch('/api/enhanced/graph/nodes'),
-        fetch('/api/enhanced/graph/relationships'),
+      const [nodesData, relsData] = await Promise.all([
+        fetchValidated('/api/enhanced/graph/nodes', looseArray(graphNodeSchema)).catch(() => null),
+        fetchValidated('/api/enhanced/graph/relationships', looseArray(graphRelationshipSchema)).catch(() => null),
       ])
-      const nodesData = (await nodesRes.json()) as GraphNode[]
-      const relsData = (await relsRes.json()) as GraphRelationship[]
-      setNodes(nodesData)
-      setRelationships(relsData)
-    } catch (err) {
-      toast.error('Failed to load temporal graph')
-      console.error(err)
+      if (nodesData) setNodes(nodesData)
+      if (relsData) setRelationships(relsData)
+      if (!nodesData || !relsData) toast.error('Failed to load temporal graph')
     } finally {
       setLoading(false)
     }
@@ -141,18 +158,14 @@ export default function TemporalGraphView() {
   // Re-issue the AS OF query whenever the scrubber settles on a timestamp.
   const applyAsOf = useCallback(async (isoTs: string, rels: GraphRelationship[]) => {
     try {
-      const res = await fetch('/api/enhanced/graph/query', {
+      const liveRows = await fetchValidated('/api/enhanced/graph/query', looseArray(asOfRowSchema), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: withAsOf(BASE_UQL, isoTs) }),
       })
-      if (!res.ok) {
-        toast.error('Temporal query failed')
-        return
-      }
-      const liveRows = (await res.json()) as AsOfRow[]
-      setExpiredEdges(computeExpiredEdges(rels, Array.isArray(liveRows) ? liveRows : [], isoTs))
+      setExpiredEdges(computeExpiredEdges(rels, liveRows, isoTs))
     } catch (err) {
+      toast.error('Temporal query failed')
       console.error(err)
     }
   }, [])
