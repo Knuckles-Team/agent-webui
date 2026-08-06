@@ -64,7 +64,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +214,35 @@ def _is_secure(scope: Any) -> bool:
         if key.decode('latin-1').lower() == 'x-forwarded-proto':
             return value.decode('latin-1').strip().lower() == 'https'
     return False
+
+
+def _request_scheme_redirect_uri(configured_redirect_uri: str, scope: Any) -> str:
+    """``configured_redirect_uri`` with its scheme swapped to match `scope`.
+
+    D-WUI-31: ``WEBUI_OIDC_REDIRECT_URI`` is one fixed scheme (currently
+    ``http://au.arpa/auth/callback``). The ingress now also serves TLS
+    (D-WA-5), and a caller starting the login flow over https sets the
+    pre-login flow cookie ``Secure`` — correctly, per ``_is_secure`` — but
+    was then bounced to the *statically configured* http callback, so the
+    browser silently dropped that Secure cookie before ``_handle_callback``
+    could read it back, and every https login failed closed with "Sign-in
+    could not be verified".
+
+    The host/path stay exactly as configured (never derived from a
+    request-controlled ``Host`` header — that would make the callback URL
+    attacker-influenceable); only the scheme varies, to whichever one the
+    live request actually used. This is safe precisely because
+    ``scripts/provision_identity.py`` already registers BOTH the http and
+    https variant of this same host+path as valid Keycloak redirect URIs —
+    this function can only ever produce one of those two already-trusted
+    values, never a third one.
+    """
+
+    parsed = urlsplit(configured_redirect_uri)
+    scheme = 'https' if _is_secure(scope) else 'http'
+    return urlunsplit(
+        (scheme, parsed.netloc, parsed.path, parsed.query, parsed.fragment)
+    )
 
 
 def _set_cookie_header(
@@ -494,7 +523,9 @@ class OIDCBrowserSessionMiddleware:
             {
                 'client_id': self.settings.client_id,
                 'response_type': 'code',
-                'redirect_uri': self.settings.redirect_uri,
+                'redirect_uri': _request_scheme_redirect_uri(
+                    self.settings.redirect_uri, scope
+                ),
                 'scope': self.settings.scope,
                 'state': state,
                 'nonce': nonce,
@@ -558,7 +589,14 @@ class OIDCBrowserSessionMiddleware:
             {
                 'grant_type': 'authorization_code',
                 'code': codes[0],
-                'redirect_uri': self.settings.redirect_uri,
+                # Must byte-match the redirect_uri sent in _handle_login's
+                # authorize request (OAuth2 requirement) — deriving it the
+                # same way from *this* request's own scheme is correct
+                # because Keycloak redirects back to the exact URI it was
+                # given, preserving the scheme unchanged.
+                'redirect_uri': _request_scheme_redirect_uri(
+                    self.settings.redirect_uri, scope
+                ),
                 'code_verifier': str(flow.get('verifier') or ''),
             }
         )

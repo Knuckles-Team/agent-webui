@@ -141,14 +141,25 @@ export default function UsageView() {
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
+      // D-WUI-17's own closure claimed every one of these 8 calls got an
+      // independent `.catch()`; only the last (getUsageTraces) actually did.
+      // The other 7 had none, so a single hostile/failing endpoint rejected
+      // the whole Promise.all, which (a) discarded every OTHER endpoint's
+      // already-successful result too — not just the bad one's — and (b),
+      // since refresh() is invoked as `void refresh()` with nothing downstream
+      // to catch it, surfaced as an unhandled promise rejection (observed
+      // live: intermittently rejecting `hostile-payload-contract-chokepoint
+      // .test.tsx`, since Promise.all vs. Promise.allSettled ordering makes
+      // which rejection wins a race). Each call now falls back independently
+      // to the same safe default its own `useState` already declares.
       const [s, m, p, a, t, act, sess, tr] = await Promise.all([
-        api.getUsageSummary(),
-        api.getUsageByModel(),
-        api.getUsageByProject(),
-        api.getUsageByAgent(),
-        api.getUsageTools(),
-        api.getUsageActivity(),
-        api.getUsageTopSessions({ limit: 25 }),
+        api.getUsageSummary().catch(() => null),
+        api.getUsageByModel().catch(() => []),
+        api.getUsageByProject().catch(() => []),
+        api.getUsageByAgent().catch(() => []),
+        api.getUsageTools().catch(() => []),
+        api.getUsageActivity().catch(() => []),
+        api.getUsageTopSessions({ limit: 25 }).catch(() => []),
         api.getUsageTraces().catch(() => null),
       ])
       setSummary(s)

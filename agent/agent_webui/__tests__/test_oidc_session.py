@@ -23,6 +23,7 @@ from agent_webui.oidc_session import (
     OIDCSettings,
     _clear_session_cookie_headers,
     _read_session_cookie,
+    _request_scheme_redirect_uri,
     _safe_next,
     _session_cookie_headers,
     load_settings,
@@ -76,13 +77,20 @@ class _Recorder:
         return b''.join(m.get('body', b'') for m in self.messages[1:])
 
 
-def _scope(path: str, *, method: str = 'GET', headers=None, query: bytes = b''):
+def _scope(
+    path: str,
+    *,
+    method: str = 'GET',
+    headers=None,
+    query: bytes = b'',
+    scheme: str = 'http',
+):
     return {
         'type': 'http',
         'method': method,
         'path': path,
         'query_string': query,
-        'scheme': 'http',
+        'scheme': scheme,
         'headers': list(headers or []),
     }
 
@@ -236,6 +244,78 @@ async def test_login_redirects_with_pkce_and_a_flow_cookie(monkeypatch):
     assert 'HttpOnly' in flow and 'Max-Age=600' in flow
 
 
+def test_redirect_uri_scheme_matches_the_request_not_the_static_config():
+    """D-WUI-31: a fixed-scheme WEBUI_OIDC_REDIRECT_URI broke login over
+    https once the ingress also started serving TLS (D-WA-5) — the pre-login
+    flow cookie became `Secure` (correctly) but Keycloak bounced back to the
+    still-http configured callback, so the browser dropped the cookie and
+    the callback's CSRF state check had nothing to compare against, failing
+    every https login closed with "Sign-in could not be verified" even with
+    a perfectly valid credential. Host and path must stay exactly as
+    configured (never derived from a request-controlled Host header)."""
+    configured = 'http://webui.example.test/auth/callback'
+    assert (
+        _request_scheme_redirect_uri(configured, _scope(LOGIN_PATH, scheme='http'))
+        == configured
+    )
+    assert (
+        _request_scheme_redirect_uri(configured, _scope(LOGIN_PATH, scheme='https'))
+        == 'https://webui.example.test/auth/callback'
+    )
+    # X-Forwarded-Proto (the ingress' forwarded scheme) must also be honored —
+    # the same signal _is_secure already trusts for the Secure cookie flag.
+    forwarded = _scope(
+        LOGIN_PATH, scheme='http', headers=[(b'x-forwarded-proto', b'https')]
+    )
+    assert (
+        _request_scheme_redirect_uri(configured, forwarded)
+        == 'https://webui.example.test/auth/callback'
+    )
+
+
+@pytest.mark.anyio
+async def test_login_and_callback_use_the_requests_own_scheme_for_redirect_uri(
+    monkeypatch,
+):
+    """End-to-end: /auth/login sent over https must advertise the https
+    callback to the provider, and /auth/callback landing over https must
+    exchange the code with that same https redirect_uri (OAuth2 requires
+    the two to byte-match) — never the statically configured http one."""
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=_settings())
+
+    async def _endpoints():
+        return {'authorization_endpoint': f'{ISSUER}/protocol/openid-connect/auth'}
+
+    monkeypatch.setattr(middleware, '_endpoints', _endpoints)
+    send = _Recorder()
+    await middleware(
+        _scope(LOGIN_PATH, query=b'next=%2Fgraph', scheme='https'), None, send
+    )
+    location = send.header(b'location').decode('latin-1')
+    assert 'redirect_uri=https%3A%2F%2Fwebui.example.test%2Fauth%2Fcallback' in location
+
+    seen_redirect_uri = {}
+
+    async def _record_token_request(form):
+        seen_redirect_uri['value'] = form['redirect_uri']
+        return None  # short-circuits with 401, which this test doesn't care about
+
+    monkeypatch.setattr(middleware, '_token_request', _record_token_request)
+    flow = middleware._seal({'state': 's', 'verifier': 'v', 'nonce': 'n', 'next': '/'})
+    callback_send = _Recorder()
+    await middleware(
+        _scope(
+            CALLBACK_PATH,
+            query=b'code=abc&state=s',
+            scheme='https',
+            headers=[(b'cookie', f'{FLOW_COOKIE}={flow}'.encode())],
+        ),
+        None,
+        callback_send,
+    )
+    assert seen_redirect_uri['value'] == 'https://webui.example.test/auth/callback'
+
+
 @pytest.mark.anyio
 async def test_callback_without_a_matching_state_is_refused(monkeypatch):
     middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=_settings())
@@ -282,7 +362,9 @@ async def test_session_endpoint_never_returns_the_token():
     assert body['authenticated'] is True
     assert body['subject'] == 'user-1'
     assert body['roles'] == ['kg:read'], 'only graph/webui capabilities are reported'
-    assert body['webui_role'] == 'user', 'kg:read falls back to the WebUI user role (R9)'
+    assert body['webui_role'] == 'user', (
+        'kg:read falls back to the WebUI user role (R9)'
+    )
     assert token not in send.body.decode('utf-8')
 
 
