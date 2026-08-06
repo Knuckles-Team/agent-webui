@@ -89,6 +89,25 @@ gates:
   # `approval-responded` branches — tracked elsewhere as D-TLS-1). `compare: lines`
   # reproduces the per-diagnostic diff so a candidate that adds a NEW type error is
   # caught even though the base was already non-clean.
+  #
+  # `ignore_lines` (D-WUI-7): the throwaway worktree this gate runs in NEVER has
+  # `node_modules` (it is a fresh `git worktree add --detach`), so `pnpm install
+  # --frozen-lockfile --prefer-offline` runs on EVERY invocation — baseline and
+  # candidate alike — and its stdout was going into the SAME `compare: lines` set as
+  # `tsc`'s diagnostics. Two rejections (w0-webui-registry: "9 NEW signal(s)",
+  # w0-webui-harness: "8 NEW signal(s)", both same base 1f2f4025861c) turned out to
+  # carry zero real new `tsc` errors on inspection — reproduced with a fresh
+  # `git merge-tree --write-tree` of the candidate onto that exact base, freshly
+  # installed, twice. Proof of the actual bug: running the IDENTICAL gate command
+  # twice against the IDENTICAL commit (`main`, unchanged) produces DIFFERENT output —
+  # pnpm's `Progress: resolved N, reused N, downloaded N, added N` lines vary run to
+  # run (install is concurrent; the intermediate snapshots it logs are not
+  # reproducible), and so does the trailing `Done in N(.N)s using pnpm vX` line. Both
+  # differences trip `compare: lines` as spurious "new" signals with no code behind
+  # them — pure infrastructure noise, not a regression. `ignore_lines` drops the whole
+  # install preamble (dependency-list lines, the resolve/progress counters, and the
+  # timing summary) from the compared set, the same discipline the `vitest` gate below
+  # already applies via `keep_lines` for its own noisy preamble.
   - name: typecheck
     command: ["bash", "-c",
       "test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm exec tsc --noEmit"]
@@ -96,6 +115,9 @@ gates:
     timeout: 90
     baseline_timeout: 150
     compare: lines
+    ignore_lines: ["^\\+ \\S", "^\\+{10,}$", "^Progress: ", "^Packages: ",
+                   "^Lockfile is up to date", "^Done in .* using pnpm",
+                   "^dependencies:$", "^devDependencies:$"]
     when_changed: ["src/**/*.ts", "src/**/*.tsx", "*.ts", "*.tsx",
                    "tsconfig*.json", "vite.config.ts"]
 
@@ -107,10 +129,16 @@ gates:
   # lines, both stable and comparable once the tree's absolute path is substituted out
   # (the driver does this for every `lines`-compare gate) — same pattern as
   # agent-utilities' own `ruff` gate, which also declares no `keep_lines`.
+  #
+  # `ignore_lines`: same pnpm-install-preamble noise as the `typecheck` gate above (this
+  # gate self-provisions `node_modules` the same way) — see D-WUI-7.
   - name: lint
     command: ["bash", "-c",
       "test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm exec eslint"]
     tier: fast
+    ignore_lines: ["^\\+ \\S", "^\\+{10,}$", "^Progress: ", "^Packages: ",
+                   "^Lockfile is up to date", "^Done in .* using pnpm",
+                   "^dependencies:$", "^devDependencies:$"]
     timeout: 150
     baseline_timeout: 240
     compare: lines
