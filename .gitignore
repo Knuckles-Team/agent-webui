@@ -21,6 +21,10 @@ playwright-report
 playwright/.cache
 *.lcov
 
+# Playwright auth setup writes the live session's storageState here
+# (real Keycloak access/refresh tokens) — never commit a session artifact.
+playwright/.auth/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
