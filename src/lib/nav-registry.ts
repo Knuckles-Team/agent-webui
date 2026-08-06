@@ -47,9 +47,26 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-/** Minimum role required to see/use a route. Metadata only for now — no enforcement is
- * wired yet; a future lane (Wave 1: "RBAC + per-user state") consumes this field. */
+/** Minimum role required to see/use a route. Enforced in two places, both derived from
+ * this same field: {@link roleAtLeast} filters the sidebar and gates route rendering in
+ * `App.tsx` (UI), and `agent/agent_webui/rbac.py` enforces the equivalent ladder
+ * server-side in `WebUIAuthorizationMiddleware` — a hidden nav item alone is not a
+ * permission. */
 export type Role = 'reader' | 'user' | 'maintainer' | 'admin'
+
+/** Ascending privilege order — index is the rank `roleAtLeast` compares. */
+export const ROLE_ORDER: readonly Role[] = ['reader', 'user', 'maintainer', 'admin']
+
+export function isRole(value: unknown): value is Role {
+  return typeof value === 'string' && (ROLE_ORDER as readonly string[]).includes(value)
+}
+
+/** True when `role` carries at least the privilege of `minimum` on the reader<user<
+ * maintainer<admin ladder. Unknown roles rank below every declared role (fail closed). */
+export function roleAtLeast(role: Role | null | undefined, minimum: Role): boolean {
+  const roleRank = role ? ROLE_ORDER.indexOf(role) : -1
+  return roleRank >= ROLE_ORDER.indexOf(minimum)
+}
 
 /** The eight top-level information-architecture sections (charter: agent-webui IA table). */
 export type SectionId =

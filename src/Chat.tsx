@@ -56,10 +56,16 @@ import { useThrottle } from '@uidotdev/usehooks'
 import { nanoid } from 'nanoid'
 import { useConversationIdFromUrl } from './hooks/useConversationIdFromUrl'
 import { Part } from './Part'
-import type { ConversationEntry } from './types'
 import { getToolIcon } from '@/lib/tool-icons'
 import { GraphActivity, type GraphEvent } from '@/components/ai-elements/graph-activity'
 import { pageContextSystemPrompt, type PageContextEnvelope } from '@/lib/page-context'
+import { useIdentity } from '@/lib/auth'
+import {
+  readConversationMessages,
+  removeConversationMessages,
+  saveConversationEntry,
+  writeConversationMessages,
+} from '@/lib/chat-store'
 
 /**
  * Interface for specialized message parts (sources, images, etc.)
@@ -533,6 +539,8 @@ const Chat = ({ pageContext }: ChatProps) => {
   const throttledMessages = useThrottle<UIMessage[]>(messages, 500)
   const [conversationId, setConversationId] = useConversationIdFromUrl()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const { identity } = useIdentity()
+  const userKey = identity.userKey
 
   // Persist mode selection so navigation/reload preserves the user's choice.
   useEffect(() => {
@@ -589,9 +597,9 @@ const Chat = ({ pageContext }: ChatProps) => {
     if (conversationId === '/') {
       setMessages([])
     } else {
-      const localStorageMessages = window.localStorage.getItem(conversationId)
-      if (localStorageMessages) {
-        setMessages(JSON.parse(localStorageMessages) as typeof messages)
+      const storedMessages = readConversationMessages(userKey, conversationId)
+      if (storedMessages) {
+        setMessages(storedMessages as typeof messages)
       } else {
         const fetchMessages = async () => {
           try {
@@ -608,7 +616,7 @@ const Chat = ({ pageContext }: ChatProps) => {
       }
     }
     textareaRef.current?.focus()
-  }, [conversationId])
+  }, [conversationId, userKey])
 
   /**
    * Handles multi-modal image uploads, converting files to base64 for the AI SDK
@@ -679,7 +687,7 @@ Available commands:
       case '/reset':
         setMessages([])
         if (conversationId && conversationId !== '/') {
-          window.localStorage.removeItem(conversationId)
+          removeConversationMessages(userKey, conversationId)
         }
         setInput('')
         return true
@@ -700,7 +708,7 @@ Available commands:
           }
         }
 
-        saveConversationEntryInLocalStorage(newConversationId, arg ? `New chat (${arg})` : 'New Chat')
+        saveConversationEntry(userKey, newConversationId, arg ? `New chat (${arg})` : 'New Chat')
         setConversationId(newConversationId)
 
         const welcomeMsg: UIMessage = {
@@ -901,7 +909,7 @@ Available commands:
         const newConversationId = `/${nanoid()}`
         setConversationId(newConversationId)
 
-        saveConversationEntryInLocalStorage(newConversationId, input)
+        saveConversationEntry(userKey, newConversationId, input)
       }
 
       const message: UIMessage = {
@@ -940,7 +948,7 @@ Available commands:
   // Persist messages to local storage whenever they are updated
   useEffect(() => {
     if (conversationId && throttledMessages.length > 0) {
-      window.localStorage.setItem(conversationId, JSON.stringify(throttledMessages))
+      writeConversationMessages(userKey, conversationId, throttledMessages)
     }
   }, [throttledMessages, conversationId])
 
@@ -1366,28 +1374,3 @@ Available commands:
 }
 
 export default Chat
-
-/**
- * Limit for the displayed length of the first message in conversation history
- */
-const MAX_FIRST_MESSAGE_LENGTH = 30
-
-/**
- * Persists a new conversation entry to the local storage list
- */
-function saveConversationEntryInLocalStorage(newConversationId: string, firstMessage: string) {
-  const currentConversations = window.localStorage.getItem('conversationIds') ?? '[]'
-  const conversationIds = JSON.parse(currentConversations) as ConversationEntry[]
-  const trimmedFirstMessage =
-    firstMessage.length > MAX_FIRST_MESSAGE_LENGTH
-      ? firstMessage.slice(0, MAX_FIRST_MESSAGE_LENGTH) + '...'
-      : firstMessage
-  conversationIds.unshift({
-    id: newConversationId,
-    firstMessage: trimmedFirstMessage,
-    timestamp: Date.now(),
-  })
-  window.localStorage.setItem('conversationIds', JSON.stringify(conversationIds))
-
-  window.dispatchEvent(new Event('local-storage-change'))
-}

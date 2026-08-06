@@ -1,6 +1,6 @@
 import { CirclePlus, MessageCircle, Trash, Pencil, Check, X } from 'lucide-react'
 import type React from 'react'
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -32,74 +32,11 @@ import {
   useConversationIdFromUrl,
 } from '@/hooks/useConversationIdFromUrl'
 import { cn } from '@/lib/utils'
-import { SECTIONS, routesBySection } from '@/lib/nav-registry'
+import { SECTIONS, roleAtLeast, routesBySection } from '@/lib/nav-registry'
+import { useIdentity } from '@/lib/auth'
+import { deleteConversationEntry, renameConversationEntry, useConversations } from '@/lib/chat-store'
 import type { ConversationEntry } from '@/types'
 import { ModeToggle } from './mode-toggle'
-
-function useConversations(): ConversationEntry[] {
-  const [localConversations, setLocalConversations] = useState<ConversationEntry[]>(() => {
-    const stored = window.localStorage.getItem('conversationIds')
-    return stored ? (JSON.parse(stored) as ConversationEntry[]) : []
-  })
-  const [remoteConversations, setRemoteConversations] = useState<ConversationEntry[]>([])
-
-  useEffect(() => {
-    const fetchRemote = async () => {
-      try {
-        const res = await fetch('/api/enhanced/chats')
-        if (res.ok) {
-          const data = (await res.json()) as ConversationEntry[]
-
-          setRemoteConversations(
-            data.map((c) => ({
-              ...c,
-              timestamp:
-                typeof c.timestamp === 'string' || typeof c.timestamp === 'number'
-                  ? new Date(c.timestamp).getTime()
-                  : Date.now(),
-            })),
-          )
-        }
-      } catch (err) {
-        console.error('Failed to fetch remote conversations', err)
-      }
-    }
-    void fetchRemote()
-  }, [])
-
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'conversationIds' && e.newValue) {
-        setLocalConversations(JSON.parse(e.newValue) as ConversationEntry[])
-      }
-    }
-
-    const handleCustomStorageChange = () => {
-      const stored = window.localStorage.getItem('conversationIds')
-      setLocalConversations(stored ? (JSON.parse(stored) as ConversationEntry[]) : [])
-    }
-
-    window.addEventListener('storage', handleStorageChange)
-    window.addEventListener('local-storage-change', handleCustomStorageChange)
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange)
-      window.removeEventListener('local-storage-change', handleCustomStorageChange)
-    }
-  }, [])
-
-  const allConversations = useMemo(() => {
-    const map = new Map<string, ConversationEntry>()
-
-    localConversations.forEach((c) => map.set(c.id, c))
-
-    remoteConversations.forEach((c) => map.set(c.id, c))
-
-    return Array.from(map.values()).sort((a, b) => b.timestamp - a.timestamp)
-  }, [localConversations, remoteConversations])
-
-  return allConversations
-}
 
 function doLocalNavigation(e: React.MouseEvent) {
   if (e.button !== 0 || e.metaKey || e.ctrlKey) {
@@ -112,17 +49,8 @@ function doLocalNavigation(e: React.MouseEvent) {
   e.preventDefault()
 }
 
-function deleteConversation(conversationId: string) {
-  const stored = window.localStorage.getItem('conversationIds')
-  if (stored) {
-    const conversations = JSON.parse(stored) as ConversationEntry[]
-    const updated = conversations.filter((conv) => conv.id !== conversationId)
-    window.localStorage.setItem('conversationIds', JSON.stringify(updated))
-
-    window.dispatchEvent(new Event('local-storage-change'))
-  }
-
-  window.localStorage.removeItem(conversationId)
+function deleteConversation(userKey: string, conversationId: string) {
+  deleteConversationEntry(userKey, conversationId)
 
   if (window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY) === conversationId) {
     window.localStorage.removeItem(ACTIVE_CONVERSATION_STORAGE_KEY)
@@ -138,7 +66,8 @@ function deleteConversation(conversationId: string) {
 }
 
 export function AppSidebar() {
-  const conversations = useConversations()
+  const { identity } = useIdentity()
+  const conversations = useConversations(identity.userKey)
   const [conversationId] = useConversationIdFromUrl()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [conversationToDelete, setConversationToDelete] = useState<ConversationEntry | null>(null)
@@ -168,7 +97,7 @@ export function AppSidebar() {
 
   const handleConfirmDelete = () => {
     if (conversationToDelete) {
-      deleteConversation(conversationToDelete.id)
+      deleteConversation(identity.userKey, conversationToDelete.id)
       setDeleteDialogOpen(false)
       setConversationToDelete(null)
       toast.success('Chat deleted successfully')
@@ -186,16 +115,8 @@ export function AppSidebar() {
     e.preventDefault()
     e.stopPropagation()
     if (editValue.trim()) {
-      const stored = window.localStorage.getItem('conversationIds')
-      if (stored) {
-        const conversations = JSON.parse(stored) as ConversationEntry[]
-        const updated = conversations.map((conv) =>
-          conv.id === id ? { ...conv, firstMessage: editValue.trim() } : conv,
-        )
-        window.localStorage.setItem('conversationIds', JSON.stringify(updated))
-        window.dispatchEvent(new Event('local-storage-change'))
-        toast.success('Chat renamed')
-      }
+      renameConversationEntry(identity.userKey, id, editValue.trim())
+      toast.success('Chat renamed')
     }
     setEditingId(null)
   }
@@ -228,9 +149,14 @@ export function AppSidebar() {
 
         <SidebarContent>
           {/* Every section and page below is derived from src/lib/nav-registry.ts — there
-              is no second place in this file that declares what pages exist. */}
+              is no second place in this file that declares what pages exist. Routes below
+              `identity.role` are filtered out here (R9): this is the UI half of role
+              enforcement, decoration on its own — `WebUIAuthorizationMiddleware` on the
+              server enforces the same `minRole` ladder for the routes it can attribute to
+              an API surface, so a hidden nav item is never the ONLY thing standing between
+              a caller and a page. */}
           {SECTIONS.map((section) => {
-            const routes = routesBySection(section.id)
+            const routes = routesBySection(section.id).filter((route) => roleAtLeast(identity.role, route.minRole))
             if (routes.length === 0) return null
             return (
               <SidebarGroup key={section.id}>
