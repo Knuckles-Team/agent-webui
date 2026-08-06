@@ -5,9 +5,17 @@
  * Orchestrates the overall layout, theme management, sidebar navigation,
  * and routing between different views (Chat, Files, Skills, Scheduling, etc.).
  * Initializes the React Query client and MCP context provider.
+ *
+ * Routing is derived from `src/lib/nav-registry.ts` (`ROUTES`) — that module is the
+ * sole source of truth for what pages exist. Three routes get bespoke handling here
+ * because they need something the generic zero-prop `RouteDef.element` contract can't
+ * express: Dashboard (always mounted, toggled visible) and Chat (a persistent
+ * prop-driven singleton, full-page on `/chat` and a drawer everywhere else — a sibling
+ * lane owns its chat-store sync) and Object detail (needs a `:id` route param). Every
+ * other route is mounted generically from its `RouteDef`.
  */
 
-import { useState, useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState, Suspense } from 'react'
 import { AppSidebar } from './components/app-sidebar.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
@@ -15,41 +23,8 @@ import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
 import { cn } from './lib/utils.ts'
 import ChatPanel from './components/ChatPanel'
-import { CapabilityWorkbench } from './components/capabilities/CapabilityWorkbench'
-import DashboardView from './components/views/DashboardView'
-import FilesView from './components/views/FilesView'
-import SkillsView from './components/views/SkillsView'
-import SchedulingView from './components/views/SchedulingView'
-import ConfigurationView from './components/views/ConfigurationView'
-import KnowledgeBaseView from './components/views/KnowledgeBaseView'
-import GraphView from './components/views/GraphView'
-import TemporalGraphView from './components/views/TemporalGraphView'
-import CodeGraphView from './components/views/CodeGraphView'
-import ExtractionView from './components/views/ExtractionView'
-import OpsPanelView from './components/views/OpsPanelView'
-import MagmaView from './components/views/MagmaView'
-import CypherReplView from './components/views/CypherReplView'
-import PromptsView from './components/views/PromptsView'
-import SessionsView from './components/views/SessionsView'
-import GoalsView from './components/views/GoalsView'
-import FleetView from './components/views/FleetView'
-import EcosystemView from './components/views/EcosystemView'
-import WorkflowEditorView from './components/views/WorkflowEditorView'
-import ObjectExplorerView from './components/views/ObjectExplorerView'
 import ObjectView from './components/views/ObjectView'
-import VertexView from './components/views/VertexView'
-import SchemaView from './components/views/SchemaView'
-import SparqlView from './components/views/SparqlView'
-import CatalogueView from './components/views/CatalogueView'
-import LearnView from './components/views/LearnView'
-import UsageView from './components/views/UsageView'
-import SweView from './components/views/SweView'
-import ObservabilityView from './components/views/ObservabilityView'
-import DataAnalystView from './components/views/DataAnalystView'
-import BrokerView from './components/views/BrokerView'
-import SystemStatusView from './components/views/SystemStatusView'
-import LiveDashboardsView from './components/views/dashboards/LiveDashboardsView'
-import AdminView from './components/views/AdminView'
+import { ROUTES, matchRoute } from './lib/nav-registry.ts'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
@@ -60,6 +35,37 @@ import { getDefaultPageActions, PageContextProvider, type PageContextSelection }
  */
 const queryClient = new QueryClient()
 
+/** The always-mounted homepage route (visibility is toggled, never unmounted). */
+const DASHBOARD_ROUTE = ROUTES.find((route) => route.id === 'observability.dashboard')
+if (!DASHBOARD_ROUTE) throw new Error('nav-registry: observability.dashboard route is missing')
+const DashboardElement = DASHBOARD_ROUTE.element
+
+/**
+ * Maps a RouteDef id to the pre-registry `view` identifier that page-context.tsx's
+ * per-view `allowedActions` table still keys off (`chat`, `files`, `graph`,
+ * `temporalgraph`, `workflows`, `goals`, `object`, `dashboard`). Routes not listed
+ * here just use their own RouteDef id as the view identifier — safe, since untouched
+ * keys simply fall back to the common action set there.
+ */
+const LEGACY_VIEW_IDS: Record<string, string> = {
+  'chat.console': 'chat',
+  'workspace.files': 'files',
+  'knowledge.graph': 'graph',
+  'knowledge.temporal-graph': 'temporalgraph',
+  'control-plane.workflows': 'workflows',
+  'control-plane.goals': 'goals',
+  'knowledge.object-detail': 'object',
+  'observability.dashboard': 'dashboard',
+}
+
+function currentPathAndSearch(): string {
+  return `${window.location.pathname}${window.location.search}`
+}
+
+function RouteLoadingFallback() {
+  return <div className="py-16 text-center text-sm text-muted-foreground">Loading…</div>
+}
+
 /**
  * Root Application Component
  *
@@ -67,12 +73,8 @@ const queryClient = new QueryClient()
  * providers for theme, sidebar, MCP tools, and data fetching.
  */
 export default function App() {
-  /** Possible views: 'dashboard', 'chat', 'files', 'skills', 'scheduling', 'configuration', 'knowledge', 'graph', 'workflows', 'ops', 'magma', 'cypher', 'prompts', 'sessions', 'goals', 'ecosystem', 'explorer', 'object', 'vertex', 'schema', 'sparql', 'catalogue', 'learn', 'observability', 'dataanalyst', 'broker', 'systemstatus' */
-  const [currentView, setCurrentView] = useState('dashboard')
-  /** Selected ontology object id, parsed from the `/object/:id` path. */
-  const [objectId, setObjectId] = useState('')
   /** Exact route included in the assistant's typed page-context envelope. */
-  const [currentRoute, setCurrentRoute] = useState(() => `${window.location.pathname}${window.location.search}`)
+  const [currentRoute, setCurrentRoute] = useState(currentPathAndSearch)
 
   /**
    * Effect hook to synchronize the current view with the browser URL path.
@@ -80,46 +82,7 @@ export default function App() {
    */
   useEffect(() => {
     const handleNavigation = () => {
-      const path = window.location.pathname
-      setCurrentRoute(`${path}${window.location.search}`)
-      if (path === '/') setCurrentView('dashboard')
-      else if (path === '/chat') setCurrentView('chat')
-      else if (path === '/files') setCurrentView('files')
-      else if (path === '/skills') setCurrentView('skills')
-      else if (path === '/scheduling') setCurrentView('scheduling')
-      else if (path === '/configuration') setCurrentView('configuration')
-      else if (path === '/knowledge') setCurrentView('knowledge')
-      else if (path === '/graph') setCurrentView('graph')
-      else if (path === '/temporal-graph') setCurrentView('temporalgraph')
-      else if (path === '/code-graph') setCurrentView('codegraph')
-      else if (path === '/extraction') setCurrentView('extraction')
-      else if (path === '/ops') setCurrentView('ops')
-      else if (path === '/magma') setCurrentView('magma')
-      else if (path === '/cypher') setCurrentView('cypher')
-      else if (path === '/prompts') setCurrentView('prompts')
-      else if (path === '/sessions') setCurrentView('sessions')
-      else if (path === '/goals') setCurrentView('goals')
-      else if (path === '/fleet') setCurrentView('fleet')
-      else if (path === '/ecosystem') setCurrentView('ecosystem')
-      else if (path === '/usage') setCurrentView('usage')
-      else if (path === '/swe') setCurrentView('swe')
-      else if (path === '/observability') setCurrentView('observability')
-      else if (path === '/data-analyst') setCurrentView('dataanalyst')
-      else if (path === '/broker') setCurrentView('broker')
-      else if (path === '/system-status') setCurrentView('systemstatus')
-      else if (path === '/dashboards') setCurrentView('dashboards')
-      else if (path === '/admin') setCurrentView('admin')
-      else if (path === '/workflows') setCurrentView('workflows')
-      else if (path === '/explorer') setCurrentView('explorer')
-      else if (path === '/vertex') setCurrentView('vertex')
-      else if (path === '/schema') setCurrentView('schema')
-      else if (path === '/sparql') setCurrentView('sparql')
-      else if (path === '/catalogue') setCurrentView('catalogue')
-      else if (path === '/learn') setCurrentView('learn')
-      else if (path.startsWith('/object/')) {
-        setObjectId(decodeURIComponent(path.slice('/object/'.length)))
-        setCurrentView('object')
-      } else setCurrentView('chat')
+      setCurrentRoute(currentPathAndSearch())
     }
 
     // Listen for custom navigation events emitted by sidebar/links
@@ -131,9 +94,19 @@ export default function App() {
     }
   }, [])
 
+  const pathname = useMemo(() => new URL(currentRoute, window.location.origin).pathname, [currentRoute])
+  const match = useMemo(() => matchRoute(pathname), [pathname])
+  const activeRoute = match?.route ?? null
+  /** Unregistered paths fall back to Chat, matching the pre-registry behavior. */
+  const isChat = !activeRoute || activeRoute.id === 'chat.console'
+  const isDashboard = activeRoute?.id === 'observability.dashboard'
+  const isObjectDetail = activeRoute?.id === 'knowledge.object-detail'
+  const objectId = isObjectDetail ? (match?.params.id ?? '') : ''
+  const currentView = activeRoute ? (LEGACY_VIEW_IDS[activeRoute.id] ?? activeRoute.id) : 'chat'
+
   const baseSelection = useMemo<PageContextSelection[]>(
-    () => (currentView === 'object' && objectId ? [{ kind: 'ontology-object', id: objectId, label: objectId }] : []),
-    [currentView, objectId],
+    () => (isObjectDetail && objectId ? [{ kind: 'ontology-object', id: objectId, label: objectId }] : []),
+    [isObjectDetail, objectId],
   )
   const allowedActions = useMemo(() => getDefaultPageActions(currentView), [currentView])
 
@@ -161,83 +134,18 @@ export default function App() {
                     </div>
                   </header>
 
-                  {/* Dashboard View — Agent-OS Homepage (default landing) */}
-                  <div
-                    className={cn(
-                      'flex flex-col w-full h-full overflow-hidden',
-                      currentView === 'dashboard' ? 'block' : 'hidden',
-                    )}
-                  >
-                    <DashboardView />
+                  {/* Dashboard View — Agent-OS Homepage (default landing, always mounted) */}
+                  <div className={cn('flex flex-col w-full h-full overflow-hidden', isDashboard ? 'block' : 'hidden')}>
+                    <Suspense fallback={<RouteLoadingFallback />}>
+                      <DashboardElement />
+                    </Suspense>
                   </div>
 
-                  {/* Secondary Views (Rendered conditionally) */}
-                  {currentView !== 'chat' && currentView !== 'dashboard' && (
+                  {/* Every other registered route (rendered conditionally) */}
+                  {!isChat && !isDashboard && (
                     <div className="flex flex-col flex-1 h-screen overflow-auto p-8">
                       <div className="mx-auto w-full">
-                        {currentView === 'files' && (
-                          <>
-                            <h1 className="text-2xl font-bold mb-4">Files</h1>
-                            <FilesView />
-                          </>
-                        )}
-                        {currentView === 'skills' && (
-                          <>
-                            <h1 className="text-2xl font-bold mb-4">Tools</h1>
-                            <SkillsView />
-                          </>
-                        )}
-                        {currentView === 'scheduling' && (
-                          <>
-                            <h1 className="text-2xl font-bold mb-4">Scheduling</h1>
-                            <SchedulingView />
-                          </>
-                        )}
-                        {currentView === 'configuration' && (
-                          <>
-                            <h1 className="text-2xl font-bold mb-4">Configuration</h1>
-                            <ConfigurationView />
-                          </>
-                        )}
-                        {currentView === 'knowledge' && (
-                          <>
-                            <h1 className="text-2xl font-bold mb-4">Knowledge</h1>
-                            <KnowledgeBaseView />
-                          </>
-                        )}
-                        {currentView === 'graph' && <GraphView />}
-                        {currentView === 'temporalgraph' && <TemporalGraphView />}
-                        {currentView === 'codegraph' && <CodeGraphView />}
-                        {currentView === 'extraction' && <ExtractionView />}
-                        {currentView === 'workflows' && <WorkflowEditorView />}
-                        {currentView === 'ops' && <OpsPanelView />}
-                        {currentView === 'magma' && <MagmaView />}
-                        {currentView === 'cypher' && <CypherReplView />}
-                        {currentView === 'prompts' && (
-                          <>
-                            <h1 className="text-2xl font-bold mb-4">Prompts</h1>
-                            <PromptsView />
-                          </>
-                        )}
-                        {currentView === 'sessions' && <SessionsView />}
-                        {currentView === 'goals' && <GoalsView />}
-                        {currentView === 'fleet' && <FleetView />}
-                        {currentView === 'ecosystem' && <EcosystemView />}
-                        {currentView === 'usage' && <UsageView />}
-                        {currentView === 'swe' && <SweView />}
-                        {currentView === 'observability' && <ObservabilityView />}
-                        {currentView === 'dataanalyst' && <DataAnalystView />}
-                        {currentView === 'broker' && <BrokerView />}
-                        {currentView === 'systemstatus' && <SystemStatusView />}
-                        {currentView === 'dashboards' && <LiveDashboardsView />}
-                        {currentView === 'admin' && <AdminView />}
-                        {currentView === 'explorer' && <ObjectExplorerView />}
-                        {currentView === 'vertex' && <VertexView />}
-                        {currentView === 'schema' && <SchemaView />}
-                        {currentView === 'sparql' && <SparqlView />}
-                        {currentView === 'catalogue' && <CatalogueView />}
-                        {currentView === 'learn' && <LearnView />}
-                        {currentView === 'object' && (
+                        {isObjectDetail ? (
                           <ObjectView
                             objectId={objectId}
                             onNavigate={(id) => {
@@ -245,12 +153,18 @@ export default function App() {
                               window.dispatchEvent(new Event('history-state-changed'))
                             }}
                           />
+                        ) : (
+                          <>
+                            <h1 className="text-2xl font-bold mb-1">{activeRoute.label}</h1>
+                            <p className="text-sm text-muted-foreground mb-4">{activeRoute.blurb}</p>
+                            <Suspense fallback={<RouteLoadingFallback />}>
+                              <activeRoute.element />
+                            </Suspense>
+                          </>
                         )}
                       </div>
                     </div>
                   )}
-                  {/* Live catalog, schema-generated actions, results, and run inspection — mounted once for every route. */}
-                  <CapabilityWorkbench />
                   {/* One stable assistant instance: full-page on /chat, drawer everywhere else. */}
                   <ChatPanel currentView={currentView} isPrimary={currentView === 'chat'} />
                 </div>
