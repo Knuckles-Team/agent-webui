@@ -22,6 +22,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { toast } from 'sonner'
+import { z } from 'zod'
+import { fetchValidated, looseArray } from '@/lib/api-validation'
 import { cn } from '@/lib/utils'
 
 interface GoalIteration {
@@ -46,6 +48,32 @@ interface GoalRun {
   summary: string
   error?: string
 }
+
+// D-WUI-12 — GoalsView crashed on `goals.length` / `goals.map` when
+// `/api/enhanced/goals` returned `null`/`{}`: `(await res.json()) as GoalRun[]`
+// asserted the shape without checking it. Validated here so a bad shape
+// throws inside `fetchGoals`'s existing try/catch instead of becoming state.
+const goalIterationSchema: z.ZodType<GoalIteration> = z.object({
+  iteration: z.number(),
+  action: z.string(),
+  result: z.string(),
+  validation_output: z.string(),
+  is_complete: z.boolean(),
+  duration_ms: z.number(),
+  tool_calls: z.number(),
+  timestamp: z.number(),
+})
+const goalRunSchema: z.ZodType<GoalRun> = z.object({
+  goal_id: z.string(),
+  session_id: z.string(),
+  status: z.enum(['running', 'completed', 'failed', 'cancelled']),
+  iterations: looseArray(goalIterationSchema),
+  total_iterations: z.number(),
+  total_duration_ms: z.number(),
+  total_tool_calls: z.number(),
+  summary: z.string(),
+  error: z.string().optional(),
+})
 
 export default function GoalsView() {
   const [goals, setGoals] = useState<GoalRun[]>([])
@@ -92,11 +120,8 @@ export default function GoalsView() {
   const fetchGoals = async (silent = false) => {
     try {
       if (!silent) setLoading(true)
-      const res = await fetch('/api/enhanced/goals')
-      if (res.ok) {
-        const data = (await res.json()) as GoalRun[]
-        setGoals(data)
-      }
+      const data = await fetchValidated('/api/enhanced/goals', looseArray(goalRunSchema))
+      setGoals(data)
     } catch (_err) {
       if (!silent) toast.error('Failed to query goals registry')
     } finally {
@@ -106,18 +131,15 @@ export default function GoalsView() {
 
   const fetchGoalIterations = async (goalId: string, silent = false) => {
     try {
-      const res = await fetch(`/api/enhanced/goals/${goalId}/iterations`)
-      if (res.ok) {
-        const data = (await res.json()) as GoalRun
-        setSelectedGoal(data)
-        // Auto-expand new iterations
-        if (data.iterations.length > 0) {
-          const lastIdx = data.iterations.length
-          setExpandedSteps((prev) => ({
-            ...prev,
-            [lastIdx]: prev[lastIdx] !== false, // default true for last
-          }))
-        }
+      const data = await fetchValidated(`/api/enhanced/goals/${goalId}/iterations`, goalRunSchema)
+      setSelectedGoal(data)
+      // Auto-expand new iterations
+      if (data.iterations.length > 0) {
+        const lastIdx = data.iterations.length
+        setExpandedSteps((prev) => ({
+          ...prev,
+          [lastIdx]: prev[lastIdx] !== false, // default true for last
+        }))
       }
     } catch (_err) {
       if (!silent) toast.error('Failed to pull goal timeline steps')
@@ -274,7 +296,9 @@ export default function GoalsView() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold text-muted-foreground uppercase">Validation Action</label>
+                    <label className="text-[11px] font-semibold text-muted-foreground uppercase">
+                      Validation Action
+                    </label>
                     <select
                       value={validationAction}
                       onChange={(e) => {

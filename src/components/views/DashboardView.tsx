@@ -9,6 +9,8 @@
 
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { z } from 'zod'
+import { fetchValidated, looseArray } from '@/lib/api-validation'
 import {
   Activity,
   Container,
@@ -73,6 +75,54 @@ interface DashboardLayout {
   auto_refresh: boolean
   refresh_interval: number
 }
+
+// D-WUI-8 — `dashboardData?.layout.groups.map(...)` crashed on `[]`/`{}`: the
+// `?.` only guards `dashboardData` itself being nullish, not `.layout` being
+// absent on a truthy-but-wrong-shaped body. Validating the fetch means a bad
+// shape now rejects the query instead of resolving with something `.layout`
+// doesn't exist on — `dashboardData` then stays `undefined` and the existing
+// `dashboardData?.layout.groups...  ?? []` chain already degrades safely.
+const serviceConfigSchema: z.ZodType<ServiceConfig> = z.object({
+  id: z.string(),
+  name: z.string(),
+  widget_type: z.string(),
+  url: z.string(),
+  icon: z.string(),
+  description: z.string(),
+  category: z.string(),
+  href: z.string(),
+  visible: z.boolean(),
+  column_span: z.number(),
+  row_span: z.number(),
+  order: z.number(),
+  refresh_interval: z.number(),
+  websocket: z.boolean(),
+  fields: looseArray(z.string()).nullable(),
+})
+const serviceGroupSchema: z.ZodType<ServiceGroup> = z.object({
+  name: z.string(),
+  services: looseArray(serviceConfigSchema),
+  order: z.number(),
+  collapsed: z.boolean(),
+  icon: z.string(),
+})
+const dashboardLayoutSchema: z.ZodType<DashboardLayout> = z.object({
+  groups: looseArray(serviceGroupSchema),
+  columns: z.number(),
+  theme: z.string(),
+  card_size: z.string(),
+  show_search: z.boolean(),
+  show_status_indicators: z.boolean(),
+  auto_refresh: z.boolean(),
+  refresh_interval: z.number(),
+})
+const widgetDataSchema: z.ZodType<WidgetData> = z.object({
+  fields: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])),
+  status: z.enum(['ok', 'error', 'unreachable', 'unknown']),
+  error: z.string().nullable(),
+  timestamp: z.string(),
+})
+const dashboardFullSchema = z.object({ layout: dashboardLayoutSchema, data: z.record(z.string(), widgetDataSchema) })
 
 /* ── Icon Map ────────────────────────────────────────────────────── */
 
@@ -325,11 +375,7 @@ export default function DashboardView() {
     refetch,
   } = useQuery({
     queryKey: ['dashboard-full'],
-    queryFn: async () => {
-      const res = await fetch('/api/dashboard/full')
-      if (!res.ok) throw new Error('Failed to fetch dashboard')
-      return res.json() as Promise<{ layout: DashboardLayout; data: Record<string, WidgetData> }>
-    },
+    queryFn: () => fetchValidated('/api/dashboard/full', dashboardFullSchema),
     refetchInterval: 30000,
     staleTime: 10000,
   })

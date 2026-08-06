@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { z } from 'zod'
+import { fetchValidated, looseArray } from '@/lib/api-validation'
 import {
   Wrench,
   Code,
@@ -70,6 +72,59 @@ interface ToolsData {
   skill_workflows: SkillWorkflow[]
 }
 
+// D-WUI-7 — SkillsView crashed on `data.mcp_tools.filter(...)` (and the sibling
+// `builtin_tools`/`skills`/`skill_graphs`/`skill_workflows` reads) whenever
+// `/api/enhanced/tools` returned `null`/`{}` — the raw `(await res.json()) as
+// ToolsData` cast made TypeScript believe the shape without checking it at
+// runtime. `looseArray` treats a missing/null field as empty (a legitimate
+// "nothing yet" response); anything that isn't array-shaped at all — the
+// `{}`/`null`/error-body cases that actually crashed this view — fails
+// validation and is caught below instead of becoming a `ToolsData`.
+const mcpToolSchema: z.ZodType<MCPTool> = z.object({
+  name: z.string(),
+  type: z.string(),
+  command: z.string(),
+  args: looseArray(z.string()),
+  status: z.string(),
+  enabled: z.boolean(),
+})
+const builtinToolSchema: z.ZodType<BuiltinTool> = z.object({
+  name: z.string(),
+  type: z.string(),
+  file_path: z.string(),
+  status: z.string(),
+  enabled: z.boolean(),
+})
+const skillSchema: z.ZodType<Skill> = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  enabled: z.boolean(),
+  tags: looseArray(z.string()),
+  type: z.string(),
+})
+const skillGraphSchema: z.ZodType<SkillGraph> = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  file_path: z.string(),
+  enabled: z.boolean(),
+})
+const skillWorkflowSchema: z.ZodType<SkillWorkflow> = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  file_path: z.string(),
+  enabled: z.boolean(),
+})
+const toolsDataSchema: z.ZodType<ToolsData> = z.object({
+  mcp_tools: looseArray(mcpToolSchema),
+  builtin_tools: looseArray(builtinToolSchema),
+  skills: looseArray(skillSchema),
+  skill_graphs: looseArray(skillGraphSchema),
+  skill_workflows: looseArray(skillWorkflowSchema),
+})
+
 interface LiveMCPTool {
   name: string
   description: string
@@ -101,15 +156,13 @@ export default function SkillsView() {
   const fetchTools = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/enhanced/tools')
-      if (!res.ok) {
-        toast.error('Failed to load tools catalog')
-        return
-      }
-      const json = (await res.json()) as ToolsData
+      const json = await fetchValidated('/api/enhanced/tools', toolsDataSchema)
       setData(json)
     } catch {
-      toast.error('Failed to connect to backend tools registry')
+      // Shape violation or HTTP failure — leave `data` at its all-empty default
+      // (set in useState above) rather than storing whatever was returned; the
+      // view already renders an empty/no-results state for empty arrays.
+      toast.error('Failed to load tools catalog')
     } finally {
       setLoading(false)
     }

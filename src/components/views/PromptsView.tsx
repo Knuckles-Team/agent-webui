@@ -7,6 +7,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
+import { z } from 'zod'
+import { fetchValidated, looseArray } from '@/lib/api-validation'
 
 interface PromptSummary {
   name: string
@@ -30,6 +32,17 @@ interface PromptDetail {
   [key: string]: unknown
 }
 
+// D-WUI-14 — PromptsView crashed on `prompts.filter(...)` for `null`/`{}`
+// responses; `(await res.json()) as PromptSummary[]` asserted the shape
+// without checking it.
+const promptSummarySchema: z.ZodType<PromptSummary> = z.object({
+  name: z.string(),
+  title: z.string(),
+  goal: z.string(),
+  core_directive: z.string(),
+  file_path: z.string(),
+})
+
 export default function PromptsView() {
   const [prompts, setPrompts] = useState<PromptSummary[]>([])
   const [selectedName, setSelectedName] = useState<string | null>(null)
@@ -48,12 +61,7 @@ export default function PromptsView() {
   const loadPrompts = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/enhanced/prompts')
-      if (!res.ok) {
-        toast.error('Failed to load prompts')
-        return
-      }
-      const data = (await res.json()) as PromptSummary[]
+      const data = await fetchValidated('/api/enhanced/prompts', looseArray(promptSummarySchema))
       setPrompts(data)
       if (data.length > 0 && !selectedName) {
         void loadPromptDetail(data[0].name)

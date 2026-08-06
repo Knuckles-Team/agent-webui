@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { toast } from 'sonner'
+import { z } from 'zod'
+import { fetchValidated, looseArray } from '@/lib/api-validation'
 import { cn } from '@/lib/utils'
 
 interface KnowledgeBase {
@@ -34,6 +36,29 @@ interface Article {
   created_at: string
 }
 
+// D-WUI-13 — KnowledgeBaseView crashed on `knowledgeBases.filter(...)` for
+// `null`/`{}` responses AND for a 500 `{detail: "..."}` body (the previous
+// code never checked `res.ok` before casting, so an error envelope was
+// stored as if it were a `KnowledgeBase[]`). `fetchValidated` covers both:
+// non-2xx throws `ApiError` before the shape is even inspected, and a 2xx
+// body that isn't array-shaped throws `ApiShapeError`.
+const knowledgeBaseSchema: z.ZodType<KnowledgeBase> = z.object({
+  id: z.string(),
+  name: z.string(),
+  article_count: z.number(),
+  topics: looseArray(z.string()),
+  health_status: z.enum(['healthy', 'warning', 'error']),
+  last_updated: z.string(),
+})
+const articleSchema: z.ZodType<Article> = z.object({
+  id: z.string(),
+  title: z.string(),
+  content: z.string(),
+  kb_id: z.string(),
+  concepts: looseArray(z.string()),
+  created_at: z.string(),
+})
+
 export default function KnowledgeBaseView() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
   const [selectedKB, setSelectedKB] = useState<KnowledgeBase | null>(null)
@@ -59,8 +84,7 @@ export default function KnowledgeBaseView() {
   const fetchKnowledgeBases = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/enhanced/kb/list')
-      const data = (await res.json()) as KnowledgeBase[]
+      const data = await fetchValidated('/api/enhanced/kb/list', looseArray(knowledgeBaseSchema))
       setKnowledgeBases(data)
       if (data.length > 0 && !selectedKB) {
         setSelectedKB(data[0])
@@ -74,8 +98,7 @@ export default function KnowledgeBaseView() {
 
   const fetchArticles = async (kbId: string) => {
     try {
-      const res = await fetch(`/api/enhanced/kb/search?query=&kb_id=${kbId}`)
-      const data = (await res.json()) as Article[]
+      const data = await fetchValidated(`/api/enhanced/kb/search?query=&kb_id=${kbId}`, looseArray(articleSchema))
       setArticles(data)
     } catch {
       toast.error('Failed to load articles')
