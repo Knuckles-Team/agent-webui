@@ -10,9 +10,16 @@
  * sole source of truth for what pages exist. Three routes get bespoke handling here
  * because they need something the generic zero-prop `RouteDef.element` contract can't
  * express: Dashboard (always mounted, toggled visible) and Chat (a persistent
- * prop-driven singleton, full-page on `/chat` and a drawer everywhere else — a sibling
- * lane owns its chat-store sync) and Object detail (needs a `:id` route param). Every
- * other route is mounted generically from its `RouteDef`.
+ * prop-driven singleton, full-page on `/chat` and a drawer everywhere else — its session
+ * list is read from the one store in `lib/chat-store.ts`) and Object detail (needs a
+ * `:id` route param). Every other route is mounted generically from its `RouteDef`.
+ *
+ * Role enforcement (R9): `activeRoute.minRole` is checked against the signed-in identity
+ * (`lib/auth.ts`, itself sourced from the server's `/auth/session`) before a route's
+ * element is ever mounted — this is in addition to, not instead of, the sidebar hiding
+ * routes the caller cannot use (`app-sidebar.tsx`) and the server enforcing the same
+ * ladder in `WebUIAuthorizationMiddleware`. A caller who guesses a hidden path directly
+ * still hits this guard.
  */
 
 import { useEffect, useMemo, useState, Suspense } from 'react'
@@ -24,7 +31,8 @@ import { Toaster } from './components/ui/sonner.tsx'
 import { cn } from './lib/utils.ts'
 import ChatPanel from './components/ChatPanel'
 import ObjectView from './components/views/ObjectView'
-import { ROUTES, matchRoute } from './lib/nav-registry.ts'
+import { ROUTES, matchRoute, roleAtLeast } from './lib/nav-registry.ts'
+import { useIdentity } from './lib/auth.ts'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
@@ -104,6 +112,15 @@ export default function App() {
   const objectId = isObjectDetail ? (match?.params.id ?? '') : ''
   const currentView = activeRoute ? (LEGACY_VIEW_IDS[activeRoute.id] ?? activeRoute.id) : 'chat'
 
+  const { identity, loading: identityLoading } = useIdentity()
+  /** The route-guard half of R9: the sidebar already hides what `identity.role` cannot
+   * reach, but a caller who navigates (or is deep-linked) straight to a hidden path must
+   * still be stopped here rather than seeing the page render. While `/auth/session` is
+   * in flight, hold off rendering a page-required-elsewhere page to avoid a flash of
+   * content that then gets pulled back. */
+  const routeAccessDenied =
+    !identityLoading && Boolean(activeRoute) && !roleAtLeast(identity.role, activeRoute!.minRole)
+
   const baseSelection = useMemo<PageContextSelection[]>(
     () => (isObjectDetail && objectId ? [{ kind: 'ontology-object', id: objectId, label: objectId }] : []),
     [isObjectDetail, objectId],
@@ -145,7 +162,22 @@ export default function App() {
                   {!isChat && !isDashboard && (
                     <div className="flex flex-col flex-1 h-screen overflow-auto p-8">
                       <div className="mx-auto w-full">
-                        {isObjectDetail ? (
+                        {routeAccessDenied ? (
+                          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6">
+                            <h1 className="text-xl font-bold mb-1">Insufficient role</h1>
+                            <p className="text-sm text-muted-foreground">
+                              {activeRoute.label} requires the <strong>{activeRoute.minRole}</strong> role or higher.{' '}
+                              {identity.needsSignIn
+                                ? 'Sign in with an account that has it.'
+                                : 'Your current role does not have access to this page.'}
+                            </p>
+                            {identity.needsSignIn && (
+                              <a href="/auth/login" className="text-sm text-primary underline mt-2 inline-block">
+                                Sign in
+                              </a>
+                            )}
+                          </div>
+                        ) : isObjectDetail ? (
                           <ObjectView
                             objectId={objectId}
                             onNavigate={(id) => {

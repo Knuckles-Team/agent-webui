@@ -17,7 +17,20 @@
  * message broker, KV-cache, federated search, GIS, agent-memory, NL→query and
  * data-analyst) are additive: where the backend has not yet wired a dedicated
  * route the call resolves to `{ unavailable: true }` and the view degrades.
+ *
+ * A second chokepoint, unified with the first (PROGRAM.md R2): `toResult`
+ * takes an OPTIONAL zod schema and, when given one, validates the unwrapped
+ * payload through the same `validateShape` boundary `api.ts`'s
+ * `getValidated`/`postValidated` use (`./api-validation`) before it becomes
+ * `data`. A shape mismatch resolves `ok: false` with a message naming the
+ * endpoint and the violation — the same "fail loudly at the boundary,
+ * never hand a view an `unknown`" contract, expressed through this module's
+ * own `{ok, data, unavailable, error}` result shape instead of a thrown
+ * exception (callers here already branch on `ok`, so a thrown error would be
+ * a second, inconsistent failure channel for the same module).
  */
+import type { z } from 'zod'
+import { validateShape, ApiShapeError } from './api-validation'
 
 /** Base path for the canonical KG REST surface as mounted in the webui backend. */
 export const GRAPH_BASE = '/api/graph'
@@ -53,7 +66,7 @@ function unwrapEnvelope(raw: unknown): unknown {
   return raw
 }
 
-async function toResult<T>(res: Response): Promise<GatewayResult<T>> {
+async function toResult<T>(res: Response, endpoint: string, schema?: z.ZodType<T>): Promise<GatewayResult<T>> {
   if (res.status === 404 || res.status === 501) {
     return { ok: false, data: null, unavailable: true, error: `HTTP ${String(res.status)}` }
   }
@@ -62,28 +75,41 @@ async function toResult<T>(res: Response): Promise<GatewayResult<T>> {
     return { ok: false, data: null, unavailable: false, error: `HTTP ${String(res.status)}: ${body}` }
   }
   const raw: unknown = await res.json()
-  return { ok: true, data: unwrapEnvelope(raw) as T, unavailable: false }
+  const unwrapped = unwrapEnvelope(raw)
+  if (!schema) return { ok: true, data: unwrapped as T, unavailable: false }
+  try {
+    return { ok: true, data: validateShape(schema, unwrapped, endpoint), unavailable: false }
+  } catch (err) {
+    const message = err instanceof ApiShapeError ? err.message : String(err)
+    return { ok: false, data: null, unavailable: false, error: message }
+  }
 }
 
-/** GET a gateway route relative to {@link GRAPH_BASE}. */
-export async function gatewayGet<T>(path: string): Promise<GatewayResult<T>> {
+/**
+ * GET a gateway route relative to {@link GRAPH_BASE}. When `schema` is given,
+ * the unwrapped payload is validated through the shared `./api-validation`
+ * boundary before `data` is populated — a shape mismatch resolves
+ * `ok: false` with a descriptive `error` rather than handing the caller an
+ * `unknown` cast to `T`.
+ */
+export async function gatewayGet<T>(path: string, schema?: z.ZodType<T>): Promise<GatewayResult<T>> {
   try {
     const res = await fetch(`${GRAPH_BASE}${path}`)
-    return await toResult<T>(res)
+    return await toResult<T>(res, `${GRAPH_BASE}${path}`, schema)
   } catch (err) {
     return { ok: false, data: null, unavailable: false, error: String(err) }
   }
 }
 
-/** POST a JSON body to a gateway route relative to {@link GRAPH_BASE}. */
-export async function gatewayPost<T>(path: string, body?: unknown): Promise<GatewayResult<T>> {
+/** POST a JSON body to a gateway route relative to {@link GRAPH_BASE}. See {@link gatewayGet} for `schema`. */
+export async function gatewayPost<T>(path: string, body?: unknown, schema?: z.ZodType<T>): Promise<GatewayResult<T>> {
   try {
     const res = await fetch(`${GRAPH_BASE}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
     })
-    return await toResult<T>(res)
+    return await toResult<T>(res, `${GRAPH_BASE}${path}`, schema)
   } catch (err) {
     return { ok: false, data: null, unavailable: false, error: String(err) }
   }
@@ -94,25 +120,26 @@ export async function gatewayPost<T>(path: string, body?: unknown): Promise<Gate
  * `/dashboard/daemon/shards` or `/enhanced/graph/stats`. Shares the same
  * envelope-unwrapping + graceful `unavailable` handling as {@link gatewayGet},
  * so the Admin console reads the dashboard/enhanced planes with one mechanism.
+ * See {@link gatewayGet} for `schema`.
  */
-export async function apiGet<T>(path: string): Promise<GatewayResult<T>> {
+export async function apiGet<T>(path: string, schema?: z.ZodType<T>): Promise<GatewayResult<T>> {
   try {
     const res = await fetch(`${API_BASE}${path}`)
-    return await toResult<T>(res)
+    return await toResult<T>(res, `${API_BASE}${path}`, schema)
   } catch (err) {
     return { ok: false, data: null, unavailable: false, error: String(err) }
   }
 }
 
-/** POST a JSON body to an arbitrary `/api/...` route (relative to {@link API_BASE}). */
-export async function apiPost<T>(path: string, body?: unknown): Promise<GatewayResult<T>> {
+/** POST a JSON body to an arbitrary `/api/...` route (relative to {@link API_BASE}). See {@link gatewayGet} for `schema`. */
+export async function apiPost<T>(path: string, body?: unknown, schema?: z.ZodType<T>): Promise<GatewayResult<T>> {
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
     })
-    return await toResult<T>(res)
+    return await toResult<T>(res, `${API_BASE}${path}`, schema)
   } catch (err) {
     return { ok: false, data: null, unavailable: false, error: String(err) }
   }

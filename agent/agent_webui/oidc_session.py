@@ -610,6 +610,11 @@ class OIDCBrowserSessionMiddleware:
             await self._respond(send, 200, body=b'{"authenticated":false}')
             return
         claims = _unverified_claims(str(session['access_token']))
+        realm_roles = [
+            str(role) for role in (claims.get('realm_access') or {}).get('roles', [])
+        ]
+        from .rbac import resolve_webui_role
+
         body = json.dumps(
             {
                 'authenticated': True,
@@ -618,10 +623,14 @@ class OIDCBrowserSessionMiddleware:
                 'email': claims.get('email'),
                 'tenant': claims.get('tenant_id'),
                 'roles': sorted(
-                    str(role)
-                    for role in (claims.get('realm_access') or {}).get('roles', [])
-                    if str(role).startswith('kg:')
+                    role for role in realm_roles if role.startswith(('kg:', 'webui:'))
                 ),
+                # The WebUI page/feature role (R9: reader < user < maintainer <
+                # admin), computed the SAME way `WebUIAuthorizationMiddleware`
+                # computes it server-side (see `rbac.py`) — the frontend reads
+                # this rather than re-deriving a role from claims itself, so the
+                # two surfaces cannot drift into disagreeing.
+                'webui_role': resolve_webui_role(realm_roles, authenticated=True),
                 'expires_at': session.get('expires_at'),
             },
             sort_keys=True,

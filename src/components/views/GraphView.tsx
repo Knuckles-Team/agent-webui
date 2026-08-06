@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { toast } from 'sonner'
+import { z } from 'zod'
+import { fetchValidated, looseArray } from '@/lib/api-validation'
 import { GraphCanvas } from '../knowledge-graph/GraphCanvas'
 import { usePageContextPublisher, type PageContextContribution } from '@/lib/page-context'
 
@@ -27,6 +29,29 @@ interface GraphStats {
   total_relationships: number
   by_type: Record<string, number>
 }
+
+// D-WUI-6 (hostile-payload update, additive to the pre-existing
+// usePageContextPublisher/PageContextProvider defect this item already
+// tracks) — GraphView crashed on `null`/`{}`/error-body responses because
+// none of the three fetches checked `res.ok` or validated the shape before
+// casting. Validating each independently (rather than one schema over
+// `Promise.all`'s tuple) means one bad endpoint doesn't wipe out data that
+// loaded fine from the other two.
+const graphNodeSchema: z.ZodType<GraphNode> = z.object({
+  id: z.string(),
+  labels: looseArray(z.string()),
+  properties: z.record(z.string(), z.unknown()),
+})
+const graphRelationshipSchema: z.ZodType<GraphRelationship> = z.object({
+  source: z.string(),
+  type: z.string(),
+  target: z.string(),
+})
+const graphStatsSchema: z.ZodType<GraphStats> = z.object({
+  total_nodes: z.number(),
+  total_relationships: z.number(),
+  by_type: z.record(z.string(), z.number()),
+})
 
 export default function GraphView() {
   const [stats, setStats] = useState<GraphStats>({ total_nodes: 0, total_relationships: 0, by_type: {} })
@@ -81,24 +106,19 @@ export default function GraphView() {
   }, [])
 
   const fetchData = async () => {
+    setLoading(true)
     try {
-      setLoading(true)
-      const [statsRes, nodesRes, relsRes] = await Promise.all([
-        fetch('/api/enhanced/graph/stats'),
-        fetch('/api/enhanced/graph/nodes'),
-        fetch('/api/enhanced/graph/relationships'),
+      const [statsData, nodesData, relsData] = await Promise.all([
+        fetchValidated('/api/enhanced/graph/stats', graphStatsSchema).catch(() => null),
+        fetchValidated('/api/enhanced/graph/nodes', looseArray(graphNodeSchema)).catch(() => null),
+        fetchValidated('/api/enhanced/graph/relationships', looseArray(graphRelationshipSchema)).catch(() => null),
       ])
-
-      const statsData = (await statsRes.json()) as GraphStats
-      const nodesData = (await nodesRes.json()) as GraphNode[]
-      const relsData = (await relsRes.json()) as GraphRelationship[]
-
-      setStats(statsData)
-      setNodes(nodesData)
-      setRelationships(relsData)
-    } catch (err) {
-      toast.error('Failed to load graph database nodes')
-      console.error(err)
+      if (statsData) setStats(statsData)
+      if (nodesData) setNodes(nodesData)
+      if (relsData) setRelationships(relsData)
+      if (!statsData || !nodesData || !relsData) {
+        toast.error('Failed to load graph database nodes')
+      }
     } finally {
       setLoading(false)
     }
@@ -126,21 +146,15 @@ export default function GraphView() {
     if (!cypherQuery.trim()) return
     setExecutingCypher(true)
     try {
-      const res = await fetch('/api/enhanced/graph/query', {
+      const data = await fetchValidated('/api/enhanced/graph/query', looseArray(z.unknown()), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: cypherQuery }),
       })
-      if (!res.ok) {
-        const errorText = await res.text()
-        toast.error(`Cypher Execution Failed: ${errorText}`)
-        return
-      }
-      const data = (await res.json()) as unknown[]
       setCypherResults(data)
       toast.success('Cypher query completed')
-    } catch {
-      toast.error('Error executing Cypher query')
+    } catch (err) {
+      toast.error(`Cypher Execution Failed: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setExecutingCypher(false)
     }
@@ -150,7 +164,7 @@ export default function GraphView() {
     if (!magmaQuery.trim()) return
     setRetrievingMagma(true)
     try {
-      const res = await fetch('/api/enhanced/graph/magma', {
+      const data = await fetchValidated('/api/enhanced/graph/magma', looseArray(z.unknown()), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -158,11 +172,6 @@ export default function GraphView() {
           view_type: magmaView,
         }),
       })
-      if (!res.ok) {
-        toast.error('Failed orthogonal view MAGMA retrieval')
-        return
-      }
-      const data = (await res.json()) as unknown[]
       setMagmaResults(data)
       toast.success('MAGMA orthogonal context retrieved')
     } catch {

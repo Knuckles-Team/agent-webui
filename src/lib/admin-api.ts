@@ -16,7 +16,9 @@
  * read-only/placeholder instead of fabricating data.
  */
 
+import { z } from 'zod'
 import { apiGet, apiPost, gatewayPost, type GatewayResult } from './gateway'
+import { looseArray } from './api-validation'
 
 // ── Shards (REAL) ───────────────────────────────────────────────────────────
 // GET /api/dashboard/daemon/shards → shard_topology_status() (CONCEPT:OS-5.28).
@@ -46,8 +48,20 @@ export interface DaemonStatus {
   [k: string]: unknown
 }
 
+const shardEndpointSchema: z.ZodType<ShardEndpoint> = z.object({
+  endpoint: z.string(),
+  local: z.boolean(),
+  reachable: z.boolean().optional(),
+  breaker: z.string().optional(),
+})
+const shardTopologySchema: z.ZodType<ShardTopology> = z.object({
+  mode: z.enum(['single', 'sharded']),
+  default_graph: z.string().optional(),
+  endpoints: looseArray(shardEndpointSchema),
+})
+
 export function fetchShardTopology(): Promise<GatewayResult<ShardTopology>> {
-  return apiGet<ShardTopology>('/dashboard/daemon/shards')
+  return apiGet<ShardTopology>('/dashboard/daemon/shards', shardTopologySchema)
 }
 
 export function fetchDaemonStatus(): Promise<GatewayResult<DaemonStatus>> {
@@ -73,12 +87,26 @@ export interface CodeInstances {
   source_systems: string[]
 }
 
+const graphStatsSchema: z.ZodType<GraphStats> = z.object({
+  total_nodes: z.number(),
+  total_relationships: z.number(),
+  by_type: z.record(z.string(), z.number()),
+})
+// D-WUI-23 — TenantsPanel: `sources.length` crashed because `fetchCodeInstances()`'s
+// caller only guarded `ok && data` (both true for a truthy-but-wrong-shaped `[]`/`{}`
+// response), then read `.source_systems` off it unguarded. Validating the shape here
+// means a `[]`/`{}` response now resolves `ok: false`, so the existing
+// `src.ok && src.data ? src.data.source_systems : []` ternary takes its `[]` branch.
+const codeInstancesSchema: z.ZodType<CodeInstances> = z.object({
+  source_systems: looseArray(z.string()),
+})
+
 export function fetchGraphStats(): Promise<GatewayResult<GraphStats>> {
-  return apiGet<GraphStats>('/enhanced/graph/stats')
+  return apiGet<GraphStats>('/enhanced/graph/stats', graphStatsSchema)
 }
 
 export function fetchCodeInstances(): Promise<GatewayResult<CodeInstances>> {
-  return apiGet<CodeInstances>('/enhanced/code/instances')
+  return apiGet<CodeInstances>('/enhanced/code/instances', codeInstancesSchema)
 }
 
 // ── RBAC (PLACEHOLDER / read-only probe) ─────────────────────────────────────
