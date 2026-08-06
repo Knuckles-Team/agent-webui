@@ -82,14 +82,20 @@ setup('authenticate against Keycloak', async ({ page }) => {
   // D-WUI-29's whole finding was that a suite can report green while every
   // route is actually a login form, because nothing asserted on real page
   // content. Do not trust the redirect alone: navigate to a known route and
-  // assert its own real heading — the exact assertion graph-view.spec.ts
-  // makes against a genuinely authenticated session. Until THIS passes,
-  // every other number this suite produces is meaningless.
+  // assert its own real heading. NOTE: this originally asserted on
+  // `text=Graph Statistics`, copied from `graph-view.spec.ts` on the
+  // assumption that spec was a reliable reference — it is not. That whole
+  // spec (and 3 of the other 4 pre-existing specs) predate a GraphView
+  // redesign and assert on headings/tabs/testids that no longer exist
+  // anywhere in `src/` (grepped: zero hits). The current, real heading
+  // `GraphView.tsx` renders is "Unified Graph Workspace" — asserting on
+  // that instead. Until THIS passes, every other number this suite
+  // produces is meaningless.
   await page.goto('/graph')
   await page.waitForURL((url) => !url.hostname.includes('keycloak'), {
     timeout: 15_000,
   })
-  await expect(page.locator('text=Graph Statistics')).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('text=Unified Graph Workspace')).toBeVisible({ timeout: 15_000 })
 
   await page.context().storageState({ path: authFile })
 })
