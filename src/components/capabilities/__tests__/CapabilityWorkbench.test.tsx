@@ -165,7 +165,9 @@ describe('CapabilityWorkbench', () => {
       </PageContextProvider>,
     )
 
-    await user.click(screen.getByRole('button', { name: 'Open capability launcher' }))
+    // CapabilityWorkbench now renders directly as a page (Control Plane → Unified Agent
+    // View) instead of behind a floating launcher button, so its content is present
+    // immediately.
     expect(await screen.findByText(/Runtime is cold but callable/)).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: /Edit ontology object/ }))
 

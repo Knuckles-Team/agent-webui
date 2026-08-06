@@ -1,38 +1,4 @@
-import {
-  CirclePlus,
-  MessageCircle,
-  Trash,
-  Files,
-  Zap,
-  Book,
-  Calendar,
-  Settings,
-  Pencil,
-  Check,
-  X,
-  Network,
-  Code2,
-  Wrench,
-  Compass,
-  Terminal,
-  ScrollText,
-  Cpu,
-  LayoutDashboard,
-  Workflow,
-  Boxes,
-  Waypoints,
-  Activity,
-  Coins,
-  History,
-  Database,
-  Inbox,
-  Gauge,
-  ShieldCheck,
-  Shapes,
-  FileCheck2,
-  LibraryBig,
-  GraduationCap,
-} from 'lucide-react'
+import { CirclePlus, MessageCircle, Trash, Pencil, Check, X } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState, useMemo } from 'react'
 import { toast } from 'sonner'
@@ -66,6 +32,7 @@ import {
   useConversationIdFromUrl,
 } from '@/hooks/useConversationIdFromUrl'
 import { cn } from '@/lib/utils'
+import { SECTIONS, routesBySection } from '@/lib/nav-registry'
 import type { ConversationEntry } from '@/types'
 import { ModeToggle } from './mode-toggle'
 
@@ -260,547 +227,53 @@ export function AppSidebar() {
         </SidebarHeader>
 
         <SidebarContent>
-          {/* Section 1: Agent-OS Dashboard & Chat */}
-          <SidebarGroup>
-            <SidebarGroupLabel>Agent-OS</SidebarGroupLabel>
-            <SidebarMenu className="mb-2">
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Agent-OS Service Dashboard — Homepage">
-                  <a
-                    href="/"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <LayoutDashboard className="text-primary" />
-                    <span>Dashboard</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Central AI Assistant Chat Console">
-                  <a
-                    href="/chat"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <MessageCircle />
-                    <span>Chat Console</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Start a new conversation session">
-                  <a
-                    href="/chat"
-                    onClick={(e) => {
-                      window.localStorage.removeItem(ACTIVE_CONVERSATION_STORAGE_KEY)
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <CirclePlus className="text-emerald-500" />
-                    <span>New Conversation</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
-
-          <SidebarGroup>
-            <SidebarGroupLabel>Workspace Manager</SidebarGroupLabel>
-            <SidebarMenu className="mb-2">
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Browse and edit workspace files">
-                  <a
-                    href="/files"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Files />
-                    <span>Workspace Files</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Autonomous goal execution loops (ORCH-5.0)">
-                  <a
-                    href="/goals"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Compass className="text-primary" />
-                    <span>Autonomous Goals</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Swarm supervisor: fleet health, topology & emergency containment (OS-5.10)"
-                >
-                  <a
-                    href="/fleet"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Activity className="text-primary" />
-                    <span>Fleet Supervisor</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Durable SQLite-backed agent sessions">
-                  <a
-                    href="/sessions"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Terminal className="text-primary" />
-                    <span>Active Sessions</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
-
-          {/* Section 3: Brain & Knowledge */}
-          <SidebarGroup>
-            <SidebarGroupLabel>Brain & Knowledge</SidebarGroupLabel>
-            <SidebarMenu className="mb-2">
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Interactive specialist nodes & links graph visualization">
-                  <a
-                    href="/graph"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Network />
-                    <span>Knowledge Graph</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Scrub the knowledge graph through time (bi-temporal AS OF view)">
-                  <a
-                    href="/temporal-graph"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <History />
-                    <span>Temporal Graph</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Navigate the resolved code graph: definitions, references, call graph, impact (per GitLab instance)"
-                >
-                  <a
-                    href="/code-graph"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Code2 />
-                    <span>Code Graph</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Extract a knowledge graph from a document or URL (live)">
-                  <a
-                    href="/extraction"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Network />
-                    <span>KG Extraction</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Compose, edit & run agent workflows visually (D9)">
-                  <a
-                    href="/workflows"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Workflow />
-                    <span>Workflows</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Faceted object-set search, pivot, search-around & bulk actions over the ontology"
-                >
-                  <a
-                    href="/explorer"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Boxes />
-                    <span>Object Explorer</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Object-set graph: expand via search-around, inspect derived properties, run what-if scenarios"
-                >
-                  <a
-                    href="/vertex"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Waypoints />
-                    <span>Vertex Explorer</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Ontology type schema (TBox): interfaces, object types & relationships as an interactive graph"
-                >
-                  <a
-                    href="/schema"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Shapes />
-                    <span>Schema View</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="SPARQL 1.1 query panel + SHACL validation-report view over the live ontology"
-                >
-                  <a
-                    href="/sparql"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <FileCheck2 />
-                    <span>SPARQL &amp; SHACL</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Browse, search, and import/export hosted ontologies">
-                  <a
-                    href="/catalogue"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <LibraryBig />
-                    <span>Ontology Catalogue</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Ontology School: courses, lessons, presentation mode, and quizzes">
-                  <a
-                    href="/learn"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <GraduationCap />
-                    <span>Ontology School</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Orthogonal perspectives (semantic, causal, temporal, entity) views explorer"
-                >
-                  <a
-                    href="/magma"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Compass />
-                    <span>Perspective Views</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Cypher query REPL terminal">
-                  <a
-                    href="/cypher"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Terminal />
-                    <span>Cypher Console</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Access the agent's knowledge bases and documents">
-                  <a
-                    href="/knowledge"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Book />
-                    <span>Knowledge Base</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Manage and version agent system prompts">
-                  <a
-                    href="/prompts"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <ScrollText />
-                    <span>Prompts Registry</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Manage agent tools, MCP servers, and skills">
-                  <a
-                    href="/skills"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Zap />
-                    <span>Tools</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
-
-          {/* Section 4: Ecosystem & Infrastructure */}
-          <SidebarGroup>
-            <SidebarGroupLabel>Ecosystem & Infrastructure</SidebarGroupLabel>
-            <SidebarMenu className="mb-2">
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="System-wide hardware, docker containers, and SSH tunnels mapping">
-                  <a
-                    href="/ecosystem"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Cpu className="text-primary" />
-                    <span>Ecosystem Hub</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Token usage, cost, and metrics across every agent + our own runtime"
-                >
-                  <a
-                    href="/usage"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Coins className="text-primary" />
-                    <span>Usage &amp; Cost</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="KG-grounded SWE agent: workspace runtime, action/observation stream, code-symbol provenance"
-                >
-                  <a
-                    href="/swe"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Wrench className="text-primary" />
-                    <span>SWE Agent</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Pipeline, maintenance, and resources admin panel">
-                  <a
-                    href="/ops"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Wrench />
-                    <span>Ops Panel</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Admin console: tenants, shard topology, RBAC, backup/PITR (epistemic-graph engine)"
-                >
-                  <a
-                    href="/admin"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <ShieldCheck className="text-primary" />
-                    <span>Admin Console</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
-
-          {/* Section: Observability & Data (gateway /graph/* capabilities) */}
-          <SidebarGroup>
-            <SidebarGroupLabel>Observability & Data</SidebarGroupLabel>
-            <SidebarMenu className="mb-2">
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="PromQL metrics and distributed traces (gateway /graph/promql, /graph/traces)"
-                >
-                  <a
-                    href="/observability"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Activity className="text-primary" />
-                    <span>Observability</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Ask in natural language → generated query + results (gateway /graph/nl-query, /graph/ask-data)"
-                >
-                  <a
-                    href="/data-analyst"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Database className="text-primary" />
-                    <span>Data Analyst</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Message broker: topics, queue depth, publish (gateway /graph/broker, /graph/bus)"
-                >
-                  <a
-                    href="/broker"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Inbox className="text-primary" />
-                    <span>Message Broker</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="KV-cache stats + gateway capability availability board (gateway /graph/kvcache)"
-                >
-                  <a
-                    href="/system-status"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Gauge className="text-primary" />
-                    <span>System Status</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  tooltip="Grafana-style live dashboards: PromQL, logs, traces (gateway /graph/promql, /graph/logs, /graph/traces)"
-                >
-                  <a
-                    href="/dashboards"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <LayoutDashboard className="text-primary" />
-                    <span>Live Dashboards</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
-
-          {/* Section 5: Maintenance & Settings */}
-          <SidebarGroup>
-            <SidebarGroupLabel>Maintenance & Settings</SidebarGroupLabel>
-            <SidebarMenu className="mb-2">
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="View and manage scheduled cron tasks">
-                  <a
-                    href="/scheduling"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Calendar />
-                    <span>Cron Scheduling</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Edit agent and workspace configuration settings">
-                  <a
-                    href="/configuration"
-                    onClick={(e) => {
-                      doLocalNavigation(e)
-                    }}
-                  >
-                    <Settings />
-                    <span>Global Settings</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
+          {/* Every section and page below is derived from src/lib/nav-registry.ts — there
+              is no second place in this file that declares what pages exist. */}
+          {SECTIONS.map((section) => {
+            const routes = routesBySection(section.id)
+            if (routes.length === 0) return null
+            return (
+              <SidebarGroup key={section.id}>
+                <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
+                <SidebarMenu className="mb-2">
+                  {routes.map((route) => {
+                    const Icon = route.icon
+                    return (
+                      <SidebarMenuItem key={route.id}>
+                        <SidebarMenuButton asChild tooltip={route.blurb}>
+                          <a
+                            href={route.path}
+                            onClick={(e) => {
+                              doLocalNavigation(e)
+                            }}
+                          >
+                            <Icon />
+                            <span>{route.label}</span>
+                          </a>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    )
+                  })}
+                  {section.id === 'chat' && (
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild tooltip="Start a new conversation session">
+                        <a
+                          href="/chat"
+                          onClick={(e) => {
+                            window.localStorage.removeItem(ACTIVE_CONVERSATION_STORAGE_KEY)
+                            doLocalNavigation(e)
+                          }}
+                        >
+                          <CirclePlus className="text-emerald-500" />
+                          <span>New Conversation</span>
+                        </a>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )}
+                </SidebarMenu>
+              </SidebarGroup>
+            )
+          })}
 
           <SidebarGroup>
             <SidebarGroupLabel>Active Chats</SidebarGroupLabel>

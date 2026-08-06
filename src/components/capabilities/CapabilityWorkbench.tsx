@@ -5,7 +5,6 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
-  Command,
   Loader2,
   Play,
   Search,
@@ -37,7 +36,6 @@ import { cn } from '../../lib/utils'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Checkbox } from '../ui/checkbox'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
 import { Input } from '../ui/input'
 import { ScrollArea } from '../ui/scroll-area'
 import { SchemaActionForm } from './SchemaActionForm'
@@ -259,7 +257,6 @@ export function CapabilityWorkbench() {
     filters: pageContext.filters,
     timeRange: pageContext.timeRange,
   })
-  const [open, setOpen] = useState(false)
   const [surface, setSurface] = useState<WorkbenchSurface>('capabilities')
   const [query, setQuery] = useState('')
   const [availabilityFilter, setAvailabilityFilter] = useState<AvailabilityFilter>('all')
@@ -283,37 +280,23 @@ export function CapabilityWorkbench() {
   const [runStatus, setRunStatus] = useState<'all' | NonNullable<RunSummary['status']>>('all')
   const executionGeneration = useRef(0)
 
-  useEffect(() => {
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault()
-        setOpen((current) => !current)
-      }
-    }
-    window.addEventListener('keydown', keydown)
-    return () => {
-      window.removeEventListener('keydown', keydown)
-    }
-  }, [])
-
   const catalogQuery = useQuery({
     queryKey: ['capability-catalog'],
     queryFn: ({ signal }) => fetchCapabilityCatalog(signal),
-    enabled: open,
     staleTime: 30_000,
     retry: 1,
   })
   const detailQuery = useQuery({
     queryKey: ['capability-detail', selectedId],
     queryFn: ({ signal }) => fetchCapabilityDetail(selectedId!, signal),
-    enabled: open && Boolean(selectedId),
+    enabled: Boolean(selectedId),
     staleTime: 30_000,
     retry: 1,
   })
   const runsQuery = useQuery({
     queryKey: ['canonical-runs', runStatus],
     queryFn: ({ signal }) => fetchRuns({ status: runStatus === 'all' ? undefined : runStatus, limit: 50, signal }),
-    enabled: open && surface === 'run',
+    enabled: surface === 'run',
     staleTime: 5_000,
     retry: 1,
   })
@@ -461,510 +444,491 @@ export function CapabilityWorkbench() {
   }
 
   return (
-    <>
-      <Button
-        type="button"
-        aria-label="Open capability launcher"
-        aria-keyshortcuts="Control+K Meta+K"
-        className="fixed bottom-6 right-24 z-30 rounded-full shadow-xl sm:rounded-md"
-        size="lg"
-        onClick={() => {
-          setOpen(true)
-        }}
-      >
-        <Command /> <span className="hidden sm:inline">Capabilities</span>
-        <kbd className="hidden rounded bg-primary-foreground/15 px-1.5 py-0.5 text-[10px] lg:inline">⌘K</kbd>
-      </Button>
+    <div className="flex h-[calc(100vh-6rem)] flex-col gap-0 overflow-hidden rounded-xl border bg-card">
+      <div className="shrink-0 border-b px-5 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="flex items-center gap-2 text-lg font-semibold leading-none">
+              <Sparkles className="size-5 text-primary" /> Unified Agent View
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Discover live actions, review policy, invoke through the governed gateway, and inspect run events.
+            </p>
+          </div>
+          <div className="flex rounded-lg bg-muted p-1">
+            <button
+              type="button"
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-medium',
+                surface === 'capabilities' && 'bg-background shadow-sm',
+              )}
+              onClick={() => {
+                setSurface('capabilities')
+              }}
+            >
+              <Wrench className="mr-1 inline size-3.5" /> Capabilities
+            </button>
+            <button
+              type="button"
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-medium',
+                surface === 'run' && 'bg-background shadow-sm',
+              )}
+              onClick={() => {
+                setSurface('run')
+              }}
+            >
+              <Activity className="mr-1 inline size-3.5" /> Runs
+            </button>
+          </div>
+        </div>
+      </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="flex h-[min(880px,calc(100vh-2rem))] max-w-5xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <DialogTitle className="flex items-center gap-2">
-                  <Sparkles className="size-5 text-primary" /> Capability workbench
-                </DialogTitle>
-                <DialogDescription className="mt-1">
-                  Discover live actions, review policy, invoke through the governed gateway, and inspect run events.
-                </DialogDescription>
-              </div>
-              <div className="flex rounded-lg bg-muted p-1">
-                <button
-                  type="button"
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium',
-                    surface === 'capabilities' && 'bg-background shadow-sm',
-                  )}
-                  onClick={() => {
-                    setSurface('capabilities')
-                  }}
-                >
-                  <Wrench className="mr-1 inline size-3.5" /> Capabilities
-                </button>
-                <button
-                  type="button"
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium',
-                    surface === 'run' && 'bg-background shadow-sm',
-                  )}
-                  onClick={() => {
-                    setSurface('run')
-                  }}
-                >
-                  <Activity className="mr-1 inline size-3.5" /> Runs
-                </button>
-              </div>
+      {surface === 'run' ? (
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="mx-auto max-w-3xl space-y-5 p-5">
+            <div>
+              <h2 className="text-base font-semibold">Replay or follow a run</h2>
+              <p className="text-sm text-muted-foreground">
+                Enter a canonical run ID. Missing event infrastructure is reported as unavailable.
+              </p>
             </div>
-          </DialogHeader>
-
-          {surface === 'run' ? (
-            <ScrollArea className="min-h-0 flex-1">
-              <div className="mx-auto max-w-3xl space-y-5 p-5">
+            <form className="flex gap-2" onSubmit={inspectRun}>
+              <Input
+                value={runDraft}
+                onChange={(event) => {
+                  setRunDraft(event.target.value)
+                }}
+                placeholder="run_…"
+                aria-label="Run ID"
+              />
+              <Button type="submit" disabled={!runDraft.trim()}>
+                Inspect
+              </Button>
+            </form>
+            {inspectedRunId && <RunInspector key={inspectedRunId} runId={inspectedRunId} />}
+            <section className="space-y-3" aria-label="Recent runs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-base font-semibold">Replay or follow a run</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Enter a canonical run ID. Missing event infrastructure is reported as unavailable.
+                  <h3 className="text-sm font-semibold">Recent runs</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Newest-first lifecycle summaries from the canonical event store.
                   </p>
                 </div>
-                <form className="flex gap-2" onSubmit={inspectRun}>
-                  <Input
-                    value={runDraft}
-                    onChange={(event) => {
-                      setRunDraft(event.target.value)
-                    }}
-                    placeholder="run_…"
-                    aria-label="Run ID"
-                  />
-                  <Button type="submit" disabled={!runDraft.trim()}>
-                    Inspect
-                  </Button>
-                </form>
-                {inspectedRunId && <RunInspector key={inspectedRunId} runId={inspectedRunId} />}
-                <section className="space-y-3" aria-label="Recent runs">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <h3 className="text-sm font-semibold">Recent runs</h3>
-                      <p className="text-xs text-muted-foreground">
-                        Newest-first lifecycle summaries from the canonical event store.
-                      </p>
-                    </div>
-                    <select
-                      aria-label="Run status filter"
-                      value={runStatus}
-                      className="border-input bg-background h-8 rounded-md border px-2 text-xs shadow-xs"
-                      onChange={(event) => {
-                        setRunStatus(event.target.value as typeof runStatus)
-                      }}
-                    >
-                      <option value="all">All statuses</option>
-                      <option value="running">Running</option>
-                      <option value="waiting_for_input">Waiting for input</option>
-                      <option value="completed">Completed</option>
-                      <option value="failed">Failed</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </div>
-                  {runsQuery.isPending ? (
-                    <div className="py-6 text-center text-sm text-muted-foreground">Loading recent runs…</div>
-                  ) : runsQuery.error ? (
-                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
-                      Run discovery unavailable: {errorMessage(runsQuery.error)}
-                    </div>
-                  ) : !runsQuery.data.runs.length ? (
-                    <div className="rounded-lg border border-dashed py-6 text-center text-sm text-muted-foreground">
-                      No runs match this status.
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {runsQuery.data.runs.map((run) => (
-                        <button
-                          key={run.run_id}
-                          type="button"
-                          className="flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left hover:border-primary/40 hover:bg-accent/30"
-                          onClick={() => {
-                            setRunDraft(run.run_id)
-                            setInspectedRunId(run.run_id)
-                          }}
-                        >
-                          <div className="min-w-0">
-                            <code className="block truncate text-xs font-medium">{run.run_id}</code>
-                            <div className="mt-1 text-[11px] text-muted-foreground">
-                              {run.event_count} events · {run.last_event_type ?? 'no last event'}
-                              {run.session_id ? ` · session ${run.session_id}` : ''}
-                            </div>
-                          </div>
-                          <Badge variant="outline">{run.status?.replaceAll('_', ' ') ?? 'unknown'}</Badge>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </section>
-              </div>
-            </ScrollArea>
-          ) : selectedId ? (
-            <ScrollArea className="min-h-0 flex-1">
-              <div className="mx-auto max-w-3xl space-y-5 p-5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="-ml-2"
-                  onClick={() => {
-                    setSelectedId(null)
-                    resetExecution()
+                <select
+                  aria-label="Run status filter"
+                  value={runStatus}
+                  className="border-input bg-background h-8 rounded-md border px-2 text-xs shadow-xs"
+                  onChange={(event) => {
+                    setRunStatus(event.target.value as typeof runStatus)
                   }}
                 >
-                  <ArrowLeft /> Back to catalog
-                </Button>
-
-                {detailQuery.isPending ? (
-                  <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
-                    <Loader2 className="animate-spin" /> Loading live descriptor…
-                  </div>
-                ) : detailQuery.error || !descriptor ? (
-                  <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-                    <div className="font-semibold">Capability detail unavailable</div>
-                    <div className="mt-1 text-xs">{errorMessage(detailQuery.error)}</div>
-                    <Button
+                  <option value="all">All statuses</option>
+                  <option value="running">Running</option>
+                  <option value="waiting_for_input">Waiting for input</option>
+                  <option value="completed">Completed</option>
+                  <option value="failed">Failed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+              {runsQuery.isPending ? (
+                <div className="py-6 text-center text-sm text-muted-foreground">Loading recent runs…</div>
+              ) : runsQuery.error ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+                  Run discovery unavailable: {errorMessage(runsQuery.error)}
+                </div>
+              ) : !runsQuery.data.runs.length ? (
+                <div className="rounded-lg border border-dashed py-6 text-center text-sm text-muted-foreground">
+                  No runs match this status.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {runsQuery.data.runs.map((run) => (
+                    <button
+                      key={run.run_id}
                       type="button"
-                      variant="outline"
-                      size="sm"
-                      className="mt-3"
+                      className="flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left hover:border-primary/40 hover:bg-accent/30"
                       onClick={() => {
-                        ignorePromise(detailQuery.refetch())
+                        setRunDraft(run.run_id)
+                        setInspectedRunId(run.run_id)
                       }}
                     >
-                      Retry
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <h2 className="text-xl font-semibold">{descriptor.title}</h2>
-                          <p className="mt-1 text-sm text-muted-foreground">{descriptor.one_line}</p>
-                          <code className="mt-1 block text-xs text-muted-foreground">{descriptor.id}</code>
+                      <div className="min-w-0">
+                        <code className="block truncate text-xs font-medium">{run.run_id}</code>
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {run.event_count} events · {run.last_event_type ?? 'no last event'}
+                          {run.session_id ? ` · session ${run.session_id}` : ''}
                         </div>
-                        <Badge variant="outline">{descriptor.render.renderer}</Badge>
                       </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {descriptor.typed_io.tags.map((tag) => (
-                          <Badge key={tag} variant="secondary">
-                            {tag}
-                          </Badge>
-                        ))}
+                      <Badge variant="outline">{run.status?.replaceAll('_', ' ') ?? 'unknown'}</Badge>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        </ScrollArea>
+      ) : selectedId ? (
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="mx-auto max-w-3xl space-y-5 p-5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="-ml-2"
+              onClick={() => {
+                setSelectedId(null)
+                resetExecution()
+              }}
+            >
+              <ArrowLeft /> Back to catalog
+            </Button>
+
+            {detailQuery.isPending ? (
+              <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+                <Loader2 className="animate-spin" /> Loading live descriptor…
+              </div>
+            ) : detailQuery.error || !descriptor ? (
+              <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+                <div className="font-semibold">Capability detail unavailable</div>
+                <div className="mt-1 text-xs">{errorMessage(detailQuery.error)}</div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => {
+                    ignorePromise(detailQuery.refetch())
+                  }}
+                >
+                  Retry
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-xl font-semibold">{descriptor.title}</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">{descriptor.one_line}</p>
+                      <code className="mt-1 block text-xs text-muted-foreground">{descriptor.id}</code>
+                    </div>
+                    <Badge variant="outline">{descriptor.render.renderer}</Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {descriptor.typed_io.tags.map((tag) => (
+                      <Badge key={tag} variant="secondary">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                  <CapabilityStatus descriptor={descriptor} />
+                </div>
+
+                {descriptor.actions.length === 0 ? (
+                  <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    The live descriptor exposes no invocable actions.
+                  </div>
+                ) : action ? (
+                  <div className="space-y-5">
+                    {descriptor.actions.length > 1 && (
+                      <div className="space-y-1.5">
+                        <label htmlFor="capability-action" className="text-sm font-medium">
+                          Action
+                        </label>
+                        <select
+                          id="capability-action"
+                          value={action.id}
+                          className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs"
+                          onChange={(event) => {
+                            chooseAction(event.target.value)
+                          }}
+                        >
+                          {descriptor.actions.map((candidate) => (
+                            <option key={candidate.id} value={candidate.id}>
+                              {candidate.id}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                      <CapabilityStatus descriptor={descriptor} />
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <Badge variant="outline">{action.id}</Badge>
+                      <Badge className="bg-sky-600">Governed invoke</Badge>
+                      <code>{governedInvokeRoute}</code>
+                      {action.side_effects.mutates !== false && (
+                        <Badge className="bg-amber-600">Confirmation required</Badge>
+                      )}
                     </div>
 
-                    {descriptor.actions.length === 0 ? (
-                      <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-                        The live descriptor exposes no invokable actions.
-                      </div>
-                    ) : action ? (
-                      <div className="space-y-5">
-                        {descriptor.actions.length > 1 && (
-                          <div className="space-y-1.5">
-                            <label htmlFor="capability-action" className="text-sm font-medium">
-                              Action
-                            </label>
-                            <select
-                              id="capability-action"
-                              value={action.id}
-                              className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs"
-                              onChange={(event) => {
-                                chooseAction(event.target.value)
-                              }}
-                            >
-                              {descriptor.actions.map((candidate) => (
-                                <option key={candidate.id} value={candidate.id}>
-                                  {candidate.id}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          <Badge variant="outline">{action.id}</Badge>
-                          <Badge className="bg-sky-600">Governed invoke</Badge>
-                          <code>{governedInvokeRoute}</code>
-                          {action.side_effects.mutates !== false && (
-                            <Badge className="bg-amber-600">Confirmation required</Badge>
+                    {legacyRestRoute && (
+                      <details className="rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                        <summary className="cursor-pointer font-medium">
+                          Legacy transport metadata · display only
+                        </summary>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <code>{legacyRestRoute}</code>
+                          {legacyRequestEncoding && (
+                            <Badge variant="outline">{legacyRequestEncoding.replaceAll('_', ' ')}</Badge>
                           )}
+                          <span>Direct frontend execution is disabled.</span>
                         </div>
+                      </details>
+                    )}
 
-                        {legacyRestRoute && (
-                          <details className="rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                            <summary className="cursor-pointer font-medium">
-                              Legacy transport metadata · display only
-                            </summary>
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                              <code>{legacyRestRoute}</code>
-                              {legacyRequestEncoding && (
-                                <Badge variant="outline">{legacyRequestEncoding.replaceAll('_', ' ')}</Badge>
-                              )}
-                              <span>Direct frontend execution is disabled.</span>
-                            </div>
-                          </details>
-                        )}
-
-                        <SchemaActionForm
-                          key={`${descriptor.id}:${action.id}`}
-                          schema={action.input_schema}
-                          context={pageContext}
-                          busy={preflightBusy}
-                          onDirty={resetExecution}
-                          onSubmit={(inputs) => {
-                            ignorePromise(submitPreflight(inputs))
-                          }}
-                        />
-
-                        {preflightError && (
-                          <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                            <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                            <div>
-                              <div className="font-medium">Preflight unavailable</div>
-                              <div className="text-xs">{preflightError}</div>
-                            </div>
-                          </div>
-                        )}
-
-                        {preflight && (
-                          <PreflightReview
-                            action={action}
-                            preflight={preflight}
-                            confirmed={confirmed}
-                            invoking={invoking}
-                            approvalPending={Boolean(pendingApproval)}
-                            executionError={executionError}
-                            onConfirmedChange={setConfirmed}
-                            onInvoke={() => {
-                              ignorePromise(invoke())
-                            }}
-                          />
-                        )}
-
-                        {pendingApproval && (
-                          <section
-                            className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4"
-                            aria-label="Pending capability approval"
-                          >
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div>
-                                <h3 className="text-sm font-semibold">Approval required</h3>
-                                <p className="text-xs text-muted-foreground">
-                                  Grant this request in an authorized approval surface, then resume this exact
-                                  invocation.
-                                </p>
-                              </div>
-                              <Badge className="bg-amber-600">Waiting for input</Badge>
-                            </div>
-                            <div className="grid gap-2 text-xs sm:grid-cols-3">
-                              <div className="rounded-md border bg-background p-2">
-                                <div className="text-muted-foreground">Approval</div>
-                                <code className="block truncate" title={pendingApproval.approvalId}>
-                                  {pendingApproval.approvalId}
-                                </code>
-                              </div>
-                              <div className="rounded-md border bg-background p-2">
-                                <div className="text-muted-foreground">Run</div>
-                                <code className="block truncate" title={pendingApproval.runId}>
-                                  {pendingApproval.runId}
-                                </code>
-                              </div>
-                              <div className="rounded-md border bg-background p-2">
-                                <div className="text-muted-foreground">Session</div>
-                                <code className="block truncate" title={pendingApproval.sessionId}>
-                                  {pendingApproval.sessionId}
-                                </code>
-                              </div>
-                            </div>
-                            <Button
-                              type="button"
-                              disabled={invoking}
-                              onClick={() => {
-                                ignorePromise(invoke(pendingApproval))
-                              }}
-                            >
-                              {invoking ? <Loader2 className="animate-spin" /> : <Play />}
-                              Resume approved action
-                            </Button>
-                          </section>
-                        )}
-
-                        {acceptedInvocation && (
-                          <section className="space-y-2 rounded-xl border border-sky-500/30 bg-sky-500/5 p-4">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div>
-                                <h3 className="text-sm font-semibold">Execution accepted</h3>
-                                <p className="text-xs text-muted-foreground">
-                                  The governed run is executing asynchronously. Live results appear in its timeline.
-                                </p>
-                              </div>
-                              <Badge className="bg-sky-600">Accepted</Badge>
-                            </div>
-                            <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                              <span>
-                                Run: <code>{acceptedInvocation.run_id}</code>
-                              </span>
-                              <span>
-                                Session: <code>{acceptedInvocation.session_id}</code>
-                              </span>
-                            </div>
-                          </section>
-                        )}
-
-                        {hasResult && (
-                          <section className="space-y-3" aria-label="Capability result">
-                            <div className="flex items-center gap-2">
-                              <CheckCircle2 className="size-5 text-emerald-600" />
-                              <h3 className="font-semibold">Result</h3>
-                            </div>
-                            <ResultRenderer value={result} hint={descriptor.render.renderer} />
-                          </section>
-                        )}
-
-                        {resultRunId && (
-                          <RunInspector
-                            key={resultRunId}
-                            runId={resultRunId}
-                            autoFollow
-                            renderHint={descriptor.render.renderer}
-                          />
-                        )}
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </div>
-            </ScrollArea>
-          ) : (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <div className="space-y-3 border-b p-4">
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-                    <Input
-                      autoFocus
-                      className="pl-9"
-                      value={query}
-                      onChange={(event) => {
-                        setQuery(event.target.value)
+                    <SchemaActionForm
+                      key={`${descriptor.id}:${action.id}`}
+                      schema={action.input_schema}
+                      context={pageContext}
+                      busy={preflightBusy}
+                      onDirty={resetExecution}
+                      onSubmit={(inputs) => {
+                        ignorePromise(submitPreflight(inputs))
                       }}
-                      placeholder="Search capabilities, actions, intents, and tags…"
                     />
+
+                    {preflightError && (
+                      <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                        <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                        <div>
+                          <div className="font-medium">Preflight unavailable</div>
+                          <div className="text-xs">{preflightError}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {preflight && (
+                      <PreflightReview
+                        action={action}
+                        preflight={preflight}
+                        confirmed={confirmed}
+                        invoking={invoking}
+                        approvalPending={Boolean(pendingApproval)}
+                        executionError={executionError}
+                        onConfirmedChange={setConfirmed}
+                        onInvoke={() => {
+                          ignorePromise(invoke())
+                        }}
+                      />
+                    )}
+
+                    {pendingApproval && (
+                      <section
+                        className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4"
+                        aria-label="Pending capability approval"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-sm font-semibold">Approval required</h3>
+                            <p className="text-xs text-muted-foreground">
+                              Grant this request in an authorized approval surface, then resume this exact invocation.
+                            </p>
+                          </div>
+                          <Badge className="bg-amber-600">Waiting for input</Badge>
+                        </div>
+                        <div className="grid gap-2 text-xs sm:grid-cols-3">
+                          <div className="rounded-md border bg-background p-2">
+                            <div className="text-muted-foreground">Approval</div>
+                            <code className="block truncate" title={pendingApproval.approvalId}>
+                              {pendingApproval.approvalId}
+                            </code>
+                          </div>
+                          <div className="rounded-md border bg-background p-2">
+                            <div className="text-muted-foreground">Run</div>
+                            <code className="block truncate" title={pendingApproval.runId}>
+                              {pendingApproval.runId}
+                            </code>
+                          </div>
+                          <div className="rounded-md border bg-background p-2">
+                            <div className="text-muted-foreground">Session</div>
+                            <code className="block truncate" title={pendingApproval.sessionId}>
+                              {pendingApproval.sessionId}
+                            </code>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          disabled={invoking}
+                          onClick={() => {
+                            ignorePromise(invoke(pendingApproval))
+                          }}
+                        >
+                          {invoking ? <Loader2 className="animate-spin" /> : <Play />}
+                          Resume approved action
+                        </Button>
+                      </section>
+                    )}
+
+                    {acceptedInvocation && (
+                      <section className="space-y-2 rounded-xl border border-sky-500/30 bg-sky-500/5 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-sm font-semibold">Execution accepted</h3>
+                            <p className="text-xs text-muted-foreground">
+                              The governed run is executing asynchronously. Live results appear in its timeline.
+                            </p>
+                          </div>
+                          <Badge className="bg-sky-600">Accepted</Badge>
+                        </div>
+                        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                          <span>
+                            Run: <code>{acceptedInvocation.run_id}</code>
+                          </span>
+                          <span>
+                            Session: <code>{acceptedInvocation.session_id}</code>
+                          </span>
+                        </div>
+                      </section>
+                    )}
+
+                    {hasResult && (
+                      <section className="space-y-3" aria-label="Capability result">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="size-5 text-emerald-600" />
+                          <h3 className="font-semibold">Result</h3>
+                        </div>
+                        <ResultRenderer value={result} hint={descriptor.render.renderer} />
+                      </section>
+                    )}
+
+                    {resultRunId && (
+                      <RunInspector
+                        key={resultRunId}
+                        runId={resultRunId}
+                        autoFollow
+                        renderHint={descriptor.render.renderer}
+                      />
+                    )}
                   </div>
-                  <select
-                    value={availabilityFilter}
-                    aria-label="Availability filter"
-                    className="border-input bg-background h-9 rounded-md border px-3 text-sm shadow-xs"
-                    onChange={(event) => {
-                      setAvailabilityFilter(event.target.value as AvailabilityFilter)
+                ) : null}
+              </>
+            )}
+          </div>
+        </ScrollArea>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="space-y-3 border-b p-4">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+                <Input
+                  autoFocus
+                  className="pl-9"
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.target.value)
+                  }}
+                  placeholder="Search capabilities, actions, intents, and tags…"
+                />
+              </div>
+              <select
+                value={availabilityFilter}
+                aria-label="Availability filter"
+                className="border-input bg-background h-9 rounded-md border px-3 text-sm shadow-xs"
+                onChange={(event) => {
+                  setAvailabilityFilter(event.target.value as AvailabilityFilter)
+                }}
+              >
+                <option value="all">All availability</option>
+                <option value="available">Available</option>
+                <option value="degraded">Degraded</option>
+                <option value="unavailable">Unavailable</option>
+              </select>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>
+                Context: <strong className="text-foreground">{pageContext.view}</strong>
+                {currentSelection ? ` · ${currentSelection.label ?? currentSelection.id}` : ''}
+              </span>
+              {catalog && (
+                <span>
+                  {catalog.action_count} actions · catalog {catalog.catalog_version}
+                </span>
+              )}
+            </div>
+            {catalog?.runtime.status === 'initializing' && (
+              <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-2 text-xs text-sky-700 dark:text-sky-300">
+                Runtime is cold but callable; the engine initializes on the first action.
+              </div>
+            )}
+            {catalog?.runtime.status === 'degraded' && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-700 dark:text-amber-300">
+                Runtime degraded
+                {catalog.runtime.reason ? `: ${catalog.runtime.reason}` : ''}
+              </div>
+            )}
+          </div>
+
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="space-y-2 p-4">
+              {catalogQuery.isPending ? (
+                <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+                  <Loader2 className="animate-spin" /> Loading live catalog…
+                </div>
+              ) : catalogQuery.error ? (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5 text-sm text-destructive">
+                  <div className="font-semibold">Capability catalog unavailable</div>
+                  <div className="mt-1 text-xs">{errorMessage(catalogQuery.error)}</div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => {
+                      ignorePromise(catalogQuery.refetch())
                     }}
                   >
-                    <option value="all">All availability</option>
-                    <option value="available">Available</option>
-                    <option value="degraded">Degraded</option>
-                    <option value="unavailable">Unavailable</option>
-                  </select>
+                    Retry
+                  </Button>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <span>
-                    Context: <strong className="text-foreground">{pageContext.view}</strong>
-                    {currentSelection ? ` · ${currentSelection.label ?? currentSelection.id}` : ''}
-                  </span>
-                  {catalog && (
-                    <span>
-                      {catalog.action_count} actions · catalog {catalog.catalog_version}
-                    </span>
-                  )}
+              ) : filteredCapabilities.length === 0 ? (
+                <div className="rounded-xl border border-dashed py-16 text-center text-sm text-muted-foreground">
+                  No live capabilities match this search and availability filter.
                 </div>
-                {catalog?.runtime.status === 'initializing' && (
-                  <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-2 text-xs text-sky-700 dark:text-sky-300">
-                    Runtime is cold but callable; the engine initializes on the first action.
-                  </div>
-                )}
-                {catalog?.runtime.status === 'degraded' && (
-                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-700 dark:text-amber-300">
-                    Runtime degraded
-                    {catalog.runtime.reason ? `: ${catalog.runtime.reason}` : ''}
-                  </div>
-                )}
-              </div>
-
-              <ScrollArea className="min-h-0 flex-1">
-                <div className="space-y-2 p-4">
-                  {catalogQuery.isPending ? (
-                    <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
-                      <Loader2 className="animate-spin" /> Loading live catalog…
-                    </div>
-                  ) : catalogQuery.error ? (
-                    <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5 text-sm text-destructive">
-                      <div className="font-semibold">Capability catalog unavailable</div>
-                      <div className="mt-1 text-xs">{errorMessage(catalogQuery.error)}</div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="mt-3"
-                        onClick={() => {
-                          ignorePromise(catalogQuery.refetch())
-                        }}
-                      >
-                        Retry
-                      </Button>
-                    </div>
-                  ) : filteredCapabilities.length === 0 ? (
-                    <div className="rounded-xl border border-dashed py-16 text-center text-sm text-muted-foreground">
-                      No live capabilities match this search and availability filter.
-                    </div>
-                  ) : (
-                    filteredCapabilities.map(({ capability, score }) => (
-                      <button
-                        key={capability.id}
-                        type="button"
-                        className="group w-full rounded-xl border bg-card p-4 text-left transition-colors hover:border-primary/40 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => {
-                          chooseCapability(capability)
-                        }}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-semibold">{capability.title}</span>
-                              {score > 0 && (
-                                <Badge variant="secondary">
-                                  <Sparkles /> Contextual
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="mt-1 text-sm text-muted-foreground">{capability.one_line}</p>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {capability.actions.slice(0, 5).map((item) => (
-                                <Badge key={item.id} variant="outline">
-                                  {item.id}
-                                </Badge>
-                              ))}
-                              {capability.actions.length > 5 && (
-                                <Badge variant="outline">+{capability.actions.length - 5}</Badge>
-                              )}
-                            </div>
-                          </div>
-                          <Badge variant="outline" className={availabilityClass(capability.availability.status)}>
-                            {capability.availability.status}
-                          </Badge>
+              ) : (
+                filteredCapabilities.map(({ capability, score }) => (
+                  <button
+                    key={capability.id}
+                    type="button"
+                    className="group w-full rounded-xl border bg-card p-4 text-left transition-colors hover:border-primary/40 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => {
+                      chooseCapability(capability)
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold">{capability.title}</span>
+                          {score > 0 && (
+                            <Badge variant="secondary">
+                              <Sparkles /> Contextual
+                            </Badge>
+                          )}
                         </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </ScrollArea>
+                        <p className="mt-1 text-sm text-muted-foreground">{capability.one_line}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {capability.actions.slice(0, 5).map((item) => (
+                            <Badge key={item.id} variant="outline">
+                              {item.id}
+                            </Badge>
+                          ))}
+                          {capability.actions.length > 5 && (
+                            <Badge variant="outline">+{capability.actions.length - 5}</Badge>
+                          )}
+                        </div>
+                      </div>
+                      <Badge variant="outline" className={availabilityClass(capability.availability.status)}>
+                        {capability.availability.status}
+                      </Badge>
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </>
+          </ScrollArea>
+        </div>
+      )}
+    </div>
   )
 }
