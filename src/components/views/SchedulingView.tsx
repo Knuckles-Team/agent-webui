@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { z } from 'zod'
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -17,6 +18,7 @@ import { toast } from 'sonner'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
+import { fetchValidated, looseArray } from '@/lib/api-validation'
 
 interface CronTask {
   id: string
@@ -36,6 +38,28 @@ interface CronLog {
   chat_id?: string
 }
 
+// D-WUI-15: `/api/enhanced/cron/{calendar,logs}` returning anything other
+// than an array (null, `{}`, an error envelope) used to crash on
+// `tasks.length`/`tasks.map(...)` below. Validate at the fetch boundary
+// instead of trusting a `res.json() as T` cast — see api-validation.ts.
+const cronTaskSchema: z.ZodType<CronTask> = z.object({
+  id: z.string(),
+  name: z.string(),
+  schedule: z.string(),
+  last_run: z.string().optional(),
+  next_run: z.string().optional(),
+  status: z.enum(['success', 'failure', 'idle']).optional(),
+})
+
+const cronLogSchema: z.ZodType<CronLog> = z.object({
+  timestamp: z.string(),
+  task_id: z.string(),
+  task_name: z.string(),
+  output: z.string(),
+  status: z.enum(['success', 'error']),
+  chat_id: z.string().optional(),
+})
+
 export default function SchedulingView() {
   const [tasks, setTasks] = useState<CronTask[]>([])
   const [logs, setLogs] = useState<CronLog[]>([])
@@ -50,18 +74,16 @@ export default function SchedulingView() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      const [tasksRes, logsRes] = await Promise.all([
-        fetch('/api/enhanced/cron/calendar'),
-        fetch('/api/enhanced/cron/logs'),
+      const [tasksData, logsData] = await Promise.all([
+        fetchValidated('/api/enhanced/cron/calendar', looseArray(cronTaskSchema)).catch(() => null),
+        fetchValidated('/api/enhanced/cron/logs', looseArray(cronLogSchema)).catch(() => null),
       ])
 
-      const tasksData = (await tasksRes.json()) as CronTask[]
-      const logsData = (await logsRes.json()) as CronLog[]
-
-      setTasks(tasksData)
-      setLogs(logsData)
-    } catch (_err) {
-      toast.error('Failed to load scheduling data')
+      if (tasksData === null || logsData === null) {
+        toast.error('Failed to load scheduling data')
+      }
+      if (tasksData !== null) setTasks(tasksData)
+      if (logsData !== null) setLogs(logsData)
     } finally {
       setLoading(false)
     }

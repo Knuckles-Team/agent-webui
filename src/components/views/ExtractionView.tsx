@@ -128,6 +128,32 @@ export default function ExtractionView() {
   const sigmaRef = useRef<Sigma<NodeAttrs, EdgeAttrs> | null>(null)
   const graphRef = useRef<FactGraph | null>(null)
   const esRef = useRef<EventSource | null>(null)
+  // D-WUI-21: the graph container can still be 0x0 the first time this effect
+  // runs (e.g. this view mounts inside a hidden tab before its layout
+  // settles) — constructing Sigma against a zero-size container throws
+  // "Sigma: Container has no width." One-shot ResizeObserver: flips true the
+  // first time the container actually has a size, so the effect below can
+  // defer construction until then instead of crashing.
+  const [containerReady, setContainerReady] = useState(false)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    if (el.clientWidth > 0 && el.clientHeight > 0) {
+      setContainerReady(true)
+      return
+    }
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth > 0 && el.clientHeight > 0) {
+        setContainerReady(true)
+        observer.disconnect()
+      }
+    })
+    observer.observe(el)
+    return () => {
+      observer.disconnect()
+    }
+  }, [])
 
   const pathEdges = useMemo(() => (showPath ? longestPathEdges(facts) : new Set<number>()), [facts, showPath])
 
@@ -202,6 +228,14 @@ export default function ExtractionView() {
     }
 
     if (!sigmaRef.current) {
+      // D-WUI-21: constructing Sigma against a 0x0 container throws "Sigma:
+      // Container has no width." `containerReady` (set by the ResizeObserver
+      // above) guards this; the graph data built above is preserved in
+      // `graphRef.current`, so the next run — either a new fact arriving or
+      // `containerReady` flipping true — picks up right where this left off.
+      if (!containerReady || containerRef.current.clientWidth === 0 || containerRef.current.clientHeight === 0) {
+        return
+      }
       const renderer = new Sigma<NodeAttrs, EdgeAttrs>(g, containerRef.current, {
         renderEdgeLabels: true,
         defaultEdgeType: 'arrow',
@@ -218,7 +252,7 @@ export default function ExtractionView() {
     } else {
       sigmaRef.current.refresh()
     }
-  }, [facts, pathEdges])
+  }, [facts, pathEdges, containerReady])
 
   // tear down sigma on unmount
   useEffect(() => {

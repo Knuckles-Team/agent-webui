@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { z } from 'zod'
 import { Book, Search, Plus, FileText, Brain, CheckCircle, AlertCircle, RefreshCw, Settings } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -9,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { fetchValidated, looseArray } from '@/lib/api-validation'
 
 interface KnowledgeBase {
   id: string
@@ -33,6 +35,34 @@ interface Article {
   concepts: string[]
   created_at: string
 }
+
+// D-WUI-13: `/api/enhanced/kb/list` returning anything other than an array
+// (null, `{}`, an error envelope) used to crash `filteredKBs =
+// knowledgeBases.filter(...)` below. Validate at the fetch boundary instead
+// of trusting a `res.json() as T` cast — see src/lib/api-validation.ts.
+const knowledgeBaseSchema: z.ZodType<KnowledgeBase> = z.object({
+  id: z.string(),
+  name: z.string(),
+  article_count: z.number(),
+  topics: z.array(z.string()),
+  health_status: z.enum(['healthy', 'warning', 'error']),
+  last_updated: z.string(),
+})
+
+const articleSchema: z.ZodType<Article> = z.object({
+  id: z.string(),
+  title: z.string(),
+  content: z.string(),
+  kb_id: z.string(),
+  concepts: z.array(z.string()),
+  created_at: z.string(),
+})
+
+const kbHealthResultSchema: z.ZodType<KbHealthResult> = z.object({
+  health_status: z.string().optional(),
+  issues: z.array(z.string()).optional(),
+  recommendations: z.array(z.string()).optional(),
+})
 
 export default function KnowledgeBaseView() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
@@ -59,8 +89,7 @@ export default function KnowledgeBaseView() {
   const fetchKnowledgeBases = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/enhanced/kb/list')
-      const data = (await res.json()) as KnowledgeBase[]
+      const data = await fetchValidated('/api/enhanced/kb/list', looseArray(knowledgeBaseSchema))
       setKnowledgeBases(data)
       if (data.length > 0 && !selectedKB) {
         setSelectedKB(data[0])
@@ -74,8 +103,7 @@ export default function KnowledgeBaseView() {
 
   const fetchArticles = async (kbId: string) => {
     try {
-      const res = await fetch(`/api/enhanced/kb/search?query=&kb_id=${kbId}`)
-      const data = (await res.json()) as Article[]
+      const data = await fetchValidated(`/api/enhanced/kb/search?query=&kb_id=${kbId}`, looseArray(articleSchema))
       setArticles(data)
     } catch {
       toast.error('Failed to load articles')
@@ -104,12 +132,11 @@ export default function KnowledgeBaseView() {
 
   const handleHealthCheck = async (kbId: string) => {
     try {
-      const res = await fetch('/api/enhanced/kb/health', {
+      const data = await fetchValidated('/api/enhanced/kb/health', kbHealthResultSchema, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kb_id: kbId }),
       })
-      const data = (await res.json()) as KbHealthResult
       setHealthResults(data)
       setActiveTab('health')
     } catch {
