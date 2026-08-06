@@ -76,6 +76,11 @@ export default defineConfig({
     {
       name: 'setup',
       testMatch: /auth\.setup\.ts/,
+      /* Needs a launchable browser too — same channel override as the
+       * Chromium-based projects below, so a host with only system Chrome
+       * installed (no downloaded Playwright browser binaries) can still run
+       * this project. */
+      use: { channel: chromeChannel },
     },
 
     {
