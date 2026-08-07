@@ -141,8 +141,16 @@ const SWE_MODE_STORAGE_KEY = 'swe-mode'
 
 /** One action+observation frame from the runtime session's SSE event stream. */
 interface SweStreamEvent {
-  action: Record<string, unknown>
-  observation: Record<string, unknown>
+  // Optional, not required: `parsed` below is a raw `JSON.parse(...) as
+  // SweStreamEvent` type assertion over an SSE frame, so nothing actually
+  // guarantees either key is present at runtime -- the type previously
+  // claimed otherwise while formatSweEvent()'s own `ev.action ?? {}` /
+  // `ev.observation ?? {}` guards (correctly) defended against exactly that.
+  // Declaring them required made those guards look dead to
+  // `@typescript-eslint/no-unnecessary-condition` (flagged as errors), which
+  // was backwards: the guards were right and the type was the lie.
+  action?: Record<string, unknown>
+  observation?: Record<string, unknown>
 }
 
 /** Coerce an unknown event field to a display string (events are typed Record<string, unknown>). */
