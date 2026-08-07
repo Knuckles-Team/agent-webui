@@ -1383,6 +1383,87 @@ async def delete_workspace_file(filename: str) -> dict[str, Any]:
     return {'status': 'ok', 'deleted': filename}
 
 
+from pydantic import BaseModel as _EditorContextBaseModel
+from pydantic import Field as _editor_context_field
+
+
+class EditorSelectionContext(_EditorContextBaseModel):
+    """Selection range published by the `agent-webui-bridge` extension (R4)."""
+
+    startLine: int = _editor_context_field(ge=0)
+    startCharacter: int = _editor_context_field(ge=0)
+    endLine: int = _editor_context_field(ge=0)
+    endCharacter: int = _editor_context_field(ge=0)
+    isEmpty: bool = True
+    text: str = _editor_context_field(default='', max_length=4096)
+
+
+class EditorCursorContext(_EditorContextBaseModel):
+    line: int = _editor_context_field(ge=0)
+    character: int = _editor_context_field(ge=0)
+
+
+class EditorDiagnosticContext(_EditorContextBaseModel):
+    severity: str = _editor_context_field(max_length=32)
+    message: str = _editor_context_field(max_length=1024)
+    line: int = _editor_context_field(ge=0)
+    character: int = _editor_context_field(ge=0)
+    source: str | None = _editor_context_field(default=None, max_length=128)
+
+
+class EditorContextPayload(_EditorContextBaseModel):
+    """Published by the `agent-webui-bridge` openvscode-server extension (R4):
+    the workbench's active file, selection, cursor, dirty state, and
+    diagnostics, so the shell -- and the chat agent -- always has context for
+    what the operator is looking at in the embedded Workspace IDE.
+    """
+
+    workspaceRoot: str | None = _editor_context_field(default=None, max_length=4096)
+    filePath: str | None = _editor_context_field(default=None, max_length=4096)
+    languageId: str | None = _editor_context_field(default=None, max_length=64)
+    dirty: bool = False
+    cursor: EditorCursorContext | None = None
+    selection: EditorSelectionContext | None = None
+    diagnostics: list[EditorDiagnosticContext] = _editor_context_field(
+        default_factory=list, max_length=25
+    )
+    capturedAt: str | None = _editor_context_field(default=None, max_length=64)
+
+
+# Single-replica, latest-wins store (D-W3OV-2: multi-replica fan-out, e.g. a
+# per-session store or a broadcast, is deferred -- this webui deployment runs
+# replicas=1 today, see plans/au-eg-program/waves/lane-w3-openvscode-2026-08-06.md).
+_latest_editor_context: dict[str, Any] | None = None
+
+
+@router.post('/editor-context')
+async def publish_editor_context(payload: EditorContextPayload) -> dict[str, str]:
+    """Receive editor context from the `agent-webui-bridge` openvscode-server
+    extension. Requires `kg:write` like every other `/api/enhanced/*` mutation
+    (`WebUIAuthorizationMiddleware`) -- the extension authenticates with a
+    client_credentials bearer token, see the code-server repo's
+    `k8s/manifests.yaml` (`envFrom: agent-webui-oidc`).
+    """
+
+    global _latest_editor_context
+    _latest_editor_context = payload.model_dump()
+    return {'status': 'ok'}
+
+
+@router.get('/editor-context')
+async def get_editor_context() -> dict[str, Any]:
+    """Return the most recently published editor context for the Workspace
+    IDE view to feed into `usePageContextPublisher`, or an empty shape if the
+    bridge extension has not published one yet (no active editor, or the
+    embedded workbench has not loaded)."""
+
+    return _latest_editor_context or {
+        'workspaceRoot': None,
+        'filePath': None,
+        'capturedAt': None,
+    }
+
+
 @router.get('/config-files')
 async def list_config_files() -> list[str]:
     """List configuration files."""
@@ -2484,8 +2565,8 @@ async def link_nodes(data: dict[str, Any]) -> dict[str, Any]:
         Success status.
     """
     try:
-        source = _validate_runtime_id(data.get('source'))
-        target = _validate_runtime_id(data.get('target'))
+        source = _validate_runtime_id(data.get('source', ''))
+        target = _validate_runtime_id(data.get('target', ''))
         relationship_type = data.get('relationship_type')
         if not isinstance(relationship_type, str) or not _SAFE_GRAPH_LABEL.fullmatch(
             relationship_type
