@@ -27,6 +27,8 @@ import {
   Search,
   FileText,
 } from 'lucide-react'
+import { z } from 'zod'
+import { validateShape, looseArray } from '@/lib/api-validation'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -70,6 +72,31 @@ interface ProcessInfo {
   cpu: number
   memory: number
 }
+
+// D-WUI-9: /api/enhanced/systems-manager/processes can answer null/{}
+// instead of an array (cold cache, degraded backend). The old raw cast
+// accepted it as `ProcessInfo[]`, so the unconditional `processes.filter(...)`
+// computed on every render crashed with "processes.filter is not a
+// function" (or "Cannot read properties of null (reading 'filter')").
+const processInfoListSchema = looseArray(
+  z.object({
+    reference: z.string(),
+    cpu: z.number(),
+    memory: z.number(),
+  }),
+)
+
+// Same defect shape, same file, sibling endpoint: `resources?.memory.percent`
+// only guards `resources` itself (matching its `SystemResources | null`
+// state type) -- an empty-object response cast straight into that state
+// crashes on `.memory`/`.disk` being undefined. Validate instead of casting;
+// on a shape violation `fetchSystems` falls back to leaving `resources` at
+// its safe `null` default (the UI already renders placeholder figures then).
+const systemResourcesSchema: z.ZodType<SystemResources> = z.object({
+  cpu_percent: z.number(),
+  memory: z.object({ percent: z.number(), used_gb: z.number(), total_gb: z.number() }),
+  disk: z.object({ percent: z.number(), used_gb: z.number(), total_gb: z.number() }),
+})
 
 interface ContainerInfo {
   reference: string
@@ -392,10 +419,13 @@ export default function EcosystemView() {
         fetch('/api/enhanced/systems-manager/processes'),
       ])
       if (resRes.ok) {
-        setResources((await resRes.json()) as SystemResources)
+        const rawRes: unknown = await resRes.json()
+        const parsed = systemResourcesSchema.safeParse(rawRes)
+        if (parsed.success) setResources(parsed.data)
       }
       if (procRes.ok) {
-        setProcesses((await procRes.json()) as ProcessInfo[])
+        const raw: unknown = await procRes.json()
+        setProcesses(validateShape(processInfoListSchema, raw, '/api/enhanced/systems-manager/processes'))
       }
     } catch (err) {
       console.error(err)

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { z } from 'zod'
 import {
   Save,
   RefreshCw,
@@ -18,6 +19,24 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { toast } from 'sonner'
+import { validateShape } from '@/lib/api-validation'
+
+// D-WUI-20: /api/enhanced/config can answer a bare JSON `null`. The old raw
+// cast accepted it as `Record<string, string | undefined>`, and the render
+// path's `Object.keys(config)` (unguarded, not behind the `loading` ternary)
+// then threw "Cannot convert undefined or null to object" on the very next
+// render after `setConfig(null)` committed. Coerce null/absent to `{}` (a
+// legitimate "no config yet" state, matching the component's own initial
+// state) instead of rejecting it.
+const configSchema = z.preprocess((value) => value ?? {}, z.record(z.string(), z.string().optional()))
+
+// Same shape as `configSchema` above, for the best-effort `/config/groups`
+// companion fetch: `groupsData.fields ?? {}` still throws on a null
+// `groupsData` itself (only the MISSING `fields` key was covered by `??`).
+const configGroupsSchema = z.preprocess(
+  (value) => value ?? {},
+  z.object({ fields: z.record(z.string(), z.string()).optional() }),
+)
 
 /** Strips the trailing `(CONCEPT:...)` provenance tag `config.py`'s own section
  *  comments carry — useful in the source, noise in a settings label. */
@@ -49,10 +68,12 @@ export default function ConfigurationView() {
         toast.error('Failed to load active configuration')
         return
       }
-      const data = (await res.json()) as Record<string, string | undefined>
+      const raw: unknown = await res.json()
+      const data = validateShape(configSchema, raw, '/api/enhanced/config')
       setConfig(data)
       if (groupsRes?.ok) {
-        const groupsData = (await groupsRes.json()) as { fields?: Record<string, string> }
+        const rawGroups: unknown = await groupsRes.json()
+        const groupsData = validateShape(configGroupsSchema, rawGroups, '/api/enhanced/config/groups')
         setFieldGroups(groupsData.fields ?? {})
       }
     } catch {

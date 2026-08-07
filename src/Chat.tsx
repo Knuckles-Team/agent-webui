@@ -67,6 +67,8 @@ import {
   writeConversationMessages,
 } from '@/lib/chat-store'
 import { api, type SweMutatedEdge, type SweProvenanceAction } from '@/lib/api'
+import { z } from 'zod'
+import { fetchValidated, looseArray } from '@/lib/api-validation'
 
 /**
  * Interface for specialized message parts (sources, images, etc.)
@@ -453,12 +455,32 @@ function exportConversation(
   }
 }
 
+// D-WUI-22: /api/configure can answer an empty-object (or otherwise
+// hostile) body. The old raw cast accepted it as `RemoteConfig` verbatim, so
+// `configQuery.data?.models.find(...)` -- guarded only on `data` itself, not
+// on `data.models` -- crashed with "Cannot read properties of undefined
+// (reading 'find')" once `models` silently resolved to `undefined`.
+const remoteConfigSchema: z.ZodType<RemoteConfig> = z.object({
+  models: looseArray(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      builtinTools: looseArray(z.string()),
+    }),
+  ),
+  builtinTools: looseArray(
+    z.object({
+      name: z.string(),
+      id: z.string(),
+    }),
+  ),
+})
+
 /**
  * Fetches the available models and tools from the server configuration endpoint
  */
 async function getModels() {
-  const res = await fetch('/api/configure')
-  return (await res.json()) as RemoteConfig
+  return fetchValidated('/api/configure', remoteConfigSchema)
 }
 
 /**
