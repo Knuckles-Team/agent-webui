@@ -18,6 +18,12 @@ dependencies = [
     "fastapi>=0.139.2",
     "langfuse>=4.14.1",
     "pydantic-ai-slim[ui]>=2.14.1",
+    # api_extensions.py's `/upload` route takes a multipart Form/File payload --
+    # FastAPI raises RuntimeError at route-registration time (not import time)
+    # without this. Not pulled transitively by any of the deps above; verified
+    # by an image built from exactly this dependency set crashing on startup
+    # with "Form data requires python-multipart to be installed" (D-WUI-30).
+    "python-multipart>=0.0.20",
     "sse-starlette>=3.4.6",
     "starlette>=1.3.1",
     "uvicorn>=0.51.0",
@@ -36,7 +42,11 @@ test = [
     "opentelemetry-instrumentation-starlette>=0.65b0",
     "opentelemetry-instrumentation-fastapi>=0.65b0",
     "opentelemetry-instrumentation-asgi>=0.65b0",
-    "agent-utilities[agent,graph]>=2.0.0"
+    # `agent` was renamed to `agent-runtime` upstream (agent-utilities
+    # pyproject.toml); the old name is a silent no-op extra (uv/pip warn and
+    # skip it rather than error), so this floor was quietly installing without
+    # the agent runtime closure. Caught building docker/Dockerfile (D-WUI-30).
+    "agent-utilities[agent-runtime,graph]>=2.0.0"
 ]
 
 [[project.authors]]
