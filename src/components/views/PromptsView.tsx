@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { z } from 'zod'
 import { FileText, Search, Save, RefreshCw, Code, X, Wrench, Sparkles, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -7,6 +8,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
+import { fetchValidated, ApiError, looseArray, looseObject } from '@/lib/api-validation'
+import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
 
 interface PromptSummary {
   name: string
@@ -30,6 +33,14 @@ interface PromptDetail {
   [key: string]: unknown
 }
 
+const promptSummarySchema: z.ZodType<PromptSummary> = z.object({
+  name: z.string(),
+  title: z.string(),
+  goal: z.string(),
+  core_directive: z.string(),
+  file_path: z.string(),
+})
+
 export default function PromptsView() {
   const [prompts, setPrompts] = useState<PromptSummary[]>([])
   const [selectedName, setSelectedName] = useState<string | null>(null)
@@ -40,6 +51,7 @@ export default function PromptsView() {
   const [editMode, setEditMode] = useState<'form' | 'json'>('form')
   const [rawJsonText, setRawJsonText] = useState('')
   const [newTool, setNewTool] = useState('')
+  const [sessionExpired, setSessionExpired] = useState(false)
 
   useEffect(() => {
     void loadPrompts()
@@ -48,18 +60,18 @@ export default function PromptsView() {
   const loadPrompts = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/enhanced/prompts')
-      if (!res.ok) {
-        toast.error('Failed to load prompts')
-        return
-      }
-      const data = (await res.json()) as PromptSummary[]
+      const data = await fetchValidated('/api/enhanced/prompts', looseArray(promptSummarySchema))
+      setSessionExpired(false)
       setPrompts(data)
       if (data.length > 0 && !selectedName) {
         void loadPromptDetail(data[0].name)
       }
-    } catch {
-      toast.error('Error connecting to prompts registry')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setSessionExpired(true)
+      } else {
+        toast.error('Error connecting to prompts registry')
+      }
     } finally {
       setLoading(false)
     }
@@ -68,16 +80,15 @@ export default function PromptsView() {
   const loadPromptDetail = async (name: string) => {
     try {
       setSelectedName(name)
-      const res = await fetch(`/api/enhanced/prompts/${name}`)
-      if (!res.ok) {
-        toast.error('Failed to load prompt details')
-        return
-      }
-      const data = (await res.json()) as PromptDetail
+      const data = (await fetchValidated(`/api/enhanced/prompts/${name}`, looseObject())) as PromptDetail
       setPromptDetail(data)
       setRawJsonText(JSON.stringify(data, null, 4))
-    } catch {
-      toast.error('Error fetching prompt content')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setSessionExpired(true)
+      } else {
+        toast.error('Error fetching prompt content')
+      }
     }
   }
 
@@ -165,6 +176,10 @@ export default function PromptsView() {
       p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.name.toLowerCase().includes(searchQuery.toLowerCase()),
   )
+
+  if (sessionExpired) {
+    return <SessionExpiredNotice />
+  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-12rem)]">

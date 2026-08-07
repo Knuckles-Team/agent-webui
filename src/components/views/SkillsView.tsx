@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { z } from 'zod'
 import {
   Wrench,
   Code,
@@ -19,6 +20,8 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
+import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
+import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
 
 interface MCPTool {
   name: string
@@ -77,6 +80,51 @@ interface LiveMCPTool {
   enabled: boolean
 }
 
+const mcpToolSchema: z.ZodType<MCPTool> = z.object({
+  name: z.string(),
+  type: z.string(),
+  command: z.string(),
+  args: looseArray(z.string()),
+  status: z.string(),
+  enabled: z.boolean(),
+})
+const builtinToolSchema: z.ZodType<BuiltinTool> = z.object({
+  name: z.string(),
+  type: z.string(),
+  file_path: z.string(),
+  status: z.string(),
+  enabled: z.boolean(),
+})
+const skillSchema: z.ZodType<Skill> = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  enabled: z.boolean(),
+  tags: looseArray(z.string()),
+  type: z.string(),
+})
+const skillGraphSchema: z.ZodType<SkillGraph> = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  file_path: z.string(),
+  enabled: z.boolean(),
+})
+const skillWorkflowSchema: z.ZodType<SkillWorkflow> = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  file_path: z.string(),
+  enabled: z.boolean(),
+})
+const toolsDataSchema: z.ZodType<ToolsData> = z.object({
+  mcp_tools: looseArray(mcpToolSchema),
+  builtin_tools: looseArray(builtinToolSchema),
+  skills: looseArray(skillSchema),
+  skill_graphs: looseArray(skillGraphSchema),
+  skill_workflows: looseArray(skillWorkflowSchema),
+})
+
 export default function SkillsView() {
   const [data, setData] = useState<ToolsData>({
     mcp_tools: [],
@@ -88,6 +136,7 @@ export default function SkillsView() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTab, setActiveTab] = useState<'mcp' | 'builtin' | 'cognitive'>('mcp')
+  const [sessionExpired, setSessionExpired] = useState(false)
 
   // Track expanded MCP servers and their loaded tools
   const [expandedMcp, setExpandedMcp] = useState<Record<string, boolean | undefined>>({})
@@ -101,15 +150,15 @@ export default function SkillsView() {
   const fetchTools = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/enhanced/tools')
-      if (!res.ok) {
-        toast.error('Failed to load tools catalog')
-        return
-      }
-      const json = (await res.json()) as ToolsData
+      const json = await fetchValidated('/api/enhanced/tools', toolsDataSchema)
+      setSessionExpired(false)
       setData(json)
-    } catch {
-      toast.error('Failed to connect to backend tools registry')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setSessionExpired(true)
+      } else {
+        toast.error('Failed to connect to backend tools registry')
+      }
     } finally {
       setLoading(false)
     }
@@ -241,6 +290,10 @@ export default function SkillsView() {
   const filteredWorkflows = data.skill_workflows.filter((w) =>
     w.name.toLowerCase().includes(searchQuery.toLowerCase()),
   )
+
+  if (sessionExpired) {
+    return <SessionExpiredNotice />
+  }
 
   return (
     <div className="space-y-6">

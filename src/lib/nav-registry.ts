@@ -141,18 +141,6 @@ export const ROUTES: readonly RouteDef[] = [
     mobile: 'adapted',
     element: lazy(() => import('@/components/views/FilesView')),
   },
-  {
-    id: 'workspace.swe',
-    path: '/swe',
-    label: 'SWE Agent',
-    section: 'workspace',
-    blurb: 'Watch a coding agent read, edit, and run code in your workspace step by step.',
-    icon: Wrench,
-    minRole: 'maintainer',
-    mobile: 'unsupported',
-    element: lazy(() => import('@/components/views/SweView')),
-  },
-
   // -------------------------------------------------------- Control Plane
   {
     id: 'control-plane.sessions',

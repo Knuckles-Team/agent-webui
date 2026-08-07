@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { z } from 'zod'
 import { Book, Search, ExternalLink } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -7,6 +8,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { Response } from '@/components/ai-elements/response'
+import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
+import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
 
 interface Skill {
   id: string
@@ -15,12 +18,20 @@ interface Skill {
   enabled: boolean
 }
 
+const skillSchema: z.ZodType<Skill> = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  enabled: z.boolean(),
+})
+
 export default function KnowledgeView() {
   const [skills, setSkills] = useState<Skill[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null)
   const [loading, setLoading] = useState(true)
   const [docContent, setDocContent] = useState('')
+  const [sessionExpired, setSessionExpired] = useState(false)
 
   useEffect(() => {
     void fetchSkills()
@@ -35,8 +46,8 @@ export default function KnowledgeView() {
   const fetchSkills = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/enhanced/skills')
-      const data = (await res.json()) as Skill[]
+      const data = await fetchValidated('/api/enhanced/skills', looseArray(skillSchema))
+      setSessionExpired(false)
 
       const docSkills = data
         .filter((s: Skill) => s.id.endsWith('-docs'))
@@ -45,8 +56,12 @@ export default function KnowledgeView() {
       if (docSkills.length > 0) {
         setSelectedSkill(docSkills[0])
       }
-    } catch (_err) {
-      toast.error('Failed to load knowledge graphs')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setSessionExpired(true)
+      } else {
+        toast.error('Failed to load knowledge graphs')
+      }
     } finally {
       setLoading(false)
     }
@@ -63,6 +78,10 @@ export default function KnowledgeView() {
       s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.id.toLowerCase().includes(searchQuery.toLowerCase()),
   )
+
+  if (sessionExpired) {
+    return <SessionExpiredNotice />
+  }
 
   return (
     <div className="flex gap-6 h-[calc(100vh-12rem)]">

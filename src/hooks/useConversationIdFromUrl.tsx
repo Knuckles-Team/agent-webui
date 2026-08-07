@@ -33,7 +33,6 @@ const APPLICATION_ROUTES = new Set([
   '/scheduling',
   '/sessions',
   '/skills',
-  '/swe',
   '/system-status',
   '/temporal-graph',
   '/usage',

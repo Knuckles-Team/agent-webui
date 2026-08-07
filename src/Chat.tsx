@@ -26,7 +26,7 @@ import {
   PromptInputToolbar,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
-import { XIcon, Settings2Icon, PaperclipIcon, DownloadIcon } from 'lucide-react'
+import { XIcon, Settings2Icon, PaperclipIcon, DownloadIcon, Wrench, Square, GitBranch } from 'lucide-react'
 import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai-elements/sources'
 import {
   DropdownMenu,
@@ -66,6 +66,7 @@ import {
   saveConversationEntry,
   writeConversationMessages,
 } from '@/lib/chat-store'
+import { api, type SweMutatedEdge, type SweProvenanceAction } from '@/lib/api'
 
 /**
  * Interface for specialized message parts (sources, images, etc.)
@@ -125,6 +126,54 @@ const AGENT_MODES: readonly AgentMode[] = ['ask', 'plan', 'code'] as const
 
 function isAgentMode(value: unknown): value is AgentMode {
   return typeof value === 'string' && (AGENT_MODES as readonly string[]).includes(value)
+}
+
+/**
+ * SWE mode (relocated from the former dedicated `/swe` page, OS-5.34): when on, a
+ * sent message drives the developer-workspace runtime (a sandboxed session, OS-5.33)
+ * instead of the normal agent reply. Persisted in localStorage like `mode` above so
+ * refreshes/navigation keep the user's last selection, independent of `mode` because
+ * it toggles an entirely different send path rather than a request body parameter.
+ */
+const SWE_MODE_STORAGE_KEY = 'swe-mode'
+
+/** One action+observation frame from the runtime session's SSE event stream. */
+interface SweStreamEvent {
+  action: Record<string, unknown>
+  observation: Record<string, unknown>
+}
+
+/** Coerce an unknown event field to a display string (events are typed Record<string, unknown>). */
+function sweAsText(v: unknown): string {
+  return typeof v === 'string' ? v : typeof v === 'number' ? String(v) : ''
+}
+
+/** Render one SWE action/observation SSE frame as a Markdown chat message body. */
+function formatSweEvent(ev: SweStreamEvent): string {
+  const action = ev.action ?? {}
+  const observation = ev.observation ?? {}
+  const kind = sweAsText(action.kind) || 'action'
+  const detail = sweAsText(action.command) || sweAsText(action.path)
+  const header = `**[${kind}]** ${detail}`.trim()
+  const output = (
+    sweAsText(observation.stdout) ||
+    sweAsText(observation.report) ||
+    sweAsText(observation.diff) ||
+    sweAsText(observation.message) ||
+    sweAsText(observation.kind)
+  ).slice(0, 4000)
+  return output ? `${header}\n\n\`\`\`\n${output}\n\`\`\`` : header
+}
+
+/** Render a SWE provenance snapshot (actions + KG-mutated symbols) as a Markdown block. */
+function formatSweProvenance(actions: SweProvenanceAction[], mutated: SweMutatedEdge[]): string {
+  if (actions.length === 0) return '### KG provenance\n\nNo actions recorded yet.'
+  const lines = actions.map((a) => {
+    const symbols = mutated.filter((m) => m.action_id === a.id).map((m) => m.symbol_id)
+    const symbolLine = symbols.length > 0 ? `\n  symbols: ${symbols.map((s) => `\`${s}\``).join(', ')}` : ''
+    return `- **[${a.kind}]** step ${a.step}: ${a.summary}${symbolLine}`
+  })
+  return `### KG provenance\n\n${lines.join('\n')}`
 }
 
 /**
@@ -508,6 +557,19 @@ const Chat = ({ pageContext }: ChatProps) => {
   const [attachments, setAttachments] = useState<{ url: string; base64: string; type: string }[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const [sweMode, setSweMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return window.localStorage.getItem(SWE_MODE_STORAGE_KEY) === 'true'
+    } catch {
+      return false
+    }
+  })
+  const [sweSessionId, setSweSessionId] = useState<string | null>(null)
+  const [sweBackend, setSweBackend] = useState('')
+  const [sweBusy, setSweBusy] = useState(false)
+  const sweEventSourceRef = useRef<EventSource | null>(null)
+
   const pageContextRef = useRef(pageContext)
   pageContextRef.current = pageContext
   const transport = useMemo(
@@ -551,6 +613,127 @@ const Chat = ({ pageContext }: ChatProps) => {
       // Storage may be disabled (private mode, quota); non-fatal.
     }
   }, [mode])
+
+  // Persist SWE mode selection the same way `mode` is persisted.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(SWE_MODE_STORAGE_KEY, String(sweMode))
+    } catch {
+      // Storage may be disabled (private mode, quota); non-fatal.
+    }
+  }, [sweMode])
+
+  // Tear down any live SSE connection to the runtime session on unmount.
+  useEffect(
+    () => () => {
+      sweEventSourceRef.current?.close()
+    },
+    [],
+  )
+
+  /** Best-effort teardown of the active SWE runtime session (OS-5.33), used by both
+   * the explicit "Stop session" control and turning SWE mode off. */
+  const stopSweSession = async () => {
+    sweEventSourceRef.current?.close()
+    sweEventSourceRef.current = null
+    const sid = sweSessionId
+    setSweSessionId(null)
+    setSweBackend('')
+    if (sid) {
+      try {
+        await api.stopSweSession(sid)
+      } catch {
+        /* best-effort teardown */
+      }
+    }
+  }
+
+  const handleToggleSweMode = () => {
+    setSweMode((prev) => {
+      const next = !prev
+      if (!next) void stopSweSession()
+      return next
+    })
+  }
+
+  /**
+   * Sends a chat message as a SWE runtime action instead of a normal agent turn:
+   * lazily creates a developer-workspace session (OS-5.33), attaches the live
+   * action/observation SSE stream into the transcript, and runs the message as a
+   * `cmd_run` action — the same mechanism `SweView` used to drive directly.
+   */
+  const sendSweMessage = async (text: string) => {
+    const userMsg: UIMessage = {
+      id: nanoid(),
+      role: 'user',
+      parts: [{ type: 'text', text }],
+    }
+    setMessages((prev) => [...prev, userMsg])
+
+    setSweBusy(true)
+    try {
+      let sid = sweSessionId
+      if (!sid) {
+        const res = await api.createSweSession({ prefer_docker: false })
+        sid = res.session_id
+        setSweSessionId(sid)
+        setSweBackend(res.backend)
+
+        const es = new EventSource(api.sweEventsUrl(sid))
+        es.onmessage = (evt) => {
+          try {
+            const parsed = JSON.parse(evt.data as string) as SweStreamEvent
+            const assistantMsg: UIMessage = {
+              id: nanoid(),
+              role: 'assistant',
+              parts: [{ type: 'text', text: formatSweEvent(parsed) }],
+            }
+            setMessages((prev) => [...prev, assistantMsg])
+          } catch {
+            /* ignore malformed SSE frames */
+          }
+        }
+        sweEventSourceRef.current = es
+      }
+
+      await api.sweAct(sid, { kind: 'cmd_run', command: text })
+    } catch (err) {
+      const errorMsg: UIMessage = {
+        id: nanoid(),
+        role: 'assistant',
+        parts: [{ type: 'text', text: `❌ SWE action failed: ${err instanceof Error ? err.message : String(err)}` }],
+      }
+      setMessages((prev) => [...prev, errorMsg])
+    } finally {
+      setSweBusy(false)
+    }
+  }
+
+  /** Fetch KG provenance (actions + mutated symbols) for the active session and
+   * render it as a compact Markdown block appended to the transcript — the chat-path
+   * equivalent of `SweView`'s dedicated provenance panel. */
+  const loadSweProvenance = async () => {
+    if (!sweSessionId) return
+    try {
+      const p = await api.sweProvenance(sweSessionId)
+      const provenanceMsg: UIMessage = {
+        id: nanoid(),
+        role: 'assistant',
+        parts: [{ type: 'text', text: formatSweProvenance(p.actions, p.mutated) }],
+      }
+      setMessages((prev) => [...prev, provenanceMsg])
+    } catch (err) {
+      const errorMsg: UIMessage = {
+        id: nanoid(),
+        role: 'assistant',
+        parts: [
+          { type: 'text', text: `❌ Failed to load provenance: ${err instanceof Error ? err.message : String(err)}` },
+        ],
+      }
+      setMessages((prev) => [...prev, errorMsg])
+    }
+  }
 
   const configQuery = useQuery({
     queryFn: getModels,
@@ -912,6 +1095,13 @@ Available commands:
         saveConversationEntry(userKey, newConversationId, input)
       }
 
+      if (sweMode) {
+        void sendSweMessage(input)
+        setInput('')
+        setAttachments([])
+        return
+      }
+
       const message: UIMessage = {
         id: nanoid(),
         role: 'user',
@@ -1241,6 +1431,58 @@ Available commands:
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PromptInputButton
+                    variant={sweMode ? 'default' : 'outline'}
+                    aria-pressed={sweMode}
+                    aria-label="Toggle SWE mode"
+                    onClick={handleToggleSweMode}
+                  >
+                    <Wrench className="size-4" />
+                  </PromptInputButton>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {sweMode
+                    ? 'SWE mode is on — messages run as commands in a live developer workspace'
+                    : 'Enable SWE mode: drive a developer-workspace runtime from chat'}
+                </TooltipContent>
+              </Tooltip>
+              {sweMode && sweSessionId && (
+                <>
+                  <Badge variant="secondary" className="font-mono text-xs">
+                    swe:{sweBackend || sweSessionId}
+                  </Badge>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PromptInputButton
+                        variant="outline"
+                        aria-label="Load KG provenance"
+                        onClick={() => {
+                          void loadSweProvenance()
+                        }}
+                      >
+                        <GitBranch className="size-4" />
+                      </PromptInputButton>
+                    </TooltipTrigger>
+                    <TooltipContent>Load KG provenance (symbols this session mutated)</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PromptInputButton
+                        variant="outline"
+                        aria-label="Stop SWE session"
+                        onClick={() => {
+                          void stopSweSession()
+                        }}
+                      >
+                        <Square className="size-4" />
+                      </PromptInputButton>
+                    </TooltipTrigger>
+                    <TooltipContent>Stop SWE session</TooltipContent>
+                  </Tooltip>
+                </>
+              )}
               {hasUsage && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1365,7 +1607,7 @@ Available commands:
                 </PromptInputModelSelect>
               </div>
             </PromptInputTools>
-            <PromptInputSubmit disabled={!input} status={status} />
+            <PromptInputSubmit disabled={!input || (sweMode && sweBusy)} status={status} />
           </PromptInputToolbar>
         </PromptInput>
       </div>

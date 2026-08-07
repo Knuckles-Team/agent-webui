@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { ROUTES } from '../nav-registry'
+import { ROUTES, SECTIONS, isDynamicPath, matchRoute, routesBySection } from '../nav-registry'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const VIEWS_DIR = join(HERE, '..', '..', 'components', 'views')
@@ -94,5 +94,40 @@ describe('nav-registry: ROUTES', () => {
     const viewFiles = new Set(listViewFiles(VIEWS_DIR))
     const stale = Object.keys(KNOWN_NON_ROUTE_COMPONENTS).filter((file) => !viewFiles.has(file))
     expect(stale, `KNOWN_NON_ROUTE_COMPONENTS names file(s) that no longer exist: ${stale.join(', ')}`).toEqual([])
+  })
+
+  // The operator's own finding: au.arpa landed on an "agent-OS Dashboard" that had
+  // no left-nav entry, so it was unreachable once you clicked anywhere else — a page
+  // can be perfectly wired into ROUTES (proven above) and STILL be an orphan if it
+  // isn't reachable from the one navigation surface (`app-sidebar.tsx`, driven by
+  // `routesBySection`). This closes that gap: every non-dynamic route must appear in
+  // its section's sidebar listing, and the app's actual landing target ('/') must
+  // resolve to one of them.
+  it('has no orphans: every reachable route is listed in its section, and the landing route resolves to one', () => {
+    const nonDynamicRoutes = ROUTES.filter((route) => !isDynamicPath(route.path))
+    const sectionIds = new Set(SECTIONS.map((section) => section.id))
+    const listedIds = new Set(SECTIONS.flatMap((section) => routesBySection(section.id).map((route) => route.id)))
+
+    const unknownSection = nonDynamicRoutes.filter((route) => !sectionIds.has(route.section))
+    expect(
+      unknownSection,
+      `route(s) declare a section not in SECTIONS, so they render nowhere in the sidebar: ` +
+        unknownSection.map((route) => route.id).join(', '),
+    ).toEqual([])
+
+    const unlisted = nonDynamicRoutes.filter((route) => !listedIds.has(route.id))
+    expect(
+      unlisted,
+      `orphaned route(s): reachable by path but absent from every sidebar section — ` +
+        unlisted.map((route) => route.id).join(', '),
+    ).toEqual([])
+
+    const landing = matchRoute('/')
+    expect(landing, "the landing path '/' does not resolve to any registered route").not.toBeNull()
+    expect(
+      landing && listedIds.has(landing.route.id),
+      `the landing route ('${landing?.route.id}') is not reachable from the sidebar once the ` +
+        `user navigates away — this is exactly the orphaned-landing-page defect the operator hit`,
+    ).toBe(true)
   })
 })

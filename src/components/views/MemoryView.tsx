@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { z } from 'zod'
 import { Brain, Plus, Search, Link2, Trash2, Edit2, Calendar, Tag, TrendingUp } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -11,6 +12,18 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
+import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
+
+const memoryNodeSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  importance: z.number(),
+  tags: looseArray(z.string()).optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  linked_nodes: looseArray(z.string()).optional(),
+})
 
 interface MemoryNode {
   id: string
@@ -37,6 +50,7 @@ export default function MemoryView() {
     tags: [] as string[],
   })
   const [tagInput, setTagInput] = useState('')
+  const [sessionExpired, setSessionExpired] = useState(false)
 
   useEffect(() => {
     void fetchMemories()
@@ -45,11 +59,18 @@ export default function MemoryView() {
   const fetchMemories = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/enhanced/graph/nodes?node_type=Memory')
-      const data = (await res.json()) as MemoryNode[]
+      const data = await fetchValidated(
+        '/api/enhanced/graph/nodes?node_type=Memory',
+        looseArray(memoryNodeSchema),
+      )
+      setSessionExpired(false)
       setMemories(data)
-    } catch {
-      toast.error('Failed to load memories')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setSessionExpired(true)
+      } else {
+        toast.error('Failed to load memories')
+      }
     } finally {
       setLoading(false)
     }
@@ -161,6 +182,10 @@ export default function MemoryView() {
     }
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   })
+
+  if (sessionExpired) {
+    return <SessionExpiredNotice />
+  }
 
   return (
     <div className="space-y-6 h-[calc(100vh-12rem)]">
