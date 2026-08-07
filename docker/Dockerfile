@@ -6,30 +6,56 @@
 # anywhere in this repo's git history; the live `knucklessg1/agent-webui:latest`
 # was a one-off manual build/push with no reproducible path back to source.)
 #
-# Three stages, right-sized (build in a builder, ship only the installed
-# package + runtime deps -- no node_modules/toolchain in the final image):
+# ── Why agent-utilities is ALSO built from source here (not `pip install
+# agent-utilities`) ──────────────────────────────────────────────────────────
+# agent_webui/api_extensions.py imports agent_utilities.security.persistence_privacy,
+# .knowledge_graph.core.engine.IntelligenceGraphEngine, .sdd.SDDManager, etc. at
+# module load -- a real runtime dependency, even though pyproject.toml declares
+# agent-utilities only under the `test` extra. Verified empirically (2026-08-06):
+# PyPI's newest published agent-utilities is 1.26.4, which is MISSING
+# `agent_utilities.security.persistence_privacy` outright (ImportError at
+# startup) -- the 2.x line this app's main branch requires has never been
+# published. Likewise agent-utilities' own floor of `epistemic-graph[full]>=
+# 2.23.2` is ahead of PyPI's newest epistemic-graph (2.23.0). So a plain `pip
+# install agent-utilities[...]` cannot produce a working image today.
 #
-#   1. frontend-build (node) -- `pnpm install --frozen-lockfile` + `pnpm build`
+# The fix mirrors agent-utilities' OWN Dockerfile's `agent-local` target
+# (docker/Dockerfile in that repo): resolve the exact-version closure from a
+# local wheelhouse via `--find-links` instead of the public index. Two extra
+# BUILD CONTEXTS supply it (`docker buildx build` / modern `docker build` both
+# support `--build-context NAME=PATH`):
+#
+#   --build-context au-src=../agent-utilities        # sibling repo checkout/worktree
+#   --build-context wheelhouse=../../.dev-wheelhouse  # pre-built epistemic-graph wheel
+#
+# `au-src` is built into a wheel here (pure-Python + this repo's own
+# `build_backend.py`; no Rust toolchain needed -- the compiled engine ships
+# separately as `epistemic-graph`). `wheelhouse` supplies a pre-built
+# `epistemic_graph-2.23.2-*.whl` (the Rust engine; rebuilding it from source is
+# a many-minute cargo/maturin build, out of scope for this image) so neither
+# wheel needs network access to an index that doesn't have them yet. Once
+# agent-utilities 2.x is published to PyPI with a matching epistemic-graph
+# floor, DELETE the `au-wheel-build` stage and its build-context and go back to
+# a plain `"agent-utilities[graph]>=2.0.0"` in the runtime `uv pip install`.
+#
+# Stages (build in a builder, ship only the installed package + runtime deps
+# in the final image -- no node_modules/cargo/toolchain/source tree):
+#   1. frontend-build (node)   -- pnpm install --frozen-lockfile && pnpm build
 #      (tsc -b && vite build) emits the SPA into agent/agent_webui/dist/, the
-#      exact path vite.config.ts's `build.outDir` and this package's
-#      `[tool.setuptools.package-data]` (`agent_webui = ["dist/**", ...]`) agree
-#      on -- the wheel built in stage 2 bundles the built SPA as package data.
-#   2. wheel-build (python + uv) -- `uv build --wheel` over the source tree
-#      (setuptools backend; `[tool.uv.sources] agent-utilities = {workspace =
-#      true}` is a uv-resolver-only declaration that plain `uv build` never
-#      reads, so this stage needs no ecosystem workspace root -- sidesteps
-#      D-FE-7, which is specifically about `uv run`/`uv sync` workspace
-#      discovery from a worktree).
-#   3. runtime (python, final) -- installs the built wheel PLUS agent-utilities
-#      explicitly. agent_webui/api_extensions.py imports
-#      `agent_utilities.knowledge_graph.core.engine.IntelligenceGraphEngine`,
-#      `agent_utilities.sdd.SDDManager`, etc. at module load -- a real runtime
-#      dependency -- even though pyproject.toml declares agent-utilities only
-#      under the `test` extra (`agent-utilities[agent,graph]`); installed here
-#      with that same extra combination since it's the one this package is
-#      actually validated against. (joserfc/JWT verification is base-dependency
-#      in current agent-utilities -- no separate `[auth]` needed; see
-#      agent-utilities pyproject.toml CONCEPT:AU-OS.config.secrets-authentication.)
+#      path vite.config.ts's `build.outDir` and this package's
+#      `[tool.setuptools.package-data]` (`agent_webui = ["dist/**", ...]`)
+#      agree on -- the wheel built in stage 2 bundles the built SPA as
+#      package data.
+#   2. wheel-build (python+uv) -- `uv build --wheel` over the source tree.
+#      `[tool.uv.sources] agent-utilities = {workspace = true}` is a
+#      uv-resolver-only declaration that plain `uv build` never reads, so this
+#      stage needs no ecosystem workspace root -- sidesteps D-FE-7 (which is
+#      specifically about `uv run`/`uv sync` workspace discovery).
+#   3. au-wheel-build (python+uv) -- same mechanism, over the `au-src` context.
+#   4. runtime (python, final) -- installs both built wheels plus
+#      epistemic-graph from the `wheelhouse` context via `--find-links`;
+#      everything else (fastapi, pydantic-ai, etc.) still resolves from PyPI
+#      normally.
 #
 # Runtime wiring: uvicorn binds loopback:8000 (agent_webui.server's own default
 # absent --host/HOST) and `socat` forwards :80 -> :8000, reproducing the
@@ -40,7 +66,10 @@
 # `knucklessg1/agent-webui:latest` -- same exposed port, no manifest change
 # required for a `:latest` swap + rollout.
 #
-#   docker build -f docker/Dockerfile -t agent-webui:local .
+#   docker build -f docker/Dockerfile \
+#     --build-context au-src=../agent-utilities \
+#     --build-context wheelhouse=../../.dev-wheelhouse \
+#     -t agent-webui:local .
 #   docker run --rm -p 8080:80 agent-webui:local
 #   curl http://localhost:8080/health
 
@@ -66,6 +95,20 @@ COPY agent ./agent
 COPY --from=frontend-build /app/agent/agent_webui/dist ./agent/agent_webui/dist
 RUN uv build --wheel --out-dir /dist
 
+# See header: builds agent-utilities from its own source tree (no Rust needed --
+# the compiled engine is the separate epistemic-graph wheel supplied by the
+# `wheelhouse` build context below). Remove this stage once agent-utilities 2.x
+# is published to PyPI.
+FROM python:3.14-slim AS au-wheel-build
+COPY --from=ghcr.io/astral-sh/uv:0.11.7@sha256:240fb85ab0f263ef12f492d8476aa3a2e4e1e333f7d67fbdd923d00a506a516a /uv /uvx /bin/
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_SYSTEM_PYTHON=1 \
+    UV_HTTP_TIMEOUT=3600
+WORKDIR /au
+COPY --from=au-src . .
+RUN uv build --wheel --out-dir /dist-au
+
 FROM python:3.14-slim AS runtime
 # socat provides the :80 -> :8000 privileged-port shim (see header); the image
 # otherwise ships no build toolchain, no node_modules, no source tree.
@@ -76,9 +119,12 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.7@sha256:240fb85ab0f263ef12f492d8476aa3a2e
 ENV UV_SYSTEM_PYTHON=1 \
     UV_HTTP_TIMEOUT=3600 \
     PYTHONUNBUFFERED=1
-COPY --from=wheel-build /dist/*.whl /tmp/
-RUN uv pip install --system --no-cache "agent-utilities[agent,graph]>=2.0.0" /tmp/*.whl \
-    && rm -f /tmp/*.whl
+COPY --from=wheel-build /dist/*.whl /tmp/agent-webui/
+COPY --from=au-wheel-build /dist-au/*.whl /tmp/wheelhouse/
+COPY --from=wheelhouse epistemic_graph-*.whl /tmp/wheelhouse/
+RUN uv pip install --system --no-cache --find-links /tmp/wheelhouse \
+        "agent-utilities[graph]" /tmp/agent-webui/*.whl \
+    && rm -rf /tmp/agent-webui /tmp/wheelhouse
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)" || exit 1
