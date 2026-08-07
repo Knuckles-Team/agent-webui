@@ -36,7 +36,11 @@
 # wheel needs network access to an index that doesn't have them yet. Once
 # agent-utilities 2.x is published to PyPI with a matching epistemic-graph
 # floor, DELETE the `au-wheel-build` stage and its build-context and go back to
-# a plain `"agent-utilities[graph]>=2.0.0"` in the runtime `uv pip install`.
+# a plain `"agent-utilities[graph,mcp]>=2.0.0"` in the runtime `uv pip install`
+# (D-WD-6: the `mcp` extra is required too -- without it, fastmcp is absent
+# and register_graph_routes()'s canonical /api/graph|sessions|goals|tools
+# mount fails at startup with ModuleNotFoundError, degrading those routes to
+# 404 for the life of the pod).
 #
 # Stages (build in a builder, ship only the installed package + runtime deps
 # in the final image -- no node_modules/cargo/toolchain/source tree):
@@ -123,7 +127,7 @@ COPY --from=wheel-build /dist/*.whl /tmp/agent-webui/
 COPY --from=au-wheel-build /dist-au/*.whl /tmp/wheelhouse/
 COPY --from=wheelhouse epistemic_graph-*.whl /tmp/wheelhouse/
 RUN uv pip install --system --no-cache --find-links /tmp/wheelhouse \
-        "agent-utilities[graph]" /tmp/agent-webui/*.whl \
+        "agent-utilities[graph,mcp]" /tmp/agent-webui/*.whl \
     && rm -rf /tmp/agent-webui /tmp/wheelhouse
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
