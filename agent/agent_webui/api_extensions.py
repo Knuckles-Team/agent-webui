@@ -844,17 +844,42 @@ def get_engine() -> IntelligenceGraphEngine:
             )
 
         try:
-            import networkx as nx
-            from agent_utilities.core.paths import ensure_dirs, kg_db_path
+            from agent_utilities.core.paths import ensure_dirs
             from agent_utilities.knowledge_graph.backends import create_backend
 
             ensure_dirs()
-            db_path = str(kg_db_path())
-            backend = create_backend(backend_type='ladybug', db_path=db_path)
-            graph = nx.MultiDiGraph()
-            engine = IntelligenceGraphEngine(graph=graph, backend=backend)
+
+            def _factory() -> IntelligenceGraphEngine:
+                # No backend_type: this is the OPERATIONAL AUTHORITY
+                # construction (create_backend() with backend_type omitted
+                # resolves the real epistemic-graph engine + configured
+                # mirrors, reaching GRAPH_SERVICE_ENDPOINTS the same way the
+                # canonical KG REST surface does). This is the identical
+                # pattern agent_utilities.mcp.kg_server._get_engine() uses to
+                # back register_graph_routes()'s /api/graph|ontology|sparql
+                # mount in this same process.
+                #
+                # An earlier version of this fallback explicitly passed
+                # backend_type='ladybug', which silently created a second,
+                # disconnected, always-empty local store instead of reaching
+                # the real ~37k-node graph -- the actual cause behind
+                # "Workflows/graph-nodes show nothing" (D-WD-7). Because
+                # IntelligenceGraphEngine.get_active() is one process-wide
+                # singleton shared with kg_server's own lazy init, whichever
+                # code path constructed it FIRST won the race; using the
+                # same operational-authority factory here removes the race
+                # entirely -- either caller now produces the same correct
+                # engine.
+                backend = create_backend()
+                if backend is None:
+                    raise RuntimeError('No operational graph backend available')
+                return IntelligenceGraphEngine(
+                    backend=backend, defer_background_start=True
+                )
+
+            engine = IntelligenceGraphEngine.get_or_create(factory=_factory)
             logger.info(
-                'Successfully auto-initialized IntelligenceGraphEngine with LadybugDB backend.'
+                'Successfully auto-initialized IntelligenceGraphEngine with the operational-authority backend.'
             )
         except Exception as e:
             _log_failure('api_extension', e)
