@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { z } from 'zod'
 import { Activity, AlertCircle, CheckCircle2, Clock, Play, RefreshCw, Server, Sparkles, Wrench } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
+import { fetchValidated } from '@/lib/api-validation'
 
 interface PipelinePhase {
   name?: string
@@ -54,6 +56,39 @@ interface CallableResource {
   resource_type?: string
   description?: string
 }
+
+// D-WUI-19: /api/enhanced/pipeline/status can answer a bare JSON `null` (a
+// legitimate "no pipeline run yet" state), which the old raw cast happily
+// accepted as `PipelineStatus`, crashing `pipelineStatus.phases` downstream
+// (`normalizePhases` already guards a missing `phases` field, but nothing
+// guarded `pipelineStatus` itself being null). Every field here is already
+// optional, so coerce a null/undefined body to `{}` at the boundary instead
+// of rejecting it -- the "nothing yet" case is not a shape violation.
+// (Not annotated `z.ZodType<PipelineStatus>`: `phases`'s real type unions a
+// PipelinePhase[] with a Record<string, Partial<PipelinePhase>>, which zod's
+// inferred `Record<string, unknown>` output isn't structurally assignable to
+// -- `normalizePhases()` below already does the actual runtime narrowing of
+// whatever shape survives this boundary, so the schema only needs to catch
+// "this isn't even an object" and coerce the legitimate null/absent case.)
+const pipelineStatusSchema = z.preprocess(
+  (value) => value ?? {},
+  z.object({
+    status: z.string().optional(),
+    phases: z.union([z.array(z.record(z.string(), z.unknown())), z.record(z.string(), z.unknown())]).optional(),
+  }),
+)
+
+// Same defect shape as `pipelineStatusSchema` above, for the maintenance tab's
+// `/api/enhanced/maintenance/status`: `maintenanceStatus.operations` (read
+// unconditionally by `normalizeOperations`) crashed on a null body the same
+// way `pipelineStatus.phases` did.
+const maintenanceStatusSchema = z.preprocess(
+  (value) => value ?? {},
+  z.object({
+    status: z.string().optional(),
+    operations: z.union([z.array(z.record(z.string(), z.unknown())), z.record(z.string(), z.unknown())]).optional(),
+  }),
+)
 
 const MAINTENANCE_OPERATIONS = ['prune', 'reindex', 'consolidate'] as const
 
@@ -129,10 +164,8 @@ export default function OpsPanelView() {
   const fetchPipeline = async () => {
     setLoadingPipeline(true)
     try {
-      const res = await fetch('/api/enhanced/pipeline/status')
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = (await res.json()) as PipelineStatus
-      setPipelineStatus(data)
+      const data = await fetchValidated('/api/enhanced/pipeline/status', pipelineStatusSchema)
+      setPipelineStatus(data as PipelineStatus)
     } catch (err) {
       toast.error(`Failed to load pipeline status: ${String(err)}`)
     } finally {
@@ -143,10 +176,8 @@ export default function OpsPanelView() {
   const fetchMaintenance = async () => {
     setLoadingMaintenance(true)
     try {
-      const res = await fetch('/api/enhanced/maintenance/status')
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = (await res.json()) as MaintenanceStatus
-      setMaintenanceStatus(data)
+      const data = await fetchValidated('/api/enhanced/maintenance/status', maintenanceStatusSchema)
+      setMaintenanceStatus(data as MaintenanceStatus)
     } catch (err) {
       toast.error(`Failed to load maintenance status: ${String(err)}`)
     } finally {

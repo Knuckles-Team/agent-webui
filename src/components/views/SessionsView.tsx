@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type MouseEvent } from 'react'
+import { z } from 'zod'
 import { Trash2, Terminal, Loader2, Send, XCircle, RefreshCw, Database, Cpu, Layers, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
@@ -9,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { Response } from '@/components/ai-elements/response'
 import { cn } from '@/lib/utils'
+import { fetchValidated, looseArray } from '@/lib/api-validation'
 
 interface Turn {
   id: string
@@ -36,6 +38,24 @@ interface Session {
   last_response_preview: string
   goal_id?: string
 }
+
+// D-WUI-16: /api/enhanced/sessions can answer null/{} instead of an array
+// (cold cache, degraded backend). `res.ok` alone does not guard body shape.
+const sessionSchema: z.ZodType<Session> = z.object({
+  id: z.string(),
+  title: z.string(),
+  created_at: z.number(),
+  updated_at: z.number(),
+  model: z.string(),
+  mode: z.string(),
+  workspace: z.string(),
+  turn_count: z.number(),
+  status: z.string(),
+  background: z.boolean(),
+  needs_input: z.boolean(),
+  last_response_preview: z.string(),
+  goal_id: z.string().optional(),
+})
 
 export default function SessionsView() {
   const [sessions, setSessions] = useState<Session[]>([])
@@ -85,11 +105,8 @@ export default function SessionsView() {
   const fetchSessions = async (silent = false) => {
     try {
       if (!silent) setLoading(true)
-      const res = await fetch('/api/enhanced/sessions')
-      if (res.ok) {
-        const data = (await res.json()) as Session[]
-        setSessions(data)
-      }
+      const data = await fetchValidated('/api/enhanced/sessions', looseArray(sessionSchema))
+      setSessions(data)
     } catch (_err) {
       if (!silent) toast.error('Failed to connect to SQLite sessions storage')
     } finally {

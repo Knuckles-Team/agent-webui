@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { z } from 'zod'
 import {
   Activity,
   Container,
@@ -26,6 +27,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { safeExternalUrl } from '@/lib/safe-url'
+import { fetchValidated, looseArray } from '@/lib/api-validation'
 import DashboardSettings from './DashboardSettings'
 
 /* ── Types ───────────────────────────────────────────────────────── */
@@ -73,6 +75,63 @@ interface DashboardLayout {
   auto_refresh: boolean
   refresh_interval: number
 }
+
+// D-WUI-8: /api/dashboard/full can answer a truthy-but-layout-less body ({}
+// or []). The old `res.json() as Promise<{layout: DashboardLayout; ...}>`
+// type assertion lied to the compiler about that -- TS then trusted
+// `dashboardData?.layout.groups` was always safe (only `dashboardData`
+// itself was ever nullable per the declared type), and it crashed with
+// "Cannot read properties of undefined (reading 'groups')" the moment a real
+// response didn't match. Validate at the fetch boundary instead of asserting
+// the shape, so the type the rest of the component sees is actually true.
+const widgetDataSchema: z.ZodType<WidgetData> = z.object({
+  fields: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])),
+  status: z.enum(['ok', 'error', 'unreachable', 'unknown']),
+  error: z.string().nullable(),
+  timestamp: z.string(),
+})
+
+const serviceConfigSchema: z.ZodType<ServiceConfig> = z.object({
+  id: z.string(),
+  name: z.string(),
+  widget_type: z.string(),
+  url: z.string(),
+  icon: z.string(),
+  description: z.string(),
+  category: z.string(),
+  href: z.string(),
+  visible: z.boolean(),
+  column_span: z.number(),
+  row_span: z.number(),
+  order: z.number(),
+  refresh_interval: z.number(),
+  websocket: z.boolean(),
+  fields: z.array(z.string()).nullable(),
+})
+
+const serviceGroupSchema: z.ZodType<ServiceGroup> = z.object({
+  name: z.string(),
+  services: looseArray(serviceConfigSchema),
+  order: z.number(),
+  collapsed: z.boolean(),
+  icon: z.string(),
+})
+
+const dashboardLayoutSchema: z.ZodType<DashboardLayout> = z.object({
+  groups: looseArray(serviceGroupSchema),
+  columns: z.number(),
+  theme: z.string(),
+  card_size: z.string(),
+  show_search: z.boolean(),
+  show_status_indicators: z.boolean(),
+  auto_refresh: z.boolean(),
+  refresh_interval: z.number(),
+})
+
+const dashboardFullSchema: z.ZodType<{ layout: DashboardLayout; data: Record<string, WidgetData> }> = z.object({
+  layout: dashboardLayoutSchema,
+  data: z.record(z.string(), widgetDataSchema),
+})
 
 /* ── Icon Map ────────────────────────────────────────────────────── */
 
@@ -325,11 +384,7 @@ export default function DashboardView() {
     refetch,
   } = useQuery({
     queryKey: ['dashboard-full'],
-    queryFn: async () => {
-      const res = await fetch('/api/dashboard/full')
-      if (!res.ok) throw new Error('Failed to fetch dashboard')
-      return res.json() as Promise<{ layout: DashboardLayout; data: Record<string, WidgetData> }>
-    },
+    queryFn: () => fetchValidated('/api/dashboard/full', dashboardFullSchema),
     refetchInterval: 30000,
     staleTime: 10000,
   })
@@ -396,7 +451,11 @@ export default function DashboardView() {
     }
   }, [queryClient])
 
-  // Filter services by search query
+  // Filter services by search query. D-WUI-8: `dashboardData` (now validated
+  // by `dashboardFullSchema` above) genuinely always carries a full `layout`
+  // once present, so guarding only `dashboardData` itself is correct -- the
+  // bug this used to hit was that the old code TRUSTED that same shape via a
+  // bare type assertion instead of actually checking it.
   const filteredGroups =
     dashboardData?.layout.groups
       .map((group) => ({

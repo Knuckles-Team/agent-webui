@@ -20,8 +20,27 @@
  * not silently orphan existing conversations.
  */
 import { useEffect, useMemo, useState } from 'react'
+import { z } from 'zod'
 import type { ConversationEntry } from '@/types'
 import { DEV_IDENTITY_USER_KEY } from './auth'
+import { fetchValidated, looseArray } from './api-validation'
+
+// D-WUI-28: /api/enhanced/chats can answer null/{}/an error envelope instead
+// of an array. The raw cast previously used here happened to never crash
+// (the throwing `.map()` sat in the same `try` as `setRemote`, so a bad
+// shape threw before any state was ever written -- see the register item's
+// own "self-corrected, not a proven crash" note), but that containment was
+// incidental to the two calls being adjacent, not a designed invariant.
+// Validating explicitly removes the dependency on that adjacency.
+//
+// This is the WIRE shape (before the `.map()` below normalizes `timestamp`
+// to a number) -- the server can legitimately send an ISO string, which the
+// existing normalization already handles.
+const rawConversationEntrySchema = z.object({
+  id: z.string(),
+  firstMessage: z.string().optional(),
+  timestamp: z.union([z.string(), z.number()]).optional(),
+})
 
 /** Fired whenever this module writes the conversation index, for same-tab listeners
  * (the native `storage` event only fires in OTHER tabs/windows). */
@@ -143,9 +162,7 @@ export function useConversations(userKey: string): ConversationEntry[] {
     let cancelled = false
     const fetchRemote = async () => {
       try {
-        const res = await fetch('/api/enhanced/chats')
-        if (!res.ok) return
-        const data = (await res.json()) as ConversationEntry[]
+        const data = await fetchValidated('/api/enhanced/chats', looseArray(rawConversationEntrySchema))
         if (cancelled) return
         setRemote(
           data.map((entry) => ({

@@ -59,10 +59,7 @@ export default function MemoryView() {
   const fetchMemories = async () => {
     try {
       setLoading(true)
-      const data = await fetchValidated(
-        '/api/enhanced/graph/nodes?node_type=Memory',
-        looseArray(memoryNodeSchema),
-      )
+      const data = await fetchValidated('/api/enhanced/graph/nodes?node_type=Memory', looseArray(memoryNodeSchema))
       setSessionExpired(false)
       setMemories(data)
     } catch (err) {

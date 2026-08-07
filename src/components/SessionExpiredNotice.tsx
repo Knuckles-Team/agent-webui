@@ -14,11 +14,7 @@
  * user cannot act on. Mirrors the same affordance `App.tsx`'s route guard
  * already shows for `identity.needsSignIn`.
  */
-export function SessionExpiredNotice({
-  message = 'Your session has expired.',
-}: {
-  message?: string
-}) {
+export function SessionExpiredNotice({ message = 'Your session has expired.' }: { message?: string }) {
   return (
     <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
       <p className="text-sm text-muted-foreground mb-2">{message}</p>

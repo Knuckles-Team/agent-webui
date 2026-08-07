@@ -86,15 +86,7 @@ interface GraphActivityProps {
 /* ── Color scheme by event category ────────────────────────────────── */
 
 type EventCategory =
-  | 'routing'
-  | 'tool'
-  | 'text'
-  | 'error'
-  | 'elicitation'
-  | 'transition'
-  | 'snapshot'
-  | 'complete'
-  | 'default'
+  'routing' | 'tool' | 'text' | 'error' | 'elicitation' | 'transition' | 'snapshot' | 'complete' | 'default'
 
 function getEventCategory(event: string): EventCategory {
   if (event.includes('routing')) return 'routing'

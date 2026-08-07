@@ -132,23 +132,58 @@ gates:
                    "tsconfig*.json", "vite.config.ts"]
 
   # ── TypeScript: lint ──────────────────────────────────────────────────────────────────
-  # `main` is red here too: 4 pre-existing eslint errors (a prettier-format diff in
-  # GraphActivity.tsx/GoalsView.tsx, an unnecessary-assertion in capability-forms.ts, an
-  # unnecessary-conditional in page-context.tsx). No `keep_lines` filter: eslint's default
-  # stylish output is a file-header line followed by `line:col  error  message  rule`
-  # lines, both stable and comparable once the tree's absolute path is substituted out
-  # (the driver does this for every `lines`-compare gate) — same pattern as
-  # agent-utilities' own `ruff` gate, which also declares no `keep_lines`.
+  # `main` is red here too: pre-existing eslint errors (a prettier-format diff in
+  # GraphActivity.tsx/GoalsView.tsx/SessionExpiredNotice.tsx/MemoryView.tsx, an
+  # unnecessary-assertion in capability-forms.ts, an unnecessary-conditional in
+  # page-context.tsx/Chat.tsx). No `keep_lines` filter: eslint's default stylish output is
+  # a file-header line followed by `line:col  error  message  rule` lines, both stable and
+  # comparable once the tree's absolute path is substituted out (the driver does this for
+  # every `lines`-compare gate) — same pattern as agent-utilities' own `ruff` gate, which
+  # also declares no `keep_lines`.
   #
   # `ignore_lines`: same pnpm-install-preamble noise as the `typecheck` gate above (this
   # gate self-provisions `node_modules` the same way) — see D-WUI-7.
+  #
+  # D-WUI-34 (w4-drain-webui, 2026-08-07): eslint's own trailing AGGREGATE lines --
+  # `✖ N problems (N errors, N warnings)` and `N errors and N warnings potentially fixable
+  # with the \`--fix\` option.` -- were NOT filtered, and rejected a fully clean candidate
+  # (D-WD-7 + the D-WUI-8/9/12/16/19/20/22/28 batch, zero real new lint violations) twice:
+  # `lint: 4 NEW signal(s) not present on base`. Root cause, proven via
+  # `repository_manager.merge_queue._normalized_lines`/`_compare_gate` (plain
+  # `merged - baseline.signals` set difference, no semantic awareness): (1) the candidate's
+  # own `pnpm exec eslint --fix` pass (run to satisfy its OWN new code) incidentally
+  # reformatted `GoalsView.tsx`'s ALREADY-pre-existing, unrelated `Validation Action` label
+  # wrap -- fixing real (if unrelated) debt is correct per this ecosystem's Quality Bar
+  # doctrine, not something to avoid, but it changed the total violation count from 8 to 7;
+  # (2) two new `import` lines added near the top of `Chat.tsx` (needed by the D-WUI-22
+  # fix) shifted TWO PRE-EXISTING, unrelated `no-unnecessary-condition` violations further
+  # down that same file from `153:18`/`154:23` to `155:18`/`156:23` -- same defect, same
+  # file, same rule, just two lines lower; a literal line-based diff cannot tell that from
+  # a genuinely new violation. Both effects change the trailing `✖ N problems (...)` count
+  # line's exact text, and (1) that count line's text differs, and (2) the shifted line:col
+  # violation text differs even though the underlying diagnostic doesn't -- entirely
+  # ordinary, unavoidable side effects of touching any file that carries pre-existing lint
+  # debt below the edit point, or of fixing (not masking) any pre-existing debt at
+  # all. The already-established discipline for this exact class of "correct diff, noisy
+  # aggregate" is the `vitest` gate's own `keep_lines: ['^FAIL ']` two gates down, which
+  # already explicitly drops "the aggregate 'X failed | Y passed' summary, all of which
+  # change every run regardless of outcome" -- this extends the identical reasoning to
+  # eslint's two aggregate lines, which nobody had done yet. The line:col SHIFT problem
+  # (Chat.tsx) is not something `ignore_lines` can fix (it is real diagnostic content, not
+  # aggregate noise) -- fixed instead by actually correcting the two pre-existing
+  # `no-unnecessary-condition` violations Chat.tsx's own new imports exposed to the diff
+  # (making `SweStreamEvent.action`/`.observation` genuinely optional, matching what the
+  # code's own `?? {}` guards already assumed -- the type was the lie, not the guard),
+  # which REMOVES those lines from the comparison entirely instead of shifting them.
   - name: lint
     command: ["bash", "-c",
       "test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm exec eslint"]
     tier: fast
     ignore_lines: ["^\\+ \\S", "^\\+{10,}$", "^Progress: ", "^Packages: ",
                    "^Lockfile is up to date", "^Done in .* using pnpm",
-                   "^dependencies:$", "^devDependencies:$"]
+                   "^dependencies:$", "^devDependencies:$",
+                   "^✖ \\d+ problems? \\(\\d+ errors?, \\d+ warnings?\\)$",
+                   "^\\d+ errors? and \\d+ warnings? potentially fixable with the `--fix` option\\.$"]
     timeout: 150
     baseline_timeout: 240
     compare: lines
