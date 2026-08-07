@@ -112,8 +112,18 @@ gates:
     command: ["bash", "-c",
       "test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm exec tsc --noEmit"]
     tier: fast
-    timeout: 90
-    baseline_timeout: 150
+    # 2026-08-07: raised from 90/150, same reasoning that raised the vitest gate
+    # to 360/480 — and this gate was DELIBERATELY left at 90 then, on the
+    # grounds that it was a different gate. That was wrong: it shares both
+    # causes. (1) The command runs `pnpm install --frozen-lockfile` INSIDE the
+    # timed window, because the queue verifies each candidate in a throwaway
+    # `git worktree add --detach` checkout carrying no node_modules. (2) The
+    # typechecked surface has grown substantially (nav registry, RBAC, agent
+    # library, IDE route, validated API client).
+    # Observed failing: `typecheck: exceeded 90s — a gate that cannot answer is
+    # not a passing gate`, rejecting a candidate whose types were fine.
+    timeout: 300
+    baseline_timeout: 420
     compare: lines
     ignore_lines: ["^\\+ \\S", "^\\+{10,}$", "^Progress: ", "^Packages: ",
                    "^Lockfile is up to date", "^Done in .* using pnpm",
