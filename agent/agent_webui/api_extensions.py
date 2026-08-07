@@ -52,7 +52,16 @@ _MAX_EXTERNAL_RESULT_BYTES = 2 * 1024 * 1024
 _MAX_EXTERNAL_ARGUMENT_BYTES = 256 * 1024
 _MAX_EXTERNAL_COLLECTION_ITEMS = 256
 _MAX_EXTERNAL_DEPTH = 10
-_MAX_EXTERNAL_NODES = 4096
+# GET /tools (list_all_tools) legitimately combines up to 5 already-bounded collections
+# (mcp_tools, builtin_tools, skills, skill_graphs, skill_workflows -- each independently
+# capped at _MAX_EXTERNAL_COLLECTION_ITEMS above). Measured live: 256 real skill entries
+# alone already walk to ~3,392 nodes (~13.25 nodes/item), so the previous 4096-node
+# budget rejected genuinely first-party, already-bounded data with a 500 the moment real
+# skills data existed (D-WD-7 / D-WUI-4) -- it was never exercised with real payloads
+# before. Raised with headroom for the worst case (5 collections * 256 items * ~13
+# nodes/item =~ 17,000) while still bounding a truly runaway/malicious delegated result,
+# which is what this constant exists to catch.
+_MAX_EXTERNAL_NODES = 20000
 _MAX_EXTERNAL_STRING_BYTES = 64 * 1024
 _MAX_UPLOAD_HARD_LIMIT = 50 * 1024 * 1024
 _SAFE_INVENTORY_TOKEN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
