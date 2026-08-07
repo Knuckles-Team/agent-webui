@@ -126,8 +126,21 @@ ENV UV_SYSTEM_PYTHON=1 \
 COPY --from=wheel-build /dist/*.whl /tmp/agent-webui/
 COPY --from=au-wheel-build /dist-au/*.whl /tmp/wheelhouse/
 COPY --from=wheelhouse epistemic_graph-*.whl /tmp/wheelhouse/
-RUN uv pip install --system --no-cache --find-links /tmp/wheelhouse \
-        "agent-utilities[graph,mcp]" /tmp/agent-webui/*.whl \
+# D-W5WR-1: naming the requirement as a bare "agent-utilities[graph,mcp]"
+# string let `uv pip install` resolve it against the DEFAULT PyPI index
+# (agent-utilities==1.26.4) instead of the locally-built wheel this stage
+# just placed in /tmp/wheelhouse -- --find-links makes a local wheel an
+# ADDITIONAL candidate, it does not make uv prefer it over the index, and
+# PyPI's 1.26.4 satisfies the unpinned "agent-utilities[graph,mcp]"
+# requirement just fine even though it predates `agent_utilities.security.
+# persistence_privacy` (an ImportError agent_webui hits at module load).
+# Referencing the wheel FILE directly (with the extras bracket appended to
+# the path, PEP 508's local-file-with-extras form) removes the ambiguity:
+# there is exactly one candidate for agent-utilities itself, and it is the
+# one this Dockerfile just built from source.
+RUN AU_WHEEL="$(ls /tmp/wheelhouse/agent_utilities-*.whl)" \
+    && uv pip install --system --no-cache --find-links /tmp/wheelhouse \
+        "${AU_WHEEL}[graph,mcp]" /tmp/agent-webui/*.whl \
     && rm -rf /tmp/agent-webui /tmp/wheelhouse
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
