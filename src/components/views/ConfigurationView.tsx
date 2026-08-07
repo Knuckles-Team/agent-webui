@@ -1,14 +1,34 @@
 import { useState, useEffect } from 'react'
-import { Save, RefreshCw, Eye, EyeOff, Settings, Shield, Sliders, Variable } from 'lucide-react'
+import {
+  Save,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  Settings,
+  Shield,
+  Sliders,
+  Variable,
+  ChevronRight,
+  FolderCog,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { toast } from 'sonner'
+
+/** Strips the trailing `(CONCEPT:...)` provenance tag `config.py`'s own section
+ *  comments carry — useful in the source, noise in a settings label. */
+function displayGroupTitle(title: string): string {
+  return title.replace(/\s*\(CONCEPT:[^)]*\)\s*$/, '').trim() || title
+}
 
 export default function ConfigurationView() {
   const [config, setConfig] = useState<Record<string, string | undefined>>({})
+  const [fieldGroups, setFieldGroups] = useState<Record<string, string>>({})
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [reloading, setReloading] = useState(false)
@@ -21,13 +41,20 @@ export default function ConfigurationView() {
   const fetchConfig = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/enhanced/config')
+      const [res, groupsRes] = await Promise.all([
+        fetch('/api/enhanced/config'),
+        fetch('/api/enhanced/config/groups').catch(() => null),
+      ])
       if (!res.ok) {
         toast.error('Failed to load active configuration')
         return
       }
       const data = (await res.json()) as Record<string, string | undefined>
       setConfig(data)
+      if (groupsRes?.ok) {
+        const groupsData = (await groupsRes.json()) as { fields?: Record<string, string> }
+        setFieldGroups(groupsData.fields ?? {})
+      }
     } catch {
       toast.error('Failed to connect to configuration service')
     } finally {
@@ -100,6 +127,25 @@ export default function ConfigurationView() {
   const customKeys = Object.keys(config).filter(
     (key) => !apiKeyFields.some((f) => f.key === key) && !operationalFields.some((f) => f.key === key),
   )
+
+  // Group the rest by the SAME `# --- Section ---` sections `agent_utilities/core/config.py`
+  // already organizes itself into (via GET /api/enhanced/config/groups), rather than one flat
+  // "everything else" dump — config.py is ~7000 lines / 500+ fields, so a raw field list is
+  // not usable. A key this deployment has set that isn't in the derived map (e.g. a value
+  // predating a config.py refactor) still shows up, under "Other".
+  const groupedCustomKeys = customKeys.reduce<Record<string, string[]>>((acc, key) => {
+    const group = displayGroupTitle(fieldGroups[key] ?? 'Other')
+    ;(acc[group] ??= []).push(key)
+    return acc
+  }, {})
+  const sortedGroupNames = Object.keys(groupedCustomKeys).sort((a, b) => {
+    if (a === 'Other') return 1
+    if (b === 'Other') return -1
+    return groupedCustomKeys[b].length - groupedCustomKeys[a].length || a.localeCompare(b)
+  })
+  const toggleGroup = (group: string) => {
+    setOpenGroups((prev) => ({ ...prev, [group]: !prev[group] }))
+  }
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto h-[calc(100vh-12rem)] flex flex-col">
@@ -236,38 +282,71 @@ export default function ConfigurationView() {
               </CardContent>
             </Card>
 
-            {/* 3. Custom Metadata Fields */}
-            {customKeys.length > 0 && (
+            {/* 3. Every other field this deployment has set, grouped by config.py's own sections */}
+            {sortedGroupNames.length > 0 && (
               <Card className="border-border/40 bg-card/60 backdrop-blur-md">
                 <CardHeader className="pb-3 flex flex-row items-center gap-3">
                   <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
                     <Variable className="size-5" />
                   </div>
                   <div>
-                    <CardTitle className="text-base font-bold">Custom Workspace Environment</CardTitle>
-                    <CardDescription>Arbitrary values loaded from your active config profile.</CardDescription>
+                    <CardTitle className="text-base font-bold">Everything Else</CardTitle>
+                    <CardDescription>
+                      Every other value your active config profile has set, grouped the same way
+                      `agent_utilities/core/config.py` organizes its ~500 settings fields.
+                    </CardDescription>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {customKeys.map((key) => (
-                      <div key={key} className="space-y-1.5">
-                        <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-                          {key}
-                          <Badge variant="outline" className="text-[8px] px-1 py-0.25">
-                            env
-                          </Badge>
-                        </label>
-                        <Input
-                          value={config[key] ?? ''}
-                          onChange={(e) => {
-                            handleFieldChange(key, e.target.value)
-                          }}
-                          className="bg-muted/20 font-mono text-xs"
-                        />
-                      </div>
-                    ))}
-                  </div>
+                <CardContent className="space-y-2">
+                  {sortedGroupNames.map((group) => (
+                    <Collapsible
+                      key={group}
+                      open={openGroups[group] ?? false}
+                      onOpenChange={() => {
+                        toggleGroup(group)
+                      }}
+                      className="rounded-md border border-border/40"
+                    >
+                      <CollapsibleTrigger asChild>
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-muted/20"
+                        >
+                          <span className="flex items-center gap-2 text-sm font-medium">
+                            <FolderCog className="size-4 text-muted-foreground" />
+                            {group}
+                            <Badge variant="outline" className="text-[10px]">
+                              {groupedCustomKeys[group].length}
+                            </Badge>
+                          </span>
+                          <ChevronRight
+                            className={`size-4 text-muted-foreground transition-transform ${openGroups[group] ? 'rotate-90' : ''}`}
+                          />
+                        </button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="border-t border-border/40 p-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {groupedCustomKeys[group].map((key) => (
+                            <div key={key} className="space-y-1.5">
+                              <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                                {key}
+                                <Badge variant="outline" className="text-[8px] px-1 py-0.25">
+                                  env
+                                </Badge>
+                              </label>
+                              <Input
+                                value={config[key] ?? ''}
+                                onChange={(e) => {
+                                  handleFieldChange(key, e.target.value)
+                                }}
+                                className="bg-muted/20 font-mono text-xs"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  ))}
                 </CardContent>
               </Card>
             )}

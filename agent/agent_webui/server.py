@@ -61,6 +61,13 @@ _REMOTE_DEFAULT_RATE = 20.0
 _REMOTE_DEFAULT_BURST = 40.0
 _MAX_WEBSOCKET_MESSAGE_BYTES = 1024 * 1024
 _MAX_BEARER_TOKEN_BYTES = 16 * 1024
+# `/api/enhanced/sessions` (D-WUI-27, D-WUI-33) is deliberately NOT here: nav-registry.ts
+# declares `control-plane.sessions` at `minRole: 'user'`, so this middleware only decides
+# whether the ROUTE is reachable (kg:read for GET, kg:write for mutation, like any other
+# route). WHICH rows a caller may see (admin: every session; non-admin: only sessions they
+# own) is enforced as row-level data scoping inside api_extensions.py's session handlers
+# (`_current_webui_is_admin` + the `sessions.owner` column) — a route-level allow/deny here
+# cannot express "your own rows only", so it belongs at the data layer, not this chokepoint.
 _ADMIN_ROUTE_PREFIXES = (
     '/api/fleet',
     '/api/dashboard',
@@ -88,7 +95,6 @@ _ADMIN_ROUTE_PREFIXES = (
     '/api/enhanced/resources',
     '/api/enhanced/sdd',
     '/api/enhanced/security',
-    '/api/enhanced/sessions',
     '/api/enhanced/systems-manager',
     '/api/enhanced/system',
     '/api/enhanced/tools/toggle',
@@ -598,10 +604,11 @@ class WebUIAuthorizationMiddleware:
 
         if required_scope == 'kg:admin':
             return 'admin'
-        if (
-            method not in {'GET', 'HEAD', 'OPTIONS'}
-            and WebUIAuthorizationMiddleware._is_admin_mutation_route(path)
-        ):
+        if method not in {
+            'GET',
+            'HEAD',
+            'OPTIONS',
+        } and WebUIAuthorizationMiddleware._is_admin_mutation_route(path):
             return 'maintainer'
         return None
 

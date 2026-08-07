@@ -536,7 +536,9 @@ class _Recorder:
 
     @property
     def status(self) -> int:
-        return next(m['status'] for m in self.messages if m['type'] == 'http.response.start')
+        return next(
+            m['status'] for m in self.messages if m['type'] == 'http.response.start'
+        )
 
 
 def test_role_requirement_is_admin_whenever_the_kg_admin_scope_is_required() -> None:
@@ -561,7 +563,9 @@ def test_role_requirement_is_maintainer_for_a_non_admin_mutation_route() -> None
 
     assert (
         WebUIAuthorizationMiddleware._role_requirement(
-            required_scope='kg:write', method='', path='/api/enhanced/skills/demo/toggle'
+            required_scope='kg:write',
+            method='',
+            path='/api/enhanced/skills/demo/toggle',
         )
         == 'maintainer'
     )
@@ -581,7 +585,10 @@ def _graph_session(*, roles: frozenset[str], scopes: frozenset[str]):
     from agent_utilities.security.brain_context import ActorContext
 
     actor = ActorContext(
-        actor_id='subject-1', tenant_id='homelab', roles=tuple(roles), authenticated=True
+        actor_id='subject-1',
+        tenant_id='homelab',
+        roles=tuple(roles),
+        authenticated=True,
     )
     return GraphSession(actor=actor, tenant='homelab', scopes=scopes)
 
@@ -596,8 +603,12 @@ def test_admin_route_rejects_a_verified_kg_admin_caller_explicitly_demoted_to_re
     from agent_utilities.core.config import config
     from agent_utilities.knowledge_graph.core.session import use_session
 
-    monkeypatch.setattr(config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False)
-    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False)
+    monkeypatch.setattr(
+        config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
+    )
+    monkeypatch.setattr(
+        config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False
+    )
     monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
 
     session = _graph_session(
@@ -608,7 +619,12 @@ def test_admin_route_rejects_a_verified_kg_admin_caller_explicitly_demoted_to_re
         raise AssertionError('the demoted caller must never reach the inner app')
 
     middleware = WebUIAuthorizationMiddleware(_inner)
-    scope = {'type': 'http', 'method': 'GET', 'path': '/api/enhanced/prompts', 'headers': []}
+    scope = {
+        'type': 'http',
+        'method': 'GET',
+        'path': '/api/enhanced/prompts',
+        'headers': [],
+    }
     send = _Recorder()
 
     async def receive() -> dict:
@@ -630,11 +646,17 @@ def test_admin_route_admits_a_verified_kg_admin_caller_with_no_webui_override(
     from agent_utilities.core.config import config
     from agent_utilities.knowledge_graph.core.session import use_session
 
-    monkeypatch.setattr(config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False)
-    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False)
+    monkeypatch.setattr(
+        config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
+    )
+    monkeypatch.setattr(
+        config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False
+    )
     monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
 
-    session = _graph_session(roles=frozenset({'kg:admin'}), scopes=frozenset({'kg:admin'}))
+    session = _graph_session(
+        roles=frozenset({'kg:admin'}), scopes=frozenset({'kg:admin'})
+    )
 
     reached: list[bool] = []
 
@@ -644,7 +666,12 @@ def test_admin_route_admits_a_verified_kg_admin_caller_with_no_webui_override(
         await send({'type': 'http.response.body', 'body': b'{}'})
 
     middleware = WebUIAuthorizationMiddleware(_inner)
-    scope = {'type': 'http', 'method': 'GET', 'path': '/api/enhanced/prompts', 'headers': []}
+    scope = {
+        'type': 'http',
+        'method': 'GET',
+        'path': '/api/enhanced/prompts',
+        'headers': [],
+    }
     send = _Recorder()
 
     async def receive() -> dict:
@@ -655,3 +682,276 @@ def test_admin_route_admits_a_verified_kg_admin_caller_with_no_webui_override(
 
     assert reached == [True]
     assert send.status == 200
+
+
+# ------------------------------------------- D-WUI-33: session cross-user scope
+
+
+def test_sessions_route_is_reachable_by_a_non_admin_user_not_a_blanket_admin_route() -> (
+    None
+):
+    """`/api/enhanced/sessions` used to require `kg:admin` for every caller
+    (D-WUI-27), contradicting `nav-registry.ts`'s `control-plane.sessions`
+    `minRole: 'user'`. Row-level ownership (see the tests below) is now what
+    keeps a non-admin from seeing someone else's sessions, so the route itself
+    must NOT be in `_ADMIN_ROUTE_PREFIXES` any more."""
+
+    assert not WebUIAuthorizationMiddleware._is_admin_route('/api/enhanced/sessions')
+    assert not WebUIAuthorizationMiddleware._is_admin_route(
+        '/api/enhanced/sessions/abc123'
+    )
+
+
+def _actor(*, roles: tuple[str, ...], actor_id: str = 'subject-1'):
+    from agent_utilities.security.brain_context import ActorContext
+
+    return ActorContext(actor_id=actor_id, roles=roles, authenticated=True)
+
+
+def test_current_webui_is_admin_reflects_the_resolved_ladder_role() -> None:
+    from agent_utilities.security.brain_context import reset_actor, set_actor
+
+    token = set_actor(_actor(roles=('kg:admin',)))
+    try:
+        assert api_extensions._current_webui_is_admin() is True
+    finally:
+        reset_actor(token)
+
+    token = set_actor(_actor(roles=('kg:read',)))
+    try:
+        assert api_extensions._current_webui_is_admin() is False
+    finally:
+        reset_actor(token)
+
+
+def test_current_webui_is_admin_fails_closed_with_no_bound_actor() -> None:
+    """No ambient identity at all (e.g. an unauthenticated dev-mode request)
+    must resolve to "not admin", never raise past this helper into a 500 that
+    could be mistaken for a broader failure."""
+
+    assert api_extensions._current_webui_is_admin() is False
+
+
+def test_get_all_sessions_scopes_rows_to_the_owner_unless_admin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The core of D-WUI-33: two users' sessions live in the same table: a
+    non-admin caller sees only the session they own; the admin sees both."""
+
+    import sqlite3
+    import time
+
+    from agent_utilities.security.brain_context import reset_actor, set_actor
+
+    db_path = tmp_path / 'sessions.db'
+    monkeypatch.setattr(api_extensions, '_get_db_path', lambda: db_path)
+    monkeypatch.setattr(api_extensions, '_is_gateway_active', lambda: False)
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY, title TEXT DEFAULT '', created_at REAL NOT NULL,
+            updated_at REAL NOT NULL, model TEXT DEFAULT '', mode TEXT DEFAULT 'ask',
+            workspace TEXT DEFAULT '', turn_count INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'active', background INTEGER DEFAULT 0,
+            needs_input INTEGER DEFAULT 0, last_response_preview TEXT DEFAULT '',
+            goal_id TEXT DEFAULT '', metadata_json TEXT DEFAULT '{}', owner TEXT DEFAULT ''
+        )
+        """
+    )
+    owner_a = api_extensions._durable_actor_reference('user-a')
+    owner_b = api_extensions._durable_actor_reference('user-b')
+    now = time.time()
+    conn.execute(
+        'INSERT INTO sessions (id, created_at, updated_at, owner) VALUES (?, ?, ?, ?)',
+        ('session-a', now, now, owner_a),
+    )
+    conn.execute(
+        'INSERT INTO sessions (id, created_at, updated_at, owner) VALUES (?, ?, ?, ?)',
+        ('session-b', now, now, owner_b),
+    )
+    conn.commit()
+    conn.close()
+
+    token = set_actor(_actor(roles=('kg:read',), actor_id='user-a'))
+    try:
+        rows = asyncio.run(api_extensions.get_all_sessions())
+    finally:
+        reset_actor(token)
+    assert [r['id'] for r in rows] == ['session-a']
+
+    token = set_actor(_actor(roles=('kg:admin',), actor_id='admin-user'))
+    try:
+        rows = asyncio.run(api_extensions.get_all_sessions())
+    finally:
+        reset_actor(token)
+    assert {r['id'] for r in rows} == {'session-a', 'session-b'}
+
+
+def test_get_session_details_404s_for_a_non_owner_instead_of_leaking_existence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sqlite3
+    import time
+
+    from agent_utilities.security.brain_context import reset_actor, set_actor
+    from fastapi import HTTPException
+
+    db_path = tmp_path / 'sessions.db'
+    monkeypatch.setattr(api_extensions, '_get_db_path', lambda: db_path)
+    monkeypatch.setattr(api_extensions, '_is_gateway_active', lambda: False)
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY, title TEXT DEFAULT '', created_at REAL NOT NULL,
+            updated_at REAL NOT NULL, model TEXT DEFAULT '', mode TEXT DEFAULT 'ask',
+            workspace TEXT DEFAULT '', turn_count INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'active', background INTEGER DEFAULT 0,
+            needs_input INTEGER DEFAULT 0, last_response_preview TEXT DEFAULT '',
+            goal_id TEXT DEFAULT '', metadata_json TEXT DEFAULT '{}', owner TEXT DEFAULT ''
+        )
+        """
+    )
+    conn.execute(
+        'CREATE TABLE turns (id TEXT PRIMARY KEY, session_id TEXT, turn_number INTEGER)'
+    )
+    now = time.time()
+    conn.execute(
+        'INSERT INTO sessions (id, created_at, updated_at, owner) VALUES (?, ?, ?, ?)',
+        ('session-a', now, now, api_extensions._durable_actor_reference('user-a')),
+    )
+    conn.commit()
+    conn.close()
+
+    token = set_actor(_actor(roles=('kg:read',), actor_id='user-b'))
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(api_extensions.get_session_details('session-a'))
+        assert exc_info.value.status_code == 404
+    finally:
+        reset_actor(token)
+
+    token = set_actor(_actor(roles=('kg:read',), actor_id='user-a'))
+    try:
+        detail = asyncio.run(api_extensions.get_session_details('session-a'))
+        assert detail['id'] == 'session-a'
+    finally:
+        reset_actor(token)
+
+
+# --------------------------------------- D-AOBS-3: grouped AgentConfig surface
+
+
+def test_config_field_groups_derives_real_sections_from_config_py() -> None:
+    """`agent_utilities/core/config.py` is ~7000 lines with 200+ typed settings
+    fields, organised under `# --- Section ---` comments — the only grouping
+    that already exists. `_config_field_groups` must read that real structure
+    (not invent a second taxonomy), so a handful of well-known fields must
+    resolve to the sections they actually live under."""
+
+    api_extensions._config_field_groups_cache = None
+    groups = api_extensions._config_field_groups()
+
+    assert len(groups) > 50, 'expected the parser to find most AgentConfig fields'
+    assert groups.get('openai_api_key', '').startswith('Provider API Keys')
+    assert groups.get('oidc_client_id', '').startswith('OIDC / OAuth 2.0 Delegation')
+    # A field declared before the first `# --- ... ---` marker in the class body
+    # still gets a group rather than being silently dropped.
+    assert 'tls_profile' in groups
+
+
+def test_config_field_groups_endpoint_returns_metadata_only_never_values() -> None:
+    """The `/config/groups` response is field-name -> section-title metadata —
+    it must never carry a configuration VALUE (that's what `/config` is for)."""
+
+    api_extensions._config_field_groups_cache = None
+    result = asyncio.run(api_extensions.get_config_field_groups())
+    assert isinstance(result['fields'], dict)
+    assert result['field_count'] == len(result['fields'])
+    for key, value in result['fields'].items():
+        assert isinstance(key, str)
+        assert isinstance(value, str)
+
+
+def test_config_field_groups_degrades_to_empty_map_on_parse_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A source-introspection failure (package relocated, source unreadable,
+    …) must degrade to an empty map — the frontend's `?? 'Other'` fallback
+    already handles that — never raise past this helper into a 500 that would
+    take the whole Global Settings page down with it."""
+
+    api_extensions._config_field_groups_cache = None
+    monkeypatch.setattr(
+        'agent_utilities.core.config.AgentConfig', object(), raising=False
+    )
+
+    def _boom(_obj: object) -> str:
+        raise RuntimeError('source not found')
+
+    monkeypatch.setattr('inspect.getsourcefile', _boom)
+    assert api_extensions._config_field_groups() == {}
+    api_extensions._config_field_groups_cache = None
+
+
+# --------------------------------------- D-AOBS-4: LLM template model listing
+
+
+def test_list_llm_models_reads_the_live_chat_models_registry_and_excludes_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The LLM template composer's model picker must reflect the SAME
+    `AgentConfig.chat_models` registry `create_model` resolves against (no
+    second, independently-drifting model list), and must never surface a
+    model's `api_key_ref`/`oauth2`/`headers_ref` wiring detail."""
+
+    from agent_utilities.core.config import ChatModelConfig, config
+
+    model = ChatModelConfig(
+        id='test-model',
+        provider='openai',
+        intelligence_level='high',
+        vision=True,
+        reasoning=True,
+        tools_enabled=True,
+        context_window=131072,
+        can_route=True,
+        can_kg=False,
+        api_key_ref='secret://provider/test-model-key',
+    )
+    monkeypatch.setattr(config, 'chat_models', [model])
+
+    result = asyncio.run(api_extensions.list_llm_models())
+
+    assert result == [
+        {
+            'id': 'test-model',
+            'provider': 'openai',
+            'intelligence_level': 'high',
+            'vision': True,
+            'reasoning': True,
+            'tools_enabled': True,
+            'context_window': 131072,
+            'can_route': True,
+            'can_kg': False,
+        }
+    ]
+    serialized = str(result)
+    assert 'secret://provider/test-model-key' not in serialized
+    assert 'api_key_ref' not in serialized
+
+
+def test_list_llm_models_degrades_to_empty_list_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent_utilities.core.config import config
+
+    class _ExplodingList:
+        def __iter__(self):
+            raise RuntimeError('registry unavailable')
+
+    monkeypatch.setattr(config, 'chat_models', _ExplodingList())
+    assert asyncio.run(api_extensions.list_llm_models()) == []

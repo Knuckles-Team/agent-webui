@@ -37,6 +37,7 @@ import {
   ScrollText,
   Settings,
   Shapes,
+  SlidersHorizontal,
   ShieldCheck,
   Sparkles,
   Terminal,
@@ -243,6 +244,17 @@ export const ROUTES: readonly RouteDef[] = [
     element: lazy(() =>
       import('@/components/capabilities/CapabilityWorkbench').then((mod) => ({ default: mod.CapabilityWorkbench })),
     ),
+  },
+  {
+    id: 'control-plane.llm-templates',
+    path: '/llm-templates',
+    label: 'LLM Templates',
+    section: 'control-plane',
+    blurb: 'Pick a model, tune its parameters, and pair it with a system prompt to build a reusable agent template.',
+    icon: SlidersHorizontal,
+    minRole: 'maintainer',
+    mobile: 'unsupported',
+    element: lazy(() => import('@/components/views/LLMTemplatesView')),
   },
 
   // ------------------------------------------------------------- Knowledge
