@@ -4064,7 +4064,8 @@ def _get_db_path() -> Path:
                 needs_input INTEGER DEFAULT 0,
                 last_response_preview TEXT DEFAULT '',
                 goal_id TEXT DEFAULT '',
-                metadata_json TEXT DEFAULT '{}'
+                metadata_json TEXT DEFAULT '{}',
+                owner TEXT DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS turns (
@@ -4085,6 +4086,15 @@ def _get_db_path() -> Path:
                 value TEXT NOT NULL
             );
         """)
+        # `owner` (CONCEPT:AU-ECO.ui.session-owner-visibility) was added after this table
+        # existed in the wild; CREATE TABLE IF NOT EXISTS does not retrofit a column onto
+        # an already-created table, so migrate it explicitly. Idempotent: sqlite raises
+        # "duplicate column name" on a DB that already has it.
+        try:
+            conn.execute("ALTER TABLE sessions ADD COLUMN owner TEXT DEFAULT ''")
+        except sqlite3.OperationalError as exc:
+            if 'duplicate column name' not in str(exc).lower():
+                raise
         marker = conn.execute(
             "SELECT value FROM webui_schema_meta WHERE key = 'privacy_version'"
         ).fetchone()
@@ -4156,12 +4166,32 @@ def _scrub_existing_session_rows(conn: Any) -> None:
 
 @router.get('/sessions')
 async def get_all_sessions() -> list[dict[str, Any]]:
-    """Retrieve all durable sqlite-backed agent sessions (TUI-20)."""
+    """Retrieve durable sqlite-backed agent sessions (TUI-20).
+
+    Cross-user visibility boundary (R9 / D-WUI-33): an `admin`-role caller sees
+    every session; anyone else sees only sessions they own. This is a
+    server-side data-layer scope, not a UI filter — `WebUIAuthorizationMiddleware`
+    only decides whether the route may be reached at all (any authenticated
+    `user`-tier caller, per `nav-registry.ts`'s `control-plane.sessions`
+    `minRole`); which ROWS come back is decided here, every time, regardless of
+    what the caller asks for.
+    """
+    is_admin = _current_webui_is_admin()
     if _is_gateway_active():
         try:
-            return await _proxy_to_gateway('GET', '/sessions')
+            proxied = await _proxy_to_gateway('GET', '/sessions')
         except Exception as e:
             _log_failure('proxy_get_all_sessions', e, level=logging.WARNING)
+            proxied = None
+        if proxied is not None:
+            if is_admin:
+                return proxied if isinstance(proxied, list) else []
+            # The proxied epistemic-gateway session store carries no per-caller
+            # ownership field (unlike the local store below), so a non-admin
+            # caller's "own sessions" cannot be verified from this data. Fail
+            # closed rather than show every session to every user (AU-OS
+            # fail-closed rule: a degraded read must never grant permission).
+            return []
 
     db_path = _get_db_path()
     if not db_path.exists():
@@ -4170,10 +4200,16 @@ async def get_all_sessions() -> list[dict[str, Any]]:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute(
-            'SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?',
-            (_MAX_SESSION_RECORDS,),
-        )
+        if is_admin:
+            cursor.execute(
+                'SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?',
+                (_MAX_SESSION_RECORDS,),
+            )
+        else:
+            cursor.execute(
+                'SELECT * FROM sessions WHERE owner = ? ORDER BY updated_at DESC LIMIT ?',
+                (_actor_id_from_request(None), _MAX_SESSION_RECORDS),
+            )
         rows = cursor.fetchall()
         res = []
         for row in rows:
@@ -4191,11 +4227,26 @@ async def get_all_sessions() -> list[dict[str, Any]]:
 
 @router.get('/sessions/{session_id}')
 async def get_session_details(session_id: str) -> dict[str, Any]:
-    """Retrieve details and turn records for a specific session."""
+    """Retrieve details and turn records for a specific session.
+
+    Same cross-user boundary as `get_all_sessions`: a non-admin caller who
+    guesses/reuses another user's session id gets 404, not their data —
+    "not found" rather than "forbidden" so existence of another user's
+    session is never disclosed either.
+    """
     session_id = _validate_runtime_id(session_id)
+    is_admin = _current_webui_is_admin()
     if _is_gateway_active():
         try:
-            return await _proxy_to_gateway('GET', f'/sessions/{session_id}')
+            result = await _proxy_to_gateway('GET', f'/sessions/{session_id}')
+            if not is_admin:
+                # See get_all_sessions: the gateway store carries no ownership
+                # field to verify against, so a non-admin caller cannot be
+                # proven to own this session — fail closed.
+                raise HTTPException(status_code=404, detail='Session not found')
+            return result
+        except HTTPException:
+            raise
         except Exception as e:
             _log_failure('proxy_get_session_details', e, level=logging.WARNING)
 
@@ -4210,6 +4261,9 @@ async def get_session_details(session_id: str) -> dict[str, Any]:
         cursor.execute('SELECT * FROM sessions WHERE id = ?', (session_id,))
         sess_row = cursor.fetchone()
         if not sess_row:
+            conn.close()
+            raise HTTPException(status_code=404, detail='Session not found')
+        if not is_admin and sess_row['owner'] != _actor_id_from_request(None):
             conn.close()
             raise HTTPException(status_code=404, detail='Session not found')
 
@@ -4236,9 +4290,18 @@ async def get_session_details(session_id: str) -> dict[str, Any]:
 
 @router.delete('/sessions/{session_id}')
 async def delete_session(session_id: str) -> dict[str, Any]:
-    """Permanently remove a session and its turns from durable persistence."""
+    """Permanently remove a session and its turns from durable persistence.
+
+    Same cross-user boundary as `get_session_details`: only the owning user
+    (or an admin) may delete a session.
+    """
     session_id = _validate_runtime_id(session_id)
+    is_admin = _current_webui_is_admin()
     if _is_gateway_active():
+        if not is_admin:
+            # No ownership field to verify against on the gateway store; fail
+            # closed rather than let any authenticated user delete any session.
+            raise HTTPException(status_code=404, detail='Session not found')
         try:
             return await _proxy_to_gateway('DELETE', f'/sessions/{session_id}')
         except Exception as e:
@@ -4249,12 +4312,23 @@ async def delete_session(session_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail='Database not found')
     try:
         conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        if not is_admin:
+            owned = cursor.execute(
+                'SELECT 1 FROM sessions WHERE id = ? AND owner = ?',
+                (session_id, _actor_id_from_request(None)),
+            ).fetchone()
+            if not owned:
+                conn.close()
+                raise HTTPException(status_code=404, detail='Session not found')
         cursor.execute('DELETE FROM turns WHERE session_id = ?', (session_id,))
         cursor.execute('DELETE FROM sessions WHERE id = ?', (session_id,))
         conn.commit()
         conn.close()
         return {'status': 'success', 'message': f'Session {session_id} deleted.'}
+    except HTTPException:
+        raise
     except Exception as e:
         _log_failure('api_extension', e)
         raise HTTPException(status_code=500, detail=type(e).__name__)
@@ -4589,6 +4663,7 @@ async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, 
         spec.constraints = safe_constraints
 
     db_path = _get_db_path()
+    owner = _actor_id_from_request(request)
 
     # Initialize session and initial turn record
     try:
@@ -4596,7 +4671,7 @@ async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, 
         cursor = conn.cursor()
 
         cursor.execute(
-            'INSERT INTO sessions (id, title, created_at, updated_at, model, mode, workspace, turn_count, status, background, needs_input, last_response_preview, goal_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO sessions (id, title, created_at, updated_at, model, mode, workspace, turn_count, status, background, needs_input, last_response_preview, goal_id, metadata_json, owner) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 session_id,
                 'Autonomous goal',
@@ -4612,6 +4687,7 @@ async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, 
                 'Goal loop initialized...',
                 goal_id,
                 '{}',
+                owner,
             ),
         )
 
@@ -4769,6 +4845,87 @@ async def get_config_file() -> dict[str, Any]:
         return {}
 
 
+_CONFIG_SECTION_MARKER = re.compile(r'^\s*#\s*-{3,}\s*(.+?)\s*-{3,}\s*$')
+_CONFIG_FIELD_DECL = re.compile(r'^    (\w+)\s*:\s*[^=\n]+=\s*Field\(')
+_config_field_groups_cache: dict[str, str] | None = None
+
+
+def _config_field_groups() -> dict[str, str]:
+    """Best-effort ``{field_name: section_title}`` map for every `AgentConfig` field.
+
+    `agent_utilities/core/config.py` (D-AOBS-3) is ~7000 lines with 200+ typed
+    settings fields organised under `# --- Section Title ---` comments — the
+    ONLY grouping that already exists, authored by whoever added each field.
+    Rather than inventing a second, drifting taxonomy in the WebUI, this reads
+    the installed package's own source (already on disk as a normal Python
+    dependency; nothing is fetched or executed) and attributes each field
+    declaration to the nearest PRECEDING section marker. Metadata only — field
+    names and section titles, never values — so this is safe to compute
+    without a graph session even though the route sits behind the same
+    `kg:admin`-gated `/api/enhanced/config` prefix as the values endpoint.
+    Parsed once per process and cached: the installed source does not change
+    while this process is running.
+    """
+
+    global _config_field_groups_cache
+    if _config_field_groups_cache is not None:
+        return _config_field_groups_cache
+
+    groups: dict[str, str] = {}
+    try:
+        import inspect
+
+        from agent_utilities.core.config import AgentConfig
+
+        source_file = inspect.getsourcefile(AgentConfig)
+        if source_file:
+            path = Path(source_file)
+            if path.is_symlink():
+                raise RuntimeError('refusing symbolic-link source file')
+            text = path.read_text(encoding='utf-8')
+            if len(text) > 4 * 1024 * 1024:
+                raise ValueError('config source exceeds the safety bound')
+            current_section = 'General'
+            in_class = False
+            for line in text.splitlines():
+                if line.startswith('class AgentConfig('):
+                    in_class = True
+                    continue
+                if in_class and line.startswith('class '):
+                    break  # AgentConfigProxy (or the next class) ends the body
+                if not in_class:
+                    continue
+                marker = _CONFIG_SECTION_MARKER.match(line)
+                if marker:
+                    current_section = marker.group(1)
+                    continue
+                field = _CONFIG_FIELD_DECL.match(line)
+                if field:
+                    groups[field.group(1)] = current_section
+    except Exception as e:  # noqa: BLE001 - best-effort; an empty map degrades to "Other"
+        _log_failure('config_field_groups_parse', e, level=logging.WARNING)
+        groups = {}
+    _config_field_groups_cache = groups
+    return groups
+
+
+@router.get('/config/groups')
+async def get_config_field_groups() -> dict[str, Any]:
+    """Return the derived `{field_name: section_title}` grouping (D-AOBS-3).
+
+    Read-only structural metadata for `ConfigurationView.tsx` to bucket the
+    fields it already reads from `/config` into the SAME sections
+    `agent_utilities/core/config.py` itself organizes them under, instead of
+    one flat "everything else" list.
+    """
+
+    groups = _config_field_groups()
+    return {
+        'fields': groups,
+        'field_count': len(groups),
+    }
+
+
 @router.put('/config')
 async def update_config_file(data: dict[str, Any]) -> dict[str, Any]:
     """Validate and atomically write the central AgentConfig document."""
@@ -4808,6 +4965,42 @@ async def update_config_file(data: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:
         _log_failure('write_agent_config', e)
         raise HTTPException(status_code=500, detail='Failed to save config') from e
+
+
+@router.get('/llm/models')
+async def list_llm_models() -> list[dict[str, Any]]:
+    """List the configured chat models for the LLM template composer (D-AOBS-4).
+
+    Reads the live `AgentConfig.chat_models` registry (`core/config.py`'s
+    `ChatModelConfig`) — the same registry `create_model` resolves against —
+    rather than re-deriving a second model list. Only capability/identity
+    fields are returned; `api_key_ref`/`oauth2`/`headers_ref` are runtime
+    secret REFERENCES (never literal secrets — enforced by ChatModelConfig's
+    own validator) but are still excluded here because they are wiring
+    detail, not something a template author needs to pick a model.
+    """
+    try:
+        from agent_utilities.core.config import config
+
+        models = []
+        for m in config.chat_models:
+            models.append(
+                {
+                    'id': m.id,
+                    'provider': m.provider,
+                    'intelligence_level': m.intelligence_level,
+                    'vision': m.vision,
+                    'reasoning': m.reasoning,
+                    'tools_enabled': m.tools_enabled,
+                    'context_window': m.context_window,
+                    'can_route': m.can_route,
+                    'can_kg': m.can_kg,
+                }
+            )
+        return models
+    except Exception as e:
+        _log_failure('api_extension', e)
+        return []
 
 
 @router.get('/prompts')
@@ -7214,6 +7407,32 @@ def _durable_actor_reference(value: Any) -> str:
     if not text or text in {'system', 'admin'}:
         return text or 'system'
     return persistence_reference('principal', text, namespace='webui')
+
+
+def _current_webui_is_admin() -> bool:
+    """True when the ambient caller holds the WebUI `admin` role (R9 ladder).
+
+    Reuses the SAME `rbac.resolve_webui_role`/`role_at_least` ladder
+    `WebUIAuthorizationMiddleware` already enforces at the route level
+    (`server.py`'s `_role_requirement`) — this is a second, additive READ of
+    that one ladder for row-level data scoping (which sessions a caller may
+    see), not a parallel authorization mechanism. Fails closed: any error
+    resolving the ambient actor is treated as non-admin.
+    """
+
+    try:
+        from agent_utilities.security.brain_context import current_actor
+
+        from .rbac import resolve_webui_role, role_at_least
+
+        actor = current_actor()
+        webui_role = resolve_webui_role(
+            tuple(getattr(actor, 'roles', ()) or ()),
+            authenticated=bool(getattr(actor, 'authenticated', False)),
+        )
+        return role_at_least(webui_role, 'admin')
+    except Exception:  # noqa: BLE001 - fail closed: unresolved role is never admin
+        return False
 
 
 def _actor_context(request: Request | None) -> Any:

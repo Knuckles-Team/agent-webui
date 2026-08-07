@@ -1,0 +1,501 @@
+/**
+ * @file LLMTemplatesView.tsx
+ * @description LLM section for composing agent templates (D-AOBS-4): pick a
+ * configured model, tune generation parameters, and pair them with a system
+ * prompt, then save the result.
+ *
+ * Deliberately reuses the EXISTING prompt store (`/api/enhanced/prompts/{name}`,
+ * owned by this same lane's `control-plane.prompts` route) rather than adding a
+ * second one — a "template" here is a prompt document with `model` and
+ * `parameters` fields attached, not a new storage layer. Model choices come
+ * from `GET /api/enhanced/llm/models`, which reads the live, already-configured
+ * `AgentConfig.chat_models` registry (the same one `create_model` resolves
+ * against), so this never invents a model list independent of what is
+ * actually usable.
+ *
+ * `w3-agent-library` (a sibling lane) owns the full agent library and its
+ * graph-node storage — this view does not touch that store or duplicate it;
+ * it only composes model + parameters + system prompt into the prompt file
+ * format the Prompts Registry already reads and writes.
+ */
+import { useCallback, useEffect, useState } from 'react'
+import { z } from 'zod'
+import { Cpu, Eye, Plus, RefreshCw, Save, Search, Sparkles, Wrench } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Badge } from '@/components/ui/badge'
+import { Slider } from '@/components/ui/slider'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { toast } from 'sonner'
+import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
+import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
+
+interface LLMModel {
+  id: string
+  provider: string
+  intelligence_level: string
+  vision: boolean
+  reasoning: boolean
+  tools_enabled: boolean
+  context_window: number | null
+  can_route: boolean
+  can_kg: boolean
+}
+const modelSchema: z.ZodType<LLMModel> = z.object({
+  id: z.string(),
+  provider: z.string(),
+  intelligence_level: z.string(),
+  vision: z.boolean(),
+  reasoning: z.boolean(),
+  tools_enabled: z.boolean(),
+  context_window: z.number().nullable(),
+  can_route: z.boolean(),
+  can_kg: z.boolean(),
+})
+
+interface TemplateSummary {
+  name: string
+  title: string
+  goal: string
+  core_directive: string
+  file_path: string
+}
+const templateSummarySchema: z.ZodType<TemplateSummary> = z.object({
+  name: z.string(),
+  title: z.string(),
+  goal: z.string(),
+  core_directive: z.string(),
+  file_path: z.string(),
+})
+
+interface TemplateParameters {
+  temperature: number
+  top_p: number
+  max_tokens: number
+  reasoning_effort: string
+}
+const DEFAULT_PARAMETERS: TemplateParameters = {
+  temperature: 0.7,
+  top_p: 1,
+  max_tokens: 4096,
+  reasoning_effort: 'inherit',
+}
+const REASONING_EFFORTS = ['inherit', 'none', 'low', 'medium', 'high', 'xhigh']
+
+/** Loosely-shaped (`z.looseObject` keeps unknown keys) so it round-trips
+ *  whatever else a prompt document already carries (identity/instructions/
+ *  metadata/tools/...) without this view needing to understand every field
+ *  PromptsView.tsx manages. */
+const templateDetailSchema = z.looseObject({
+  title: z.string().optional(),
+  goal: z.string().optional(),
+  core_directive: z.string().optional(),
+  model: z.string().optional(),
+  parameters: z
+    .looseObject({
+      temperature: z.number().optional(),
+      top_p: z.number().optional(),
+      max_tokens: z.number().optional(),
+      reasoning_effort: z.string().optional(),
+    })
+    .optional(),
+})
+
+function ModelBadges({ model }: { model: LLMModel }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      <Badge variant="outline" className="text-[9px]">
+        {model.provider}
+      </Badge>
+      <Badge variant="outline" className="text-[9px]">
+        {model.intelligence_level}
+      </Badge>
+      {model.reasoning && (
+        <Badge variant="secondary" className="text-[9px]">
+          reasoning
+        </Badge>
+      )}
+      {model.vision && (
+        <Badge variant="secondary" className="text-[9px]">
+          vision
+        </Badge>
+      )}
+      {model.tools_enabled && (
+        <Badge variant="secondary" className="text-[9px]">
+          tools
+        </Badge>
+      )}
+      {model.context_window && (
+        <Badge variant="outline" className="text-[9px]">
+          {(model.context_window / 1000).toFixed(0)}k ctx
+        </Badge>
+      )}
+    </div>
+  )
+}
+
+export default function LLMTemplatesView() {
+  const [models, setModels] = useState<LLMModel[]>([])
+  const [templates, setTemplates] = useState<TemplateSummary[]>([])
+  const [selectedName, setSelectedName] = useState<string | null>(null)
+  const [isNew, setIsNew] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [title, setTitle] = useState('')
+  const [goal, setGoal] = useState('')
+  const [coreDirective, setCoreDirective] = useState('')
+  const [modelId, setModelId] = useState('')
+  const [parameters, setParameters] = useState<TemplateParameters>(DEFAULT_PARAMETERS)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sessionExpired, setSessionExpired] = useState(false)
+
+  const loadAll = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [m, t] = await Promise.all([
+        fetchValidated('/api/enhanced/llm/models', looseArray(modelSchema)),
+        fetchValidated('/api/enhanced/prompts', looseArray(templateSummarySchema)),
+      ])
+      setSessionExpired(false)
+      setModels(m)
+      setTemplates(t)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setSessionExpired(true)
+      } else {
+        toast.error('Error connecting to the LLM template composer')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadAll()
+  }, [loadAll])
+
+  const loadTemplate = useCallback(async (name: string) => {
+    try {
+      const detail = await fetchValidated(`/api/enhanced/prompts/${name}`, templateDetailSchema)
+      setSelectedName(name)
+      setIsNew(false)
+      setTitle(detail.title ?? name)
+      setGoal(detail.goal ?? '')
+      setCoreDirective(detail.core_directive ?? '')
+      setModelId(detail.model ?? '')
+      setParameters({ ...DEFAULT_PARAMETERS, ...detail.parameters })
+    } catch {
+      toast.error('Failed to load template')
+    }
+  }, [])
+
+  const startNewTemplate = () => {
+    setSelectedName(null)
+    setIsNew(true)
+    setNewName('')
+    setTitle('')
+    setGoal('')
+    setCoreDirective('')
+    setModelId(models[0]?.id ?? '')
+    setParameters(DEFAULT_PARAMETERS)
+  }
+
+  const handleSave = async () => {
+    const targetName = isNew ? newName.trim() : selectedName
+    if (!targetName) {
+      toast.error('Give the template a name first')
+      return
+    }
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(targetName)) {
+      toast.error('Template name may only contain letters, numbers, "-", and "_"')
+      return
+    }
+    setSaving(true)
+    try {
+      const payload: Record<string, unknown> = {
+        title: title || targetName,
+        goal,
+        core_directive: coreDirective,
+        model: modelId,
+        parameters,
+      }
+      const res = await fetch(`/api/enhanced/prompts/${targetName}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        toast.error('Failed to save template')
+        return
+      }
+      toast.success(`Template "${targetName}" saved`)
+      setIsNew(false)
+      setSelectedName(targetName)
+      void loadAll()
+    } catch {
+      toast.error('Error sending save request')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const filteredTemplates = templates.filter(
+    (t) =>
+      t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  )
+  const selectedModel = models.find((m) => m.id === modelId)
+
+  if (sessionExpired) {
+    return <SessionExpiredNotice />
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-12rem)]">
+      {/* 1. Sidebar - Template List */}
+      <Card className="lg:col-span-1 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-xl font-bold flex items-center gap-2">
+              <Cpu className="size-5 text-emerald-400" />
+              LLM Templates
+            </CardTitle>
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={startNewTemplate}>
+                <Plus className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => {
+                  void loadAll()
+                }}
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+          </div>
+          <CardDescription>Model + parameters + system prompt, saved as one template.</CardDescription>
+          <div className="relative mt-2">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search templates..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+              }}
+              className="pl-8 h-9"
+            />
+          </div>
+        </CardHeader>
+        <ScrollArea className="flex-1">
+          <CardContent className="space-y-1 pt-0">
+            {loading ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">Loading templates…</div>
+            ) : filteredTemplates.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                No templates yet. Use + to compose one.
+              </div>
+            ) : (
+              filteredTemplates.map((t) => (
+                <button
+                  key={t.name}
+                  type="button"
+                  onClick={() => {
+                    void loadTemplate(t.name)
+                  }}
+                  className={`w-full text-left rounded-md p-2 text-sm hover:bg-muted/40 ${
+                    selectedName === t.name ? 'bg-muted/60' : ''
+                  }`}
+                >
+                  <div className="font-medium truncate">{t.title || t.name}</div>
+                  <div className="text-xs text-muted-foreground truncate">{t.goal || t.name}</div>
+                </button>
+              ))
+            )}
+          </CardContent>
+        </ScrollArea>
+      </Card>
+
+      {/* 2. Composer */}
+      <Card className="lg:col-span-2 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base font-bold flex items-center gap-2">
+              <Sparkles className="size-4 text-emerald-400" />
+              {isNew ? 'New template' : (selectedName ?? 'Select a template')}
+            </CardTitle>
+            <CardDescription>
+              Compose the model, its generation parameters, and the system prompt it runs with.
+            </CardDescription>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              void handleSave()
+            }}
+            disabled={saving || (!isNew && !selectedName)}
+            className="bg-emerald-600 hover:bg-emerald-700"
+          >
+            <Save className="size-4 mr-1.5" />
+            {saving ? 'Saving...' : 'Save template'}
+          </Button>
+        </CardHeader>
+        <ScrollArea className="flex-1">
+          <CardContent className="space-y-5 pb-8">
+            {isNew && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Template name (id)</label>
+                <Input
+                  value={newName}
+                  onChange={(e) => {
+                    setNewName(e.target.value)
+                  }}
+                  placeholder="e.g. release-notes-writer"
+                  className="font-mono text-xs"
+                />
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Display title</label>
+                <Input
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value)
+                  }}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Goal (one sentence)</label>
+                <Input
+                  value={goal}
+                  onChange={(e) => {
+                    setGoal(e.target.value)
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">Model</label>
+              {models.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No models are configured in AgentConfig's `chat_models` yet — set one in Global Settings before a
+                  template can select it.
+                </p>
+              ) : (
+                <Select value={modelId} onValueChange={setModelId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Pick a model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.id} — {m.provider}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {selectedModel && <ModelBadges model={selectedModel} />}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                <Eye className="h-3.5 w-3.5" />
+                System prompt / core directive
+              </label>
+              <Textarea
+                value={coreDirective}
+                onChange={(e) => {
+                  setCoreDirective(e.target.value)
+                }}
+                rows={6}
+                className="font-mono text-xs"
+                placeholder="You are ..."
+              />
+            </div>
+
+            <div className="space-y-4 rounded-md border border-border/40 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Wrench className="h-4 w-4 text-muted-foreground" />
+                Parameters
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Temperature</span>
+                  <span className="tabular-nums">{parameters.temperature.toFixed(2)}</span>
+                </div>
+                <Slider
+                  value={parameters.temperature}
+                  onValueChange={(v) => {
+                    setParameters((p) => ({ ...p, temperature: v }))
+                  }}
+                  min={0}
+                  max={2}
+                  step={0.05}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Top P</span>
+                  <span className="tabular-nums">{parameters.top_p.toFixed(2)}</span>
+                </div>
+                <Slider
+                  value={parameters.top_p}
+                  onValueChange={(v) => {
+                    setParameters((p) => ({ ...p, top_p: v }))
+                  }}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground">Max tokens</label>
+                  <Input
+                    type="number"
+                    value={parameters.max_tokens}
+                    onChange={(e) => {
+                      const next = Number(e.target.value)
+                      setParameters((p) => ({ ...p, max_tokens: Number.isFinite(next) ? next : p.max_tokens }))
+                    }}
+                    className="font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground">Reasoning effort</label>
+                  <Select
+                    value={parameters.reasoning_effort}
+                    onValueChange={(v) => {
+                      setParameters((p) => ({ ...p, reasoning_effort: v }))
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {REASONING_EFFORTS.map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {r}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </ScrollArea>
+      </Card>
+    </div>
+  )
+}

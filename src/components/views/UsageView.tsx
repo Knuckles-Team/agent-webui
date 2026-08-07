@@ -12,14 +12,17 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Activity, BarChart3, Coins, Cpu, RefreshCw, Search, Wrench } from 'lucide-react'
+import { Activity, BarChart3, Coins, Cpu, Info, RefreshCw, Search, Users, Wrench } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { safeExternalUrl } from '@/lib/safe-url'
+import { useIdentity } from '@/lib/auth'
+import { roleAtLeast } from '@/lib/nav-registry'
 import {
   api,
   type UsageActivityCell,
@@ -31,6 +34,56 @@ import {
   type UsageToolStat,
   type UsageTraces,
 } from '@/lib/api'
+
+/**
+ * What each real LLM-token source actually captures today (verified against
+ * `agent_utilities/usage/models.py` + `usage_api.py` + a repo-wide grep for
+ * `dspy`, not assumed). Rendered instead of inventing a counter for a source
+ * that isn't wired: a dashboard that silently shows 0 for an uninstrumented
+ * source is worse than one that says so.
+ */
+type SourceStatus = 'captured' | 'partial' | 'not-instrumented'
+interface SourceInfo {
+  label: string
+  status: SourceStatus
+  note: string
+}
+function sourceRows(langfuseEnabled: boolean): SourceInfo[] {
+  return [
+    {
+      label: 'Direct LLM calls',
+      status: 'captured',
+      note: 'Every model call (input/output/cache/reasoning tokens + cost) is recorded per session and per message — this is what the totals, and the Models/Projects/Agents tabs, are built from.',
+    },
+    {
+      label: 'MCP tool & skill calls',
+      status: 'partial',
+      note: 'Call counts and success rate are recorded per tool (see the Tools & Skills tab), and the LLM turns that invoke them count toward the totals above — but no token/cost figure is attributed to an individual tool call. There is no per-tool-call cost breakdown to show.',
+    },
+    {
+      label: 'Langfuse captures',
+      status: langfuseEnabled ? 'captured' : 'not-instrumented',
+      note: langfuseEnabled
+        ? 'A Langfuse exporter is configured — trace references for runtime sessions are available in the Traces tab.'
+        : 'No Langfuse exporter is configured on this deployment, so no Langfuse trace data exists to show here.',
+    },
+    {
+      label: 'DSPy',
+      status: 'not-instrumented',
+      note: 'agent-utilities has no DSPy integration today (no dependency, no call site, no token capture) — this is not a filtered-out or zero-usage number, DSPy usage genuinely is not tracked anywhere in the codebase.',
+    },
+  ]
+}
+const SOURCE_STATUS_STYLE: Record<SourceStatus, string> = {
+  captured: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+  partial: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+  'not-instrumented': 'bg-muted text-muted-foreground',
+}
+const SOURCE_STATUS_LABEL: Record<SourceStatus, string> = {
+  captured: 'Captured',
+  partial: 'Partially captured',
+  'not-instrumented': 'Not instrumented',
+}
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const fmtUsd = (n: number) => `$${n.toFixed(2)}`
@@ -125,6 +178,8 @@ function Empty({ children }: { children: ReactNode }) {
 }
 
 export default function UsageView() {
+  const { identity } = useIdentity()
+  const isAdmin = roleAtLeast(identity.role, 'admin')
   const [summary, setSummary] = useState<UsageSummary | null>(null)
   const [byModel, setByModel] = useState<UsageBreakdown[]>([])
   const [byProject, setByProject] = useState<UsageBreakdown[]>([])
@@ -137,6 +192,14 @@ export default function UsageView() {
   const [searchQ, setSearchQ] = useState('')
   const [hits, setHits] = useState<UsageSearchHit[]>([])
   const [loading, setLoading] = useState(true)
+  // Admin-only cross-tenant view (D-AOBS-2). The backend
+  // (`agent_utilities.usage.authorization.resolve_usage_tenant`) already lets an
+  // admin caller name a DIFFERENT tenant explicitly — by design there is no
+  // implicit "every tenant" query, so this is a one-tenant-at-a-time selector,
+  // not a merged all-tenants view. Non-admins never see this control and the
+  // server independently refuses a non-admin's cross-tenant request either way.
+  const [tenantInput, setTenantInput] = useState('')
+  const [tenantFilter, setTenantFilter] = useState<string | undefined>(undefined)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -152,14 +215,15 @@ export default function UsageView() {
       // .test.tsx`, since Promise.all vs. Promise.allSettled ordering makes
       // which rejection wins a race). Each call now falls back independently
       // to the same safe default its own `useState` already declares.
+      const f = tenantFilter ? { tenant_id: tenantFilter } : undefined
       const [s, m, p, a, t, act, sess, tr] = await Promise.all([
-        api.getUsageSummary().catch(() => null),
-        api.getUsageByModel().catch(() => []),
-        api.getUsageByProject().catch(() => []),
-        api.getUsageByAgent().catch(() => []),
-        api.getUsageTools().catch(() => []),
-        api.getUsageActivity().catch(() => []),
-        api.getUsageTopSessions({ limit: 25 }).catch(() => []),
+        api.getUsageSummary(f).catch(() => null),
+        api.getUsageByModel(f).catch(() => []),
+        api.getUsageByProject(f).catch(() => []),
+        api.getUsageByAgent(f).catch(() => []),
+        api.getUsageTools(f).catch(() => []),
+        api.getUsageActivity(f).catch(() => []),
+        api.getUsageTopSessions({ limit: 25, ...f }).catch(() => []),
         api.getUsageTraces().catch(() => null),
       ])
       setSummary(s)
@@ -173,7 +237,7 @@ export default function UsageView() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [tenantFilter])
 
   useEffect(() => {
     void refresh()
@@ -199,17 +263,79 @@ export default function UsageView() {
             Token usage, cost, and metrics across every agent + our own runtime.
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            void refresh()
-          }}
-          disabled={loading}
-        >
-          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <div className="flex items-center gap-1.5">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={identity.raw?.tenant ? `tenant (default: ${identity.raw.tenant})` : 'tenant id'}
+                value={tenantInput}
+                onChange={(e) => {
+                  setTenantInput(e.target.value)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') setTenantFilter(tenantInput.trim() || undefined)
+                }}
+                className="h-8 w-44 text-xs"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8"
+                onClick={() => {
+                  setTenantFilter(tenantInput.trim() || undefined)
+                }}
+              >
+                View tenant
+              </Button>
+              {tenantFilter && (
+                <Badge variant="secondary" className="text-[10px]">
+                  viewing: {tenantFilter}
+                </Badge>
+              )}
+            </div>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void refresh()
+            }}
+            disabled={loading}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {isAdmin && (
+        <p className="text-xs text-muted-foreground">
+          Admin view: showing tenant{' '}
+          <span className="font-mono">{tenantFilter ?? identity.raw?.tenant ?? 'your own'}</span>. There is no single
+          "every tenant" query — the server requires naming one tenant at a time (never an implicit all-tenant read),
+          so switch tenants above to look at another one.
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-2 text-xs">
+        <span className="flex items-center gap-1 font-medium text-muted-foreground">
+          <Info className="h-3.5 w-3.5" />
+          Data sources:
+        </span>
+        {sourceRows(Boolean(traces?.enabled)).map((s) => (
+          <Tooltip key={s.label}>
+            <TooltipTrigger asChild>
+              <Badge
+                variant="outline"
+                className={`cursor-default gap-1 border-none text-[10px] ${SOURCE_STATUS_STYLE[s.status]}`}
+              >
+                {s.label}: {SOURCE_STATUS_LABEL[s.status]}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs text-xs">{s.note}</TooltipContent>
+          </Tooltip>
+        ))}
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
