@@ -570,7 +570,7 @@ def _validate_delegation_call(
     return bounded_arguments
 
 
-def _validate_runtime_id(value: str) -> str:
+def _validate_runtime_id(value: Any) -> str:
     """Validate a session/goal identifier before storage or proxy routing."""
 
     if not isinstance(value, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(value):
@@ -817,7 +817,12 @@ def get_engine() -> IntelligenceGraphEngine:
         or hasattr(get_active_fn, 'return_value')
         or 'mock' in type(get_active_fn).__name__.lower()
     )
-    is_testing = 'pytest' in sys.modules or 'unittest' in sys.modules
+    # 'unittest' alone is NOT a reliable test-mode signal: several production
+    # dependencies (e.g. pydantic_graph) import `unittest` for non-test reasons,
+    # so checking for it made every real deployment look like it was under
+    # test, skipping auto-initialization entirely (D-WUI, 2026-08-06). Only
+    # 'pytest' in sys.modules is trustworthy — production never imports pytest.
+    is_testing = 'pytest' in sys.modules
 
     engine = get_active_fn()
     if not engine:
@@ -1583,8 +1588,8 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
             )
 
     # 3. Skills & Workflows from installed packages
-    skills = []
-    workflows = []
+    skills: list[dict[str, Any]] = []
+    workflows: list[dict[str, Any]] = []
     univ_skills_dir = (
         get_skills_packages_dir() / 'universal-skills' / 'universal_skills'
     )
@@ -1717,10 +1722,12 @@ async def list_skills() -> list[dict[str, Any]]:
     Returns:
         A list of skill definitions sorted alphabetically.
     """
-    skills = []
+    skills: list[dict[str, Any]] = []
     import sys
 
-    is_testing = 'pytest' in sys.modules or 'unittest' in sys.modules
+    # See the matching note in get_engine(): 'unittest' alone is not a
+    # trustworthy test-mode signal in this process.
+    is_testing = 'pytest' in sys.modules
     univ_skills_dir = (
         get_skills_packages_dir() / 'universal-skills' / 'universal_skills'
     )

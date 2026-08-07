@@ -48,4 +48,13 @@ export const HOSTILE_FIXTURES: [string, unknown, { ok?: boolean; status?: number
   ['empty-object', {}],
   ['empty-array', []],
   ['error envelope', { detail: 'internal error' }, { ok: false, status: 500 }],
+  // D-WUI (2026-08-06): the root cause of the "12 broken pages" incident — an
+  // OIDC misconfiguration made every authenticated route 401 with exactly
+  // this shaped body (`agent/agent_webui/server.py`'s identity gate). Several
+  // views stored this object straight into state and a later `.filter()`/
+  // `.map()` crashed with "m.filter is not a function" — one auth failure,
+  // a dozen broken pages, and this fixture class did not catch it because it
+  // had no case using the real `error` key or a 401 status. Covering it here
+  // pins that class shut across every view in this file's `cases` list.
+  ['401 auth-required envelope', { error: 'Verified Bearer identity required' }, { ok: false, status: 401 }],
 ]

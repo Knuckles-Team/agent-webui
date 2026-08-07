@@ -4,6 +4,10 @@ import { waitFor, screen } from '@testing-library/react'
 import KnowledgeBaseView from '@/components/views/KnowledgeBaseView'
 import SchedulingView from '@/components/views/SchedulingView'
 import ExtractionView from '@/components/views/ExtractionView'
+import MemoryView from '@/components/views/MemoryView'
+import KnowledgeView from '@/components/views/KnowledgeView'
+import PromptsView from '@/components/views/PromptsView'
+import SkillsView from '@/components/views/SkillsView'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { renderWithProviders } from './fixtures'
 import { stubFetch, expectSurvives, HOSTILE_FIXTURES } from './hostile-payload-contract-helpers'
@@ -33,6 +37,18 @@ import { stubFetch, expectSurvives, HOSTILE_FIXTURES } from './hostile-payload-c
  * the ErrorBoundary with "Something went wrong" on real API responses, not
  * just synthetic hostile fixtures — these are live, reproducible bugs, not
  * theoretical ones.
+ *
+ * - D-WUI (2026-08-06, w3-webui-dataplane) MemoryView / KnowledgeView /
+ *   PromptsView — the actual root-cause crash sites of the "12 broken pages"
+ *   incident: all three called `fetch()` directly, bypassing the
+ *   `api.ts`/`api-validation.ts` chokepoint entirely, so a 401 response body
+ *   (`{"error": "..."}`) went straight into `setState` and a later
+ *   `.filter()` (MemoryView/KnowledgeView render-time, or PromptsView's
+ *   `filteredPrompts`) crashed with "m.filter is not a function". Moved onto
+ *   `fetchValidated()` + zod schemas so a non-2xx throws `ApiError` before it
+ *   can reach state, and a 401 specifically now renders
+ *   `SessionExpiredNotice` ("session expired / sign in") instead of a blank
+ *   page or a toast the user cannot act on.
  */
 describe('hostile-payload contract — view-code fixes', () => {
   afterEach(() => {
@@ -42,6 +58,10 @@ describe('hostile-payload contract — view-code fixes', () => {
   const cases: [string, string, () => ReactElement][] = [
     ['D-WUI-13', 'KnowledgeBaseView', () => <KnowledgeBaseView />],
     ['D-WUI-15', 'SchedulingView', () => <SchedulingView />],
+    ['D-WUI', 'MemoryView', () => <MemoryView />],
+    ['D-WUI', 'KnowledgeView', () => <KnowledgeView />],
+    ['D-WUI', 'PromptsView', () => <PromptsView />],
+    ['D-WUI-7', 'SkillsView', () => <SkillsView />],
   ]
 
   for (const [registerId, label, make] of cases) {
