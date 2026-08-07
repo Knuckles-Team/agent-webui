@@ -32,6 +32,19 @@ interface MCPContextValue {
 const MCPContext = createContext<MCPContextValue | undefined>(undefined)
 
 export function MCPProvider({ children }: { children: ReactNode }) {
+  // D-FE-3: `tools` is a deliberate, documented placeholder -- always `null`,
+  // no live consumer of `useMCP().tools` exists in this repo today (grepped;
+  // SkillsView.tsx keeps its own separate `mcpTools` state fetched over
+  // REST, unrelated to this context). A stale sibling `.backup*` draft of
+  // this file once wired `tools` to `@ai-sdk/mcp`'s `createMCPClient` over
+  // an SSE transport at `/mcp/sse` -- that route does not exist anywhere in
+  // `agent/agent_webui/*.py` (grepped), and the draft's
+  // `process.env.NEXT_PUBLIC_MCP_SSE_URL` is a Next.js convention this
+  // Vite-based app has no equivalent for, so that draft was never a viable
+  // fix, just a dead lead. Removed the `.backup*` files (six of them) so a
+  // future reader isn't misled into thinking a working implementation
+  // already existed. A real fix needs a backend MCP-tool-listing surface
+  // first (none exists), not a frontend patch alone.
   const [tools] = useState<ToolSet | null>(null)
   const [isLoadingTools, setIsLoadingTools] = useState(false)
   const [elicitation, setElicitation] = useState<ElicitationState>({
