@@ -535,6 +535,10 @@ class ApiClient {
   runSweBench = (body: { instances: unknown[]; ingest?: boolean; remediate?: boolean }) =>
     this.post<{ run_id: string; report: SweBenchReport; remediation: unknown }>('/api/swebench/run', body)
 
+  // Workspace IDE (R4 — openvscode-server embed): the `agent-webui-bridge`
+  // extension polls-publishes here; the Workspace IDE view polls it back.
+  getEditorContext = () => this.getValidated('/api/enhanced/editor-context', editorContextSchema)
+
   // Memory Methods
   getGraphNodes = (type?: string) =>
     this.get<unknown[]>(`/api/enhanced/graph/nodes${type ? `?node_type=${type}` : ''}`)
@@ -1196,6 +1200,63 @@ const ontologyActionSchema = z.object({
   produces_effect: z.string(),
   required_capability: z.string(),
   acts_on: looseArray(z.string()),
+})
+
+// Workspace IDE editor context, published by the agent-webui-bridge
+// openvscode-server extension (R4). Every field is optional -- the bridge
+// has nothing to report before an editor is open or before the workbench has
+// loaded, and the backend returns an empty shape in that case.
+export interface EditorContext {
+  workspaceRoot: string | null
+  filePath: string | null
+  languageId?: string
+  dirty?: boolean
+  cursor?: { line: number; character: number } | null
+  selection?: {
+    startLine: number
+    startCharacter: number
+    endLine: number
+    endCharacter: number
+    isEmpty: boolean
+    text: string
+  } | null
+  diagnostics?: {
+    severity: string
+    message: string
+    line: number
+    character: number
+    source: string | null
+  }[]
+  capturedAt: string | null
+}
+
+const editorContextSchema: z.ZodType<EditorContext> = z.object({
+  workspaceRoot: z.string().nullable(),
+  filePath: z.string().nullable(),
+  languageId: z.string().optional(),
+  dirty: z.boolean().optional(),
+  cursor: z.object({ line: z.number(), character: z.number() }).nullable().optional(),
+  selection: z
+    .object({
+      startLine: z.number(),
+      startCharacter: z.number(),
+      endLine: z.number(),
+      endCharacter: z.number(),
+      isEmpty: z.boolean(),
+      text: z.string(),
+    })
+    .nullable()
+    .optional(),
+  diagnostics: looseArray(
+    z.object({
+      severity: z.string(),
+      message: z.string(),
+      line: z.number(),
+      character: z.number(),
+      source: z.string().nullable(),
+    }),
+  ).optional(),
+  capturedAt: z.string().nullable(),
 })
 
 /**

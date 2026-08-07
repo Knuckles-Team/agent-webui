@@ -141,6 +141,18 @@ export const ROUTES: readonly RouteDef[] = [
     mobile: 'adapted',
     element: lazy(() => import('@/components/views/FilesView')),
   },
+  {
+    id: 'workspace.ide',
+    path: '/ide',
+    label: 'IDE',
+    section: 'workspace',
+    blurb:
+      'A full VS Code editor on your workspace, right inside the app -- the agent can see what file and selection you have open.',
+    icon: Code2,
+    minRole: 'user',
+    mobile: 'unsupported',
+    element: lazy(() => import('@/components/views/WorkspaceIDEView')),
+  },
   // -------------------------------------------------------- Control Plane
   {
     id: 'control-plane.sessions',
