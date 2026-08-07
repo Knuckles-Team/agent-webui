@@ -138,10 +138,29 @@ COPY --from=wheelhouse epistemic_graph-*.whl /tmp/wheelhouse/
 # the path, PEP 508's local-file-with-extras form) removes the ambiguity:
 # there is exactly one candidate for agent-utilities itself, and it is the
 # one this Dockerfile just built from source.
+#
+# D-W5WR-2: pinning the real 2.x wheel then surfaced a SECOND, independent
+# gap -- its `[mcp]` extra declares `fastmcp>=4.0.0b1` (CONCEPT:AU-ECO.mcp.
+# protocol-compat-bridge), which conflicts with `pydantic-ai-slim[mcp]`'s
+# own `fastmcp-slim[client]<4` cap. agent-utilities' OWN pyproject.toml
+# already carries the tested fix for exactly this
+# (`[tool.uv] override-dependencies`, see that file's comment for the full
+# empirical justification -- a live fastmcp-4 MCP round-trip verified under
+# this override), but `[tool.uv]` resolver settings are project-local: they
+# apply when uv resolves agent-utilities' OWN environment (`uv sync`/`uv
+# lock`), not when a downstream Dockerfile `uv pip install`s the built
+# wheel into an unrelated image. Reproducing the identical override via
+# `--overrides` (uv's flag for the same mechanism from outside the project)
+# carries the fix across that boundary without inventing a new resolution.
 RUN AU_WHEEL="$(ls /tmp/wheelhouse/agent_utilities-*.whl)" \
+    && printf '%s\n' \
+        'fastmcp-slim[client,server]>=4.0.0b1' \
+        'nltk>=3.10.0' \
+        > /tmp/au-overrides.txt \
     && uv pip install --system --no-cache --find-links /tmp/wheelhouse \
+        --overrides /tmp/au-overrides.txt \
         "${AU_WHEEL}[graph,mcp]" /tmp/agent-webui/*.whl \
-    && rm -rf /tmp/agent-webui /tmp/wheelhouse
+    && rm -rf /tmp/agent-webui /tmp/wheelhouse /tmp/au-overrides.txt
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)" || exit 1
