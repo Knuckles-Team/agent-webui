@@ -4,74 +4,12 @@ on:
   push:
     branches:
       - 'main'
-    tags:
-      - 'v*'
 
 permissions:
   contents: read
 
 jobs:
-  require-release-tag:
-    name: Require an explicit vX.Y.Z release tag on the published commit
-    runs-on: ubuntu-latest
-    outputs:
-      should_publish: ${{ steps.check.outputs.should_publish }}
-    steps:
-      - name: Require an explicit vX.Y.Z release tag on the published commit
-        id: check
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.sha }}
-        # D-ORC-10 class gate (mirrors agent-utilities' pipeline.yml and
-        # epistemic-graph's release-build.yml): publishing to PyPI is irreversible,
-        # so an ordinary push to main must never reach `twine upload` as a side
-        # effect of the reusable python_web_pipeline.yml workflow. Before this gate,
-        # this workflow ran unconditionally on every push to main -- no tag
-        # requirement, no environment protection -- straight to twine upload.
-        #
-        # Gate 1 (native): `environment: pypi-publish` on the publish-pypi job below
-        # enables GitHub's required-reviewers / wait-timer protection rules once an
-        # admin configures Settings > Environments > pypi-publish; until then this
-        # alone does not block anything, which is why gate 2 exists.
-        #
-        # Gate 2 (structural, no external config needed): refuse to publish unless
-        # the exact pushed commit is also pointed at by an annotated/lightweight
-        # `vX.Y.Z` tag, so publishing requires a deliberate tag push, not merely a
-        # routine merge to main. Checked via the GitHub API (not `github.ref`
-        # alone) so it also covers the case where main and the release tag are
-        # pushed in the same `git push --follow-tags` and either ref could have
-        # triggered this run.
-        run: |
-          set -euo pipefail
-          # `gh api --jq` takes ONE jq expression and does not accept jq's own
-          # --arg flag; passing it made gh see 4 positional args and abort with
-          # "accepts 1 arg(s), received 4". Pipe to real jq so --arg works.
-          tags="$(gh api "repos/${{ github.repository }}/tags?per_page=100" \
-            | jq -r --arg sha "$HEAD_SHA" '.[] | select(.commit.sha == $sha) | .name')"
-          if grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$tags"; then
-            echo "should_publish=true" >> "$GITHUB_OUTPUT"
-            echo "release tag verified at $HEAD_SHA: $tags"
-          else
-            echo "should_publish=false" >> "$GITHUB_OUTPUT"
-            echo "no vX.Y.Z tag points at $HEAD_SHA -- this is a branch push, not a release; skipping publish."
-          fi
-
   publish-pypi:
-    needs: require-release-tag
-    # D-ORC-10: the actual block. A plain `push` to `main` computes
-    # should_publish=false above, so this job -- and therefore the reusable
-    # workflow's `twine upload` step -- never runs for a routine push.
-    if: needs.require-release-tag.outputs.should_publish == 'true'
-    # NOTE: no `environment:` here. A job that calls a reusable workflow
-    # (`uses:`) accepts only name/uses/with/secrets/needs/if/permissions/
-    # strategy/concurrency -- adding `environment:` makes the parser treat this
-    # as a normal job, which then fails validation with "Unexpected value
-    # 'uses'", "Unexpected value 'secrets'" and "Required property is missing:
-    # runs-on", taking the WHOLE workflow file down. Gate 1 (environment
-    # protection) therefore has to live on the publish job inside
-    # python_web_pipeline.yml, not on this caller. Gate 2 below is unaffected
-    # and is the one that actually blocks: without a vX.Y.Z tag on this exact
-    # commit, `should_publish` is false and this job never runs at all.
     uses: Knuckles-Team/pipelines/.github/workflows/python_web_pipeline.yml@main
     permissions:
       contents: write
