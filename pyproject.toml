@@ -101,6 +101,16 @@ agent-webui = "agent_webui.skills"
 # override this program's handoff flagged as a CVE-fix-defeating footgun,
 # this does not widen or shadow any other package's version floor.
 [tool.uv]
+# Resolution-only restriction (does not affect what ships): this repo is
+# Linux-only in practice (see the `Operating System :: POSIX :: Linux`
+# classifier above; graph-os/agent-utilities do not target Windows). Without
+# this, `uv lock`'s default multi-platform ("universal") resolution includes a
+# `sys_platform == 'win32'` fork, and — independent of this D-FE-7/D-WD-5 fix
+# — that fork does not honor the local path source above and falls back to
+# the package index, where only an older, unrelated agent-utilities release
+# is published. Restricting to the platform this repo actually runs on avoids
+# resolving that irrelevant fork at all.
+environments = ["sys_platform == 'linux' and python_full_version >= '3.12'"]
 override-dependencies = [
     "fastmcp-slim[client,server]>=4.0.0b1",
 ]
