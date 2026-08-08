@@ -67,6 +67,11 @@ _MAX_UPLOAD_HARD_LIMIT = 50 * 1024 * 1024
 _SAFE_INVENTORY_TOKEN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 _SAFE_HOSTNAME = re.compile(r'^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$')
 _SAFE_DELEGATION_TOKEN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$')
+# MCP Apps resources are addressed with the extension's own ``ui://`` scheme
+# (``io.modelcontextprotocol/ui``). Pinning the scheme here keeps the resource
+# route from being turned into a general-purpose reader for any URI a caller
+# can name (``file://``, ``http://`` to an internal host, ...).
+_SAFE_MCP_APP_URI = re.compile(r'^ui://[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$')
 _MAX_SESSION_RECORDS = 256
 _MAX_SESSION_TURNS = 256
 _MAX_SESSION_REPLY_BYTES = 64 * 1024
@@ -1805,6 +1810,110 @@ async def list_mcp_server_tools(server_name: str) -> list[dict[str, Any]]:
     except Exception as e:
         _log_failure('mcp_inventory_delegation', e)
         raise HTTPException(status_code=503, detail='MCP inventory unavailable')
+
+
+@router.post('/mcp/tools/call')
+async def call_mcp_tool_route(data: dict[str, Any]) -> dict[str, Any]:
+    """Invoke one MCP tool through the host's governed delegation seam.
+
+    CONCEPT:AU-ECO.mcp.webui-governed-mcp-delegation
+
+    This is the browser's only path to an MCP tool (``src/lib/mcp-client.ts``),
+    and in particular the executor behind an MCP App's ``tools/call`` bridge
+    (``src/lib/mcp-apps/bridge.ts``). The browser cannot reach a graph-os
+    listener itself — that listener enforces ``MCP_ALLOWED_HOSTS`` on the
+    ``Host`` authority and authenticates with a service bearer no page may
+    hold — so the call is made here, same-origin, under the session identity
+    every ``/api/*`` route already requires.
+
+    The WebUI adds NO authority of its own: it validates the shape of the
+    request and hands it to the host-injected ``call_mcp_tool`` helper, which
+    owns the allowlist, actor policy, credential references, and audit
+    envelope. With no host injection the route reports 501 rather than
+    inventing a delegation path.
+    """
+    server_name = str(data.get('server') or '')
+    tool_name = str(data.get('tool') or '')
+    arguments = data.get('arguments')
+    if arguments is None:
+        arguments = {}
+    try:
+        _validate_delegation_call(server_name, tool_name, arguments)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if get_helper('call_mcp_tool') is None:
+        raise HTTPException(
+            status_code=501,
+            detail='Governed MCP delegation is not configured',
+        )
+    try:
+        result = await _call_mcp_tool(
+            server_name,
+            tool_name,
+            arguments if isinstance(arguments, dict) else {},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('mcp_tool_delegation', e)
+        raise HTTPException(status_code=502, detail='MCP tool call failed') from e
+    return {'status': 'success', 'result': result}
+
+
+@router.post('/mcp/apps/resource')
+async def read_mcp_app_resource_route(data: dict[str, Any]) -> dict[str, Any]:
+    """Read one ``ui://`` MCP App resource through the governed seam.
+
+    CONCEPT:AU-ECO.mcp.webui-governed-mcp-delegation
+
+    The returned ``html`` is UNTRUSTED tool output. The only supported way to
+    render it is ``McpAppFrame``, which sandboxes it (``allow-scripts`` with no
+    ``allow-same-origin``) and applies the host-resolved CSP; this route
+    deliberately returns it as JSON rather than as an HTML response so it can
+    never be navigated to directly and inherit this origin.
+    """
+    server_name = str(data.get('server') or '')
+    uri = str(data.get('uri') or '')
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
+        raise HTTPException(status_code=400, detail='Invalid MCP server name')
+    if not _SAFE_MCP_APP_URI.fullmatch(uri):
+        raise HTTPException(status_code=400, detail='Invalid MCP app resource URI')
+
+    delegated_read = get_helper('read_mcp_resource')
+    if delegated_read is None:
+        raise HTTPException(
+            status_code=501,
+            detail='Governed MCP resource delegation is not configured',
+        )
+    try:
+        resource = await _invoke_governed_helper(
+            delegated_read,
+            deadline=15.0,
+            server_name=server_name,
+            uri=uri,
+        )
+        resource = _public_external_result(resource)
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('mcp_resource_delegation', e)
+        raise HTTPException(status_code=502, detail='MCP resource read failed') from e
+
+    if not isinstance(resource, dict):
+        raise HTTPException(status_code=502, detail='MCP resource read failed')
+    html = resource.get('text', resource.get('html'))
+    if not isinstance(html, str):
+        raise HTTPException(status_code=502, detail='MCP resource carried no text')
+    mime_type = resource.get('mimeType') or resource.get('mime_type') or 'text/html'
+    return {
+        'status': 'success',
+        'result': {
+            'uri': uri,
+            'html': html,
+            'mimeType': str(mime_type),
+        },
+    }
 
 
 @router.post('/tools/toggle')

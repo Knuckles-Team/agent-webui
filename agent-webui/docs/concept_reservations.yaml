@@ -1,0 +1,5 @@
+# Concept-ID reservation ledger — one reservation per line (merge=union safe).
+# Managed by agent_utilities.governance.concept_allocator; see
+# docs/concept_coordination.md. Reserve via `agent-utilities concept reserve`.
+- {id: AU-ECO.mcp.webui-governed-mcp-delegation, slug: AU, pillar: ECO, domain: mcp, session_ref: pref_concept_session_766b45b039496ecb7b9fd2f856b9b3f054f923ebfe08feb9b601da99a0b74714, reserved_at: '2026-07-31T13:20:31.743784+00:00', expires_at: '2026-08-01T13:20:31.743784+00:00', status: reserved}
+- {id: AU-ECO.ui.mcp-apps-client, slug: AU, pillar: ECO, domain: ui, session_ref: pref_concept_session_766b45b039496ecb7b9fd2f856b9b3f054f923ebfe08feb9b601da99a0b74714, reserved_at: '2026-07-31T13:20:30.442654+00:00', expires_at: '2026-08-01T13:20:30.442654+00:00', status: reserved}

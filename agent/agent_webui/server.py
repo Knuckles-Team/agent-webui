@@ -106,6 +106,13 @@ _ADMIN_ROUTE_PREFIXES = (
     '/ws/dashboard',
 )
 _ADMIN_MUTATION_ROUTE_PREFIXES = (
+    # Invoking an arbitrary MCP tool through the governed delegation seam is at
+    # least as powerful as any other admin mutation (the fleet exposes writes,
+    # configuration and orchestration as tools), so every POST under
+    # ``/api/enhanced/mcp`` requires ``kg:admin``. The GET inventory route
+    # (``/mcp/servers/{name}/tools``) stays a ``kg:read``.
+    # CONCEPT:AU-ECO.mcp.webui-governed-mcp-delegation
+    '/api/enhanced/mcp',
     '/api/enhanced/skills',
     '/api/enhanced/tools',
 )

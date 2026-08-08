@@ -196,6 +196,31 @@ The WebUI backend (`agent/agent_webui/server.py`) integrates with a **Centralize
 
 All communication is fully traceable, logging session parameters, agent identities, and provenance for complete ecosystem visibility.
 
+### MCP client & MCP Apps host
+
+The browser never opens an MCP connection itself. graph-os rejects any request whose `Host`
+authority is outside `MCP_ALLOWED_HOSTS` (which a browser cannot set) and authenticates children
+with a service bearer no page may hold, so `src/lib/mcp-client.ts` calls the WebUI's own backend
+same-origin instead:
+
+| Route | Purpose |
+|-------|---------|
+| `POST /api/enhanced/mcp/tools/call` | one MCP `tools/call` through the governed delegation seam |
+| `POST /api/enhanced/mcp/apps/resource` | one MCP `resources/read` for a `ui://` MCP App |
+
+Both require `kg:admin` (invoking an arbitrary fleet tool is an admin mutation), and both delegate to
+the host-injected `call_mcp_tool` / `read_mcp_resource` workspace helpers — supplied by
+`agent_utilities.server.webui_mcp_delegation` — which own the allow-list, credentials and audit
+envelope. With no host injection they answer `501` rather than building a client of their own.
+
+`McpAppHost` (`src/components/mcp/McpAppHost.tsx`) fetches a `ui://` app's HTML and renders it in
+`McpAppFrame`. **Tool-returned HTML is untrusted**: the frame is `sandbox="allow-scripts"` with no
+`allow-same-origin` (so the app can never read this origin's document, cookies, storage, or issue a
+credentialed request of its own), gets a `no-referrer` policy, and carries a CSP built by
+intersecting the server-declared `_meta.ui.csp` against the host's own `allowedDomains` ceiling. Its
+tool-call channel is host-mediated `postMessage` only, gated by an `allowedTools` allow-list that
+`McpAppHost` requires explicitly — there is no permissive default.
+
 ### Unified Discovery Architecture
 
 ```mermaid

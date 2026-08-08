@@ -115,10 +115,15 @@ function routeContext(route: string): {
     else if (key === 'to' || key === 'end') timeRange.end = value
     else if (key === 'asOf' || key === 'as_of') timeRange.asOf = value
     else {
-      const existing = filters[key]
-      if (existing === undefined) filters[key] = value
-      else if (Array.isArray(existing)) filters[key] = [...existing, value]
-      else filters[key] = [existing, value]
+      // Presence, not `=== undefined`: `Record<string, T>` indexing is typed as
+      // always-present, so comparing the lookup against `undefined` reads as a
+      // dead branch even though a not-yet-seen key really is absent.
+      if (!(key in filters)) {
+        filters[key] = value
+      } else {
+        const existing = filters[key]
+        filters[key] = Array.isArray(existing) ? [...existing, value] : [existing, value]
+      }
     }
   }
 

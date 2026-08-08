@@ -64,9 +64,32 @@ export function McpAppFrame({
 }: McpAppFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [attached, setAttached] = useState(false)
+  const [frameWindow, setFrameWindow] = useState<Window | null>(null)
+
+  const policy = resolveFramePolicy(meta, allowedDomains)
+  const srcDoc = buildFrameSrcDoc(html, policy)
+
+  // Navigating to `srcdoc` REPLACES the iframe's `Window`, and it happens
+  // asynchronously — after React has committed the element and run this
+  // effect. `bridge.ts` accepts messages only from the exact window identity
+  // it was given (`event.source !== frameWindow`), so binding once to the
+  // pre-navigation window would silently drop every message the loaded app
+  // ever sends. Track the current window instead: bind eagerly (so a host
+  // that never navigates still works) and rebind on each `load`.
+  useEffect(() => {
+    const iframe = iframeRef.current
+    if (!iframe) return
+    const bind = () => {
+      setFrameWindow(iframe.contentWindow)
+    }
+    iframe.addEventListener('load', bind)
+    bind()
+    return () => {
+      iframe.removeEventListener('load', bind)
+    }
+  }, [srcDoc])
 
   useEffect(() => {
-    const frameWindow = iframeRef.current?.contentWindow
     if (!frameWindow) return
     const detach = attachMcpAppBridge({
       frameWindow,
@@ -82,10 +105,7 @@ export function McpAppFrame({
     }
     // `initProps` is intentionally read once at attach time -- an app can't
     // be handed changed initial props after it has already booted.
-  }, [allowedTools, callTool, onRefused])
-
-  const policy = resolveFramePolicy(meta, allowedDomains)
-  const srcDoc = buildFrameSrcDoc(html, policy)
+  }, [frameWindow, allowedTools, callTool, onRefused])
 
   return (
     <iframe

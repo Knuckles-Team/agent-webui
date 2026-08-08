@@ -20,7 +20,7 @@ def _corpus(root: Path) -> list[tuple[str, bytes]]:
         candidates = sorted(
             path
             for path in root.iterdir()
-            if path.suffix.casefold() in {".json", ".toml"}
+            if path.suffix.casefold() in {'.json', '.toml'}
         )[:MAX_FILES]
     except OSError:
         candidates = []
@@ -40,19 +40,19 @@ def _mutations(payload: bytes) -> tuple[bytes, ...]:
     midpoint = max(1, len(payload) // 2)
     return (
         payload[:midpoint],
-        payload + b"\x00",
-        b"{" * 128 + payload[:64],
-        b"[" * 128 + payload[:64],
-        payload[:32] + b"\xff\xfe" + payload[32:64],
-        b"null trailing",
-        b"key = [1, 2,",
-        b"\n" * 4096 + payload[:128],
+        payload + b'\x00',
+        b'{' * 128 + payload[:64],
+        b'[' * 128 + payload[:64],
+        payload[:32] + b'\xff\xfe' + payload[32:64],
+        b'null trailing',
+        b'key = [1, 2,',
+        b'\n' * 4096 + payload[:128],
     )
 
 
 def _exercise(suffix: str, payload: bytes) -> None:
-    text = payload.decode("utf-8")
-    if suffix == ".json":
+    text = payload.decode('utf-8')
+    if suffix == '.json':
         json.loads(text)
     else:
         tomllib.loads(text)
@@ -61,7 +61,7 @@ def _exercise(suffix: str, payload: bytes) -> None:
 def main() -> int:
     if len(sys.argv) != 2:
         return 2
-    corpus = _corpus(Path.cwd()) or [(".json", b'{"seed": true}')]
+    corpus = _corpus(Path.cwd()) or [('.json', b'{"seed": true}')]
     cases = 0
     crashes = 0
     while cases < 64:
@@ -69,7 +69,11 @@ def main() -> int:
             for mutation in _mutations(payload):
                 try:
                     _exercise(suffix, mutation)
-                except (UnicodeDecodeError, json.JSONDecodeError, tomllib.TOMLDecodeError):
+                except (
+                    UnicodeDecodeError,
+                    json.JSONDecodeError,
+                    tomllib.TOMLDecodeError,
+                ):
                     pass
                 except Exception:
                     crashes += 1
@@ -83,19 +87,19 @@ def main() -> int:
     output.write_text(
         json.dumps(
             {
-                "version": 1,
-                "kind": "fuzz",
-                "passed": crashes == 0,
-                "cases": cases,
-                "failures": 0,
-                "crashes": crashes,
+                'version': 1,
+                'kind': 'fuzz',
+                'passed': crashes == 0,
+                'cases': cases,
+                'failures': 0,
+                'crashes': crashes,
             },
             sort_keys=True,
         ),
-        encoding="utf-8",
+        encoding='utf-8',
     )
     return 0 if crashes == 0 else 1
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())

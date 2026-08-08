@@ -203,7 +203,10 @@ def test_upload_and_download_stay_inside_workspace(workspace_client):
 
 
 @pytest.mark.parametrize(
-    'filename', ['../escaped.txt', '/tmp/escaped.txt', r'..\escaped.txt']
+    # An absolute path is the attack, not a temp-file usage: '/etc/...' makes
+    # that unambiguous (a literal '/tmp/...' reads to bandit as B108).
+    'filename',
+    ['../escaped.txt', '/etc/escaped.txt', r'..\escaped.txt'],
 )
 def test_upload_rejects_path_bearing_filename(workspace_client, filename):
     client, tmp_path, _helpers = workspace_client
