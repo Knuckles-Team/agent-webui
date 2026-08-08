@@ -59,7 +59,16 @@ jobs:
     # should_publish=false above, so this job -- and therefore the reusable
     # workflow's `twine upload` step -- never runs for a routine push.
     if: needs.require-release-tag.outputs.should_publish == 'true'
-    environment: pypi-publish
+    # NOTE: no `environment:` here. A job that calls a reusable workflow
+    # (`uses:`) accepts only name/uses/with/secrets/needs/if/permissions/
+    # strategy/concurrency -- adding `environment:` makes the parser treat this
+    # as a normal job, which then fails validation with "Unexpected value
+    # 'uses'", "Unexpected value 'secrets'" and "Required property is missing:
+    # runs-on", taking the WHOLE workflow file down. Gate 1 (environment
+    # protection) therefore has to live on the publish job inside
+    # python_web_pipeline.yml, not on this caller. Gate 2 below is unaffected
+    # and is the one that actually blocks: without a vX.Y.Z tag on this exact
+    # commit, `should_publish` is false and this job never runs at all.
     uses: Knuckles-Team/pipelines/.github/workflows/python_web_pipeline.yml@main
     permissions:
       contents: write
