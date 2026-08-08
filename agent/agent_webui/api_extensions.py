@@ -817,7 +817,23 @@ def set_workspace_helpers(helpers: dict[str, Any]) -> None:
 
 
 def get_engine() -> IntelligenceGraphEngine:
-    """Helper to get the active graph engine, lazy-initializing it if necessary."""
+    """Helper to get the active graph engine, lazy-initializing it if necessary.
+
+    CONCEPT:AU-ECO.ui.one-engine-authority — the ONLY sanctioned way to acquire
+    the process-wide engine is ``IntelligenceGraphEngine.get_or_create()``: it
+    returns the already-active singleton when one exists, and otherwise
+    constructs the ONE operational authority (the epistemic-graph engine plus
+    any configured mirrors — ``create_backend()`` called with no
+    ``backend_type``). This entrypoint must never build its own backend/engine
+    directly. It previously did: a hand-rolled
+    ``create_backend(backend_type='ladybug', ...)`` fallback here constructed a
+    disconnected, empty, ephemeral local LadybugDB whenever this route raced
+    ahead of the MCP server's own bootstrap and won the process-wide singleton
+    first — "Workflows shows nothing" even though the real ~37k-node graph was
+    reachable the whole time (D-WD-7). Routing through ``get_or_create()``
+    makes that divergence structurally impossible: whichever caller
+    constructs first, it is always the same operational authority.
+    """
     import sys
 
     get_active_fn = IntelligenceGraphEngine.get_active
@@ -844,17 +860,10 @@ def get_engine() -> IntelligenceGraphEngine:
             )
 
         try:
-            import networkx as nx
-            from agent_utilities.core.paths import ensure_dirs, kg_db_path
-            from agent_utilities.knowledge_graph.backends import create_backend
-
-            ensure_dirs()
-            db_path = str(kg_db_path())
-            backend = create_backend(backend_type='ladybug', db_path=db_path)
-            graph = nx.MultiDiGraph()
-            engine = IntelligenceGraphEngine(graph=graph, backend=backend)
+            engine = IntelligenceGraphEngine.get_or_create(defer_background_start=True)
             logger.info(
-                'Successfully auto-initialized IntelligenceGraphEngine with LadybugDB backend.'
+                'Successfully acquired the process-wide IntelligenceGraphEngine '
+                '(operational authority) via get_or_create().'
             )
         except Exception as e:
             _log_failure('api_extension', e)
