@@ -11,6 +11,7 @@
  * `routesBySection` (used by the sidebar) excludes it; `matchRoute` still resolves it.
  */
 import { createElement, lazy, type ComponentType, type LazyExoticComponent } from 'react'
+import ChatPanel from '@/components/ChatPanel'
 import {
   Activity,
   Bot,
@@ -124,11 +125,19 @@ export const ROUTES: readonly RouteDef[] = [
     // elsewhere) mounted once at the App shell rather than swapped in by route — see
     // App.tsx. This element exists so Chat is still a first-class registry entry for
     // the sidebar/docs/role metadata; the router does not use it to mount the page.
-    element: lazy(() =>
-      import('@/components/ChatPanel').then((mod) => ({
-        default: () => createElement(mod.default, { currentView: 'chat', isPrimary: true }),
-      })),
-    ),
+    // Statically imported on purpose: App.tsx mounts ChatPanel unconditionally, so
+    // it is ALWAYS in the entry chunk and a dynamic import here could never move it
+    // into another one -- it only produced vite's "dynamically imported ... but also
+    // statically imported" warning. The router never mounts this element anyway.
+    // Cast mirrors the other registry entries: the field is typed
+    // LazyExoticComponent<ComponentType> for the router's benefit, and this entry
+    // is metadata-only (never mounted by the router), so a plain component
+    // function is the honest value behind that shape.
+    element: (() =>
+      createElement(ChatPanel, {
+        currentView: 'chat',
+        isPrimary: true,
+      })) as unknown as LazyExoticComponent<ComponentType>,
   },
 
   // ------------------------------------------------------------ Workspace

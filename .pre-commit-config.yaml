@@ -99,10 +99,29 @@ repos:
     # instead of silently unrunnable — pnpm's content-addressable store makes
     # this a few seconds, not a fresh download, whenever the store is already
     # warm (e.g. from the canonical checkout's own install).
-    entry: bash -c 'if [ ! -d node_modules ]; then pnpm install --frozen-lockfile; fi && pnpm build'
+    # NODE_OPTIONS mirrors the release workflow's own ceiling
+    # (Knuckles-Team/pipelines python_web_pipeline.yml sets
+    # --max-old-space-size=4096 on its "Build Frontend" step). Without it this
+    # hook builds under the dev box's unbounded heap and cannot reproduce a
+    # runner OOM, so a build that only fails in CI looks green locally.
+    entry: bash -c 'if [ ! -d node_modules ]; then pnpm install --frozen-lockfile; fi && NODE_OPTIONS=--max-old-space-size=4096 pnpm build'
     language: system
     pass_filenames: false
     always_run: true
+  # Release parity (offline): the publish workflow's ONLY two build steps are
+  # "Build Frontend" (pnpm run build, above) and "Build package" (uv build).
+  # The wheel build had no local gate at all, so a packaging break could only
+  # ever be discovered by pushing to main and watching the release job -- and
+  # when that job's logs expire, not even then. Runs fully offline against the
+  # tracked lock; staged pre-push because it is heavy, and reachable in the
+  # parity sweep via `--hook-stage pre-push`.
+  - id: release-wheel-build
+    name: release parity — uv build (wheel + sdist, HEAVY, pre-push)
+    entry: bash -c 'set -e; rm -rf dist; uv build; ls dist/*.whl >/dev/null'
+    language: system
+    pass_filenames: false
+    always_run: true
+    stages: [pre-push, manual]
   # w5-ci-gates-local (D-W5CG-1): `.mergequeue.yaml`'s `typecheck`/`lint` gates
   # are FAST-tier and genuinely reachable (unlike `build`/`e2e`, which are
   # `tier: slow` and structurally never executed by the queue engine) -- but

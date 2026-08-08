@@ -22,7 +22,7 @@
  * still hits this guard.
  */
 
-import { useEffect, useMemo, useState, Suspense } from 'react'
+import { useEffect, useMemo, useState, Suspense, lazy } from 'react'
 import { AppSidebar } from './components/app-sidebar.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
@@ -30,7 +30,10 @@ import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
 import { cn } from './lib/utils.ts'
 import ChatPanel from './components/ChatPanel'
-import ObjectView from './components/views/ObjectView'
+// Lazy: only reachable behind `isObjectDetail`. A static import here pinned it
+// into the entry chunk and defeated nav-registry's dynamic import of the same
+// module (vite: "dynamically imported ... but also statically imported").
+const ObjectView = lazy(() => import('./components/views/ObjectView'))
 import { ROUTES, matchRoute, roleAtLeast } from './lib/nav-registry.ts'
 import { useIdentity } from './lib/auth.ts'
 
@@ -178,13 +181,15 @@ export default function App() {
                             )}
                           </div>
                         ) : isObjectDetail ? (
-                          <ObjectView
-                            objectId={objectId}
-                            onNavigate={(id) => {
-                              window.history.pushState({}, '', `/object/${encodeURIComponent(id)}`)
-                              window.dispatchEvent(new Event('history-state-changed'))
-                            }}
-                          />
+                          <Suspense fallback={<RouteLoadingFallback />}>
+                            <ObjectView
+                              objectId={objectId}
+                              onNavigate={(id) => {
+                                window.history.pushState({}, '', `/object/${encodeURIComponent(id)}`)
+                                window.dispatchEvent(new Event('history-state-changed'))
+                              }}
+                            />
+                          </Suspense>
                         ) : (
                           <>
                             <h1 className="text-2xl font-bold mb-1">{activeRoute.label}</h1>
