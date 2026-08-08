@@ -63,7 +63,12 @@ export function MCPProvider({ children }: { children: ReactNode }) {
   // already existed. A real fix needs a backend MCP-tool-listing surface
   // first (none exists), not a frontend patch alone.
   const [tools] = useState<ToolSet | null>(null)
-  const [isLoadingTools, setIsLoadingTools] = useState(false)
+  // No setter: with `tools` a fixed `null` placeholder there is nothing to
+  // load, so this never leaves `false`. (main carried a
+  // `useEffect(() => setIsLoadingTools(false), [])` that was already a no-op
+  // over the identical initial state; fix/lane-sweep-frontends-webui deleted
+  // it, and keeping a write-only setter would just be an unused binding.)
+  const [isLoadingTools] = useState(false)
   const [elicitation, setElicitation] = useState<ElicitationState>({
     isOpen: false,
     message: '',
