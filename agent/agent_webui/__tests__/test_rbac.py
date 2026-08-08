@@ -16,7 +16,12 @@ def test_role_order_is_reader_user_maintainer_admin():
 
 
 def test_role_rank_is_monotonic_and_unknown_role_ranks_below_everything():
-    assert role_rank('reader') < role_rank('user') < role_rank('maintainer') < role_rank('admin')
+    assert (
+        role_rank('reader')
+        < role_rank('user')
+        < role_rank('maintainer')
+        < role_rank('admin')
+    )
     assert role_rank('not-a-role') == -1
     assert role_rank(None) == -1
 
@@ -38,7 +43,10 @@ def test_unauthenticated_caller_resolves_to_no_role():
 
 
 def test_authenticated_caller_with_no_matching_claim_defaults_to_reader():
-    assert resolve_webui_role(['offline_access', 'uma_authorization'], authenticated=True) == 'reader'
+    assert (
+        resolve_webui_role(['offline_access', 'uma_authorization'], authenticated=True)
+        == 'reader'
+    )
 
 
 def test_kg_scopes_fall_back_to_the_equivalent_webui_role():
@@ -48,17 +56,33 @@ def test_kg_scopes_fall_back_to_the_equivalent_webui_role():
 
 
 def test_kg_admin_implies_at_least_admin_even_alongside_lesser_scopes():
-    assert resolve_webui_role(['kg:read', 'kg:write', 'kg:admin'], authenticated=True) == 'admin'
+    assert (
+        resolve_webui_role(['kg:read', 'kg:write', 'kg:admin'], authenticated=True)
+        == 'admin'
+    )
 
 
 def test_explicit_webui_role_wins_over_the_kg_scope_fallback():
-    assert resolve_webui_role(['kg:admin', 'webui:reader'], authenticated=True) == 'reader'
-    assert resolve_webui_role(['kg:read', 'webui:maintainer'], authenticated=True) == 'maintainer'
+    assert (
+        resolve_webui_role(['kg:admin', 'webui:reader'], authenticated=True) == 'reader'
+    )
+    assert (
+        resolve_webui_role(['kg:read', 'webui:maintainer'], authenticated=True)
+        == 'maintainer'
+    )
 
 
 def test_the_highest_ranked_explicit_webui_role_wins_when_several_are_present():
-    assert resolve_webui_role(['webui:reader', 'webui:admin', 'webui:user'], authenticated=True) == 'admin'
+    assert (
+        resolve_webui_role(
+            ['webui:reader', 'webui:admin', 'webui:user'], authenticated=True
+        )
+        == 'admin'
+    )
 
 
 def test_an_unrecognised_explicit_webui_role_is_ignored_not_fatal():
-    assert resolve_webui_role(['webui:superuser', 'kg:write'], authenticated=True) == 'maintainer'
+    assert (
+        resolve_webui_role(['webui:superuser', 'kg:write'], authenticated=True)
+        == 'maintainer'
+    )
