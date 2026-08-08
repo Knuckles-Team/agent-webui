@@ -479,7 +479,7 @@ export const ROUTES: readonly RouteDef[] = [
   {
     id: 'observability.live-dashboards',
     path: '/dashboards',
-    label: 'Live Dashboards',
+    label: 'Status',
     section: 'observability',
     blurb: 'Build live charts of metrics, logs, and traces from across the system.',
     icon: LayoutDashboard,

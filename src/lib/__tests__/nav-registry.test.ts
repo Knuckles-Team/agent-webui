@@ -19,6 +19,7 @@ const REGISTRY_SOURCE_PATH = join(HERE, '..', 'nav-registry.ts')
  */
 const KNOWN_NON_ROUTE_COMPONENTS: Record<string, string> = {
   'DashboardSettings.tsx': 'rendered by DashboardView',
+  'DefaultOverviewPanel.tsx': 'rendered by DashboardView (D-W6-9 default landing overview)',
   'dashboards/LineChart.tsx': 'rendered by LiveDashboardsView',
   'dashboards/LogsPanel.tsx': 'rendered by LiveDashboardsView',
   'dashboards/PanelShell.tsx': 'rendered by LiveDashboardsView',

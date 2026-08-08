@@ -82,6 +82,31 @@ describe('LogsPanel', () => {
     expect(screen.getByText('read-only')).toBeInTheDocument()
   })
 
+  it('shows a read-only placeholder when the route answers 200 but the engine surface degrades (D-W6-ISO-2)', async () => {
+    // The registered /graph/logs route now always answers 200 -- a missing
+    // engine capability comes back as {degraded: true}, not a 404/501. This
+    // must be treated identically to the 404 case above, not as "0 logs".
+    global.fetch = mockFetch({
+      '/api/graph/logs': {
+        body: {
+          status: 'success',
+          result: {
+            surface: 'logs',
+            action: 'query',
+            degraded: true,
+            error: "engine surface 'logs' is not available in this engine build",
+            tried: ['observability.query_logs'],
+          },
+        },
+      },
+    }) as unknown as typeof fetch
+    render(<LogsPanel title="Logs" range={RANGE} refreshSignal={0} />)
+    await waitFor(() => {
+      expect(screen.getByText(/not activated/i)).toBeInTheDocument()
+    })
+    expect(screen.getByText('read-only')).toBeInTheDocument()
+  })
+
   it('renders log rows when the API returns lines', async () => {
     global.fetch = mockFetch({
       '/api/graph/logs': {

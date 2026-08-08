@@ -26,10 +26,9 @@ import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
 interface MCPTool {
   name: string
   type: string
-  command: string
-  args: string[]
   status: string
   enabled: boolean
+  tool_count?: number
 }
 
 interface BuiltinTool {
@@ -83,10 +82,17 @@ interface LiveMCPTool {
 const mcpToolSchema: z.ZodType<MCPTool> = z.object({
   name: z.string(),
   type: z.string(),
-  command: z.string(),
-  args: looseArray(z.string()),
   status: z.string(),
   enabled: z.boolean(),
+  // Backend never sends `command`/`args` -- those are per-process launch
+  // config for a static local mcp_config.json, not something the KG's
+  // discovered-fleet catalog carries (D-W5WR-4 follow-up fix). Requiring
+  // them here silently discarded EVERY mcp_tools entry (a single item
+  // failing z.array(mcpToolSchema) fails the whole array, which fails the
+  // whole toolsDataSchema, which fails the whole SkillsView fetch) the
+  // moment mcp_tools stopped being empty -- masked until now only because
+  // it was always `[]`.
+  tool_count: z.number().optional(),
 })
 const builtinToolSchema: z.ZodType<BuiltinTool> = z.object({
   name: z.string(),
@@ -420,22 +426,16 @@ export default function SkillsView() {
                                     </button>
                                   </div>
                                 </div>
-                                <div className="space-y-1.5 mt-2">
-                                  <div className="text-xs text-muted-foreground">
-                                    <span className="font-semibold text-foreground">Command: </span>
-                                    <code className="font-mono bg-muted/40 px-1 py-0.5 rounded text-[10px]">
-                                      {server.command}
-                                    </code>
-                                  </div>
-                                  {server.args.length > 0 && (
+                                {typeof server.tool_count === 'number' && (
+                                  <div className="space-y-1.5 mt-2">
                                     <div className="text-xs text-muted-foreground">
-                                      <span className="font-semibold text-foreground">Args: </span>
+                                      <span className="font-semibold text-foreground">Served tools: </span>
                                       <code className="font-mono bg-muted/40 px-1 py-0.5 rounded text-[10px]">
-                                        {server.args.join(' ')}
+                                        {server.tool_count}
                                       </code>
                                     </div>
-                                  )}
-                                </div>
+                                  </div>
+                                )}
                               </div>
 
                               {/* Sub-tools list control toggle */}

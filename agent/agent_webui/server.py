@@ -1532,10 +1532,18 @@ def main() -> None:
         return
 
     import uvicorn
-    from pydantic_ai import Agent
-    from pydantic_ai.models.test import TestModel
 
-    agent = Agent(TestModel())
+    from agent_webui.api_extensions import _get_engine_bounded
+    from agent_webui.orchestrator_model import build_orchestrator_model
+
+    # D-W5OEP-2: this was ``Agent(TestModel())`` -- a canned, no-LLM double,
+    # so every chat turn the production Dockerfile CMD served was ungrounded
+    # by construction. ``build_orchestrator_model`` routes chat through
+    # ``Orchestrator.execute_agent`` (the SAME universal execution plane
+    # messaging already uses), which resolves its model/provider from the
+    # existing ``AgentConfig`` -- there is no separate webui model config to
+    # build here, only the wiring to the one that already exists.
+    agent = Agent(build_orchestrator_model(_get_engine_bounded))
     app = create_agent_web_app(agent, workspace_helpers={}, listener_host=host)
 
     print('Application startup complete', file=sys.stderr)

@@ -3,11 +3,13 @@
  * @description Logs panel — filter by stream + free-text over a time range and
  * render a paginated log table. Targets `POST /graph/logs`.
  *
- * READ-ONLY / PLACEHOLDER: the engine's log-query surface (EG-162) is not yet
- * exposed as a gateway REST twin (only PromQL + traces are today), so this call
- * resolves `unavailable` and the panel shows a capability notice instead of
- * fabricating log lines. When the backend wires `/graph/logs`, the same code
- * path renders live rows with no UI change.
+ * READ-ONLY / PLACEHOLDER: `/graph/logs` is now a registered REST route
+ * (D-W6-ISO-2 fixed its prior HTTP 405 — the path did not exist at all), but
+ * the engine's own log-QUERY surface (EG-162) still doesn't exist on the wire
+ * client (only its log-INGEST listener does), so the call resolves
+ * `unavailable` and the panel shows a capability notice instead of fabricating
+ * log lines. When the engine ships a log-query RPC, the same code path renders
+ * live rows with no UI change.
  */
 
 import { useEffect, useState } from 'react'

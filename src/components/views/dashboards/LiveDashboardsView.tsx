@@ -110,7 +110,7 @@ export default function LiveDashboardsView() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <LayoutDashboard className="size-6" />
-            Live Dashboards
+            Status
           </h1>
           <p className="text-muted-foreground text-sm">
             Compose PromQL, logs, and trace panels over the KG observability gateway.
