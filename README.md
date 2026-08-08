@@ -43,6 +43,7 @@ Agent WebUI is a highly interactive, responsive chat interface designed specific
 - [Installation](#installation)
 - [Usage](#usage)
 - [Development](#development)
+- [Build & Deploy](#build--deploy)
 - [Detailed Documentation](#detailed-documentation)
 - [Documentation](#documentation)
 - [License](#license)
@@ -412,6 +413,90 @@ pytest agent/agent_webui/__tests__/ --cov        # With coverage
 | `AGENT_WEBUI_CSP_MEDIA_SOURCES` | — | Extra exact media origins |
 | `AGENT_WEBUI_CSP_WORKER_SOURCES` | — | Extra exact worker origins |
 | `AGENT_WEBUI_CSP_FRAME_SOURCES` | — | Exact origins allowed in the Web Preview iframe; frames are denied when unset |
+
+## Build & Deploy
+
+There is **one** way to build and ship this app's container image, and **one** way
+to deploy it. Both are scripts, not manual steps, precisely because manual/ad-hoc
+builds shipped stale code to production three separate ways in one day
+(2026-08-07) before this section existed:
+
+1. A digest-pinned Deployment + `imagePullPolicy: Always` looks safe, but the
+   pull policy is irrelevant under a digest pin -- `kubectl rollout restart`
+   re-pulls the identical bits forever. Deploying a NEW image always requires
+   `kubectl set image deploy/agent-webui agent-webui=<image>@sha256:<new-digest>`.
+2. `uv pip install agent-utilities[...]` can silently resolve from stale PyPI
+   instead of a locally built wheel -- PyPI's newest `agent-utilities` doesn't
+   have modules this app imports at startup, and the mismatch only surfaces as a
+   `ModuleNotFoundError` crash-loop in production, not at build time.
+3. The served frontend `dist/` can go stale **independently of the backend**.
+   apps/agent-webui's k8s Deployment NFS-mounts this repo's `agent/` directory
+   at `/webui-src` ahead of site-packages (so a Python edit + pod restart goes
+   live with no image rebuild) -- but that mount also shadows
+   `Path(__file__).parent / 'dist'`, so the served frontend bundle is whatever
+   `pnpm build` last produced on the **canonical checkout's disk**, independent
+   of which Docker image is running. Rolling the Deployment alone does not ship
+   a frontend change.
+
+### Local build + deploy (one command)
+
+```sh
+docker/deploy.sh
+```
+
+Builds the image on the r820 buildhost (always -- see the script's header for
+why, and why it never silently falls back to whatever daemon happens to be
+local), verifies the served bundle carries today's commit **before** pushing
+anything, pushes to Docker Hub by digest, deploys by that digest, waits out a
+60-second availability soak before Kubernetes will retire the old pod
+(`minReadySeconds: 60` on the Deployment), verifies the running pod's `imageID`
+actually changed, rebuilds the live-mounted frontend bundle on the canonical
+checkout, and verifies (via `kubectl exec`, not an HTTP guess) that the live pod
+is actually serving it. It prints the rollback digest **first**, before doing
+anything else, and again at the end alongside the exact rollback command.
+
+```sh
+docker/deploy.sh --build-only    # local build + verify only; no push, no deploy
+docker/deploy.sh --skip-deploy   # build + verify + push; does NOT touch the cluster
+```
+
+`docker/build_and_push.sh` (called internally by `deploy.sh`) is the build-only
+half, kept as its own file for a standalone build-only smoke test. Do not
+hand-roll a `docker build`/`kubectl set image` sequence outside these two
+scripts -- see their headers for the full contract, including every env var
+override (`AU_SRC_PATH`, `WHEELHOUSE_PATH`, `CANONICAL_CHECKOUT`, etc.).
+
+#### Coordinating concurrent deploys
+
+Only one apps/agent-webui Deployment exists. If another lane/session is
+actively deploying to it, use `docker/deploy.sh --skip-deploy` to build and
+push without touching the cluster, coordinate an order (message the other
+lane), and run a bare `docker/deploy.sh` (or `kubectl set image` with the
+digest `--skip-deploy` just printed) once it's clear.
+
+### Production image (GitHub CI)
+
+Pushing a `v*` tag (or a manual `workflow_dispatch`) runs
+`.github/workflows/docker-publish.yml`, which builds and publishes
+`knucklessg1/agent-webui` from the same `docker/Dockerfile` -- no second,
+divergent CI-only build definition. It builds `epistemic-graph` from source on
+a GitHub-hosted runner (no self-hosted runner is registered for this org today,
+and PyPI's `epistemic-graph` is still behind agent-utilities' floor), checks
+out `agent-utilities` from source as the `au-src` build-context (never PyPI,
+same rule as the local script), and runs the identical served-bundle
+verification before the job is considered successful. See that workflow file's
+header comments for why it can't simply call the fleet's shared
+`container_pipeline.yml` reusable workflow (that workflow's interface has no
+way to pass this Dockerfile's extra build-contexts).
+
+### k8s manifest
+
+`inventory/k8s-migration/cutover/apptier/agent-webui.yaml` (in the `inventory`
+repo) describes the Deployment's shape (env, mounts, probes, `minReadySeconds`).
+Its `image:` field is a point-in-time snapshot, **not** the source of truth --
+re-applying that file does not update the running image, and hand-editing that
+field back to a mutable tag would reopen trap #1 above. See the file's own
+header warning for the full reasoning.
 
 ## Documentation
 

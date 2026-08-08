@@ -73,11 +73,33 @@
 #   docker build -f docker/Dockerfile \
 #     --build-context au-src=../agent-utilities \
 #     --build-context wheelhouse=../../.dev-wheelhouse \
+#     --build-arg BUILD_SHA="$(git rev-parse --short HEAD)" \
+#     --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 #     -t agent-webui:local .
 #   docker run --rm -p 8080:80 agent-webui:local
 #   curl http://localhost:8080/health
+#   curl http://localhost:8080/build-info.txt   # confirms which commit is SERVED, not just built
+#
+# ── ONE standardized way to build+push+deploy this image (2026-08-07 consolidation) ──
+# Don't hand-roll a `docker build` invocation or a kubectl recipe -- use
+# `docker/build_and_push.sh`, the single command that builds on the r820 buildhost,
+# verifies the served bundle carries today's commit BEFORE pushing, pushes by digest,
+# and (unless `--build-only` is passed) deploys + verifies the rollout. See that
+# script's own header and README.md's "Build & Deploy" section for the full contract.
 
 FROM node:22-slim AS frontend-build
+# BUILD_SHA/BUILD_TIME (passed via `--build-arg`, see docker/build_and_push.sh) get
+# baked into a `build-info.txt` static asset alongside the compiled SPA. This exists
+# specifically to close trap #3 from the 2026-08-07 build-standardization incident:
+# the served frontend `dist/` can go stale independently of the backend (the backend
+# is live-NFS-mounted; the frontend bundle is baked into the image at build time
+# only). `agent_webui.server` mounts `dist/` at the app root via `SPAStaticFiles`, so
+# this file is reachable at `/build-info.txt` on every running deployment -- both the
+# build script (grepping it out of the freshly built image BEFORE push) and a human
+# (`curl https://au.arpa/build-info.txt`) can verify which commit is actually being
+# served, not just which commit was last built.
+ARG BUILD_SHA=unknown
+ARG BUILD_TIME=unknown
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 COPY package.json pnpm-lock.yaml .npmrc ./
@@ -85,7 +107,8 @@ RUN pnpm install --frozen-lockfile
 COPY tsconfig.json vite.config.ts components.json index.html ./
 COPY public ./public
 COPY src ./src
-RUN pnpm build
+RUN pnpm build \
+    && printf 'sha=%s\nbuilt_at=%s\n' "${BUILD_SHA}" "${BUILD_TIME}" > agent/agent_webui/dist/build-info.txt
 
 FROM python:3.14-slim AS wheel-build
 COPY --from=ghcr.io/astral-sh/uv:0.11.7@sha256:240fb85ab0f263ef12f492d8476aa3a2e4e1e333f7d67fbdd923d00a506a516a /uv /uvx /bin/
@@ -116,6 +139,11 @@ RUN uv build --wheel --out-dir /dist-au
 FROM python:3.14-slim AS runtime
 # socat provides the :80 -> :8000 privileged-port shim (see header); the image
 # otherwise ships no build toolchain, no node_modules, no source tree.
+ARG BUILD_SHA=unknown
+ARG BUILD_TIME=unknown
+LABEL org.opencontainers.image.revision="${BUILD_SHA}" \
+      org.opencontainers.image.created="${BUILD_TIME}" \
+      org.opencontainers.image.source="https://github.com/Knuckles-Team/agent-webui"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends socat \
     && rm -rf /var/lib/apt/lists/*
