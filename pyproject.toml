@@ -13,7 +13,16 @@ classifiers = [
     "Environment :: Console",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3"]
-requires-python = ">=3.11,<3.15"
+# D-W6-BSF-1: raised from >=3.11 -- agent-utilities (a REAL runtime
+# dependency: the Dockerfile's own frontend-build/runtime stages document
+# this app importing agent_utilities.security.persistence_privacy and
+# friends at module load, not merely a test-extra floor) requires
+# >=3.12,<3.15. The `test` extra's `agent-utilities[agent-runtime,graph]`
+# pin only surfaced this because it is now resolved as a real editable
+# path dependency (D-W6-BSF-1's sibling fix) instead of a loose `>=2.0.0`
+# published-floor reference that never triggered interpreter-floor
+# resolution.
+requires-python = ">=3.12,<3.15"
 dependencies = [
     "fastapi>=0.139.2",
     "langfuse>=4.14.1",
@@ -74,11 +83,42 @@ where = ["agent"]
 [project.entry-points."agent_utilities.skill_providers"]
 agent-webui = "agent_webui.skills"
 
+# D-W6-BSF-1: the SAME narrow, protocol-compat override agent-utilities'
+# own pyproject.toml declares for itself (see that file's `[tool.uv]`
+# comment for the full "why" -- fastmcp-slim ships no non-prerelease under
+# the fastmcp>=4.0.0b1 floor agent-utilities[agent-runtime] requires, and
+# uv only allows prereleases for a package when a ROOT project's own
+# requirement names one; agent-utilities' override IS such a root
+# requirement inside ITS OWN tree, but does not propagate as one here, so
+# this repo needs the identical override to resolve at all). Scoped to
+# exactly this one package -- unlike the workspace-root `cryptography`
+# override this program's handoff flagged as a CVE-fix-defeating footgun,
+# this does not widen or shadow any other package's version floor.
+[tool.uv]
+override-dependencies = [
+    "fastmcp-slim[client,server]>=4.0.0b1",
+]
+
 # Development and ecosystem validation use the co-versioned sibling source so
 # the lock cannot silently fall back to an older published security posture.
 # This table is uv-only and is not included in the wheel's dependency metadata.
+#
+# D-W6-BSF-1 (2026-08-07): agent-utilities became its own self-contained uv
+# WORKSPACE ROOT the same day (D-75-1/D-CIP-19/D-W3BP-4). uv rejects a
+# workspace member that is itself a workspace root ("Nested workspaces are
+# not supported"), which broke `agent-utilities = { workspace = true }` here
+# for every checkout of this repo, canonical included (verified: `uv run
+# --all-extras python -c "..."` failed identically on a clean, unmodified
+# canonical checkout before this fix, both as a plain source AND when this
+# repo declared its own `[tool.uv.workspace]` naming agent-utilities as a
+# member -- the nesting error is unconditional either way). The fix is a
+# plain editable PATH dependency instead of a workspace-member reference --
+# path deps have no such restriction, and this repo has no other reason to
+# be a uv workspace itself. `.uv-workspace-siblings/agent-utilities` is a
+# local, untracked symlink to the real sibling checkout (see `.gitignore`'s
+# matching comment); dev/lane-machine-only, materialized once per checkout.
 [tool.uv.sources]
-agent-utilities = { workspace = true }
+agent-utilities = { path = ".uv-workspace-siblings/agent-utilities", editable = true }
 
 [tool.ruff]
 line-length = 88

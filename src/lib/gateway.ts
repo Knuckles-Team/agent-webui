@@ -66,6 +66,21 @@ function unwrapEnvelope(raw: unknown): unknown {
   return raw
 }
 
+/**
+ * True when an already-unwrapped body is the engine-surface tools'
+ * `_degraded(...)` payload (`agent_utilities/mcp/tools/engine_surface_tools.py`):
+ * `{surface, action, degraded: true, error, tried}`. These tools (PromQL,
+ * traces, logs, …) never raise on a missing engine capability — they answer
+ * HTTP 200 with this shape instead — so an unwrapped body must be inspected
+ * for it explicitly; the HTTP-status check above only ever catches a route
+ * that isn't REGISTERED at all (404/501), not one that answered but degraded.
+ * Without this, a degraded capability rendered identically to a genuinely
+ * empty result (D-W6-10's same "broken vs. empty" defect, one layer up).
+ */
+function isDegradedSurfacePayload(unwrapped: unknown): boolean {
+  return !!unwrapped && typeof unwrapped === 'object' && (unwrapped as Record<string, unknown>).degraded === true
+}
+
 async function toResult<T>(res: Response, endpoint: string, schema?: z.ZodType<T>): Promise<GatewayResult<T>> {
   if (res.status === 404 || res.status === 501) {
     return { ok: false, data: null, unavailable: true, error: `HTTP ${String(res.status)}` }
@@ -76,6 +91,15 @@ async function toResult<T>(res: Response, endpoint: string, schema?: z.ZodType<T
   }
   const raw: unknown = await res.json()
   const unwrapped = unwrapEnvelope(raw)
+  if (isDegradedSurfacePayload(unwrapped)) {
+    const detail = (unwrapped as Record<string, unknown>).error
+    return {
+      ok: false,
+      data: null,
+      unavailable: true,
+      error: typeof detail === 'string' ? detail : 'capability not available',
+    }
+  }
   if (!schema) return { ok: true, data: unwrapped as T, unavailable: false }
   try {
     return { ok: true, data: validateShape(schema, unwrapped, endpoint), unavailable: false }

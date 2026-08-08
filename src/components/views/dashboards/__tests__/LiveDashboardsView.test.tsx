@@ -18,7 +18,7 @@ describe('LiveDashboardsView', () => {
 
   it('renders the shell with the default panels (op rate, p50, p99, logs, traces)', async () => {
     render(<LiveDashboardsView />)
-    expect(screen.getByText('Live Dashboards')).toBeInTheDocument()
+    expect(screen.getByText('Status')).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.getAllByTestId('dashboard-panel')).toHaveLength(5)
     })

@@ -1588,7 +1588,23 @@ def _parse_skill_md(path: Path) -> dict[str, Any]:
 
 
 async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
-    """Check if an item is enabled or disabled in the KG."""
+    """Check if an item is enabled or disabled in the KG.
+
+    Degrades to the same "enabled by default" answer on a query FAILURE as on
+    a genuinely-absent preference, rather than raising. Found live (D-W6-7):
+    every caller of this helper is a per-item read inside a LIST endpoint
+    (``list_all_tools``'s mcp/builtin/skill/skill-graph/workflow loops) --
+    this previously raised ``HTTPException(500)`` on ANY backend error
+    (confirmed live: a real, non-cluster-admin authenticated principal's
+    ``query_cypher`` call here hits ``CypherEngineError``/
+    ``PlacementAuthorityError`` -- ``graph_compute``'s per-call
+    ``resolve_placement`` still requires ``admin:cluster-read``, a DIFFERENT
+    call site than the one D-WD-1 already fixed at identity-mint time), which
+    killed the ENTIRE ``/api/enhanced/tools`` response for every item behind
+    it -- not a partial degrade, a hard 500 the frontend renders as an empty
+    view + a toast, for any caller who is not a cluster admin. A single
+    toggle-preference lookup failing must not take down the whole list.
+    """
     if not engine:
         return True
     pref_id = f'preference:toggle:{item_type}:{item_id}'
@@ -1601,12 +1617,13 @@ async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
         )
         if res and len(res) > 0:
             return res[0]['value'] == 'enabled'
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        if e.status_code == 503:
+            raise
+        _log_failure('query_toggle_state', e)
     except Exception as e:
         _log_failure('query_toggle_state', e)
-        raise HTTPException(status_code=500, detail='Unable to read toggle') from e
-    return True  # Enabled by default only when the preference does not exist.
+    return True  # Enabled by default: preference absent, or unreadable.
 
 
 async def set_toggle_state(
@@ -1650,27 +1667,28 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
     except Exception:
         engine = None
 
-    # 1. MCP Tools
+    # 1. MCP Tools — the KG is the discovered-fleet authority (D-W5WR-4/D-WD-7
+    # follow-up): a static ``mcp_config.json`` only ever holds LOCAL
+    # process-launch config (command/args) for whatever servers happen to be
+    # declared next to this deployment, never the fleet-wide catalog the same
+    # way graph-os discovers/ingests it. Query real ``:MCPServer`` nodes
+    # first (mirrors ``get_all_prompts``/``/prompts/graph``'s established
+    # KG-authority pattern) and only fall back to the static file when the
+    # engine genuinely has none — never silently prefer the narrower source.
     mcp_tools = []
-    config_path = _mcp_inventory_path()
-    if config_path is not None:
+    if engine is not None:
         try:
-            mcp_data = _read_bounded_json(config_path)
-            mcp_servers = mcp_data.get('mcpServers', {})
-            if (
-                not mcp_servers
-                and 'mcp_config' in mcp_data
-                and isinstance(mcp_data['mcp_config'], dict)
-            ):
-                mcp_servers = mcp_data['mcp_config'].get('mcpServers', {})
-            for name, cfg in list(mcp_servers.items())[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-                if not isinstance(name, str) or not isinstance(cfg, dict):
-                    continue
-                if not _SAFE_DELEGATION_TOKEN.fullmatch(name):
+            kg_servers = await _invoke_governed_helper(
+                engine.get_all_mcp_servers, deadline=10.0
+            )
+            for row in list(kg_servers or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+                name = row.get('name')
+                if not isinstance(name, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(
+                    name
+                ):
                     continue
                 mcp_enabled = await get_toggle_state(engine, 'mcp_server', name)
-                # If configured as disabled in json, keep it disabled
-                if cfg.get('disabled', False):
+                if row.get('disabled'):
                     mcp_enabled = False
                 mcp_tools.append(
                     {
@@ -1678,10 +1696,46 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
                         'type': 'MCP Server',
                         'status': 'active' if mcp_enabled else 'disabled',
                         'enabled': mcp_enabled,
+                        'tool_count': row.get('tool_count', 0),
                     }
                 )
+        except HTTPException:
+            raise
         except Exception as e:
             _log_failure('api_extension', e)
+    if not mcp_tools:
+        config_path = _mcp_inventory_path()
+        if config_path is not None:
+            try:
+                mcp_data = _read_bounded_json(config_path)
+                mcp_servers = mcp_data.get('mcpServers', {})
+                if (
+                    not mcp_servers
+                    and 'mcp_config' in mcp_data
+                    and isinstance(mcp_data['mcp_config'], dict)
+                ):
+                    mcp_servers = mcp_data['mcp_config'].get('mcpServers', {})
+                for name, cfg in list(mcp_servers.items())[
+                    :_MAX_EXTERNAL_COLLECTION_ITEMS
+                ]:
+                    if not isinstance(name, str) or not isinstance(cfg, dict):
+                        continue
+                    if not _SAFE_DELEGATION_TOKEN.fullmatch(name):
+                        continue
+                    mcp_enabled = await get_toggle_state(engine, 'mcp_server', name)
+                    # If configured as disabled in json, keep it disabled
+                    if cfg.get('disabled', False):
+                        mcp_enabled = False
+                    mcp_tools.append(
+                        {
+                            'name': name,
+                            'type': 'MCP Server',
+                            'status': 'active' if mcp_enabled else 'disabled',
+                            'enabled': mcp_enabled,
+                        }
+                    )
+            except Exception as e:
+                _log_failure('api_extension', e)
     # 2. Built-in Agent Tools
     builtin_tools = []
     tools_dir = get_agent_utilities_dir() / 'tools'
@@ -2360,8 +2414,20 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
     except HTTPException:
         raise
     except Exception as e:
-        _log_failure('api_extension', e)
-        return []
+        # D-W6-10: this used to swallow ANY backend failure (including an
+        # authorization rejection such as PlacementAuthorityError) into a
+        # bare `[]` -- indistinguishable, to both this route's caller and to
+        # GraphView.tsx, from a graph that is genuinely empty. Raise instead
+        # so the frontend's existing `.catch(() => null)` -> "Failed to load
+        # graph database nodes" toast (GraphView.tsx's own fetchData, already
+        # wired, previously never fired because a 200 + `[]` looks like
+        # success) fires on a REAL failure, and stays silent for a REAL empty
+        # graph (which never reaches this except block at all).
+        _log_failure('get_graph_nodes', e)
+        raise HTTPException(
+            status_code=503,
+            detail='Knowledge Graph node query failed',
+        ) from e
 
 
 @router.get('/graph/relationships')
@@ -2394,8 +2460,12 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
     except HTTPException:
         raise
     except Exception as e:
-        _log_failure('api_extension', e)
-        return []
+        # D-W6-10: mirror of get_graph_nodes' fix above -- see that comment.
+        _log_failure('get_graph_relationships', e)
+        raise HTTPException(
+            status_code=503,
+            detail='Knowledge Graph relationship query failed',
+        ) from e
 
 
 @router.get('/graph/stats')
@@ -2451,8 +2521,20 @@ async def get_graph_stats() -> dict[str, Any]:
     except HTTPException:
         raise
     except Exception as e:
+        # D-W6-10 (get_graph_stats' narrower related gap, named alongside the
+        # get_graph_nodes/get_graph_relationships fix above): a failure of the
+        # total_nodes/total_relationships queries themselves used to render as
+        # a fake "genuinely empty" {0, 0, {}} response -- identical to a real
+        # empty graph, with no signal anything went wrong. The per-node-type
+        # loop above intentionally keeps its own narrower degrade (one label's
+        # count failing should not take down the whole stats response), but a
+        # failure of the two TOTAL-count queries is a real backend failure and
+        # must surface as one.
         _log_failure('get_graph_stats', e)
-        return {'total_nodes': 0, 'total_relationships': 0, 'by_type': {}}
+        raise HTTPException(
+            status_code=503,
+            detail='Knowledge Graph stats query failed',
+        ) from e
 
 
 # ---------------------------------------------------------------------------

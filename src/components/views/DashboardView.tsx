@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils'
 import { safeExternalUrl } from '@/lib/safe-url'
 import { fetchValidated, looseArray } from '@/lib/api-validation'
 import DashboardSettings from './DashboardSettings'
+import DefaultOverviewPanel from './DefaultOverviewPanel'
 
 /* ── Types ───────────────────────────────────────────────────────── */
 
@@ -545,11 +546,13 @@ export default function DashboardView() {
             <p className="text-sm text-muted-foreground animate-pulse">Loading dashboard...</p>
           </div>
         ) : filteredGroups.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
-            <LayoutGrid className="size-12 opacity-20" />
-            <p className="text-sm">No services configured</p>
-            <p className="text-xs opacity-50">Add services via services.yaml or auto-discover from mcp_config.json</p>
-          </div>
+          // D-W6-9: this used to be the ENTIRE landing experience whenever no
+          // services.yaml/mcp_config.json was populated -- a literal, static
+          // "No services configured" placeholder with no real data behind it.
+          // DefaultOverviewPanel replaces it with a zero-configuration summary
+          // built from surfaces that are already reachable (prompts/tools/
+          // models/KG/health), never seeded/fabricated data.
+          <DefaultOverviewPanel />
         ) : (
           filteredGroups.map((group) => (
             <ServiceGroupSection

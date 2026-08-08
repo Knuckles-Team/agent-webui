@@ -188,6 +188,16 @@ ENV/
 env.bak/
 venv.bak/
 
+# This repo ships its own tracked uv.lock, so (mirroring agent-utilities'
+# identical D-75-1/D-CIP-19/D-W3BP-4 pattern) it is its own self-contained uv
+# workspace root: `[tool.uv.workspace]` in pyproject.toml pins
+# `agent-utilities` as an editable member at this path, symlinked to the real
+# sibling checkout already present on the dev/lane machine (no clone, no
+# copy) so the repo resolves/tests standalone against its own tracked lock,
+# without depending on a larger, untracked, unshipped ecosystem workspace at
+# the `agent-packages/` root. Dev/lane-machine-only, never tracked.
+.uv-workspace-siblings/
+
 # Spyder project settings
 .spyderproject
 .spyproject
