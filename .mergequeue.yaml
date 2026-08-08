@@ -188,6 +188,15 @@ gates:
     when_changed: ["src/**/*.ts", "src/**/*.tsx", "vitest.config.ts"]
 
   # ── Deliberately outside the fast tier ────────────────────────────────────────────────
+  # w5-ci-gates-local (D-W5CG-1) correction: "NOT run inside the queue's lease" below is
+  # not a per-run policy choice -- `tier: slow` gates are structurally UNREACHABLE in this
+  # engine. Verified in repository_manager/merge_queue.py: `QueueConfig.slow_gates()`
+  # (gates with tier != "fast") has exactly one caller in the whole file, a read-only
+  # `status`/`describe` dict field; `run_queue`/`run_fast_gates` never invoke it. Doesn't
+  # change either verdict below (both are ALSO independently justified not to run, on
+  # their own merits, regardless of tier reachability) -- just don't read "tier: slow" as
+  # "the queue chooses not to, this run" anywhere in this file; nothing choosable happens.
+  #
   # `pnpm build` (`tsc -b && vite build`): declared so this file stays the single
   # description of what guards the repo, but NOT run inside the queue's lease. It fails
   # on `main` for the SAME 2 pre-existing `tsc` errors the `typecheck` gate above already
