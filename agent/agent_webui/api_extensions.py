@@ -3359,6 +3359,520 @@ async def spawn_agent(data: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Agent Library — compose delegatable agents, register external A2A agents,
+# and suggest agents to build from the installed tool/skill inventory.
+#
+# A library entry IS the same ``CallableResource`` node ``run_agent`` resolves
+# for delegation, never a UI-only record: a locally composed agent is written
+# with ``resource_type=AGENT_SKILL`` using the identical field contract
+# ``ingest_runnable_skill``/atomic-skill ingestion produces (``source_ref``
+# starting ``skill://``, ``instruction_digest = runnable_skill_digest(body)``)
+# so ``run_agent``'s fail-closed skill-runnable check accepts it; an external
+# agent is written with ``resource_type=A2A_AGENT`` via the engine's own
+# ``ingest_a2a_agent_card``/``ingest_agent_toolkit``, the same primitives an
+# offline A2A config sync uses. ``provider_ref == _AGENT_LIBRARY_PROVIDER_REF``
+# marks a locally composed entry so the Library lists only what was authored
+# here, not every ingested skill in the corpus (that corpus is browsed
+# separately via ``/api/enhanced/skills``).
+# ---------------------------------------------------------------------------
+
+_AGENT_LIBRARY_PROVIDER = 'agent-webui-library'
+_AGENT_LIBRARY_PROVIDER_REF = f'provider://{_AGENT_LIBRARY_PROVIDER}'
+_MAX_INSTRUCTIONS_BYTES = 32_000
+
+
+def _library_agent_view(row: dict[str, Any]) -> dict[str, Any]:
+    """Shape one ``CallableResource`` row for the Agent Library list/detail views."""
+
+    resource_type = str(row.get('resource_type') or '')
+    return {
+        'id': row.get('id'),
+        'name': row.get('name'),
+        'description': row.get('description') or '',
+        'kind': 'a2a' if resource_type == 'A2A_AGENT' else 'local',
+        'mcp_server': row.get('mcp_server'),
+        'model_preference': row.get('model_preference'),
+        'timestamp': row.get('timestamp'),
+        'status': row.get('status') or 'active',
+        'runnable_bound': bool(row.get('runnable_bound', resource_type == 'A2A_AGENT')),
+    }
+
+
+@router.get('/agent-library/agents')
+async def list_library_agents() -> list[dict[str, Any]]:
+    """List every agent composed or registered through the Agent Library.
+
+    Local agents are ``CallableResource(resource_type=AGENT_SKILL)`` nodes
+    written by this feature (marked by ``provider_ref``); external agents are
+    every ``CallableResource(resource_type=A2A_AGENT)`` node regardless of
+    which pipeline registered it, since the KG — not this endpoint — is the
+    one source of truth for what is externally callable.
+    """
+    try:
+        engine = await _get_engine_bounded()
+        rows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (r:CallableResource) WHERE r.resource_type = $a2a '
+            'OR (r.resource_type = $skill AND r.provider_ref = $ref) '
+            f'RETURN r LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
+            {
+                'a2a': 'A2A_AGENT',
+                'skill': 'AGENT_SKILL',
+                'ref': _AGENT_LIBRARY_PROVIDER_REF,
+            },
+            deadline=10.0,
+        )
+        agents = [
+            _library_agent_view(row['r'])
+            for row in (rows or [])
+            if isinstance(row, dict)
+            and isinstance(row.get('r'), dict)
+            and str(row['r'].get('status') or '') != 'ARCHIVED'
+        ]
+        agents.sort(key=lambda a: str(a.get('name') or '').lower())
+        bounded = _public_external_result(agents)
+        return bounded if isinstance(bounded, list) else []
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('list_library_agents', e)
+        return []
+
+
+@router.get('/agent-library/tools')
+async def list_library_tools(mcp_server: str | None = None) -> list[dict[str, Any]]:
+    """List ``:Tool`` nodes from the KG for the agent composer's tool picker.
+
+    Optionally filtered to one owning ``mcp_server`` so a composer can offer
+    "everything this package's server exposes" as a starting point.
+    """
+    if mcp_server is not None and not _SAFE_DELEGATION_TOKEN.fullmatch(mcp_server):
+        raise HTTPException(status_code=400, detail='Invalid MCP server filter')
+    try:
+        engine = await _get_engine_bounded()
+        if mcp_server:
+            query = (
+                'MATCH (t:Tool) WHERE t.mcp_server = $s RETURN t.id AS id, '
+                't.name AS name, t.mcp_server AS mcp_server, t.tags AS tags '
+                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+            )
+            params = {'s': mcp_server}
+        else:
+            query = (
+                'MATCH (t:Tool) RETURN t.id AS id, t.name AS name, '
+                't.mcp_server AS mcp_server, t.tags AS tags '
+                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+            )
+            params = {}
+        rows = await _invoke_governed_helper(
+            engine.backend.execute, query, params, deadline=15.0
+        )
+        tools = [
+            {
+                'id': r.get('id'),
+                'name': r.get('name'),
+                'mcp_server': r.get('mcp_server'),
+                'tags': r.get('tags') or [],
+            }
+            for r in (rows or [])
+            if isinstance(r, dict) and r.get('id')
+        ]
+        tools.sort(
+            key=lambda t: (
+                str(t.get('mcp_server') or ''),
+                str(t.get('name') or '').lower(),
+            )
+        )
+        bounded = _public_external_result(tools)
+        return bounded if isinstance(bounded, list) else []
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('list_library_tools', e)
+        return []
+
+
+@router.get('/agent-library/suggestions')
+async def suggest_library_agents() -> list[dict[str, Any]]:
+    """Suggest agents to build, derived from the installed tool inventory.
+
+    Groups ``:Tool`` nodes by their owning ``mcp_server`` (an installed
+    ``agent-packages/agents/*`` package's MCP server, once ingested) and
+    proposes one for every server that has no Agent Library entry bound to it
+    yet. Nothing here is hardcoded: an uningested package, or one that
+    already has a composed agent, produces no suggestion.
+    """
+    try:
+        engine = await _get_engine_bounded()
+        tool_rows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (t:Tool) WHERE t.mcp_server IS NOT NULL AND t.mcp_server <> "" '
+            f'RETURN t.mcp_server AS server, t.name AS name LIMIT {_MAX_LIST_FILES}',
+            {},
+            deadline=15.0,
+        )
+        bound_rows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (r:CallableResource) WHERE r.resource_type = $skill '
+            'AND r.provider_ref = $ref AND r.mcp_server IS NOT NULL '
+            'RETURN DISTINCT r.mcp_server AS server',
+            {'skill': 'AGENT_SKILL', 'ref': _AGENT_LIBRARY_PROVIDER_REF},
+            deadline=15.0,
+        )
+        bound = {
+            str(row.get('server'))
+            for row in (bound_rows or [])
+            if isinstance(row, dict) and row.get('server')
+        }
+        by_server: dict[str, list[str]] = {}
+        for row in tool_rows or []:
+            if not isinstance(row, dict):
+                continue
+            server = row.get('server')
+            if not server:
+                continue
+            server = str(server)
+            names = by_server.setdefault(server, [])
+            name = row.get('name')
+            if name and len(names) < 8:
+                names.append(str(name))
+
+        suggestions: list[dict[str, Any]] = []
+        for server, names in by_server.items():
+            if server in bound:
+                continue
+            suggestions.append(
+                {
+                    'mcp_server': server,
+                    'tool_count': sum(
+                        1 for r in tool_rows if r.get('server') == server
+                    ),
+                    'sample_tools': names,
+                    'reason': (
+                        f"Tools from '{server}' are installed and ingested, "
+                        'but no agent in the Library uses them yet.'
+                    ),
+                }
+            )
+        suggestions.sort(key=lambda s: s.get('tool_count', 0), reverse=True)
+        bounded = _public_external_result(suggestions[:_MAX_EXTERNAL_COLLECTION_ITEMS])
+        return bounded if isinstance(bounded, list) else []
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('suggest_library_agents', e)
+        return []
+
+
+@router.get('/agent-library/agents/{agent_id:path}')
+async def get_library_agent(agent_id: str) -> dict[str, Any]:
+    """Return one Agent Library entry with its instructions and bound tools."""
+
+    agent_id = _validate_runtime_id(agent_id)
+    try:
+        engine = await _get_engine_bounded()
+        rows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (r:CallableResource {id: $id}) RETURN r',
+            {'id': agent_id},
+            deadline=10.0,
+        )
+        if not rows or not isinstance(rows[0].get('r'), dict):
+            raise HTTPException(status_code=404, detail='Agent not found')
+        row = rows[0]['r']
+        if str(row.get('resource_type') or '') not in {'AGENT_SKILL', 'A2A_AGENT'}:
+            raise HTTPException(status_code=404, detail='Agent not found')
+        view = _library_agent_view(row)
+        view['instructions'] = row.get('system_prompt') or ''
+        view['endpoint'] = row.get('endpoint')
+        view['agent_card'] = row.get('agent_card')
+        tool_rows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (r {id: $id})-[:USES_TOOL]->(t) RETURN t.name AS name, t.id AS id',
+            {'id': agent_id},
+            deadline=10.0,
+        )
+        view['tools'] = [
+            {'id': t.get('id'), 'name': t.get('name')}
+            for t in (tool_rows or [])
+            if isinstance(t, dict) and (t.get('id') or t.get('name'))
+        ]
+        return _public_external_result(view)
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('get_library_agent', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+@router.post('/agent-library/agents')
+async def create_library_agent(data: dict[str, Any]) -> dict[str, Any]:
+    """Compose a new locally-delegatable agent from a name, instructions, and tools.
+
+    Writes the exact ``CallableResource(resource_type=AGENT_SKILL)`` field
+    contract atomic-skill ingestion produces, so the saved agent is
+    delegatable by name immediately — never a second, UI-only representation.
+    Optionally expands ``bind_server`` into ``USES_TOOL`` edges for every
+    currently-ingested tool of that MCP server, in addition to any explicitly
+    picked ``tool_ids``.
+    """
+    name = str(data.get('name') or '').strip()
+    description = str(data.get('description') or '').strip()
+    instructions = str(data.get('instructions') or '').strip()
+    bind_server = str(data.get('bind_server') or '').strip()
+    model_preference = str(data.get('model_preference') or '').strip()
+    tool_ids = _bounded_identifier_list(data.get('tool_ids'))
+
+    if not name or len(name) > 120:
+        raise HTTPException(status_code=422, detail='Agent name is required')
+    if not instructions:
+        raise HTTPException(status_code=422, detail='Agent instructions are required')
+    if len(instructions.encode('utf-8')) > _MAX_INSTRUCTIONS_BYTES:
+        raise HTTPException(
+            status_code=400, detail='Instructions exceed the safety bound'
+        )
+    if bind_server and not _SAFE_DELEGATION_TOKEN.fullmatch(bind_server):
+        raise HTTPException(status_code=400, detail='Invalid MCP server name')
+    if model_preference and not _SAFE_DELEGATION_TOKEN.fullmatch(model_preference):
+        raise HTTPException(status_code=400, detail='Invalid model id')
+
+    try:
+        engine = await _get_engine_bounded()
+        from agent_utilities.knowledge_graph.ingestion.skill_workflow_ingest import (
+            runnable_skill_digest,
+            skill_reference,
+        )
+
+        def persist_agent() -> tuple[str, list[str]]:
+            source_ref = skill_reference(name)
+            digest = runnable_skill_digest(instructions)
+            skill_id = f'skill:{source_ref.removeprefix("skill://")}'
+            resource_id = f'resource:{skill_id}'
+            ts = datetime.now(timezone.utc).isoformat()
+            common: dict[str, Any] = {
+                'name': name,
+                'description': description or name,
+                'source_ref': source_ref,
+                'provider_ref': _AGENT_LIBRARY_PROVIDER_REF,
+                'instruction_digest': digest,
+                'timestamp': ts,
+            }
+            resolved_tool_ids = list(tool_ids)
+            if bind_server:
+                common['mcp_server'] = bind_server
+                server_rows = engine.backend.execute(
+                    'MATCH (t:Tool) WHERE t.mcp_server = $s RETURN t.id AS id',
+                    {'s': bind_server},
+                )
+                resolved_tool_ids.extend(
+                    str(r['id'])
+                    for r in (server_rows or [])
+                    if isinstance(r, dict) and r.get('id')
+                )
+            engine.add_node(
+                skill_id,
+                'Skill',
+                {**common, 'body': instructions, 'instruction': instructions},
+            )
+            resource_props: dict[str, Any] = {
+                **common,
+                'resource_type': 'AGENT_SKILL',
+                'system_prompt': instructions,
+                'runnable_bound': True,
+            }
+            if model_preference:
+                resource_props['model_preference'] = model_preference
+            engine.add_node(resource_id, 'CallableResource', resource_props)
+            engine.link_nodes(skill_id, resource_id, 'BINDS_RUNNABLE')
+            seen: set[str] = set()
+            for tool_id in resolved_tool_ids:
+                if tool_id in seen or len(seen) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                    continue
+                seen.add(tool_id)
+                engine.link_nodes(resource_id, tool_id, 'USES_TOOL')
+            return resource_id, sorted(seen)
+
+        resource_id, bound_tools = await _invoke_governed_helper(
+            persist_agent, deadline=30.0
+        )
+        return _public_external_result(
+            {
+                'id': resource_id,
+                'name': name,
+                'description': description or name,
+                'kind': 'local',
+                'mcp_server': bind_server or None,
+                'model_preference': model_preference or None,
+                'tools': bound_tools,
+            }
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        _log_failure('create_library_agent', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+@router.delete('/agent-library/agents/{agent_id:path}')
+async def archive_library_agent(agent_id: str) -> dict[str, Any]:
+    """Archive an Agent Library entry (soft delete, matching the fleet's
+    ``deregister_function`` convention: it stops being listed, but the node
+    and its provenance stay in the graph)."""
+
+    agent_id = _validate_runtime_id(agent_id)
+    try:
+        engine = await _get_engine_bounded()
+        rows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (r:CallableResource {id: $id}) '
+            'RETURN r.resource_type AS rtype, r.provider_ref AS provider_ref',
+            {'id': agent_id},
+            deadline=10.0,
+        )
+        if not rows or not isinstance(rows[0], dict):
+            raise HTTPException(status_code=404, detail='Agent not found')
+        rtype = str(rows[0].get('rtype') or '')
+        provider_ref = str(rows[0].get('provider_ref') or '')
+        if rtype not in {'AGENT_SKILL', 'A2A_AGENT'}:
+            raise HTTPException(status_code=404, detail='Agent not found')
+        if rtype == 'AGENT_SKILL' and provider_ref != _AGENT_LIBRARY_PROVIDER_REF:
+            raise HTTPException(
+                status_code=403,
+                detail='Only agents composed in the Agent Library can be archived here',
+            )
+        await _invoke_governed_helper(
+            engine.backend.execute,
+            "MATCH (r:CallableResource {id: $id}) SET r.status = 'ARCHIVED'",
+            {'id': agent_id},
+            deadline=10.0,
+        )
+        return {'status': 'success', 'id': agent_id, 'archived': True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('archive_library_agent', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+@router.post('/agent-library/a2a')
+async def register_a2a_agent(data: dict[str, Any]) -> dict[str, Any]:
+    """Register an external A2A agent alongside local ones.
+
+    Paste an agent-card JSON directly (no outbound fetch needed), or give
+    just a URL to fetch its published card through the engine's governed A2A
+    ingestion. Writes through the same ``CallableResource(resource_type=
+    A2A_AGENT)`` primitive ``run_agent`` resolves for delegation — the exact
+    mechanism an offline A2A config sync uses, so an agent registered here is
+    indistinguishable from one wired at deploy time.
+    """
+    url = str(data.get('url') or '').strip()
+    card = data.get('agent_card')
+    parsed = urlsplit(url) if url else None
+    if (
+        not url
+        or not parsed
+        or parsed.scheme not in {'http', 'https'}
+        or not parsed.netloc
+    ):
+        raise HTTPException(status_code=422, detail='A valid http(s) URL is required')
+    if len(url.encode('utf-8')) > 2048:
+        raise HTTPException(status_code=400, detail='URL exceeds its safety bound')
+
+    try:
+        engine = await _get_engine_bounded()
+        if isinstance(card, dict) and card:
+            bounded_card = _bounded_query_params(card)
+            await _invoke_governed_helper(
+                engine.ingest_a2a_agent_card, url, bounded_card, deadline=20.0
+            )
+            return {
+                'status': 'success',
+                'name': bounded_card.get('name'),
+                'endpoint_configured': True,
+            }
+        summary = await _invoke_governed_helper(
+            engine.ingest_agent_toolkit, [url], deadline=25.0
+        )
+        registered = bool(isinstance(summary, dict) and summary.get('a2a_agents'))
+        if not registered:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    'Could not fetch an agent card from that URL. '
+                    'Paste the agent-card JSON manually instead.'
+                ),
+            )
+        bounded_summary = _public_external_result(summary)
+        return {
+            'status': 'success',
+            'endpoint_configured': True,
+            'summary': bounded_summary,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('register_a2a_agent', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+@router.get('/agent-library/config-summary')
+async def agent_config_summary() -> dict[str, Any]:
+    """Curated, secret-free projection of the active AgentConfig model registry.
+
+    ``agent_utilities.core.config.AgentConfig`` has thousands of fields; this
+    surfaces only what matters for choosing a model when composing an agent —
+    never API keys, secret references, or provider credentials.
+    """
+    try:
+        from agent_utilities.core.config import AgentConfig
+
+        cfg = await _invoke_governed_helper(AgentConfig, deadline=15.0)
+        chat_models = [
+            {
+                'id': m.id,
+                'provider': m.provider,
+                'intelligence_level': m.intelligence_level,
+                'vision': m.vision,
+                'reasoning': m.reasoning,
+                'tools_enabled': m.tools_enabled,
+                'can_route': m.can_route,
+                'can_kg': m.can_kg,
+                'context_window': m.context_window,
+            }
+            for m in (cfg.chat_models or [])
+        ]
+        embedding_models = [
+            {
+                'id': m.id,
+                'provider': m.provider,
+                'chunk_size': m.chunk_size,
+                'context_window': m.context_window,
+            }
+            for m in (cfg.embedding_models or [])
+        ]
+        result = {
+            'app_profile': cfg.app_profile,
+            'deployment_profile': cfg.deployment_profile,
+            'chat_models': chat_models,
+            'embedding_models': embedding_models,
+        }
+        bounded = _public_external_result(result)
+        return bounded if isinstance(bounded, dict) else result
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('agent_config_summary', e)
+        return {
+            'app_profile': '',
+            'deployment_profile': '',
+            'chat_models': [],
+            'embedding_models': [],
+        }
+
+
+# ---------------------------------------------------------------------------
 # Maintenance and Pipeline Endpoints
 # ---------------------------------------------------------------------------
 

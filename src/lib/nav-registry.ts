@@ -13,6 +13,7 @@
 import { createElement, lazy, type ComponentType, type LazyExoticComponent } from 'react'
 import {
   Activity,
+  Bot,
   Book,
   BookOpen,
   Boxes,
@@ -242,6 +243,18 @@ export const ROUTES: readonly RouteDef[] = [
     minRole: 'maintainer',
     mobile: 'unsupported',
     element: lazy(() => import('@/components/views/SDDView')),
+  },
+  {
+    id: 'control-plane.agent-library',
+    path: '/agent-library',
+    label: 'Agent Library',
+    section: 'control-plane',
+    blurb:
+      'Compose your own agents from prompts and tools, or add outside agents, and call on them whenever you need.',
+    icon: Bot,
+    minRole: 'maintainer',
+    mobile: 'adapted',
+    element: lazy(() => import('@/components/views/AgentLibraryView')),
   },
   {
     id: 'control-plane.unified-agent-view',
