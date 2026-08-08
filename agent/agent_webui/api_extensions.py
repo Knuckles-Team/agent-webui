@@ -570,7 +570,7 @@ def _validate_delegation_call(
     return bounded_arguments
 
 
-def _validate_runtime_id(value: str) -> str:
+def _validate_runtime_id(value: object) -> str:
     """Validate a session/goal identifier before storage or proxy routing."""
 
     if not isinstance(value, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(value):
@@ -1583,8 +1583,8 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
             )
 
     # 3. Skills & Workflows from installed packages
-    skills = []
-    workflows = []
+    skills: list[dict[str, Any]] = []
+    workflows: list[dict[str, Any]] = []
     univ_skills_dir = (
         get_skills_packages_dir() / 'universal-skills' / 'universal_skills'
     )
@@ -1717,7 +1717,7 @@ async def list_skills() -> list[dict[str, Any]]:
     Returns:
         A list of skill definitions sorted alphabetically.
     """
-    skills = []
+    skills: list[dict[str, Any]] = []
     import sys
 
     is_testing = 'pytest' in sys.modules or 'unittest' in sys.modules

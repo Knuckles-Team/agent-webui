@@ -203,7 +203,8 @@ def test_upload_and_download_stay_inside_workspace(workspace_client):
 
 
 @pytest.mark.parametrize(
-    'filename', ['../escaped.txt', '/tmp/escaped.txt', r'..\escaped.txt']
+    'filename',
+    ['../escaped.txt', '/tmp/escaped.txt', r'..\escaped.txt'],  # nosec B108 -- attack-payload fixtures asserting rejection, not real temp-file usage
 )
 def test_upload_rejects_path_bearing_filename(workspace_client, filename):
     client, tmp_path, _helpers = workspace_client

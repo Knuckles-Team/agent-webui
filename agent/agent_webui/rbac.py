@@ -41,7 +41,7 @@ being able to disagree.
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 __all__ = [
     'ROLE_ORDER',
@@ -76,7 +76,9 @@ def role_at_least(role: str | None, minimum: str) -> bool:
     return role_rank(role) >= _ROLE_RANK.get(minimum, len(ROLE_ORDER))
 
 
-def resolve_webui_role(realm_roles: Iterable[str], *, authenticated: bool) -> str | None:
+def resolve_webui_role(
+    realm_roles: Iterable[str], *, authenticated: bool
+) -> str | None:
     """Resolve the effective WebUI role from a verified actor's realm roles.
 
     Args:

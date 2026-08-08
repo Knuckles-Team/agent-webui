@@ -598,10 +598,11 @@ class WebUIAuthorizationMiddleware:
 
         if required_scope == 'kg:admin':
             return 'admin'
-        if (
-            method not in {'GET', 'HEAD', 'OPTIONS'}
-            and WebUIAuthorizationMiddleware._is_admin_mutation_route(path)
-        ):
+        if method not in {
+            'GET',
+            'HEAD',
+            'OPTIONS',
+        } and WebUIAuthorizationMiddleware._is_admin_mutation_route(path):
             return 'maintainer'
         return None
 

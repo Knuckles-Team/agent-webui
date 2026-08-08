@@ -536,7 +536,9 @@ class _Recorder:
 
     @property
     def status(self) -> int:
-        return next(m['status'] for m in self.messages if m['type'] == 'http.response.start')
+        return next(
+            m['status'] for m in self.messages if m['type'] == 'http.response.start'
+        )
 
 
 def test_role_requirement_is_admin_whenever_the_kg_admin_scope_is_required() -> None:
@@ -561,7 +563,9 @@ def test_role_requirement_is_maintainer_for_a_non_admin_mutation_route() -> None
 
     assert (
         WebUIAuthorizationMiddleware._role_requirement(
-            required_scope='kg:write', method='', path='/api/enhanced/skills/demo/toggle'
+            required_scope='kg:write',
+            method='',
+            path='/api/enhanced/skills/demo/toggle',
         )
         == 'maintainer'
     )
@@ -581,7 +585,10 @@ def _graph_session(*, roles: frozenset[str], scopes: frozenset[str]):
     from agent_utilities.security.brain_context import ActorContext
 
     actor = ActorContext(
-        actor_id='subject-1', tenant_id='homelab', roles=tuple(roles), authenticated=True
+        actor_id='subject-1',
+        tenant_id='homelab',
+        roles=tuple(roles),
+        authenticated=True,
     )
     return GraphSession(actor=actor, tenant='homelab', scopes=scopes)
 
@@ -596,8 +603,12 @@ def test_admin_route_rejects_a_verified_kg_admin_caller_explicitly_demoted_to_re
     from agent_utilities.core.config import config
     from agent_utilities.knowledge_graph.core.session import use_session
 
-    monkeypatch.setattr(config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False)
-    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False)
+    monkeypatch.setattr(
+        config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
+    )
+    monkeypatch.setattr(
+        config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False
+    )
     monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
 
     session = _graph_session(
@@ -608,7 +619,12 @@ def test_admin_route_rejects_a_verified_kg_admin_caller_explicitly_demoted_to_re
         raise AssertionError('the demoted caller must never reach the inner app')
 
     middleware = WebUIAuthorizationMiddleware(_inner)
-    scope = {'type': 'http', 'method': 'GET', 'path': '/api/enhanced/prompts', 'headers': []}
+    scope = {
+        'type': 'http',
+        'method': 'GET',
+        'path': '/api/enhanced/prompts',
+        'headers': [],
+    }
     send = _Recorder()
 
     async def receive() -> dict:
@@ -630,11 +646,17 @@ def test_admin_route_admits_a_verified_kg_admin_caller_with_no_webui_override(
     from agent_utilities.core.config import config
     from agent_utilities.knowledge_graph.core.session import use_session
 
-    monkeypatch.setattr(config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False)
-    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False)
+    monkeypatch.setattr(
+        config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
+    )
+    monkeypatch.setattr(
+        config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False
+    )
     monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
 
-    session = _graph_session(roles=frozenset({'kg:admin'}), scopes=frozenset({'kg:admin'}))
+    session = _graph_session(
+        roles=frozenset({'kg:admin'}), scopes=frozenset({'kg:admin'})
+    )
 
     reached: list[bool] = []
 
@@ -644,7 +666,12 @@ def test_admin_route_admits_a_verified_kg_admin_caller_with_no_webui_override(
         await send({'type': 'http.response.body', 'body': b'{}'})
 
     middleware = WebUIAuthorizationMiddleware(_inner)
-    scope = {'type': 'http', 'method': 'GET', 'path': '/api/enhanced/prompts', 'headers': []}
+    scope = {
+        'type': 'http',
+        'method': 'GET',
+        'path': '/api/enhanced/prompts',
+        'headers': [],
+    }
     send = _Recorder()
 
     async def receive() -> dict:
