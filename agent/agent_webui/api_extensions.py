@@ -1,3 +1,4 @@
+import base64
 import contextvars
 import hashlib
 import inspect
@@ -2844,6 +2845,114 @@ async def execute_cypher(data: dict[str, Any]) -> list[dict[str, Any]]:
         raise
     except Exception as e:
         _log_failure('execute_query', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+# ---------------------------------------------------------------------------
+# Native visualization (D-VZ-1 lane w6-viz-xy) — renders a ViewSpec through the
+# eg-viz LOD ColumnStore/export pipeline (Method::Viz on the epistemic-graph
+# engine) and returns the resulting PNG/SVG/PDF bytes as a data: URL. The image
+# is rendered server-side (Rust) at a bounded primitive/byte budget regardless
+# of how many rows the request describes -- this is the mechanism that lets a
+# 100M-row scatter or a 100k-node graph render in the browser without shipping
+# 100M points over the wire. See plans/au-eg-program/program/visualization-native.md.
+# ---------------------------------------------------------------------------
+_MAX_VIZ_RESPONSE_BYTES = 20 * 1024 * 1024
+
+
+@router.get('/graph/viz/capabilities')
+async def get_viz_capabilities() -> dict[str, Any]:
+    """Return the eg-viz mark/surface capability matrix (what's renderable today)."""
+    try:
+        engine = await _get_engine_bounded()
+        if not engine or not engine.backend:
+            raise HTTPException(status_code=503, detail='Graph engine not available')
+        client = engine.backend._graph.client
+        result = await _invoke_governed_helper(
+            client.viz.capability_matrix, deadline=10.0
+        )
+        return _bounded_external_value(result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('viz_capabilities', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+@router.post('/graph/viz/render')
+async def render_viz(data: dict[str, Any]) -> dict[str, Any]:
+    """Render a chart or graph through the eg-viz LOD pipeline.
+
+    Body: ``{"spec": <ViewSpec JSON>, "dataset": <VizDatasetSource JSON>,
+    "width_px", "height_px", "format" ("png"|"svg"|"pdf"), "max_primitives",
+    "max_bytes"}``. ``dataset`` may be an ``InlineColumns`` payload (small,
+    caller-supplied data) or a ``SyntheticScatterClusters``/``SyntheticGraph``
+    generator spec -- the latter are generated ENGINE-SIDE (never shipped over
+    the wire), which is how a high-density demo (millions of rows / tens of
+    thousands of graph nodes) stays a small request.
+
+    Returns ``{"view_result", "format", "content_type", "data_url"}`` -- the
+    ``data_url`` is a ready-to-render ``data:<content_type>;base64,...`` string.
+    """
+    try:
+        spec = data.get('spec')
+        dataset = data.get('dataset')
+        if not isinstance(spec, dict) or not isinstance(dataset, dict):
+            raise HTTPException(
+                status_code=422, detail="'spec' and 'dataset' must be objects"
+            )
+        width_px = max(16, min(int(data.get('width_px', 900)), 8192))
+        height_px = max(16, min(int(data.get('height_px', 600)), 8192))
+        fmt = str(data.get('format', 'png')).lower()
+        if fmt not in ('png', 'svg', 'pdf'):
+            raise HTTPException(status_code=422, detail='format must be png|svg|pdf')
+        max_primitives = max(
+            1, min(int(data.get('max_primitives', 200_000)), 2_000_000)
+        )
+        max_bytes = max(1, min(int(data.get('max_bytes', 50_000_000)), 200_000_000))
+        dataset_ref = str(data.get('dataset_ref', 'webui-viz-render'))[:200]
+
+        engine = await _get_engine_bounded()
+        if not engine or not engine.backend:
+            raise HTTPException(status_code=503, detail='Graph engine not available')
+        client = engine.backend._graph.client
+
+        result = await _invoke_governed_helper(
+            client.viz.render,
+            spec,
+            dataset,
+            deadline=30.0,
+            width_px=width_px,
+            height_px=height_px,
+            format=fmt,
+            max_primitives=max_primitives,
+            max_bytes=max_bytes,
+            dataset_ref=dataset_ref,
+        )
+        image_bytes = result.get('bytes') or b''
+        if not isinstance(image_bytes, (bytes, bytearray)):
+            raise HTTPException(
+                status_code=502, detail='Engine returned no image bytes'
+            )
+        if len(image_bytes) > _MAX_VIZ_RESPONSE_BYTES:
+            raise HTTPException(status_code=422, detail='Rendered image is too large')
+        content_type = {
+            'png': 'image/png',
+            'svg': 'image/svg+xml',
+            'pdf': 'application/pdf',
+        }[fmt]
+        b64 = base64.b64encode(bytes(image_bytes)).decode('ascii')
+        return {
+            'view_result': _bounded_external_value(result.get('view_result', {})),
+            'format': fmt,
+            'content_type': content_type,
+            'byte_len': len(image_bytes),
+            'data_url': f'data:{content_type};base64,{b64}',
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('viz_render', e)
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
