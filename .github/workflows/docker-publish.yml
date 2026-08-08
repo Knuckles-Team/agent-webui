@@ -1,0 +1,240 @@
+name: Build and Publish Docker Image
+
+# THE production counterpart to docker/deploy.sh (2026-08-07, lane/w6-webui-build-standard).
+# docker/deploy.sh is the LOCAL release path (dev host -> r820 -> live k8s Deployment);
+# this workflow is the PRODUCTION build path -- it cuts the image that gets deployed
+# alongside an agent-utilities release, published to Docker Hub so any host (not just
+# r820) can pull it by digest. Both consume the SAME docker/Dockerfile -- there is only
+# ONE Dockerfile, ONE set of build-contexts/build-args, no separate "CI variant."
+#
+# WHY THIS ISN'T `Knuckles-Team/pipelines/.github/workflows/container_pipeline.yml`
+# (the reusable workflow agent-utilities' own `publish-docker` job calls, and the fleet
+# convention for cutting a Docker image): that reusable workflow's `docker/build-push-
+# action` call only exposes `context`/`dockerfile` inputs -- a single-context build. This
+# repo's Dockerfile needs TWO extra named build-contexts (`au-src`, `wheelhouse` -- see
+# the Dockerfile header for why: agent-utilities has no PyPI release with the modules
+# this app imports, so it's built from source in-image) plus `BUILD_SHA`/`BUILD_TIME`
+# build-args (see build-info.txt below). Neither is expressible through that reusable
+# workflow's interface, so this is a bespoke job using the same underlying actions
+# (docker/build-push-action et al.) directly. A fleet-wide enhancement to
+# container_pipeline.yml to accept build-contexts/build-args would be the cleaner
+# long-term fix -- out of this repo's scope (that repo is owned by Knuckles-Team/pipelines,
+# shared across ~62 packages); flagged as a follow-up, not attempted here.
+#
+# WHY NOT `runs-on: self-hosted` (also the fleet convention, and what
+# container_pipeline.yml itself specifies): verified 2026-08-07 that NO self-hosted
+# runner is currently registered at either the repo or org level (`gh api repos/
+# Knuckles-Team/agent-webui/actions/runners` / `orgs/Knuckles-Team/actions/runners` both
+# return `total_count: 0`) -- provisioning one is a separate, security-sensitive
+# decision (a self-hosted runner attached to a public repo is a known arbitrary-code-
+# execution surface for PRs) that needs an explicit operator/security call, not
+# something to default into here. This workflow runs entirely on GitHub-hosted
+# `ubuntu-latest` runners instead, which means it must be fully self-contained from
+# PUBLIC sources -- no reachback into the private homelab wheelhouse/NFS the local
+# docker/deploy.sh script uses. That's WHY the `build-eg-wheel` job below builds
+# epistemic-graph from source (a public repo) rather than consuming the private
+# `.dev-wheelhouse` -- there is no public, versioned artifact for it yet (verified
+# 2026-08-07: PyPI's newest epistemic-graph is still 2.23.0, below agent-utilities'
+# >=2.23.2 floor).
+#
+# WHY GATED ON A `v*` TAG (not every push to main): mirrors the fleet's existing D-ORC-10
+# pattern (agent-utilities' own `publish-pypi`/`publish-docker` jobs) -- publishing an
+# image is effectively irreversible (a pulled `:latest` can't be un-pulled) and this
+# workflow's own eg-wheel build is a genuine multi-minute Rust release build, so it
+# should never be a side effect of an ordinary merge. `workflow_dispatch` is also
+# available for an explicit manual run without cutting a tag.
+#
+# Secrets referenced by NAME ONLY below (GitHub is public; never echo/commit a value):
+# DOCKER_USERNAME, DOCKER_PASSWORD -- the same secrets agent-utilities' own
+# publish-docker job already uses, provisioned at the org/repo level.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: "1"
+  MATURIN_FEATURES: "full,ast-extended"
+
+jobs:
+  # ── Build the ONE epistemic-graph wheel this image needs (linux-x86_64 only --
+  #    that's the only platform this runtime image ships for). Deliberately a
+  #    SUBSET of epistemic-graph's own release-build.yml: that workflow additionally
+  #    does a byte-identical dual-build reproducibility proof, SBOM normalization, and
+  #    5-platform matrix -- release-integrity gates that belong to epistemic-graph's
+  #    OWN publish step, not something a downstream consumer needs to re-certify.
+  #    What IS kept: folding the eg-numeric kernel into the wheel and the
+  #    completeness/privacy checks -- skipping those reproduced a real, previously
+  #    shipped bug (2.14.0-2.23.0 published with NO numeric kernel at all, because
+  #    nothing checked the payload after the fold step).
+  build-eg-wheel:
+    name: Build epistemic-graph wheel (linux-x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout epistemic-graph
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: Knuckles-Team/epistemic-graph
+          ref: main
+          path: eg-src
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Read tracked Rust toolchain pin
+        id: rust-toolchain
+        shell: bash
+        working-directory: eg-src
+        run: >-
+          python -c "import os,re,tomllib;
+          channel=tomllib.load(open('rust-toolchain.toml','rb'))['toolchain']['channel'];
+          assert re.fullmatch(r'[0-9]+[.][0-9]+[.][0-9]+', channel);
+          open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8').write(f'channel={channel}\n')"
+
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: ${{ steps.rust-toolchain.outputs.channel }}
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Build epistemic-graph server wheel
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
+        with:
+          working-directory: eg-src
+          target: x86_64-unknown-linux-gnu
+          args: >-
+            --release
+            --out dist
+            --features ${{ env.MATURIN_FEATURES }}
+          manylinux: '2_28'
+          sccache: 'false'
+
+      - name: Build eg-numeric kernel (same target)
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
+        with:
+          working-directory: eg-src
+          target: x86_64-unknown-linux-gnu
+          args: >-
+            --release
+            --out numdist
+            -m crates/eg-numeric/Cargo.toml
+            --features python
+          manylinux: '2_28'
+          sccache: 'false'
+
+      - name: Fold numeric kernel into the server wheel
+        working-directory: eg-src
+        run: python scripts/inject_numeric_kernel.py "$(ls dist/epistemic_graph-*.whl)" "$(ls numdist/*.whl)"
+
+      # D-ORC/eg wheel kernel packaging regression precedent: 2.14.0-2.23.0 published
+      # with NO numeric kernel because nothing verified the payload after the fold.
+      - name: Require a complete wheel (kernel + executable binary + RECORD)
+        working-directory: eg-src
+        run: python scripts/check_wheel_completeness.py dist/*.whl
+
+      - name: Audit wheel privacy
+        working-directory: eg-src
+        run: python scripts/check_wheel_privacy.py dist/*.whl
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: eg-wheel
+          path: eg-src/dist/epistemic_graph-*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  build-and-push-image:
+    name: Build and push agent-webui image
+    needs: build-eg-wheel
+    runs-on: ubuntu-latest
+    # D-ORC-10-style gate (matches agent-utilities' own publish-docker job): a
+    # protected GitHub Environment enables required-reviewer / wait-timer rules once
+    # an admin configures them under Settings > Environments > docker-publish; the
+    # `v*` tag trigger above is the structural gate that holds regardless.
+    environment: docker-publish
+    steps:
+      - name: Checkout agent-webui
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      # Never installed from PyPI (D-W5WR-1) -- built from source, same as
+      # docker/build_and_push.sh's AU_SRC_PATH. PyPI's newest agent-utilities
+      # (1.26.4, verified 2026-08-07) is missing modules this app imports at
+      # startup; see docker/Dockerfile's header for the full empirical trail.
+      - name: Checkout agent-utilities (au-src build context)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: Knuckles-Team/agent-utilities
+          ref: main
+          path: au-src
+          persist-credentials: false
+
+      - name: Download epistemic-graph wheel (wheelhouse build context)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: eg-wheel
+          path: wheelhouse
+
+      - name: Compute build metadata
+        id: meta_build
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ secrets.DOCKER_USERNAME }}/agent-webui
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: runtime
+          build-contexts: |
+            au-src=au-src
+            wheelhouse=wheelhouse
+          build-args: |
+            BUILD_SHA=${{ steps.meta_build.outputs.sha }}
+            BUILD_TIME=${{ steps.meta_build.outputs.time }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      # Same check docker/build_and_push.sh runs locally before it will push --
+      # confirms the pushed image's served bundle actually carries this commit,
+      # not a stale cached layer, using the tag `metadata-action` just resolved
+      # (so this pulls the exact manifest just pushed, not a mutable `:latest`
+      # someone else could have moved in the meantime).
+      - name: Verify pushed image serves today's build-info.txt
+        run: |
+          set -euo pipefail
+          IMAGE_REF="$(head -n1 <<<"${{ steps.meta.outputs.tags }}")"
+          INFO="$(docker run --rm --entrypoint sh "${IMAGE_REF}" -c \
+            'cat "$(python3 -c "import agent_webui, os; print(os.path.join(os.path.dirname(agent_webui.__file__), \"dist\", \"build-info.txt\"))")"')"
+          echo "${INFO}"
+          grep -q "sha=${{ steps.meta_build.outputs.sha }}$" <<<"${INFO}"

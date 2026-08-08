@@ -111,6 +111,31 @@ pnpm run test:e2e:headed   # Run E2E tests in headed mode
 
 See [TESTING.md](TESTING.md) for comprehensive testing documentation.
 
+## Build & Deploy (container image + k8s)
+
+**One** local command builds and deploys the k8s-hosted UI end to end:
+`docker/deploy.sh` (add `--build-only` or `--skip-deploy` to stop early). **One**
+GitHub Actions workflow (`.github/workflows/docker-publish.yml`, gated on a `v*`
+tag) cuts the production image from the same `docker/Dockerfile`. Full contract,
+env vars, and the coordination protocol for concurrent deploys are documented in
+README.md's [Build & Deploy](README.md#build--deploy) section — read it before
+touching anything under `docker/` or the k8s manifest.
+
+Do not hand-roll a `docker build`/`kubectl set image` sequence, and do not
+`kubectl apply` `inventory/k8s-migration/cutover/apptier/agent-webui.yaml` to
+change the running image — that file's `image:` field is a point-in-time
+snapshot, not the source of truth (see its own header comment). Three traps
+already cost a day of production incidents before these scripts existed —
+README.md's Build & Deploy section names all three; the short version: (1) a
+digest-pinned Deployment still needs `kubectl set image ...@sha256:<new>`, a
+plain rollout restart re-pulls identical bits forever; (2) `uv pip install
+agent-utilities[...]` can silently resolve a stale PyPI release instead of the
+locally built wheel; (3) the served frontend `dist/` is independently stale from
+the backend because of a live NFS mount that shadows it — rebuilding the Docker
+image alone does not ship a frontend change; `docker/deploy.sh` handles this by
+also rebuilding `dist/` on the canonical checkout and verifying the live pod
+serves it.
+
 ## Code Style Guidelines
 
 ### TypeScript/JavaScript
