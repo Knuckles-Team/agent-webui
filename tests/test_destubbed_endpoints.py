@@ -152,7 +152,14 @@ def test_ecosystem_endpoint_honest_error_on_backend_failure(client, monkeypatch,
     # An unreachable backend yields an honest error, never canned data.
     assert data['status'] == 'error'
     assert data['source'] == 'unreachable'
-    assert 'backend down' in data['detail']
+    # ``_service_error`` deliberately reports only ``type(exc).__name__`` --
+    # the exception *message* can carry upstream host names, URLs, credentials
+    # or query text, so it never crosses the API boundary (the same redaction
+    # the ``HTTPException`` subclass applies to ``detail``). The honest signal
+    # is preserved: the client learns the read failed and why in kind, and
+    # ``_log_failure`` keeps the full cause server-side.
+    assert data['detail'] == 'RuntimeError'
+    assert 'backend down' not in resp.text
     for fake in FORBIDDEN_FAKES:
         assert fake not in resp.text
 
@@ -289,7 +296,14 @@ def test_atlassian_kanban_surfaces_http_error(client, monkeypatch):
     resp = client.get('/ecosystem/atlassian/kanban')
     data = resp.json()
     assert data['status'] == 'error'
-    assert '404' in data['detail']
+    assert data['source'] == 'unreachable'
+    # A non-2xx from Jira is raised as ``RuntimeError(f'Jira returned HTTP
+    # {status_code}')`` and reported through ``_service_error``, which
+    # redacts to the exception type (see the honest-error test above). The
+    # upstream status code is a property of a third-party service and stays
+    # server-side; the client still learns the read failed honestly.
+    assert data['detail'] == 'RuntimeError'
+    assert data['columns'] == []
     assert 'ECO-101' not in resp.text
 
 
@@ -313,28 +327,70 @@ def test_stirlingpdf_reports_no_backend(client):
 
 
 def test_call_mcp_tool_unknown_server_raises():
+    """An unresolvable server refuses loudly; it never yields fake data.
+
+    The WebUI no longer owns a fleet registry to consult -- ``_call_mcp_tool``
+    delegates through the host's governed seam, which injects
+    ``call_mcp_tool`` only after applying its own allowlist and actor policy.
+    So "unknown server" is refused one layer out, and with no governed helper
+    installed (as in this unit context) the call cannot proceed at all. Either
+    way the contract under test is unchanged: it RAISES rather than returning
+    a fabricated result.
+    """
     import asyncio
 
-    with pytest.raises(RuntimeError, match='not found in the fleet registry'):
+    with pytest.raises(RuntimeError, match='Governed MCP delegation is not configured'):
         asyncio.run(mod._call_mcp_tool('definitely-not-a-server', 'x', {}))
+
+
+def test_call_mcp_tool_rejects_malformed_server_name():
+    """The in-repo refusal that survived the delegation refactor."""
+    import asyncio
+
+    with pytest.raises(ValueError, match='Invalid delegated server name'):
+        asyncio.run(mod._call_mcp_tool('not a server!', 'x', {}))
 
 
 # --- Non-ecosystem de-stubs (still valid) ----------------------------------
 
 
+# A well-formed opaque repo reference (``repo:`` + 32 hex) that no real
+# repository hashes to. Raw repository *names* and paths are no longer accepted
+# across the API boundary -- ``trigger_workspace_bulk_actions`` takes only
+# ``_opaque_reference`` handles -- so a syntactically valid handle is required
+# to exercise anything past input validation.
+_UNRESOLVABLE_REPO_REF = 'repo:' + '0' * 32
+
+
 def test_bulk_actions_rejects_unknown_action(client):
     resp = client.post(
         '/repository-manager/bulk',
-        json={'action': 'deploy-prod', 'targets': ['agent-webui']},
+        json={'action': 'deploy-prod', 'targets': [_UNRESOLVABLE_REPO_REF]},
     )
     assert resp.status_code == 400
-    assert 'Unsupported bulk action' in resp.text
+    # The rejection reason ("Unsupported bulk action 'deploy-prod'. Supported:
+    # ['status']") is deliberately redacted at the boundary by the
+    # ``HTTPException`` subclass -- echoing it would enumerate the dispatch
+    # whitelist to an unauthenticated caller. The contract under test is that
+    # a non-whitelisted action is REFUSED, which the 400 proves.
+    assert resp.json() == {'detail': 'Invalid request'}
+    assert 'deploy-prod' not in resp.text
+
+
+def test_bulk_actions_rejects_raw_repository_names(client):
+    """Repository names/paths never cross the API boundary (opaque refs only)."""
+    resp = client.post(
+        '/repository-manager/bulk',
+        json={'action': 'status', 'targets': ['definitely-not-a-real-repo-xyz']},
+    )
+    assert resp.status_code == 400
+    assert 'definitely-not-a-real-repo-xyz' not in resp.text
 
 
 def test_bulk_actions_reports_missing_repo(client):
     resp = client.post(
         '/repository-manager/bulk',
-        json={'action': 'status', 'targets': ['definitely-not-a-real-repo-xyz']},
+        json={'action': 'status', 'targets': [_UNRESOLVABLE_REPO_REF]},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -343,16 +399,37 @@ def test_bulk_actions_reports_missing_repo(client):
     assert data['results'][0]['detail'] == 'repo not found'
 
 
-def test_container_inventory_reports_unavailable_not_simulated(client, monkeypatch):
-    import socket as _socket
+def test_container_inventory_reports_unavailable_not_simulated(client):
+    """No governed inventory adapter -> honest 501, never a simulated fleet.
 
-    def _bad_connect(self, *_a, **_k):
+    The WebUI intentionally has no direct Docker/Podman socket access any
+    more; ``list_docker_containers`` delegates to a governed host adapter that
+    owns daemon authorization, transport and audit policy. With no
+    ``list_containers`` helper registered (as in this unit context) the honest
+    answer is 501 "capability is not available" rather than the old
+    socket-probe 503. The invariant this test exists for is unchanged: it
+    reports unavailability instead of inventing containers.
+    """
+    resp = client.get('/container-manager/containers')
+    assert resp.status_code == 501
+    assert resp.json() == {'detail': 'Capability is not available'}
+    assert 'agent-utilities-core' not in resp.text
+    assert 'mealie-service' not in resp.text
+
+
+def test_container_inventory_reports_503_when_adapter_fails(client, monkeypatch):
+    """A registered-but-broken adapter degrades to 503, still without fakes."""
+
+    def _broken_list_containers(**_kwargs):
         raise OSError('no docker socket')
 
-    monkeypatch.setattr(_socket.socket, 'connect', _bad_connect)
+    monkeypatch.setitem(
+        mod.workspace_helpers, 'list_containers', _broken_list_containers
+    )
     resp = client.get('/container-manager/containers')
     assert resp.status_code == 503
-    assert 'inventory unavailable' in resp.text.lower()
+    assert resp.json() == {'detail': 'Service unavailable'}
+    assert 'no docker socket' not in resp.text
     assert 'agent-utilities-core' not in resp.text
     assert 'mealie-service' not in resp.text
 
@@ -370,19 +447,40 @@ def test_repository_inventory_does_not_invent_standard_repos(
     assert 'epistemic-graph' not in resp.text
 
 
-def test_voice_transcribe_honest_without_whisper(client, monkeypatch):
-    import shutil as _shutil
+def test_voice_transcribe_honest_without_whisper(client):
+    """No governed transcriber -> honest 501, never a fabricated transcript.
 
-    monkeypatch.setattr(mod.shutil, 'which', lambda _name: None, raising=False)
-    monkeypatch.setattr(_shutil, 'which', lambda _name: None)
+    Transcription no longer shells out to a local ``whisper`` binary (so
+    ``api_extensions`` no longer imports ``shutil`` at all, which is why the
+    old ``mod.shutil`` monkeypatch targets a dead symbol). One bounded upload
+    is delegated to a governed transcription sandbox; with no
+    ``transcribe_voice`` helper registered the endpoint refuses with 501
+    instead of returning canned text.
+    """
+    resp = client.post(
+        '/voice/transcribe',
+        files={'file': ('clip.webm', b'fake-audio-bytes', 'audio/webm')},
+    )
+    assert resp.status_code == 501
+    assert resp.json() == {'detail': 'Capability is not available'}
+    assert 'docker containers' not in resp.text
+
+
+def test_voice_transcribe_threads_governed_transcript(client, monkeypatch):
+    """A registered transcriber's real text is threaded through verbatim."""
+
+    def _transcriber(*, content, content_type):
+        assert content == b'fake-audio-bytes'
+        assert content_type == 'audio/webm'
+        return {'text': '  real spoken words  '}
+
+    monkeypatch.setitem(mod.workspace_helpers, 'transcribe_voice', _transcriber)
     resp = client.post(
         '/voice/transcribe',
         files={'file': ('clip.webm', b'fake-audio-bytes', 'audio/webm')},
     )
     assert resp.status_code == 200
-    data = resp.json()
-    assert data['text'] == ''
-    assert 'not configured' in data['error']
+    assert resp.json() == {'text': 'real spoken words'}
     assert 'docker containers' not in resp.text
 
 
