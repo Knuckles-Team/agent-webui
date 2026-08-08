@@ -385,6 +385,36 @@ export interface ExtractionJob {
   user_held?: boolean
 }
 
+/** Body for POST /api/enhanced/graph/viz/render — the eg-viz ViewSpec render request (D-VZ-1). */
+export interface VizRenderRequest {
+  spec: Record<string, unknown>
+  dataset: Record<string, unknown>
+  width_px?: number
+  height_px?: number
+  format?: 'png' | 'svg' | 'pdf'
+  max_primitives?: number
+  max_bytes?: number
+  dataset_ref?: string
+}
+
+/** eg-viz `ViewResult` — exact-vs-approximated trust metadata for a render (D-VZ-1). */
+export interface VizViewResult {
+  query_hash: string
+  row_count: number
+  lod_tier: 'direct' | 'decimate' | 'density' | 'tiled'
+  reduction: 'none' | 'decimate' | 'density' | 'tiled'
+  exact: boolean
+  wall_time_ms: number
+}
+
+export interface VizRenderResponse {
+  view_result: VizViewResult
+  format: string
+  content_type: string
+  byte_len: number
+  data_url: string
+}
+
 /** A (workspace-action -> Code symbol) MUTATED edge from the provenance graph (KG-2.64). */
 export interface SweMutatedEdge {
   action_id: string
@@ -560,6 +590,15 @@ class ApiClient {
       '/api/enhanced/graph/stats',
     )
   getGraphRelationships = () => this.get<unknown[]>('/api/enhanced/graph/relationships')
+
+  // Native visualization (D-VZ-1) — renders a ViewSpec through the eg-viz
+  // LOD ColumnStore/export pipeline (Method::Viz) and returns image bytes as
+  // a data: URL. `dataset` can be caller-supplied InlineColumns or an
+  // engine-side SyntheticScatterClusters/SyntheticGraph generator, so a
+  // high-density request (millions of rows / thousands of graph nodes) stays
+  // a small request/response regardless of how many primitives are drawn.
+  getVizCapabilities = () => this.get<unknown>('/api/enhanced/graph/viz/capabilities')
+  renderViz = (payload: VizRenderRequest) => this.post<VizRenderResponse>('/api/enhanced/graph/viz/render', payload)
 
   // Code-graph analytics (CONCEPT:KG-2.210/2.214): Graphify-style god nodes,
   // communities, surprising connections + a render payload for the canvas. Routes

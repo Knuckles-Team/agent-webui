@@ -317,6 +317,17 @@ export const ROUTES: readonly RouteDef[] = [
     element: lazy(() => import('@/components/views/CodeGraphView')),
   },
   {
+    id: 'knowledge.viz',
+    path: '/viz',
+    label: 'Visualizations',
+    section: 'knowledge',
+    blurb: 'High-density charts and graph renders, generated server-side through the eg-viz LOD pipeline.',
+    icon: Zap,
+    minRole: 'reader',
+    mobile: 'adapted',
+    element: lazy(() => import('@/components/views/VizDemoView')),
+  },
+  {
     id: 'knowledge.extraction',
     path: '/extraction',
     label: 'KG Extraction',
