@@ -5,7 +5,6 @@ import {
   Cpu,
   HardDrive,
   Terminal,
-  X,
   GitPullRequest,
   RefreshCw,
   BarChart2,
@@ -26,6 +25,9 @@ import {
   Compass,
   Search,
   FileText,
+  AlertTriangle,
+  Loader2,
+  Lock,
 } from 'lucide-react'
 import { z } from 'zod'
 import { validateShape, looseArray } from '@/lib/api-validation'
@@ -153,7 +155,10 @@ interface GitlabPipeline {
   id: number
   ref: string
   status: string
-  duration: string
+  // The backend (`get_gitlab_mrs` in api_extensions.py) does not report a
+  // duration for a pipeline -- GitLab's `/pipelines` list endpoint doesn't
+  // include it either. Optional so the UI never renders a fabricated value.
+  duration?: string
 }
 
 interface PortainerStack {
@@ -163,27 +168,157 @@ interface PortainerStack {
   type: string
 }
 
-interface LossData {
-  epoch: number
-  loss: number
-  val_loss: number
+// D-WUI-BUG-008: the previous `TrainingMetrics` shape (hyperparameters, a
+// live epoch counter, a per-epoch loss curve) never matched what
+// `GET /api/enhanced/ecosystem/datascience/training` actually returns.
+// `data-science-mcp`'s `rank_models` reports each *already-fitted* model's
+// stored test R^2 -- there is no live epoch/loss stream. Rendering the old
+// shape against the real response either crashed (`.hyperparameters` is
+// undefined) or, worse, silently kept whatever fabricated card was already
+// on screen. `TrainedModel` matches the real backend record exactly; see
+// `agent/agent_webui/api_extensions.py:get_datascience_training` and
+// `data_science_mcp/ml_engine.py:ranked_models`.
+interface TrainedModel {
+  model_id: string
+  dataset: string
+  model_str: string
+  r2_test: number
 }
 
-interface TrainingMetrics {
-  model_name: string
-  hyperparameters: {
-    learning_rate: number
-    batch_size: number
-    epochs: number
-    optimizer: string
+// D-WUI-BUG-008: production truthful-state machinery. Every ecosystem/system
+// fetch below classifies its response into one of these instead of letting
+// an error or "no backend" response collapse into an empty array/`0` that
+// renders indistinguishably from real empty data. See
+// `ServiceNotice`/`classifyEcosystemList` and
+// designs/BUG-REMEDIATION-DESIGNS.md#bug-008.
+type EcoStatus = 'loading' | 'ready' | 'empty' | 'unavailable' | 'error'
+
+interface EcoState {
+  status: EcoStatus
+  reason?: string
+}
+
+const LOADING_STATE: EcoState = { status: 'loading' }
+
+/**
+ * Classify one `/api/enhanced/ecosystem/*` (or similarly enveloped) JSON
+ * body into a truthful {@link EcoState} plus the list it carries under
+ * `key`. The backend envelope (`agent/agent_webui/api_extensions.py`) is
+ * `status: 'success' | 'error' | 'capability_unavailable' | 'needs_input'`
+ * with a human `detail` reason on every non-success status. A response that
+ * doesn't carry a recognizable envelope is never treated as "empty" -- an
+ * unrecognized shape is reported as an error, not silently swallowed.
+ */
+// T intentionally appears only in the return position: every call site names
+// its own item shape (`classifyEcosystemList<KanbanColumn>(...)`) for a
+// compile-time label on a field this helper cannot itself validate (the
+// backend envelope carries no per-array schema). This mirrors the existing
+// `as ContainerInfo[]`/`as RepoInfo[]` casts elsewhere in this file; a full
+// runtime schema per ecosystem list is `GOC-28-W02` scope, not this lane's.
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
+function classifyEcosystemList<T>(json: unknown, key: string): { state: EcoState; items: T[] } {
+  if (!json || typeof json !== 'object') {
+    return { state: { status: 'error', reason: 'The backend returned a malformed response.' }, items: [] }
   }
-  metrics: {
-    current_epoch: number
-    loss: number
-    val_loss: number
-    accuracy: number
+  const obj = json as Record<string, unknown>
+  const items = Array.isArray(obj[key]) ? (obj[key] as T[]) : []
+  const reason = typeof obj.detail === 'string' ? obj.detail : undefined
+  switch (obj.status) {
+    case 'capability_unavailable':
+      return {
+        state: { status: 'unavailable', reason: reason ?? 'No backend is wired for this capability.' },
+        items: [],
+      }
+    case 'needs_input':
+      return { state: { status: 'unavailable', reason: reason ?? 'Additional input is required.' }, items: [] }
+    case 'error':
+      return { state: { status: 'error', reason: reason ?? 'The service reported an error.' }, items: [] }
+    case 'success':
+      return { state: { status: items.length > 0 ? 'ready' : 'empty' }, items }
+    default:
+      // Unrecognized envelope shape. If it happens to carry a real-looking
+      // array, surface it rather than discard real data -- but never invent
+      // a "ready, empty" state for a contract we don't understand.
+      return items.length > 0
+        ? { state: { status: 'ready' }, items }
+        : { state: { status: 'error', reason: 'Unexpected response shape from the backend.' }, items: [] }
   }
-  loss_curve: LossData[]
+}
+
+/**
+ * Read one `/api/enhanced/ecosystem/*` response body honestly, whether the
+ * HTTP call succeeded or not. A non-2xx response is normalized into the same
+ * `{status: 'error', detail}` envelope `classifyEcosystemList` expects, so
+ * every call site has exactly one path to classify through -- there is no
+ * second "the fetch failed" branch that quietly renders nothing.
+ */
+async function readEcosystemResponse(res: Response): Promise<unknown> {
+  let body: unknown = null
+  try {
+    body = await res.json()
+  } catch {
+    body = null
+  }
+  if (res.ok) return body
+  const detail =
+    body && typeof body === 'object' && typeof (body as Record<string, unknown>).detail === 'string'
+      ? (body as Record<string, unknown>).detail
+      : `HTTP ${res.status}`
+  return { status: 'error', detail }
+}
+
+/**
+ * Truthful placeholder for a section that is `loading`, `empty`,
+ * `unavailable`, or `error`. Renders nothing once `status === 'ready'` --
+ * the caller is responsible for rendering the real data in that case. Never
+ * renders `0`, `[]`, or a green/success indicator for `unavailable`/`error`.
+ */
+function ServiceNotice({ state, emptyLabel = 'No data reported.' }: { state: EcoState; emptyLabel?: string }) {
+  if (state.status === 'ready') return null
+  if (state.status === 'loading') {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-border/60 bg-accent/10 p-4 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" /> Loading live data…
+      </div>
+    )
+  }
+  if (state.status === 'empty') {
+    return <div className="rounded-md border p-4 text-sm text-muted-foreground">{emptyLabel}</div>
+  }
+  if (state.status === 'unavailable') {
+    return (
+      <div
+        role="status"
+        className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-300"
+      >
+        <AlertTriangle className="size-4 mt-0.5 flex-shrink-0" />
+        <span>
+          <strong>Unavailable.</strong> {state.reason ?? 'This capability is not wired to a live backend.'}
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-700 dark:text-red-300"
+    >
+      <AlertTriangle className="size-4 mt-0.5 flex-shrink-0" />
+      <span>
+        <strong>Error.</strong> {state.reason ?? 'The backend reported an error.'}
+      </span>
+    </div>
+  )
+}
+
+/** Read-only note for a control surface with no wired write/mutation endpoint. */
+function ReadOnlyNotice({ reason }: { reason: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-border/60 bg-accent/10 p-3 text-xs text-muted-foreground">
+      <Lock className="size-3.5 mt-0.5 flex-shrink-0" />
+      <span>{reason}</span>
+    </div>
+  )
 }
 
 interface ScholarxPaper {
@@ -224,12 +359,6 @@ interface NextcloudEvent {
   start: string
   end: string
   type: string
-}
-
-interface NextcloudTask {
-  id: string
-  title: string
-  completed: boolean
 }
 
 interface MicrosoftEmail {
@@ -287,6 +416,33 @@ export default function EcosystemView() {
   const [bulkActionRunning, setBulkActionRunning] = useState(false)
   const [repoInventoryError, setRepoInventoryError] = useState<string | null>(null)
 
+  // D-WUI-BUG-008: one truthful-state slot per ecosystem/system section,
+  // keyed by service id. Every fetch below sets this via `classifyEcosystemList`
+  // / `classifyEcosystemFailure` instead of letting a failure collapse into a
+  // silently-empty array. `ServiceNotice` renders the honest state; see the
+  // type/helper definitions above the component.
+  const [ecoStatus, setEcoStatus] = useState<Record<string, EcoState>>({
+    resources: LOADING_STATE,
+    processes: LOADING_STATE,
+    kanban: LOADING_STATE,
+    github: LOADING_STATE,
+    gitlab: LOADING_STATE,
+    portainer: LOADING_STATE,
+    training: LOADING_STATE,
+    scholarx: LOADING_STATE,
+    uptime: LOADING_STATE,
+    searxng: { status: 'empty' },
+    homeassistant: LOADING_STATE,
+    nextcloud: LOADING_STATE,
+    microsoft: LOADING_STATE,
+    mediadownloader: LOADING_STATE,
+    qbittorrent: LOADING_STATE,
+    stirlingpdf: LOADING_STATE,
+  })
+  const setStatus = (key: string, state: EcoState) => {
+    setEcoStatus((prev) => ({ ...prev, [key]: state }))
+  }
+
   // 14 Services States
   const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([])
   const [githubPrs, setGithubPrs] = useState<GithubPr[]>([])
@@ -295,7 +451,7 @@ export default function EcosystemView() {
   const [gitlabPipelines, setGitlabPipelines] = useState<GitlabPipeline[]>([])
   const [portainerStacks, setPortainerStacks] = useState<PortainerStack[]>([])
 
-  const [trainingData, setTrainingData] = useState<TrainingMetrics | null>(null)
+  const [trainedModels, setTrainedModels] = useState<TrainedModel[]>([])
   const [scholarxPapers, setScholarxPapers] = useState<ScholarxPaper[]>([])
   const [uptimeMonitors, setUptimeMonitors] = useState<UptimeMonitor[]>([])
   const [searxngQuery, setSearxngQuery] = useState('agent-utilities')
@@ -304,76 +460,11 @@ export default function EcosystemView() {
 
   const [haDevices, setHaDevices] = useState<HaDevice[]>([])
   const [nextcloudEvents, setNextcloudEvents] = useState<NextcloudEvent[]>([])
-  const [nextcloudTasks, setNextcloudTasks] = useState<NextcloudTask[]>([])
   const [microsoftEmails, setMicrosoftEmails] = useState<MicrosoftEmail[]>([])
 
   const [mediaDownloads, setMediaDownloads] = useState<MediaDownload[]>([])
-  const [mediaUrl, setMediaUrl] = useState('')
   const [qbittorrentTorrents, setQbittorrentTorrents] = useState<QbittorrentTorrent[]>([])
   const [stirlingJobs, setStirlingJobs] = useState<StirlingJob[]>([])
-
-  // Culinary / Workout multipliers and states
-  const [mealMultiplier, setMealMultiplier] = useState(2)
-  const [workoutMuscle, setWorkoutMuscle] = useState('All')
-  const [mealPlan] = useState([
-    { day: 'Monday', meal: 'Protein Power Salmon & Quinoa', cal: 650, protein: '45g' },
-    { day: 'Tuesday', meal: 'Avocado Cobb Salad with Turkey', cal: 520, protein: '38g' },
-    { day: 'Wednesday', meal: 'Garlic Butter Grass-fed Ribeye', cal: 850, protein: '55g' },
-    { day: 'Thursday', meal: 'Lemon Zest Chicken Breast & Asparagus', cal: 490, protein: '42g' },
-    { day: 'Friday', meal: 'Spicy Baked Cod with Roasted Sweets', cal: 580, protein: '39g' },
-  ])
-  const [workoutRoutines] = useState([
-    { name: 'Dumbbell Incline Bench Press', muscle: 'Chest', sets: 4, reps: '8-10' },
-    { name: 'Standard Cable Chest Flyes', muscle: 'Chest', sets: 3, reps: '12-15' },
-    { name: 'Alternating Hammer Dumbbell Curls', muscle: 'Biceps', sets: 4, reps: '10' },
-    { name: 'Concentrated Barbell Spider Curls', muscle: 'Biceps', sets: 3, reps: '12' },
-    { name: 'Standard Barbell Back Squats', muscle: 'Quads', sets: 4, reps: '8' },
-    { name: 'Barbell Romanian Deadlifts', muscle: 'Hamstrings', sets: 4, reps: '10' },
-  ])
-
-  // Latency analytics static model representation
-  const [latencyData] = useState([
-    {
-      id: 'tr-9a1b',
-      route: 'POST /api/enhanced/agent/chat',
-      agent: 'ECO-Agent',
-      latency: 450,
-      tokens: 1204,
-      status: 'success',
-    },
-    {
-      id: 'tr-7f2e',
-      route: 'GET /api/enhanced/graph/magma',
-      agent: 'KG-Orchestrator',
-      latency: 180,
-      tokens: 450,
-      status: 'success',
-    },
-    {
-      id: 'tr-3d5c',
-      route: 'POST /api/enhanced/graph/delegate',
-      agent: 'GraphOS-Policy',
-      latency: 980,
-      tokens: 890,
-      status: 'success',
-    },
-    {
-      id: 'tr-1e8b',
-      route: 'PUT /api/enhanced/config',
-      agent: 'Settings-Agent',
-      latency: 120,
-      tokens: 120,
-      status: 'success',
-    },
-    {
-      id: 'tr-8d4a',
-      route: 'POST /api/enhanced/voice/transcribe',
-      agent: 'Speech-Agent',
-      latency: 1200,
-      tokens: 2100,
-      status: 'success',
-    },
-  ])
 
   // Core functions
   const fetchHosts = async () => {
@@ -421,14 +512,48 @@ export default function EcosystemView() {
       if (resRes.ok) {
         const rawRes: unknown = await resRes.json()
         const parsed = systemResourcesSchema.safeParse(rawRes)
-        if (parsed.success) setResources(parsed.data)
+        if (parsed.success) {
+          setResources(parsed.data)
+          setStatus('resources', { status: 'ready' })
+        } else {
+          // D-WUI-BUG-008: a shape violation must not leave the fallback
+          // constants on screen looking like real telemetry -- surface it.
+          setResources(null)
+          setStatus('resources', {
+            status: 'error',
+            reason: 'The resource response did not match the expected shape.',
+          })
+        }
+      } else {
+        const body = (await resRes.json().catch(() => ({}))) as { detail?: string }
+        setResources(null)
+        setStatus('resources', {
+          status: 'error',
+          reason: body.detail ?? `System resources unavailable (${resRes.status})`,
+        })
       }
       if (procRes.ok) {
         const raw: unknown = await procRes.json()
-        setProcesses(validateShape(processInfoListSchema, raw, '/api/enhanced/systems-manager/processes'))
+        const parsedProcesses = validateShape(processInfoListSchema, raw, '/api/enhanced/systems-manager/processes')
+        setProcesses(parsedProcesses)
+        setStatus('processes', { status: parsedProcesses.length > 0 ? 'ready' : 'empty' })
+      } else {
+        const body = (await procRes.json().catch(() => ({}))) as { detail?: string }
+        setProcesses([])
+        setStatus('processes', {
+          status: 'error',
+          reason: body.detail ?? `Process listing unavailable (${procRes.status})`,
+        })
       }
     } catch (err) {
       console.error(err)
+      setResources(null)
+      setProcesses([])
+      setStatus('resources', {
+        status: 'error',
+        reason: 'System telemetry unavailable: the API could not be reached.',
+      })
+      setStatus('processes', { status: 'error', reason: 'Process listing unavailable: the API could not be reached.' })
     }
   }
 
@@ -493,7 +618,11 @@ export default function EcosystemView() {
     }
   }
 
-  // Load the 14 new services endpoints dynamically
+  // Load the ecosystem endpoints. Every response is classified through
+  // `classifyEcosystemList` (D-WUI-BUG-008) instead of the old bare
+  // `if (res.ok) setX(d.field ?? [])`, which rendered a backend error or a
+  // "no backend at all" (`capability_unavailable`) response as an
+  // indistinguishable empty list.
   const loadEcosystemData = async () => {
     setLoading(true)
     try {
@@ -505,24 +634,29 @@ export default function EcosystemView() {
         fetch('/api/enhanced/ecosystem/portainer/stacks'),
       ])
 
-      if (atlassianRes.ok) {
-        const d = (await atlassianRes.json()) as { columns?: KanbanColumn[] }
-        setKanbanColumns(d.columns ?? [])
-      }
-      if (githubRes.ok) {
-        const d = (await githubRes.json()) as { prs?: GithubPr[]; workflows?: GithubWorkflow[] }
-        setGithubPrs(d.prs ?? [])
-        setGithubWorkflows(d.workflows ?? [])
-      }
-      if (gitlabRes.ok) {
-        const d = (await gitlabRes.json()) as { mrs?: GitlabMr[]; pipelines?: GitlabPipeline[] }
-        setGitlabMrs(d.mrs ?? [])
-        setGitlabPipelines(d.pipelines ?? [])
-      }
-      if (portainerRes.ok) {
-        const d = (await portainerRes.json()) as { stacks?: PortainerStack[] }
-        setPortainerStacks(d.stacks ?? [])
-      }
+      const kanbanJson = await readEcosystemResponse(atlassianRes)
+      const kanban = classifyEcosystemList<KanbanColumn>(kanbanJson, 'columns')
+      setKanbanColumns(kanban.items)
+      setStatus('kanban', kanban.state)
+
+      const githubJson = await readEcosystemResponse(githubRes)
+      const ghPrs = classifyEcosystemList<GithubPr>(githubJson, 'prs')
+      const ghWorkflows = classifyEcosystemList<GithubWorkflow>(githubJson, 'workflows')
+      setGithubPrs(ghPrs.items)
+      setGithubWorkflows(ghWorkflows.items)
+      setStatus('github', ghPrs.state)
+
+      const gitlabJson = await readEcosystemResponse(gitlabRes)
+      const glMrs = classifyEcosystemList<GitlabMr>(gitlabJson, 'mrs')
+      const glPipelines = classifyEcosystemList<GitlabPipeline>(gitlabJson, 'pipelines')
+      setGitlabMrs(glMrs.items)
+      setGitlabPipelines(glPipelines.items)
+      setStatus('gitlab', glMrs.state)
+
+      const portainerJson = await readEcosystemResponse(portainerRes)
+      const stacks = classifyEcosystemList<PortainerStack>(portainerJson, 'stacks')
+      setPortainerStacks(stacks.items)
+      setStatus('portainer', stacks.state)
 
       // 2. Data & Research Services
       const [dsRes, scholarRes] = await Promise.all([
@@ -530,20 +664,22 @@ export default function EcosystemView() {
         fetch('/api/enhanced/ecosystem/scholarx/papers'),
       ])
 
-      if (dsRes.ok) {
-        setTrainingData((await dsRes.json()) as TrainingMetrics)
-      }
-      if (scholarRes.ok) {
-        const d = (await scholarRes.json()) as { papers?: ScholarxPaper[] }
-        setScholarxPapers(d.papers ?? [])
-      }
+      const trainingJson = await readEcosystemResponse(dsRes)
+      const models = classifyEcosystemList<TrainedModel>(trainingJson, 'models')
+      setTrainedModels(models.items)
+      setStatus('training', models.state)
+
+      const scholarJson = await readEcosystemResponse(scholarRes)
+      const papers = classifyEcosystemList<ScholarxPaper>(scholarJson, 'papers')
+      setScholarxPapers(papers.items)
+      setStatus('scholarx', papers.state)
 
       // 3. Infrastructure Hub Services
       const uptimeRes = await fetch('/api/enhanced/ecosystem/uptime/status')
-      if (uptimeRes.ok) {
-        const d = (await uptimeRes.json()) as { monitors?: UptimeMonitor[] }
-        setUptimeMonitors(d.monitors ?? [])
-      }
+      const uptimeJson = await readEcosystemResponse(uptimeRes)
+      const monitors = classifyEcosystemList<UptimeMonitor>(uptimeJson, 'monitors')
+      setUptimeMonitors(monitors.items)
+      setStatus('uptime', monitors.state)
 
       // 4. Lifestyle & Productivity Services
       const [haRes, ncRes, msRes] = await Promise.all([
@@ -552,19 +688,51 @@ export default function EcosystemView() {
         fetch('/api/enhanced/ecosystem/microsoft/emails'),
       ])
 
-      if (haRes.ok) {
-        const d = (await haRes.json()) as { devices?: HaDevice[] }
-        setHaDevices(d.devices ?? [])
+      const haJson = await readEcosystemResponse(haRes)
+      // D-WUI-BUG-008: the backend returns raw HA states as
+      // `{entity_id, friendly_name, state, attributes}` -- `brightness`/
+      // `temperature`/`target_temp` live inside `attributes`, not at the top
+      // level. The previous cast (`as { devices?: HaDevice[] }`) skipped
+      // this mapping entirely, so `d.brightness`/`d.temperature` were
+      // always `undefined` and every device silently rendered as a generic
+      // on/off switch regardless of its real domain.
+      interface RawHaDevice {
+        entity_id: string
+        friendly_name?: string
+        state: string
+        attributes?: Record<string, unknown>
       }
-      if (ncRes.ok) {
-        const d = (await ncRes.json()) as { events?: NextcloudEvent[]; tasks?: NextcloudTask[] }
-        setNextcloudEvents(d.events ?? [])
-        setNextcloudTasks(d.tasks ?? [])
-      }
-      if (msRes.ok) {
-        const d = (await msRes.json()) as { emails?: MicrosoftEmail[] }
-        setMicrosoftEmails(d.emails ?? [])
-      }
+      const haRaw = classifyEcosystemList<RawHaDevice>(haJson, 'devices')
+      const devices: HaDevice[] = haRaw.items.map((d) => {
+        const attrs = d.attributes ?? {}
+        const brightness = typeof attrs.brightness === 'number' ? attrs.brightness : undefined
+        const temperature = typeof attrs.current_temperature === 'number' ? attrs.current_temperature : undefined
+        const targetTemp = typeof attrs.temperature === 'number' ? attrs.temperature : undefined
+        return {
+          entity_id: d.entity_id,
+          friendly_name: d.friendly_name ?? d.entity_id,
+          state: d.state,
+          brightness,
+          temperature,
+          target_temp: targetTemp,
+        }
+      })
+      setHaDevices(devices)
+      setStatus('homeassistant', haRaw.state)
+
+      const ncJson = await readEcosystemResponse(ncRes)
+      const ncEvents = classifyEcosystemList<NextcloudEvent>(ncJson, 'events')
+      // The backend has no read path for Nextcloud tasks at all (only
+      // `list_calendars`/`list_calendar_events` are wired) -- the "Pending
+      // Tasks" card below always shows a permanent unavailable notice
+      // rather than an empty (and misleading) task state.
+      setNextcloudEvents(ncEvents.items)
+      setStatus('nextcloud', ncEvents.state)
+
+      const msJson = await readEcosystemResponse(msRes)
+      const emails = classifyEcosystemList<MicrosoftEmail>(msJson, 'emails')
+      setMicrosoftEmails(emails.items)
+      setStatus('microsoft', emails.state)
 
       // 5. Media & Utilities Services
       const [dlRes, qbtRes, stirlingRes] = await Promise.all([
@@ -573,18 +741,20 @@ export default function EcosystemView() {
         fetch('/api/enhanced/ecosystem/stirlingpdf/jobs'),
       ])
 
-      if (dlRes.ok) {
-        const d = (await dlRes.json()) as { queue?: MediaDownload[] }
-        setMediaDownloads(d.queue ?? [])
-      }
-      if (qbtRes.ok) {
-        const d = (await qbtRes.json()) as { torrents?: QbittorrentTorrent[] }
-        setQbittorrentTorrents(d.torrents ?? [])
-      }
-      if (stirlingRes.ok) {
-        const d = (await stirlingRes.json()) as { jobs?: StirlingJob[] }
-        setStirlingJobs(d.jobs ?? [])
-      }
+      const dlJson = await readEcosystemResponse(dlRes)
+      const downloads = classifyEcosystemList<MediaDownload>(dlJson, 'queue')
+      setMediaDownloads(downloads.items)
+      setStatus('mediadownloader', downloads.state)
+
+      const qbtJson = await readEcosystemResponse(qbtRes)
+      const torrents = classifyEcosystemList<QbittorrentTorrent>(qbtJson, 'torrents')
+      setQbittorrentTorrents(torrents.items)
+      setStatus('qbittorrent', torrents.state)
+
+      const stirlingJson = await readEcosystemResponse(stirlingRes)
+      const jobs = classifyEcosystemList<StirlingJob>(stirlingJson, 'jobs')
+      setStirlingJobs(jobs.items)
+      setStatus('stirlingpdf', jobs.state)
     } catch (err) {
       console.error('Failed to load full ecosystem payloads', err)
     } finally {
@@ -598,94 +768,21 @@ export default function EcosystemView() {
     setSearxngLoading(true)
     try {
       const res = await fetch(`/api/enhanced/ecosystem/searxng/search?q=${encodeURIComponent(searxngQuery)}`)
-      if (res.ok) {
-        const data = (await res.json()) as { results?: SearxngResult[] }
-        setSearxngResults(data.results ?? [])
-        toast.success(`Retrieved ${data.results?.length ?? 0} search rankings from SearXNG`)
+      const json = await readEcosystemResponse(res)
+      const results = classifyEcosystemList<SearxngResult>(json, 'results')
+      setSearxngResults(results.items)
+      setStatus('searxng', results.state)
+      if (results.state.status === 'error' || results.state.status === 'unavailable') {
+        toast.error(results.state.reason ?? 'SearXNG lookup failed')
       }
     } catch (err) {
       console.error(err)
+      setSearxngResults([])
+      setStatus('searxng', { status: 'error', reason: 'SearXNG could not be reached.' })
       toast.error('SearXNG lookup failed')
     } finally {
       setSearxngLoading(false)
     }
-  }
-
-  // IoT Dimmer and switch actions simulated
-  const updateDeviceState = (entityId: string, value: string | number) => {
-    setHaDevices((prev) =>
-      prev.map((d) => {
-        if (d.entity_id === entityId) {
-          if (typeof value === 'number') {
-            return { ...d, brightness: value, state: value > 0 ? 'on' : 'off' }
-          }
-          return { ...d, state: value }
-        }
-        return d
-      }),
-    )
-    toast.success(`IoT command dispatched to ${entityId}`)
-  }
-
-  const updateThermostatTemp = (entityId: string, diff: number) => {
-    setHaDevices((prev) =>
-      prev.map((d) => {
-        if (d.entity_id === entityId && d.target_temp !== undefined) {
-          const n = parseFloat((d.target_temp + diff).toFixed(1))
-          return { ...d, target_temp: n }
-        }
-        return d
-      }),
-    )
-  }
-
-  // Stirling PDF simulated job dispatch
-  const submitStirlingPdf = (action: string) => {
-    const newJob: StirlingJob = {
-      id: `pdf-${Math.floor(Math.random() * 1000)}`,
-      filename: `processed_${action}_doc.pdf`,
-      action,
-      status: 'running',
-      timestamp: 'Just now',
-    }
-    setStirlingJobs((prev) => [newJob, ...prev])
-    toast.success(`Stirling PDF job launched successfully`)
-    setTimeout(() => {
-      setStirlingJobs((prev) => prev.map((j) => (j.id === newJob.id ? { ...j, status: 'completed' } : j)))
-      toast.info(`PDF Action ${action} successfully completed.`)
-    }, 3000)
-  }
-
-  // yt-dlp submit
-  const addMediaDownload = (e: SyntheticEvent) => {
-    e.preventDefault()
-    if (!mediaUrl.trim()) return
-    const newDl: MediaDownload = {
-      id: `dl-${Math.floor(Math.random() * 1000)}`,
-      url: mediaUrl,
-      title: 'Parsing target streaming metadata...',
-      progress: 0,
-      speed: '0 B/s',
-      status: 'queued',
-    }
-    setMediaDownloads((prev) => [newDl, ...prev])
-    setMediaUrl('')
-    toast.success('yt-dlp stream queued')
-    setTimeout(() => {
-      setMediaDownloads((prev) =>
-        prev.map((d) =>
-          d.id === newDl.id
-            ? {
-                ...d,
-                title: 'Self-driven coding agents presentation',
-                progress: 45.2,
-                speed: '5.8 MB/s',
-                status: 'downloading',
-              }
-            : d,
-        ),
-      )
-    }, 2000)
   }
 
   useEffect(() => {
@@ -816,49 +913,53 @@ export default function EcosystemView() {
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                <ServiceNotice state={ecoStatus.kanban} emptyLabel="No sprint columns reported." />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {kanbanColumns.map((col) => (
-                    <div key={col.id} className="bg-accent/15 p-4 rounded-lg border border-border/40 space-y-3">
-                      <div className="flex justify-between items-center border-b pb-2">
-                        <span className="font-bold text-xs uppercase tracking-wide text-muted-foreground">
-                          {col.title}
-                        </span>
-                        <Badge variant="secondary" className="font-mono text-xs">
-                          {col.issues.length}
-                        </Badge>
-                      </div>
-                      <div className="space-y-2">
-                        {col.issues.map((iss) => (
-                          <div
-                            key={iss.id}
-                            className="p-3 bg-background border rounded-md hover:border-primary/30 transition-all shadow-sm space-y-2"
-                          >
-                            <div className="flex justify-between items-center">
-                              <span className="font-mono text-[10px] font-bold text-primary">{iss.id}</span>
-                              <Badge
-                                className="text-[9px] uppercase tracking-wide scale-90"
-                                variant={
-                                  iss.priority === 'Highest' || iss.priority === 'High' ? 'destructive' : 'secondary'
-                                }
-                              >
-                                {iss.priority}
-                              </Badge>
+                  {ecoStatus.kanban.status === 'ready' &&
+                    kanbanColumns.map((col) => (
+                      <div key={col.id} className="bg-accent/15 p-4 rounded-lg border border-border/40 space-y-3">
+                        <div className="flex justify-between items-center border-b pb-2">
+                          <span className="font-bold text-xs uppercase tracking-wide text-muted-foreground">
+                            {col.title}
+                          </span>
+                          <Badge variant="secondary" className="font-mono text-xs">
+                            {col.issues.length}
+                          </Badge>
+                        </div>
+                        <div className="space-y-2">
+                          {col.issues.map((iss) => (
+                            <div
+                              key={iss.id}
+                              className="p-3 bg-background border rounded-md hover:border-primary/30 transition-all shadow-sm space-y-2"
+                            >
+                              <div className="flex justify-between items-center">
+                                <span className="font-mono text-[10px] font-bold text-primary">{iss.id}</span>
+                                <Badge
+                                  className="text-[9px] uppercase tracking-wide scale-90"
+                                  variant={
+                                    iss.priority === 'Highest' || iss.priority === 'High' ? 'destructive' : 'secondary'
+                                  }
+                                >
+                                  {iss.priority}
+                                </Badge>
+                              </div>
+                              <h4 className="text-xs font-semibold text-foreground leading-snug">{iss.title}</h4>
+                              <div className="flex justify-end pt-1">
+                                <span className="size-5 rounded-full bg-accent text-[9px] font-extrabold flex items-center justify-center border uppercase text-muted-foreground">
+                                  {iss.assignee.substring(0, 2)}
+                                </span>
+                              </div>
                             </div>
-                            <h4 className="text-xs font-semibold text-foreground leading-snug">{iss.title}</h4>
-                            <div className="flex justify-end pt-1">
-                              <span className="size-5 rounded-full bg-accent text-[9px] font-extrabold flex items-center justify-center border uppercase text-muted-foreground">
-                                {iss.assignee.substring(0, 2)}
-                              </span>
+                          ))}
+                          {col.issues.length === 0 && (
+                            <div className="text-center py-6 text-xs text-muted-foreground font-mono">
+                              Column Empty
                             </div>
-                          </div>
-                        ))}
-                        {col.issues.length === 0 && (
-                          <div className="text-center py-6 text-xs text-muted-foreground font-mono">Column Empty</div>
-                        )}
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </CardContent>
             </Card>
@@ -873,33 +974,35 @@ export default function EcosystemView() {
                   <CardDescription>Live actions CI execution streams</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  <ServiceNotice state={ecoStatus.github} emptyLabel="No open pull requests reported." />
                   <div className="space-y-2.5">
-                    {githubPrs.map((pr) => (
-                      <div
-                        key={pr.id}
-                        className="flex items-center justify-between p-2.5 border rounded-md bg-accent/5"
-                      >
-                        <div className="space-y-1 truncate pr-2">
-                          <h4 className="text-xs font-bold text-foreground truncate flex items-center gap-1.5">
-                            #{pr.id} {pr.title}
-                          </h4>
-                          <p className="text-[10px] text-muted-foreground font-mono truncate">
-                            by {pr.author} | branch: <span className="text-primary font-semibold">{pr.branch}</span>
-                          </p>
+                    {ecoStatus.github.status === 'ready' &&
+                      githubPrs.map((pr) => (
+                        <div
+                          key={pr.id}
+                          className="flex items-center justify-between p-2.5 border rounded-md bg-accent/5"
+                        >
+                          <div className="space-y-1 truncate pr-2">
+                            <h4 className="text-xs font-bold text-foreground truncate flex items-center gap-1.5">
+                              #{pr.id} {pr.title}
+                            </h4>
+                            <p className="text-[10px] text-muted-foreground font-mono truncate">
+                              by {pr.author} | branch: <span className="text-primary font-semibold">{pr.branch}</span>
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <Badge
+                              variant="outline"
+                              className="capitalize text-[10px] bg-emerald-500/5 text-emerald-600 border-emerald-500/20"
+                            >
+                              {pr.status}
+                            </Badge>
+                            <Badge variant="secondary" className="text-[9px] uppercase">
+                              {pr.checks}
+                            </Badge>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <Badge
-                            variant="outline"
-                            className="capitalize text-[10px] bg-emerald-500/5 text-emerald-600 border-emerald-500/20"
-                          >
-                            {pr.status}
-                          </Badge>
-                          <Badge variant="secondary" className="text-[9px] uppercase">
-                            {pr.checks}
-                          </Badge>
-                        </div>
-                      </div>
-                    ))}
+                      ))}
                   </div>
 
                   <div className="border-t pt-4 space-y-2">
@@ -907,16 +1010,20 @@ export default function EcosystemView() {
                       CI Actions Runs
                     </h5>
                     <div className="space-y-1.5 text-xs">
-                      {githubWorkflows.map((wf, idx) => (
-                        <div key={idx} className="flex justify-between items-center font-mono">
-                          <span className="text-foreground">
-                            Run #{wf.run_number} - {wf.name}
-                          </span>
-                          <Badge variant="default" className="text-[9px] px-1 py-0">
-                            {wf.conclusion}
-                          </Badge>
-                        </div>
-                      ))}
+                      {ecoStatus.github.status === 'ready' &&
+                        githubWorkflows.map((wf, idx) => (
+                          <div key={idx} className="flex justify-between items-center font-mono">
+                            <span className="text-foreground">
+                              Run #{wf.run_number} - {wf.name}
+                            </span>
+                            <Badge variant="default" className="text-[9px] px-1 py-0">
+                              {wf.conclusion}
+                            </Badge>
+                          </div>
+                        ))}
+                      {ecoStatus.github.status === 'ready' && githubWorkflows.length === 0 && (
+                        <div className="text-muted-foreground">No CI runs reported.</div>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -930,39 +1037,45 @@ export default function EcosystemView() {
                   <CardDescription>GitLab server integration logs</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  <ServiceNotice state={ecoStatus.gitlab} emptyLabel="No open merge requests reported." />
                   <div className="space-y-2.5">
-                    {gitlabMrs.map((mr) => (
-                      <div
-                        key={mr.id}
-                        className="flex items-center justify-between p-2.5 border rounded-md bg-accent/5"
-                      >
-                        <div className="space-y-1 truncate pr-2">
-                          <h4 className="text-xs font-bold text-foreground truncate">
-                            !{mr.id} {mr.title}
-                          </h4>
-                          <p className="text-[10px] text-muted-foreground font-mono">
-                            by {mr.author} | target: {mr.target_branch}
-                          </p>
+                    {ecoStatus.gitlab.status === 'ready' &&
+                      gitlabMrs.map((mr) => (
+                        <div
+                          key={mr.id}
+                          className="flex items-center justify-between p-2.5 border rounded-md bg-accent/5"
+                        >
+                          <div className="space-y-1 truncate pr-2">
+                            <h4 className="text-xs font-bold text-foreground truncate">
+                              !{mr.id} {mr.title}
+                            </h4>
+                            <p className="text-[10px] text-muted-foreground font-mono">
+                              by {mr.author} | target: {mr.target_branch}
+                            </p>
+                          </div>
+                          <Badge className="text-[9px] uppercase">{mr.status}</Badge>
                         </div>
-                        <Badge className="text-[9px] uppercase">{mr.status}</Badge>
-                      </div>
-                    ))}
+                      ))}
                   </div>
 
                   <div className="border-t pt-4 space-y-2">
                     <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Pipelines Runs</h5>
                     <div className="space-y-1.5 text-xs">
-                      {gitlabPipelines.map((p) => (
-                        <div key={p.id} className="flex justify-between items-center font-mono">
-                          <span className="text-foreground">
-                            Pipeline #{p.id} ({p.ref})
-                          </span>
-                          <span className="text-muted-foreground text-[10px]">{p.duration}</span>
-                          <Badge variant="secondary" className="text-[9px]">
-                            {p.status}
-                          </Badge>
-                        </div>
-                      ))}
+                      {ecoStatus.gitlab.status === 'ready' &&
+                        gitlabPipelines.map((p) => (
+                          <div key={p.id} className="flex justify-between items-center font-mono">
+                            <span className="text-foreground">
+                              Pipeline #{p.id} ({p.ref})
+                            </span>
+                            {p.duration && <span className="text-muted-foreground text-[10px]">{p.duration}</span>}
+                            <Badge variant="secondary" className="text-[9px]">
+                              {p.status}
+                            </Badge>
+                          </div>
+                        ))}
+                      {ecoStatus.gitlab.status === 'ready' && gitlabPipelines.length === 0 && (
+                        <div className="text-muted-foreground">No pipeline runs reported.</div>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -979,31 +1092,33 @@ export default function EcosystemView() {
                   Multi-host service stacks loaded dynamically from Portainer environments
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                <ServiceNotice state={ecoStatus.portainer} emptyLabel="No Portainer stacks reported." />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {portainerStacks.map((stack) => (
-                    <Card
-                      key={stack.name}
-                      className="p-4 bg-accent/5 hover:border-primary/30 transition-all flex flex-col justify-between"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="font-bold text-sm text-foreground leading-snug">{stack.name}</h4>
-                          <p className="text-xs text-muted-foreground pt-1">{stack.services} services configured</p>
+                  {ecoStatus.portainer.status === 'ready' &&
+                    portainerStacks.map((stack) => (
+                      <Card
+                        key={stack.name}
+                        className="p-4 bg-accent/5 hover:border-primary/30 transition-all flex flex-col justify-between"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-bold text-sm text-foreground leading-snug">{stack.name}</h4>
+                            <p className="text-xs text-muted-foreground pt-1">{stack.services} services configured</p>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className="capitalize scale-90 bg-emerald-500/10 text-emerald-600 border-emerald-500/25"
+                          >
+                            {stack.status}
+                          </Badge>
                         </div>
-                        <Badge
-                          variant="outline"
-                          className="capitalize scale-90 bg-emerald-500/10 text-emerald-600 border-emerald-500/25"
-                        >
-                          {stack.status}
-                        </Badge>
-                      </div>
-                      <div className="pt-4 flex justify-between items-center text-[10px] font-mono text-muted-foreground border-t mt-3">
-                        <span>Deploy Type:</span>
-                        <span className="font-bold text-foreground">{stack.type}</span>
-                      </div>
-                    </Card>
-                  ))}
+                        <div className="pt-4 flex justify-between items-center text-[10px] font-mono text-muted-foreground border-t mt-3">
+                          <span>Deploy Type:</span>
+                          <span className="font-bold text-foreground">{stack.type}</span>
+                        </div>
+                      </Card>
+                    ))}
                 </div>
               </CardContent>
             </Card>
@@ -1014,161 +1129,120 @@ export default function EcosystemView() {
         {activeDomain === 'research' && (
           <div className="space-y-6 animate-in fade-in-50 duration-200">
             {/* Systems telemetry gauges CPU/RAM/Disk */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <Card className="border border-border/85 shadow-sm hover:border-primary/20 transition-all">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
+            {ecoStatus.resources.status !== 'ready' ? (
+              <ServiceNotice state={ecoStatus.resources} />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Card className="border border-border/85 shadow-sm hover:border-primary/20 transition-all">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-bold flex items-center gap-1.5">
+                        <Cpu className="text-primary size-4" /> CPU Workload
+                      </CardTitle>
+                      <Activity className="size-4 text-emerald-500 animate-pulse" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.cpu_percent}%</div>
+                    <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden">
+                      <div
+                        className="bg-primary h-full transition-all duration-500"
+                        style={{ width: `${resources?.cpu_percent ?? 0}%` }}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border border-border/85 shadow-sm hover:border-primary/20 transition-all">
+                  <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-bold flex items-center gap-1.5">
-                      <Cpu className="text-primary size-4" /> CPU Workload
+                      <Server className="text-primary size-4" /> RAM Utilization
                     </CardTitle>
-                    <Activity className="size-4 text-emerald-500 animate-pulse" />
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.cpu_percent ?? 24.5}%</div>
-                  <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden">
-                    <div
-                      className="bg-primary h-full transition-all duration-500"
-                      style={{ width: `${resources?.cpu_percent ?? 24.5}%` }}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border border-border/85 shadow-sm hover:border-primary/20 transition-all">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-bold flex items-center gap-1.5">
-                    <Server className="text-primary size-4" /> RAM Utilization
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-extrabold tracking-tight mb-2">
-                    {resources?.memory.percent ?? 42.1}%
-                  </div>
-                  <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden mb-1">
-                    <div
-                      className="bg-purple-500 h-full transition-all duration-500"
-                      style={{ width: `${resources?.memory.percent ?? 42.1}%` }}
-                    />
-                  </div>
-                  <div className="text-xs text-muted-foreground flex justify-between">
-                    <span>Used: {resources?.memory.used_gb ?? 6.7} GB</span>
-                    <span>Total: {resources?.memory.total_gb ?? 16.0} GB</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border border-border/85 shadow-sm hover:border-primary/20 transition-all">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-bold flex items-center gap-1.5">
-                    <HardDrive className="text-primary size-4" /> Disk Capacity
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.disk.percent ?? 68.3}%</div>
-                  <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden mb-1">
-                    <div
-                      className="bg-blue-500 h-full transition-all duration-500"
-                      style={{ width: `${resources?.disk.percent ?? 68.3}%` }}
-                    />
-                  </div>
-                  <div className="text-xs text-muted-foreground flex justify-between">
-                    <span>Used: {resources?.disk.used_gb ?? 341.5} GB</span>
-                    <span>Total: {resources?.disk.total_gb ?? 500.0} GB</span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Model training parameters and visual loss curves */}
-            {trainingData && (
-              <Card className="border border-border/80 shadow-md">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Sliders className="text-primary size-5" /> iModel Training Loop Analytics (Data-Science-MCP)
-                  </CardTitle>
-                  <CardDescription>Live epoch progress, accuracy vectors, and hyperparameter metrics</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Hyperparameters Card */}
-                    <div className="space-y-3 p-4 bg-accent/5 rounded-lg border">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                        Model Parameters: {trainingData.model_name}
-                      </h4>
-                      <div className="grid grid-cols-2 gap-3 text-xs pt-1.5">
-                        <div>
-                          <span className="text-muted-foreground">Learning Rate:</span>
-                          <p className="font-mono font-bold text-primary">
-                            {trainingData.hyperparameters.learning_rate}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Batch Size:</span>
-                          <p className="font-mono font-bold text-foreground">
-                            {trainingData.hyperparameters.batch_size}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Epochs Target:</span>
-                          <p className="font-mono font-bold text-foreground">{trainingData.hyperparameters.epochs}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Optimizer:</span>
-                          <p className="font-mono font-bold text-foreground">
-                            {trainingData.hyperparameters.optimizer}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="border-t pt-3 space-y-1.5">
-                        <div className="flex justify-between items-center text-xs">
-                          <span>Accuracy score:</span>
-                          <span className="font-bold text-emerald-500">{trainingData.metrics.accuracy}%</span>
-                        </div>
-                        <div className="w-full bg-accent h-1.5 rounded-full overflow-hidden">
-                          <div
-                            className="bg-emerald-500 h-full"
-                            style={{ width: `${trainingData.metrics.accuracy}%` }}
-                          />
-                        </div>
-                      </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.memory.percent}%</div>
+                    <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden mb-1">
+                      <div
+                        className="bg-purple-500 h-full transition-all duration-500"
+                        style={{ width: `${resources?.memory.percent ?? 0}%` }}
+                      />
                     </div>
-
-                    {/* Mini SVG Loss Curve */}
-                    <div className="flex flex-col justify-between p-4 bg-accent/5 rounded-lg border">
-                      <div className="flex justify-between items-center">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                          Epoch Loss Curves (Simulated Convergence)
-                        </h4>
-                        <Badge variant="secondary" className="text-[10px] font-mono">
-                          Epoch {trainingData.metrics.current_epoch} / {trainingData.hyperparameters.epochs}
-                        </Badge>
-                      </div>
-                      <div className="h-28 w-full flex items-end gap-1.5 pt-4">
-                        {trainingData.loss_curve.map((l, idx) => (
-                          <div
-                            key={idx}
-                            className="flex-1 flex flex-col items-center justify-end h-full group relative"
-                          >
-                            {/* Bar representing val_loss */}
-                            <div
-                              className="w-full bg-red-500/25 rounded-t group-hover:bg-red-500/40 transition-colors"
-                              style={{ height: `${l.val_loss * 100}%` }}
-                            />
-                            {/* Bar representing train loss */}
-                            <div
-                              className="w-full bg-primary rounded-t group-hover:bg-primary/80 transition-colors -mt-1"
-                              style={{ height: `${l.loss * 100}%` }}
-                            />
-                            <span className="text-[8px] font-mono text-muted-foreground pt-1.5">E{l.epoch}</span>
-                          </div>
-                        ))}
-                      </div>
+                    <div className="text-xs text-muted-foreground flex justify-between">
+                      <span>Used: {resources?.memory.used_gb} GB</span>
+                      <span>Total: {resources?.memory.total_gb} GB</span>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+
+                <Card className="border border-border/85 shadow-sm hover:border-primary/20 transition-all">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-bold flex items-center gap-1.5">
+                      <HardDrive className="text-primary size-4" /> Disk Capacity
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.disk.percent}%</div>
+                    <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden mb-1">
+                      <div
+                        className="bg-blue-500 h-full transition-all duration-500"
+                        style={{ width: `${resources?.disk.percent ?? 0}%` }}
+                      />
+                    </div>
+                    <div className="text-xs text-muted-foreground flex justify-between">
+                      <span>Used: {resources?.disk.used_gb} GB</span>
+                      <span>Total: {resources?.disk.total_gb} GB</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             )}
+
+            {/* Fitted model ranking (D-WUI-BUG-008: this used to render a
+                fabricated "TrainingMetrics" shape -- hyperparameters, a live
+                epoch counter, a "Simulated Convergence" loss curve -- that
+                never matched what the backend actually returns. The real
+                `rank_models` endpoint reports already-fitted models ranked
+                by stored test R^2; there is no live epoch/loss stream. */}
+            <Card className="border border-border/80 shadow-md">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sliders className="text-primary size-5" /> Fitted Model Ranking (Data-Science-MCP)
+                </CardTitle>
+                <CardDescription>
+                  Models fitted in the current engine session, ranked by stored test R&sup2;
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ServiceNotice
+                  state={ecoStatus.training}
+                  emptyLabel="No trained models registered in the current engine session."
+                />
+                {ecoStatus.training.status === 'ready' && (
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead className="bg-accent/40 border-b">
+                      <tr>
+                        <th className="p-2 font-semibold text-muted-foreground">Model ID</th>
+                        <th className="p-2 font-semibold text-muted-foreground">Dataset</th>
+                        <th className="p-2 font-semibold text-muted-foreground">Model</th>
+                        <th className="p-2 font-semibold text-muted-foreground text-right">R&sup2; (test)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y font-mono">
+                      {trainedModels.map((m) => (
+                        <tr key={m.model_id} className="hover:bg-accent/10 transition-colors">
+                          <td className="p-2 font-bold text-primary">{m.model_id}</td>
+                          <td className="p-2 text-muted-foreground">{m.dataset}</td>
+                          <td className="p-2 text-foreground truncate max-w-[240px]" title={m.model_str}>
+                            {m.model_str}
+                          </td>
+                          <td className="p-2 text-right font-bold text-emerald-500">{m.r2_test.toFixed(4)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </CardContent>
+            </Card>
 
             {/* ScholarX Research Scientific literature */}
             <Card className="border border-border/80 shadow-md">
@@ -1180,43 +1254,54 @@ export default function EcosystemView() {
                   Scientific paper metadata registries downloaded locally for Offline Graph training
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                <ServiceNotice state={ecoStatus.scholarx} emptyLabel="No downloaded papers reported." />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {scholarxPapers.map((paper) => (
-                    <Card
-                      key={paper.id}
-                      className="p-4 bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-[10px] font-bold font-mono text-primary uppercase">{paper.id}</span>
-                          <Badge variant="secondary" className="text-[9px] uppercase">
-                            {paper.category}
+                  {ecoStatus.scholarx.status === 'ready' &&
+                    scholarxPapers.map((paper) => (
+                      <Card
+                        key={paper.id}
+                        className="p-4 bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between"
+                      >
+                        <div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-bold font-mono text-primary uppercase">{paper.id}</span>
+                            <Badge variant="secondary" className="text-[9px] uppercase">
+                              {paper.category}
+                            </Badge>
+                          </div>
+                          <h4 className="font-bold text-xs text-foreground tracking-tight pt-2 leading-snug line-clamp-2">
+                            {paper.title}
+                          </h4>
+                          <p className="text-[10px] text-muted-foreground pt-1">Author: {paper.author}</p>
+                        </div>
+                        <div className="pt-3 border-t mt-3 flex justify-between items-center text-[10px] text-emerald-500 font-bold">
+                          <span className="flex items-center gap-1">
+                            <Check className="size-3" /> Ready
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] bg-emerald-500/5 text-emerald-600 border-emerald-500/20"
+                          >
+                            {paper.status}
                           </Badge>
                         </div>
-                        <h4 className="font-bold text-xs text-foreground tracking-tight pt-2 leading-snug line-clamp-2">
-                          {paper.title}
-                        </h4>
-                        <p className="text-[10px] text-muted-foreground pt-1">Author: {paper.author}</p>
-                      </div>
-                      <div className="pt-3 border-t mt-3 flex justify-between items-center text-[10px] text-emerald-500 font-bold">
-                        <span className="flex items-center gap-1">
-                          <Check className="size-3" /> Ready
-                        </span>
-                        <Badge
-                          variant="outline"
-                          className="text-[9px] bg-emerald-500/5 text-emerald-600 border-emerald-500/20"
-                        >
-                          {paper.status}
-                        </Badge>
-                      </div>
-                    </Card>
-                  ))}
+                      </Card>
+                    ))}
                 </div>
               </CardContent>
             </Card>
 
-            {/* Agent Latency Traces Table */}
+            {/* D-WUI-BUG-008: this card used to render a hardcoded, permanent
+                `latencyData` array of five invented trace rows (fake trace
+                IDs, routes, latencies, and token counts) labeled "Live call
+                spans" under a Langfuse-Agent heading. No
+                `/api/enhanced/ecosystem/*` route exists for trace/latency
+                data at all -- `langfuse-agent` is only listed as an
+                installed package by `/ecosystem/services`, it has no read
+                endpoint wired here. Removed rather than left displaying
+                invented numbers; a real card requires a backend route
+                first (see BUG-REMEDIATION-DESIGNS.md#bug-008). */}
             <Card className="border border-border/80 shadow-md">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1224,38 +1309,15 @@ export default function EcosystemView() {
                 </CardTitle>
                 <CardDescription>Live call spans, execution times, and token cost tracking logs</CardDescription>
               </CardHeader>
-              <CardContent className="p-0 border-t">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-accent/40 border-b">
-                    <tr>
-                      <th className="p-3.5 font-semibold text-muted-foreground w-28">Trace ID</th>
-                      <th className="p-3.5 font-semibold text-muted-foreground">API Gateway Route</th>
-                      <th className="p-3.5 font-semibold text-muted-foreground w-40">Agent Name</th>
-                      <th className="p-3.5 font-semibold text-muted-foreground text-right w-28">Latency</th>
-                      <th className="p-3.5 font-semibold text-muted-foreground text-right w-24">Tokens</th>
-                      <th className="p-3.5 font-semibold text-muted-foreground text-center w-24">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y font-mono">
-                    {latencyData.map((trace) => (
-                      <tr key={trace.id} className="hover:bg-accent/10 transition-colors">
-                        <td className="p-3.5 font-bold text-primary">{trace.id}</td>
-                        <td className="p-3.5 text-foreground font-semibold">{trace.route}</td>
-                        <td className="p-3.5 text-muted-foreground">{trace.agent}</td>
-                        <td className="p-3.5 text-right text-orange-500 font-bold">{trace.latency} ms</td>
-                        <td className="p-3.5 text-right text-foreground">{trace.tokens}</td>
-                        <td className="p-3.5 text-center">
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
-                          >
-                            {trace.status}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <CardContent>
+                <ServiceNotice
+                  state={{
+                    status: 'unavailable',
+                    reason:
+                      'No backend endpoint is wired for Langfuse trace data. Add a ' +
+                      'GET /api/enhanced/ecosystem/langfuse/traces route before this card can show real data.',
+                  }}
+                />
               </CardContent>
             </Card>
           </div>
@@ -1273,40 +1335,42 @@ export default function EcosystemView() {
                 </CardTitle>
                 <CardDescription>Active health checks on gateways, DNS databases and storage streams</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                <ServiceNotice state={ecoStatus.uptime} emptyLabel="No monitors reported." />
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                  {uptimeMonitors.map((m) => (
-                    <Card
-                      key={m.name}
-                      className="p-4 bg-accent/5 hover:border-primary/20 transition-all flex flex-col justify-between"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="font-bold text-xs text-foreground truncate">{m.name}</h4>
-                          <span className="text-[10px] font-mono text-muted-foreground truncate block">{m.url}</span>
+                  {ecoStatus.uptime.status === 'ready' &&
+                    uptimeMonitors.map((m) => (
+                      <Card
+                        key={m.name}
+                        className="p-4 bg-accent/5 hover:border-primary/20 transition-all flex flex-col justify-between"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-bold text-xs text-foreground truncate">{m.name}</h4>
+                            <span className="text-[10px] font-mono text-muted-foreground truncate block">{m.url}</span>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className={cn('capitalize scale-90 font-semibold px-2 py-0.5 rounded-full border', {
+                              'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': m.status === 'up',
+                              'bg-red-500/10 border-red-500/25 text-red-600': m.status === 'down',
+                            })}
+                          >
+                            {m.status}
+                          </Badge>
                         </div>
-                        <Badge
-                          variant="outline"
-                          className={cn('capitalize scale-90 font-semibold px-2 py-0.5 rounded-full border', {
-                            'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': m.status === 'up',
-                            'bg-red-500/10 border-red-500/25 text-red-600': m.status === 'down',
-                          })}
-                        >
-                          {m.status}
-                        </Badge>
-                      </div>
-                      <div className="pt-4 space-y-1 border-t mt-3">
-                        <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                          <span>Uptime 24h:</span>
-                          <span className="font-bold text-foreground">{m.uptime_24h}%</span>
+                        <div className="pt-4 space-y-1 border-t mt-3">
+                          <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+                            <span>Uptime 24h:</span>
+                            <span className="font-bold text-foreground">{m.uptime_24h}%</span>
+                          </div>
+                          <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+                            <span>Latency:</span>
+                            <span className="font-bold text-primary">{m.latency}ms</span>
+                          </div>
                         </div>
-                        <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                          <span>Latency:</span>
-                          <span className="font-bold text-primary">{m.latency}ms</span>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
+                      </Card>
+                    ))}
                 </div>
               </CardContent>
             </Card>
@@ -1344,11 +1408,14 @@ export default function EcosystemView() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {searxngResults.length === 0 ? (
+                {ecoStatus.searxng.status === 'empty' ? (
                   <div className="text-center py-6 text-xs text-muted-foreground font-mono border rounded-md">
                     Search something to load results
                   </div>
                 ) : (
+                  <ServiceNotice state={ecoStatus.searxng} />
+                )}
+                {ecoStatus.searxng.status === 'ready' && (
                   <div className="space-y-2.5">
                     {searxngResults.map((r, idx) => (
                       <div
@@ -1658,100 +1725,71 @@ export default function EcosystemView() {
                   Visual dials, thermostats, and lights controls loaded from local Home Assistant server
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                  {haDevices.map((d) => (
-                    <Card
-                      key={d.entity_id}
-                      className="p-4 bg-accent/5 flex flex-col justify-between hover:border-primary/20 transition-all"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex justify-between items-center">
-                          <h4 className="font-bold text-xs text-foreground truncate">{d.friendly_name}</h4>
-                          <Badge
-                            variant={d.state === 'on' || d.state === 'heat' ? 'default' : 'secondary'}
-                            className="capitalize text-[9px]"
-                          >
-                            {d.state}
-                          </Badge>
-                        </div>
-                        <span className="text-[10px] font-mono text-muted-foreground">{d.entity_id}</span>
-                      </div>
-
-                      {/* Display dimmer sliders for lights */}
-                      {d.brightness !== undefined && (
-                        <div className="pt-4 space-y-2">
-                          <div className="flex justify-between text-[10px] font-mono">
-                            <span>Brightness:</span>
-                            <span className="font-bold">{d.brightness}%</span>
+              <CardContent className="space-y-4">
+                <ServiceNotice state={ecoStatus.homeassistant} emptyLabel="No Home Assistant entities reported." />
+                {ecoStatus.homeassistant.status === 'ready' && (
+                  <>
+                    {/*
+                      D-WUI-BUG-008: the brightness slider, thermostat +/-
+                      buttons, and power toggle below used to call
+                      `updateDeviceState`/`updateThermostatTemp`, which only
+                      mutated local React state and showed a
+                      `toast.success('IoT command dispatched...')` -- no
+                      request was ever sent to Home Assistant. There is no
+                      write/command endpoint under
+                      `/api/enhanced/ecosystem/homeassistant/*` at all (only
+                      the GET .../devices read exists), so this is a
+                      read-only view until a real command endpoint is wired.
+                    */}
+                    <ReadOnlyNotice reason="Device state below is read-only. No command endpoint is wired here yet, so controls that would send a write are not shown." />
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                      {haDevices.map((d) => (
+                        <Card
+                          key={d.entity_id}
+                          className="p-4 bg-accent/5 flex flex-col justify-between hover:border-primary/20 transition-all"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center">
+                              <h4 className="font-bold text-xs text-foreground truncate">{d.friendly_name}</h4>
+                              <Badge
+                                variant={d.state === 'on' || d.state === 'heat' ? 'default' : 'secondary'}
+                                className="capitalize text-[9px]"
+                              >
+                                {d.state}
+                              </Badge>
+                            </div>
+                            <span className="text-[10px] font-mono text-muted-foreground">{d.entity_id}</span>
                           </div>
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            value={d.brightness}
-                            onChange={(e) => {
-                              updateDeviceState(d.entity_id, parseInt(e.target.value))
-                            }}
-                            className="w-full accent-primary h-1.5 bg-accent rounded-lg cursor-pointer"
-                          />
-                        </div>
-                      )}
 
-                      {/* Climate Thermostat temperature controls */}
-                      {d.temperature !== undefined && d.target_temp !== undefined && (
-                        <div className="pt-4 space-y-3">
-                          <div className="flex justify-between text-xs font-mono">
-                            <span>
-                              Room: <strong className="text-foreground">{d.temperature}°C</strong>
-                            </span>
-                            <span>
-                              Target: <strong className="text-primary">{d.target_temp}°C</strong>
-                            </span>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 px-2 font-bold flex-1"
-                              onClick={() => {
-                                updateThermostatTemp(d.entity_id, -0.5)
-                              }}
-                            >
-                              -0.5°
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 px-2 font-bold flex-1"
-                              onClick={() => {
-                                updateThermostatTemp(d.entity_id, 0.5)
-                              }}
-                            >
-                              +0.5°
-                            </Button>
-                          </div>
-                        </div>
-                      )}
+                          {/* Brightness readout for lights */}
+                          {d.brightness !== undefined && (
+                            <div className="pt-4 space-y-1">
+                              <div className="flex justify-between text-[10px] font-mono">
+                                <span>Brightness:</span>
+                                <span className="font-bold">{d.brightness}%</span>
+                              </div>
+                              <div className="w-full bg-accent h-1.5 rounded-full overflow-hidden">
+                                <div className="bg-primary h-full" style={{ width: `${d.brightness}%` }} />
+                              </div>
+                            </div>
+                          )}
 
-                      {/* General toggles for generic smart switches */}
-                      {d.brightness === undefined && d.temperature === undefined && (
-                        <div className="pt-4">
-                          <Button
-                            variant={d.state === 'on' ? 'destructive' : 'default'}
-                            size="sm"
-                            className="w-full text-xs h-8"
-                            onClick={() => {
-                              updateDeviceState(d.entity_id, d.state === 'on' ? 'off' : 'on')
-                            }}
-                          >
-                            {d.state === 'on' ? 'Power OFF' : 'Power ON'}
-                          </Button>
-                        </div>
-                      )}
-                    </Card>
-                  ))}
-                </div>
+                          {/* Climate readout */}
+                          {d.temperature !== undefined && d.target_temp !== undefined && (
+                            <div className="pt-4 text-xs font-mono flex justify-between">
+                              <span>
+                                Room: <strong className="text-foreground">{d.temperature}°C</strong>
+                              </span>
+                              <span>
+                                Target: <strong className="text-primary">{d.target_temp}°C</strong>
+                              </span>
+                            </div>
+                          )}
+                        </Card>
+                      ))}
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 
@@ -1768,52 +1806,48 @@ export default function EcosystemView() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  <ServiceNotice state={ecoStatus.nextcloud} emptyLabel="No upcoming calendar events reported." />
                   <div className="space-y-2">
                     <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
                       Upcoming Calendars
                     </h5>
                     <div className="space-y-2">
-                      {nextcloudEvents.map((ev) => (
-                        <div
-                          key={ev.id}
-                          className="flex items-center justify-between p-2 border rounded-md bg-accent/5"
-                        >
-                          <div className="space-y-0.5">
-                            <h4 className="text-xs font-semibold text-foreground">{ev.title}</h4>
-                            <span className="text-[10px] font-mono text-muted-foreground">
-                              {new Date(ev.start).toLocaleString()}
-                            </span>
+                      {ecoStatus.nextcloud.status === 'ready' &&
+                        nextcloudEvents.map((ev) => (
+                          <div
+                            key={ev.id}
+                            className="flex items-center justify-between p-2 border rounded-md bg-accent/5"
+                          >
+                            <div className="space-y-0.5">
+                              <h4 className="text-xs font-semibold text-foreground">{ev.title}</h4>
+                              <span className="text-[10px] font-mono text-muted-foreground">
+                                {new Date(ev.start).toLocaleString()}
+                              </span>
+                            </div>
+                            <Badge variant="secondary" className="text-[9px] uppercase tracking-wide">
+                              {ev.type}
+                            </Badge>
                           </div>
-                          <Badge variant="secondary" className="text-[9px] uppercase tracking-wide">
-                            {ev.type}
-                          </Badge>
-                        </div>
-                      ))}
+                        ))}
                     </div>
                   </div>
 
                   <div className="border-t pt-4 space-y-2">
                     <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Pending Tasks</h5>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                      {nextcloudTasks.map((t) => (
-                        <div key={t.id} className="flex items-center gap-2 p-2 border rounded-md bg-accent/5">
-                          <div
-                            className={cn(
-                              'size-4 rounded-full border flex items-center justify-center flex-shrink-0',
-                              {
-                                'bg-emerald-500 border-emerald-500 text-white': t.completed,
-                                'border-input': !t.completed,
-                              },
-                            )}
-                          >
-                            {t.completed && <Check className="size-3" />}
-                          </div>
-                          <span className={cn('truncate', { 'line-through text-muted-foreground': t.completed })}>
-                            {t.title}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                    {/* D-WUI-BUG-008: `nextcloudTasks` is always `[]` -- the
+                        backend only wires `list_calendars`/
+                        `list_calendar_events`, there is no tasks read path.
+                        Rendering an empty task grid here was
+                        indistinguishable from "you have zero tasks", which
+                        is not what's actually true. Say so explicitly. */}
+                    <ServiceNotice
+                      state={{
+                        status: 'unavailable',
+                        reason:
+                          'Nextcloud tasks have no backend read path wired (only calendars/events are). ' +
+                          'This section cannot show real data until one is added.',
+                      }}
+                    />
                   </div>
                 </CardContent>
               </Card>
@@ -1826,188 +1860,95 @@ export default function EcosystemView() {
                   </CardTitle>
                   <CardDescription>Synced MS Exchange emails summaries</CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
+                  <ServiceNotice state={ecoStatus.microsoft} emptyLabel="No inbox messages reported." />
                   <div className="space-y-2.5">
-                    {microsoftEmails.map((mail) => (
-                      <div
-                        key={mail.id}
-                        className="p-3 border rounded-md hover:border-primary/20 transition-all bg-accent/5 space-y-1 relative"
-                      >
-                        <div className="flex justify-between items-center">
-                          <span className="text-[10px] font-bold text-primary truncate max-w-[120px]">
-                            {mail.from}
-                          </span>
-                          <span className="text-[9px] font-mono text-muted-foreground">{mail.received}</span>
+                    {ecoStatus.microsoft.status === 'ready' &&
+                      microsoftEmails.map((mail) => (
+                        <div
+                          key={mail.id}
+                          className="p-3 border rounded-md hover:border-primary/20 transition-all bg-accent/5 space-y-1 relative"
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-bold text-primary truncate max-w-[120px]">
+                              {mail.from}
+                            </span>
+                            <span className="text-[9px] font-mono text-muted-foreground">{mail.received}</span>
+                          </div>
+                          <h4 className="text-xs font-bold text-foreground leading-snug truncate pr-6">
+                            {mail.subject}
+                          </h4>
+                          {mail.importance === 'high' && (
+                            <span
+                              className="absolute top-3 right-3 text-red-500 font-extrabold text-[10px]"
+                              title="High Importance"
+                            >
+                              !
+                            </span>
+                          )}
                         </div>
-                        <h4 className="text-xs font-bold text-foreground leading-snug truncate pr-6">
-                          {mail.subject}
-                        </h4>
-                        {mail.importance === 'high' && (
-                          <span
-                            className="absolute top-3 right-3 text-red-500 font-extrabold text-[10px]"
-                            title="High Importance"
-                          >
-                            !
-                          </span>
-                        )}
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Existing Mealie planner & Wger workouts */}
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-              <div className="xl:col-span-2 flex flex-col gap-6">
-                <Card className="border border-border/80 shadow-md">
-                  <CardHeader className="flex flex-col md:flex-row md:items-center justify-between pb-3 gap-4">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <Calendar className="text-primary size-5" /> Culinary Meal Planner (Mealie-MCP)
-                      </CardTitle>
-                      <CardDescription>Scale ingredients and recipes dynamically</CardDescription>
-                    </div>
-                    <div className="flex items-center gap-2.5 bg-accent/30 p-1 rounded-md border text-xs">
-                      <span className="font-bold text-muted-foreground px-2">Servings:</span>
-                      <button
-                        className="size-7 flex items-center justify-center font-bold bg-background border rounded hover:bg-accent"
-                        onClick={() => {
-                          setMealMultiplier(Math.max(1, mealMultiplier - 1))
-                        }}
-                      >
-                        -
-                      </button>
-                      <span className="font-extrabold w-4 text-center">{mealMultiplier}</span>
-                      <button
-                        className="size-7 flex items-center justify-center font-bold bg-background border rounded hover:bg-accent"
-                        onClick={() => {
-                          setMealMultiplier(mealMultiplier + 1)
-                        }}
-                      >
-                        +
-                      </button>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-0 border-t">
-                    <table className="w-full text-left border-collapse text-sm">
-                      <thead className="bg-accent/40 border-b">
-                        <tr>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground w-28">
-                            Day
-                          </th>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                            Planned Recipe
-                          </th>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground text-right w-24">
-                            Calories
-                          </th>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground text-right w-24">
-                            Protein
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {mealPlan.map((m) => (
-                          <tr key={m.day} className="hover:bg-accent/10 transition-colors">
-                            <td className="p-3.5 font-bold text-xs text-muted-foreground uppercase">{m.day}</td>
-                            <td className="p-3.5 font-semibold text-foreground tracking-tight">{m.meal}</td>
-                            <td className="p-3.5 text-right font-mono font-bold text-xs text-orange-500">
-                              {m.cal * mealMultiplier} kcal
-                            </td>
-                            <td className="p-3.5 text-right font-mono font-bold text-xs text-blue-500">
-                              {parseInt(m.protein) * mealMultiplier}g
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </CardContent>
-                </Card>
+            {/*
+              D-WUI-BUG-008: this entire section used to be a permanent,
+              hardcoded five-day meal plan (real-looking recipe names,
+              calories, protein grams) and a hardcoded six-exercise workout
+              split, both labeled as if pulled live from Mealie-MCP and
+              Wger-Agent. Neither ever fetched anything -- `mealPlan` and
+              `workoutRoutines` were `useState` literals with no backing
+              request, and the interactive "Servings"/"muscle filter"
+              controls only recomputed derived numbers from that invented
+              data. No `/api/enhanced/ecosystem/mealie/*` or
+              `/api/enhanced/ecosystem/wger/*` read route exists at all
+              (`mealie-mcp`/`wger-agent` are only listed as installed
+              packages by `/ecosystem/services`). Per BUG-REMEDIATION-DESIGNS
+              #bug-008, an honest "unavailable" here is the correct outcome,
+              not a regression -- the accompanying "Biometrics & Meal
+              Calibration" card was pure marketing copy describing behavior
+              that never existed and is removed with it.
+            */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="border border-border/80 shadow-md">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calendar className="text-primary size-5" /> Culinary Meal Planner (Mealie-MCP)
+                  </CardTitle>
+                  <CardDescription>Scale ingredients and recipes dynamically</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ServiceNotice
+                    state={{
+                      status: 'unavailable',
+                      reason:
+                        'No backend endpoint is wired for Mealie meal-plan data. Add a ' +
+                        'GET /api/enhanced/ecosystem/mealie/plan route before this card can show real data.',
+                    }}
+                  />
+                </CardContent>
+              </Card>
 
-                <Card className="border border-border/80 shadow-md">
-                  <CardHeader className="flex flex-col md:flex-row md:items-center justify-between pb-3 gap-4">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <Flame className="text-orange-500 size-5" /> Workout Splits Builder (Wger-Agent)
-                      </CardTitle>
-                      <CardDescription>Tailor strength splits and reps counters</CardDescription>
-                    </div>
-                    <div className="flex gap-2">
-                      {['All', 'Chest', 'Biceps', 'Quads'].map((muscle) => (
-                        <Button
-                          key={muscle}
-                          variant={workoutMuscle === muscle ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => {
-                            setWorkoutMuscle(muscle)
-                          }}
-                        >
-                          {muscle}
-                        </Button>
-                      ))}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-0 border-t">
-                    <table className="w-full text-left border-collapse text-sm">
-                      <thead className="bg-accent/40 border-b">
-                        <tr>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                            Exercise Name
-                          </th>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground w-32">
-                            Target Muscle
-                          </th>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground text-center w-24">
-                            Sets
-                          </th>
-                          <th className="p-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground text-center w-24">
-                            Reps Split
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {workoutRoutines
-                          .filter((w) => workoutMuscle === 'All' || w.muscle === workoutMuscle)
-                          .map((w) => (
-                            <tr key={w.name} className="hover:bg-accent/10 transition-colors">
-                              <td className="p-3.5 font-semibold text-foreground tracking-tight">{w.name}</td>
-                              <td className="p-3.5 font-semibold text-xs">
-                                <Badge variant="secondary">{w.muscle}</Badge>
-                              </td>
-                              <td className="p-3.5 text-center font-mono font-bold text-xs text-primary">
-                                {w.sets} sets
-                              </td>
-                              <td className="p-3.5 text-center font-mono text-xs text-muted-foreground">
-                                {w.reps} reps
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="flex flex-col gap-6">
-                <Card className="border border-border/80 shadow-md">
-                  <CardHeader>
-                    <CardTitle className="text-sm font-bold flex items-center gap-2">
-                      <Heart className="text-red-500 size-4.5" /> Biometrics & Meal Calibration
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3.5 text-xs text-muted-foreground leading-relaxed">
-                    <p>
-                      Connecting Mealie and Wger directly allows dynamic ingredient calculations based on target daily
-                      caloric expenditure.
-                    </p>
-                    <p>
-                      When you complete a chest and biceps session, the recipe serving weights scale up automatically
-                      to guarantee optimal protein synthesis.
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
+              <Card className="border border-border/80 shadow-md">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Flame className="text-orange-500 size-5" /> Workout Splits Builder (Wger-Agent)
+                  </CardTitle>
+                  <CardDescription>Tailor strength splits and reps counters</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ServiceNotice
+                    state={{
+                      status: 'unavailable',
+                      reason:
+                        'No backend endpoint is wired for Wger workout-routine data. Add a ' +
+                        'GET /api/enhanced/ecosystem/wger/routines route before this card can show real data.',
+                    }}
+                  />
+                </CardContent>
+              </Card>
             </div>
           </div>
         )}
@@ -2024,45 +1965,47 @@ export default function EcosystemView() {
                 </CardTitle>
                 <CardDescription>Network traffic speed limiters and seed ratio checks</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                <ServiceNotice state={ecoStatus.qbittorrent} emptyLabel="No active torrents reported." />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {qbittorrentTorrents.map((t) => (
-                    <Card key={t.name} className="p-4 bg-accent/5 hover:border-primary/20 transition-all space-y-4">
-                      <div className="flex justify-between items-start gap-2">
-                        <div className="truncate">
-                          <h4 className="font-bold text-xs text-foreground truncate" title={t.name}>
-                            {t.name}
-                          </h4>
-                          <span className="text-[10px] font-mono text-muted-foreground">
-                            Size: {t.size} | Status: <strong className="capitalize">{t.status}</strong>
-                          </span>
+                  {ecoStatus.qbittorrent.status === 'ready' &&
+                    qbittorrentTorrents.map((t) => (
+                      <Card key={t.name} className="p-4 bg-accent/5 hover:border-primary/20 transition-all space-y-4">
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="truncate">
+                            <h4 className="font-bold text-xs text-foreground truncate" title={t.name}>
+                              {t.name}
+                            </h4>
+                            <span className="text-[10px] font-mono text-muted-foreground">
+                              Size: {t.size} | Status: <strong className="capitalize">{t.status}</strong>
+                            </span>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] uppercase tracking-wide bg-primary/5 text-primary border-primary/20"
+                          >
+                            {t.progress}%
+                          </Badge>
                         </div>
-                        <Badge
-                          variant="outline"
-                          className="text-[9px] uppercase tracking-wide bg-primary/5 text-primary border-primary/20"
-                        >
-                          {t.progress}%
-                        </Badge>
-                      </div>
 
-                      <div className="space-y-1.5">
-                        <div className="w-full bg-accent h-2 rounded-full overflow-hidden">
-                          <div
-                            className="bg-primary h-full transition-all duration-300"
-                            style={{ width: `${t.progress}%` }}
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 text-[10px] font-mono text-muted-foreground pt-0.5">
-                          <div>
-                            DL Speed: <span className="font-bold text-green-500">{t.dl_speed}</span>
+                        <div className="space-y-1.5">
+                          <div className="w-full bg-accent h-2 rounded-full overflow-hidden">
+                            <div
+                              className="bg-primary h-full transition-all duration-300"
+                              style={{ width: `${t.progress}%` }}
+                            />
                           </div>
-                          <div className="text-right">
-                            UL Speed: <span className="font-bold text-blue-500">{t.ul_speed}</span>
+                          <div className="grid grid-cols-2 text-[10px] font-mono text-muted-foreground pt-0.5">
+                            <div>
+                              DL Speed: <span className="font-bold text-green-500">{t.dl_speed}</span>
+                            </div>
+                            <div className="text-right">
+                              UL Speed: <span className="font-bold text-blue-500">{t.ul_speed}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </Card>
-                  ))}
+                      </Card>
+                    ))}
                 </div>
               </CardContent>
             </Card>
@@ -2077,44 +2020,49 @@ export default function EcosystemView() {
                   <CardDescription>Submit streaming video URLs to download as local MP3/MP4 files</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <form onSubmit={addMediaDownload} className="flex gap-2">
-                    <Input
-                      placeholder="Enter streaming video URL (YouTube, Vimeo, etc)..."
-                      value={mediaUrl}
-                      onChange={(e) => {
-                        setMediaUrl(e.target.value)
-                      }}
-                    />
-                    <Button type="submit" className="gap-1.5">
-                      <Plus className="size-4" /> Queue Download
-                    </Button>
-                  </form>
-
+                  {/*
+                    D-WUI-BUG-008: this form used to call `addMediaDownload`,
+                    which never sent the URL anywhere -- it fabricated a
+                    queue row client-side with `Math.random()`-based id,
+                    then a `setTimeout` swapped in a fixed fake title
+                    ("Self-driven coding agents presentation"), 45.2%
+                    progress, and "5.8 MB/s" after 2 seconds, regardless of
+                    what URL was entered. `media-downloader-mcp` only
+                    exposes a fire-and-forget `download_media` action with
+                    no way to read back a queue/history (see
+                    `get_mediadownloader_downloads` in
+                    `api_extensions.py`), so there is no honest "submit and
+                    watch progress" UI possible today -- the read-only GET
+                    below reports that explicitly instead.
+                  */}
+                  <ReadOnlyNotice reason="Submitting a download is not available: media-downloader-mcp exposes only a fire-and-forget action with no queue to read back or show progress from." />
                   <div className="border-t pt-4 space-y-2">
                     <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Queue Status</h5>
+                    <ServiceNotice state={ecoStatus.mediadownloader} emptyLabel="No active downloads reported." />
                     <div className="space-y-2.5">
-                      {mediaDownloads.map((dl) => (
-                        <div
-                          key={dl.id}
-                          className="p-3 border rounded-md bg-accent/5 hover:border-primary/20 transition-all space-y-2"
-                        >
-                          <div className="flex justify-between items-center text-xs">
-                            <h4 className="font-bold text-foreground truncate max-w-[280px]" title={dl.title}>
-                              {dl.title}
-                            </h4>
-                            <span className="font-mono font-bold text-primary">{dl.progress}%</span>
+                      {ecoStatus.mediadownloader.status === 'ready' &&
+                        mediaDownloads.map((dl) => (
+                          <div
+                            key={dl.id}
+                            className="p-3 border rounded-md bg-accent/5 hover:border-primary/20 transition-all space-y-2"
+                          >
+                            <div className="flex justify-between items-center text-xs">
+                              <h4 className="font-bold text-foreground truncate max-w-[280px]" title={dl.title}>
+                                {dl.title}
+                              </h4>
+                              <span className="font-mono font-bold text-primary">{dl.progress}%</span>
+                            </div>
+                            <div className="w-full bg-accent h-1.5 rounded-full overflow-hidden">
+                              <div className="bg-primary h-full transition-all" style={{ width: `${dl.progress}%` }} />
+                            </div>
+                            <div className="flex justify-between text-[10px] font-mono text-muted-foreground pt-0.5">
+                              <span>
+                                Status: <strong className="capitalize text-foreground">{dl.status}</strong>
+                              </span>
+                              <span>Speed: {dl.speed}</span>
+                            </div>
                           </div>
-                          <div className="w-full bg-accent h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-primary h-full transition-all" style={{ width: `${dl.progress}%` }} />
-                          </div>
-                          <div className="flex justify-between text-[10px] font-mono text-muted-foreground pt-0.5">
-                            <span>
-                              Status: <strong className="capitalize text-foreground">{dl.status}</strong>
-                            </span>
-                            <span>Speed: {dl.speed}</span>
-                          </div>
-                        </div>
-                      ))}
+                        ))}
                     </div>
                   </div>
                 </CardContent>
@@ -2129,76 +2077,50 @@ export default function EcosystemView() {
                   <CardDescription>Convert, split, or merge files</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1 text-xs"
-                      onClick={() => {
-                        submitStirlingPdf('merge')
-                      }}
-                    >
-                      <Plus className="size-3 text-red-500" /> Merge PDFs
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1 text-xs"
-                      onClick={() => {
-                        submitStirlingPdf('split')
-                      }}
-                    >
-                      <X className="size-3 text-red-500" /> Split PDF
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1 text-xs"
-                      onClick={() => {
-                        submitStirlingPdf('compress')
-                      }}
-                    >
-                      <BarChart2 className="size-3 text-red-500" /> Compress PDF
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1 text-xs"
-                      onClick={() => {
-                        submitStirlingPdf('ocr')
-                      }}
-                    >
-                      <Search className="size-3 text-red-500" /> OCR PDF
-                    </Button>
-                  </div>
-
+                  {/*
+                    D-WUI-BUG-008: these four buttons used to call
+                    `submitStirlingPdf`, which fabricated a job entirely
+                    client-side (`Math.random()` id, filename
+                    `processed_<action>_doc.pdf`, no file was ever selected
+                    or uploaded) and showed `toast.success('...launched
+                    successfully')` immediately, then a `setTimeout` flipped
+                    it to "completed" after 3s with another toast -- no PDF
+                    was ever processed. `stirlingpdf-mcp` exposes only a
+                    synchronous one-shot `pdf_action` with no persistent job
+                    list (see `get_stirlingpdf_jobs`), so a queued-jobs UI
+                    cannot be honest here without a file-upload + durable
+                    job store this lane does not own.
+                  */}
+                  <ReadOnlyNotice reason="PDF actions are not available in this view: Stirling-PDF processes synchronously (no file upload/job queue is wired here)." />
                   <div className="border-t pt-4 space-y-2">
                     <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Jobs Status</h5>
+                    <ServiceNotice state={ecoStatus.stirlingpdf} emptyLabel="No PDF jobs reported." />
                     <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {stirlingJobs.map((job) => (
-                        <div
-                          key={job.id}
-                          className="flex justify-between items-center p-2 border rounded-md text-xs bg-accent/5"
-                        >
-                          <div className="truncate max-w-[120px] pr-2">
-                            <span className="font-bold block truncate" title={job.filename}>
-                              {job.filename}
-                            </span>
-                            <span className="text-[9px] font-mono text-muted-foreground uppercase">
-                              {job.action} | {job.timestamp}
-                            </span>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className={cn('capitalize scale-90', {
-                              'bg-emerald-500/10 text-emerald-600 border-emerald-500/25': job.status === 'completed',
-                              'bg-amber-500/10 text-amber-600 border-amber-500/25': job.status === 'running',
-                            })}
+                      {ecoStatus.stirlingpdf.status === 'ready' &&
+                        stirlingJobs.map((job) => (
+                          <div
+                            key={job.id}
+                            className="flex justify-between items-center p-2 border rounded-md text-xs bg-accent/5"
                           >
-                            {job.status}
-                          </Badge>
-                        </div>
-                      ))}
+                            <div className="truncate max-w-[120px] pr-2">
+                              <span className="font-bold block truncate" title={job.filename}>
+                                {job.filename}
+                              </span>
+                              <span className="text-[9px] font-mono text-muted-foreground uppercase">
+                                {job.action} | {job.timestamp}
+                              </span>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className={cn('capitalize scale-90', {
+                                'bg-emerald-500/10 text-emerald-600 border-emerald-500/25': job.status === 'completed',
+                                'bg-amber-500/10 text-amber-600 border-amber-500/25': job.status === 'running',
+                              })}
+                            >
+                              {job.status}
+                            </Badge>
+                          </div>
+                        ))}
                     </div>
                   </div>
                 </CardContent>
