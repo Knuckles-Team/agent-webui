@@ -1,7 +1,10 @@
-import { useState, useEffect, useMemo, useRef, type ChangeEvent } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, type ChangeEvent } from 'react'
 import {
   FileIcon,
   FileText,
+  Folder,
+  FolderOpen,
+  ChevronRight,
   Download,
   Eye,
   Upload,
@@ -14,10 +17,12 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Dialog,
   DialogContent,
@@ -29,6 +34,7 @@ import {
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { usePageContextPublisher, type PageContextContribution } from '@/lib/page-context'
+import { buildFileTree, matchingPaths, type FileTreeNode } from '@/lib/file-tree'
 
 /**
  * Metadata about a workspace file.
@@ -127,6 +133,177 @@ async function extractErrorMessage(res: Response, fallback: string): Promise<str
   return fallback
 }
 
+/** How many children of one directory to mount at once. A directory Collapsible's
+ * content unmounts entirely while closed (Radix Collapsible), so this only bounds
+ * the render cost of a single very large EXPANDED directory, not the tree overall —
+ * the "Show more" affordance below reveals the rest in the same increments. */
+const CHILD_PAGE_SIZE = 200
+
+interface FileTreeRowProps {
+  node: FileTreeNode
+  depth: number
+  selectedPath: string | null
+  /** Paths (files and their ancestor directories) to show, or null for "show
+   *  everything" — see `matchingPaths` in `lib/file-tree.ts`. */
+  visibleFilter: Set<string> | null
+  isExpanded: (path: string) => boolean
+  onToggleExpand: (path: string) => void
+  onSelectFile: (path: string) => void
+  onDownloadFile: (path: string) => void
+  onRequestDelete: (path: string) => void
+}
+
+function FileTreeRow({
+  node,
+  depth,
+  selectedPath,
+  visibleFilter,
+  isExpanded,
+  onToggleExpand,
+  onSelectFile,
+  onDownloadFile,
+  onRequestDelete,
+}: FileTreeRowProps) {
+  const [visibleCount, setVisibleCount] = useState(CHILD_PAGE_SIZE)
+  const indent = { paddingLeft: `${depth * 1.1 + 0.5}rem` }
+
+  if (!node.isDir) {
+    return (
+      <div
+        className={cn(
+          'flex items-center gap-1 rounded-sm group hover:bg-accent/50 transition-colors',
+          selectedPath === node.path && 'bg-accent',
+        )}
+      >
+        <button
+          type="button"
+          className="flex items-center gap-2 flex-1 min-w-0 py-1.5 pr-1 text-left"
+          style={indent}
+          onClick={() => {
+            onSelectFile(node.path)
+          }}
+          title={`${node.path}${node.modified ? ` • ${formatDate(node.modified)}` : ''}`}
+        >
+          <FileText className="size-4 shrink-0 text-muted-foreground" />
+          <span className="truncate text-sm">{node.segment}</span>
+          {node.size !== undefined && (
+            <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground hidden sm:inline">
+              {formatBytes(node.size)}
+            </span>
+          )}
+        </button>
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0 pr-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={() => {
+              onSelectFile(node.path)
+            }}
+            title="Preview"
+          >
+            <Eye className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={() => {
+              onDownloadFile(node.path)
+            }}
+            title="Download"
+          >
+            <Download className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 text-destructive hover:text-destructive"
+            onClick={() => {
+              onRequestDelete(node.path)
+            }}
+            title="Delete"
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  const open = isExpanded(node.path)
+  const visibleChildren = visibleFilter
+    ? node.children.filter((child) => visibleFilter.has(child.path))
+    : node.children
+
+  return (
+    <Collapsible
+      open={open}
+      onOpenChange={() => {
+        onToggleExpand(node.path)
+      }}
+    >
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 rounded-sm py-1.5 pr-2 text-left hover:bg-accent/50 transition-colors"
+          style={indent}
+        >
+          <ChevronRight
+            className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')}
+          />
+          {open ? (
+            <FolderOpen className="size-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <Folder className="size-4 shrink-0 text-muted-foreground" />
+          )}
+          <span className="truncate text-sm font-medium">{node.segment}</span>
+          <Badge variant="outline" className="ml-auto shrink-0 text-[10px] font-normal">
+            {visibleChildren.length}
+          </Badge>
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        {visibleChildren.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-1" style={{ paddingLeft: `${(depth + 1) * 1.1 + 0.5}rem` }}>
+            Empty
+          </p>
+        ) : (
+          <>
+            {visibleChildren.slice(0, visibleCount).map((child) => (
+              <FileTreeRow
+                key={child.path}
+                node={child}
+                depth={depth + 1}
+                selectedPath={selectedPath}
+                visibleFilter={visibleFilter}
+                isExpanded={isExpanded}
+                onToggleExpand={onToggleExpand}
+                onSelectFile={onSelectFile}
+                onDownloadFile={onDownloadFile}
+                onRequestDelete={onRequestDelete}
+              />
+            ))}
+            {visibleChildren.length > visibleCount && (
+              <button
+                type="button"
+                className="text-xs text-primary hover:underline py-1"
+                style={{ paddingLeft: `${(depth + 1) * 1.1 + 0.5}rem` }}
+                onClick={() => {
+                  setVisibleCount((n) => n + CHILD_PAGE_SIZE)
+                }}
+              >
+                Show {Math.min(CHILD_PAGE_SIZE, visibleChildren.length - visibleCount)} more (
+                {visibleChildren.length - visibleCount} remaining)
+              </button>
+            )}
+          </>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
 export default function FilesView() {
   const [files, setFiles] = useState<FileEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -142,7 +319,41 @@ export default function FilesView() {
   const [newFileContent, setNewFileContent] = useState('')
   const [deleteCandidate, setDeleteCandidate] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const uploadInputRef = useRef<HTMLInputElement>(null)
+
+  const tree = useMemo(() => buildFileTree(files), [files])
+
+  // Non-blank search filters the tree down to matches + their ancestor
+  // directories (see `matchingPaths`) and auto-expands those ancestors —
+  // `null` here means "no filter", i.e. show everything at its own
+  // manually-toggled expand state instead.
+  const searchVisible = useMemo(() => matchingPaths(files, searchQuery), [files, searchQuery])
+
+  const isExpanded = useCallback(
+    (path: string) => expandedPaths.has(path) || (searchVisible?.has(path) ?? false),
+    [expandedPaths, searchVisible],
+  )
+
+  // Manual toggles are recorded even while a search forces a directory open,
+  // so the directory keeps its user-chosen state once the query is cleared —
+  // but while actively searching, a forced-open ancestor cannot be manually
+  // collapsed (isExpanded ORs the two sources together). That trade-off keeps
+  // search results from disappearing mid-typing, which matters more here than
+  // letting a search-time collapse stick.
+  const toggleExpand = useCallback((path: string) => {
+    setExpandedPaths((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) {
+        next.delete(path)
+      } else {
+        next.add(path)
+      }
+      return next
+    })
+  }, [])
+
+  const visibleRoots = searchVisible ? tree.filter((node) => searchVisible.has(node.path)) : tree
 
   const pageContext = useMemo<PageContextContribution>(
     () => ({
@@ -335,8 +546,6 @@ export default function FilesView() {
     }
   }
 
-  const filteredFiles = files.filter((f) => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
-
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-[calc(100vh-12rem)]">
       <input
@@ -399,89 +608,31 @@ export default function FilesView() {
           <ScrollArea className="h-full pr-4">
             {loading ? (
               <p className="text-muted-foreground text-sm">Loading files...</p>
-            ) : filteredFiles.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                {searchQuery ? 'No files match your search.' : 'No files found.'}
-              </p>
+            ) : tree.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No files found.</p>
+            ) : visibleRoots.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No files match your search.</p>
             ) : (
-              <table className="w-full text-sm">
-                <thead className="text-xs text-muted-foreground border-b">
-                  <tr>
-                    <th className="text-left font-medium py-2 pr-2">Name</th>
-                    <th className="text-left font-medium py-2 pr-2 hidden sm:table-cell">Size</th>
-                    <th className="text-left font-medium py-2 pr-2 hidden md:table-cell">Modified</th>
-                    <th className="text-right font-medium py-2">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredFiles.map((file) => (
-                    <tr
-                      key={file.name}
-                      className={cn(
-                        'border-b border-border/50 hover:bg-accent/50 transition-colors group',
-                        previewFile === file.name && 'bg-accent',
-                      )}
-                    >
-                      <td className="py-2 pr-2">
-                        <button
-                          type="button"
-                          className="flex items-center gap-2 text-left hover:text-primary transition-colors w-full"
-                          onClick={() => {
-                            void handlePreview(file.name)
-                          }}
-                        >
-                          <FileText className="size-4 shrink-0 text-muted-foreground" />
-                          <span className="truncate font-medium">{file.name}</span>
-                        </button>
-                      </td>
-                      <td className="py-2 pr-2 text-muted-foreground text-xs hidden sm:table-cell">
-                        {formatBytes(file.size)}
-                      </td>
-                      <td className="py-2 pr-2 text-muted-foreground text-xs hidden md:table-cell">
-                        {formatDate(file.modified)}
-                      </td>
-                      <td className="py-2 text-right">
-                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8"
-                            onClick={() => {
-                              void handlePreview(file.name)
-                            }}
-                            title="Preview"
-                          >
-                            <Eye className="size-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8"
-                            onClick={() => {
-                              handleDownload(file.name)
-                            }}
-                            title="Download"
-                          >
-                            <Download className="size-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 text-destructive hover:text-destructive"
-                            onClick={() => {
-                              setDeleteCandidate(file.name)
-                            }}
-                            disabled={file.isDir}
-                            title={file.isDir ? 'Cannot delete directories' : 'Delete'}
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div role="tree" aria-label="Workspace files">
+                {visibleRoots.map((node) => (
+                  <FileTreeRow
+                    key={node.path}
+                    node={node}
+                    depth={0}
+                    selectedPath={previewFile}
+                    visibleFilter={searchVisible}
+                    isExpanded={isExpanded}
+                    onToggleExpand={toggleExpand}
+                    onSelectFile={(path) => {
+                      void handlePreview(path)
+                    }}
+                    onDownloadFile={handleDownload}
+                    onRequestDelete={(path) => {
+                      setDeleteCandidate(path)
+                    }}
+                  />
+                ))}
+              </div>
             )}
           </ScrollArea>
         </CardContent>
