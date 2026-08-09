@@ -6,6 +6,7 @@ import asyncio
 import contextvars
 import threading
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import agent_webui.api_extensions as api_extensions
@@ -518,8 +519,384 @@ def test_supervisory_routes_require_admin_scope() -> None:
     assert WebUIAuthorizationMiddleware._is_admin_route(
         '/api/enhanced/ontology/object-set/action'
     )
-    assert WebUIAuthorizationMiddleware._is_admin_route('/ws/dashboard')
     assert not WebUIAuthorizationMiddleware._is_admin_route('/api/graph/write')
+
+
+# ------------------------------------------------- GOC-60-W05: E1b/E6 nav/policy drift
+#
+# `observability.dashboard` (nav `minRole: 'reader'`, the DEFAULT LANDING ROUTE),
+# `integrations.ecosystem` (nav `minRole: 'maintainer'`), and `knowledge.graph` (nav
+# `minRole: 'reader'`) all previously 403'd for every non-admin caller because
+# `_is_admin_route` forced `kg:admin` for every method on their prefixes, including a
+# bare GET. These tests pin the corrected classification: the prefixes below are no
+# longer admin-for-every-method (an ordinary read now needs only `kg:read`, matching
+# nav), while the genuinely admin-only operations that used to hide inside the same
+# prefixes (arbitrary Cypher execution, the dashboard hydration daemon) keep their
+# `kg:admin` floor explicitly and narrowly.
+#
+# Before this fix (see `git show main:agent/agent_webui/server.py` at the commit prior
+# to this change), every one of the `not WebUIAuthorizationMiddleware._is_admin_route`
+# assertions below was the opposite (`_is_admin_route(...)` was `True`) and the role
+# matrix' reader/user/maintainer GET/websocket cases were all denied 403 — this is the
+# failing-first evidence for E1b/E6.
+
+
+def test_dashboard_route_is_no_longer_a_blanket_admin_route() -> None:
+    """`/api/dashboard` (E1b/E6): ordinary reads (layout/data/full/widgets/health/
+    discover/daemon-status/hydration-status) must not force `kg:admin` any more —
+    `observability.dashboard` is the default landing route at nav `minRole: 'reader'`."""
+
+    assert not WebUIAuthorizationMiddleware._is_admin_route('/api/dashboard')
+    assert not WebUIAuthorizationMiddleware._is_admin_route('/api/dashboard/full')
+    assert not WebUIAuthorizationMiddleware._is_admin_route('/api/dashboard/health')
+    assert not WebUIAuthorizationMiddleware._is_admin_route('/ws/dashboard')
+    # But the operational triggers under the same prefix keep their admin floor —
+    # via the mutation-only bucket, so only their non-GET methods are gated.
+    assert WebUIAuthorizationMiddleware._is_admin_mutation_route(
+        '/api/dashboard/daemon/start'
+    )
+    assert WebUIAuthorizationMiddleware._is_admin_mutation_route(
+        '/api/dashboard/hydrate'
+    )
+    assert WebUIAuthorizationMiddleware._is_admin_mutation_route(
+        '/api/dashboard/hydrate/some-source'
+    )
+
+
+def test_ecosystem_route_is_no_longer_a_blanket_admin_route() -> None:
+    """`/api/enhanced/ecosystem` (E6): every route under this prefix is a GET-only
+    third-party status read (no mutation exists), matching `integrations.ecosystem`'s
+    nav `minRole: 'maintainer'` — a maintainer's `kg:write`-derived session already
+    carries `kg:read`, so this must not force `kg:admin`."""
+
+    assert not WebUIAuthorizationMiddleware._is_admin_route('/api/enhanced/ecosystem')
+    assert not WebUIAuthorizationMiddleware._is_admin_route(
+        '/api/enhanced/ecosystem/uptime/status'
+    )
+    assert not WebUIAuthorizationMiddleware._is_admin_route(
+        '/api/enhanced/ecosystem/github/prs'
+    )
+
+
+def test_graph_route_admin_gate_is_narrowed_to_arbitrary_query_execution() -> None:
+    """`/api/enhanced/graph` (E1b layer 3): the base prefix used to force `kg:admin`
+    for every sub-route including the plain structured reads `GraphView.tsx` needs
+    (`nodes`/`relationships`/`stats`/`search`/`impact`/`viz/capabilities`) and the
+    ordinary per-user writes (`memory`, `link`). Only arbitrary Cypher execution
+    (`/graph/query`) is still genuinely admin-only: a query can `MATCH`/`SET`/
+    `CREATE`/`DELETE` in one call and bypasses every other route's object-level
+    scoping, so it stays admin for every method."""
+
+    assert WebUIAuthorizationMiddleware._is_admin_route('/api/enhanced/graph/query')
+    for path in (
+        '/api/enhanced/graph/nodes',
+        '/api/enhanced/graph/relationships',
+        '/api/enhanced/graph/stats',
+        '/api/enhanced/graph/search',
+        '/api/enhanced/graph/impact/some_symbol',
+        '/api/enhanced/graph/viz/capabilities',
+        '/api/enhanced/graph/memory',
+        '/api/enhanced/graph/memory/mem-1',
+        '/api/enhanced/graph/link',
+        '/api/enhanced/graph/magma',
+    ):
+        assert not WebUIAuthorizationMiddleware._is_admin_route(path), path
+
+
+def _webui_session(*, roles: tuple[str, ...], scopes: frozenset[str]):
+    """Build a `GraphSession` the way a real mint would: `scopes` pre-expanded per
+    the KG scope hierarchy (see `graph_identity.mint_frontend_graph_session` and
+    `GraphSession.require_scope`'s docstring: admin implies write+read, write implies
+    read). Hand-building an under-expanded scope set would test a shape no real
+    session has, per the existing `_graph_session` helper's convention above."""
+
+    return _graph_session(roles=frozenset(roles), scopes=scopes)
+
+
+# One fixture per WebUI role, following `rbac.resolve_webui_role`'s documented
+# mapping: an explicit `webui:*` realm role wins outright; otherwise the caller's
+# highest KG scope decides. Every real session's `scopes` set is hierarchy-expanded
+# (kg:admin -> +write+read, kg:write -> +read), so these mirror what
+# `mint_frontend_graph_session` actually produces for each tier.
+_ROLE_SESSIONS = {
+    'reader': lambda: _webui_session(
+        roles=('webui:reader', 'kg:read'), scopes=frozenset({'kg:read'})
+    ),
+    'user': lambda: _webui_session(roles=('kg:read',), scopes=frozenset({'kg:read'})),
+    'maintainer': lambda: _webui_session(
+        roles=('kg:write',), scopes=frozenset({'kg:read', 'kg:write'})
+    ),
+    'admin': lambda: _webui_session(
+        roles=('kg:admin',), scopes=frozenset({'kg:read', 'kg:write', 'kg:admin'})
+    ),
+}
+
+
+async def _drive_http(
+    *, method: str, path: str, session: Any, monkeypatch: pytest.MonkeyPatch
+) -> int:
+    from agent_utilities.core.config import config
+    from agent_utilities.knowledge_graph.core.session import use_session
+
+    monkeypatch.setattr(
+        config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
+    )
+
+    async def inner(_scope: dict, _receive: Any, send: Any) -> None:
+        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
+        await send({'type': 'http.response.body', 'body': b'{}'})
+
+    middleware = WebUIAuthorizationMiddleware(inner)
+    scope = {'type': 'http', 'method': method, 'path': path, 'headers': []}
+    send = _Recorder()
+
+    async def receive() -> dict:
+        return {'type': 'http.request'}
+
+    with use_session(session):
+        await middleware(scope, receive, send)
+    return send.status
+
+
+async def _drive_ws(
+    *, path: str, session: Any, monkeypatch: pytest.MonkeyPatch
+) -> bool:
+    """Returns True if the websocket handshake was admitted (reached the inner app,
+    never closed by the middleware)."""
+
+    from agent_utilities.core.config import config
+    from agent_utilities.knowledge_graph.core.session import use_session
+
+    monkeypatch.setattr(
+        config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
+    )
+
+    reached: list[bool] = []
+
+    async def inner(_scope: dict, _receive: Any, send: Any) -> None:
+        reached.append(True)
+        await send({'type': 'websocket.accept'})
+
+    middleware = WebUIAuthorizationMiddleware(inner)
+    scope = {'type': 'websocket', 'path': path, 'headers': []}
+    send = _Recorder()
+
+    async def receive() -> dict:
+        return {'type': 'websocket.connect'}
+
+    with use_session(session):
+        await middleware(scope, receive, send)
+    return reached == [True]
+
+
+@pytest.mark.parametrize('role', ['reader', 'user', 'maintainer', 'admin'])
+def test_role_matrix_dashboard_get_agrees_with_reader_nav(
+    role: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`observability.dashboard` nav `minRole: 'reader'`: every role, including
+    `reader`, must be admitted to `GET /api/dashboard/full` — this is the default
+    landing route (E1b/E6); it must not 403 for the majority role."""
+
+    status = asyncio.run(
+        _drive_http(
+            method='GET',
+            path='/api/dashboard/full',
+            session=_ROLE_SESSIONS[role](),
+            monkeypatch=monkeypatch,
+        )
+    )
+    assert status == 200, f'role={role} expected 200, got {status}'
+
+
+@pytest.mark.parametrize('role', ['reader', 'user', 'maintainer', 'admin'])
+def test_role_matrix_dashboard_websocket_agrees_with_reader_nav(
+    role: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same surface, the websocket leg: `/ws/dashboard` is a receive-only stream
+    (`DashboardView.tsx` never calls `.send`), so it now requires only `kg:read`,
+    the same floor as the REST route above — every role is admitted."""
+
+    admitted = asyncio.run(
+        _drive_ws(
+            path='/ws/dashboard',
+            session=_ROLE_SESSIONS[role](),
+            monkeypatch=monkeypatch,
+        )
+    )
+    assert admitted, f'role={role} expected the /ws/dashboard handshake to be admitted'
+
+
+@pytest.mark.parametrize(
+    ('role', 'expected_status'),
+    [('reader', 200), ('user', 200), ('maintainer', 200), ('admin', 200)],
+)
+def test_role_matrix_ecosystem_get_agrees_with_maintainer_nav(
+    role: str, expected_status: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`integrations.ecosystem` nav `minRole: 'maintainer'`: a maintainer (and above)
+    must be admitted to a `GET /api/enhanced/ecosystem/*` read. `reader`/`user` are
+    also admitted at the ROUTE level (an ordinary `kg:read` gate, same precedent as
+    `/api/enhanced/sessions`) — the nav sidebar, not this route, is what keeps the
+    page out of a reader's view; navigation never grants a capability, but the
+    inverse (a hidden page's API being reachable directly) is not a defect here."""
+
+    status = asyncio.run(
+        _drive_http(
+            method='GET',
+            path='/api/enhanced/ecosystem/uptime/status',
+            session=_ROLE_SESSIONS[role](),
+            monkeypatch=monkeypatch,
+        )
+    )
+    assert status == expected_status, (
+        f'role={role} expected {expected_status}, got {status}'
+    )
+
+
+@pytest.mark.parametrize('role', ['reader', 'user', 'maintainer', 'admin'])
+def test_role_matrix_graph_stats_get_agrees_with_reader_nav(
+    role: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`knowledge.graph` nav `minRole: 'reader'`: every role must be admitted to the
+    structured, genuinely read-only `GET /api/enhanced/graph/stats` that
+    `GraphView.tsx`'s `fetchData` depends on."""
+
+    status = asyncio.run(
+        _drive_http(
+            method='GET',
+            path='/api/enhanced/graph/stats',
+            session=_ROLE_SESSIONS[role](),
+            monkeypatch=monkeypatch,
+        )
+    )
+    assert status == 200, f'role={role} expected 200, got {status}'
+
+
+@pytest.mark.parametrize(
+    ('role', 'expected_status'),
+    [('reader', 403), ('user', 403), ('maintainer', 403), ('admin', 200)],
+)
+def test_role_matrix_graph_query_post_stays_admin_only(
+    role: str, expected_status: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The narrowed admin gate (`/api/enhanced/graph/query`, arbitrary Cypher
+    execution) must still reject everyone below `admin`, including `maintainer`
+    (`kg:write` does not satisfy `kg:admin`) — this is the negative control proving
+    the fix did not over-widen the boundary."""
+
+    status = asyncio.run(
+        _drive_http(
+            method='POST',
+            path='/api/enhanced/graph/query',
+            session=_ROLE_SESSIONS[role](),
+            monkeypatch=monkeypatch,
+        )
+    )
+    assert status == expected_status, (
+        f'role={role} expected {expected_status}, got {status}'
+    )
+
+
+@pytest.mark.parametrize(
+    ('role', 'expected_status'),
+    [('reader', 403), ('user', 403), ('maintainer', 403), ('admin', 200)],
+)
+def test_role_matrix_dashboard_hydrate_post_stays_admin_only(
+    role: str, expected_status: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`POST /api/dashboard/hydrate` (an operational trigger, not an ordinary read)
+    must still require `kg:admin` even though `GET /api/dashboard/*` no longer does —
+    proves the mutation-only reclassification did not also loosen the mutation."""
+
+    status = asyncio.run(
+        _drive_http(
+            method='POST',
+            path='/api/dashboard/hydrate',
+            session=_ROLE_SESSIONS[role](),
+            monkeypatch=monkeypatch,
+        )
+    )
+    assert status == expected_status, (
+        f'role={role} expected {expected_status}, got {status}'
+    )
+
+
+@pytest.mark.parametrize(
+    ('role', 'expected_status'),
+    [('reader', 403), ('user', 403), ('maintainer', 403), ('admin', 200)],
+)
+def test_role_matrix_tunnel_manager_hosts_get_stays_admin_only(
+    role: str, expected_status: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Negative control on a prefix this lane did NOT reclassify: SSH host
+    inventory (`/api/enhanced/tunnel-manager/hosts`, reachable from the same
+    `integrations.ecosystem` page) stays admin-for-every-method — proves the
+    ecosystem-prefix fix did not accidentally widen a sibling prefix that is
+    fetched from the same page but genuinely is infrastructure-sensitive."""
+
+    status = asyncio.run(
+        _drive_http(
+            method='GET',
+            path='/api/enhanced/tunnel-manager/hosts',
+            session=_ROLE_SESSIONS[role](),
+            monkeypatch=monkeypatch,
+        )
+    )
+    assert status == expected_status, (
+        f'role={role} expected {expected_status}, got {status}'
+    )
+
+
+def test_ws_dashboard_scope_missing_denies_a_caller_with_no_kg_scope_at_all(
+    caplog: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression coverage for the scope-missing branch on `/ws/dashboard` at its
+    NEW (lowered) floor: a session with no KG scope whatsoever is still correctly
+    denied. Superseded by this test:
+    `test_authorization_denies_and_logs_scope_missing_for_a_resolved_session` in
+    `test_ws_dashboard_denial_diagnostics.py` used to prove the OLD `kg:admin` floor
+    rejected a `kg:write`-scoped caller; that scenario is now a documented ADMIT
+    (see `test_role_matrix_dashboard_websocket_agrees_with_reader_nav` above), so the
+    true negative for this path is an entirely unscoped session, not a `kg:write` one.
+    """
+
+    import logging
+
+    from agent_utilities.core.config import config
+    from agent_utilities.knowledge_graph.core.session import use_session
+
+    monkeypatch.setattr(
+        config,
+        'auth_jwt_jwks_uri',
+        'https://idp.invalid/certs',
+        raising=False,
+    )
+
+    session = _graph_session(roles=frozenset(), scopes=frozenset())
+
+    async def inner_never_called(_scope: dict, _receive: Any, _send: Any) -> None:
+        raise AssertionError('a scope-less session must never reach /ws/dashboard')
+
+    middleware = WebUIAuthorizationMiddleware(inner_never_called)
+    scope = {'type': 'websocket', 'path': '/ws/dashboard', 'headers': []}
+    send = _Recorder()
+
+    async def receive() -> dict:
+        return {'type': 'websocket.connect'}
+
+    with (
+        caplog.at_level(logging.WARNING, logger='agent_webui.server'),
+        use_session(session),
+    ):
+        asyncio.run(middleware(scope, receive, send))
+
+    assert send.status == 403
+    denial_lines = [
+        r.getMessage() for r in caplog.records if 'ws_denied' in r.getMessage()
+    ]
+    assert len(denial_lines) == 1
+    assert 'reason=scope-missing' in denial_lines[0]
+    assert 'required=kg:read' in denial_lines[0]
 
 
 # ------------------------------------------------------------- R9: WebUI roles

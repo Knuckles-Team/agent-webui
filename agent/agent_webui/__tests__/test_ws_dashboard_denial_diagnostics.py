@@ -103,10 +103,12 @@ def _oidc_settings() -> OIDCSettings:
     )
 
 
-def _ws_scope(*, headers: list[tuple[bytes, bytes]]) -> dict:
+def _ws_scope(
+    *, headers: list[tuple[bytes, bytes]], path: str = '/ws/dashboard'
+) -> dict:
     return {
         'type': 'websocket',
-        'path': '/ws/dashboard',
+        'path': path,
         'method': '',
         'scheme': 'wss',
         'headers': headers,
@@ -185,8 +187,13 @@ def test_full_chain_admits_a_valid_kg_admin_browser_websocket_session(
 ) -> None:
     """Disproves the "websocket never resolves a session" hypothesis: a
     real session cookie, forwarded through the real BrowserSSO ->
-    ActorIdentity -> Authorization chain, DOES reach the inner app for the
-    admin-only `/ws/dashboard` route when the caller holds `kg:admin`."""
+    ActorIdentity -> Authorization chain, DOES reach the inner app for
+    `/ws/dashboard` when the caller holds `kg:admin`. (GOC-60-W05: this route no
+    longer requires `kg:admin` specifically -- it is a receive-only stream gated at
+    `kg:read`, see `test_security_boundaries.py`'s role-matrix tests -- but a
+    `kg:admin` scope satisfies `kg:read` too via the hierarchy expansion
+    `mint_frontend_graph_session` performs, so this still proves the full chain
+    admits a real, high-privilege session.)"""
 
     from agent_webui.graph_identity import mint_frontend_graph_session
 
@@ -258,11 +265,18 @@ def test_authorization_denies_and_logs_scope_missing_for_a_resolved_session(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """The literal "403 for a websocket WITH a valid session" case: identity
-    resolves fine (a real, unexpired, verified session is bound) but its
-    scope (`kg:write`) does not satisfy the admin route's `kg:admin`
-    requirement. Distinctly logged as `scope-missing`, never confusable with
-    `no-credential-resolved` above even though uvicorn logs both as 403."""
+    """The literal "403 for a websocket WITH a valid session" case, at
+    `/ws/dashboard`'s current (GOC-60-W05, E1b/E6) floor: identity resolves fine (a
+    real, unexpired, verified session is bound) but its scope set is completely
+    empty, so it does not satisfy even the route's `kg:read` requirement.
+    Distinctly logged as `scope-missing`, never confusable with
+    `no-credential-resolved` above even though uvicorn logs both as 403.
+
+    Before GOC-60-W05 this route required `kg:admin` for every caller (E1b layer 3),
+    so a merely `kg:write`-scoped session was the true negative here; that scenario
+    is now a documented ADMIT (`test_security_boundaries.py`'s
+    `test_role_matrix_dashboard_websocket_agrees_with_reader_nav`), so the true
+    negative for this path is a session with no KG scope at all."""
 
     from agent_utilities.knowledge_graph.core.session import GraphSession, use_session
     from agent_utilities.security.brain_context import ActorContext
@@ -270,15 +284,13 @@ def test_authorization_denies_and_logs_scope_missing_for_a_resolved_session(
     actor = ActorContext(
         actor_id='subject-1',
         tenant_id='homelab',
-        roles=frozenset({'kg:write'}),
+        roles=frozenset(),
         authenticated=True,
     )
-    session = GraphSession(
-        actor=actor, tenant='homelab', scopes=frozenset({'kg:write', 'kg:read'})
-    )
+    session = GraphSession(actor=actor, tenant='homelab', scopes=frozenset())
 
     async def inner_never_called(_scope: dict, _receive: Any, _send: Any) -> None:
-        raise AssertionError('a kg:write-only session must never reach /ws/dashboard')
+        raise AssertionError('a scope-less session must never reach /ws/dashboard')
 
     middleware = WebUIAuthorizationMiddleware(inner_never_called)
     scope = _ws_scope(headers=[(b'origin', b'https://au.arpa'), (b'host', b'au.arpa')])
@@ -293,7 +305,7 @@ def test_authorization_denies_and_logs_scope_missing_for_a_resolved_session(
     ]
     assert len(denial_lines) == 1
     assert 'reason=scope-missing' in denial_lines[0]
-    assert 'required=kg:admin' in denial_lines[0]
+    assert 'required=kg:read' in denial_lines[0]
     assert 'session_resolved=True' in denial_lines[0]
 
 
@@ -333,7 +345,17 @@ def test_authorization_denies_and_logs_webui_role_insufficient(
 ) -> None:
     """A `kg:admin`-scoped caller explicitly demoted by an additive
     `webui:reader` realm role is still rejected -- distinctly logged as
-    `webui-role-insufficient`, not `scope-missing`."""
+    `webui-role-insufficient`, not `scope-missing`.
+
+    Uses `/api/fleet` (a synthetic path: the still-admin-for-every-method prefix
+    reused as a websocket scope's ``path``, since the middleware classifies purely
+    by path string and does not require a route to actually be registered under it)
+    rather than `/ws/dashboard`:
+    GOC-60-W05 (E1b/E6) lowered `/ws/dashboard`'s floor to `kg:read`, so it can no
+    longer demonstrate the webui-role gate rejecting a *scope-satisfied* caller --
+    a `kg:admin` scope alone would now be admitted there. The role-demotion
+    mechanism under test is generic to any admin-classified path; only the path
+    string changes here, not the assertions below."""
 
     from agent_utilities.core.config import config
     from agent_utilities.knowledge_graph.core.session import GraphSession, use_session
@@ -361,7 +383,10 @@ def test_authorization_denies_and_logs_webui_role_insufficient(
         raise AssertionError('a webui:reader-demoted caller must never reach the app')
 
     middleware = WebUIAuthorizationMiddleware(inner_never_called)
-    scope = _ws_scope(headers=[(b'origin', b'https://au.arpa'), (b'host', b'au.arpa')])
+    scope = _ws_scope(
+        path='/api/fleet',
+        headers=[(b'origin', b'https://au.arpa'), (b'host', b'au.arpa')],
+    )
     send = _Recorder()
 
     with caplog.at_level(logging.WARNING, logger=LOGGER_NAME), use_session(session):

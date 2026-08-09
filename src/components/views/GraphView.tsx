@@ -1,5 +1,17 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Network, Terminal, Brain, RefreshCw, Database, Play, Layers, Sparkles } from 'lucide-react'
+import {
+  Network,
+  Terminal,
+  Brain,
+  RefreshCw,
+  Database,
+  Play,
+  Layers,
+  Sparkles,
+  ShieldAlert,
+  AlertTriangle,
+  Inbox,
+} from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -8,7 +20,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { fetchValidated, looseArray } from '@/lib/api-validation'
+import { ApiError, fetchValidated, looseArray } from '@/lib/api-validation'
 import { GraphCanvas } from '../knowledge-graph/GraphCanvas'
 import { usePageContextPublisher, type PageContextContribution } from '@/lib/page-context'
 
@@ -53,12 +65,35 @@ const graphStatsSchema: z.ZodType<GraphStats> = z.object({
   by_type: z.record(z.string(), z.number()),
 })
 
+// GOC-60-W05 (E1b layer 3 / E6): `fetchData` used to `.catch(() => null)` each of the
+// three requests independently and fall back to one generic toast on any failure —
+// an authorization denial (403, e.g. from a nav/policy drift like the one this lane
+// fixes) was therefore visually indistinguishable from a genuinely empty graph: both
+// left `nodes`/`relationships` at their `[]` default and rendered a blank canvas. This
+// type makes the three cases explicit so the render can tell the difference:
+//   - `ready`    all three requests succeeded and returned at least one node.
+//   - `empty`    all three requests succeeded but the graph genuinely has no nodes.
+//   - `degraded` some requests succeeded and some failed — partial data is shown,
+//                with the failed ones named.
+//   - `error`    every request failed — no data at all — naming the reason (an
+//                authorization denial vs. any other fetch/shape failure) rather than
+//                rendering the same blank canvas an empty graph would show.
+type GraphLoadStatus =
+  | { kind: 'loading' }
+  | { kind: 'ready' }
+  | { kind: 'empty' }
+  | { kind: 'degraded'; failed: string[]; forbidden: boolean }
+  | { kind: 'error'; failed: string[]; forbidden: boolean }
+
+const GRAPH_FETCH_LABELS = ['stats', 'nodes', 'relationships'] as const
+
 export default function GraphView() {
   const [stats, setStats] = useState<GraphStats>({ total_nodes: 0, total_relationships: 0, by_type: {} })
   const [nodes, setNodes] = useState<GraphNode[]>([])
   const [relationships, setRelationships] = useState<GraphRelationship[]>([])
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadStatus, setLoadStatus] = useState<GraphLoadStatus>({ kind: 'loading' })
   const [activeTab, setActiveTab] = useState('visualization')
 
   // Cypher states
@@ -108,16 +143,50 @@ export default function GraphView() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const [statsData, nodesData, relsData] = await Promise.all([
-        fetchValidated('/api/enhanced/graph/stats', graphStatsSchema).catch(() => null),
-        fetchValidated('/api/enhanced/graph/nodes', looseArray(graphNodeSchema)).catch(() => null),
-        fetchValidated('/api/enhanced/graph/relationships', looseArray(graphRelationshipSchema)).catch(() => null),
+      const [statsResult, nodesResult, relsResult] = await Promise.allSettled([
+        fetchValidated('/api/enhanced/graph/stats', graphStatsSchema),
+        fetchValidated('/api/enhanced/graph/nodes', looseArray(graphNodeSchema)),
+        fetchValidated('/api/enhanced/graph/relationships', looseArray(graphRelationshipSchema)),
       ])
-      if (statsData) setStats(statsData)
-      if (nodesData) setNodes(nodesData)
-      if (relsData) setRelationships(relsData)
-      if (!statsData || !nodesData || !relsData) {
-        toast.error('Failed to load graph database nodes')
+      const results = [statsResult, nodesResult, relsResult]
+
+      const failed: string[] = []
+      let forbidden = false
+      results.forEach((result, i) => {
+        if (result.status === 'rejected') {
+          failed.push(GRAPH_FETCH_LABELS[i])
+          if (result.reason instanceof ApiError && (result.reason.status === 401 || result.reason.status === 403)) {
+            forbidden = true
+          }
+        }
+      })
+
+      let nextStats = stats
+      if (statsResult.status === 'fulfilled') {
+        nextStats = statsResult.value
+        setStats(statsResult.value)
+      }
+      let nextNodes = nodes
+      if (nodesResult.status === 'fulfilled') {
+        nextNodes = nodesResult.value
+        setNodes(nodesResult.value)
+      }
+      if (relsResult.status === 'fulfilled') setRelationships(relsResult.value)
+
+      if (failed.length === results.length) {
+        setLoadStatus({ kind: 'error', failed, forbidden })
+        toast.error(
+          forbidden
+            ? "You don't have permission to view the knowledge graph."
+            : 'The knowledge graph is unavailable right now.',
+        )
+      } else if (failed.length > 0) {
+        setLoadStatus({ kind: 'degraded', failed, forbidden })
+        toast.error(`Partial graph data: ${failed.join(', ')} failed to load.`)
+      } else if (nextStats.total_nodes === 0 && nextNodes.length === 0) {
+        setLoadStatus({ kind: 'empty' })
+      } else {
+        setLoadStatus({ kind: 'ready' })
       }
     } finally {
       setLoading(false)
@@ -235,17 +304,51 @@ export default function GraphView() {
         <TabsContent value="visualization" className="flex-1 overflow-hidden mt-4">
           <Card className="h-full border-border/40 bg-card/60 backdrop-blur-md flex flex-col">
             <CardContent className="flex-1 p-0 relative overflow-hidden h-full min-h-[450px]">
-              {activeTab === 'visualization' && (
-                <GraphCanvas
-                  nodes={nodes}
-                  relationships={relationships}
-                  onUpdateNode={handleUpdateNode}
-                  onDeleteNode={handleDeleteNode}
-                  onAddNode={handleAddNode}
-                  selectedNodeExternally={selectedNode}
-                  onSelectNode={setSelectedNode}
-                />
+              {activeTab === 'visualization' && loadStatus.kind === 'error' && (
+                <div className="flex flex-col items-center justify-center h-full text-center gap-2 p-8">
+                  <ShieldAlert className="size-10 text-red-400" />
+                  <p className="text-sm font-semibold">
+                    {loadStatus.forbidden
+                      ? "You don't have permission to view the knowledge graph."
+                      : 'The knowledge graph is unavailable right now.'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Failed to load: {loadStatus.failed.join(', ')}
+                    {loadStatus.forbidden ? ' (403 Forbidden)' : ''}
+                  </p>
+                </div>
               )}
+              {activeTab === 'visualization' && loadStatus.kind === 'empty' && (
+                <div className="flex flex-col items-center justify-center h-full text-center gap-2 p-8">
+                  <Inbox className="size-10 text-muted-foreground/40" />
+                  <p className="text-sm font-semibold text-muted-foreground">
+                    The knowledge graph has no nodes yet.
+                  </p>
+                </div>
+              )}
+              {activeTab === 'visualization' &&
+                (loadStatus.kind === 'ready' || loadStatus.kind === 'degraded' || loadStatus.kind === 'loading') && (
+                  <>
+                    {loadStatus.kind === 'degraded' && (
+                      <div className="absolute top-2 left-2 right-2 z-10 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-500">
+                        <AlertTriangle className="size-3.5 shrink-0" />
+                        <span>
+                          Showing partial data — {loadStatus.failed.join(', ')} failed to load
+                          {loadStatus.forbidden ? ' (permission denied)' : ''}.
+                        </span>
+                      </div>
+                    )}
+                    <GraphCanvas
+                      nodes={nodes}
+                      relationships={relationships}
+                      onUpdateNode={handleUpdateNode}
+                      onDeleteNode={handleDeleteNode}
+                      onAddNode={handleAddNode}
+                      selectedNodeExternally={selectedNode}
+                      onSelectNode={setSelectedNode}
+                    />
+                  </>
+                )}
             </CardContent>
           </Card>
         </TabsContent>
