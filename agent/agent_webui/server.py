@@ -83,9 +83,23 @@ _MAX_BEARER_TOKEN_BYTES = 16 * 1024
 # own) is enforced as row-level data scoping inside api_extensions.py's session handlers
 # (`_current_webui_is_admin` + the `sessions.owner` column) — a route-level allow/deny here
 # cannot express "your own rows only", so it belongs at the data layer, not this chokepoint.
+#
+# GOC-60-W05: every prefix below requires `kg:admin` for EVERY method, including a bare
+# GET — this list is for routes whose *reads* are themselves admin-only, not merely their
+# mutations. A prefix belongs here only when the read exposes something a non-admin
+# genuinely should not see (infra/credential inventory, arbitrary query execution,
+# operational triggers) — never merely because a mutation lives under the same prefix
+# (that case belongs in `_ADMIN_MUTATION_ROUTE_PREFIXES` below, which gates only
+# non-GET methods so an ordinary read is never misclassified as a mutation). Three
+# prefixes were reclassified out of this list 2026-08-09 (GOC-60-W05, evidence E1b/E6)
+# because their reads were incorrectly forced to admin for every caller including GET:
+# `/api/dashboard` (+ `/ws/dashboard`, see the websocket branch in `__call__`),
+# `/api/enhanced/ecosystem`, and the base `/api/enhanced/graph` (its one genuinely
+# admin-only sub-route, arbitrary Cypher execution, now has its own narrow entry:
+# `/api/enhanced/graph/query`). See the GOC-60-W05 worker report for the full
+# per-prefix read/mutate determination and justification.
 _ADMIN_ROUTE_PREFIXES = (
     '/api/fleet',
-    '/api/dashboard',
     '/api/enhanced/agents',
     '/api/enhanced/backend',
     '/api/enhanced/chats',
@@ -96,10 +110,19 @@ _ADMIN_ROUTE_PREFIXES = (
     '/api/enhanced/container-manager',
     '/api/enhanced/cron',
     '/api/enhanced/download',
-    '/api/enhanced/ecosystem',
     '/api/enhanced/files',
     '/api/enhanced/goals',
-    '/api/enhanced/graph',
+    # Arbitrary Cypher execution: functionally admin-equivalent even as a "read" (a
+    # query can MATCH/SET/CREATE/DELETE in one call, and bypasses every other route's
+    # object-level scoping), so it stays admin for every method. This is narrower than
+    # the old base `/api/enhanced/graph` prefix on purpose — see the block comment
+    # above; the structured, genuinely read-only sub-routes (`/graph/nodes`,
+    # `/graph/relationships`, `/graph/stats`, `/graph/search`, `/graph/impact`,
+    # `/graph/viz/capabilities`) and the ordinary-write sub-routes (`/graph/memory`,
+    # `/graph/link`, `/graph/viz/render`, `/graph/magma`) are no longer admin-gated at
+    # all — they fall through to the ordinary kg:read (GET) / kg:write (mutation) tier,
+    # matching `knowledge.graph`'s nav `minRole: 'reader'`.
+    '/api/enhanced/graph/query',
     '/api/enhanced/kb',
     '/api/enhanced/maintenance',
     '/api/enhanced/ontology/object-set/action',
@@ -118,7 +141,6 @@ _ADMIN_ROUTE_PREFIXES = (
     '/api/enhanced/voice',
     '/api/enhanced/workflows',
     '/api/tools/toggle',
-    '/ws/dashboard',
 )
 _ADMIN_MUTATION_ROUTE_PREFIXES = (
     # Invoking an arbitrary MCP tool through the governed delegation seam is at
@@ -130,7 +152,28 @@ _ADMIN_MUTATION_ROUTE_PREFIXES = (
     '/api/enhanced/mcp',
     '/api/enhanced/skills',
     '/api/enhanced/tools',
+    # GOC-60-W05: `/api/dashboard`'s reads (layout/data/full/widgets/health/discover/
+    # daemon-status/hydration-status) are ordinary status information matching
+    # `observability.dashboard`'s nav `minRole: 'reader'` (E1b/E6) and are NOT listed
+    # in `_ADMIN_ROUTE_PREFIXES` above any more — but starting the hydration daemon or
+    # triggering a source hydration are operational actions with real resource/API
+    # cost, so those two specific mutation sub-routes keep the admin floor.
+    '/api/dashboard/daemon/start',
+    '/api/dashboard/hydrate',
 )
+# GOC-60-W05 (E1b layer 3 / E6): websocket handshakes carry no HTTP method, so the
+# generic branch below has always had only two tiers — `kg:admin` for an admin route,
+# `kg:write` for everything else (a websocket can carry outbound client messages, so
+# `kg:write` is the right floor for an unclassified one). `/ws/dashboard` is the one
+# documented exception: `DashboardView.tsx`'s socket is receive-only (it has no
+# `.send(...)` call at all — it only republishes server-pushed snapshots into the
+# `dashboard-full` query cache), so it is exactly as read-only as the `/api/dashboard`
+# GET routes it streams updates for, and belongs at `kg:read` to match
+# `observability.dashboard`'s nav `minRole: 'reader'`. This set exists so that
+# reclassification is explicit and auditable rather than folded into the two-tier
+# default; add a path here only when the same receive-only property is verified true
+# of the socket, not merely assumed.
+_WEBSOCKET_READ_ONLY_PATHS = frozenset({'/ws/dashboard'})
 _PUBLIC_LIVENESS_PATHS = frozenset(
     {'/health', '/healthz', '/api/health', '/api/healthz'}
 )
@@ -838,7 +881,12 @@ class WebUIAuthorizationMiddleware:
         path = str(scope.get('path') or '')
         method = str(scope.get('method') or '').upper()
         if scope_type == 'websocket':
-            required = 'kg:admin' if self._is_admin_route(path) else 'kg:write'
+            if self._is_admin_route(path):
+                required = 'kg:admin'
+            elif path in _WEBSOCKET_READ_ONLY_PATHS:
+                required = 'kg:read'
+            else:
+                required = 'kg:write'
         else:
             if self._is_admin_route(path) or (
                 method not in {'GET', 'HEAD', 'OPTIONS'}
