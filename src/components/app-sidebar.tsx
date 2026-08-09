@@ -37,6 +37,7 @@ import { useIdentity } from '@/lib/auth'
 import { deleteConversationEntry, renameConversationEntry, useConversations } from '@/lib/chat-store'
 import type { ConversationEntry } from '@/types'
 import { ModeToggle } from './mode-toggle'
+import { UserMenu } from './UserMenu'
 
 function doLocalNavigation(e: React.MouseEvent) {
   if (e.button !== 0 || e.metaKey || e.ctrlKey) {
@@ -327,6 +328,7 @@ export function AppSidebar() {
         </SidebarContent>
 
         <SidebarFooter>
+          <UserMenu />
           <ModeToggle />
         </SidebarFooter>
 

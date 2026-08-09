@@ -29,6 +29,12 @@ export interface AuthSession {
   subject?: string | null
   username?: string | null
   email?: string | null
+  /** The IdP's `name` claim (display name). Optional per OIDC -- not every
+   *  client scope configuration includes it. */
+  name?: string | null
+  /** The IdP's `picture` claim (avatar URL). Optional -- Keycloak omits it
+   *  unless the account has one set. */
+  picture?: string | null
   tenant?: string | null
   roles: string[]
   /** Computed server-side by `agent/agent_webui/rbac.py::resolve_webui_role`. */

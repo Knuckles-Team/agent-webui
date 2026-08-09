@@ -659,6 +659,14 @@ class OIDCBrowserSessionMiddleware:
                 'subject': claims.get('sub'),
                 'username': claims.get('preferred_username'),
                 'email': claims.get('email'),
+                # Additive (D-W-17): the profile surface renders these directly from
+                # the IdP claims rather than inventing a second identity store. Both
+                # are optional per the OIDC spec -- Keycloak omits `picture` unless an
+                # avatar was set on the account, and `name` is absent for some client
+                # scope configurations -- so the frontend must treat `null`/absent as
+                # "no IdP value", not an error.
+                'name': claims.get('name'),
+                'picture': claims.get('picture'),
                 'tenant': claims.get('tenant_id'),
                 'roles': sorted(
                     role for role in realm_roles if role.startswith(('kg:', 'webui:'))

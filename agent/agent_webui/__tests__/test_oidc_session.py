@@ -338,6 +338,8 @@ async def test_session_endpoint_never_returns_the_token():
         'sub': 'user-1',
         'preferred_username': 'alice',
         'email': 'alice@example.test',
+        'name': 'Alice Example',
+        'picture': 'https://idp.example.test/avatars/alice.png',
         'tenant_id': 'homelab',
         'realm_access': {'roles': ['kg:read', 'offline_access']},
     }
@@ -365,7 +367,45 @@ async def test_session_endpoint_never_returns_the_token():
     assert body['webui_role'] == 'user', (
         'kg:read falls back to the WebUI user role (R9)'
     )
+    assert body['name'] == 'Alice Example', (
+        'the profile surface reads the name claim verbatim'
+    )
+    assert body['picture'] == 'https://idp.example.test/avatars/alice.png'
     assert token not in send.body.decode('utf-8')
+
+
+@pytest.mark.anyio
+async def test_session_endpoint_omits_name_and_picture_when_absent():
+    """Neither claim is mandatory in OIDC -- absence must round-trip as null,
+    not raise, so the profile surface can fall back cleanly."""
+
+    settings = _settings()
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=settings)
+    claims = {
+        'sub': 'user-3',
+        'preferred_username': 'bob',
+        'realm_access': {'roles': ['kg:read']},
+    }
+    import base64
+
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip('=')
+    token = f'header.{payload}.signature'
+    sealed = middleware._seal(
+        {'access_token': token, 'refresh_token': '', 'expires_at': time.time() + 300}
+    )
+    cookie = '; '.join(
+        raw.decode('latin-1').split(';', 1)[0]
+        for _n, raw in _session_cookie_headers(sealed, secure=False)
+    )
+    send = _Recorder()
+    await middleware(
+        _scope(SESSION_PATH, headers=[(b'cookie', cookie.encode('latin-1'))]),
+        None,
+        send,
+    )
+    body = json.loads(send.body)
+    assert body['name'] is None
+    assert body['picture'] is None
 
 
 @pytest.mark.anyio
