@@ -180,6 +180,11 @@ COPY --from=wheelhouse epistemic_graph-*.whl /tmp/wheelhouse/
 # wheel into an unrelated image. Reproducing the identical override via
 # `--overrides` (uv's flag for the same mechanism from outside the project)
 # carries the fix across that boundary without inventing a new resolution.
+# LANE F: `metrics` (prometheus-client — one light pure-Python wheel, no
+# native/heavy deps) turns the `GatewayMetricsMiddleware` this image already
+# mounts (register_graph_routes, server.py) from a graceful no-op into real
+# per-route request-count/duration series on GET /metrics, reusing the
+# EXISTING gateway metrics stack instead of standing up a bespoke store.
 RUN AU_WHEEL="$(ls /tmp/wheelhouse/agent_utilities-*.whl)" \
     && printf '%s\n' \
         'fastmcp-slim[client,server]>=4.0.0b1' \
@@ -187,7 +192,7 @@ RUN AU_WHEEL="$(ls /tmp/wheelhouse/agent_utilities-*.whl)" \
         > /tmp/au-overrides.txt \
     && uv pip install --system --no-cache --find-links /tmp/wheelhouse \
         --overrides /tmp/au-overrides.txt \
-        "${AU_WHEEL}[graph,mcp]" /tmp/agent-webui/*.whl \
+        "${AU_WHEEL}[graph,mcp,metrics]" /tmp/agent-webui/*.whl \
     && rm -rf /tmp/agent-webui /tmp/wheelhouse /tmp/au-overrides.txt
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

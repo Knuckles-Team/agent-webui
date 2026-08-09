@@ -61,7 +61,13 @@ test = [
     # pyproject.toml); the old name is a silent no-op extra (uv/pip warn and
     # skip it rather than error), so this floor was quietly installing without
     # the agent runtime closure. Caught building docker/Dockerfile (D-WUI-30).
-    "agent-utilities[agent-runtime,graph]>=2.0.0"
+    # LANE F: `metrics` (prometheus-client, a single light pure-Python wheel)
+    # turns the already-wired `GatewayMetricsMiddleware` (installed for free
+    # by `register_graph_routes` — see server.py's `create_agent_web_app`)
+    # from a graceful no-op into real per-route request-count/duration series
+    # on `GET /metrics` — reusing the EXISTING gateway metrics stack instead
+    # of a bespoke usage-analytics store.
+    "agent-utilities[agent-runtime,graph,metrics]>=2.0.0"
 ]
 
 [[project.authors]]
