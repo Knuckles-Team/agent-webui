@@ -1,3 +1,10 @@
+# `git push` must run the FULL gate, not a subset. Without
+# `default_install_hook_types`, `pre-commit install` wires ONLY the pre-commit
+# hook, so `git push` runs nothing and any hook staged pre-push is dead code.
+# `default_stages` then makes every hook that names no stages of its own run at
+# BOTH stages, so a push is a strict superset of a commit.
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit, pre-push]
 exclude:
   ^(scripts/|.*skill_graphs/|.*pnpm-lock\.yaml|.*uv\.lock|.*\.db$|.*\.bak$|.*\.sqlite$)
 repos:
