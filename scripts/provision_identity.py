@@ -89,7 +89,19 @@ FLEET_SCOPE = os.environ.get('KEYCLOAK_AUDIENCE_SCOPE', 'agent-services')
 TENANT = os.environ.get('KEYCLOAK_TENANT', 'homelab')
 
 # Minimum viable grants.  ``kg:admin`` is deliberately absent everywhere.
-SERVICE_ROLES = ('kg:write',)
+#
+# ``admin:cluster-read`` is NOT a graph scope and is not covered by the
+# ``kg:*`` hierarchy -- it is the engine capability the ``PlacementRoute``
+# declares (``authz_action = "admin:cluster-read"``), and the webui backend
+# resolves shard placement on the data path.  Without it every placement
+# resolution fails with
+#   ACCESS_DENIED: verified request context lacks required scope 'admin:cluster-read'
+# which surfaces as an unexplained empty UI rather than an auth error.  This
+# was provisioned by hand on the live cluster on 2026-08-08 after that exact
+# failure; granting it here is what stops the NEXT environment reproducing it.
+# It is a READ capability (placement lookup), not graph administration, so it
+# does not weaken the deliberate absence of ``kg:admin`` above.
+SERVICE_ROLES = ('kg:write', 'admin:cluster-read')
 USER_ROLES = ('kg:read', 'kg:write')
 GRAPH_ROLES = ('kg:read', 'kg:write', 'kg:admin')
 
@@ -392,6 +404,43 @@ def _client_secret(token: str, uuid: str) -> str:
     return secret
 
 
+_ROLE_DESCRIPTIONS: dict[str, str] = {
+    'kg:read': 'Read the knowledge graph.',
+    'kg:write': 'Write to the knowledge graph (implies kg:read).',
+    'kg:admin': 'Administer the knowledge graph (implies kg:read + kg:write).',
+    'admin:cluster-read': (
+        'Engine PlacementRoute capability (authz_action admin:cluster-read). '
+        'Required by service identities that resolve shard placement.'
+    ),
+}
+
+
+def _ensure_realm_roles(token: str, names: tuple[str, ...], dry_run: bool) -> None:
+    """Create any realm role in ``names`` that does not exist yet.
+
+    This script creates clients and groups but used to REQUIRE every realm role
+    to pre-exist, raising ``Realm roles are missing`` otherwise. That made it
+    non-self-sufficient on a fresh realm: whoever ran it had to already know the
+    role list and hand-create it in Keycloak first. ``admin:cluster-read`` in
+    particular existed on no realm until it was created by hand on 2026-08-08,
+    after a live outage where the webui showed an empty knowledge graph because
+    the service account could not resolve placement.
+    """
+    _status, roles = _kc('GET', f'/admin/realms/{REALM}/roles', token)
+    have = {role['name'] for role in roles or []}
+    for name in [n for n in names if n not in have]:
+        if dry_run:
+            log(f'  would create realm role {name}')
+            continue
+        _kc(
+            'POST',
+            f'/admin/realms/{REALM}/roles',
+            token,
+            {'name': name, 'description': _ROLE_DESCRIPTIONS.get(name, '')},
+        )
+        log(f'  created realm role {name}')
+
+
 def _realm_role_objects(token: str, names: tuple[str, ...]) -> list[dict[str, Any]]:
     _status, roles = _kc('GET', f'/admin/realms/{REALM}/roles', token)
     by_name = {role['name']: role for role in roles or []}
@@ -564,6 +613,10 @@ def stage_keycloak(grant_users: list[str], dry_run: bool) -> dict[str, str]:
         },
         dry_run,
     )
+    # Create the realm roles before anything tries to GRANT them: the grant
+    # path raises `Realm roles are missing` rather than creating, so a fresh
+    # realm used to fail here unless someone had hand-created the roles first.
+    _ensure_realm_roles(token, tuple({*SERVICE_ROLES, *USER_ROLES, *GRAPH_ROLES}), dry_run)
     if service is not None:
         _ensure_service_account_roles(token, service['id'], SERVICE_CLIENT, dry_run)
     _ensure_user_group(token, grant_users, dry_run)
