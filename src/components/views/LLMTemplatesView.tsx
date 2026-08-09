@@ -1,17 +1,24 @@
 /**
  * @file LLMTemplatesView.tsx
- * @description LLM section for composing agent templates (D-AOBS-4): pick a
- * configured model, tune generation parameters, and pair them with a system
- * prompt, then save the result.
+ * @description LLM Models / configuration section (D-AOBS-4, W-8 fix): the
+ * PRIMARY, sidebar-bound list is the live `AgentConfig.chat_models` registry
+ * (`GET /api/enhanced/llm/models` — the same registry `create_model` resolves
+ * against), not the system-prompt store. Picking a model surfaces its actual
+ * AgentConfig settings (provider, intelligence level, context window,
+ * vision/reasoning/tools capability, routing/KG eligibility — e.g. the
+ * `qwen` model's configured settings) in a read-only "Model configuration"
+ * card, then optionally lets you pair it with generation parameters and a
+ * system prompt into a saved template.
  *
- * Deliberately reuses the EXISTING prompt store (`/api/enhanced/prompts/{name}`,
- * owned by this same lane's `control-plane.prompts` route) rather than adding a
- * second one — a "template" here is a prompt document with `model` and
- * `parameters` fields attached, not a new storage layer. Model choices come
- * from `GET /api/enhanced/llm/models`, which reads the live, already-configured
- * `AgentConfig.chat_models` registry (the same one `create_model` resolves
- * against), so this never invents a model list independent of what is
- * actually usable.
+ * Before this fix the sidebar listed prompt documents from
+ * `/api/enhanced/prompts` — i.e. system prompts — which is what the
+ * "LLM Templates" section is NOT supposed to show (that already has its own
+ * dedicated home: `control-plane.prompts` / `PromptsView.tsx`, the Prompts
+ * Registry). Templates (a prompt document with `model` + `parameters`
+ * fields attached) are still composed and saved through the EXISTING prompt
+ * store (`/api/enhanced/prompts/{name}`) — no second storage layer — but
+ * loading one is now a secondary "load existing template" action, not the
+ * panel's primary binding.
  *
  * `w3-agent-library` (a sibling lane) owns the full agent library and its
  * graph-node storage — this view does not touch that store or duplicate it;
@@ -204,6 +211,20 @@ export default function LLMTemplatesView() {
     setParameters(DEFAULT_PARAMETERS)
   }
 
+  /** Selecting a model from the (now primary) AgentConfig-bound sidebar list
+   * — starts a fresh, unsaved template scoped to that model so its
+   * configuration card renders immediately, without loading any prompt. */
+  const selectModel = (m: LLMModel) => {
+    setSelectedName(null)
+    setIsNew(true)
+    setNewName('')
+    setTitle('')
+    setGoal('')
+    setCoreDirective('')
+    setModelId(m.id)
+    setParameters(DEFAULT_PARAMETERS)
+  }
+
   const handleSave = async () => {
     const targetName = isNew ? newName.trim() : selectedName
     if (!targetName) {
@@ -243,10 +264,11 @@ export default function LLMTemplatesView() {
     }
   }
 
-  const filteredTemplates = templates.filter(
-    (t) =>
-      t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  const filteredModels = models.filter(
+    (m) =>
+      m.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      m.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      m.intelligence_level.toLowerCase().includes(searchQuery.toLowerCase()),
   )
   const selectedModel = models.find((m) => m.id === modelId)
 
@@ -256,7 +278,8 @@ export default function LLMTemplatesView() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-12rem)]">
-      {/* 1. Sidebar - Template List */}
+      {/* 1. Sidebar - LLM Models (AgentConfig.chat_models — W-8: this is the
+          panel's primary binding, not the prompt/system-prompt store). */}
       <Card className="lg:col-span-1 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -280,11 +303,11 @@ export default function LLMTemplatesView() {
               </Button>
             </div>
           </div>
-          <CardDescription>Model + parameters + system prompt, saved as one template.</CardDescription>
+          <CardDescription>Model/LLM configuration from AgentConfig&apos;s chat_models registry.</CardDescription>
           <div className="relative mt-2">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search templates..."
+              placeholder="Search models..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value)
@@ -296,25 +319,28 @@ export default function LLMTemplatesView() {
         <ScrollArea className="flex-1">
           <CardContent className="space-y-1 pt-0">
             {loading ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">Loading templates…</div>
-            ) : filteredTemplates.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">Loading models…</div>
+            ) : filteredModels.length === 0 ? (
               <div className="py-8 text-center text-sm text-muted-foreground">
-                No templates yet. Use + to compose one.
+                No models are configured in AgentConfig&apos;s `chat_models` yet.
               </div>
             ) : (
-              filteredTemplates.map((t) => (
+              filteredModels.map((m) => (
                 <button
-                  key={t.name}
+                  key={m.id}
                   type="button"
                   onClick={() => {
-                    void loadTemplate(t.name)
+                    selectModel(m)
                   }}
                   className={`w-full text-left rounded-md p-2 text-sm hover:bg-muted/40 ${
-                    selectedName === t.name ? 'bg-muted/60' : ''
+                    modelId === m.id ? 'bg-muted/60' : ''
                   }`}
                 >
-                  <div className="font-medium truncate">{t.title || t.name}</div>
-                  <div className="text-xs text-muted-foreground truncate">{t.goal || t.name}</div>
+                  <div className="font-medium truncate">{m.id}</div>
+                  <div className="text-xs text-muted-foreground truncate">{m.provider}</div>
+                  <div className="mt-1">
+                    <ModelBadges model={m} />
+                  </div>
                 </button>
               ))
             )}
@@ -328,10 +354,11 @@ export default function LLMTemplatesView() {
           <div>
             <CardTitle className="text-base font-bold flex items-center gap-2">
               <Sparkles className="size-4 text-emerald-400" />
-              {isNew ? 'New template' : (selectedName ?? 'Select a template')}
+              {selectedModel ? selectedModel.id : 'Select a model'}
             </CardTitle>
             <CardDescription>
-              Compose the model, its generation parameters, and the system prompt it runs with.
+              Model configuration from AgentConfig, plus an optional saved template (generation parameters + system
+              prompt) that pairs with it.
             </CardDescription>
           </div>
           <Button
@@ -348,6 +375,53 @@ export default function LLMTemplatesView() {
         </CardHeader>
         <ScrollArea className="flex-1">
           <CardContent className="space-y-5 pb-8">
+            {selectedModel && (
+              <div className="space-y-2 rounded-md border border-border/40 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Cpu className="h-4 w-4 text-muted-foreground" />
+                  Model configuration
+                </div>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                  <dt className="text-muted-foreground">Model id</dt>
+                  <dd className="font-mono">{selectedModel.id}</dd>
+                  <dt className="text-muted-foreground">Provider</dt>
+                  <dd>{selectedModel.provider}</dd>
+                  <dt className="text-muted-foreground">Intelligence level</dt>
+                  <dd>{selectedModel.intelligence_level}</dd>
+                  <dt className="text-muted-foreground">Context window</dt>
+                  <dd>{selectedModel.context_window ? `${String(selectedModel.context_window)} tokens` : '—'}</dd>
+                  <dt className="text-muted-foreground">Can route</dt>
+                  <dd>{selectedModel.can_route ? 'yes' : 'no'}</dd>
+                  <dt className="text-muted-foreground">Can serve KG queries</dt>
+                  <dd>{selectedModel.can_kg ? 'yes' : 'no'}</dd>
+                </dl>
+                <ModelBadges model={selectedModel} />
+              </div>
+            )}
+
+            {templates.length > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Load an existing template</label>
+                <Select
+                  value={selectedName ?? ''}
+                  onValueChange={(name) => {
+                    void loadTemplate(name)
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Pick a saved template…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templates.map((t) => (
+                      <SelectItem key={t.name} value={t.name}>
+                        {t.title || t.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {isNew && (
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground">Template name (id)</label>
@@ -381,30 +455,6 @@ export default function LLMTemplatesView() {
                   }}
                 />
               </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground">Model</label>
-              {models.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No models are configured in AgentConfig's `chat_models` yet — set one in Global Settings before a
-                  template can select it.
-                </p>
-              ) : (
-                <Select value={modelId} onValueChange={setModelId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Pick a model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {models.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.id} — {m.provider}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              {selectedModel && <ModelBadges model={selectedModel} />}
             </div>
 
             <div className="space-y-1.5">
