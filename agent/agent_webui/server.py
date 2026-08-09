@@ -1886,7 +1886,28 @@ def main() -> None:
     # existing ``AgentConfig`` -- there is no separate webui model config to
     # build here, only the wiring to the one that already exists.
     agent = Agent(build_orchestrator_model(_get_engine_bounded))
-    app = create_agent_web_app(agent, workspace_helpers={}, listener_host=host)
+    # GOC-60-W04b: this was ``workspace_helpers={}`` -- a LITERAL empty dict.
+    # All three MCP delegation routes (list_mcp_server_tools/call_mcp_tool/
+    # read_mcp_resource) resolve behaviour via ``get_helper(...)`` against
+    # this dict and answer 501 when a key is absent, so this standalone CLI
+    # entrypoint refused every fleet MCP call unconditionally -- independent
+    # of, and undetected by, the SEPARATE fix already applied at
+    # ``agent_utilities/server/app.py``'s embedded-mount caller of this same
+    # function (GOC-60 lane evidence E2, break 2: "a control wired at one
+    # entrypoint while other callers bypass it"). Reusing
+    # ``webui_mcp_delegation_helpers()`` here -- the SAME host-side
+    # implementation the embedded mount already injects -- keeps both
+    # callers of ``create_agent_web_app`` on one source of truth instead of
+    # two independent (and now provably divergent) delegation seams.
+    from agent_utilities.server.webui_mcp_delegation import (
+        webui_mcp_delegation_helpers,
+    )
+
+    app = create_agent_web_app(
+        agent,
+        workspace_helpers=webui_mcp_delegation_helpers(),
+        listener_host=host,
+    )
 
     print('Application startup complete', file=sys.stderr)
     # Uvicorn access records include the raw query string, which can contain
