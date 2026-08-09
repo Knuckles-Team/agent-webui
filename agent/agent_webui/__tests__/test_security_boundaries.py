@@ -638,9 +638,15 @@ async def _drive_http(
     from agent_utilities.core.config import config
     from agent_utilities.knowledge_graph.core.session import use_session
 
+    # All three must be set -- `_identity_enforced()` is an AND of all three, and
+    # when it is False the middleware skips every check (see `__call__`'s
+    # `if not _identity_enforced() ...: return`), which would silently admit
+    # every role and defeat the negative-control (admin-only) assertions below.
     monkeypatch.setattr(
         config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
     )
+    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False)
+    monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
 
     async def inner(_scope: dict, _receive: Any, send: Any) -> None:
         await send({'type': 'http.response.start', 'status': 200, 'headers': []})
@@ -667,9 +673,15 @@ async def _drive_ws(
     from agent_utilities.core.config import config
     from agent_utilities.knowledge_graph.core.session import use_session
 
+    # All three must be set -- `_identity_enforced()` is an AND of all three, and
+    # when it is False the middleware skips every check (see `__call__`'s
+    # `if not _identity_enforced() ...: return`), which would silently admit
+    # every role and defeat the negative-control (admin-only) assertions below.
     monkeypatch.setattr(
         config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
     )
+    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False)
+    monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
 
     reached: list[bool] = []
 
@@ -866,11 +878,12 @@ def test_ws_dashboard_scope_missing_denies_a_caller_with_no_kg_scope_at_all(
     from agent_utilities.knowledge_graph.core.session import use_session
 
     monkeypatch.setattr(
-        config,
-        'auth_jwt_jwks_uri',
-        'https://idp.invalid/certs',
-        raising=False,
+        config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
     )
+    monkeypatch.setattr(
+        config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False
+    )
+    monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
 
     session = _graph_session(roles=frozenset(), scopes=frozenset())
 
@@ -890,7 +903,8 @@ def test_ws_dashboard_scope_missing_denies_a_caller_with_no_kg_scope_at_all(
     ):
         asyncio.run(middleware(scope, receive, send))
 
-    assert send.status == 403
+    close_codes = [m['code'] for m in send.messages if m['type'] == 'websocket.close']
+    assert close_codes == [4403]
     denial_lines = [
         r.getMessage() for r in caplog.records if 'ws_denied' in r.getMessage()
     ]
