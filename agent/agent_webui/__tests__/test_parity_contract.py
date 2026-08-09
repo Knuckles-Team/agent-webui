@@ -22,6 +22,7 @@ Both failures flag a parity bug that a human must resolve.
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,30 @@ def _registered_routes() -> set[str]:
     return out
 
 
+def _tracked_or_walked_tsx_files(views_dir: Path) -> list[Path]:
+    """``.tsx`` files under ``views_dir``, preferring the git-tracked set (BUG-043).
+
+    A raw ``rglob`` also picks up gitignored, generated build output (a
+    stale bundler cache, an editor swap copy, ...), which could false-flag
+    a fetch call that no longer exists in real source. Falls back to a
+    filesystem walk only when ``views_dir`` is not inside a git working
+    tree (e.g. a synthetic test fixture).
+    """
+    try:
+        out = subprocess.run(
+            ['git', '-C', str(views_dir), 'ls-files', '--', '*.tsx'],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        tracked = [views_dir / line for line in out.splitlines() if line]
+        if tracked:
+            return sorted(p for p in tracked if p.is_file())
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    return sorted(views_dir.rglob('*.tsx'))
+
+
 def _iter_view_fetches() -> list[tuple[Path, str]]:
     """Collect ``(file, url)`` pairs for every fetch call in the views tree."""
     assert VIEWS_DIR.is_dir(), (
@@ -85,7 +110,7 @@ def _iter_view_fetches() -> list[tuple[Path, str]]:
         'Did the agent-webui package layout change?'
     )
     pairs: list[tuple[Path, str]] = []
-    for tsx in sorted(VIEWS_DIR.rglob('*.tsx')):
+    for tsx in _tracked_or_walked_tsx_files(VIEWS_DIR):
         if '__tests__' in tsx.parts:
             continue
         try:
