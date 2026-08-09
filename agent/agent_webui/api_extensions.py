@@ -1665,7 +1665,7 @@ async def set_toggle_state(
 
 
 @router.get('/tools')
-async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
+async def list_all_tools() -> dict[str, Any]:
     """Retrieve all MCP tools, built-in tools, skills, skill graphs, and workflows categorized."""
     try:
         engine = await _get_engine_bounded()
@@ -1676,43 +1676,67 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
     except Exception:
         engine = None
 
-    # 1. MCP Tools — the KG is the discovered-fleet authority (D-W5WR-4/D-WD-7
-    # follow-up): a static ``mcp_config.json`` only ever holds LOCAL
-    # process-launch config (command/args) for whatever servers happen to be
-    # declared next to this deployment, never the fleet-wide catalog the same
-    # way graph-os discovers/ingests it. Query real ``:MCPServer`` nodes
-    # first (mirrors ``get_all_prompts``/``/prompts/graph``'s established
-    # KG-authority pattern) and only fall back to the static file when the
-    # engine genuinely has none — never silently prefer the narrower source.
-    mcp_tools = []
-    if engine is not None:
-        try:
-            kg_servers = await _invoke_governed_helper(
-                engine.get_all_mcp_servers, deadline=10.0
+    # 1. MCP Tools — the multiplexer's fleet catalog is the discovered-fleet
+    # authority (GOC-60-W03/W04a). ``engine.get_all_mcp_servers()`` was called
+    # here previously; that method was never defined on ``RegistryMixin``
+    # (agent_utilities/core/registry/kg_adapter.py only ever exposed
+    # ``get_all_prompts``/``get_skills``/``get_tools``), so every call raised
+    # ``AttributeError`` that was silently swallowed into an empty list
+    # (GOC-60 lane evidence E2). ``agent_utilities.mcp.shared_multiplexer``
+    # reads the SAME dispatchable-truth catalog
+    # (``MCPMultiplexer.list_catalog``) the ``list_catalog``/``find_tools``
+    # MCP meta-tools use and the REST twin at ``/api/mcp/catalog``
+    # (GOC-60-W03) serves — strictly more accurate than either the
+    # nonexistent KG method or the static ``mcp_config.json``, which only
+    # ever holds LOCAL process-launch config for whatever servers happen to
+    # be declared next to this deployment, never the fleet-wide catalog.
+    #
+    # A missing/failed source is reported via ``mcp_status`` in the response,
+    # never silently downgraded to an indistinguishable empty list (GOC-60
+    # lane authority/invariant 1: "A missing data source is an ERROR/
+    # DEGRADED state, never []").
+    mcp_tools: list[dict[str, Any]] = []
+    mcp_source = 'multiplexer'
+    mcp_error: str | None = None
+    try:
+        from agent_utilities.mcp.shared_multiplexer import get_shared_multiplexer
+
+        mux = await get_shared_multiplexer()
+        catalog = await mux.list_catalog(server='', include_tools=False)
+        for row in list(catalog.get('servers', []))[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+            name = row.get('server')
+            if not isinstance(name, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(name):
+                continue
+            mcp_enabled = await get_toggle_state(engine, 'mcp_server', name)
+            available = row.get('available')
+            if not mcp_enabled:
+                status = 'disabled'
+            elif available is False:
+                status = 'unavailable'
+            else:
+                status = 'active'
+            mcp_tools.append(
+                {
+                    'name': name,
+                    'type': 'MCP Server',
+                    'status': status,
+                    'enabled': mcp_enabled,
+                    'tool_count': row.get('tool_count', 0),
+                    'available': available,
+                }
             )
-            for row in list(kg_servers or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-                name = row.get('name')
-                if not isinstance(name, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(
-                    name
-                ):
-                    continue
-                mcp_enabled = await get_toggle_state(engine, 'mcp_server', name)
-                if row.get('disabled'):
-                    mcp_enabled = False
-                mcp_tools.append(
-                    {
-                        'name': name,
-                        'type': 'MCP Server',
-                        'status': 'active' if mcp_enabled else 'disabled',
-                        'enabled': mcp_enabled,
-                        'tool_count': row.get('tool_count', 0),
-                    }
-                )
-        except HTTPException:
-            raise
-        except Exception as e:
-            _log_failure('api_extension', e)
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('mcp_catalog_multiplexer', e)
+        mcp_source = 'unavailable'
+        mcp_error = f'{type(e).__name__}: MCP fleet catalog unavailable'
     if not mcp_tools:
+        # Demoted, EXPLICITLY-LABELLED degraded fallback: the static
+        # ``mcp_config.json`` only ever holds LOCAL process-launch config,
+        # never the fleet-wide catalog the multiplexer discovers, so falling
+        # back to it is a visible DEGRADE (``mcp_status.source`` below), not
+        # a silent equivalent substitute for the real source.
         config_path = _mcp_inventory_path()
         if config_path is not None:
             try:
@@ -1741,10 +1765,16 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
                             'type': 'MCP Server',
                             'status': 'active' if mcp_enabled else 'disabled',
                             'enabled': mcp_enabled,
+                            'source': 'static-config-degraded',
                         }
                     )
+                if mcp_tools:
+                    mcp_source = 'static-config-degraded'
             except Exception as e:
-                _log_failure('api_extension', e)
+                _log_failure('mcp_config_static_fallback', e)
+                if mcp_error is None:
+                    mcp_error = f'{type(e).__name__}: static MCP config fallback failed'
+    mcp_status = {'source': mcp_source, 'error': mcp_error}
     # 2. Built-in Agent Tools
     builtin_tools = []
     tools_dir = get_agent_utilities_dir() / 'tools'
@@ -1809,6 +1839,7 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
 
     result = {
         'mcp_tools': mcp_tools,
+        'mcp_status': mcp_status,
         'builtin_tools': builtin_tools,
         'skills': sorted(skills, key=lambda x: x.get('name', '').lower()),
         'skill_graphs': sorted(graphs, key=lambda x: x.get('name', '').lower()),

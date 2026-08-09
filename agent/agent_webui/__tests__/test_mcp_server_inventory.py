@@ -3,22 +3,31 @@
 CONCEPT:AU-ECO.mcp.webui-mcp-server-inventory
 
 GOC-60 lane evidence E2 (break 1): ``api_extensions.list_all_tools`` called
-``engine.get_all_mcp_servers()`` -- a method ``RegistryMixin``
-(``agent_utilities/core/registry/kg_adapter.py``) never defined (it only ever
-exposed ``get_all_prompts``/``get_skills``/``get_tools``). Every call raised
-``AttributeError``, silently swallowed by a bare ``except Exception``, leaving
-``mcp_tools`` permanently ``[]`` -- "No MCP servers registered" was the
-EXPECTED steady-state output of ``GET /api/enhanced/tools``, not a transient
-outage.
+``engine.get_all_mcp_servers()`` -- at the time the lane was written,
+``RegistryMixin`` (``agent_utilities/core/registry/kg_adapter.py``) never
+defined that method (it only ever exposed ``get_all_prompts``/
+``get_skills``/``get_tools``), so every call raised ``AttributeError``,
+silently swallowed by a bare ``except Exception``, leaving ``mcp_tools``
+permanently ``[]`` -- "No MCP servers registered" was the EXPECTED
+steady-state output of ``GET /api/enhanced/tools``, not a transient outage.
+Reproduced live during this lane's RED capture (see the failing-first commit
+message for the exact ``error_type=AttributeError`` log line).
 
-``test_current_defect_registry_mixin_has_no_get_all_mcp_servers`` pins that
-the KG engine really has no such method (so a regression that re-adds a call
-to it reproduces the exact original defect). The main test in this file,
-``test_list_all_tools_sources_mcp_servers_from_the_shared_multiplexer``, is
-the RED/GREEN test: it fails against the pre-fix code (which never even
-attempts to read the shared multiplexer) and passes once
-``list_all_tools`` is wired to ``agent_utilities.mcp.shared_multiplexer``
-(GOC-60-W03/W04a).
+NOTE ON A CONCURRENT LANDING: a separate, concurrent worker independently
+added a KG-node-sourced ``get_all_mcp_servers()`` to ``RegistryMixin``
+(``agent-utilities`` commit ``a1a9f173``, "placement catalog + engine-surface
+tools") while this lane was in flight, so the method now exists on current
+``main`` -- an AttributeError-pinning test against the live class would be
+stale and is intentionally NOT kept here. This lane's fix does not call that
+method either way: it sources ``mcp_tools`` from
+``agent_utilities.mcp.shared_multiplexer`` (GOC-60-W03), which the lane's own
+evidence (E5) identifies as the more accurate source -- LIVE, per-session
+dispatchable truth derived from the same predicate the real dispatch gate
+enforces, vs. the KG method's periodically-ingested ``:MCPServer`` nodes.
+``test_list_all_tools_sources_mcp_servers_from_the_shared_multiplexer`` below
+is the RED/GREEN test: it failed against the pre-fix code (which never even
+attempted to read the shared multiplexer) and passes once ``list_all_tools``
+is wired to it (GOC-60-W03/W04a).
 """
 
 from __future__ import annotations
@@ -58,18 +67,6 @@ def install_shared_multiplexer(monkeypatch) -> Callable[[Callable[[], Any]], Non
         )
 
     return _install
-
-
-def test_current_defect_registry_mixin_has_no_get_all_mcp_servers() -> None:
-    """Pins GOC-60 evidence E2: ``get_all_mcp_servers`` was never defined on
-    the mixin the KG engine inherits from. A ``MagicMock(spec=...)`` of the
-    real engine raises ``AttributeError`` on access, exactly like production.
-    """
-    from unittest.mock import MagicMock
-
-    engine = MagicMock(spec=IntelligenceGraphEngine)
-    with pytest.raises(AttributeError):
-        _unused_attribute = engine.get_all_mcp_servers  # noqa: F841 - access alone is the assertion
 
 
 class _StubMultiplexer:
