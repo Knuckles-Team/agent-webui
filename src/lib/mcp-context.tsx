@@ -35,18 +35,31 @@ const MCPContext = createContext<MCPContextValue | undefined>(undefined)
  * `tools` is honestly always `null` today — there is no wiring to strip out
  * here, on purpose, not by omission.
  *
- * A real browser-side MCP client (`src/lib/mcp-client.ts`) and MCP Apps host
- * (`src/components/mcp/McpAppHost.tsx`) exist and are tested, but only on the
- * unmerged `feat/mcp-client-wiring` branch (based on `feat/mcp-apps-host`, off
- * `main@698ea63`) — neither branch is an ancestor of this repo's current
- * `main`, and current `main` has no `/api/enhanced/mcp/tools/call` /
- * `/api/enhanced/mcp/apps/resource` backend routes for it to call. Wiring
- * `tools` from that client here would either dangle (routes 404) or require
- * re-landing that whole branch (client + Apps host + two backend routes +
- * tests) against the auth/identity changes current `main` has since merged —
- * out of scope for this fix. Do not restore a `useState` setter here without
- * first landing that reconciliation; until then `tools` stays `null` and
- * `isLoadingTools` stays `false` (there is nothing to load).
+ * CORRECTION (GOC-60-W07, 2026-08-09): a prior version of this comment
+ * claimed the browser-side MCP client (`src/lib/mcp-client.ts`) and MCP Apps
+ * host (`src/components/mcp/McpAppHost.tsx`) plus their backend routes
+ * existed only on an unmerged `feat/mcp-client-wiring` branch. That claim is
+ * now false and actively misleading: commit `9fc394f`
+ * ("merge(webui-closeout): feat/mcp-client-wiring", 2026-08-08) merged that
+ * branch into `main` — `9fc394f` is an ancestor of current `main` — and both
+ * backend routes it names now exist (`api_extensions.py`'s
+ * `POST /api/enhanced/mcp/tools/call` and
+ * `POST /api/enhanced/mcp/apps/resource`).
+ *
+ * What is actually true today: `McpAppHost` is merged, exported, and
+ * covered by its own test (`src/components/mcp/__tests__/McpAppHost.test.tsx`),
+ * but it has **zero production render sites** — grepping `src/` for
+ * `<McpAppHost` matches only that test file. Nothing in this app currently
+ * mounts it into a real UX, and no `useMCP().tools` consumer exists either
+ * (`SkillsView.tsx` keeps its own separate `mcpTools` state fetched over
+ * REST, unrelated to this context). Deciding *how* and *where* to mount
+ * `McpAppHost` (and correspondingly wire `tools` here) is an MCP Apps
+ * consumer-UX decision this lane hands off explicitly to **GOC-26** rather
+ * than making unilaterally — see the GOC-60 lane brief's E3 finding and
+ * handoff checklist. Do not restore a `useState` setter here without first
+ * landing that decision; until then `tools` stays `null` and
+ * `isLoadingTools` stays `false` (there is nothing to load) — this is a
+ * truthfulness correction only, not a behaviour change.
  */
 export function MCPProvider({ children }: { children: ReactNode }) {
   // D-FE-3: `tools` is a deliberate, documented placeholder -- always `null`,

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import type { ReactNode } from 'react'
 import { z } from 'zod'
 import {
   Wrench,
@@ -13,6 +14,9 @@ import {
   ChevronUp,
   Sliders,
   Layers,
+  AlertTriangle,
+  HelpCircle,
+  type LucideIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -39,13 +43,22 @@ interface BuiltinTool {
   enabled: boolean
 }
 
+// `runnable` / `resource_type` / `kg_classified` come from the backend's
+// live KG lookup (GOC-60-W06 / E7: `CallableResource.resource_type` vs a
+// describe-only `WorkflowDefinition` node) -- NOT from filesystem path.
+// `resource_type` is `null` and `kg_classified` is `false` for a skill the
+// KG has no record of yet (surfaced honestly instead of guessed).
 interface Skill {
   id: string
   name: string
   description?: string
   enabled: boolean
   tags: string[]
+  domain?: string
   type: string
+  runnable?: boolean
+  resource_type?: string | null
+  kg_classified?: boolean
 }
 
 interface SkillGraph {
@@ -54,6 +67,8 @@ interface SkillGraph {
   type: string
   file_path: string
   enabled: boolean
+  domain?: string
+  tags?: string[]
 }
 
 interface SkillWorkflow {
@@ -62,6 +77,26 @@ interface SkillWorkflow {
   type: string
   file_path: string
   enabled: boolean
+  domain?: string
+  tags?: string[]
+  runnable?: boolean
+  resource_type?: string | null
+  kg_classified?: boolean
+}
+
+// GOC-60-W06b: the live filesystem-vs-KG reconciliation. Computed fresh by
+// the backend on every `/api/enhanced/tools` call so a drift between what's
+// on disk and what the KG has actually typed as runnable is always visible
+// here, not just discoverable via a one-off script.
+interface SkillClassificationSummary {
+  source: string
+  kg_reachable: boolean
+  filesystem_skill_md_count: number
+  kg_agent_skill_count: number
+  kg_workflow_definition_count: number
+  runnable_count: number
+  describe_only_count: number
+  unclassified_count: number
 }
 
 interface ToolsData {
@@ -70,6 +105,8 @@ interface ToolsData {
   skills: Skill[]
   skill_graphs: SkillGraph[]
   skill_workflows: SkillWorkflow[]
+  skill_unclassified: Skill[]
+  skill_classification: SkillClassificationSummary
 }
 
 interface LiveMCPTool {
@@ -107,7 +144,11 @@ const skillSchema: z.ZodType<Skill> = z.object({
   description: z.string().optional(),
   enabled: z.boolean(),
   tags: looseArray(z.string()),
+  domain: z.string().optional(),
   type: z.string(),
+  runnable: z.boolean().optional(),
+  resource_type: z.string().nullable().optional(),
+  kg_classified: z.boolean().optional(),
 })
 const skillGraphSchema: z.ZodType<SkillGraph> = z.object({
   id: z.string(),
@@ -115,6 +156,8 @@ const skillGraphSchema: z.ZodType<SkillGraph> = z.object({
   type: z.string(),
   file_path: z.string(),
   enabled: z.boolean(),
+  domain: z.string().optional(),
+  tags: looseArray(z.string()).optional(),
 })
 const skillWorkflowSchema: z.ZodType<SkillWorkflow> = z.object({
   id: z.string(),
@@ -122,6 +165,21 @@ const skillWorkflowSchema: z.ZodType<SkillWorkflow> = z.object({
   type: z.string(),
   file_path: z.string(),
   enabled: z.boolean(),
+  domain: z.string().optional(),
+  tags: looseArray(z.string()).optional(),
+  runnable: z.boolean().optional(),
+  resource_type: z.string().nullable().optional(),
+  kg_classified: z.boolean().optional(),
+})
+const skillClassificationSummarySchema: z.ZodType<SkillClassificationSummary> = z.object({
+  source: z.string(),
+  kg_reachable: z.boolean(),
+  filesystem_skill_md_count: z.number(),
+  kg_agent_skill_count: z.number(),
+  kg_workflow_definition_count: z.number(),
+  runnable_count: z.number(),
+  describe_only_count: z.number(),
+  unclassified_count: z.number(),
 })
 const toolsDataSchema: z.ZodType<ToolsData> = z.object({
   mcp_tools: looseArray(mcpToolSchema),
@@ -129,7 +187,177 @@ const toolsDataSchema: z.ZodType<ToolsData> = z.object({
   skills: looseArray(skillSchema),
   skill_graphs: looseArray(skillGraphSchema),
   skill_workflows: looseArray(skillWorkflowSchema),
+  skill_unclassified: looseArray(skillSchema),
+  skill_classification: skillClassificationSummarySchema,
 })
+
+// Exported for the zod round-trip test (GOC-60-W06c) -- proves `domain`/
+// `tags`/`runnable` actually survive backend-shaped JSON through the zod
+// boundary instead of being silently stripped by key-shape mismatch.
+export { skillSchema, skillGraphSchema, skillWorkflowSchema, toolsDataSchema }
+
+/** Group items by `domain` (falling back to "Uncategorized"), sorted by
+ * domain name. GOC-60-W06d: every cognitive surface is organized by domain
+ * instead of one flat unsectioned list. */
+function groupByDomain<T extends { domain?: string }>(items: T[]): [string, T[]][] {
+  const groups = new Map<string, T[]>()
+  for (const item of items) {
+    const key = item.domain && item.domain.trim() !== '' ? item.domain : 'Uncategorized'
+    const bucket = groups.get(key)
+    if (bucket) {
+      bucket.push(item)
+    } else {
+      groups.set(key, [item])
+    }
+  }
+  return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b))
+}
+
+/** Free-text match against name, domain, and tags -- keeps search working
+ * across the new grouped-by-domain layout (GOC-60-W06d). */
+function matchesSearch(query: string, name: string, domain?: string, tags?: string[]): boolean {
+  if (!query) return true
+  const q = query.toLowerCase()
+  if (name.toLowerCase().includes(q)) return true
+  if (domain?.toLowerCase().includes(q)) return true
+  if (tags?.some((t) => t.toLowerCase().includes(q))) return true
+  return false
+}
+
+/** Structural shape shared by everything a cognitive-registry box renders
+ * (Skill / SkillGraph / SkillWorkflow / unclassified Skill items). */
+interface CognitiveItem {
+  id: string
+  name: string
+  enabled: boolean
+  domain?: string
+  tags?: string[]
+  description?: string
+  file_path?: string
+  runnable?: boolean
+  resource_type?: string | null
+  kg_classified?: boolean
+}
+
+/** Shows runnability explicitly (GOC-60-W06a): a describe-only
+ * `WorkflowDefinition` is visibly distinguished from a runnable
+ * `CallableResource(AGENT_SKILL)`, and an item the KG has no record of at
+ * all reads as "Unverified in KG" rather than being silently guessed one
+ * way or the other. Renders nothing for surfaces with no KG resource-type
+ * concept at all (Skill Graphs -- `resource_type` is `undefined`, not
+ * `null`, on that shape). */
+function RunnabilityBadge({ item }: { item: CognitiveItem }) {
+  if (item.resource_type === undefined) return null
+  if (!item.kg_classified) {
+    return (
+      <Badge variant="outline" className="text-[8px] font-bold border-amber-500/40 text-amber-400 bg-amber-500/10">
+        Unverified in KG
+      </Badge>
+    )
+  }
+  return item.runnable ? (
+    <Badge variant="outline" className="text-[8px] font-bold border-emerald-500/40 text-emerald-400 bg-emerald-500/10">
+      Runnable
+    </Badge>
+  ) : (
+    <Badge variant="outline" className="text-[8px] font-bold border-sky-500/40 text-sky-400 bg-sky-500/10">
+      Describe-only
+    </Badge>
+  )
+}
+
+/** One cognitive-registry panel, organized by `domain` (GOC-60-W06d) instead
+ * of one flat unsectioned list. */
+function CognitiveBox({
+  icon: Icon,
+  iconClassName,
+  title,
+  description,
+  groups,
+  totalCount,
+  emptyLabel,
+  onToggle,
+  renderSecondary,
+}: {
+  icon: LucideIcon
+  iconClassName: string
+  title: string
+  description: string
+  groups: [string, CognitiveItem[]][]
+  totalCount: number
+  emptyLabel: string
+  onToggle: (item: CognitiveItem) => void
+  renderSecondary: (item: CognitiveItem) => ReactNode
+}) {
+  return (
+    <div className="space-y-4 border border-border/40 rounded-xl bg-card/40 p-4">
+      <div className="flex items-center gap-2 border-b border-border/20 pb-3 mb-2">
+        <Icon className={`size-5 ${iconClassName}`} />
+        <div>
+          <h3 className="font-bold text-sm text-foreground">{title}</h3>
+          <p className="text-[10px] text-muted-foreground">{description}</p>
+        </div>
+        <Badge variant="secondary" className="ml-auto px-1.5 text-[10px] bg-muted/40">
+          {totalCount}
+        </Badge>
+      </div>
+
+      <ScrollArea className="h-[calc(100vh-27rem)] pr-2">
+        {totalCount === 0 ? (
+          <div className="text-center py-6 text-xs text-muted-foreground">{emptyLabel}</div>
+        ) : (
+          <div className="space-y-4">
+            {groups.map(([domain, items]) => (
+              <div key={domain} className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{domain}</span>
+                  <span className="text-[9px] text-muted-foreground/60">({items.length})</span>
+                </div>
+                <div className="space-y-3">
+                  {items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-3.5 rounded-lg border border-border/30 bg-muted/5 hover:border-emerald-500/20 transition-all flex flex-col justify-between space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-bold text-xs text-foreground">{item.name}</span>
+                        <button
+                          onClick={() => {
+                            onToggle(item)
+                          }}
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold border shrink-0 transition-all ${
+                            item.enabled
+                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                              : 'bg-red-500/10 border-red-500/20 text-red-400'
+                          }`}
+                        >
+                          {item.enabled ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <RunnabilityBadge item={item} />
+                        {item.tags?.slice(0, 3).map((t) => (
+                          <Badge
+                            key={t}
+                            variant="secondary"
+                            className="text-[8px] bg-muted/40 font-semibold scale-90 origin-left"
+                          >
+                            {t}
+                          </Badge>
+                        ))}
+                      </div>
+                      {renderSecondary(item)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </ScrollArea>
+    </div>
+  )
+}
 
 export default function SkillsView() {
   const [data, setData] = useState<ToolsData>({
@@ -138,6 +366,17 @@ export default function SkillsView() {
     skills: [],
     skill_graphs: [],
     skill_workflows: [],
+    skill_unclassified: [],
+    skill_classification: {
+      source: 'kg_resource_type',
+      kg_reachable: true,
+      filesystem_skill_md_count: 0,
+      kg_agent_skill_count: 0,
+      kg_workflow_definition_count: 0,
+      runnable_count: 0,
+      describe_only_count: 0,
+      unclassified_count: 0,
+    },
   })
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -215,6 +454,10 @@ export default function SkillsView() {
   }
 
   const handleToggleCognitive = async (
+    // The backend keys an unclassified item's toggle preference under the
+    // same `skill` namespace it uses while KG-unverified (api_extensions.py
+    // `_get_engine_bounded`/`get_toggle_state` call for the unclassified
+    // branch) -- no separate `skill_unclassified` toggle type exists.
     type: 'skill' | 'skill_graph' | 'skill_workflow',
     id: string,
     currentVal: boolean,
@@ -288,14 +531,21 @@ export default function SkillsView() {
     }
   }
 
-  // Filters
+  // Filters -- name, domain, and tags all match (GOC-60-W06d keeps free-text
+  // search working across the new grouped-by-domain layout).
   const filteredMcp = data.mcp_tools.filter((t) => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
   const filteredBuiltin = data.builtin_tools.filter((t) => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  const filteredSkills = data.skills.filter((s) => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  const filteredGraphs = data.skill_graphs.filter((g) => g.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  const filteredWorkflows = data.skill_workflows.filter((w) =>
-    w.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  const filteredSkills = data.skills.filter((s) => matchesSearch(searchQuery, s.name, s.domain, s.tags))
+  const filteredGraphs = data.skill_graphs.filter((g) => matchesSearch(searchQuery, g.name, g.domain, g.tags))
+  const filteredWorkflows = data.skill_workflows.filter((w) => matchesSearch(searchQuery, w.name, w.domain, w.tags))
+  const filteredUnclassified = data.skill_unclassified.filter((s) =>
+    matchesSearch(searchQuery, s.name, s.domain, s.tags),
   )
+
+  const groupedSkills = groupByDomain(filteredSkills)
+  const groupedGraphs = groupByDomain(filteredGraphs)
+  const groupedWorkflows = groupByDomain(filteredWorkflows)
+  const groupedUnclassified = groupByDomain(filteredUnclassified)
 
   if (sessionExpired) {
     return <SessionExpiredNotice />
@@ -350,7 +600,11 @@ export default function SkillsView() {
                 id: 'cognitive',
                 label: 'Cognitive Skills',
                 icon: Layers,
-                count: data.skills.length + data.skill_graphs.length + data.skill_workflows.length,
+                count:
+                  data.skills.length +
+                  data.skill_graphs.length +
+                  data.skill_workflows.length +
+                  data.skill_unclassified.length,
               },
             ].map((tab) => (
               <button
@@ -574,170 +828,116 @@ export default function SkillsView() {
                   </div>
                 )}
 
-                {/* 3. Cognitive Registry - 3 Separate Side-by-Side boxes */}
+                {/* 3. Cognitive Registry - classified by the KG's own resource_type
+                    truth (GOC-60-W06 / E7), organized by domain, 4 boxes:
+                    runnable skills / skill graphs / describe-only workflows /
+                    items the KG has no record of yet. */}
                 {activeTab === 'cognitive' && (
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Box 1: Agent Skills */}
-                    <div className="space-y-4 border border-border/40 rounded-xl bg-card/40 p-4">
-                      <div className="flex items-center gap-2 border-b border-border/20 pb-3 mb-2">
-                        <Zap className="size-5 text-emerald-400" />
-                        <div>
-                          <h3 className="font-bold text-sm text-foreground">Agent Skills</h3>
-                          <p className="text-[10px] text-muted-foreground">Dynamic cognitive modular skills</p>
+                  <div className="space-y-4">
+                    {!data.skill_classification.kg_reachable && (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-amber-300">
+                        <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                        <div className="text-xs">
+                          <p className="font-bold">Knowledge Graph unreachable</p>
+                          <p className="text-amber-300/80">
+                            Skill/workflow classification could not be verified against the KG on this request. Every
+                            discovered SKILL.md is listed under &ldquo;Unclassified&rdquo; below rather than guessed
+                            from its filesystem path.
+                          </p>
                         </div>
-                        <Badge variant="secondary" className="ml-auto px-1.5 text-[10px] bg-muted/40">
-                          {filteredSkills.length}
-                        </Badge>
                       </div>
-
-                      <ScrollArea className="h-[calc(100vh-27rem)] pr-2">
-                        <div className="space-y-3">
-                          {filteredSkills.length === 0 ? (
-                            <div className="text-center py-6 text-xs text-muted-foreground">
-                              No matching skills found.
-                            </div>
-                          ) : (
-                            filteredSkills.map((skill) => (
-                              <div
-                                key={skill.id}
-                                className="p-3.5 rounded-lg border border-border/30 bg-muted/5 hover:border-emerald-500/20 transition-all flex flex-col justify-between space-y-2"
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <span className="font-bold text-xs text-foreground">{skill.name}</span>
-                                  <button
-                                    onClick={() => {
-                                      void handleToggleCognitive('skill', skill.id, skill.enabled)
-                                    }}
-                                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold border shrink-0 transition-all ${
-                                      skill.enabled
-                                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                                        : 'bg-red-500/10 border-red-500/20 text-red-400'
-                                    }`}
-                                  >
-                                    {skill.enabled ? 'ON' : 'OFF'}
-                                  </button>
-                                </div>
-                                <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">
-                                  {skill.description ?? 'No description available.'}
-                                </p>
-                                {skill.tags.length > 0 && (
-                                  <div className="flex flex-wrap gap-1">
-                                    {skill.tags.slice(0, 3).map((t) => (
-                                      <Badge
-                                        key={t}
-                                        variant="secondary"
-                                        className="text-[8px] bg-muted/40 font-semibold scale-90 origin-left"
-                                      >
-                                        {t}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </ScrollArea>
+                    )}
+                    <div className="text-[10px] text-muted-foreground px-1">
+                      <span className="font-semibold text-foreground">
+                        {data.skill_classification.filesystem_skill_md_count}
+                      </span>{' '}
+                      discovered on disk ·{' '}
+                      <span className="font-semibold text-emerald-400">
+                        {data.skill_classification.runnable_count}
+                      </span>{' '}
+                      KG-verified runnable ·{' '}
+                      <span className="font-semibold text-sky-400">
+                        {data.skill_classification.describe_only_count}
+                      </span>{' '}
+                      describe-only ·{' '}
+                      <span className="font-semibold text-amber-400">
+                        {data.skill_classification.unclassified_count}
+                      </span>{' '}
+                      unclassified
                     </div>
 
-                    {/* Box 2: Skill Graphs */}
-                    <div className="space-y-4 border border-border/40 rounded-xl bg-card/40 p-4">
-                      <div className="flex items-center gap-2 border-b border-border/20 pb-3 mb-2">
-                        <Network className="size-5 text-teal-400" />
-                        <div>
-                          <h3 className="font-bold text-sm text-foreground">Skill Graphs</h3>
-                          <p className="text-[10px] text-muted-foreground">Epistemic connection abstractions</p>
-                        </div>
-                        <Badge variant="secondary" className="ml-auto px-1.5 text-[10px] bg-muted/40">
-                          {filteredGraphs.length}
-                        </Badge>
-                      </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                      <CognitiveBox
+                        icon={Zap}
+                        iconClassName="text-emerald-400"
+                        title="Agent Skills"
+                        description="KG-verified runnable CallableResource(AGENT_SKILL)"
+                        groups={groupedSkills}
+                        totalCount={filteredSkills.length}
+                        emptyLabel="No matching skills found."
+                        onToggle={(item) => {
+                          void handleToggleCognitive('skill', item.id, item.enabled)
+                        }}
+                        renderSecondary={(item) => (
+                          <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">
+                            {item.description ?? 'No description available.'}
+                          </p>
+                        )}
+                      />
 
-                      <ScrollArea className="h-[calc(100vh-27rem)] pr-2">
-                        <div className="space-y-3">
-                          {filteredGraphs.length === 0 ? (
-                            <div className="text-center py-6 text-xs text-muted-foreground">
-                              No matching graphs found.
-                            </div>
-                          ) : (
-                            filteredGraphs.map((graph) => (
-                              <div
-                                key={graph.id}
-                                className="p-3.5 rounded-lg border border-border/30 bg-muted/5 hover:border-emerald-500/20 transition-all flex flex-col justify-between space-y-2"
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <span className="font-bold text-xs text-foreground">{graph.name}</span>
-                                  <button
-                                    onClick={() => {
-                                      void handleToggleCognitive('skill_graph', graph.id, graph.enabled)
-                                    }}
-                                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold border shrink-0 transition-all ${
-                                      graph.enabled
-                                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                                        : 'bg-red-500/10 border-red-500/20 text-red-400'
-                                    }`}
-                                  >
-                                    {graph.enabled ? 'ON' : 'OFF'}
-                                  </button>
-                                </div>
-                                <div className="text-[9px] text-muted-foreground font-mono truncate break-all">
-                                  {graph.file_path}
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </ScrollArea>
-                    </div>
+                      <CognitiveBox
+                        icon={Network}
+                        iconClassName="text-teal-400"
+                        title="Skill Graphs"
+                        description="Epistemic connection abstractions"
+                        groups={groupedGraphs}
+                        totalCount={filteredGraphs.length}
+                        emptyLabel="No matching graphs found."
+                        onToggle={(item) => {
+                          void handleToggleCognitive('skill_graph', item.id, item.enabled)
+                        }}
+                        renderSecondary={(item) => (
+                          <div className="text-[9px] text-muted-foreground font-mono truncate break-all">
+                            {item.file_path}
+                          </div>
+                        )}
+                      />
 
-                    {/* Box 3: Skill Workflows */}
-                    <div className="space-y-4 border border-border/40 rounded-xl bg-card/40 p-4">
-                      <div className="flex items-center gap-2 border-b border-border/20 pb-3 mb-2">
-                        <GitBranch className="size-5 text-green-400" />
-                        <div>
-                          <h3 className="font-bold text-sm text-foreground">Skill Workflows</h3>
-                          <p className="text-[10px] text-muted-foreground">Orchestrated execution pipelines</p>
-                        </div>
-                        <Badge variant="secondary" className="ml-auto px-1.5 text-[10px] bg-muted/40">
-                          {filteredWorkflows.length}
-                        </Badge>
-                      </div>
+                      <CognitiveBox
+                        icon={GitBranch}
+                        iconClassName="text-sky-400"
+                        title="Skill Workflows"
+                        description="KG-verified describe-only WorkflowDefinition"
+                        groups={groupedWorkflows}
+                        totalCount={filteredWorkflows.length}
+                        emptyLabel="No matching workflows found."
+                        onToggle={(item) => {
+                          void handleToggleCognitive('skill_workflow', item.id, item.enabled)
+                        }}
+                        renderSecondary={(item) => (
+                          <div className="text-[9px] text-muted-foreground font-mono truncate break-all">
+                            {item.file_path}
+                          </div>
+                        )}
+                      />
 
-                      <ScrollArea className="h-[calc(100vh-27rem)] pr-2">
-                        <div className="space-y-3">
-                          {filteredWorkflows.length === 0 ? (
-                            <div className="text-center py-6 text-xs text-muted-foreground">
-                              No matching workflows found.
-                            </div>
-                          ) : (
-                            filteredWorkflows.map((wf) => (
-                              <div
-                                key={wf.id}
-                                className="p-3.5 rounded-lg border border-border/30 bg-muted/5 hover:border-emerald-500/20 transition-all flex flex-col justify-between space-y-2"
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <span className="font-bold text-xs text-foreground">{wf.name}</span>
-                                  <button
-                                    onClick={() => {
-                                      void handleToggleCognitive('skill_workflow', wf.id, wf.enabled)
-                                    }}
-                                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold border shrink-0 transition-all ${
-                                      wf.enabled
-                                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                                        : 'bg-red-500/10 border-red-500/20 text-red-400'
-                                    }`}
-                                  >
-                                    {wf.enabled ? 'ON' : 'OFF'}
-                                  </button>
-                                </div>
-                                <div className="text-[9px] text-muted-foreground font-mono truncate break-all">
-                                  {wf.file_path}
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </ScrollArea>
+                      <CognitiveBox
+                        icon={HelpCircle}
+                        iconClassName="text-amber-400"
+                        title="Unclassified"
+                        description="On disk, but no matching KG node yet"
+                        groups={groupedUnclassified}
+                        totalCount={filteredUnclassified.length}
+                        emptyLabel="Nothing unclassified — every discovered skill has a matching KG node."
+                        onToggle={(item) => {
+                          void handleToggleCognitive('skill', item.id, item.enabled)
+                        }}
+                        renderSecondary={(item) => (
+                          <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">
+                            {item.description ?? 'No description available.'}
+                          </p>
+                        )}
+                      />
                     </div>
                   </div>
                 )}
