@@ -385,6 +385,39 @@ def _validated_bearer_header(scope: Any) -> tuple[str | None, bool]:
     return token, True
 
 
+def _log_ws_denial(scope: Any, *, reason: str, **fields: Any) -> None:
+    """Emit one distinct, greppable log line for a websocket handshake denial.
+
+    W-18: uvicorn's ``websockets``/``wsproto`` protocol implementations log
+    **every** pre-accept ``websocket.close`` identically as
+    ``"WebSocket <path>" 403`` — the ASGI ``code`` field (4400/4401/4403 here)
+    is never read for that log line, so origin, auth, scope, and role denials
+    were indistinguishable from the access log alone. ``reason`` is a stable
+    tag identifying exactly which branch fired; the keyword fields are the
+    inputs that branch evaluated. Never pass a raw token or full session
+    object here — only booleans, scope names, and role/reason strings.
+    """
+
+    origin = ''
+    host = ''
+    for key, value in scope.get('headers') or []:
+        name = key.decode('latin-1').lower()
+        if name == 'origin':
+            origin = value.decode('latin-1').strip()
+        elif name == 'host':
+            host = value.decode('latin-1').strip()
+    extra = ' '.join(f'{name}={value}' for name, value in fields.items())
+    logger.warning(
+        'agent_webui.ws_denied reason=%s path=%s origin=%s host=%s scheme=%s %s',
+        reason,
+        scope.get('path') or '',
+        origin or '<absent>',
+        host or '<absent>',
+        scope.get('scheme') or '<absent>',
+        extra,
+    )
+
+
 class _RequestBodyLimitExceeded(Exception):
     """Internal signal used by the streaming ASGI receive boundary."""
 
@@ -730,6 +763,7 @@ class WebUIAuthorizationMiddleware:
         origin_sensitive = scope_type == 'websocket' or required != 'kg:read'
         if origin_sensitive and not self._origin_allowed(scope):
             if scope_type == 'websocket':
+                _log_ws_denial(scope, reason='origin-rejected', required=required)
                 await send({'type': 'websocket.close', 'code': 4403})
             else:
                 body = b'{"detail":"Request forbidden"}'
@@ -765,6 +799,14 @@ class WebUIAuthorizationMiddleware:
                 )
                 if not role_at_least(webui_role, role_requirement):
                     if scope_type == 'websocket':
+                        _log_ws_denial(
+                            scope,
+                            reason='webui-role-insufficient',
+                            required_scope=required,
+                            required_role=role_requirement,
+                            resolved_role=webui_role,
+                            scopes=','.join(sorted(scopes)) or '<none>',
+                        )
                         await send({'type': 'websocket.close', 'code': 4403})
                         return
                     body = b'{"detail":"Request forbidden"}'
@@ -784,6 +826,13 @@ class WebUIAuthorizationMiddleware:
             return
 
         if scope_type == 'websocket':
+            _log_ws_denial(
+                scope,
+                reason='scope-missing',
+                required=required,
+                session_resolved=session is not None,
+                scopes=','.join(sorted(scopes)) or '<none>',
+            )
             await send({'type': 'websocket.close', 'code': 4403})
             return
         body = b'{"detail":"Request forbidden"}'
@@ -983,14 +1032,30 @@ def _ensure_actor_identity_middleware(
             from agent_utilities.core.config import config
 
             if not valid_credential:
+                # W-18: a raw Authorization header was present but was not
+                # exactly one bounded `Bearer <token>` value — distinct from
+                # "no credential at all" below, since it means SOMETHING
+                # (a service client, or a corrupted cookie-derived header
+                # forwarded by OIDCBrowserSessionMiddleware) sent a header
+                # that failed the shape check.
+                _log_ws_denial(scope, reason='malformed-bearer-header')
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
 
             if token and not config.auth_jwt_jwks_uri:
+                _log_ws_denial(scope, reason='verifier-unconfigured')
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
             if not token:
                 if _identity_enforced():
+                    # W-18: no Authorization header reached this middleware at
+                    # all. For a browser session this means
+                    # OIDCBrowserSessionMiddleware did not forward a bearer —
+                    # most commonly because no usable session cookie arrived
+                    # on the websocket handshake (missing, expired with a
+                    # failed refresh, or never established). Check the cookie
+                    # delivery path first when this reason fires repeatedly.
+                    _log_ws_denial(scope, reason='no-credential-resolved')
                     await send({'type': 'websocket.close', 'code': 4401})
                     return
                 await self.app(scope, receive, send)
@@ -999,7 +1064,12 @@ def _ensure_actor_identity_middleware(
             try:
                 actor = await actor_from_bearer_token(token)
                 session = mint_graph_session(actor)
-            except Exception:  # noqa: BLE001 - any credential failure is denied
+            except Exception as exc:  # noqa: BLE001 - any credential failure is denied
+                _log_ws_denial(
+                    scope,
+                    reason='credential-verification-failed',
+                    error_type=type(exc).__name__,
+                )
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
 
