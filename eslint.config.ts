@@ -32,6 +32,12 @@ export default defineConfig(
       // (their own tooling/tsconfig), so the typed lint can't resolve them.
       'e2e/**',
       'playwright.config.ts',
+      // scripts/ (pre-commit hook entries, GOC-28's no-fabrication gate) is
+      // plain Node ESM run directly via `node scripts/*.mjs`, not part of
+      // `tsconfig.json`'s `include` -- same "outside the TS build project"
+      // reason as e2e/ above, not a suppression of anything real (scripts/
+      // previously held only .py files, which eslint never covered anyway).
+      'scripts/**',
       'commitlint.config.js',
       'vitest.config.ts',
       'vite.config.ts',

@@ -96,6 +96,23 @@ repos:
     args: ["."]
     pass_filenames: false
     always_run: true
+  - id: no-fabrication-gate
+    name: no-fabrication gate — Ecosystem view (BUG-008 / GOC-28)
+    # Static scan rejecting fabricated operational state in production paths
+    # this lane owns (EcosystemView.tsx and its widgets): Math.random()-based
+    # ids/metrics, numeric `??` fallbacks standing in for real telemetry, and
+    # setTimeout-driven fake async-completion toasts. See the script's own
+    # header for the full rationale, scope boundary (this lane's files only —
+    # other GOC-28/GOC-60 workers are concurrently editing nav-registry.ts /
+    # SkillsView.tsx / GraphView.tsx / server.py / api_extensions.py in this
+    # same repo right now), and the allowlist mechanism for reviewed
+    # exceptions. Cheap (no tsc/vite needed) — runs standalone in addition to
+    # being the first step of `pnpm build` (below) so a fabrication is caught
+    # before the heavier build even starts.
+    entry: bash -c 'node scripts/no_fabrication_gate.mjs'
+    language: system
+    pass_filenames: false
+    always_run: true
   - id: pnpm-build
     name: pnpm build
     # D-FE-7/D-WD-5: a `git worktree` checkout gets no `node_modules` of its

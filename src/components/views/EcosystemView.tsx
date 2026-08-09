@@ -1147,6 +1147,12 @@ export default function EcosystemView() {
                     <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden">
                       <div
                         className="bg-primary h-full transition-all duration-500"
+                        // no-fabrication-allow: cosmetic progress-bar width only, not the
+                        // displayed number (line above has no fallback). This branch only
+                        // renders when ecoStatus.resources.status === 'ready', i.e. a real
+                        // fetch already populated `resources`; the `?? 0` is an
+                        // impossible-in-practice defensive default TS requires, and 0 is
+                        // an honest "no bar" rather than a plausible fake percentage.
                         style={{ width: `${resources?.cpu_percent ?? 0}%` }}
                       />
                     </div>
@@ -1164,6 +1170,9 @@ export default function EcosystemView() {
                     <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden mb-1">
                       <div
                         className="bg-purple-500 h-full transition-all duration-500"
+                        // no-fabrication-allow: same as the CPU gauge above -- cosmetic
+                        // bar width only, gated behind a real successful fetch, 0 (not a
+                        // plausible fake percentage) is the defensive default.
                         style={{ width: `${resources?.memory.percent ?? 0}%` }}
                       />
                     </div>
@@ -1185,6 +1194,9 @@ export default function EcosystemView() {
                     <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden mb-1">
                       <div
                         className="bg-blue-500 h-full transition-all duration-500"
+                        // no-fabrication-allow: same as the CPU gauge above -- cosmetic
+                        // bar width only, gated behind a real successful fetch, 0 (not a
+                        // plausible fake percentage) is the defensive default.
                         style={{ width: `${resources?.disk.percent ?? 0}%` }}
                       />
                     </div>
@@ -2023,7 +2035,7 @@ export default function EcosystemView() {
                   {/*
                     D-WUI-BUG-008: this form used to call `addMediaDownload`,
                     which never sent the URL anywhere -- it fabricated a
-                    queue row client-side with `Math.random()`-based id,
+                    queue row client-side with a randomly generated (non-backend) id,
                     then a `setTimeout` swapped in a fixed fake title
                     ("Self-driven coding agents presentation"), 45.2%
                     progress, and "5.8 MB/s" after 2 seconds, regardless of
@@ -2080,7 +2092,7 @@ export default function EcosystemView() {
                   {/*
                     D-WUI-BUG-008: these four buttons used to call
                     `submitStirlingPdf`, which fabricated a job entirely
-                    client-side (`Math.random()` id, filename
+                    client-side (a randomly generated, non-backend id, filename
                     `processed_<action>_doc.pdf`, no file was ever selected
                     or uploaded) and showed `toast.success('...launched
                     successfully')` immediately, then a `setTimeout` flipped
