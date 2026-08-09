@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import sys
+import time
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Any
@@ -37,8 +38,22 @@ from .api_extensions import (
     set_workspace_helpers,
     sync_work_status,
 )
+from .observability import (
+    CORRELATION_RESPONSE_HEADER,
+    configure_logging,
+    current_correlation_id,
+    new_error_id,
+)
 
 logger = logging.getLogger(__name__)
+
+# LANE F: structured, level-configurable logging for the WHOLE `agent_webui.*`
+# namespace (AGENT_WEBUI_LOG_LEVEL / AGENT_WEBUI_LOG_FORMAT — see
+# observability.py). Installed at import time, mirroring the existing
+# `_LOGFIRE_ENABLED` pattern immediately below, so every log line this module
+# and its submodules emit — including the ones production `kubectl logs`
+# previously never saw — is structured and JSON-capable from process start.
+configure_logging()
 
 _LOGFIRE_ENABLED = os.getenv('AGENT_WEBUI_LOGFIRE_ENABLED', '').strip().lower() in {
     '1',
@@ -571,6 +586,72 @@ class RequestBodyLimitMiddleware:
         await send({'type': 'http.response.body', 'body': body})
 
 
+def _denial_request_metadata(scope: Any) -> dict[str, Any]:
+    """Extract the non-secret request/connection metadata a deny-branch log
+    line needs to be diagnosable: origin, host, and scheme. Never reads
+    Authorization, Cookie, or any other credential-bearing header.
+    """
+    origin = None
+    host = None
+    for key, value in scope.get('headers') or []:
+        name = key.decode('latin-1').lower()
+        if name == 'origin':
+            origin = value.decode('latin-1').strip()
+        elif name == 'host':
+            host = value.decode('latin-1').strip()
+    return {
+        'method': str(
+            scope.get('method') or ('WS' if scope.get('type') == 'websocket' else '')
+        ),
+        'path': str(scope.get('path') or ''),
+        'scope_type': str(scope.get('type') or ''),
+        'origin': origin,
+        'host': host,
+        'scheme': str(scope.get('scheme') or ''),
+    }
+
+
+def _log_denial(
+    scope: Any,
+    *,
+    event: str,
+    reason: str,
+    session: Any = None,
+    **extra_fields: Any,
+) -> None:
+    """Log WHY a request/connection was denied, with the evaluated inputs.
+
+    LANE F item 3: a generic 403 / ``websocket.close code=4403`` collapses at
+    least three different denial reasons (bad origin, missing KG scope,
+    insufficient WebUI role) into one indistinguishable outcome — this is the
+    single call site every deny branch in ``WebUIAuthorizationMiddleware``
+    and ``WebUIActorIdentityMiddleware`` routes through, so the reason and
+    the inputs that produced it are always in the log, never just the status
+    code. Only metadata is logged (origin/host/scheme, resolved scope/role
+    NAMES, whether a session resolved at all) — never a token, secret, or
+    cookie value; the caller-supplied ``extra_fields`` must follow the same
+    rule.
+    """
+    metadata = _denial_request_metadata(scope)
+    scopes = sorted(session.scopes) if session is not None and session.scopes else []
+    payload: dict[str, Any] = {
+        'event': event,
+        'reason': reason,
+        'session_resolved': session is not None,
+        'resolved_scopes': scopes,
+        **metadata,
+        **extra_fields,
+    }
+    logger.warning(
+        '%s denied: reason=%s method=%s path=%s',
+        event,
+        reason,
+        metadata['method'],
+        metadata['path'],
+        extra=payload,
+    )
+
+
 class WebUIAuthorizationMiddleware:
     """Require graph scopes for every authenticated HTTP/websocket route."""
 
@@ -729,6 +810,13 @@ class WebUIAuthorizationMiddleware:
                 required = 'kg:write'
         origin_sensitive = scope_type == 'websocket' or required != 'kg:read'
         if origin_sensitive and not self._origin_allowed(scope):
+            _log_denial(
+                scope,
+                event='authorization',
+                reason='origin_not_allowed',
+                session=current_session(),
+                required_scope=required,
+            )
             if scope_type == 'websocket':
                 await send({'type': 'websocket.close', 'code': 4403})
             else:
@@ -764,6 +852,15 @@ class WebUIAuthorizationMiddleware:
                     authenticated=bool(getattr(actor, 'authenticated', False)),
                 )
                 if not role_at_least(webui_role, role_requirement):
+                    _log_denial(
+                        scope,
+                        event='authorization',
+                        reason='webui_role_insufficient',
+                        session=session,
+                        required_scope=required,
+                        webui_role_required=role_requirement,
+                        webui_role_resolved=webui_role,
+                    )
                     if scope_type == 'websocket':
                         await send({'type': 'websocket.close', 'code': 4403})
                         return
@@ -783,6 +880,13 @@ class WebUIAuthorizationMiddleware:
             await self._call_with_transport_bounds(scope, receive, send)
             return
 
+        _log_denial(
+            scope,
+            event='authorization',
+            reason='kg_scope_missing',
+            session=session,
+            required_scope=required,
+        )
         if scope_type == 'websocket':
             await send({'type': 'websocket.close', 'code': 4403})
             return
@@ -798,6 +902,124 @@ class WebUIAuthorizationMiddleware:
             }
         )
         await send({'type': 'http.response.body', 'body': body})
+
+
+class RequestObservabilityMiddleware:
+    """HTTP access logging + correlation-id binding for every request.
+
+    LANE F item 1 (the biggest gap): before this, ``kubectl logs`` on the
+    running pod showed WebSocket protocol lines only — nothing logged HTTP
+    requests at all, so a reported 503, a "shape violation", or a 405 was
+    invisible server-side. Mounted OUTERMOST (see ``create_agent_web_app`` —
+    it is the LAST ``add_middleware`` call, and ``add_middleware`` prepends,
+    so later == more outer), so it observes every request/connection
+    regardless of outcome: rate-limited, auth-denied deeper in the stack, or
+    routed and served.
+
+    Also binds a correlation id for the request's lifetime — REUSING
+    ``agent_utilities.observability.correlation`` rather than inventing a
+    parallel id scheme (item 2). An inbound ``x-correlation-id`` header is
+    honoured (so a browser or an upstream proxy can supply one); otherwise a
+    fresh id is minted. Because this middleware is outermost, every inner
+    layer (authorization/identity denial logging, route handlers, and any
+    downstream graph-os call the request triggers via
+    ``correlation.inject()``) runs inside the SAME bound contextvar and logs
+    the SAME id. The id is also echoed back as a response header so a
+    browser-side failure report can be grepped straight to its server-side
+    log lines.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        scope_type = scope.get('type')
+        if scope_type not in {'http', 'websocket'}:
+            await self.app(scope, receive, send)
+            return
+
+        from agent_utilities.observability.correlation import (
+            CORRELATION_HEADER,
+            bind_carrier,
+        )
+
+        inbound_correlation_id = None
+        for key, value in scope.get('headers') or []:
+            if key.decode('latin-1').lower() == CORRELATION_HEADER:
+                inbound_correlation_id = value.decode('latin-1').strip()
+                break
+
+        method = str(scope.get('method') or '') if scope_type == 'http' else 'WS'
+        path = str(scope.get('path') or '')
+        is_liveness = path in _PUBLIC_LIVENESS_PATHS
+        status_box: dict[str, Any] = {'status': None}
+
+        with bind_carrier(
+            {CORRELATION_HEADER: inbound_correlation_id}
+            if inbound_correlation_id
+            else None
+        ) as correlation_id:
+
+            async def observed_send(message: dict[str, Any]) -> None:
+                if message.get('type') == 'http.response.start':
+                    status_box['status'] = int(message.get('status', 0))
+                    headers = [*(message.get('headers') or [])]
+                    headers.append(
+                        (
+                            CORRELATION_RESPONSE_HEADER.encode('ascii'),
+                            correlation_id.encode('ascii'),
+                        )
+                    )
+                    message = {**message, 'headers': headers}
+                elif message.get('type') == 'websocket.close':
+                    status_box['status'] = int(message.get('code', 1000))
+                elif (
+                    message.get('type') == 'websocket.accept'
+                    and status_box['status'] is None
+                ):
+                    status_box['status'] = 'accepted'
+                await send(message)
+
+            start = time.perf_counter()
+            log_fields = {
+                'event': 'http_request'
+                if scope_type == 'http'
+                else 'websocket_connection',
+                'method': method,
+                'path': path,
+                'correlation_id': correlation_id,
+            }
+            try:
+                await self.app(scope, receive, observed_send)
+            except Exception:
+                log_fields['status'] = 'error'
+                log_fields['duration_ms'] = round(
+                    (time.perf_counter() - start) * 1000, 2
+                )
+                logger.error(
+                    '%s %s -> error (%sms)',
+                    method,
+                    path,
+                    log_fields['duration_ms'],
+                    exc_info=True,
+                    extra=log_fields,
+                )
+                raise
+            log_fields['status'] = status_box['status']
+            log_fields['duration_ms'] = round((time.perf_counter() - start) * 1000, 2)
+            # Liveness probes fire every few seconds and are not diagnostically
+            # interesting in steady state; keep them out of INFO to avoid
+            # drowning real request logs, but never drop them outright.
+            level = logging.DEBUG if is_liveness else logging.INFO
+            logger.log(
+                level,
+                '%s %s -> %s (%sms)',
+                method,
+                path,
+                log_fields['status'],
+                log_fields['duration_ms'],
+                extra=log_fields,
+            )
 
 
 def _is_loopback_listener(host: str) -> bool:
@@ -954,6 +1176,11 @@ def _ensure_actor_identity_middleware(
             token, valid_credential = _validated_bearer_header(scope)
             if scope_type == 'http':
                 if not valid_credential:
+                    _log_denial(
+                        scope,
+                        event='authentication',
+                        reason='malformed_or_multiple_authorization_header',
+                    )
                     body = b'{"detail":"Authentication required"}'
                     await send(
                         {
@@ -983,14 +1210,25 @@ def _ensure_actor_identity_middleware(
             from agent_utilities.core.config import config
 
             if not valid_credential:
+                _log_denial(
+                    scope,
+                    event='authentication',
+                    reason='malformed_or_multiple_authorization_header',
+                )
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
 
             if token and not config.auth_jwt_jwks_uri:
+                _log_denial(scope, event='authentication', reason='jwks_not_configured')
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
             if not token:
                 if _identity_enforced():
+                    _log_denial(
+                        scope,
+                        event='authentication',
+                        reason='credential_required_none_presented',
+                    )
                     await send({'type': 'websocket.close', 'code': 4401})
                     return
                 await self.app(scope, receive, send)
@@ -1000,6 +1238,11 @@ def _ensure_actor_identity_middleware(
                 actor = await actor_from_bearer_token(token)
                 session = mint_graph_session(actor)
             except Exception:  # noqa: BLE001 - any credential failure is denied
+                _log_denial(
+                    scope,
+                    event='authentication',
+                    reason='credential_verification_failed',
+                )
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
 
@@ -1042,9 +1285,13 @@ def _ensure_actor_identity_middleware(
             try:
                 session = mint_graph_session(actor)
             except SessionExpiredError:
+                _log_denial(scope, event='authentication', reason='session_expired')
                 await _send_json(send, 401, {'error': 'Bearer credential expired'})
                 return
             except PermissionError:
+                _log_denial(
+                    scope, event='authentication', reason='tenant_claim_required'
+                )
                 await _send_json(send, 403, {'error': 'Verified tenant claim required'})
                 return
             try:
@@ -1055,6 +1302,7 @@ def _ensure_actor_identity_middleware(
                     reset_actor(actor_token)
                     raise
             except (CredentialExpiredError, SessionExpiredError):
+                _log_denial(scope, event='authentication', reason='session_expired')
                 await _send_json(send, 401, {'error': 'Bearer credential expired'})
                 return
 
@@ -1312,12 +1560,33 @@ def create_agent_web_app(
 
     @app.exception_handler(Exception)
     async def _privacy_safe_unhandled_error(_request, exc: Exception):
-        """Keep unexpected exception values out of responses and server logs."""
+        """Keep unexpected exception values out of the RESPONSE (still 'Internal
+        request failed' — no exception text reaches the client), but capture the
+        full traceback server-side against a stable id the response DOES carry.
 
-        logger.error('Unhandled request failed: error_type=%s', type(exc).__name__)
+        LANE F item 4: previously the traceback was discarded entirely
+        (`error_type=%s` only), so a user-reported failure had nothing to grep
+        logs for. The id returned here is the ambient correlation id whenever a
+        request bound one (RequestObservabilityMiddleware, outermost) so the
+        same id already in every access-log line for this request also finds
+        the error — falling back to a fresh id only if none was bound.
+        """
+
+        error_id = current_correlation_id() or new_error_id()
+        logger.error(
+            'Unhandled request failed (error_id=%s, error_type=%s)',
+            error_id,
+            type(exc).__name__,
+            exc_info=exc,
+            extra={
+                'event': 'unhandled_exception',
+                'error_id': error_id,
+                'error_type': type(exc).__name__,
+            },
+        )
         return JSONResponse(
             status_code=500,
-            content={'detail': 'Internal request failed'},
+            content={'detail': 'Internal request failed', 'error_id': error_id},
         )
 
     @app.get('/api/enhanced/security/doctor')
@@ -1495,6 +1764,17 @@ def create_agent_web_app(
         app,
         content_security_policy=content_security_policy,
     )
+    # LANE F: mounted LAST (add_middleware prepends, so this is the OUTERMOST
+    # layer — see RequestObservabilityMiddleware's own docstring). It must sit
+    # outside every other middleware so it observes and logs EVERY request,
+    # including ones the rate limiter, the authorization gate, or the identity
+    # boundary reject before a route is ever reached — those are exactly the
+    # requests the motivating gap (no HTTP access logging at all) hid.
+    if not any(
+        getattr(middleware, 'cls', None) is RequestObservabilityMiddleware
+        for middleware in app.user_middleware
+    ):
+        app.add_middleware(RequestObservabilityMiddleware)
     return app
 
 
