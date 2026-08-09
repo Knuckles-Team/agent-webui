@@ -496,6 +496,14 @@ class StrictHostHeaderMiddleware:
             or any(byte < 0x20 or byte == 0x7F for byte in hosts[0])
         ):
             if scope_type == 'websocket':
+                # W-18: this 4400 sits UPSTREAM of every other websocket denial
+                # and was the one site the first instrumentation pass missed, so
+                # a rejection here still looked like an unexplained bare 403.
+                _log_ws_denial(
+                    scope,
+                    reason='invalid-host-header',
+                    host_header_count=len(hosts),
+                )
                 await send({'type': 'websocket.close', 'code': 4400})
             else:
                 body = b'{"detail":"Invalid host header"}'
