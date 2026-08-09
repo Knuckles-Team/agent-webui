@@ -39,9 +39,28 @@ const graphStatsSchema = z.object({
   total_relationships: z.number().default(0),
 })
 
+/**
+ * W-12: the backend's `HealthReport` (`agent_utilities.observability.
+ * runtime_health.collect_health`, the ONE implementation shared by
+ * `/api/dashboard/health`, the top-level `/health`, and the MCP `graph_health`
+ * tool) types `checks` as `list[HealthCheck]` — an ARRAY of `{name, status,
+ * reason?, latency_ms?, detail?}` objects, not a `name -> value` map. The
+ * schema previously declared here (`z.record(...)`) never matched what any of
+ * those transports actually return, which is why every request failed with
+ * "API shape violation ... (checks: Invalid input)". Mirror the true,
+ * documented contract instead of loosening it to `z.unknown()`.
+ */
+const healthCheckSchema = z.object({
+  name: z.string(),
+  status: z.string(),
+  reason: z.string().optional(),
+  latency_ms: z.number().optional(),
+  detail: z.record(z.string(), z.unknown()).optional(),
+})
+
 const healthSchema = z.object({
   status: z.string().optional(),
-  checks: z.record(z.string(), z.unknown()).optional(),
+  checks: looseArray(healthCheckSchema).optional(),
 })
 
 /* ── One tile's fetch/render state ── */
@@ -116,7 +135,16 @@ export default function DefaultOverviewPanel() {
     const flag = { cancelled: false }
 
     void (async () => {
-      const r = await apiGet('/enhanced/prompts/graph', looseArray(z.unknown()))
+      // W-10: this MUST read the same source the Prompts Registry
+      // (`PromptsView.tsx`) lists from — `/api/enhanced/prompts`, the
+      // file-based store under `agent_utilities/prompts/`. The KG-backed
+      // `/enhanced/prompts/graph` endpoint used here previously is a DIFFERENT
+      // store (`engine.get_all_prompts()`, CONCEPT:WU-KG.compute.prompt-management-ahe-rollback)
+      // that falls back to a single synthesized "System Prompt" placeholder
+      // whenever the KG engine call fails or is empty — which is exactly why
+      // this tile showed "1" while the registry showed several: two counts of
+      // two different collections, not a filter on the same one.
+      const r = await apiGet('/enhanced/prompts', looseArray(z.unknown()))
       if (flag.cancelled) return
       setPrompts(
         r.ok && r.data
@@ -175,7 +203,7 @@ export default function DefaultOverviewPanel() {
       const r = await apiGet('/dashboard/health', healthSchema)
       if (flag.cancelled) return
       const status = r.ok && r.data ? (r.data.status ?? 'unknown') : null
-      const checkCount = r.ok && r.data?.checks ? Object.keys(r.data.checks).length : 0
+      const checkCount = r.ok && r.data?.checks ? r.data.checks.length : 0
       setHealth(
         status
           ? {

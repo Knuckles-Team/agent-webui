@@ -33,7 +33,10 @@ describe('DefaultOverviewPanel', () => {
 
   it('renders real counts from every backing surface when all succeed', async () => {
     global.fetch = mockFetch({
-      '/api/enhanced/prompts/graph': { body: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] },
+      // W-10: the "System Prompts" tile reads the SAME store as the Prompts
+      // Registry (`/api/enhanced/prompts`), not the separate KG-backed
+      // `/api/enhanced/prompts/graph` collection.
+      '/api/enhanced/prompts': { body: [{ name: 'a' }, { name: 'b' }, { name: 'c' }] },
       '/api/enhanced/tools': {
         body: {
           mcp_tools: [{ name: 'x' }],
@@ -45,7 +48,18 @@ describe('DefaultOverviewPanel', () => {
       },
       '/api/enhanced/llm/models': { body: [{ id: 'gpt' }, { id: 'claude' }] },
       '/api/enhanced/graph/stats': { body: { total_nodes: 43579, total_relationships: 91000, by_type: {} } },
-      '/api/dashboard/health': { body: { status: 'ok', checks: { engine: 'ok', kg: 'ok' } } },
+      // `checks` is an ARRAY of HealthCheck objects (the real
+      // `agent_utilities.observability.runtime_health.HealthReport` shape,
+      // W-12) — not a `name -> status` map.
+      '/api/dashboard/health': {
+        body: {
+          status: 'ok',
+          checks: [
+            { name: 'engine', status: 'ok' },
+            { name: 'kg', status: 'ok' },
+          ],
+        },
+      },
     }) as unknown as typeof fetch
 
     render(<DefaultOverviewPanel />)
@@ -63,13 +77,13 @@ describe('DefaultOverviewPanel', () => {
 
   it('marks a tile unavailable — never a fabricated zero — when its backend call fails', async () => {
     global.fetch = mockFetch({
-      '/api/enhanced/prompts/graph': { body: [] },
+      '/api/enhanced/prompts': { body: [] },
       '/api/enhanced/tools': {
         body: { mcp_tools: [], builtin_tools: [], skills: [], skill_graphs: [], skill_workflows: [] },
       },
       '/api/enhanced/llm/models': { body: [] },
       '/api/enhanced/graph/stats': { status: 503 }, // D-W6-10: a real backend failure
-      '/api/dashboard/health': { body: { status: 'degraded', checks: {} } },
+      '/api/dashboard/health': { body: { status: 'degraded', checks: [] } },
     }) as unknown as typeof fetch
 
     render(<DefaultOverviewPanel />)
