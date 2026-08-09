@@ -1664,6 +1664,77 @@ async def set_toggle_state(
         raise HTTPException(status_code=500, detail='Unable to persist toggle') from e
 
 
+async def _fetch_kg_skill_classification(engine: Any) -> dict[str, Any]:
+    """Batch-query the KG once for the runnability truth used to classify every
+    discovered ``SKILL.md`` (GOC-60-W06 / E7).
+
+    The KG's ``CallableResource(resource_type='AGENT_SKILL')`` shape is what the
+    delegation binder actually requires to RUN a skill; a bare
+    ``WorkflowDefinition`` node (KG-2.97 ingestion,
+    ``docs/architecture/skill_workflow_ingestion.md``) can only be described, not
+    executed. Filesystem path (a literal ``workflows`` path segment) asserts
+    nothing about either and MUST NOT be used to decide the bucket — lane
+    invariant 4 ("KG resource_type is the authority for whether a skill is
+    runnable. Filesystem path is not evidence and may not be used for
+    classification.").
+
+    Both lookups are single batched Cypher calls (never a per-item round trip
+    — see AGENTS.md "batch every engine call"). A query failure is reported as
+    ``kg_reachable=False``, never silently treated as "no matching nodes": the
+    caller must render an explicit unclassified/unverified state rather than
+    falling back to the old path heuristic (lane invariant 1 + 5 — a missing
+    data source is a typed unavailable state, never a silent guess).
+    """
+
+    agent_skill_names: set[str] = set()
+    workflow_def_names: set[str] = set()
+    kg_reachable = False
+    if engine is None:
+        return {
+            'agent_skill_names': agent_skill_names,
+            'workflow_def_names': workflow_def_names,
+            'kg_reachable': kg_reachable,
+        }
+    try:
+        skill_rows = await _invoke_governed_helper(
+            engine.query_cypher,
+            "MATCH (s:CallableResource) WHERE s.resource_type = 'AGENT_SKILL' "
+            'RETURN s.name AS name',
+            {},
+            deadline=10.0,
+        )
+        for row in skill_rows or []:
+            name = row.get('name') if isinstance(row, dict) else None
+            if isinstance(name, str) and name:
+                agent_skill_names.add(name.strip().lower())
+
+        workflow_rows = await _invoke_governed_helper(
+            engine.query_cypher,
+            "MATCH (w:WorkflowDefinition) WHERE w.source = 'universal-skills' "
+            'RETURN w.name AS name',
+            {},
+            deadline=10.0,
+        )
+        for row in workflow_rows or []:
+            name = row.get('name') if isinstance(row, dict) else None
+            if isinstance(name, str) and name:
+                workflow_def_names.add(name.strip().lower())
+
+        kg_reachable = True
+    except HTTPException as e:
+        if e.status_code == 503:
+            raise
+        _log_failure('classify_skills_via_kg', e)
+    except Exception as e:
+        _log_failure('classify_skills_via_kg', e)
+
+    return {
+        'agent_skill_names': agent_skill_names,
+        'workflow_def_names': workflow_def_names,
+        'kg_reachable': kg_reachable,
+    }
+
+
 @router.get('/tools')
 async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
     """Retrieve all MCP tools, built-in tools, skills, skill graphs, and workflows categorized."""
@@ -1765,9 +1836,17 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
                 }
             )
 
-    # 3. Skills & Workflows from installed packages
+    # 3. Skills & Workflows from installed packages — classified by the KG's own
+    # CallableResource/WorkflowDefinition truth (GOC-60-W06 / E7), not by
+    # filesystem path. See ``_fetch_kg_skill_classification`` docstring.
     skills: list[dict[str, Any]] = []
     workflows: list[dict[str, Any]] = []
+    unclassified: list[dict[str, Any]] = []
+    filesystem_skill_md_count = 0
+    kg_index = await _fetch_kg_skill_classification(engine)
+    agent_skill_names = kg_index['agent_skill_names']
+    workflow_def_names = kg_index['workflow_def_names']
+    kg_reachable = kg_index['kg_reachable']
     univ_skills_dir = (
         get_skills_packages_dir() / 'universal-skills' / 'universal_skills'
     )
@@ -1775,23 +1854,46 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
         for index, p in enumerate(univ_skills_dir.glob('**/SKILL.md')):
             if index >= _MAX_LIST_FILES:
                 break
+            filesystem_skill_md_count += 1
             skill_info = _parse_skill_md(p)
-            if 'workflows' in p.parts:
+            lookup_name = str(skill_info.get('name', '')).strip().lower()
+            is_agent_skill = kg_reachable and lookup_name in agent_skill_names
+            is_workflow_def = kg_reachable and lookup_name in workflow_def_names
+            skill_info['kg_classified'] = bool(is_agent_skill or is_workflow_def)
+
+            if is_agent_skill:
+                if len(skills) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                    continue
+                skill_info['type'] = 'Agent Skill'
+                skill_info['resource_type'] = 'AGENT_SKILL'
+                skill_info['runnable'] = True
+                skill_info['enabled'] = await get_toggle_state(
+                    engine, 'skill', skill_info['id']
+                )
+                skills.append(skill_info)
+            elif is_workflow_def:
                 if len(workflows) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
                     continue
                 skill_info['type'] = 'Skill Workflow'
+                skill_info['resource_type'] = 'WORKFLOW_DEFINITION'
+                skill_info['runnable'] = False
                 skill_info['enabled'] = await get_toggle_state(
                     engine, 'skill_workflow', skill_info['id']
                 )
                 workflows.append(skill_info)
             else:
-                if len(skills) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                # No matching KG node (either genuinely un-ingested, or the KG
+                # was unreachable this request) — report it explicitly rather
+                # than guessing a bucket from its path (lane invariant 4/5).
+                if len(unclassified) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
                     continue
-                skill_info['type'] = 'Agent Skill'
+                skill_info['type'] = 'Unclassified'
+                skill_info['resource_type'] = None
+                skill_info['runnable'] = False
                 skill_info['enabled'] = await get_toggle_state(
                     engine, 'skill', skill_info['id']
                 )
-                skills.append(skill_info)
+                unclassified.append(skill_info)
 
     # 4. Skill Graphs
     graphs = []
@@ -1813,6 +1915,23 @@ async def list_all_tools() -> dict[str, list[dict[str, Any]]]:
         'skills': sorted(skills, key=lambda x: x.get('name', '').lower()),
         'skill_graphs': sorted(graphs, key=lambda x: x.get('name', '').lower()),
         'skill_workflows': sorted(workflows, key=lambda x: x.get('name', '').lower()),
+        'skill_unclassified': sorted(
+            unclassified, key=lambda x: x.get('name', '').lower()
+        ),
+        # Live filesystem-vs-KG reconciliation (GOC-60-W06b): computed fresh on
+        # every call, so a drift between what's on disk and what the KG has
+        # actually typed as runnable is always visible on this surface, never
+        # only discoverable via a one-off script.
+        'skill_classification': {
+            'source': 'kg_resource_type',
+            'kg_reachable': kg_reachable,
+            'filesystem_skill_md_count': filesystem_skill_md_count,
+            'kg_agent_skill_count': len(agent_skill_names),
+            'kg_workflow_definition_count': len(workflow_def_names),
+            'runnable_count': len(skills),
+            'describe_only_count': len(workflows),
+            'unclassified_count': len(unclassified),
+        },
     }
     bounded = _public_external_result(result)
     return bounded if isinstance(bounded, dict) else {}
