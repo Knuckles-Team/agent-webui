@@ -26,6 +26,7 @@ call site this lane happened to fix.
 from __future__ import annotations
 
 import ast
+import subprocess
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]  # .../agent-webui
@@ -82,13 +83,34 @@ def _is_test_path(path: Path) -> bool:
     return path.name.startswith('test_') or path.name.endswith('_test.py')
 
 
+def _tracked_python_files() -> list[Path]:
+    """Every ``.py`` file git actually tracks in this repository.
+
+    Deliberately ``git ls-files`` rather than ``Path.rglob`` -- a filesystem
+    walk also picks up generated, gitignored build output (``build/lib/...``
+    from a packaging step, ``node_modules``, ``.venv``, coverage caches, ...),
+    which can contain a STALE COPY of a since-fixed source file and would
+    falsely re-flag an already-fixed call site as a live production
+    violation. A chokepoint gate protecting production source should only
+    ever look at tracked source, matching what actually ships/reviews.
+    """
+    result = subprocess.run(
+        ['git', 'ls-files', '--', '*.py'],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return [_REPO_ROOT / line for line in result.stdout.splitlines() if line]
+
+
 def _production_violations() -> list[str]:
     violations: list[str] = []
-    for path in _REPO_ROOT.rglob('*.py'):
-        if 'node_modules' in path.parts or '.venv' in path.parts:
-            continue
+    for path in _tracked_python_files():
         if _is_test_path(path):
             continue
+        if not path.is_file():
+            continue  # a tracked path git still lists after a local deletion
         source = path.read_text(encoding='utf-8', errors='ignore')
         if 'create_agent_web_app' not in source:
             continue
