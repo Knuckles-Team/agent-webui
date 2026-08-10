@@ -620,7 +620,7 @@ class ApiClient {
     dedup_field?: string
     dedup_threshold?: number
   }) => this.post<{ status: string; job_id?: string; message?: string }>('/api/enhanced/extract/submit', payload)
-  listExtractionJobs = () => this.get<{ status: string; jobs: ExtractionJob[] }>('/api/enhanced/extract/jobs')
+  listExtractionJobs = () => this.getValidated('/api/enhanced/extract/jobs', extractionJobsResponseSchema)
   getExtractionStatus = (jobId: string) =>
     this.get<ExtractionJob>(`/api/enhanced/extract/status/${encodeURIComponent(jobId)}`)
   pauseExtraction = (jobId: string) =>
@@ -1125,6 +1125,30 @@ const sddConstitutionSchema: z.ZodType<SddConstitution> = z.object({
   governance_rules: looseArray(z.string()),
   tech_stack: z.record(z.string(), z.string()),
   quality_gates: looseArray(z.string()),
+})
+
+// Extraction (D-WUI-21 residual — ExtractionView: `jobs.length`/`jobs.map` on
+// a non-array response. `listExtractionJobs` used the unvalidated `get<T>`
+// (a bare type-assertion cast, no runtime check), so `well-formed`/
+// `empty-object`/`empty-array` bodies from /api/enhanced/extract/jobs — none
+// of which carry a `jobs` array — landed as `jobs: undefined` in component
+// state and crashed `jobs.length === 0` on the next render. `null`/`error`/
+// `never-resolving` never reproduced because those paths throw before
+// `setJobs` runs, at the `res.ok` check or the JSON parse, and are caught by
+// the view's own try/catch.
+const extractionJobSchema: z.ZodType<ExtractionJob> = z.object({
+  job_id: z.string(),
+  state: z.string(),
+  kind: z.string().optional(),
+  total_facts: z.number().optional(),
+  unique_facts: z.number().optional(),
+  duplicate_facts: z.number().optional(),
+  preempted: z.boolean().optional(),
+  user_held: z.boolean().optional(),
+})
+const extractionJobsResponseSchema = z.object({
+  status: z.string(),
+  jobs: looseArray(extractionJobSchema),
 })
 
 // Workflows (D-WUI-18 — WorkflowEditorView: saved.length / saved.map, capabilities panels)

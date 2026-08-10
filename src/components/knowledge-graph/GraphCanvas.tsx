@@ -103,7 +103,16 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
       sigmaRef.current = new Sigma<SigmaNodeAttributes, SigmaEdgeAttributes>(graph, containerRef.current, {
         renderEdgeLabels: true,
         allowInvalidContainer: true,
-        // Grey + dash edges that are expired at the current scrubber instant.
+        // Grey + thin edges that are expired at the current scrubber instant.
+        // D-WUI-6: this used to also set `type: 'dashed'`, but Sigma only
+        // renders edge types it has a registered WebGL program for (`line`/
+        // `arrow`/... via `settings.edgeProgramClasses`) — no `dashed`
+        // program is registered here, so `Sigma.render()` threw "could not
+        // find a suitable program for edge type \"dashed\"!" the instant any
+        // edge was actually marked expired (a real crash, not a test
+        // artifact — any AS OF query that expires at least one edge trips
+        // it). Color + a thinner stroke give the same "this edge is expired"
+        // signal without asserting an edge type the renderer can't draw.
         edgeReducer: (edge, data) => {
           const expired = expiredEdgesRef.current
           if (!expired || expired.size === 0) return data
@@ -111,7 +120,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
           if (!g) return data
           const key = edgeKey(g.source(edge), g.target(edge))
           if (expired.has(key)) {
-            return { ...data, color: expiredEdgeColorRef.current, type: 'dashed' }
+            return { ...data, color: expiredEdgeColorRef.current, size: Math.min(data.size, 1) }
           }
           return data
         },
