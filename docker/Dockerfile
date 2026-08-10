@@ -15,28 +15,32 @@
 # PyPI's newest published agent-utilities is 1.26.4, which is MISSING
 # `agent_utilities.security.persistence_privacy` outright (ImportError at
 # startup) -- the 2.x line this app's main branch requires has never been
-# published. Likewise agent-utilities' own floor of `epistemic-graph[full]>=
-# 2.23.2` is ahead of PyPI's newest epistemic-graph (2.23.0). So a plain `pip
-# install agent-utilities[...]` cannot produce a working image today.
+# published. So a plain `pip install agent-utilities[...]` cannot produce a
+# working image today.
 #
 # The fix mirrors agent-utilities' OWN Dockerfile's `agent-local` target
-# (docker/Dockerfile in that repo): resolve the exact-version closure from a
-# local wheelhouse via `--find-links` instead of the public index. Two extra
-# BUILD CONTEXTS supply it (`docker buildx build` / modern `docker build` both
-# support `--build-context NAME=PATH`):
+# (docker/Dockerfile in that repo): resolve agent-utilities' exact-version
+# closure from source instead of the public index, via ONE extra BUILD CONTEXT
+# (`docker buildx build` / modern `docker build` both support
+# `--build-context NAME=PATH`):
 #
 #   --build-context au-src=../agent-utilities        # sibling repo checkout/worktree
-#   --build-context wheelhouse=../../.dev-wheelhouse  # pre-built epistemic-graph wheel
 #
 # `au-src` is built into a wheel here (pure-Python + this repo's own
 # `build_backend.py`; no Rust toolchain needed -- the compiled engine ships
-# separately as `epistemic-graph`). `wheelhouse` supplies a pre-built
-# `epistemic_graph-2.23.2-*.whl` (the Rust engine; rebuilding it from source is
-# a many-minute cargo/maturin build, out of scope for this image) so neither
-# wheel needs network access to an index that doesn't have them yet. Once
-# agent-utilities 2.x is published to PyPI with a matching epistemic-graph
-# floor, DELETE the `au-wheel-build` stage and its build-context and go back to
-# a plain `"agent-utilities[graph,mcp]>=2.0.0"` in the runtime `uv pip install`
+# separately as `epistemic-graph`, installed from PyPI like any other
+# dependency: it's a hard base dependency of agent-utilities' own
+# pyproject.toml (`epistemic-graph[full]>=X,<3.0.0`), so `uv pip install`
+# resolves it transitively from the default index with no extra plumbing here.
+# (2026-08-10: previously a SECOND build context, `wheelhouse`, supplied a
+# pre-built `epistemic_graph-*.whl` because PyPI's newest epistemic-graph
+# release was below agent-utilities' floor -- see CI's release.yml
+# `publish-docker` job for the gate that now fails this build with one clear
+# line naming the missing version instead of silently trying, and failing
+# deep inside a pip resolver, when that floor still isn't published.) Once
+# agent-utilities 2.x is published to PyPI too, DELETE the `au-wheel-build`
+# stage and its build-context and go back to a plain
+# `"agent-utilities[graph,mcp]>=2.0.0"` in the runtime `uv pip install`
 # (D-WD-6: the `mcp` extra is required too -- without it, fastmcp is absent
 # and register_graph_routes()'s canonical /api/graph|sessions|goals|tools
 # mount fails at startup with ModuleNotFoundError, degrading those routes to
@@ -56,10 +60,10 @@
 #      stage needs no ecosystem workspace root -- sidesteps D-FE-7 (which is
 #      specifically about `uv run`/`uv sync` workspace discovery).
 #   3. au-wheel-build (python+uv) -- same mechanism, over the `au-src` context.
-#   4. runtime (python, final) -- installs both built wheels plus
-#      epistemic-graph from the `wheelhouse` context via `--find-links`;
-#      everything else (fastapi, pydantic-ai, etc.) still resolves from PyPI
-#      normally.
+#   4. runtime (python, final) -- installs both built wheels; epistemic-graph
+#      (agent-utilities' own transitive dependency) and everything else
+#      (fastapi, pydantic-ai, etc.) resolve from the default PyPI index
+#      normally, no local wheelhouse involved.
 #
 # Runtime wiring: uvicorn binds loopback:8000 (agent_webui.server's own default
 # absent --host/HOST) and `socat` forwards :80 -> :8000, reproducing the
@@ -72,7 +76,6 @@
 #
 #   docker build -f docker/Dockerfile \
 #     --build-context au-src=../agent-utilities \
-#     --build-context wheelhouse=../../.dev-wheelhouse \
 #     --build-arg BUILD_SHA="$(git rev-parse --short HEAD)" \
 #     --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 #     -t agent-webui:local .
@@ -123,9 +126,9 @@ COPY --from=frontend-build /app/agent/agent_webui/dist ./agent/agent_webui/dist
 RUN uv build --wheel --out-dir /dist
 
 # See header: builds agent-utilities from its own source tree (no Rust needed --
-# the compiled engine is the separate epistemic-graph wheel supplied by the
-# `wheelhouse` build context below). Remove this stage once agent-utilities 2.x
-# is published to PyPI.
+# the compiled engine is the separate epistemic-graph wheel, resolved from
+# PyPI in the runtime stage below like any other dependency). Remove this
+# stage once agent-utilities 2.x is published to PyPI.
 FROM python:3.14-slim AS au-wheel-build
 COPY --from=ghcr.io/astral-sh/uv:0.11.7@sha256:240fb85ab0f263ef12f492d8476aa3a2e4e1e333f7d67fbdd923d00a506a516a /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 \
@@ -153,7 +156,6 @@ ENV UV_SYSTEM_PYTHON=1 \
     PYTHONUNBUFFERED=1
 COPY --from=wheel-build /dist/*.whl /tmp/agent-webui/
 COPY --from=au-wheel-build /dist-au/*.whl /tmp/wheelhouse/
-COPY --from=wheelhouse epistemic_graph-*.whl /tmp/wheelhouse/
 # D-W5WR-1: naming the requirement as a bare "agent-utilities[graph,mcp]"
 # string let `uv pip install` resolve it against the DEFAULT PyPI index
 # (agent-utilities==1.26.4) instead of the locally-built wheel this stage
@@ -165,7 +167,11 @@ COPY --from=wheelhouse epistemic_graph-*.whl /tmp/wheelhouse/
 # Referencing the wheel FILE directly (with the extras bracket appended to
 # the path, PEP 508's local-file-with-extras form) removes the ambiguity:
 # there is exactly one candidate for agent-utilities itself, and it is the
-# one this Dockerfile just built from source.
+# one this Dockerfile just built from source. epistemic-graph (agent-utilities'
+# own hard base dependency, `epistemic-graph[full]>=X,<3.0.0`) is NOT in
+# /tmp/wheelhouse -- it resolves from the default PyPI index like any normal
+# dependency; CI's release.yml `publish-docker` job verifies beforehand that a
+# satisfying release actually exists there (see that workflow for why).
 #
 # D-W5WR-2: pinning the real 2.x wheel then surfaced a SECOND, independent
 # gap -- its `[mcp]` extra declares `fastmcp>=4.0.0b1` (CONCEPT:AU-ECO.mcp.

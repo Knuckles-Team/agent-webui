@@ -464,7 +464,7 @@ docker/deploy.sh --skip-deploy   # build + verify + push; does NOT touch the clu
 half, kept as its own file for a standalone build-only smoke test. Do not
 hand-roll a `docker build`/`kubectl set image` sequence outside these two
 scripts -- see their headers for the full contract, including every env var
-override (`AU_SRC_PATH`, `WHEELHOUSE_PATH`, `CANONICAL_CHECKOUT`, etc.).
+override (`AU_SRC_PATH`, `CANONICAL_CHECKOUT`, etc.).
 
 #### Coordinating concurrent deploys
 
@@ -476,18 +476,23 @@ digest `--skip-deploy` just printed) once it's clear.
 
 ### Production image (GitHub CI)
 
-Pushing a `v*` tag (or a manual `workflow_dispatch`) runs
-`.github/workflows/docker-publish.yml`, which builds and publishes
-`knucklessg1/agent-webui` from the same `docker/Dockerfile` -- no second,
-divergent CI-only build definition. It builds `epistemic-graph` from source on
-a GitHub-hosted runner (no self-hosted runner is registered for this org today,
-and PyPI's `epistemic-graph` is still behind agent-utilities' floor), checks
-out `agent-utilities` from source as the `au-src` build-context (never PyPI,
-same rule as the local script), and runs the identical served-bundle
-verification before the job is considered successful. See that workflow file's
-header comments for why it can't simply call the fleet's shared
-`container_pipeline.yml` reusable workflow (that workflow's interface has no
-way to pass this Dockerfile's extra build-contexts).
+`.github/workflows/release.yml` is the **only** workflow that can publish this
+repo. Its `publish-docker` job runs after `publish-pypi` succeeds (`needs:`),
+so PyPI always publishes first and the container build always comes second --
+see that workflow's own top-of-file comment for the two-workflow model
+(`release.yml` blocking, `advisory.yml` everything else). `publish-docker`
+builds and publishes `knucklessg1/agent-webui` from the same `docker/Dockerfile`
+-- no second, divergent CI-only build definition -- checking out
+`agent-utilities` from source as the `au-src` build-context (never PyPI, same
+rule as the local script) and running the identical served-bundle verification
+before the job is considered successful. Before any of that, it verifies that
+agent-utilities' declared `epistemic-graph` floor is actually resolvable on
+PyPI (`scripts/release/check_eg_pypi_resolvable.py`) and fails with one clear
+line naming the missing version if not, rather than dying inside a pip
+resolver backtrace -- see that workflow file's header comments for why it
+can't simply call the fleet's shared `container_pipeline.yml` reusable
+workflow (that workflow's interface has no way to pass this Dockerfile's extra
+build-context).
 
 ### k8s manifest
 
