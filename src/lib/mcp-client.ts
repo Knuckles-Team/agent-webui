@@ -44,8 +44,16 @@ export const MCP_TOOL_CALL_ROUTE = '/api/enhanced/mcp/tools/call'
 /** Backend route that proxies one MCP `resources/read` for a `ui://` app. */
 export const MCP_APP_RESOURCE_ROUTE = '/api/enhanced/mcp/apps/resource'
 
+/** Backend route that lists one server's governed, policy-filtered tool catalog. */
+export function mcpServerToolsRoute(server: string): string {
+  return `/api/enhanced/mcp/servers/${encodeURIComponent(server)}/tools`
+}
+
 /** Default MCP server name delegated to — graph-os, the KG/fleet gateway. */
 export const DEFAULT_MCP_SERVER = 'graph-os'
+
+/** Governed catalog is bounded at 200 tools per server (algorithmic budget: T <= 200). */
+export const MAX_CATALOG_TOOLS = 200
 
 /** Raised when a tool call or resource read does not reach a usable result. */
 export class McpClientError extends Error {
@@ -70,6 +78,89 @@ export interface McpAppResource {
   uri: string
   html: string
   mimeType: string
+}
+
+/**
+ * One tool descriptor from the governed catalog
+ * (`GET /api/enhanced/mcp/servers/{server}/tools`, `list_mcp_server_tools` in
+ * `agent_webui.api_extensions`). `enabled` reflects this deployment's own
+ * toggle state, not caller authorization — a disabled tool is still listed so
+ * an operator can see and re-enable it, but `MCPProvider` treats it exactly
+ * like any other entry (no policy is inferred client-side; the server
+ * revalidates every `tools/call`).
+ */
+export interface McpToolDescriptor {
+  name: string
+  description: string
+  input_schema: Record<string, unknown>
+  enabled: boolean
+}
+
+function isValidToolDescriptor(value: unknown): value is McpToolDescriptor {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Record<string, unknown>
+  return (
+    typeof candidate.name === 'string' &&
+    candidate.name.length > 0 &&
+    typeof candidate.description === 'string' &&
+    typeof candidate.enabled === 'boolean' &&
+    typeof candidate.input_schema === 'object' &&
+    candidate.input_schema !== null
+  )
+}
+
+/**
+ * Fetch and bound-validate one server's governed tool catalog.
+ *
+ * Never throws on a malformed *entry* — an individual null/wrong-typed/
+ * duplicate-named item is dropped rather than failing the whole catalog, so
+ * one bad tool descriptor cannot blank the list. Throws {@link McpClientError}
+ * only when the backend itself refuses the request (missing delegation,
+ * policy denial, transport failure) or the top-level response is not a JSON
+ * array, so a caller can distinguish "no catalog" from "empty catalog".
+ * Caps the result at {@link MAX_CATALOG_TOOLS}, matching the lane's bounded
+ * per-page budget — this is a page guard, not pagination.
+ */
+export async function fetchMcpServerTools(
+  server: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<McpToolDescriptor[]> {
+  let res: Response
+  try {
+    res = await fetch(mcpServerToolsRoute(server), {
+      method: 'GET',
+      credentials: 'same-origin',
+      signal: options.signal,
+    })
+  } catch (err) {
+    throw new McpClientError(`MCP tool catalog request for "${server}" failed`, { cause: err })
+  }
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new McpClientError(
+      `MCP tool catalog request for "${server}" failed: HTTP ${String(res.status)}${detail ? `: ${detail}` : ''}`,
+      { status: res.status },
+    )
+  }
+  let payload: unknown
+  try {
+    payload = await res.json()
+  } catch (err) {
+    throw new McpClientError(`MCP tool catalog response for "${server}" was not JSON`, { cause: err })
+  }
+  if (!Array.isArray(payload)) {
+    throw new McpClientError(`MCP tool catalog response for "${server}" was not a list`)
+  }
+  const seen = new Set<string>()
+  const validated: McpToolDescriptor[] = []
+  for (const entry of payload) {
+    if (!isValidToolDescriptor(entry)) continue
+    if (seen.has(entry.name)) continue
+    seen.add(entry.name)
+    validated.push(entry)
+    if (validated.length >= MAX_CATALOG_TOOLS) break
+  }
+  return validated
 }
 
 /** Unwrap the canonical `{status, result}` action-twin envelope when present. */
