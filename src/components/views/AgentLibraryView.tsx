@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
+import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 import { toast } from 'sonner'
 
 /**
@@ -107,6 +108,15 @@ export default function AgentLibraryView() {
   const [config, setConfig] = useState<ConfigSummary>(EMPTY_CONFIG)
   const [loadingConfig, setLoadingConfig] = useState(true)
 
+  // BUG-008 (dashboard-wide follow-on, GOC-28-W06): each fetch below used to
+  // leave its list at the same empty default on a failed request as on a
+  // real "nothing here yet" response, with only a transient toast (or
+  // nothing at all for the best-effort tools/config calls). Each now records
+  // whether its most recent fetch actually reached the backend.
+  const [agentsUnavailable, setAgentsUnavailable] = useState(false)
+  const [toolsUnavailable, setToolsUnavailable] = useState(false)
+  const [configUnavailable, setConfigUnavailable] = useState(false)
+
   // Compose form state
   const [composeName, setComposeName] = useState('')
   const [composeDescription, setComposeDescription] = useState('')
@@ -127,11 +137,14 @@ export default function AgentLibraryView() {
       const res = await fetch('/api/enhanced/agent-library/agents')
       if (!res.ok) {
         toast.error('Failed to load the Agent Library')
+        setAgentsUnavailable(true)
         return
       }
       setAgents(asArray<LibraryAgent>(await res.json()))
+      setAgentsUnavailable(false)
     } catch {
       toast.error('Failed to connect to the Agent Library')
+      setAgentsUnavailable(true)
     } finally {
       setLoadingAgents(false)
     }
@@ -155,10 +168,16 @@ export default function AgentLibraryView() {
       setLoadingTools(true)
       const qs = server ? `?mcp_server=${encodeURIComponent(server)}` : ''
       const res = await fetch(`/api/enhanced/agent-library/tools${qs}`)
-      if (!res.ok) return
+      if (!res.ok) {
+        setToolsUnavailable(true)
+        return
+      }
       setTools(asArray<LibraryTool>(await res.json()))
+      setToolsUnavailable(false)
     } catch {
-      // Best-effort catalog for the picker; the compose form still works without it.
+      // Best-effort catalog for the picker; the compose form still works without it --
+      // but the picker must still say so rather than silently looking empty.
+      setToolsUnavailable(true)
     } finally {
       setLoadingTools(false)
     }
@@ -170,6 +189,7 @@ export default function AgentLibraryView() {
       const res = await fetch('/api/enhanced/agent-library/config-summary')
       if (!res.ok) {
         setConfig(EMPTY_CONFIG)
+        setConfigUnavailable(true)
         return
       }
       const data = (await res.json()) as Partial<ConfigSummary> | null
@@ -179,8 +199,10 @@ export default function AgentLibraryView() {
         chat_models: asArray<ChatModelSummary>(data?.chat_models),
         embedding_models: asArray<EmbeddingModelSummary>(data?.embedding_models),
       })
+      setConfigUnavailable(false)
     } catch {
       setConfig(EMPTY_CONFIG)
+      setConfigUnavailable(true)
     } finally {
       setLoadingConfig(false)
     }
@@ -461,6 +483,10 @@ export default function AgentLibraryView() {
                     <RefreshCw className="size-8 text-emerald-500 animate-spin" />
                     <span className="text-sm text-muted-foreground font-medium">Querying the graph...</span>
                   </div>
+                ) : agentsUnavailable ? (
+                  <div className="text-center py-12">
+                    <UnavailableNotice what="The Agent Library" className="justify-center" />
+                  </div>
                 ) : filteredAgents.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground text-sm">
                     No agents yet. Compose one, or register an external A2A agent.
@@ -615,6 +641,10 @@ export default function AgentLibraryView() {
                 <div className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-border/20 bg-muted/5 p-2 space-y-1">
                   {loadingTools ? (
                     <div className="text-xs text-muted-foreground p-2">Loading tools...</div>
+                  ) : toolsUnavailable ? (
+                    <div className="p-2">
+                      <UnavailableNotice what="The tool catalog" />
+                    </div>
                   ) : tools.length === 0 ? (
                     <div className="text-xs text-muted-foreground p-2">
                       No tools ingested yet for this filter — the agent can still run prompt-only.
@@ -717,11 +747,13 @@ export default function AgentLibraryView() {
                     </div>
                   </div>
 
+                  {configUnavailable && <UnavailableNotice what="The model configuration summary" />}
+
                   <div>
                     <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
                       Chat models
                     </h3>
-                    {config.chat_models.length === 0 ? (
+                    {configUnavailable ? null : config.chat_models.length === 0 ? (
                       <div className="text-xs text-muted-foreground">No chat models configured.</div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -780,7 +812,7 @@ export default function AgentLibraryView() {
                     <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
                       Embedding models
                     </h3>
-                    {config.embedding_models.length === 0 ? (
+                    {configUnavailable ? null : config.embedding_models.length === 0 ? (
                       <div className="text-xs text-muted-foreground">No embedding models configured.</div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

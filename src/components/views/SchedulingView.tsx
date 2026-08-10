@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { fetchValidated, looseArray } from '@/lib/api-validation'
+import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 
 interface CronTask {
   id: string
@@ -66,6 +67,12 @@ export default function SchedulingView() {
   const [loading, setLoading] = useState(true)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week')
+  // BUG-008 (dashboard-wide follow-on, GOC-28-W06): `tasks`/`logs` stayed at
+  // their initial `[]` on a failed fetch (only a transient toast fired), so
+  // "No tasks found."/"No History Found" rendered identically for a real
+  // empty schedule and a backend outage.
+  const [tasksUnavailable, setTasksUnavailable] = useState(false)
+  const [logsUnavailable, setLogsUnavailable] = useState(false)
 
   useEffect(() => {
     void fetchData()
@@ -82,6 +89,8 @@ export default function SchedulingView() {
       if (tasksData === null || logsData === null) {
         toast.error('Failed to load scheduling data')
       }
+      setTasksUnavailable(tasksData === null)
+      setLogsUnavailable(logsData === null)
       if (tasksData !== null) setTasks(tasksData)
       if (logsData !== null) setLogs(logsData)
     } finally {
@@ -172,6 +181,10 @@ export default function SchedulingView() {
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="h-12 bg-muted animate-pulse rounded-md" />
                   ))}
+                </div>
+              ) : tasksUnavailable ? (
+                <div className="py-4">
+                  <UnavailableNotice what="Scheduled tasks" className="justify-center" />
                 </div>
               ) : tasks.length === 0 ? (
                 <p className="text-muted-foreground text-sm text-center py-4">No tasks found.</p>
@@ -426,6 +439,10 @@ export default function SchedulingView() {
                     {[1, 2, 3].map((i) => (
                       <div key={i} className="h-20 bg-muted animate-pulse rounded-md" />
                     ))}
+                  </div>
+                ) : logsUnavailable ? (
+                  <div className="py-20">
+                    <UnavailableNotice what="Run history" className="justify-center" />
                   </div>
                 ) : logs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 text-muted-foreground/40 space-y-3">

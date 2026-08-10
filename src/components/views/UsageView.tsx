@@ -23,6 +23,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { safeExternalUrl } from '@/lib/safe-url'
 import { useIdentity } from '@/lib/auth'
 import { roleAtLeast } from '@/lib/nav-registry'
+import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 import {
   api,
   type UsageActivityCell,
@@ -105,9 +106,15 @@ function Kpi({ label, value, icon: Icon }: { label: string; value: string; icon:
   )
 }
 
-/** Horizontal bar rows for a breakdown (cost-weighted). */
-function BarRows({ rows }: { rows: UsageBreakdown[] }) {
+/**
+ * Horizontal bar rows for a breakdown (cost-weighted). `unavailable` (BUG-008
+ * dashboard-wide follow-on, GOC-28-W06) distinguishes "the fetch failed" from
+ * "the fetch succeeded and there is genuinely no spend yet" -- both used to
+ * render the identical "No data yet." text.
+ */
+function BarRows({ rows, unavailable }: { rows: UsageBreakdown[]; unavailable?: boolean }) {
   const max = Math.max(1, ...rows.map((r) => r.cost_usd))
+  if (unavailable) return <UnavailableNotice what="This breakdown" className="py-4" />
   if (!rows.length) return <Empty>No data yet.</Empty>
   return (
     <div className="space-y-2">
@@ -192,6 +199,19 @@ export default function UsageView() {
   const [searchQ, setSearchQ] = useState('')
   const [hits, setHits] = useState<UsageSearchHit[]>([])
   const [loading, setLoading] = useState(true)
+  // BUG-008 (dashboard-wide follow-on, GOC-28-W06): each of the 6 breakdown/
+  // list calls below independently `.catch()`es down to its own safe empty
+  // default, so a failing endpoint used to render identically to a real
+  // "nothing here yet" -- on a cost/observability surface an operator
+  // legitimately needs to trust. Each call now also records whether its most
+  // recent fetch actually succeeded.
+  const [summaryUnavailable, setSummaryUnavailable] = useState(false)
+  const [byModelUnavailable, setByModelUnavailable] = useState(false)
+  const [byProjectUnavailable, setByProjectUnavailable] = useState(false)
+  const [byAgentUnavailable, setByAgentUnavailable] = useState(false)
+  const [toolsUnavailable, setToolsUnavailable] = useState(false)
+  const [activityUnavailable, setActivityUnavailable] = useState(false)
+  const [sessionsUnavailable, setSessionsUnavailable] = useState(false)
   // Admin-only cross-tenant view (D-AOBS-2). The backend
   // (`agent_utilities.usage.authorization.resolve_usage_tenant`) already lets an
   // admin caller name a DIFFERENT tenant explicitly — by design there is no
@@ -217,22 +237,50 @@ export default function UsageView() {
       // to the same safe default its own `useState` already declares.
       const f = tenantFilter ? { tenant_id: tenantFilter } : undefined
       const [s, m, p, a, t, act, sess, tr] = await Promise.all([
-        api.getUsageSummary(f).catch(() => null),
-        api.getUsageByModel(f).catch(() => []),
-        api.getUsageByProject(f).catch(() => []),
-        api.getUsageByAgent(f).catch(() => []),
-        api.getUsageTools(f).catch(() => []),
-        api.getUsageActivity(f).catch(() => []),
-        api.getUsageTopSessions({ limit: 25, ...f }).catch(() => []),
+        api
+          .getUsageSummary(f)
+          .then((v) => ({ v, ok: true }))
+          .catch(() => ({ v: null, ok: false })),
+        api
+          .getUsageByModel(f)
+          .then((v) => ({ v, ok: true }))
+          .catch(() => ({ v: [], ok: false })),
+        api
+          .getUsageByProject(f)
+          .then((v) => ({ v, ok: true }))
+          .catch(() => ({ v: [], ok: false })),
+        api
+          .getUsageByAgent(f)
+          .then((v) => ({ v, ok: true }))
+          .catch(() => ({ v: [], ok: false })),
+        api
+          .getUsageTools(f)
+          .then((v) => ({ v, ok: true }))
+          .catch(() => ({ v: [], ok: false })),
+        api
+          .getUsageActivity(f)
+          .then((v) => ({ v, ok: true }))
+          .catch(() => ({ v: [], ok: false })),
+        api
+          .getUsageTopSessions({ limit: 25, ...f })
+          .then((v) => ({ v, ok: true }))
+          .catch(() => ({ v: [], ok: false })),
         api.getUsageTraces().catch(() => null),
       ])
-      setSummary(s)
-      setByModel(m)
-      setByProject(p)
-      setByAgent(a)
-      setTools(t)
-      setActivity(act)
-      setSessions(sess)
+      setSummary(s.v)
+      setSummaryUnavailable(!s.ok)
+      setByModel(m.v)
+      setByModelUnavailable(!m.ok)
+      setByProject(p.v)
+      setByProjectUnavailable(!p.ok)
+      setByAgent(a.v)
+      setByAgentUnavailable(!a.ok)
+      setTools(t.v)
+      setToolsUnavailable(!t.ok)
+      setActivity(act.v)
+      setActivityUnavailable(!act.ok)
+      setSessions(sess.v)
+      setSessionsUnavailable(!sess.ok)
       setTraces(tr)
     } finally {
       setLoading(false)
@@ -339,15 +387,26 @@ export default function UsageView() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Total cost" value={fmtUsd(totals?.cost_usd ?? 0)} icon={Coins} />
+        <Kpi label="Total cost" value={summaryUnavailable ? '—' : fmtUsd(totals?.cost_usd ?? 0)} icon={Coins} />
         <Kpi
           label="Tokens (in/out)"
-          value={`${fmtNum(totals?.input_tokens ?? 0)} / ${fmtNum(totals?.output_tokens ?? 0)}`}
+          value={
+            summaryUnavailable ? '—' : `${fmtNum(totals?.input_tokens ?? 0)} / ${fmtNum(totals?.output_tokens ?? 0)}`
+          }
           icon={Cpu}
         />
-        <Kpi label="Cache hit rate" value={`${Math.round((summary?.cache_hit_rate ?? 0) * 100)}%`} icon={Activity} />
-        <Kpi label="Sessions" value={fmtNum(summary?.session_count ?? 0)} icon={BarChart3} />
+        <Kpi
+          label="Cache hit rate"
+          value={summaryUnavailable ? '—' : `${Math.round((summary?.cache_hit_rate ?? 0) * 100)}%`}
+          icon={Activity}
+        />
+        <Kpi
+          label="Sessions"
+          value={summaryUnavailable ? '—' : fmtNum(summary?.session_count ?? 0)}
+          icon={BarChart3}
+        />
       </div>
+      {summaryUnavailable && <UnavailableNotice what="The usage summary" />}
 
       <Tabs defaultValue="models">
         <TabsList>
@@ -368,7 +427,7 @@ export default function UsageView() {
               <CardDescription>Spend and tokens per model.</CardDescription>
             </CardHeader>
             <CardContent>
-              <BarRows rows={byModel} />
+              <BarRows rows={byModel} unavailable={byModelUnavailable} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -379,7 +438,7 @@ export default function UsageView() {
               <CardTitle>Cost by project</CardTitle>
             </CardHeader>
             <CardContent>
-              <BarRows rows={byProject} />
+              <BarRows rows={byProject} unavailable={byProjectUnavailable} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -391,7 +450,7 @@ export default function UsageView() {
               <CardDescription>Across all ingested agent tools + runtime.</CardDescription>
             </CardHeader>
             <CardContent>
-              <BarRows rows={byAgent} />
+              <BarRows rows={byAgent} unavailable={byAgentUnavailable} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -403,7 +462,9 @@ export default function UsageView() {
               <CardDescription>Frequency and success rate.</CardDescription>
             </CardHeader>
             <CardContent>
-              {tools.length === 0 ? (
+              {toolsUnavailable ? (
+                <UnavailableNotice what="Tool/skill call stats" />
+              ) : tools.length === 0 ? (
                 <Empty>No tool calls recorded yet.</Empty>
               ) : (
                 <div className="space-y-1">
@@ -444,7 +505,13 @@ export default function UsageView() {
               <CardDescription>Sessions by day of week × hour.</CardDescription>
             </CardHeader>
             <CardContent>
-              {activity.length === 0 ? <Empty>No activity yet.</Empty> : <Heatmap cells={activity} />}
+              {activityUnavailable ? (
+                <UnavailableNotice what="Activity data" />
+              ) : activity.length === 0 ? (
+                <Empty>No activity yet.</Empty>
+              ) : (
+                <Heatmap cells={activity} />
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -455,7 +522,9 @@ export default function UsageView() {
               <CardTitle>Top sessions by cost</CardTitle>
             </CardHeader>
             <CardContent>
-              {sessions.length === 0 ? (
+              {sessionsUnavailable ? (
+                <UnavailableNotice what="The session list" />
+              ) : sessions.length === 0 ? (
                 <Empty>No sessions yet.</Empty>
               ) : (
                 <table className="w-full text-sm">

@@ -19,10 +19,16 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { api, type OntologyCatalogueEntry } from '@/lib/api'
 import { ImportExportModal } from '@/components/ontology/ImportExportModal'
+import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 
 export default function CatalogueView() {
   const [entries, setEntries] = useState<OntologyCatalogueEntry[]>([])
   const [loading, setLoading] = useState(true)
+  // BUG-008 (dashboard-wide follow-on, GOC-28-W06): a failed fetch used to
+  // leave `entries` at `[]` with no distinguishing state, so "No hosted
+  // ontologies match these filters." rendered identically for a real empty
+  // search result and a fetch failure.
+  const [unavailable, setUnavailable] = useState(false)
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('')
   const [tag, setTag] = useState('')
@@ -33,8 +39,10 @@ export default function CatalogueView() {
     try {
       const res = await api.getOntologyCatalogue({ search, category, tag })
       setEntries(res.ontologies)
+      setUnavailable(false)
     } catch {
       setEntries([])
+      setUnavailable(true)
     } finally {
       setLoading(false)
     }
@@ -133,6 +141,10 @@ export default function CatalogueView() {
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
           <Loader2 className="size-8 animate-spin mb-3" />
           <p className="text-sm">Loading catalogue...</p>
+        </div>
+      ) : unavailable ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <UnavailableNotice what="The ontology catalogue" />
         </div>
       ) : entries.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">

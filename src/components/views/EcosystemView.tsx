@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 
 interface Host {
   reference: string
@@ -466,6 +467,14 @@ export default function EcosystemView() {
   const [qbittorrentTorrents, setQbittorrentTorrents] = useState<QbittorrentTorrent[]>([])
   const [stirlingJobs, setStirlingJobs] = useState<StirlingJob[]>([])
 
+  // BUG-008 (dashboard-wide follow-on, GOC-28-W06): unlike every other fetch
+  // in this file (which routes through `classifyEcosystemList`/
+  // `ServiceNotice`), `fetchHosts` swallowed both a non-OK response and a
+  // network exception with no state update and no visible error at all --
+  // the "Host Aliases Inventory" grid rendered identically blank whether
+  // zero hosts are configured or the tunnel-manager endpoint is down.
+  const [hostsUnavailable, setHostsUnavailable] = useState(false)
+
   // Core functions
   const fetchHosts = async () => {
     try {
@@ -473,9 +482,13 @@ export default function EcosystemView() {
       if (res.ok) {
         const data = (await res.json()) as { hosts?: Host[] }
         setHosts(data.hosts ?? [])
+        setHostsUnavailable(false)
+      } else {
+        setHostsUnavailable(true)
       }
     } catch {
       console.error('Failed to load configured hosts')
+      setHostsUnavailable(true)
     }
   }
 
@@ -1620,6 +1633,7 @@ export default function EcosystemView() {
                     </Dialog>
                   </CardHeader>
                   <CardContent>
+                    {hostsUnavailable && <UnavailableNotice what="The configured hosts inventory" className="mb-4" />}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {hosts.map((h, index) => (
                         <div
