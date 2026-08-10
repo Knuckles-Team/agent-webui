@@ -1,0 +1,201 @@
+name: Release
+
+# ─────────────────────────────────────────────────────────────────────────
+# THE TWO-WORKFLOW MODEL (read this before adding a check to either file)
+#
+# This repo ships exactly two GitHub Actions workflows, matching the model
+# already landed in agent-utilities and epistemic-graph:
+#
+#   release.yml (THIS FILE) -- the ONLY workflow that can block a release.
+#     Two jobs, wired with `needs:` so the ordering is explicit and the
+#     failing stage is obvious at a glance:
+#
+#       publish-pypi   -- builds + publishes the agent-webui wheel to PyPI
+#                         (delegates to the fleet's shared reusable
+#                         `python_web_pipeline.yml`, which does its own
+#                         build/test/publish/tag-and-release in one atomic
+#                         job -- there is no separable "gates"/"build" stage
+#                         to pull out of it from here without editing that
+#                         workflow, which is owned by Knuckles-Team/pipelines
+#                         and shared across ~62 packages).
+#       publish-docker -- needs: publish-pypi. Builds and publishes the
+#                         container image FROM THE SAME COMMIT, consuming
+#                         whatever agent-utilities/epistemic-graph floor is
+#                         actually resolvable once PyPI publish has landed.
+#
+#   advisory.yml -- everything else (currently: GitHub Pages). Every job
+#     there runs with `continue-on-error: true` so debt stays visible (red
+#     job, annotation, job summary) but never blocks a release.
+#
+# WHY: this replaced THREE independent workflows (`pipeline.yml` for PyPI,
+# `docker-publish.yml` for the container image, `pages.yml` for docs) that
+# had no explicit relationship to each other. `docker-publish.yml` triggered
+# on `push: tags: ['v*']` -- which happened to fire only AFTER `pipeline.yml`
+# succeeded, because `python_web_pipeline.yml` creates that tag as its own
+# last step (`softprops/action-gh-release`, `tag_name: v${BUILD_VERSION}`).
+# That made PyPI-then-Docker ordering an accidental side effect of two
+# decoupled workflows reacting to two separate push events, not something
+# this repo declared on purpose -- exactly what the owner asked to fix
+# ("it should all be one pipeline -- first builds the pypi image for
+# agent-webui, then runs the docker build job to include the newly
+# published pypi package"). `needs: publish-pypi` below makes that ordering
+# structural instead of incidental.
+#
+# CROSS-REPO ORDERING: epistemic-graph must publish to PyPI before
+# agent-utilities can be installed from a plain index, because
+# agent-utilities pins a version floor on it. `publish-docker` below
+# verifies that floor is actually resolvable on PyPI
+# (scripts/release/check_eg_pypi_resolvable.py, adapted from
+# agent-utilities' own script of the same name and purpose) and fails with
+# one clear message naming the missing version, rather than letting `uv pip
+# install` die deep inside a resolver backtrace -- which is also why the
+# former `docker-publish.yml` had its own `build-eg-wheel` job compiling
+# epistemic-graph from source in CI: a workaround for eg never having
+# published a satisfying release, not a deliberate bundling choice. That job
+# is gone; the image now installs epistemic-graph from PyPI like any normal
+# dependency, and this gate makes the "not yet published" case fail loudly
+# instead of silently, deep inside a build.
+# ─────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches:
+      - 'main'
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ── STAGE 1: build + publish the agent-webui wheel to PyPI, then tag the
+  # release commit. Unchanged from the former pipeline.yml except pinned by
+  # SHA (SC-GHA-style convention this repo's other workflow already follows)
+  # instead of a floating `@main` ref.
+  publish-pypi:
+    name: publish-pypi
+    uses: Knuckles-Team/pipelines/.github/workflows/python_web_pipeline.yml@ea769702ad1ebdc104293854e0767fea133899e1 # main as of 2026-08-10
+    permissions:
+      contents: write
+    secrets:
+      PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+
+  # ── STAGE 2: build + publish the container image. Needs: publish-pypi --
+  # unreachable unless the PyPI stage above (including its tag-and-release
+  # step) already succeeded on this exact commit.
+  publish-docker:
+    name: publish-docker
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    # D-ORC-10-style gate (matches agent-utilities' own publish-docker job):
+    # a protected GitHub Environment enables required-reviewer / wait-timer
+    # rules once an admin configures them under
+    # Settings > Environments > docker-publish. Safe to set here because this
+    # is a normal job (runs-on + steps), NOT a `uses:` job -- putting
+    # `environment:` on a `uses:` job makes the GitHub Actions parser reject
+    # the whole file ("Unexpected value 'uses'"), which is exactly why
+    # `publish-pypi` above does not have one.
+    environment: docker-publish
+    steps:
+      # Belt-and-suspenders confirmation that this commit really is a
+      # published release, not merely a commit that happens to follow one:
+      # `publish-pypi`'s reusable workflow creates a `vX.Y.Z` tag pointing at
+      # this exact commit as its last step (softprops/action-gh-release), so
+      # by the time `needs: publish-pypi` has been satisfied the tag should
+      # already exist. Failing loudly here if it doesn't catches a
+      # partial-success case (e.g. the tag/release step itself regresses
+      # upstream in a way that doesn't fail the calling job).
+      - name: Require a vX.Y.Z release tag on the published commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tags="$(gh api "repos/${{ github.repository }}/tags?per_page=100" \
+            | jq -r --arg sha "$HEAD_SHA" '.[] | select(.commit.sha == $sha) | .name')"
+          if ! grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$tags"; then
+            echo "::error::release gate: no vX.Y.Z tag points at $HEAD_SHA -- publish-pypi should have created one on success. Refusing to publish the image against an unreleased commit."
+            exit 1
+          fi
+          echo "release tag verified: $tags"
+
+      - name: Checkout agent-webui
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      # Never installed from PyPI (D-W5WR-1) -- built from source, same as
+      # docker/build_and_push.sh's AU_SRC_PATH. PyPI's newest agent-utilities
+      # (1.26.4, verified 2026-08-07) is missing modules this app imports at
+      # startup; see docker/Dockerfile's header for the full empirical trail.
+      - name: Checkout agent-utilities (au-src build context)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: Knuckles-Team/agent-utilities
+          ref: main
+          path: au-src
+          persist-credentials: false
+
+      # ---- Cross-repo release-order gate (see top-of-file comment). Stdlib
+      # -only, no environment sync needed: verifies the epistemic-graph floor
+      # au-src/pyproject.toml declares is actually resolvable on PyPI before
+      # spending any build time. eg must publish before au; au must publish
+      # before this image can install it from the index. Turns that deadlock
+      # into one clear line instead of a pip resolver backtrace.
+      - name: Verify required epistemic-graph release is resolvable on PyPI
+        run: python3 scripts/release/check_eg_pypi_resolvable.py au-src/pyproject.toml
+
+      - name: Compute build metadata
+        id: meta_build
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ secrets.DOCKER_USERNAME }}/agent-webui
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: runtime
+          build-contexts: |
+            au-src=au-src
+          build-args: |
+            BUILD_SHA=${{ steps.meta_build.outputs.sha }}
+            BUILD_TIME=${{ steps.meta_build.outputs.time }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      # Same check docker/build_and_push.sh runs locally before it will push --
+      # confirms the pushed image's served bundle actually carries this commit,
+      # not a stale cached layer, using the tag `metadata-action` just resolved
+      # (so this pulls the exact manifest just pushed, not a mutable `:latest`
+      # someone else could have moved in the meantime).
+      - name: Verify pushed image serves today's build-info.txt
+        run: |
+          set -euo pipefail
+          IMAGE_REF="$(head -n1 <<<"${{ steps.meta.outputs.tags }}")"
+          INFO="$(docker run --rm --entrypoint sh "${IMAGE_REF}" -c \
+            'cat "$(python3 -c "import agent_webui, os; print(os.path.join(os.path.dirname(agent_webui.__file__), \"dist\", \"build-info.txt\"))")"')"
+          echo "${INFO}"
+          grep -q "sha=${{ steps.meta_build.outputs.sha }}$" <<<"${INFO}"

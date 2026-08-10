@@ -25,17 +25,26 @@
 # daemon happens to be reachable." Override only if you know what you're doing
 # (DOCKER_CONTEXT=default requires a local daemon).
 #
-# WHY TWO EXTRA BUILD CONTEXTS: agent-webui's runtime imports
+# WHY THE EXTRA BUILD CONTEXT: agent-webui's runtime imports
 # agent_utilities.security.persistence_privacy and friends at module load,
-# but PyPI's newest agent-utilities (1.26.4) doesn't have that module, and
-# agent-utilities' own dependency floor (epistemic-graph[full]>=2.23.2) is
-# ahead of PyPI's newest epistemic-graph (2.23.0) too -- see the Dockerfile
-# header for the full empirical trail. So the build needs agent-utilities'
-# actual source tree (built into a wheel in-image, no Rust required) and a
-# pre-built epistemic-graph wheel (the Rust engine; rebuilding it here would
-# need a cargo/maturin toolchain this image doesn't carry). NEVER "simplify"
+# but PyPI's newest agent-utilities (1.26.4) doesn't have that module -- see
+# the Dockerfile header for the full empirical trail. So the build needs
+# agent-utilities' actual source tree (built into a wheel in-image, no Rust
+# required; the compiled engine ships separately as epistemic-graph, resolved
+# from the default PyPI index like any other dependency since it's a hard
+# base dependency of agent-utilities' own pyproject.toml). NEVER "simplify"
 # this to `pip install agent-utilities[...]` -- that silently resolves from
 # stale PyPI (D-W5WR-1) and crash-loops production on a missing module.
+#
+# (2026-08-10: this script previously also required WHEELHOUSE_PATH, a
+# directory with a pre-built epistemic_graph-*.whl, because PyPI's newest
+# epistemic-graph release was below agent-utilities' declared floor. That
+# local-wheelhouse workaround is gone -- epistemic-graph now installs from
+# PyPI like any normal dependency. If PyPI still doesn't have a satisfying
+# release, this build fails inside `uv pip install` with a pip resolver
+# backtrace naming agent-utilities as unsatisfiable; CI's release.yml
+# `publish-docker` job runs a clearer pre-flight check for the same gap
+# before it ever reaches that point.)
 #
 # WHY build-info.txt: baked into the served SPA bundle at BUILD_SHA/BUILT_AT
 # (see Dockerfile's frontend-build stage) and verified below BEFORE any push --
@@ -50,8 +59,6 @@
 # is normally checked out in -- see plans/au-eg-program/designs/
 # design-remote-build-hosts-2026-08-06.md for the r820 buildhost layout):
 #   AU_SRC_PATH       path to an agent-utilities checkout (default: ../agent-utilities)
-#   WHEELHOUSE_PATH   directory containing epistemic_graph-*.whl
-#                     (default: ../../.dev-wheelhouse)
 #   IMAGE             image name:tag prefix (default: knucklessg1/agent-webui)
 #   DOCKER_CONTEXT    docker context to build in (default: r820; see above)
 #   DOCKER            docker binary to invoke (default: docker)
@@ -59,7 +66,6 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AU_SRC_PATH="${AU_SRC_PATH:-${REPO_ROOT}/../agent-utilities}"
-WHEELHOUSE_PATH="${WHEELHOUSE_PATH:-${REPO_ROOT}/../../.dev-wheelhouse}"
 IMAGE="${IMAGE:-knucklessg1/agent-webui}"
 DOCKER_CONTEXT="${DOCKER_CONTEXT:-r820}"
 DOCKER="${DOCKER:-docker --context ${DOCKER_CONTEXT}}"
@@ -102,21 +108,13 @@ if ! grep -q '^name = "agent-utilities"' "${AU_SRC_PATH}/pyproject.toml" 2>/dev/
        "it must be a real source tree" >&2
   exit 66
 fi
-if ! ls "${WHEELHOUSE_PATH}"/epistemic_graph-*.whl >/dev/null 2>&1; then
-  echo "WHEELHOUSE_PATH has no epistemic_graph-*.whl: ${WHEELHOUSE_PATH}" >&2
-  echo "set WHEELHOUSE_PATH to a directory containing a pre-built wheel" \
-       "matching agent-utilities' epistemic-graph[full] floor" >&2
-  exit 66
-fi
-
 BUILD_SHA="$(cd "${REPO_ROOT}" && git rev-parse --short HEAD)"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 echo "Building ${IMAGE}:${TAG} on docker context '${DOCKER_CONTEXT}'" \
-     "(au-src=${AU_SRC_PATH}, wheelhouse=${WHEELHOUSE_PATH}, sha=${BUILD_SHA})" >&2
+     "(au-src=${AU_SRC_PATH}, sha=${BUILD_SHA})" >&2
 ${DOCKER} build -f "${REPO_ROOT}/docker/Dockerfile" \
   --build-context au-src="${AU_SRC_PATH}" \
-  --build-context wheelhouse="${WHEELHOUSE_PATH}" \
   --build-arg BUILD_SHA="${BUILD_SHA}" \
   --build-arg BUILD_TIME="${BUILD_TIME}" \
   -t "${IMAGE}:${TAG}" \
