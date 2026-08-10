@@ -645,7 +645,9 @@ async def _drive_http(
     monkeypatch.setattr(
         config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
     )
-    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False)
+    monkeypatch.setattr(
+        config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False
+    )
     monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
 
     async def inner(_scope: dict, _receive: Any, send: Any) -> None:
@@ -680,7 +682,9 @@ async def _drive_ws(
     monkeypatch.setattr(
         config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
     )
-    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False)
+    monkeypatch.setattr(
+        config, 'auth_jwt_issuer', 'https://idp.invalid/', raising=False
+    )
     monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
 
     reached: list[bool] = []
