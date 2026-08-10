@@ -20,7 +20,7 @@
 ![PyPI - Wheel](https://img.shields.io/pypi/wheel/agent-webui)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/agent-webui)
 
-_Version: 2.2.0_
+_Version: 2.3.0_
 
 > **Documentation** — The architecture, graph-activity event model, feature surface,
 > and ecosystem integration of Agent WebUI are maintained in the
