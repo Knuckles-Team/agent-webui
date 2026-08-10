@@ -18,6 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
+import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 import { toast } from 'sonner'
 import { fetchValidated } from '@/lib/api-validation'
 
@@ -146,6 +147,14 @@ export default function OpsPanelView() {
   const [loadingPipeline, setLoadingPipeline] = useState(true)
   const [loadingMaintenance, setLoadingMaintenance] = useState(true)
   const [loadingResources, setLoadingResources] = useState(true)
+  // BUG-008 (dashboard-wide follow-on, GOC-28-W06): a failed fetch used to
+  // leave the previous (or initial empty) state in place with only a
+  // transient toast, so "No phases/operations/resources reported." rendered
+  // identically for a genuinely empty backend and an unreachable one. Each
+  // tab now tracks whether its most recent fetch actually succeeded.
+  const [pipelineUnavailable, setPipelineUnavailable] = useState(false)
+  const [maintenanceUnavailable, setMaintenanceUnavailable] = useState(false)
+  const [resourcesUnavailable, setResourcesUnavailable] = useState(false)
   const [pendingTrigger, setPendingTrigger] = useState<string | null>(null)
   const [isSpawnOpen, setIsSpawnOpen] = useState(false)
   const [spawnForm, setSpawnForm] = useState({
@@ -166,8 +175,10 @@ export default function OpsPanelView() {
     try {
       const data = await fetchValidated('/api/enhanced/pipeline/status', pipelineStatusSchema)
       setPipelineStatus(data as PipelineStatus)
+      setPipelineUnavailable(false)
     } catch (err) {
       toast.error(`Failed to load pipeline status: ${String(err)}`)
+      setPipelineUnavailable(true)
     } finally {
       setLoadingPipeline(false)
     }
@@ -178,8 +189,10 @@ export default function OpsPanelView() {
     try {
       const data = await fetchValidated('/api/enhanced/maintenance/status', maintenanceStatusSchema)
       setMaintenanceStatus(data as MaintenanceStatus)
+      setMaintenanceUnavailable(false)
     } catch (err) {
       toast.error(`Failed to load maintenance status: ${String(err)}`)
+      setMaintenanceUnavailable(true)
     } finally {
       setLoadingMaintenance(false)
     }
@@ -192,8 +205,10 @@ export default function OpsPanelView() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = (await res.json()) as CallableResource[]
       setResources(Array.isArray(data) ? data : [])
+      setResourcesUnavailable(false)
     } catch (err) {
       toast.error(`Failed to load resources: ${String(err)}`)
+      setResourcesUnavailable(true)
     } finally {
       setLoadingResources(false)
     }
@@ -338,6 +353,8 @@ export default function OpsPanelView() {
             <CardContent>
               {loadingPipeline ? (
                 <p className="text-muted-foreground text-sm">Loading pipeline status...</p>
+              ) : pipelineUnavailable ? (
+                <UnavailableNotice what="Pipeline status" />
               ) : phases.length === 0 ? (
                 <p className="text-muted-foreground text-sm">No phases reported.</p>
               ) : (
@@ -440,6 +457,8 @@ export default function OpsPanelView() {
               </div>
               {loadingMaintenance ? (
                 <p className="text-muted-foreground text-sm">Loading maintenance status...</p>
+              ) : maintenanceUnavailable ? (
+                <UnavailableNotice what="Maintenance status" />
               ) : operations.length === 0 ? (
                 <p className="text-muted-foreground text-sm">No operations reported.</p>
               ) : (
@@ -506,6 +525,8 @@ export default function OpsPanelView() {
             <CardContent>
               {loadingResources ? (
                 <p className="text-muted-foreground text-sm">Loading resources...</p>
+              ) : resourcesUnavailable ? (
+                <UnavailableNotice what="Callable resources" />
               ) : resources.length === 0 ? (
                 <p className="text-muted-foreground text-sm">No resources available.</p>
               ) : (

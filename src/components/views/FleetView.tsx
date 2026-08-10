@@ -15,28 +15,68 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 import { toast } from 'sonner'
 import { api, type FleetHealth, type FleetTopology } from '@/lib/api'
 
 const REFRESH_MS = 5000
 
+// BUG-008 (dashboard-wide follow-on, GOC-28-W06): a failed `getFleetHealth`/
+// `getFleetTopology`/`getFleetApprovals` call used to be swallowed by
+// `.catch(() => null)` / `.catch(() => ({ pending: [] }))`, so an operator
+// whose fleet-supervisor fetch was actually failing (network error, 5xx,
+// auth expiry) saw the exact same "No active sessions." / "No pending
+// approvals." text as a genuinely healthy, empty fleet -- a false
+// reassurance on the surface that gates emergency pause/kill and the
+// mutation/risk approval queue. Each section now tracks its own fetch
+// outcome so "confirmed empty" and "couldn't be confirmed" never render
+// identically. Mirrors `EcosystemView.tsx`'s `EcoStatus`/`ServiceNotice`.
+type FleetSectionStatus = 'loading' | 'ready' | 'unavailable'
+
 export default function FleetView() {
   const [health, setHealth] = useState<FleetHealth | null>(null)
+  const [healthStatus, setHealthStatus] = useState<FleetSectionStatus>('loading')
   const [topology, setTopology] = useState<FleetTopology | null>(null)
+  const [topologyStatus, setTopologyStatus] = useState<FleetSectionStatus>('loading')
   const [approvals, setApprovals] = useState<unknown[]>([])
+  const [approvalsStatus, setApprovalsStatus] = useState<FleetSectionStatus>('loading')
   const [loading, setLoading] = useState(false)
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
       const [h, t, a] = await Promise.all([
-        api.getFleetHealth().catch(() => null),
-        api.getFleetTopology().catch(() => null),
-        api.getFleetApprovals().catch(() => ({ pending: [] })),
+        api
+          .getFleetHealth()
+          .then((v) => ({ ok: true as const, v }))
+          .catch(() => ({ ok: false as const, v: null })),
+        api
+          .getFleetTopology()
+          .then((v) => ({ ok: true as const, v }))
+          .catch(() => ({ ok: false as const, v: null })),
+        api
+          .getFleetApprovals()
+          .then((v) => ({ ok: true as const, v }))
+          .catch(() => ({ ok: false as const, v: null })),
       ])
-      if (h) setHealth(h)
-      if (t) setTopology(t)
-      setApprovals(a.pending)
+      if (h.ok) {
+        setHealth(h.v)
+        setHealthStatus('ready')
+      } else {
+        setHealthStatus('unavailable')
+      }
+      if (t.ok) {
+        setTopology(t.v)
+        setTopologyStatus('ready')
+      } else {
+        setTopologyStatus('unavailable')
+      }
+      if (a.ok) {
+        setApprovals(a.v.pending)
+        setApprovalsStatus('ready')
+      } else {
+        setApprovalsStatus('unavailable')
+      }
     } finally {
       setLoading(false)
     }
@@ -126,7 +166,10 @@ export default function FleetView() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              {domains.length === 0 && <p className="text-sm text-muted-foreground">No active sessions.</p>}
+              {healthStatus === 'unavailable' && <UnavailableNotice what="Domain health" />}
+              {healthStatus === 'ready' && domains.length === 0 && (
+                <p className="text-sm text-muted-foreground">No active sessions.</p>
+              )}
               {domains.map(([domain, d]) => (
                 <div key={domain} className="flex items-center justify-between border rounded-md px-3 py-2">
                   <div className="flex items-center gap-3">
@@ -171,6 +214,10 @@ export default function FleetView() {
               <CardDescription>Durable sessions grouped by enterprise domain.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              {topologyStatus === 'unavailable' && <UnavailableNotice what="Topology" />}
+              {topologyStatus === 'ready' && (topology?.domains.length ?? 0) === 0 && (
+                <p className="text-sm text-muted-foreground">No active sessions.</p>
+              )}
               {(topology?.domains ?? []).map((dom) => (
                 <div key={dom.domain}>
                   <div className="font-medium mb-1">{dom.domain}</div>
@@ -207,7 +254,8 @@ export default function FleetView() {
               <CardDescription>Pending high-risk actions awaiting human sign-off.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              {approvals.length === 0 && (
+              {approvalsStatus === 'unavailable' && <UnavailableNotice what="The mutation/risk approval queue" />}
+              {approvalsStatus === 'ready' && approvals.length === 0 && (
                 <p className="text-sm text-muted-foreground flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4" /> No pending approvals.
                 </p>

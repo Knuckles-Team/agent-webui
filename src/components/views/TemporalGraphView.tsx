@@ -10,6 +10,7 @@ import { fetchValidated, looseArray } from '@/lib/api-validation'
 import { GraphCanvas, edgeKey } from '../knowledge-graph/GraphCanvas'
 import type { GraphNode, GraphRelationship } from '../knowledge-graph/GraphAdapter'
 import { usePageContextPublisher, type PageContextContribution } from '@/lib/page-context'
+import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 
 // D-WUI-6 (hostile-payload update) — TemporalGraphView shares GraphView's
 // crash class: `(await res.json()) as GraphNode[]` / `as GraphRelationship[]`
@@ -85,6 +86,11 @@ export default function TemporalGraphView() {
   const [relationships, setRelationships] = useState<GraphRelationship[]>([])
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
   const [loading, setLoading] = useState(true)
+  // BUG-008 (dashboard-wide follow-on, GOC-28-W06): `nodes`/`relationships`
+  // stay at their initial `[]` when a fetch fails (only a transient toast
+  // fires), so "No graph data loaded." rendered identically for a genuinely
+  // empty temporal graph and a fetch failure.
+  const [graphUnavailable, setGraphUnavailable] = useState(false)
   const [expiredEdges, setExpiredEdges] = useState<Set<string>>(new Set())
 
   // Scrubber range: last 30 days → now, expressed as a 0..100 slider position.
@@ -149,7 +155,9 @@ export default function TemporalGraphView() {
       ])
       if (nodesData) setNodes(nodesData)
       if (relsData) setRelationships(relsData)
-      if (!nodesData || !relsData) toast.error('Failed to load temporal graph')
+      const failed = !nodesData || !relsData
+      if (failed) toast.error('Failed to load temporal graph')
+      setGraphUnavailable(failed)
     } finally {
       setLoading(false)
     }
@@ -250,6 +258,10 @@ export default function TemporalGraphView() {
               onSelectNode={setSelectedNode}
               expiredEdges={expiredEdges}
             />
+          ) : graphUnavailable ? (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <UnavailableNotice what="The temporal graph" className="justify-center" />
+            </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
               <Network className="size-10 text-muted-foreground/30 mb-2" />

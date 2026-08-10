@@ -15,6 +15,7 @@ import { CheckCircle2, Layers, Loader2, RefreshCw, Server, XCircle } from 'lucid
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 import { fetchDaemonStatus, fetchShardTopology, type DaemonStatus, type ShardTopology } from '@/lib/admin-api'
 
 function breakerVariant(state: string | undefined): 'default' | 'secondary' | 'destructive' | 'outline' {
@@ -29,12 +30,20 @@ export default function ShardsPanel() {
   const [topology, setTopology] = useState<ShardTopology | null>(null)
   const [daemon, setDaemon] = useState<DaemonStatus | null>(null)
   const [unavailable, setUnavailable] = useState(false)
+  // BUG-008 (dashboard-wide follow-on, GOC-28-W06): `unavailable` is only
+  // ever true for an HTTP 404/501 (the route genuinely not activated yet) --
+  // a real error (network failure, 5xx) left `topology` at `null` with NO
+  // distinguishing state, so "No shard endpoints reported." rendered
+  // identically for that error and for a genuine zero-shard topology.
+  // `topologyError` closes that gap.
+  const [topologyError, setTopologyError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   const refresh = async () => {
     setLoading(true)
     const [top, dae] = await Promise.all([fetchShardTopology(), fetchDaemonStatus()])
     setUnavailable(top.unavailable)
+    setTopologyError(!top.ok && !top.unavailable ? (top.error ?? 'The shard topology request failed.') : null)
     setTopology(top.ok ? top.data : null)
     setDaemon(dae.ok ? dae.data : null)
     setLoading(false)
@@ -81,6 +90,8 @@ export default function ShardsPanel() {
         <p className="text-muted-foreground text-sm">
           The <code>/api/dashboard/daemon/shards</code> route is not activated on this backend yet.
         </p>
+      ) : topologyError ? (
+        <UnavailableNotice what={`Shard topology (${topologyError})`} />
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

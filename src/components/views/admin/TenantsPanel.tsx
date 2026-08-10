@@ -23,6 +23,7 @@ import { Boxes, Database, GitBranch, Loader2, Network, RefreshCw } from 'lucide-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 import {
   fetchCodeInstances,
   fetchGraphStats,
@@ -42,6 +43,11 @@ export default function TenantsPanel() {
   const [stats, setStats] = useState<GraphStats | null>(null)
   const [topology, setTopology] = useState<ShardTopology | null>(null)
   const [sources, setSources] = useState<string[]>([])
+  // BUG-008 (dashboard-wide follow-on, GOC-28-W06): a failed `/enhanced/code/
+  // instances` fetch left `sources` at `[]` with no distinguishing state, so
+  // "No indexed source tenants reported." rendered identically for a real
+  // fresh-install zero and a fetch failure.
+  const [sourcesUnavailable, setSourcesUnavailable] = useState(false)
   const [loading, setLoading] = useState(false)
 
   const refresh = async () => {
@@ -50,6 +56,7 @@ export default function TenantsPanel() {
     setStats(st.ok ? st.data : null)
     setTopology(top.ok ? top.data : null)
     setSources(src.ok && src.data ? src.data.source_systems : [])
+    setSourcesUnavailable(!src.ok)
     setLoading(false)
   }
 
@@ -161,6 +168,8 @@ export default function TenantsPanel() {
         <CardContent>
           {loading ? (
             <Loader2 className="size-4 animate-spin text-muted-foreground" />
+          ) : sourcesUnavailable ? (
+            <UnavailableNotice what="Indexed source tenants" />
           ) : sources.length === 0 ? (
             <p className="text-muted-foreground text-sm">No indexed source tenants reported.</p>
           ) : (
