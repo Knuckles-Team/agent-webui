@@ -22,6 +22,18 @@ credential anywhere:
     WebUI's admin routes stay closed until a realm admin deliberately opens
     them.
 
+``tier2-admission``
+    Closes BUG-068/BUG-038: a Keycloak realm role only ever satisfies **Tier
+    1** (the JWT-scope check). The engine ALSO gates ``admin:cluster-read``
+    (the ``PlacementRoute`` the backend's data path depends on) behind a
+    SECOND, independent, engine-local RBAC check that no Keycloak grant can
+    satisfy — see ``agent_utilities.security.engine_rbac_admission`` and
+    ``stage_tier2_admission()`` below for the full design. Runs
+    ``agent_utilities.security.tier2_admission_cli.run_tier2_admission``
+    against the service account's just-resolved Keycloak identity, granting
+    the minimum (a narrow named role, never ``System``/``security:admin``).
+    Idempotent; safe on every deploy.
+
 ``openbao``
     Writes the resolved configuration to KV ``apps/agent-webui`` — the single
     source the ``ExternalSecret`` mirrors.  Never writes to the mirrored
@@ -48,6 +60,11 @@ Credentials this script needs (read, never printed):
   ``platform/keycloak-creds`` Kubernetes Secret.
 * OpenBao root/write token — ``BAO_ROOT_TOKEN``, or read from
   ``services/openbao/.env``.
+* Engine Tier-2 admission provisioner identity — a secret at
+  ``engine-admission/provisioner`` in the configured secrets backend (see
+  ``agent_utilities.security.tier2_admission_cli`` for how to seed it once).
+  Only resolved when the ``tier2-admission`` stage actually applies (never
+  under ``--dry-run``).
 
 Nothing this script prints is secret: it reports client IDs, paths, key
 *names*, and outcomes only.
@@ -104,6 +121,14 @@ TENANT = os.environ.get('KEYCLOAK_TENANT', 'homelab')
 SERVICE_ROLES = ('kg:write', 'admin:cluster-read')
 USER_ROLES = ('kg:read', 'kg:write')
 GRAPH_ROLES = ('kg:read', 'kg:write', 'kg:admin')
+
+# The narrow, named RBAC role the ENGINE's own Tier-2 admission grants the
+# webui service account -- see stage_tier2_admission() below for why this is a
+# SEPARATE step from SERVICE_ROLES above (Keycloak realm roles never reach the
+# engine's Tier-2 gate at all). Deliberately not "System"/full admin: an
+# `admin_grant` on this one named role is the minimum that makes
+# `admin:cluster-read` (PlacementRoute) reachable.
+TIER2_ADMISSION_ROLE = 'webui-cluster-read'
 
 NAMESPACE = os.environ.get('WEBUI_NAMESPACE', 'apps')
 DEPLOYMENT = 'agent-webui'
@@ -450,15 +475,30 @@ def _realm_role_objects(token: str, names: tuple[str, ...]) -> list[dict[str, An
     return [by_name[name] for name in names]
 
 
-def _ensure_service_account_roles(
-    token: str, uuid: str, client_id: str, dry_run: bool
-) -> None:
+def _service_account_user_id(token: str, uuid: str, client_id: str) -> str:
+    """The Keycloak user id of ``client_id``'s service account.
+
+    This is not a cosmetic detail: it is the ``sub`` claim on every token that
+    service account mints, and ``agent_utilities.security.identity.normalize_identity``
+    resolves a verified principal's subject as ``sub`` | ``client_id`` | ``azp``
+    -- checking ``sub`` FIRST. So this user id, not the literal ``client_id``
+    string, is exactly the value that becomes the service's own
+    ``VerifiedRequestContext.agent_id`` at request time -- the value the Tier-2
+    admission manifest (``stage_tier2_admission`` below) MUST key on for the
+    grant to ever match at the engine.
+    """
     _status, account = _kc(
         'GET', f'/admin/realms/{REALM}/clients/{uuid}/service-account-user', token
     )
     if not account:
         raise ProvisioningError(f'{client_id} has no service account user')
-    user_id = account['id']
+    return str(account['id'])
+
+
+def _ensure_service_account_roles(
+    token: str, uuid: str, client_id: str, dry_run: bool
+) -> None:
+    user_id = _service_account_user_id(token, uuid, client_id)
     _status, held = _kc(
         'GET', f'/admin/realms/{REALM}/users/{user_id}/role-mappings/realm', token
     )
@@ -540,6 +580,94 @@ def _ensure_user_group(token: str, grant_users: list[str], dry_run: bool) -> Non
         log(f'  user {username}: added to {USER_GROUP}')
 
 
+def stage_tier2_admission(dry_run: bool) -> None:
+    """Run the engine's own Tier-2 RBAC admission pass for the webui backend
+    service account (closes BUG-068/BUG-038).
+
+    A Keycloak realm role (``SERVICE_ROLES`` above, including
+    ``admin:cluster-read`` itself) only ever satisfies **Tier 1** -- the
+    verified-JWT-scope check. The engine ALSO gates ``admin:cluster-read``
+    (the ``PlacementRoute`` the webui backend's data path depends on) behind
+    a SECOND, independent, engine-local check --
+    ``IsolationLayer::has_admin_capability`` -- that consults only a durable
+    engine-side RBAC store no Keycloak grant, however broad, ever satisfies.
+    See ``agent_utilities.security.engine_rbac_admission``'s module
+    docstring (GOC-62 D3(a)) for the full design. Without this stage a fresh
+    engine RBAC store has NO admin identity at all, and every placement
+    lookup fails ``ACCESS_DENIED`` even though Keycloak granted the matching
+    scope -- exactly the gap the live cluster papered over with an
+    undocumented by-hand admission call on 2026-08-08 (see the comment on
+    ``SERVICE_ROLES`` above). This stage performs that same admission
+    reproducibly, from source, on every deploy.
+
+    Grants the MINIMUM that reaches ``admin:cluster-read``: a narrow, named
+    ``admin_grant`` role (``TIER2_ADMISSION_ROLE``) scoped to Graph
+    ``__admin__``, never the unconditional ``System`` identity and never
+    Keycloak's ``security:admin``. Delegates to
+    ``agent_utilities.security.tier2_admission_cli.run_tier2_admission``,
+    which is idempotent (safe on every deploy -- see
+    ``provision_tier2_admission``'s own docstring) and fails LOUD: a failed
+    admission raises :class:`ProvisioningError` and stops the script rather
+    than silently leaving the service under-admitted (BUG-038's whole
+    point). The identity that performs the admission is resolved from the
+    configured secrets backend (never hard-coded here) and is logged by
+    ``provision_tier2_admission`` itself on a successful bootstrap -- so a
+    deploy log always names who did this, addressing the same
+    no-attributable-caller gap flagged in BUG-070.
+
+    ``dry_run=True`` never resolves a real credential and never touches a
+    live engine (see ``run_tier2_admission``'s own docstring) -- it proves
+    the manifest is well-formed and reachable against an in-memory fixture,
+    the same shape of proof this module's own tests use.
+    """
+
+    from agent_utilities.security.engine_rbac_admission import ServiceAdmissionEntry
+    from agent_utilities.security.tier2_admission_cli import (
+        Tier2AdmissionError,
+        run_tier2_admission,
+    )
+
+    log(f'[tier2-admission] role={TIER2_ADMISSION_ROLE} client={SERVICE_CLIENT}')
+    token = _admin_token()
+    service = _find_client(token, SERVICE_CLIENT)
+    if service is None:
+        raise ProvisioningError(
+            f'{SERVICE_CLIENT}: Keycloak client not found -- run the keycloak '
+            'stage first (Tier-2 admission needs its resolved service-account '
+            'identity)'
+        )
+    principal = _service_account_user_id(token, service['id'], SERVICE_CLIENT)
+
+    manifest = [
+        ServiceAdmissionEntry(
+            agent_id=principal,
+            tier2_actions=('admin:cluster-read',),
+            grant_mode='admin_grant',
+            role=TIER2_ADMISSION_ROLE,
+        ),
+    ]
+
+    if dry_run:
+        log(
+            f'  would admit {principal} ({SERVICE_CLIENT}) via role '
+            f'{TIER2_ADMISSION_ROLE!r} for admin:cluster-read (PREVIEW ONLY -- '
+            'dry-run never resolves a secret or touches a live engine)'
+        )
+
+    try:
+        result = run_tier2_admission(manifest, apply=not dry_run)
+    except Tier2AdmissionError as exc:
+        raise ProvisioningError(f'Tier-2 engine admission failed: {exc}') from exc
+
+    verb = 'admitted' if not dry_run else 'previewed'
+    for outcome in result.outcomes:
+        log(f'  {outcome.agent_id} {verb}: {outcome.detail}')
+    if not result.all_admitted:
+        raise ProvisioningError(
+            'Tier-2 engine admission did not complete for every manifest entry'
+        )
+
+
 def stage_keycloak(grant_users: list[str], dry_run: bool) -> dict[str, str]:
     """Reconcile every realm object and return the resolved configuration."""
 
@@ -616,7 +744,9 @@ def stage_keycloak(grant_users: list[str], dry_run: bool) -> dict[str, str]:
     # Create the realm roles before anything tries to GRANT them: the grant
     # path raises `Realm roles are missing` rather than creating, so a fresh
     # realm used to fail here unless someone had hand-created the roles first.
-    _ensure_realm_roles(token, tuple({*SERVICE_ROLES, *USER_ROLES, *GRAPH_ROLES}), dry_run)
+    _ensure_realm_roles(
+        token, tuple({*SERVICE_ROLES, *USER_ROLES, *GRAPH_ROLES}), dry_run
+    )
     if service is not None:
         _ensure_service_account_roles(token, service['id'], SERVICE_CLIENT, dry_run)
     _ensure_user_group(token, grant_users, dry_run)
@@ -862,9 +992,7 @@ def stage_kubernetes(dry_run: bool) -> None:
                         },
                         {
                             'op': 'add',
-                            'path': (
-                                '/spec/template/spec/containers/0/volumeMounts/-'
-                            ),
+                            'path': ('/spec/template/spec/containers/0/volumeMounts/-'),
                             'value': {
                                 'name': 'homelab-ca',
                                 'mountPath': CA_BUNDLE_MOUNT,
@@ -875,7 +1003,9 @@ def stage_kubernetes(dry_run: bool) -> None:
                 ),
             ]
         )
-        log(f'  deploy/{DEPLOYMENT}: mounted {CA_BUNDLE_CONFIGMAP} at {CA_BUNDLE_MOUNT}')
+        log(
+            f'  deploy/{DEPLOYMENT}: mounted {CA_BUNDLE_CONFIGMAP} at {CA_BUNDLE_MOUNT}'
+        )
     else:
         log(f'  deploy/{DEPLOYMENT}: CA bundle already mounted')
         _ = mounts
@@ -889,7 +1019,7 @@ def main() -> int:
     parser.add_argument(
         '--stage',
         action='append',
-        choices=['keycloak', 'openbao', 'kubernetes'],
+        choices=['keycloak', 'tier2-admission', 'openbao', 'kubernetes'],
         help='Run only the named stage(s). Default: all, in order.',
     )
     parser.add_argument(
@@ -908,12 +1038,18 @@ def main() -> int:
         help='Report what would change without writing anything.',
     )
     args = parser.parse_args()
-    stages = args.stage or ['keycloak', 'openbao', 'kubernetes']
+    stages = args.stage or ['keycloak', 'tier2-admission', 'openbao', 'kubernetes']
 
     try:
         values: dict[str, str] = {}
         if 'keycloak' in stages:
             values = stage_keycloak(args.grant_user, args.dry_run)
+        if 'tier2-admission' in stages:
+            # Self-sufficient: re-resolves the service account's Keycloak
+            # identity itself (does not consume `values`), so it runs
+            # correctly whether or not 'keycloak' ran in this same
+            # invocation -- same independence as the 'kubernetes' stage.
+            stage_tier2_admission(args.dry_run)
         if 'openbao' in stages:
             if not values and not args.dry_run:
                 raise ProvisioningError(
