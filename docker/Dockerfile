@@ -40,11 +40,14 @@
 # deep inside a pip resolver, when that floor still isn't published.) Once
 # agent-utilities 2.x is published to PyPI too, DELETE the `au-wheel-build`
 # stage and its build-context and go back to a plain
-# `"agent-utilities[graph,mcp]>=2.0.0"` in the runtime `uv pip install`
-# (D-WD-6: the `mcp` extra is required too -- without it, fastmcp is absent
-# and register_graph_routes()'s canonical /api/graph|sessions|goals|tools
-# mount fails at startup with ModuleNotFoundError, degrading those routes to
-# 404 for the life of the pod).
+# `"agent-utilities[agent-headless,graph,metrics]>=2.0.0"` in the runtime
+# `uv pip install` (D-WD-6: `agent-headless` self-references the `mcp`
+# extra, required -- without it, fastmcp is absent and
+# register_graph_routes()'s canonical /api/graph|sessions|goals|tools mount
+# fails at startup with ModuleNotFoundError, degrading those routes to 404
+# for the life of the pod; `agent-headless` ALSO supplies
+# `pydantic-ai-harness`, required by `agent_utilities.capabilities.
+# content_guardrails` -- see the runtime install step below).
 #
 # Stages (build in a builder, ship only the installed package + runtime deps
 # in the final image -- no node_modules/cargo/toolchain/source tree):
@@ -110,6 +113,12 @@ RUN pnpm install --frozen-lockfile
 COPY tsconfig.json vite.config.ts components.json index.html ./
 COPY public ./public
 COPY src ./src
+# `pnpm build` runs `node scripts/no_fabrication_gate.mjs` before tsc/vite
+# (package.json's `build` script) -- added by the no-fabrication gate
+# (BUG-008) after this stage's COPY list was last set, so the file was never
+# copied into the builder and every image build failed with MODULE_NOT_FOUND
+# before reaching any agent-utilities/epistemic-graph stage.
+COPY scripts/no_fabrication_gate.mjs ./scripts/no_fabrication_gate.mjs
 RUN pnpm build \
     && printf 'sha=%s\nbuilt_at=%s\n' "${BUILD_SHA}" "${BUILD_TIME}" > agent/agent_webui/dist/build-info.txt
 
@@ -164,6 +173,29 @@ COPY --from=au-wheel-build /dist-au/*.whl /tmp/wheelhouse/
 # PyPI's 1.26.4 satisfies the unpinned "agent-utilities[graph,mcp]"
 # requirement just fine even though it predates `agent_utilities.security.
 # persistence_privacy` (an ImportError agent_webui hits at module load).
+#
+# `[graph,mcp]` -> `[agent-headless,graph,mcp,metrics]` -> settled on
+# `[agent-headless,graph,metrics]` (GOC-73 verification pass): `[graph,mcp]`
+# alone is missing `pydantic-ai-harness` -- `agent_utilities.server` ->
+# `.app` -> `agent_utilities.agent.factory` ->
+# `agent_utilities.capabilities.content_guardrails` imports
+# `pydantic_ai_harness` unconditionally at module load, so an image built
+# with only `[graph,mcp,metrics]` crashes on startup with
+# `ModuleNotFoundError: No module named 'pydantic_ai_harness'` -- caught by
+# actually running a locally built image, not just building it.
+# `agent-headless` (agent-utilities' purpose-built "agent-runtime's
+# skill/runtime stack minus the frontend component libs" extra) already
+# self-references `mcp`, provides `pydantic-ai-harness`, and -- unlike
+# `agent-runtime` -- pulls neither `ag-ui` (agent-webui, this repo, would
+# depend on itself) nor `terminal` (agent-terminal-ui); it also carries NO
+# epistemic-graph reference (GOC-73's `graphos` extra is opt-in and not
+# among `agent-headless`'s transitive closure), so this stays eg-free.
+# Verified: all ~50 `agent_utilities` submodules this repo imports resolve
+# cleanly under `[agent-headless,graph,metrics]` with epistemic-graph
+# absent, and a container built from this exact install line starts and
+# serves `/health`. Keep this extras list in sync with the `test` extra in
+# ../pyproject.toml and the `--extras` flag in
+# ../.github/workflows/release.yml's PyPI-resolvability gate.
 # Referencing the wheel FILE directly (with the extras bracket appended to
 # the path, PEP 508's local-file-with-extras form) removes the ambiguity:
 # there is exactly one candidate for agent-utilities itself, and it is the
@@ -198,7 +230,7 @@ RUN AU_WHEEL="$(ls /tmp/wheelhouse/agent_utilities-*.whl)" \
         > /tmp/au-overrides.txt \
     && uv pip install --system --no-cache --find-links /tmp/wheelhouse \
         --overrides /tmp/au-overrides.txt \
-        "${AU_WHEEL}[graph,mcp,metrics]" /tmp/agent-webui/*.whl \
+        "${AU_WHEEL}[agent-headless,graph,metrics]" /tmp/agent-webui/*.whl \
     && rm -rf /tmp/agent-webui /tmp/wheelhouse /tmp/au-overrides.txt
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

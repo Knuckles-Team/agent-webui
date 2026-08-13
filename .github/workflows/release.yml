@@ -145,8 +145,21 @@ jobs:
       # spending any build time. eg must publish before au; au must publish
       # before this image can install it from the index. Turns that deadlock
       # into one clear line instead of a pip resolver backtrace.
+      #
+      # `--extras agent-headless,graph,metrics` scopes the check to exactly
+      # the extras the runtime stage below actually installs
+      # (docker/Dockerfile's
+      # `uv pip install ... "${AU_WHEEL}[agent-headless,graph,metrics]"`) --
+      # none of which pull in epistemic-graph (GOC-73's `graphos` extra is
+      # opt-in and not among them, including transitively through
+      # `agent-headless`'s own self-referenced `mcp`/`sandbox`). Without
+      # this the gate scanned au-src's WHOLE pyproject.toml (every
+      # optional-dependencies entry, `graphos` included) and failed even
+      # though this image never resolves epistemic-graph from PyPI at all.
+      # Keep this flag's extras list in sync with the runtime
+      # `uv pip install` line if that ever changes.
       - name: Verify required epistemic-graph release is resolvable on PyPI
-        run: python3 scripts/release/check_eg_pypi_resolvable.py au-src/pyproject.toml
+        run: python3 scripts/release/check_eg_pypi_resolvable.py au-src/pyproject.toml --extras agent-headless,graph,metrics
 
       - name: Compute build metadata
         id: meta_build
