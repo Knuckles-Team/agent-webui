@@ -8,6 +8,7 @@ with enhanced workspace management, real-time observability via Logfire,
 and a high-performance React-based frontend.
 """
 
+import asyncio
 import importlib
 import json
 import logging
@@ -20,7 +21,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import logfire
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -61,6 +62,13 @@ _REMOTE_DEFAULT_RATE = 20.0
 _REMOTE_DEFAULT_BURST = 40.0
 _MAX_WEBSOCKET_MESSAGE_BYTES = 1024 * 1024
 _MAX_BEARER_TOKEN_BYTES = 16 * 1024
+# W-19: how often `/ws/dashboard` pushes an `update` message after its initial
+# `snapshot`. Matches the Aggregator's own short read cache (`agent_utilities.
+# gateway.api`'s 10s-TTL comment) so a push never re-fetches data the cache
+# would have answered stale anyway, while staying well under the frontend's
+# 30s HTTP poll (`DashboardView.tsx` `refetchInterval: 30000`) so the socket
+# is genuinely faster than falling back to polling.
+_DASHBOARD_WS_PUSH_INTERVAL_SECONDS = 15.0
 # `/api/enhanced/sessions` (D-WUI-27, D-WUI-33) is deliberately NOT here: nav-registry.ts
 # declares `control-plane.sessions` at `minRole: 'user'`, so this middleware only decides
 # whether the ROUTE is reachable (kg:read for GET, kg:write for mutation, like any other
@@ -1417,12 +1425,71 @@ def create_agent_web_app(
 
     # Mount the service dashboard API if available (optional dependency)
     try:
-        from agent_utilities.gateway.api import dashboard_router
-        from agent_utilities.gateway.ws import dashboard_ws_router as ws_router
+        from agent_utilities.gateway.api import dashboard_router, get_full_dashboard
 
         app.include_router(dashboard_router, prefix='/api/dashboard')
-        app.include_router(ws_router)
         logger.info('Service Dashboard API mounted at /api/dashboard')
+
+        # W-19 (reports/webui-graphos-defects-2026-08-08.md): `/ws/dashboard`
+        # never registered a real route — Starlette closed the unmatched
+        # handshake and uvicorn logged that as a bare "403 Forbidden", which
+        # read for hours like an authorization bug. `_ADMIN_ROUTE_PREFIXES`
+        # above already lists `/ws/dashboard` and `WebUIAuthorizationMiddleware`
+        # already enforces `kg:admin` on it (proven with a real sealed-cookie
+        # chain test in `test_ws_dashboard_denial_diagnostics.py`) — the only
+        # missing piece was the endpoint itself.
+        #
+        # Deliberately NOT `agent_utilities.gateway.ws.dashboard_ws_router`:
+        # that handler re-checks capabilities itself using the OLDER
+        # `gateway:read/write/admin` namespace (`identity_group_capability_map`
+        # never maps `kg:admin` -> `gateway:admin`), so it would reject a
+        # caller `WebUIAuthorizationMiddleware` just admitted. This route
+        # performs NO additional internal auth check — the middleware chain
+        # above is the single source of truth for who may connect — and
+        # streams the exact same payload `GET /api/dashboard/full` serves by
+        # calling that route's own handler (`get_full_dashboard`) rather than
+        # re-deriving the data.
+        @app.websocket('/ws/dashboard')
+        async def _dashboard_ws(websocket: WebSocket) -> None:
+            """Stream dashboard widget data: a `snapshot` on connect, then
+            periodic `update` messages, both shaped exactly like
+            `GET /api/dashboard/full`'s `data` field so the frontend's single
+            `['dashboard-full']` query-cache merge (`DashboardView.tsx`)
+            applies to either source unmodified.
+            """
+            await websocket.accept()
+            message_type = 'snapshot'
+            try:
+                while True:
+                    full = await get_full_dashboard()
+                    await websocket.send_json(
+                        {
+                            'type': message_type,
+                            'data': {
+                                widget_id: widget.model_dump(mode='json')
+                                for widget_id, widget in full.data.items()
+                            },
+                        }
+                    )
+                    message_type = 'update'
+                    try:
+                        # The client never sends anything meaningful (see
+                        # DashboardView.tsx — it only listens); this is purely
+                        # the cheapest way to notice a disconnect promptly
+                        # instead of blocking a full interval on a dead socket.
+                        await asyncio.wait_for(
+                            websocket.receive_text(),
+                            timeout=_DASHBOARD_WS_PUSH_INTERVAL_SECONDS,
+                        )
+                    except TimeoutError:
+                        pass
+            except WebSocketDisconnect:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    '/ws/dashboard stream failed: error_type=%s',
+                    type(exc).__name__,
+                )
 
         # Canonical Knowledge Graph REST surface (CONCEPT:AU-ECO.messaging.native-backend-abstraction): mount the
         # SAME route table the API gateway serves — /api/graph/*, /api/ontology/*,
