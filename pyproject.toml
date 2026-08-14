@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-webui"
-version = "2.4.0"
+version = "2.4.1"
 description = "Agent Web Interface for Pydantic AI Agents"
 readme = "README.md"
 classifiers = [
@@ -17,7 +17,7 @@ classifiers = [
 # dependency: the Dockerfile's own frontend-build/runtime stages document
 # this app importing agent_utilities.security.persistence_privacy and
 # friends at module load, not merely a test-extra floor) requires
-# >=3.12,<3.15. The `test` extra's `agent-utilities[agent-runtime,graph]`
+# >=3.12,<3.15. The `test` extra's `agent-utilities[agent-headless,graph]`
 # pin only surfaced this because it is now resolved as a real editable
 # path dependency (D-W6-BSF-1's sibling fix) instead of a loose `>=2.0.0`
 # published-floor reference that never triggered interpreter-floor
@@ -61,13 +61,27 @@ test = [
     # pyproject.toml); the old name is a silent no-op extra (uv/pip warn and
     # skip it rather than error), so this floor was quietly installing without
     # the agent runtime closure. Caught building docker/Dockerfile (D-WUI-30).
+    # `agent-runtime` -> `agent-headless`: `agent-runtime` self-references
+    # agent-utilities' own `ag-ui` extra (agent-webui -- THIS repo -- as a
+    # dependency of its own dependency closure) and `terminal`
+    # (agent-terminal-ui), neither of which this serving-plane package
+    # renders or needs; `agent-headless` is agent-utilities' purpose-built
+    # "same skill/runtime stack, minus the frontend component libs" extra
+    # (see that extra's own comment in agent-utilities' pyproject.toml) and
+    # is what docker/Dockerfile's runtime `uv pip install` already installs
+    # (`[graph,mcp,metrics]`, D-WD-6/LANE F) -- this mirrors that surface for
+    # the `test` extra instead of the circular `agent-runtime`. Verified: the
+    # ~50 `agent_utilities` submodules this repo imports (knowledge_graph,
+    # core, security, gateway, observability, models, mcp, sdd,
+    # orchestration, server) all import cleanly under
+    # `[agent-headless,graph,metrics]` alone, with epistemic-graph absent.
     # LANE F: `metrics` (prometheus-client, a single light pure-Python wheel)
     # turns the already-wired `GatewayMetricsMiddleware` (installed for free
     # by `register_graph_routes` — see server.py's `create_agent_web_app`)
     # from a graceful no-op into real per-route request-count/duration series
     # on `GET /metrics` — reusing the EXISTING gateway metrics stack instead
     # of a bespoke usage-analytics store.
-    "agent-utilities[agent-runtime,graph,metrics]>=2.0.0"
+    "agent-utilities[agent-headless,graph,metrics]>=2.0.0"
 ]
 
 [[project.authors]]
@@ -98,7 +112,8 @@ agent-webui = "agent_webui.skills"
 # D-W6-BSF-1: the SAME narrow, protocol-compat override agent-utilities'
 # own pyproject.toml declares for itself (see that file's `[tool.uv]`
 # comment for the full "why" -- fastmcp-slim ships no non-prerelease under
-# the fastmcp>=4.0.0b1 floor agent-utilities[agent-runtime] requires, and
+# the fastmcp>=4.0.0b1 floor agent-utilities[agent-headless] (via its
+# self-referenced `mcp` extra) requires, and
 # uv only allows prereleases for a package when a ROOT project's own
 # requirement names one; agent-utilities' override IS such a root
 # requirement inside ITS OWN tree, but does not propagate as one here, so

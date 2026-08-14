@@ -14,6 +14,10 @@ agent/agent_webui/__pycache__
 e2e
 scratch
 scripts
+# frontend-build's Docker stage needs this one file at `pnpm build` time
+# (package.json's `build` script runs it before tsc/vite) -- see
+# docker/Dockerfile's COPY comment.
+!scripts/no_fabrication_gate.mjs
 docs
 reports
 build
