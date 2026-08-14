@@ -91,6 +91,9 @@ email = "maintainers@users.noreply.github.com"
 [project.license]
 text = "MIT"
 
+[tool.uv.workspace]
+members = ["."]
+
 [tool.ruff.format]
 docstring-code-format = false
 quote-style = "single"
