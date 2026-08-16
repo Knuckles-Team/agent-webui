@@ -134,6 +134,57 @@ const dashboardFullSchema: z.ZodType<{ layout: DashboardLayout; data: Record<str
   data: z.record(z.string(), widgetDataSchema),
 })
 
+/* ── BUG-019 (GOC-29): WebSocket reconnect backoff + stale-connection guard ──
+ *
+ * Extracted as pure, DOM-free logic so it is unit-testable independent of
+ * this repo's react-query render harness (the same "assert the pure logic,
+ * not DOM output" precedent WorkflowEditorView/ObjectView already use for
+ * react-query-backed views).
+ */
+
+export const RECONNECT_BASE_DELAY_MS = 1000
+export const RECONNECT_MAX_DELAY_MS = 30000
+
+/** Doubles the delay every failed attempt, capped at {@link RECONNECT_MAX_DELAY_MS}. */
+export function nextBackoffDelayMs(previousDelayMs: number): number {
+  return Math.min(RECONNECT_MAX_DELAY_MS, previousDelayMs * 2)
+}
+
+/**
+ * Applies +/-30% full jitter around `delayMs`, clamped to
+ * `[0, RECONNECT_MAX_DELAY_MS]`. Spreads simultaneously-disconnected clients'
+ * retries instead of every client reconnecting on the same tick (the
+ * thundering-herd pattern a flat, un-jittered delay produces).
+ */
+export function jitteredReconnectDelayMs(delayMs: number, random: () => number = Math.random): number {
+  const jitter = delayMs * 0.3 * (random() * 2 - 1)
+  return Math.min(RECONNECT_MAX_DELAY_MS, Math.max(0, delayMs + jitter))
+}
+
+/**
+ * Tracks which WebSocket "generation" (one per `connect()` attempt) is
+ * currently authoritative. A stale/duplicate message or close/error event
+ * from a socket a newer `connect()` has already superseded -- e.g. arriving
+ * just after a forced disconnect triggers a fresh reconnect -- must never be
+ * allowed to overwrite state a newer connection already established. Each
+ * socket's callbacks close over the generation they were opened with and
+ * call {@link isCurrent} before acting on anything.
+ */
+export class ConnectionGeneration {
+  private current = 0
+
+  /** Call once per `connect()` attempt; returns the generation to close over. */
+  next(): number {
+    this.current += 1
+    return this.current
+  }
+
+  /** True only for the most recently started generation. */
+  isCurrent(generation: number): boolean {
+    return generation === this.current
+  }
+}
+
 /* ── Icon Map ────────────────────────────────────────────────────── */
 
 const ICON_MAP: Record<string, ReactNode | undefined> = {
@@ -390,24 +441,68 @@ export default function DashboardView() {
     staleTime: 10000,
   })
 
-  // WebSocket connection for real-time updates
+  // WebSocket connection for real-time updates.
+  //
+  // BUG-019 (GOC-29) partial fix, frontend-only scope: the backend
+  // `/ws/dashboard` handler (`agent_webui/server.py::_dashboard_ws`, out of
+  // this lane's file ownership) re-sends the ENTIRE dashboard payload on
+  // every push -- it carries no per-widget subscription protocol, sequence
+  // number, or cursor, so a true subscription-scoped fetch and a
+  // sequence-verified resume both require a backend wire-protocol change
+  // that is a separate reviewed increment, not something to slip in here
+  // (same "additive, not a shared-contract rewrite" judgement BUG-071 used).
+  // Two things ARE fully fixable within this repo's surface and are fixed
+  // here:
+  //   1. Reconnect used a flat, un-jittered 5000ms retry -- every client
+  //      that lost the connection at the same moment (a single dashboard
+  //      pod restart affects all of them at once) would reconnect in
+  //      lockstep, a thundering-herd pattern BD-019 explicitly calls out
+  //      ("exponential jittered reconnect"). Replaced with exponential
+  //      backoff (1s -> 30s cap) plus +/-30% jitter, reset to the base delay
+  //      on every successful `onopen`.
+  //   2. There was no guard against a stale/duplicate message from a
+  //      SUPERSEDED socket landing after a newer connection already took
+  //      over (e.g. the old socket's `onmessage`/`onclose` firing after
+  //      `connect()` already opened a replacement following a forced
+  //      disconnect) -- each socket now closes over its own connection
+  //      generation and is ignored once a newer generation exists, so a
+  //      late-arriving stale message can never overwrite fresher data.
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`
 
     let ws: WebSocket | null = null
     let reconnectTimer: ReturnType<typeof setTimeout>
+    let reconnectDelayMs: number = RECONNECT_BASE_DELAY_MS
+    const generation = new ConnectionGeneration()
+    let disposed = false
+
+    const scheduleReconnect = () => {
+      if (disposed) return
+      reconnectTimer = setTimeout(connect, jitteredReconnectDelayMs(reconnectDelayMs))
+      reconnectDelayMs = nextBackoffDelayMs(reconnectDelayMs)
+    }
 
     const connect = () => {
+      if (disposed) return
+      const myGeneration = generation.next()
+
       try {
         ws = new WebSocket(wsUrl)
         wsRef.current = ws
 
         ws.onopen = () => {
+          if (!generation.isCurrent(myGeneration)) return
           setIsConnected(true)
+          // A confirmed connection resets the backoff -- a run of failures
+          // shouldn't keep the delay elevated after recovery.
+          reconnectDelayMs = RECONNECT_BASE_DELAY_MS
         }
 
         ws.onmessage = (event) => {
+          // Ignore anything from a socket a newer `connect()` has already
+          // superseded (BUG-019 duplicate/stale guard).
+          if (!generation.isCurrent(myGeneration)) return
           try {
             const msg = JSON.parse(event.data as string) as { type?: string; data?: Record<string, WidgetData> }
             if (msg.type === 'update' || msg.type === 'snapshot') {
@@ -428,22 +523,25 @@ export default function DashboardView() {
         }
 
         ws.onclose = () => {
+          if (!generation.isCurrent(myGeneration)) return
           setIsConnected(false)
           wsRef.current = null
-          reconnectTimer = setTimeout(connect, 5000)
+          scheduleReconnect()
         }
 
         ws.onerror = () => {
+          if (!generation.isCurrent(myGeneration)) return
           ws?.close()
         }
       } catch {
-        reconnectTimer = setTimeout(connect, 5000)
+        if (generation.isCurrent(myGeneration)) scheduleReconnect()
       }
     }
 
     connect()
 
     return () => {
+      disposed = true
       clearTimeout(reconnectTimer)
       if (ws) {
         ws.onclose = null
