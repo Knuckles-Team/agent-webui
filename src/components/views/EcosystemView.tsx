@@ -396,8 +396,44 @@ interface StirlingJob {
   timestamp: string
 }
 
+// BUG-018 (GOC-25): every server `/api/enhanced/ecosystem/services` reports
+// that already has a dedicated card (or an explicit "no backend endpoint
+// wired" notice, e.g. Mealie/Wger/Langfuse above) elsewhere in this view.
+// This is the ONLY place that inventory is declared -- the "Other
+// Integrations" tab below renders a generic descriptor for every catalog
+// entry NOT in this set, so a newly installed MCP server is visible by
+// default (with an honest "no dedicated dashboard yet" reason) instead of
+// silently omitted until someone hand-writes it a card.
+const COVERED_ECOSYSTEM_SERVICES = new Set([
+  'tunnel-manager',
+  'systems-manager',
+  'container-manager-mcp',
+  'repository-manager',
+  'atlassian-agent',
+  'github-agent',
+  'gitlab-api',
+  'portainer-agent',
+  'data-science-mcp',
+  'scholarx',
+  'uptime-kuma-agent',
+  'searxng-mcp',
+  'home-assistant-agent',
+  'nextcloud-agent',
+  'microsoft-agent',
+  'media-downloader',
+  'qbittorrent-agent',
+  'stirlingpdf-agent',
+  'mealie-mcp',
+  'wger-agent',
+  'langfuse-agent',
+])
+
+const catalogServicesSchema = looseArray(z.string())
+
 export default function EcosystemView() {
-  const [activeDomain, setActiveDomain] = useState<'devops' | 'research' | 'infra' | 'lifestyle' | 'media'>('devops')
+  const [activeDomain, setActiveDomain] = useState<'devops' | 'research' | 'infra' | 'lifestyle' | 'media' | 'other'>(
+    'devops',
+  )
   const [loading, setLoading] = useState(false)
 
   // Core Hosts & Systems States
@@ -443,6 +479,11 @@ export default function EcosystemView() {
   const setStatus = (key: string, state: EcoState) => {
     setEcoStatus((prev) => ({ ...prev, [key]: state }))
   }
+
+  // BUG-018 (GOC-25): the live MCP/agent-package catalog, sourced from
+  // `/api/enhanced/ecosystem/services` rather than any hard-coded list.
+  const [catalogServices, setCatalogServices] = useState<string[]>([])
+  const [catalogState, setCatalogState] = useState<EcoState>(LOADING_STATE)
 
   // 14 Services States
   const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([])
@@ -603,6 +644,34 @@ export default function EcosystemView() {
       console.error(err)
       setRepos([])
       setRepoInventoryError('Repository inventory unavailable: the API could not be reached')
+    }
+  }
+
+  // BUG-018 (GOC-25): `/api/enhanced/ecosystem/services` is a raw
+  // `list[str]`, not the `{status, ...}` envelope `classifyEcosystemList`
+  // expects for the other `/ecosystem/*` routes -- validate its own shape
+  // directly instead of forcing it through that helper.
+  const fetchEcosystemCatalog = async () => {
+    setCatalogState(LOADING_STATE)
+    try {
+      const res = await fetch('/api/enhanced/ecosystem/services')
+      const body: unknown = await res.json().catch(() => null)
+      if (!res.ok) {
+        const detail =
+          body && typeof body === 'object' && typeof (body as Record<string, unknown>).detail === 'string'
+            ? (body as Record<string, unknown>).detail
+            : `HTTP ${res.status}`
+        setCatalogServices([])
+        setCatalogState({ status: 'error', reason: String(detail) })
+        return
+      }
+      const parsed = validateShape(catalogServicesSchema, body, '/api/enhanced/ecosystem/services')
+      setCatalogServices(parsed)
+      setCatalogState({ status: parsed.length > 0 ? 'ready' : 'empty' })
+    } catch (err) {
+      console.error(err)
+      setCatalogServices([])
+      setCatalogState({ status: 'error', reason: 'The live integration catalog could not be reached.' })
     }
   }
 
@@ -803,6 +872,7 @@ export default function EcosystemView() {
     void fetchSystems()
     void fetchContainers()
     void fetchRepos()
+    void fetchEcosystemCatalog()
     void loadEcosystemData()
     // Periodic refresh
     const interval = setInterval(() => {
@@ -886,6 +956,24 @@ export default function EcosystemView() {
             <Download className="size-4" />
             Media & Utilities
           </button>
+          <button
+            onClick={() => {
+              setActiveDomain('other')
+            }}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
+              activeDomain === 'other'
+                ? 'bg-primary text-primary-foreground shadow-md'
+                : 'hover:bg-accent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Compass className="size-4" />
+            Other Integrations
+            {catalogState.status === 'ready' && (
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                {catalogServices.filter((s) => !COVERED_ECOSYSTEM_SERVICES.has(s)).length}
+              </Badge>
+            )}
+          </button>
         </div>
 
         <Button
@@ -897,6 +985,7 @@ export default function EcosystemView() {
             void fetchSystems()
             void fetchContainers()
             void fetchRepos()
+            void fetchEcosystemCatalog()
           }}
           disabled={loading}
           className="gap-1.5"
@@ -2272,6 +2361,60 @@ export default function EcosystemView() {
                     ))}
                   </tbody>
                 </table>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* 6. OTHER INTEGRATIONS DOMAIN (BUG-018, GOC-25) — the live catalog
+            is the availability authority here, not a hard-coded list. Every
+            server `/api/enhanced/ecosystem/services` reports that has no
+            dedicated card elsewhere in this view (COVERED_ECOSYSTEM_SERVICES)
+            gets a generic descriptor with an explicit "no dedicated
+            dashboard yet" reason instead of being silently omitted. */}
+        {activeDomain === 'other' && (
+          <div className="space-y-6 animate-in fade-in-50 duration-200">
+            <Card className="border border-border/80 shadow-md">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Compass className="text-primary size-5" /> Other Installed Integrations
+                </CardTitle>
+                <CardDescription>
+                  Every MCP server / agent package the live catalog reports that has no dedicated dashboard yet. A
+                  server never disappears from this list just because no one has hand-built it a card.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ServiceNotice state={catalogState} emptyLabel="No additional integrations were reported." />
+                {catalogState.status === 'ready' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {catalogServices
+                      .filter((service) => !COVERED_ECOSYSTEM_SERVICES.has(service))
+                      .sort((a, b) => a.localeCompare(b))
+                      .map((service) => (
+                        <Card
+                          key={service}
+                          className="p-4 bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Layers className="text-muted-foreground size-4 shrink-0" />
+                            <h4 className="font-bold text-xs text-foreground tracking-tight truncate">{service}</h4>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className="mt-3 w-fit text-[9px] uppercase border-amber-500/30 text-amber-500 bg-amber-500/10"
+                          >
+                            No dedicated dashboard implemented yet
+                          </Badge>
+                        </Card>
+                      ))}
+                    {catalogServices.filter((service) => !COVERED_ECOSYSTEM_SERVICES.has(service)).length === 0 && (
+                      <p className="text-sm text-muted-foreground col-span-full">
+                        Every server the live catalog reports already has a dedicated section elsewhere in this view.
+                      </p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

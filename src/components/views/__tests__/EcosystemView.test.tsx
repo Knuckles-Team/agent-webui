@@ -118,6 +118,46 @@ describe('EcosystemView (BUG-008 truthful-state proof)', () => {
     expect(screen.queryByRole('button', { name: /split pdf/i })).not.toBeInTheDocument()
   })
 
+  it('BUG-018: every server the live catalog reports appears somewhere in the UI, or carries an explicit blocked/unavailable reason -- an unknown MCP server is never silently omitted', async () => {
+    // `GET /api/enhanced/ecosystem/services` (agent_webui/api_extensions.py
+    // `list_ecosystem_services`) is the runtime catalog authority: it
+    // dynamically scans `agent-packages/agents/*` plus a small guaranteed
+    // set. Prior to BUG-018's fix, EcosystemView never fetched this endpoint
+    // at all -- its ~20 integration cards were a fixed, hand-written list,
+    // so any server not on that list (most of the ~65-strong fleet) had
+    // zero surface presence: no card, no blocked reason, nothing.
+    const KNOWN_UNCOVERED_SERVER = 'zz-catalog-parity-probe-mcp'
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url.includes('/ecosystem/services')) {
+        return Promise.resolve(
+          new Response(JSON.stringify(['github-agent', KNOWN_UNCOVERED_SERVER]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+      }
+      return Promise.reject(new Error('network unreachable'))
+    }) as unknown as typeof fetch
+
+    render(<EcosystemView />)
+
+    const otherTab = screen.getByRole('button', { name: /other integrations/i })
+    otherTab.click()
+
+    // The probe name must surface once its tab is open, proving the live
+    // catalog -- not a hard-coded list -- is the availability authority. A
+    // server with no dedicated card still gets a generic descriptor with an
+    // explicit blocked/degraded reason; it is never dropped on the floor.
+    await waitFor(
+      () => {
+        expect(screen.queryAllByText(new RegExp(KNOWN_UNCOVERED_SERVER, 'i')).length).toBeGreaterThan(0)
+      },
+      { timeout: 3000 },
+    )
+    expect(screen.getAllByText(/no dedicated dashboard implemented yet/i).length).toBeGreaterThan(0)
+  })
+
   it('renders no fabricated Mealie/Wger data and reports both as unavailable', async () => {
     global.fetch = rejectingFetch()
     render(<EcosystemView />)
