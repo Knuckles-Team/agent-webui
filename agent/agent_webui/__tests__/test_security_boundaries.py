@@ -1350,3 +1350,195 @@ def test_list_llm_models_degrades_to_empty_list_on_failure(
 
     monkeypatch.setattr(config, 'chat_models', _ExplodingList())
     assert asyncio.run(api_extensions.list_llm_models()) == []
+
+
+# --------------------------------------- BUG-260: schema-derived model create/edit
+
+
+def test_llm_model_schema_is_derived_from_agentconfig_not_hand_maintained() -> None:
+    """`/llm/model-schema` must reflect `ChatModelConfig`/`EmbeddingModelConfig`
+    directly (`model_json_schema()`), so a field AgentConfig adds/removes shows
+    up here automatically -- the whole point of BUG-260."""
+
+    from agent_utilities.core.config import ChatModelConfig, EmbeddingModelConfig
+
+    result = asyncio.run(api_extensions.get_llm_model_schema())
+
+    chat_fields = set(result['chat']['properties'])
+    assert chat_fields == set(ChatModelConfig.model_fields)
+    assert set(result['chat']['required']) == {'id', 'provider'}
+
+    # EmbeddingModelConfig is self-referencing (`fallback`), which pydantic
+    # renders as a root `$ref` -- `_flatten_model_schema` must resolve it into
+    # a flat `properties`/`required` shape identical in kind to the chat one.
+    embedding_fields = set(result['embedding']['properties'])
+    assert embedding_fields == set(EmbeddingModelConfig.model_fields)
+    assert '$ref' not in result['embedding']
+    assert set(result['embedding']['required']) == {'id', 'provider'}
+
+
+def test_llm_model_schema_updates_when_agentconfig_gains_a_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The generated-not-hand-maintained guarantee, proven directly: a NEW
+    field added to `ChatModelConfig` appears in `/llm/model-schema` with no
+    change to this route's own code."""
+
+    from agent_utilities.core import config as config_module
+    from pydantic import BaseModel, ConfigDict
+
+    class _ChatModelConfigWithExtraField(BaseModel):
+        id: str
+        provider: str
+        brand_new_field: str = 'default-value'
+        model_config = ConfigDict(extra='forbid')
+
+    # `get_llm_model_schema` does `from agent_utilities.core.config import
+    # ChatModelConfig` INSIDE the function body, so patching the attribute on
+    # the source module is picked up at call time -- no route code changes.
+    monkeypatch.setattr(
+        config_module, 'ChatModelConfig', _ChatModelConfigWithExtraField
+    )
+    result = asyncio.run(api_extensions.get_llm_model_schema())
+    assert 'brand_new_field' in result['chat']['properties']
+
+
+def _config_json_path(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(api_extensions, 'config_dir', lambda: tmp_path)
+    return tmp_path / 'config.json'
+
+
+def test_update_llm_models_validates_and_persists_a_new_chat_model(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The write path (BUG-260's "create a template/model" ask): a valid
+    model is validated against `ChatModelConfig`, merged into the persisted
+    document under `chat_models`, and the WHOLE resulting AgentConfig
+    document is re-validated before the atomic write."""
+
+    import json
+
+    config_path = _config_json_path(tmp_path, monkeypatch)
+
+    result = asyncio.run(
+        api_extensions.update_llm_models(
+            {
+                'models': [
+                    {
+                        'id': 'new-model',
+                        'provider': 'openai',
+                        'intelligence_level': 'high',
+                        'vision': True,
+                    }
+                ]
+            }
+        )
+    )
+    assert result == {'status': 'success'}
+
+    written = json.loads(config_path.read_text())
+    assert len(written['chat_models']) == 1
+    saved = written['chat_models'][0]
+    assert saved['id'] == 'new-model'
+    assert saved['vision'] is True
+    # Every ChatModelConfig field is present with its schema default --
+    # nothing was silently dropped by a hand-picked write shape either.
+    assert saved['tools_enabled'] is False
+    assert saved['reasoning_effort'] == 'inherit'
+
+
+def test_update_llm_models_rejects_a_field_agentconfig_does_not_permit(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ChatModelConfig`'s `extra='forbid'` must reject an unknown field --
+    the create/edit form cannot smuggle in something AgentConfig disallows."""
+
+    config_path = _config_json_path(tmp_path, monkeypatch)
+
+    with pytest.raises(FastAPIHTTPException) as exc_info:
+        asyncio.run(
+            api_extensions.update_llm_models(
+                {'models': [{'id': 'bad', 'provider': 'openai', 'not_a_real_field': 1}]}
+            )
+        )
+    assert exc_info.value.status_code == 422
+    assert not config_path.exists()
+
+
+def test_update_llm_models_rejects_a_model_missing_a_required_field(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = _config_json_path(tmp_path, monkeypatch)
+
+    with pytest.raises(FastAPIHTTPException) as exc_info:
+        asyncio.run(
+            api_extensions.update_llm_models({'models': [{'id': 'no-provider'}]})
+        )
+    assert exc_info.value.status_code == 422
+    assert not config_path.exists()
+
+
+def test_update_embedding_models_validates_and_persists_without_touching_chat_models(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BUG-260: BOTH kinds are editable, and each write touches ONLY its own
+    registry key -- an embedding-model save must never clobber chat_models."""
+
+    import json
+
+    config_path = _config_json_path(tmp_path, monkeypatch)
+    config_path.write_text(
+        json.dumps(
+            {
+                'chat_models': [{'id': 'keep-me', 'provider': 'openai'}],
+                'embedding_models': [],
+            }
+        )
+    )
+
+    result = asyncio.run(
+        api_extensions.update_embedding_models(
+            {'models': [{'id': 'bge-m3', 'provider': 'openai', 'chunk_size': 512}]}
+        )
+    )
+    assert result == {'status': 'success'}
+
+    written = json.loads(config_path.read_text())
+    assert written['chat_models'] == [{'id': 'keep-me', 'provider': 'openai'}]
+    assert written['embedding_models'][0]['id'] == 'bge-m3'
+    assert written['embedding_models'][0]['chunk_size'] == 512
+
+
+def test_get_llm_model_detail_returns_full_fields_including_secret_refs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unlike `/llm/models` (which deliberately excludes secret REFERENCES
+    from the browse list), `/llm/model-detail` is the edit-form fetch and
+    must return every field so an existing model's auth wiring is editable."""
+
+    from agent_utilities.core.config import ChatModelConfig, config
+
+    model = ChatModelConfig(
+        id='qwen/qwen3', provider='openai', api_key_ref='secret://provider/key'
+    )
+    monkeypatch.setattr(config, 'chat_models', [model])
+
+    detail = asyncio.run(
+        api_extensions.get_llm_model_detail(kind='chat', model_id='qwen/qwen3')
+    )
+    assert detail['id'] == 'qwen/qwen3'
+    assert detail['api_key_ref'] == 'secret://provider/key'
+
+
+def test_get_llm_model_detail_404s_for_an_unknown_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent_utilities.core.config import config
+
+    monkeypatch.setattr(config, 'chat_models', [])
+
+    with pytest.raises(FastAPIHTTPException) as exc_info:
+        asyncio.run(
+            api_extensions.get_llm_model_detail(kind='chat', model_id='does-not-exist')
+        )
+    assert exc_info.value.status_code == 404
