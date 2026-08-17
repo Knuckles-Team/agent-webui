@@ -165,13 +165,23 @@ export function useConversations(userKey: string): ConversationEntry[] {
         const data = await fetchValidated('/api/enhanced/chats', looseArray(rawConversationEntrySchema))
         if (cancelled) return
         setRemote(
-          data.map((entry) => ({
-            ...entry,
-            timestamp:
+          data.map((entry) => {
+            // BUG-259: a server record with a missing or unparsable
+            // `timestamp` (real shape -- the field is optional per
+            // `rawConversationEntrySchema`, and older server-side chat
+            // records predate it) used to default to `Date.now()` AT FETCH
+            // TIME. That made an untimed history record outrank a
+            // conversation the user had JUST created locally -- the "New
+            // Conversation" entry got pushed below it in the sidebar instead
+            // of appearing at the top. A record we have no timing
+            // information for should sort as the OLDEST entry, not the
+            // newest.
+            const parsed =
               typeof entry.timestamp === 'string' || typeof entry.timestamp === 'number'
                 ? new Date(entry.timestamp).getTime()
-                : Date.now(),
-          })),
+                : NaN
+            return { ...entry, timestamp: Number.isFinite(parsed) ? parsed : 0 }
+          }),
         )
       } catch (err) {
         console.error('Failed to fetch remote conversations', err)
