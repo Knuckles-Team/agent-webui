@@ -1731,7 +1731,11 @@ def create_agent_web_app(
 
     # Mount the service dashboard API if available (optional dependency)
     try:
-        from agent_utilities.gateway.api import dashboard_router, get_full_dashboard
+        from agent_utilities.gateway.api import (
+            dashboard_router,
+            fetch_dashboard_subset,
+            get_full_dashboard,
+        )
 
         app.include_router(dashboard_router, prefix='/api/dashboard')
         logger.info('Service Dashboard API mounted at /api/dashboard')
@@ -1767,9 +1771,10 @@ def create_agent_web_app(
             now also carries `stream_id` (a UUID minted fresh per accepted
             connection) and `sequence` (monotonic within that connection,
             starting at 1). This endpoint has no durable backlog to replay
-            from -- each push is a fresh full poll of `get_full_dashboard()`,
-            not a delta against an event log -- so there is no cursor a
-            reconnect could resume from. `stream_id` makes that honest on the
+            from -- each push is a fresh poll (full, or subscription-scoped
+            once a subscribe message has arrived; see below), not a delta
+            against an event log -- so there is no cursor a reconnect could
+            resume from. `stream_id` makes that honest on the
             wire: a client that already held one `stream_id` and now receives
             a *different* one knows, structurally, that whatever changed
             between its last received message and this one was never
@@ -1786,12 +1791,13 @@ def create_agent_web_app(
             whenever its visible widget set changes (a group collapses/
             expands, or the search filter narrows it), naming exactly the
             widget ids currently rendered on screen. Once a subscription is
-            received, every subsequent push (this endpoint still has to poll
-            the FULL dashboard internally -- `get_full_dashboard()` has no
-            per-widget query form -- but the `data` field on the wire is
-            filtered to the subscribed set, so a collapsed group's widgets
-            are computed but never sent. Before any subscribe message
-            arrives, the full set is sent (matches every pre-existing
+            received, every subsequent push fetches ONLY the subscribed
+            widgets via `fetch_dashboard_subset()` (concurrent per-widget
+            `Aggregator.fetch_one()` calls, the same primitive
+            `GET /api/dashboard/data/{service_id}` uses) -- a collapsed
+            group's widgets are neither computed nor sent. Before any
+            subscribe message arrives, the full set is fetched via
+            `get_full_dashboard()` and sent (matches every pre-existing
             caller/test that never subscribes at all).
             """
             await websocket.accept()
@@ -1801,13 +1807,15 @@ def create_agent_web_app(
             subscribed_widget_ids: set[str] | None = None
             try:
                 while True:
-                    full = await get_full_dashboard()
+                    if subscribed_widget_ids is None:
+                        full = await get_full_dashboard()
+                        widgets = full.data
+                    else:
+                        widgets = await fetch_dashboard_subset(subscribed_widget_ids)
                     sequence += 1
                     payload_data = {
                         widget_id: widget.model_dump(mode='json')
-                        for widget_id, widget in full.data.items()
-                        if subscribed_widget_ids is None
-                        or widget_id in subscribed_widget_ids
+                        for widget_id, widget in widgets.items()
                     }
                     await websocket.send_json(
                         {

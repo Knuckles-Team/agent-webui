@@ -250,15 +250,23 @@ def test_ws_dashboard_subscribe_scopes_subsequent_pushes_to_the_named_widgets(
     """BUG-019 (GOC-29): `DashboardView.tsx` sends `{"type": "subscribe",
     "widget_ids": [...]}` naming exactly the widgets currently visible on
     screen (a collapsed group's widgets are excluded). Once received, the
-    `data` field of every later push must contain ONLY the subscribed ids --
-    an unsubscribed widget's fresh value is computed (this endpoint has no
-    per-widget query form) but must never cross the wire.
+    `data` field of every later push must contain ONLY the subscribed ids,
+    AND an unsubscribed widget must never be computed at all -- this test
+    proves both the wire scoping (the `data` field) and the fetch scoping
+    (which function actually gets called) so a future regression back to
+    "compute everything, filter after" is caught even though it would look
+    identical on the wire.
 
     Known-bad proof: before this fix `subscribe` messages were silently
     discarded (the receive was only ever used to detect a dead socket), so
     every push always carried the full widget set regardless of what a
     client asked for -- this is the literal "fetches all widgets and filters
-    after subscription" defect BUG-019 names.
+    after subscription" defect BUG-019 names. A second, subtler instance of
+    the same defect survived an earlier partial fix: the wire payload was
+    scoped, but `get_full_dashboard()` (a poll of EVERY configured widget)
+    was still called for every push -- an unsubscribed/collapsed widget was
+    still computed, just not sent. `fetch_dashboard_subset()` closes that:
+    once subscribed, only the named widgets are fetched at all.
     """
 
     import agent_webui.server as server_module
@@ -266,15 +274,28 @@ def test_ws_dashboard_subscribe_scopes_subsequent_pushes_to_the_named_widgets(
     monkeypatch.setattr(server_module, '_DASHBOARD_WS_PUSH_INTERVAL_SECONDS', 5.0)
 
     sample = _two_widget_dashboard_response()
-    with patch(
-        'agent_utilities.gateway.api.get_full_dashboard',
-        new=AsyncMock(return_value=sample),
+    full_dashboard_mock = AsyncMock(return_value=sample)
+
+    async def _fake_fetch_subset(widget_ids: set[str]) -> dict:
+        return {wid: widget for wid, widget in sample.data.items() if wid in widget_ids}
+
+    fetch_subset_mock = AsyncMock(side_effect=_fake_fetch_subset)
+
+    with (
+        patch(
+            'agent_utilities.gateway.api.get_full_dashboard', new=full_dashboard_mock
+        ),
+        patch(
+            'agent_utilities.gateway.api.fetch_dashboard_subset', new=fetch_subset_mock
+        ),
     ):
         app = _build_app()
         client = TestClient(app)
         with client.websocket_connect('/ws/dashboard') as ws:
             snapshot = ws.receive_json()
             assert set(snapshot['data']) == {'jellyfin', 'pihole'}
+            assert full_dashboard_mock.call_count == 1
+            assert fetch_subset_mock.call_count == 0
 
             ws.send_json({'type': 'subscribe', 'widget_ids': ['jellyfin']})
 
@@ -286,6 +307,13 @@ def test_ws_dashboard_subscribe_scopes_subsequent_pushes_to_the_named_widgets(
             # The stream/sequence contract is unaffected by subscribing.
             assert update['stream_id'] == snapshot['stream_id']
             assert update['sequence'] == 2
+            # Fetch-side scoping: the post-subscribe push must go through
+            # fetch_dashboard_subset({'jellyfin'}) and must NOT re-poll the
+            # full dashboard (which would compute 'pihole' too, just to
+            # discard it on the wire).
+            assert fetch_subset_mock.call_count == 1
+            assert fetch_subset_mock.call_args.args[0] == {'jellyfin'}
+            assert full_dashboard_mock.call_count == 1
 
             # Re-subscribing to nothing must scope to nothing, not fall back
             # to "unfiltered" -- an explicit empty list is a real answer, not
@@ -293,6 +321,9 @@ def test_ws_dashboard_subscribe_scopes_subsequent_pushes_to_the_named_widgets(
             ws.send_json({'type': 'subscribe', 'widget_ids': []})
             empty_update = ws.receive_json()
             assert empty_update['data'] == {}
+            assert fetch_subset_mock.call_count == 2
+            assert fetch_subset_mock.call_args.args[0] == set()
+            assert full_dashboard_mock.call_count == 1
 
 
 def test_ws_dashboard_ignores_malformed_subscribe_payloads(
