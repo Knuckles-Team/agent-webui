@@ -6798,6 +6798,20 @@ async def get_github_prs(repo: str | None = None):
             'author': (p.get('user') or {}).get('login'),
             'branch': (p.get('head') or {}).get('ref'),
             'status': p.get('state') or 'open',
+            # BUG-012: GitHub never returns a per-check-run summary on the
+            # pulls/list payload itself (that requires a separate
+            # `/commits/{sha}/check-runs` call this endpoint does not make),
+            # so there is no `checks` field here -- the frontend must not
+            # render one either. `web_url` mirrors the field GitLab's MR
+            # mapping already returns. NOTE: `_public_external_result` below
+            # runs this whole dict through `sanitize_for_persistence`, whose
+            # `_LOCATION_FIELDS` blanket-redacts ANY field named `web_url`
+            # (this one included) to `"[REDACTED_LOCATION]"` regardless of
+            # content -- resolving that for a genuinely public source link
+            # is `GOC-27-W06` (security-review) scope; `EcosystemView.tsx`'s
+            # `isRenderableUrl` guard is today's WebUI-side mitigation so
+            # this never renders as a broken `<a href>`.
+            'web_url': p.get('html_url'),
         }
         for p in (prs_raw[:100] if isinstance(prs_raw, list) else [])
         if isinstance(p, dict)
@@ -6820,6 +6834,13 @@ async def get_github_prs(repo: str | None = None):
         workflows = [
             {
                 'id': r.get('id'),
+                # BUG-012: the real GitHub Actions run object carries
+                # `run_number` (the per-repository sequential run count the
+                # UI has always rendered as `Run #{run_number}`); this
+                # mapping used to drop it on the floor, so the field the
+                # frontend declared and rendered never had a source --
+                # `wf.run_number` always rendered blank.
+                'run_number': r.get('run_number'),
                 'name': r.get('name'),
                 'status': r.get('status'),
                 'conclusion': r.get('conclusion'),

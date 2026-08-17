@@ -128,38 +128,106 @@ interface KanbanColumn {
   issues: KanbanIssue[]
 }
 
+// BUG-012 (GOC-27-W01/W05): these four interfaces plus the
+// `*ItemSchema`s below them are the WebUI-side half of the GitHub/GitLab
+// contract-mismatch fix. Two concrete drifts were found and fixed:
+//   - `GithubPr.checks` had no backend data source at all (the pulls/list
+//     payload carries no per-check-run summary) -- removed, matching the
+//     `GitlabPipeline.duration?` precedent below it.
+//   - `GithubWorkflow.run_number` DOES exist upstream but
+//     `get_github_prs`'s run mapping (`api_extensions.py`) was dropping it
+//     before it ever reached this file -- fixed there; typed here as
+//     nullable so a future regression degrades visibly instead of
+//     re-fabricating a value.
+// `web_url`/`project_id` were already returned by the backend and simply
+// never modeled here -- added so the normalized envelope's required
+// `source.url` has somewhere to come from.
 interface GithubPr {
   id: number
   title: string
-  author: string
-  branch: string
+  author: string | null
+  branch: string | null
   status: string
-  checks: string
+  web_url: string | null
 }
 
 interface GithubWorkflow {
-  name: string
-  status: string
-  conclusion: string
-  run_number: number
+  id: number | null
+  name: string | null
+  status: string | null
+  conclusion: string | null
+  run_number: number | null
 }
 
 interface GitlabMr {
   id: number
+  project_id: number | null
   title: string
-  author: string
+  author: string | null
   target_branch: string
   status: string
+  web_url: string | null
 }
 
 interface GitlabPipeline {
   id: number
+  project_id: number | null
   ref: string
   status: string
   // The backend (`get_gitlab_mrs` in api_extensions.py) does not report a
   // duration for a pipeline -- GitLab's `/pipelines` list endpoint doesn't
   // include it either. Optional so the UI never renders a fabricated value.
   duration?: string
+}
+
+const githubPrItemSchema = z.object({
+  id: z.number(),
+  title: z.string(),
+  author: z.string().nullable(),
+  branch: z.string().nullable(),
+  status: z.string(),
+  web_url: z.string().nullable(),
+})
+
+const githubWorkflowItemSchema = z.object({
+  id: z.number().nullable(),
+  name: z.string().nullable(),
+  status: z.string().nullable(),
+  conclusion: z.string().nullable(),
+  run_number: z.number().nullable(),
+})
+
+const gitlabMrItemSchema = z.object({
+  id: z.number(),
+  project_id: z.number().nullable(),
+  title: z.string(),
+  author: z.string().nullable(),
+  target_branch: z.string(),
+  status: z.string(),
+  web_url: z.string().nullable(),
+})
+
+const gitlabPipelineItemSchema = z.object({
+  id: z.number(),
+  project_id: z.number().nullable(),
+  ref: z.string(),
+  status: z.string(),
+  duration: z.string().optional(),
+})
+
+// `web_url` reaches this endpoint through `_public_external_result`
+// (`agent_webui/api_extensions.py`), which runs every governed delegation
+// result through `sanitize_for_persistence` -- and that sanitizer
+// blanket-redacts ANY field literally named `web_url`/`html_url`/`url`/etc
+// to the fixed string `"[REDACTED_LOCATION]"` regardless of content,
+// including a genuinely public GitHub/GitLab source link
+// (`agent_utilities/security/persistence_privacy.py`'s `_LOCATION_FIELDS`).
+// Resolving that policy tension (an allowlist for known-public source
+// links) is `GOC-27-W06` scope, owned by security review, not this fix --
+// so render a link only when the value actually looks like one, rather
+// than ever pointing an `<a href>` at the redaction placeholder.
+function isRenderableUrl(value: string | null | undefined): value is string {
+  return typeof value === 'string' && (value.startsWith('https://') || value.startsWith('http://'))
 }
 
 interface PortainerStack {
@@ -210,20 +278,48 @@ const LOADING_STATE: EcoState = { status: 'loading' }
  * doesn't carry a recognizable envelope is never treated as "empty" -- an
  * unrecognized shape is reported as an error, not silently swallowed.
  */
-// T intentionally appears only in the return position: every call site names
-// its own item shape (`classifyEcosystemList<KanbanColumn>(...)`) for a
-// compile-time label on a field this helper cannot itself validate (the
-// backend envelope carries no per-array schema). This mirrors the existing
-// `as ContainerInfo[]`/`as RepoInfo[]` casts elsewhere in this file; a full
-// runtime schema per ecosystem list is `GOC-28-W02` scope, not this lane's.
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
-function classifyEcosystemList<T>(json: unknown, key: string): { state: EcoState; items: T[] } {
+// Every call site names its own item shape
+// (`classifyEcosystemList<KanbanColumn>(...)`) for a compile-time label on
+// a field this helper cannot itself validate WITHOUT an `itemSchema` (the
+// backend envelope carries no per-array schema of its own). This mirrors
+// the existing `as ContainerInfo[]`/`as RepoInfo[]` casts elsewhere in this
+// file; a full runtime schema per ecosystem list (every domain, not just
+// GitHub/GitLab) is `GOC-28-W02` scope, not this lane's -- but when a
+// caller DOES pass `itemSchema` (BUG-012's GitHub/GitLab call sites do), a
+// per-field drift is a typed, diagnosable `error` state instead of a value
+// silently reaching the render as `undefined`.
+function classifyEcosystemList<T>(
+  json: unknown,
+  key: string,
+  itemSchema?: z.ZodType<T>,
+): { state: EcoState; items: T[] } {
   if (!json || typeof json !== 'object') {
     return { state: { status: 'error', reason: 'The backend returned a malformed response.' }, items: [] }
   }
   const obj = json as Record<string, unknown>
-  const items = Array.isArray(obj[key]) ? (obj[key] as T[]) : []
+  const rawItems = Array.isArray(obj[key]) ? obj[key] : []
   const reason = typeof obj.detail === 'string' ? obj.detail : undefined
+
+  const withValidatedItems = (): { state: EcoState; items: T[] } => {
+    if (!itemSchema) {
+      const items = rawItems as T[]
+      return { state: { status: items.length > 0 ? 'ready' : 'empty' }, items }
+    }
+    const parsed = z.array(itemSchema).safeParse(rawItems)
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0]
+      const path = issue.path.length > 0 ? issue.path.join('.') : '<root>'
+      return {
+        state: {
+          status: 'error',
+          reason: `Backend '${key}' response does not match the expected schema at '${path}': ${issue.message}.`,
+        },
+        items: [],
+      }
+    }
+    return { state: { status: parsed.data.length > 0 ? 'ready' : 'empty' }, items: parsed.data }
+  }
+
   switch (obj.status) {
     case 'capability_unavailable':
       return {
@@ -235,13 +331,13 @@ function classifyEcosystemList<T>(json: unknown, key: string): { state: EcoState
     case 'error':
       return { state: { status: 'error', reason: reason ?? 'The service reported an error.' }, items: [] }
     case 'success':
-      return { state: { status: items.length > 0 ? 'ready' : 'empty' }, items }
+      return withValidatedItems()
     default:
       // Unrecognized envelope shape. If it happens to carry a real-looking
       // array, surface it rather than discard real data -- but never invent
       // a "ready, empty" state for a contract we don't understand.
-      return items.length > 0
-        ? { state: { status: 'ready' }, items }
+      return rawItems.length > 0
+        ? withValidatedItems()
         : { state: { status: 'error', reason: 'Unexpected response shape from the backend.' }, items: [] }
   }
 }
@@ -487,6 +583,12 @@ export default function EcosystemView() {
 
   // 14 Services States
   const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([])
+  // BUG-012: `get_github_prs` requires an explicit `owner/name` repository
+  // selector (a PR list is inherently per-repository) -- this view used to
+  // never supply one, so the card was permanently `needs_input` unless an
+  // operator happened to set the server-side `GITHUB_REPO` env var. This is
+  // the persisted selector the fetch below sends as `?repo=`.
+  const [githubRepo, setGithubRepo] = useState(() => window.localStorage.getItem('ecosystem.githubRepo') ?? '')
   const [githubPrs, setGithubPrs] = useState<GithubPr[]>([])
   const [githubWorkflows, setGithubWorkflows] = useState<GithubWorkflow[]>([])
   const [gitlabMrs, setGitlabMrs] = useState<GitlabMr[]>([])
@@ -709,9 +811,12 @@ export default function EcosystemView() {
     setLoading(true)
     try {
       // 1. DevOps Services
+      const githubPrsUrl = githubRepo.trim()
+        ? `/api/enhanced/ecosystem/github/prs?repo=${encodeURIComponent(githubRepo.trim())}`
+        : '/api/enhanced/ecosystem/github/prs'
       const [atlassianRes, githubRes, gitlabRes, portainerRes] = await Promise.all([
         fetch('/api/enhanced/ecosystem/atlassian/kanban'),
-        fetch('/api/enhanced/ecosystem/github/prs'),
+        fetch(githubPrsUrl),
         fetch('/api/enhanced/ecosystem/gitlab/mrs'),
         fetch('/api/enhanced/ecosystem/portainer/stacks'),
       ])
@@ -722,15 +827,15 @@ export default function EcosystemView() {
       setStatus('kanban', kanban.state)
 
       const githubJson = await readEcosystemResponse(githubRes)
-      const ghPrs = classifyEcosystemList<GithubPr>(githubJson, 'prs')
-      const ghWorkflows = classifyEcosystemList<GithubWorkflow>(githubJson, 'workflows')
+      const ghPrs = classifyEcosystemList<GithubPr>(githubJson, 'prs', githubPrItemSchema)
+      const ghWorkflows = classifyEcosystemList<GithubWorkflow>(githubJson, 'workflows', githubWorkflowItemSchema)
       setGithubPrs(ghPrs.items)
       setGithubWorkflows(ghWorkflows.items)
       setStatus('github', ghPrs.state)
 
       const gitlabJson = await readEcosystemResponse(gitlabRes)
-      const glMrs = classifyEcosystemList<GitlabMr>(gitlabJson, 'mrs')
-      const glPipelines = classifyEcosystemList<GitlabPipeline>(gitlabJson, 'pipelines')
+      const glMrs = classifyEcosystemList<GitlabMr>(gitlabJson, 'mrs', gitlabMrItemSchema)
+      const glPipelines = classifyEcosystemList<GitlabPipeline>(gitlabJson, 'pipelines', gitlabPipelineItemSchema)
       setGitlabMrs(glMrs.items)
       setGitlabPipelines(glPipelines.items)
       setStatus('gitlab', glMrs.state)
@@ -1076,6 +1181,34 @@ export default function EcosystemView() {
                   <CardDescription>Live actions CI execution streams</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* BUG-012: `get_github_prs` requires an explicit
+                      `owner/name` selector -- a PR list is inherently
+                      per-repository, and the backend returns
+                      `needs_input` (not an error, not fabricated data)
+                      without one. This is the only place the selector can
+                      come from. */}
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={githubRepo}
+                      onChange={(e) => {
+                        setGithubRepo(e.target.value)
+                      }}
+                      placeholder="owner/name"
+                      className="h-7 text-xs font-mono"
+                      aria-label="GitHub repository (owner/name)"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        window.localStorage.setItem('ecosystem.githubRepo', githubRepo.trim())
+                        void loadEcosystemData()
+                      }}
+                    >
+                      Load
+                    </Button>
+                  </div>
                   <ServiceNotice state={ecoStatus.github} emptyLabel="No open pull requests reported." />
                   <div className="space-y-2.5">
                     {ecoStatus.github.status === 'ready' &&
@@ -1086,10 +1219,23 @@ export default function EcosystemView() {
                         >
                           <div className="space-y-1 truncate pr-2">
                             <h4 className="text-xs font-bold text-foreground truncate flex items-center gap-1.5">
-                              #{pr.id} {pr.title}
+                              #{pr.id}{' '}
+                              {isRenderableUrl(pr.web_url) ? (
+                                <a
+                                  href={pr.web_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="hover:underline"
+                                >
+                                  {pr.title}
+                                </a>
+                              ) : (
+                                pr.title
+                              )}
                             </h4>
                             <p className="text-[10px] text-muted-foreground font-mono truncate">
-                              by {pr.author} | branch: <span className="text-primary font-semibold">{pr.branch}</span>
+                              by {pr.author ?? 'unknown'} | branch:{' '}
+                              <span className="text-primary font-semibold">{pr.branch ?? 'unknown'}</span>
                             </p>
                           </div>
                           <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -1098,9 +1244,6 @@ export default function EcosystemView() {
                               className="capitalize text-[10px] bg-emerald-500/5 text-emerald-600 border-emerald-500/20"
                             >
                               {pr.status}
-                            </Badge>
-                            <Badge variant="secondary" className="text-[9px] uppercase">
-                              {pr.checks}
                             </Badge>
                           </div>
                         </div>
@@ -1114,12 +1257,12 @@ export default function EcosystemView() {
                     <div className="space-y-1.5 text-xs">
                       {ecoStatus.github.status === 'ready' &&
                         githubWorkflows.map((wf, idx) => (
-                          <div key={idx} className="flex justify-between items-center font-mono">
+                          <div key={wf.id ?? idx} className="flex justify-between items-center font-mono">
                             <span className="text-foreground">
-                              Run #{wf.run_number} - {wf.name}
+                              Run #{wf.run_number ?? '?'} - {wf.name ?? 'unnamed workflow'}
                             </span>
                             <Badge variant="default" className="text-[9px] px-1 py-0">
-                              {wf.conclusion}
+                              {wf.conclusion ?? wf.status ?? 'unknown'}
                             </Badge>
                           </div>
                         ))}
@@ -1149,10 +1292,22 @@ export default function EcosystemView() {
                         >
                           <div className="space-y-1 truncate pr-2">
                             <h4 className="text-xs font-bold text-foreground truncate">
-                              !{mr.id} {mr.title}
+                              !{mr.id}{' '}
+                              {isRenderableUrl(mr.web_url) ? (
+                                <a
+                                  href={mr.web_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="hover:underline"
+                                >
+                                  {mr.title}
+                                </a>
+                              ) : (
+                                mr.title
+                              )}
                             </h4>
                             <p className="text-[10px] text-muted-foreground font-mono">
-                              by {mr.author} | target: {mr.target_branch}
+                              by {mr.author ?? 'unknown'} | target: {mr.target_branch}
                             </p>
                           </div>
                           <Badge className="text-[9px] uppercase">{mr.status}</Badge>

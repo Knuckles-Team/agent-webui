@@ -175,3 +175,179 @@ describe('EcosystemView (BUG-008 truthful-state proof)', () => {
     expect(screen.queryByText(/servings/i)).not.toBeInTheDocument()
   })
 })
+
+/**
+ * BUG-012 (GOC-27) proof: the GitHub/GitLab cards' `checks`/`run_number`
+ * field mismatch and the missing repository selector, plus the typed
+ * schema-validation fix.
+ *
+ * The `prs[0]`/`workflows[0]`/`mrs[0]`/`pipelines[0]` fixtures below are the
+ * *backend-mapped shape* of real, captured GitHub/GitLab API responses --
+ * see `agent-utilities` `tests/fixtures/enterprise/github_gitlab/` for the
+ * raw upstream payloads and provenance (sha256 digests, capture method) and
+ * `agent_utilities/protocols/enterprise/read_models.py` for the normalizer
+ * that maps them into `ChangeRequest`/`Build`. Field values here
+ * (`Knucklessg1`, `feat/ontology-operator-ui`, run `#5` "Release", GitLab MR
+ * `!250339`, ...) come directly from those captures, not invented.
+ */
+describe('EcosystemView (BUG-012 GitHub/GitLab contract-mismatch proof)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function fixtureFetch() {
+    return vi.fn((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url.includes('/ecosystem/github/prs')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              status: 'success',
+              source: 'live',
+              repo: 'Knuckles-Team/agent-webui',
+              prs: [
+                {
+                  id: 1,
+                  title: 'Operator UI for the ontology system (Object Explorer, Object View, Vertex)',
+                  author: 'Knucklessg1',
+                  branch: 'feat/ontology-operator-ui',
+                  status: 'closed',
+                  web_url: 'https://github.com/Knuckles-Team/agent-webui/pull/1',
+                },
+              ],
+              workflows: [
+                { id: 31969737553, run_number: 5, name: 'Release', status: 'completed', conclusion: 'failure' },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      if (url.includes('/ecosystem/gitlab/mrs')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              status: 'success',
+              source: 'live',
+              mrs: [
+                {
+                  id: 250339,
+                  project_id: 278964,
+                  title: 'Document save_ tool action-fold exception for lifecycle actions',
+                  author: 'adruid',
+                  target_branch: 'master',
+                  status: 'opened',
+                  web_url: 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/250339',
+                },
+              ],
+              pipelines: [
+                { id: 2764458303, project_id: 278964, ref: 'refs/workloads/c1a9bdb4956', status: 'running' },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      // Every other `/ecosystem/*` endpoint the same `Promise.all` batch
+      // fetches: answer with a benign, well-formed envelope rather than
+      // rejecting -- `loadEcosystemData` fetches GitHub/GitLab/Atlassian/
+      // Portainer in one `Promise.all`, so an unmocked reject here would
+      // fail that whole batch and leave the GitHub/GitLab sections stuck
+      // in `loading` for a reason that has nothing to do with BUG-012.
+      return Promise.resolve(
+        new Response(JSON.stringify({ status: 'success', source: 'live' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }) as unknown as typeof fetch
+  }
+
+  it('renders the real backend-mapped run_number and drops the unsourced checks field', async () => {
+    global.fetch = fixtureFetch()
+    render(<EcosystemView />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Run #5 - Release/i)).toBeInTheDocument()
+    })
+
+    // BUG-012: `checks` never had a backend data source -- it must not
+    // appear anywhere in the rendered PR row.
+    expect(screen.queryByText(/^checks$/i)).not.toBeInTheDocument()
+
+    // The PR/MR titles render as real source links now that `web_url` is
+    // modeled and validated instead of silently discarded.
+    const prLink = screen.getByRole('link', {
+      name: /Operator UI for the ontology system/i,
+    })
+    expect(prLink).toHaveAttribute('href', 'https://github.com/Knuckles-Team/agent-webui/pull/1')
+
+    const mrLink = screen.getByRole('link', {
+      name: /Document save_ tool action-fold exception/i,
+    })
+    expect(mrLink).toHaveAttribute('href', 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/250339')
+  })
+
+  it('lets an operator supply the required GitHub repository selector', async () => {
+    global.fetch = fixtureFetch()
+    render(<EcosystemView />)
+
+    // BUG-012: `get_github_prs` requires an explicit `owner/name` selector
+    // and the view used to never provide a way to enter one.
+    const repoInput = await screen.findByLabelText(/github repository/i)
+    expect(repoInput).toBeInTheDocument()
+  })
+
+  it('known-bad proof: a drifted GitHub PR field fails typed and diagnosable, not as a silent undefined', async () => {
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url.includes('/ecosystem/github/prs')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              status: 'success',
+              source: 'live',
+              // `id` renamed to `number` -- simulates exactly the class of
+              // vendor/adapter drift BUG-012 found (a field the frontend
+              // depends on silently stops arriving under the name it
+              // expects).
+              prs: [
+                {
+                  number: 1,
+                  title: 'Drifted PR',
+                  author: 'someone',
+                  branch: 'main',
+                  status: 'open',
+                  web_url: null,
+                },
+              ],
+              workflows: [],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      // See `fixtureFetch` above for why unrelated endpoints in the same
+      // `Promise.all` batch must not reject.
+      return Promise.resolve(
+        new Response(JSON.stringify({ status: 'success', source: 'live' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }) as unknown as typeof fetch
+
+    render(<EcosystemView />)
+
+    await waitFor(
+      () => {
+        expect(screen.getByText(/does not match the expected schema/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
+
+    // The drifted title never silently renders -- the section is in its
+    // typed error state, not a "successful, empty-looking" one.
+    expect(screen.queryByText('Drifted PR')).not.toBeInTheDocument()
+  })
+})
