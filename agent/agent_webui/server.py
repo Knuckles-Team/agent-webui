@@ -1369,6 +1369,23 @@ def _ensure_actor_identity_middleware(
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
 
+            from .graph_admission import (
+                EngineAdmissionUnavailableError,
+                TenantNotProvisionedError,
+                ensure_tenant_admission,
+            )
+
+            try:
+                await ensure_tenant_admission(actor, session)
+            except TenantNotProvisionedError:
+                _log_ws_denial(scope, reason='tenant-not-provisioned')
+                await send({'type': 'websocket.close', 'code': 4403})
+                return
+            except EngineAdmissionUnavailableError:
+                _log_ws_denial(scope, reason='engine-admission-unavailable')
+                await send({'type': 'websocket.close', 'code': 4503})
+                return
+
             from agent_utilities.knowledge_graph.core.session import (
                 reset_session,
                 set_session,
@@ -1416,6 +1433,27 @@ def _ensure_actor_identity_middleware(
                     scope, event='authentication', reason='tenant_claim_required'
                 )
                 await _send_json(send, 403, {'error': 'Verified tenant claim required'})
+                return
+
+            from .graph_admission import (
+                EngineAdmissionUnavailableError,
+                TenantNotProvisionedError,
+                ensure_tenant_admission,
+            )
+
+            try:
+                await ensure_tenant_admission(actor, session)
+            except TenantNotProvisionedError as exc:
+                _log_denial(
+                    scope, event='authorization', reason='tenant_not_provisioned'
+                )
+                await _send_json(send, 403, {'error': str(exc)})
+                return
+            except EngineAdmissionUnavailableError as exc:
+                _log_denial(
+                    scope, event='authorization', reason='engine_admission_unavailable'
+                )
+                await _send_json(send, 503, {'error': str(exc)})
                 return
             try:
                 actor_token = set_actor(actor)
