@@ -149,7 +149,12 @@ export const ROUTES: readonly RouteDef[] = [
     section: 'workspace',
     blurb: 'Browse, open, and edit the files in your project workspace.',
     icon: Files,
-    minRole: 'user',
+    // BUG-023: every method under `/api/enhanced/files` (this view's sole data
+    // source -- list/read/write/upload/download) requires `kg:admin` in
+    // `server.py::_ADMIN_ROUTE_PREFIXES`. Policy wins over nav (GOC-60 E6/W05
+    // invariant): raise nav to match, never loosen the API for an
+    // unscoped-by-owner filesystem surface.
+    minRole: 'admin',
     mobile: 'adapted',
     element: lazy(() => import('@/components/views/FilesView')),
   },
@@ -184,7 +189,10 @@ export const ROUTES: readonly RouteDef[] = [
     section: 'control-plane',
     blurb: 'Watch the health of every agent group and pause or stop them in an emergency.',
     icon: Activity,
-    minRole: 'maintainer',
+    // BUG-023: every read this view makes (getFleetHealth/getFleetTopology/
+    // getFleetApprovals) hits `/api/fleet/*`, `kg:admin` on every method
+    // (`_ADMIN_ROUTE_PREFIXES`). Nav raised to match backend policy.
+    minRole: 'admin',
     mobile: 'adapted',
     element: lazy(() => import('@/components/views/FleetView')),
   },
@@ -195,7 +203,12 @@ export const ROUTES: readonly RouteDef[] = [
     section: 'control-plane',
     blurb: 'Set a goal in plain English and let agents work toward it on their own.',
     icon: Compass,
-    minRole: 'user',
+    // BUG-023: `/api/enhanced/goals` is `kg:admin` on every method
+    // (`_ADMIN_ROUTE_PREFIXES`) and, unlike sessions, has no owner-based row
+    // scoping -- a non-admin would otherwise see every user's goals. The
+    // admin gate is protective and correct; nav raised to match it rather
+    // than loosening the API.
+    minRole: 'admin',
     mobile: 'adapted',
     element: lazy(() => import('@/components/views/GoalsView')),
   },
@@ -206,7 +219,10 @@ export const ROUTES: readonly RouteDef[] = [
     section: 'control-plane',
     blurb: 'Build and run step-by-step automations by connecting agent actions together.',
     icon: Workflow,
-    minRole: 'user',
+    // BUG-023: `/api/enhanced/workflows` is `kg:admin` on every method
+    // (`_ADMIN_ROUTE_PREFIXES`), same unscoped-by-owner reasoning as
+    // control-plane.goals above. Nav raised to match policy.
+    minRole: 'admin',
     mobile: 'unsupported',
     element: lazy(() => import('@/components/views/WorkflowEditorView')),
   },
@@ -217,7 +233,10 @@ export const ROUTES: readonly RouteDef[] = [
     section: 'control-plane',
     blurb: 'Write and save the instructions that tell an agent how to behave.',
     icon: ScrollText,
-    minRole: 'maintainer',
+    // BUG-023: `PromptsView`'s entire data path (list/read/save) is
+    // `/api/enhanced/prompts`, `kg:admin` on every method
+    // (`_ADMIN_ROUTE_PREFIXES`). Nav raised to match backend policy.
+    minRole: 'admin',
     mobile: 'adapted',
     element: lazy(() => import('@/components/views/PromptsView')),
   },
@@ -239,7 +258,10 @@ export const ROUTES: readonly RouteDef[] = [
     section: 'control-plane',
     blurb: 'See upcoming and past scheduled jobs, and set up new ones to run automatically.',
     icon: Calendar,
-    minRole: 'maintainer',
+    // BUG-023: `SchedulingView`'s entire data path is
+    // `/api/enhanced/cron/{calendar,logs}`, `kg:admin` on every method
+    // (`_ADMIN_ROUTE_PREFIXES`). Nav raised to match backend policy.
+    minRole: 'admin',
     mobile: 'adapted',
     element: lazy(() => import('@/components/views/SchedulingView')),
   },
@@ -333,7 +355,10 @@ export const ROUTES: readonly RouteDef[] = [
     section: 'knowledge',
     blurb: 'Trace how a piece of code is used and what it depends on, across every repository.',
     icon: Code2,
-    minRole: 'user',
+    // BUG-023: `CodeGraphView`'s entire data path (`/api/enhanced/code/
+    // instances`, `/code/nav`) is `kg:admin` on every method
+    // (`_ADMIN_ROUTE_PREFIXES`). Nav raised to match backend policy.
+    minRole: 'admin',
     mobile: 'unsupported',
     element: lazy(() => import('@/components/views/CodeGraphView')),
   },
@@ -425,7 +450,13 @@ export const ROUTES: readonly RouteDef[] = [
     section: 'knowledge',
     blurb: 'Run raw graph-database queries directly against the knowledge graph.',
     icon: Terminal,
-    minRole: 'maintainer',
+    // BUG-023: `CypherReplView`'s sole endpoint is `/api/enhanced/graph/query`
+    // -- deliberately kept `kg:admin` on every method (arbitrary Cypher can
+    // MATCH/SET/CREATE/DELETE in one call; see the block comment above
+    // `_ADMIN_ROUTE_PREFIXES` in server.py). Nav raised to match; this is the
+    // one drifted route where the API's admin requirement is unambiguously
+    // correct on its own terms, not merely "no row-scoping exists yet".
+    minRole: 'admin',
     mobile: 'unsupported',
     element: lazy(() => import('@/components/views/CypherReplView')),
   },
@@ -469,7 +500,12 @@ export const ROUTES: readonly RouteDef[] = [
     section: 'knowledge',
     blurb: 'Search the documents and notes the agent has been given to work from.',
     icon: Book,
-    minRole: 'reader',
+    // BUG-023: `KnowledgeBaseView`'s entire data path (`/api/enhanced/kb/
+    // {list,search,ingest,health}`) is `kg:admin` on every method
+    // (`_ADMIN_ROUTE_PREFIXES`) -- previously the most severe drift found:
+    // `reader`, the LOWEST nav tier, landed every authenticated user on a
+    // page where every single call 403'd. Nav raised to match backend policy.
+    minRole: 'admin',
     mobile: 'full',
     element: lazy(() => import('@/components/views/KnowledgeBaseView')),
   },
@@ -635,7 +671,12 @@ export const ROUTES: readonly RouteDef[] = [
     section: 'admin',
     blurb: 'Run maintenance jobs and check on background pipelines and resources.',
     icon: Wrench,
-    minRole: 'maintainer',
+    // BUG-023: `OpsPanelView`'s entire data path (`/api/enhanced/pipeline/
+    // status`, `/maintenance/status`, `/resources`, plus their trigger/spawn
+    // mutations) is `kg:admin` on every method (`_ADMIN_ROUTE_PREFIXES`).
+    // Nav raised to match backend policy; it already lived in the `admin`
+    // nav section, only the role floor was wrong.
+    minRole: 'admin',
     mobile: 'unsupported',
     element: lazy(() => import('@/components/views/OpsPanelView')),
   },

@@ -198,6 +198,137 @@ def test_ws_dashboard_mints_a_new_stream_id_per_connection(
         assert first_snapshot['stream_id'] != second_snapshot['stream_id']
 
 
+def _two_widget_dashboard_response():
+    from agent_utilities.gateway.api import DashboardResponse
+    from agent_utilities.gateway.models import DashboardLayout, WidgetData
+
+    return DashboardResponse(
+        layout=DashboardLayout(),
+        data={
+            'jellyfin': WidgetData(
+                fields={'active_streams': 2},
+                status='ok',
+                error=None,
+                timestamp='2026-08-08T00:00:00Z',
+            ),
+            'pihole': WidgetData(
+                fields={'queries_today': 5},
+                status='ok',
+                error=None,
+                timestamp='2026-08-08T00:00:00Z',
+            ),
+        },
+    )
+
+
+def test_ws_dashboard_default_push_is_unfiltered_before_any_subscribe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Before a client ever sends a `subscribe` message, every pre-existing
+    caller (and this suite's other tests) must keep seeing the full widget
+    set -- subscription-scoping must be strictly opt-in."""
+
+    import agent_webui.server as server_module
+
+    monkeypatch.setattr(server_module, '_DASHBOARD_WS_PUSH_INTERVAL_SECONDS', 5.0)
+
+    sample = _two_widget_dashboard_response()
+    with patch(
+        'agent_utilities.gateway.api.get_full_dashboard',
+        new=AsyncMock(return_value=sample),
+    ):
+        app = _build_app()
+        client = TestClient(app)
+        with client.websocket_connect('/ws/dashboard') as ws:
+            snapshot = ws.receive_json()
+            assert set(snapshot['data']) == {'jellyfin', 'pihole'}
+
+
+def test_ws_dashboard_subscribe_scopes_subsequent_pushes_to_the_named_widgets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BUG-019 (GOC-29): `DashboardView.tsx` sends `{"type": "subscribe",
+    "widget_ids": [...]}` naming exactly the widgets currently visible on
+    screen (a collapsed group's widgets are excluded). Once received, the
+    `data` field of every later push must contain ONLY the subscribed ids --
+    an unsubscribed widget's fresh value is computed (this endpoint has no
+    per-widget query form) but must never cross the wire.
+
+    Known-bad proof: before this fix `subscribe` messages were silently
+    discarded (the receive was only ever used to detect a dead socket), so
+    every push always carried the full widget set regardless of what a
+    client asked for -- this is the literal "fetches all widgets and filters
+    after subscription" defect BUG-019 names.
+    """
+
+    import agent_webui.server as server_module
+
+    monkeypatch.setattr(server_module, '_DASHBOARD_WS_PUSH_INTERVAL_SECONDS', 5.0)
+
+    sample = _two_widget_dashboard_response()
+    with patch(
+        'agent_utilities.gateway.api.get_full_dashboard',
+        new=AsyncMock(return_value=sample),
+    ):
+        app = _build_app()
+        client = TestClient(app)
+        with client.websocket_connect('/ws/dashboard') as ws:
+            snapshot = ws.receive_json()
+            assert set(snapshot['data']) == {'jellyfin', 'pihole'}
+
+            ws.send_json({'type': 'subscribe', 'widget_ids': ['jellyfin']})
+
+            update = ws.receive_json()
+            assert set(update['data']) == {'jellyfin'}, (
+                'a subscribed-to widget set must scope every later push; '
+                f'got {set(update["data"])}'
+            )
+            # The stream/sequence contract is unaffected by subscribing.
+            assert update['stream_id'] == snapshot['stream_id']
+            assert update['sequence'] == 2
+
+            # Re-subscribing to nothing must scope to nothing, not fall back
+            # to "unfiltered" -- an explicit empty list is a real answer, not
+            # a missing one.
+            ws.send_json({'type': 'subscribe', 'widget_ids': []})
+            empty_update = ws.receive_json()
+            assert empty_update['data'] == {}
+
+
+def test_ws_dashboard_ignores_malformed_subscribe_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-JSON, non-dict, or non-`subscribe` client message must never
+    crash the stream or be treated as a subscription -- only well-formed
+    `{"type": "subscribe", "widget_ids": [...]}` frames may narrow the push."""
+
+    import agent_webui.server as server_module
+
+    monkeypatch.setattr(server_module, '_DASHBOARD_WS_PUSH_INTERVAL_SECONDS', 5.0)
+
+    sample = _two_widget_dashboard_response()
+    with patch(
+        'agent_utilities.gateway.api.get_full_dashboard',
+        new=AsyncMock(return_value=sample),
+    ):
+        app = _build_app()
+        client = TestClient(app)
+        with client.websocket_connect('/ws/dashboard') as ws:
+            ws.receive_json()
+
+            ws.send_text('not json at all')
+            update = ws.receive_json()
+            assert set(update['data']) == {'jellyfin', 'pihole'}
+
+            ws.send_json({'type': 'ping'})
+            update2 = ws.receive_json()
+            assert set(update2['data']) == {'jellyfin', 'pihole'}
+
+            ws.send_json({'type': 'subscribe', 'widget_ids': 'jellyfin'})
+            update3 = ws.receive_json()
+            assert set(update3['data']) == {'jellyfin', 'pihole'}
+
+
 def test_ws_dashboard_closes_cleanly_on_client_disconnect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -260,17 +391,31 @@ def test_full_app_admits_a_valid_kg_admin_bearer_session(
             assert snapshot['data']['jellyfin']['status'] == 'ok'
 
 
-def test_full_app_denies_a_kg_write_only_bearer_session(
+def test_full_app_denies_a_scopeless_bearer_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A caller with `kg:write` but not `kg:admin` must still be refused —
-    the new route must not have widened `_ADMIN_ROUTE_PREFIXES`' `kg:admin`
-    requirement for `/ws/dashboard`."""
+    """A caller with no KG scope at all must still be refused end-to-end
+    through the real app.
+
+    NOT `kg:write`: `_mint_graph_session` (`agent_utilities.security.
+    request_identity`) deliberately expands the coarse scope hierarchy at the
+    trusted-claims boundary -- a `kg:write` grant always also carries
+    `kg:read` ("a writer necessarily performs authorization-safe
+    precondition reads"). `/ws/dashboard` requires only `kg:read`
+    (`_WEBSOCKET_READ_ONLY_PATHS`), so a `kg:write`-only session is a
+    documented ADMIT, not a negative control -- proven independently by
+    `test_role_matrix_dashboard_websocket_agrees_with_reader_nav` in
+    `test_security_boundaries.py`, and already corrected to the same
+    scopeless-session negative control in
+    `test_ws_dashboard_denial_diagnostics.py`'s
+    `test_authorization_denies_and_logs_scope_missing_for_a_resolved_session`
+    (which drives a stub inner app; this test proves the identical outcome
+    through the REAL app `create_agent_web_app` builds)."""
 
     from starlette.websockets import WebSocketDisconnect
 
     _configure_jwt_verifier(monkeypatch)
-    _fake_actor(monkeypatch, roles=frozenset({'kg:write'}))
+    _fake_actor(monkeypatch, roles=frozenset())
 
     with patch(
         'agent_utilities.gateway.api.get_full_dashboard',

@@ -239,3 +239,54 @@ def test_skill_classification_never_falls_back_to_path_when_kg_unreachable(
         'path-says-skill-kg-says-workflow',
         'never-ingested',
     }
+
+
+class TestListSkillsUsesKgTypeNotPath:
+    """BUG-024, second live instance: `GET /api/enhanced/skills`
+    (``list_skills``, consumed by ``KnowledgeView.tsx``) had its own,
+    separate ``'workflows' not in p.parts`` filesystem-path guess -- fixing
+    `list_all_tools` (`/tools`, covered above) never touched this route.
+    ``list_skills`` delegates its classification to
+    ``_classify_universal_skills_from_kg``, which is exercised directly here
+    so the fixture never needs to defeat that route's `is_testing`
+    real-filesystem guard.
+    """
+
+    def test_agent_skill_under_a_workflows_path_segment_is_still_a_skill(
+        self, tmp_path
+    ):
+        from agent_webui.api_extensions import _classify_universal_skills_from_kg
+
+        skills_root = _skills_fixture(tmp_path)
+        univ_dir = skills_root / 'universal-skills' / 'universal_skills'
+        kg_index = {
+            'agent_skill_names': {'path-says-workflow-kg-says-skill'},
+            'workflow_def_names': {'path-says-skill-kg-says-workflow'},
+            'kg_reachable': True,
+        }
+
+        result = run(_classify_universal_skills_from_kg(univ_dir, kg_index))
+
+        names = {s['name'] for s in result}
+        assert names == {'path-says-workflow-kg-says-skill'}, (
+            'must trust the KG resource_type, not the literal `workflows` '
+            f'path segment or its absence (got {names})'
+        )
+
+    def test_kg_unreachable_never_falls_back_to_the_path_guess(self, tmp_path):
+        from agent_webui.api_extensions import _classify_universal_skills_from_kg
+
+        skills_root = _skills_fixture(tmp_path)
+        univ_dir = skills_root / 'universal-skills' / 'universal_skills'
+        kg_index = {
+            'agent_skill_names': {'path-says-workflow-kg-says-skill'},
+            'workflow_def_names': {'path-says-skill-kg-says-workflow'},
+            'kg_reachable': False,
+        }
+
+        result = run(_classify_universal_skills_from_kg(univ_dir, kg_index))
+
+        assert result == [], (
+            'a KG-unreachable response must not silently degrade to the old '
+            f'path-based heuristic; got {[s["name"] for s in result]}'
+        )

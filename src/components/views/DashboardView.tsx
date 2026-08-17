@@ -404,13 +404,16 @@ function ServiceGroupSection({
   data,
   isLoading,
   dataFreshness,
+  collapsed,
+  onToggleCollapsed,
 }: {
   group: ServiceGroup
   data: Record<string, WidgetData>
   isLoading: boolean
   dataFreshness: DataFreshness
+  collapsed: boolean
+  onToggleCollapsed: () => void
 }) {
-  const [collapsed, setCollapsed] = useState(group.collapsed)
   const panelId = groupPanelId(group.name)
 
   const visibleServices = group.services.filter((s) => s.visible)
@@ -422,9 +425,7 @@ function ServiceGroupSection({
         className="flex items-center gap-2 mb-3 group/header cursor-pointer"
         aria-expanded={!collapsed}
         aria-controls={panelId}
-        onClick={() => {
-          setCollapsed(!collapsed)
-        }}
+        onClick={onToggleCollapsed}
       >
         {collapsed ? (
           <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
@@ -484,6 +485,15 @@ export default function DashboardView() {
   const lastStreamIdRef = useRef<string | null>(null)
   const everLiveRef = useRef(false)
   const queryClient = useQueryClient()
+  // BUG-019 (GOC-29, subscription-scoped fetch): per-group collapse state
+  // lifted out of `ServiceGroupSection` so this component can compute which
+  // widget ids are actually on screen and tell `/ws/dashboard` to stop
+  // pushing data for the rest. Keyed by group name; a name absent here
+  // falls back to the server-supplied `group.collapsed` default.
+  const [collapsedOverrides, setCollapsedOverrides] = useState<Record<string, boolean>>({})
+  const isGroupCollapsed = (group: ServiceGroup): boolean => collapsedOverrides[group.name] ?? group.collapsed
+  const visibleWidgetIdsRef = useRef<string[]>([])
+  const lastSentSubscriptionKeyRef = useRef<string | null>(null)
 
   // Fetch full dashboard (layout + data) on mount
   const {
@@ -560,6 +570,10 @@ export default function DashboardView() {
           if (!generation.isCurrent(myGeneration)) return
           setIsConnected(true)
           everLiveRef.current = true
+          // BUG-019: a fresh connection starts unfiltered server-side until
+          // told otherwise -- tell it immediately which widgets are already
+          // on screen instead of taking one full unscoped push first.
+          ws?.send(JSON.stringify({ type: 'subscribe', widget_ids: visibleWidgetIdsRef.current }))
           // A confirmed connection resets the backoff -- a run of failures
           // shouldn't keep the delay elevated after recovery.
           reconnectDelayMs = RECONNECT_BASE_DELAY_MS
@@ -660,6 +674,29 @@ export default function DashboardView() {
         ),
       }))
       .filter((g) => g.services.length > 0) ?? []
+
+  // BUG-019 (GOC-29, subscription-scoped fetch): exactly the widget ids
+  // rendered right now -- a collapsed group or one the search query hid
+  // contributes none. Re-sent to `/ws/dashboard` on every change so a
+  // collapsed section's widgets stop being pushed instead of arriving on
+  // every push and being discarded client-side after the fact.
+  const visibleWidgetIds = filteredGroups
+    .filter((group) => !isGroupCollapsed(group))
+    .flatMap((group) => group.services.filter((s) => s.visible).map((s) => s.id))
+  const visibleWidgetIdsKey = [...visibleWidgetIds].sort().join(',')
+
+  useEffect(() => {
+    // Only the SET of visible ids matters, not array identity -- `filteredGroups`
+    // is a new array every render, so guard on the sorted key and bail out
+    // rather than re-sending the identical subscription on every unrelated
+    // state change.
+    if (lastSentSubscriptionKeyRef.current === visibleWidgetIdsKey) return
+    lastSentSubscriptionKeyRef.current = visibleWidgetIdsKey
+    visibleWidgetIdsRef.current = visibleWidgetIds
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'subscribe', widget_ids: visibleWidgetIds }))
+    }
+  }, [visibleWidgetIds, visibleWidgetIdsKey])
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -778,6 +815,10 @@ export default function DashboardView() {
               data={dashboardData?.data ?? {}}
               isLoading={isLoading}
               dataFreshness={dataFreshness}
+              collapsed={isGroupCollapsed(group)}
+              onToggleCollapsed={() => {
+                setCollapsedOverrides((prev) => ({ ...prev, [group.name]: !isGroupCollapsed(group) }))
+              }}
             />
           ))
         )}

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, act } from '@testing-library/react'
+import { render, act, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DashboardView, {
   RECONNECT_BASE_DELAY_MS,
@@ -22,15 +22,16 @@ import DashboardView, {
  * generation/epoch concept at all. A stale message from an old socket could
  * silently overwrite state a fresher connection had already established.
  *
- * OUT OF SCOPE, stated honestly: the backend `/ws/dashboard` handler
- * (`agent_webui/server.py::_dashboard_ws`, owned by a different lane per this
- * program's file-ownership split) re-sends the ENTIRE dashboard on every
- * push with no per-widget subscription protocol or sequence/cursor field --
- * a true subscription-scoped fetch and a sequence-verified resume both
- * require a backend wire-protocol change this lane does not make. What IS
- * fixed and proven here is the frontend-only half: jittered exponential
- * backoff, and a connection-generation guard that makes a stale/duplicate
- * message from a superseded socket provably inert.
+ * UPDATE (GOC-29, closing BUG-019's remaining "overfetch" half): the backend
+ * wire-protocol gap (no `stream_id`/`sequence`) was closed first (see the
+ * `data-freshness` describe block below); this file's later `subscription
+ * scoping` describe block proves the second half -- `/ws/dashboard` now
+ * accepts `{"type": "subscribe", "widget_ids": [...]}` and this component
+ * sends one naming exactly the widget ids currently on screen (a collapsed
+ * group or one the search filter hid contributes none), so a collapsed
+ * section's data is never pushed over the wire in the first place. What
+ * follows here (jittered exponential backoff + connection-generation guard)
+ * remains the original frontend-only proof for that half of the fix.
  */
 
 describe('DashboardView reconnect backoff (pure logic, BUG-019)', () => {
@@ -99,14 +100,20 @@ class MockWebSocket {
   onclose: (() => void) | null = null
   onerror: (() => void) | null = null
   readonly url: string
+  /** BUG-019: every frame this socket instance was asked to send, in order. */
+  readonly sent: unknown[] = []
 
   constructor(url: string) {
     this.url = url
     MockWebSocket.instances.push(this)
   }
 
-  send(): void {
-    /* DashboardView's socket never sends anything meaningful; no-op. */
+  send(data: string): void {
+    try {
+      this.sent.push(JSON.parse(data) as unknown)
+    } catch {
+      this.sent.push(data)
+    }
   }
 
   close(): void {
@@ -418,5 +425,171 @@ describe('DashboardView data-freshness (GOC-29 backend wire-protocol proofs)', (
       })
     })
     expect(queryByText(/reconnected.*missed/i)).toBeNull()
+  })
+})
+
+/**
+ * BUG-019 (GOC-29), subscription-scoped fetch: `/ws/dashboard` used to send
+ * the ENTIRE dashboard on every push regardless of what the client actually
+ * displayed. `DashboardView` now sends `{"type": "subscribe", "widget_ids":
+ * [...]}` naming exactly the widget ids currently rendered on screen -- a
+ * collapsed group's widgets are excluded -- so the backend (server.py's
+ * `_dashboard_ws`, tested independently in `test_ws_dashboard_endpoint.py`)
+ * can stop pushing data for them at all instead of the client silently
+ * discarding it after the fact.
+ *
+ * KNOWN-BAD: before this fix `MockWebSocket.send` was a documented no-op
+ * ("DashboardView's socket never sends anything meaningful") -- there was no
+ * subscribe message to assert on at all.
+ */
+const emptyWidgetData = { fields: {}, status: 'ok' as const, error: null, timestamp: '2026-01-01T00:00:00Z' }
+
+function service(id: string, category: string) {
+  return {
+    id,
+    name: id,
+    widget_type: 'generic',
+    url: '',
+    icon: 'container',
+    description: '',
+    category,
+    href: '',
+    visible: true,
+    column_span: 1,
+    row_span: 1,
+    order: 0,
+    refresh_interval: 30,
+    websocket: false,
+    fields: null,
+  }
+}
+
+const SUBSCRIBE_DASHBOARD_BODY = {
+  layout: {
+    groups: [
+      { name: 'Media', services: [service('widgetA', 'media')], order: 0, collapsed: false, icon: 'container' },
+      { name: 'Network', services: [service('widgetB', 'network')], order: 1, collapsed: false, icon: 'globe' },
+    ],
+    columns: 4,
+    theme: 'system',
+    card_size: 'medium',
+    show_search: true,
+    show_status_indicators: true,
+    auto_refresh: true,
+    refresh_interval: 30,
+  },
+  data: { widgetA: emptyWidgetData, widgetB: emptyWidgetData },
+}
+
+describe('DashboardView subscription-scoped fetch (BUG-019 GOC-29)', () => {
+  let originalWebSocket: typeof WebSocket
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    MockWebSocket.instances = []
+    originalWebSocket = global.WebSocket
+    global.WebSocket = MockWebSocket as unknown as typeof WebSocket
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify(SUBSCRIBE_DASHBOARD_BODY), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    ) as unknown as typeof fetch
+  })
+
+  afterEach(() => {
+    global.WebSocket = originalWebSocket
+    vi.useRealTimers()
+  })
+
+  it('sends a subscribe message on open naming every currently-visible widget id', async () => {
+    renderDashboard()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    const socket = MockWebSocket.instances[0]
+
+    act(() => {
+      socket.serverOpen()
+    })
+
+    const subscribeMessages = socket.sent.filter(
+      (m): m is { type: string; widget_ids: string[] } =>
+        typeof m === 'object' && m !== null && (m as { type?: unknown }).type === 'subscribe',
+    )
+    expect(subscribeMessages.length).toBeGreaterThan(0)
+    expect(new Set(subscribeMessages[subscribeMessages.length - 1].widget_ids)).toEqual(
+      new Set(['widgetA', 'widgetB']),
+    )
+  })
+
+  it("collapsing a group re-subscribes to exclude that group's widgets, and expanding it again restores them", async () => {
+    const { getByRole } = renderDashboard()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    const socket = MockWebSocket.instances[0]
+    act(() => {
+      socket.serverOpen()
+    })
+    socket.sent.length = 0
+
+    const networkToggle = getByRole('button', { name: /Network/i })
+    act(() => {
+      fireEvent.click(networkToggle)
+    })
+
+    const afterCollapse = socket.sent.filter(
+      (m): m is { type: string; widget_ids: string[] } =>
+        typeof m === 'object' && m !== null && (m as { type?: unknown }).type === 'subscribe',
+    )
+    expect(afterCollapse.length).toBeGreaterThan(0)
+    expect(new Set(afterCollapse[afterCollapse.length - 1].widget_ids)).toEqual(new Set(['widgetA']))
+
+    act(() => {
+      fireEvent.click(networkToggle)
+    })
+    const afterExpand = socket.sent.filter(
+      (m): m is { type: string; widget_ids: string[] } =>
+        typeof m === 'object' && m !== null && (m as { type?: unknown }).type === 'subscribe',
+    )
+    expect(new Set(afterExpand[afterExpand.length - 1].widget_ids)).toEqual(new Set(['widgetA', 'widgetB']))
+  })
+
+  it('a reconnect re-sends the CURRENT visible set (not the set from the first connection)', async () => {
+    const { getByRole } = renderDashboard()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    const first = MockWebSocket.instances[0]
+    act(() => {
+      first.serverOpen()
+    })
+
+    const networkToggle = getByRole('button', { name: /Network/i })
+    act(() => {
+      fireEvent.click(networkToggle)
+    })
+
+    act(() => {
+      first.serverForceClose()
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RECONNECT_BASE_DELAY_MS * 1.5)
+    })
+    expect(MockWebSocket.instances.length).toBe(2)
+    const second = MockWebSocket.instances[1]
+
+    act(() => {
+      second.serverOpen()
+    })
+    const onOpenSubscribe = second.sent.find(
+      (m): m is { type: string; widget_ids: string[] } =>
+        typeof m === 'object' && m !== null && (m as { type?: unknown }).type === 'subscribe',
+    )
+    expect(onOpenSubscribe).toBeDefined()
+    expect(new Set(onOpenSubscribe?.widget_ids)).toEqual(new Set(['widgetA']))
   })
 })

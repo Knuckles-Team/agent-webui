@@ -2229,6 +2229,31 @@ async def toggle_tool_status(data: dict[str, Any]) -> dict[str, Any]:
     return {'status': 'success', 'type': item_type, 'id': item_id, 'enabled': enabled}
 
 
+async def _classify_universal_skills_from_kg(
+    univ_skills_dir: Path, kg_index: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Scan ``univ_skills_dir`` for ``SKILL.md`` files and keep only the ones
+    the KG's own classification (``_fetch_kg_skill_classification``) types as
+    ``AGENT_SKILL`` (BUG-024: never a literal ``workflows`` path segment —
+    lane invariant 4). Isolated from ``list_skills`` so this logic can be
+    exercised directly against a fixture directory without needing to defeat
+    that route's ``is_testing`` real-filesystem guard.
+    """
+
+    agent_skill_names = kg_index['agent_skill_names']
+    kg_reachable = kg_index['kg_reachable']
+    skills: list[dict[str, Any]] = []
+    for index, p in enumerate(univ_skills_dir.glob('**/SKILL.md')):
+        if index >= _MAX_LIST_FILES or len(skills) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            break
+        skill_info = _parse_skill_md(p)
+        lookup_name = str(skill_info.get('name', '')).strip().lower()
+        if kg_reachable and lookup_name in agent_skill_names:
+            skill_info['type'] = 'Agent Skill'
+            skills.append(skill_info)
+    return skills
+
+
 @router.get('/skills')
 async def list_skills() -> list[dict[str, Any]]:
     """Retrieve the catalog of dynamic agent skills.
@@ -2244,36 +2269,35 @@ async def list_skills() -> list[dict[str, Any]]:
     # See the matching note in get_engine(): 'unittest' alone is not a
     # trustworthy test-mode signal in this process.
     is_testing = 'pytest' in sys.modules
+    try:
+        engine = await _get_engine_bounded()
+    except HTTPException as exc:
+        # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- get_engine()
+        # raises HTTPException(501) for "no engine", not None, so a bare
+        # `except HTTPException: raise` here made the `if engine:` /
+        # get_helper() fallback below dead code: every no-engine request
+        # 501'd before ever reaching it. Only a genuine 503 (bounded-sync
+        # deadline/capacity) still hard-fails; "not initialized" degrades
+        # to the get_helper()/501 fallback chain already written below.
+        if exc.status_code != 501:
+            raise
+        engine = None
+    except Exception:
+        engine = None
     univ_skills_dir = (
         get_skills_packages_dir() / 'universal-skills' / 'universal_skills'
     )
     if not is_testing and univ_skills_dir.exists():
-        for index, p in enumerate(univ_skills_dir.glob('**/SKILL.md')):
-            if (
-                index >= _MAX_LIST_FILES
-                or len(skills) >= _MAX_EXTERNAL_COLLECTION_ITEMS
-            ):
-                break
-            if 'workflows' not in p.parts:
-                skill_info = _parse_skill_md(p)
-                skill_info['type'] = 'Agent Skill'
-                skills.append(skill_info)
+        # BUG-024: classify by the KG's CallableResource(resource_type=...)
+        # truth, the same authority `/tools` already uses, never by a literal
+        # `workflows` path segment (lane invariant 4 -- see
+        # `_fetch_kg_skill_classification`'s docstring). When the KG is
+        # unreachable, `kg_reachable` is False and every candidate is left
+        # out here rather than guessed from path -- that falls through to
+        # the governed-helper fallback below instead of a silent path guess.
+        kg_index = await _fetch_kg_skill_classification(engine)
+        skills = await _classify_universal_skills_from_kg(univ_skills_dir, kg_index)
     if not skills:
-        try:
-            engine = await _get_engine_bounded()
-        except HTTPException as exc:
-            # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- get_engine()
-            # raises HTTPException(501) for "no engine", not None, so a bare
-            # `except HTTPException: raise` here made the `if engine:` /
-            # get_helper() fallback below dead code: every no-engine request
-            # 501'd before ever reaching it. Only a genuine 503 (bounded-sync
-            # deadline/capacity) still hard-fails; "not initialized" degrades
-            # to the get_helper()/501 fallback chain already written below.
-            if exc.status_code != 501:
-                raise
-            engine = None
-        except Exception:
-            engine = None
         if engine:
             skills_result = await _invoke_governed_helper(
                 engine.get_skills,
