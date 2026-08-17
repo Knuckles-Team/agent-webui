@@ -1049,6 +1049,49 @@ class TestInfraHandlersFailHonestly:
         assert 'Simulated' not in response.text
 
 
+class TestWorkflowsEndpointFailsHonestly:
+    """`GET /api/enhanced/workflows` must distinguish a real backend failure
+    (D-W5WR-4: e.g. `PlacementAuthorityError`) from a genuinely empty
+    Workflows list -- same class of fix `TestGraphNodesEndpoint` locks in for
+    `/graph/nodes` (D-W6-10). Before this fix, a raised backend exception was
+    swallowed into a bare `200 []`, indistinguishable from "no workflows
+    saved yet".
+    """
+
+    def test_list_workflows_backend_error_is_not_silently_empty(
+        self, client, mock_graph_engine
+    ):
+        """A backend failure raises 503, not a fabricated `200 []`."""
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.backend = MagicMock()
+            mock_graph_engine.backend.execute.side_effect = RuntimeError(
+                'PlacementAuthorityError: admin:cluster-read required'
+            )
+
+            response = client.get('/api/enhanced/workflows')
+
+        assert response.status_code == 503
+        assert response.json() != []
+
+    def test_list_workflows_genuinely_empty_is_200(self, client, mock_graph_engine):
+        """A real empty graph still returns `200 []` -- the fix must not
+        turn a genuinely empty Workflows list into a false failure."""
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.backend = MagicMock()
+            mock_graph_engine.backend.execute.return_value = []
+
+            response = client.get('/api/enhanced/workflows')
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+
 class TestServerIntegration:
     """Test server-level features."""
 
