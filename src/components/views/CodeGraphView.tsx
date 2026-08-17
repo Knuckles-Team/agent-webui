@@ -54,13 +54,28 @@ export default function CodeGraphView() {
   const [systems, setSystems] = useState<string[]>([])
 
   useEffect(() => {
+    // A failure here only narrows the optional source-system filter -- the
+    // Navigator/Call graph tabs below have their own explicit failure
+    // reporting on `run()`/`render()`, so this stays a silent degrade rather
+    // than a toast. It must not FABRICATE a genuinely-empty response for a
+    // real backend error though: an `!r.ok` used to resolve the same
+    // `{ source_systems: [] }` shape a real empty list would, so a 500/503
+    // was indistinguishable from "no indexed instances" -- both in the
+    // dropdown (unavoidable, it is a plain <select>) and in devtools, since
+    // nothing was ever logged. Routing both failure modes through one
+    // `console.error` at least makes the difference diagnosable, matching
+    // this file's other catches.
     fetch('/api/enhanced/code/instances')
-      .then((r) => (r.ok ? (r.json() as Promise<{ source_systems?: string[] }>) : { source_systems: [] }))
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${String(r.status)}`)
+        return r.json() as Promise<{ source_systems?: string[] }>
+      })
       .then((d) => {
         setSystems(d.source_systems ?? [])
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         setSystems([])
+        console.error('Failed to load indexed source systems', err)
       })
   }, [])
 
