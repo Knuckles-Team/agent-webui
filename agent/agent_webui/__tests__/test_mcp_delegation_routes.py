@@ -325,3 +325,168 @@ class TestServerToolsRoute:
     ):
         response = unwired_client.get('/api/enhanced/mcp/servers/graph-os/tools')
         assert response.status_code == 501
+
+
+@pytest.fixture
+def mcp_registry_path(tmp_path, monkeypatch):
+    """Point the CRUD routes' catalog resolution at a throwaway file so a
+    test never touches a real ``mcp_config.json``."""
+    path = tmp_path / 'mcp_config.json'
+    monkeypatch.setenv('MCP_CONFIG', str(path))
+    return path
+
+
+class TestMcpServerCrud:
+    """Add / modify / delete MCP servers in the fleet catalog file -- the
+    SAME file the live multiplexer reloads from (CONCEPT:AU-ECO.mcp.webui-governed-mcp-delegation)."""
+
+    def test_schema_exposes_command_and_url(self, client):
+        response = client.get('/api/enhanced/mcp/server-schema')
+        assert response.status_code == 200, response.text
+        schema = response.json()
+        assert {'command', 'url'} <= set(schema['properties'])
+
+    def test_create_writes_the_real_catalog_file_and_is_readable_back(
+        self, client, mcp_registry_path
+    ):
+        response = client.post(
+            '/api/enhanced/mcp/servers',
+            json={
+                'name': 'ansible-tower-mcp',
+                'config': {'url': 'https://ansible-tower-mcp.example/mcp'},
+            },
+        )
+        assert response.status_code == 200, response.text
+        import json
+
+        on_disk = json.loads(mcp_registry_path.read_text())
+        assert on_disk['mcpServers']['ansible-tower-mcp']['url'] == (
+            'https://ansible-tower-mcp.example/mcp'
+        )
+
+    def test_create_rejects_a_shape_with_neither_command_nor_url(
+        self, client, mcp_registry_path
+    ):
+        response = client.post(
+            '/api/enhanced/mcp/servers',
+            json={'name': 'broken-mcp', 'config': {}},
+        )
+        assert response.status_code == 422
+
+    def test_create_rejects_duplicate_name(self, client, mcp_registry_path):
+        body = {
+            'name': 'dup-mcp',
+            'config': {'url': 'https://dup-mcp.example/mcp'},
+        }
+        first = client.post('/api/enhanced/mcp/servers', json=body)
+        assert first.status_code == 200, first.text
+        second = client.post('/api/enhanced/mcp/servers', json=body)
+        assert second.status_code == 409
+
+    def test_create_refuses_stdio_when_deployment_prohibits_it(
+        self, client, mcp_registry_path, monkeypatch
+    ):
+        """The Task-1 stdio guard is consulted at CRUD time too -- an add
+        attempt is refused (400) rather than silently written to the catalog
+        and only failing at the next spawn. Like every other validation
+        error in this app, the browser-facing body is the app-wide generic
+        per-status string (``server.py``'s ``_privacy_safe_http_error`` never
+        reflects an exception's ``detail=`` to the client, by design); the
+        precise reason is logged server-side (``_log_failure``) and --
+        unaffected by that generalization, since it is DATA not an exception
+        -- is exactly what the catalog/probe surface
+        (``/api/enhanced/tools`` -> per-server ``error``) reports to the
+        operator when the server is next probed."""
+        from agent_utilities.core.config import config
+
+        monkeypatch.setattr(config, 'mcp_stdio_prohibited', True)
+        response = client.post(
+            '/api/enhanced/mcp/servers',
+            json={
+                'name': 'ansible-tower-mcp',
+                'config': {'command': 'ansible-tower-mcp', 'args': []},
+            },
+        )
+        assert response.status_code == 400
+        import json
+
+        assert 'ansible-tower-mcp' not in json.loads(
+            mcp_registry_path.read_text() if mcp_registry_path.exists() else '{}'
+        ).get('mcpServers', {})
+
+    def test_update_edits_an_existing_entry(self, client, mcp_registry_path):
+        create = client.post(
+            '/api/enhanced/mcp/servers',
+            json={
+                'name': 'edit-mcp',
+                'config': {'url': 'https://edit-mcp.example/mcp'},
+            },
+        )
+        assert create.status_code == 200, create.text
+        update = client.put(
+            '/api/enhanced/mcp/servers/edit-mcp',
+            json={'config': {'url': 'https://edit-mcp.example/mcp/v2'}},
+        )
+        assert update.status_code == 200, update.text
+        assert update.json()['config']['url'] == 'https://edit-mcp.example/mcp/v2'
+
+    def test_update_unknown_server_is_404(self, client, mcp_registry_path):
+        response = client.put(
+            '/api/enhanced/mcp/servers/nope-mcp',
+            json={'config': {'url': 'https://nope.example/mcp'}},
+        )
+        assert response.status_code == 404
+
+    def test_delete_defaults_to_reversible_soft_disable(
+        self, client, mcp_registry_path
+    ):
+        client.post(
+            '/api/enhanced/mcp/servers',
+            json={
+                'name': 'soft-delete-mcp',
+                'config': {'url': 'https://soft-delete-mcp.example/mcp'},
+            },
+        )
+        response = client.delete('/api/enhanced/mcp/servers/soft-delete-mcp')
+        assert response.status_code == 200, response.text
+        assert response.json()['hard_deleted'] is False
+        import json
+
+        on_disk = json.loads(mcp_registry_path.read_text())
+        # Reversible: the entry still exists, merely disabled.
+        assert on_disk['mcpServers']['soft-delete-mcp']['disabled'] is True
+
+    def test_delete_hard_actually_removes_the_entry(self, client, mcp_registry_path):
+        client.post(
+            '/api/enhanced/mcp/servers',
+            json={
+                'name': 'hard-delete-mcp',
+                'config': {'url': 'https://hard-delete-mcp.example/mcp'},
+            },
+        )
+        response = client.delete('/api/enhanced/mcp/servers/hard-delete-mcp?hard=true')
+        assert response.status_code == 200, response.text
+        assert response.json()['hard_deleted'] is True
+        import json
+
+        on_disk = json.loads(mcp_registry_path.read_text())
+        assert 'hard-delete-mcp' not in on_disk['mcpServers']
+
+    def test_delete_unknown_server_is_404(self, client, mcp_registry_path):
+        response = client.delete('/api/enhanced/mcp/servers/nope-mcp')
+        assert response.status_code == 404
+
+    def test_without_host_injection_crud_still_works(
+        self, unwired_client, mcp_registry_path
+    ):
+        """Unlike tool-call delegation, CRUD needs no host-injected helper --
+        it writes the catalog file directly, so it must work even when the
+        host has wired NO delegation helpers at all."""
+        response = unwired_client.post(
+            '/api/enhanced/mcp/servers',
+            json={
+                'name': 'no-helper-mcp',
+                'config': {'url': 'https://no-helper-mcp.example/mcp'},
+            },
+        )
+        assert response.status_code == 200, response.text

@@ -224,6 +224,98 @@ def test_archive_library_agent_missing_returns_404(mock_engine):
     assert exc.value.status_code == 404
 
 
+def test_update_library_agent_requires_name_and_instructions(mock_engine):
+    from agent_webui.api_extensions import update_library_agent
+    from fastapi import HTTPException
+
+    with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
+        run(
+            update_library_agent(
+                'resource:skill:demo', {'name': '', 'instructions': ''}
+            )
+        )
+    assert exc.value.status_code == 422
+
+
+def test_update_library_agent_rejects_non_library_resource(mock_engine):
+    from agent_webui.api_extensions import update_library_agent
+    from fastapi import HTTPException
+
+    mock_engine.backend.execute.return_value = [
+        {
+            'rtype': 'AGENT_SKILL',
+            'provider_ref': 'provider://mcp:some-fleet-skill',
+            'source_ref': 'skill://fleet-thing',
+        }
+    ]
+    with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
+        run(
+            update_library_agent(
+                'resource:skill:fleet-thing',
+                {'name': 'x', 'instructions': 'y'},
+            )
+        )
+    assert exc.value.status_code == 403
+
+
+def test_update_library_agent_missing_returns_404(mock_engine):
+    from agent_webui.api_extensions import update_library_agent
+    from fastapi import HTTPException
+
+    mock_engine.backend.execute.return_value = []
+    with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
+        run(
+            update_library_agent(
+                'resource:skill:nope', {'name': 'x', 'instructions': 'y'}
+            )
+        )
+    assert exc.value.status_code == 404
+
+
+def test_update_library_agent_edits_fields_and_resyncs_tools(mock_engine):
+    from agent_webui.api_extensions import update_library_agent
+
+    queries = []
+
+    def execute(query, params=None):
+        queries.append((query, params))
+        if 'RETURN r.resource_type AS rtype' in query:
+            return [
+                {
+                    'rtype': 'AGENT_SKILL',
+                    'provider_ref': 'provider://agent-webui-library',
+                    'source_ref': 'skill://my-agent',
+                }
+            ]
+        return []
+
+    mock_engine.backend.execute.side_effect = execute
+    with _patched_engine(mock_engine):
+        data = run(
+            update_library_agent(
+                'resource:skill:my-agent',
+                {
+                    'name': 'my-agent',
+                    'description': 'now does more things',
+                    'instructions': 'You are an updated specialist.',
+                    'tool_ids': ['tool:new'],
+                },
+            )
+        )
+    assert data['id'] == 'resource:skill:my-agent'
+    assert data['description'] == 'now does more things'
+    assert data['tools'] == ['tool:new']
+
+    # Skill + CallableResource nodes were both updated in place.
+    assert any('SET s.name' in q for q, _ in queries)
+    assert any('SET r.name' in q for q, _ in queries)
+    # Old USES_TOOL edges were dropped before the new set was linked --
+    # full-replace, not merge.
+    assert any('DELETE e' in q for q, _ in queries)
+    link_calls = [call.args for call in mock_engine.link_nodes.call_args_list]
+    assert ('resource:skill:my-agent', 'tool:new', 'USES_TOOL') in link_calls
+
+
 def test_register_a2a_agent_requires_valid_url(mock_engine):
     from agent_webui.api_extensions import register_a2a_agent
     from fastapi import HTTPException

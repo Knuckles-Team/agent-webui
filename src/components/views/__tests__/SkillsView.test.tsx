@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import SkillsView, {
   skillSchema,
   skillGraphSchema,
@@ -233,5 +233,77 @@ describe('SkillsView cognitive registry — grouped by domain (GOC-60-W06d)', ()
     })
     expect(screen.getAllByText('Runnable').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Describe-only').length).toBeGreaterThan(0)
+  })
+})
+
+const MCP_SERVER_SCHEMA = {
+  properties: {
+    command: { type: 'string', title: 'Command' },
+    url: { type: 'string', title: 'Url' },
+    args: { type: 'array', items: { type: 'string' }, title: 'Args', default: [] },
+    env: { type: 'object', title: 'Env', default: {} },
+    transport: { type: 'string', enum: ['', 'streamable-http', 'sse'], title: 'Transport', default: '' },
+    headers: { type: 'object', title: 'Headers', default: {} },
+    disabled: { type: 'boolean', title: 'Disabled', default: false },
+    timeout: { type: 'number', title: 'Timeout', default: 300.0 },
+    allowed_private_hosts: { type: 'array', items: { type: 'string' }, title: 'Allowed private hosts', default: [] },
+  },
+}
+
+const EMPTY_TOOLS_PAYLOAD = {
+  ...GROUPED_PAYLOAD,
+  skills: [],
+  skill_workflows: [],
+}
+
+/** Routes a fetch mock by URL/method so the Add-server flow (GET /tools ->
+ * GET /mcp/server-schema -> POST /mcp/servers) can be exercised end to end. */
+function routedFetch(routes: { match: (url: string, init?: RequestInit) => boolean; body: unknown }[]) {
+  return vi.fn((url: string, init?: RequestInit) => {
+    const route = routes.find((r) => r.match(url, init))
+    return Promise.resolve(new Response(JSON.stringify(route ? route.body : {}), { status: route ? 200 : 404 }))
+  })
+}
+
+describe('SkillsView — Add MCP Server (schema-derived form)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('fetches the live schema and POSTs the submitted server to /api/enhanced/mcp/servers', async () => {
+    const fetchMock = routedFetch([
+      { match: (u) => u.includes('/api/enhanced/tools'), body: EMPTY_TOOLS_PAYLOAD },
+      { match: (u) => u.includes('/api/enhanced/mcp/server-schema'), body: MCP_SERVER_SCHEMA },
+      {
+        match: (u, i) => u.includes('/api/enhanced/mcp/servers') && i?.method === 'POST',
+        body: { status: 'success' },
+      },
+    ])
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<SkillsView />)
+    await waitFor(() => {
+      expect(screen.getByText('Add MCP Server')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('Add MCP Server'))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^Name/)).toBeInTheDocument()
+    })
+    fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'ansible-tower-mcp' } })
+    fireEvent.change(screen.getByLabelText(/Url/), {
+      target: { value: 'https://ansible-tower-mcp.example/mcp' },
+    })
+    fireEvent.click(screen.getByText('Review preflight'))
+
+    await waitFor(() => {
+      const postCall = fetchMock.mock.calls.find(
+        (c) => c[0].includes('/api/enhanced/mcp/servers') && c[1]?.method === 'POST',
+      )
+      expect(postCall).toBeDefined()
+      const body = JSON.parse(String((postCall?.[1] as RequestInit).body))
+      expect(body.name).toBe('ansible-tower-mcp')
+      expect(body.config.url).toBe('https://ansible-tower-mcp.example/mcp')
+    })
   })
 })

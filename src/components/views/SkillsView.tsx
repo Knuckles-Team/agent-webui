@@ -16,6 +16,9 @@ import {
   Layers,
   AlertTriangle,
   HelpCircle,
+  Plus,
+  Pencil,
+  Trash2,
   type LucideIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -23,9 +26,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
 import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
+import { SchemaActionForm } from '@/components/capabilities/SchemaActionForm'
+import type { JsonSchema } from '@/lib/capabilities-api'
+import type { PageContextEnvelope } from '@/lib/page-context'
 
 interface MCPTool {
   name: string
@@ -33,6 +40,11 @@ interface MCPTool {
   status: string
   enabled: boolean
   tool_count?: number
+  /** Stated reason a server is `unavailable` (e.g. "stdio transport is not
+   * permitted in this process") -- `null`/absent when healthy. Never treat
+   * an unavailable server with no `error` as healthy; the backend always
+   * sets one when `status === 'unavailable'`. */
+  error?: string | null
 }
 
 interface BuiltinTool {
@@ -141,6 +153,7 @@ const mcpToolSchema: z.ZodType<MCPTool> = z.object({
   // moment mcp_tools stopped being empty -- masked until now only because
   // it was always `[]`.
   tool_count: z.number().optional(),
+  error: z.string().nullable().optional(),
 })
 const builtinToolSchema: z.ZodType<BuiltinTool> = z.object({
   name: z.string(),
@@ -405,6 +418,13 @@ export default function SkillsView() {
   const [mcpTools, setMcpTools] = useState<Record<string, LiveMCPTool[] | undefined>>({})
   const [loadingMcpTools, setLoadingMcpTools] = useState<Record<string, boolean | undefined>>({})
 
+  // MCP server add/edit -- schema-derived form (BUG-260 pattern: the fields
+  // come from the backend's live JSON schema, never hand-listed here).
+  const [mcpServerSchema, setMcpServerSchema] = useState<JsonSchema | null>(null)
+  const [mcpServerDialog, setMcpServerDialog] = useState<{ mode: 'add' | 'edit'; name: string } | null>(null)
+  const [mcpServerEditValues, setMcpServerEditValues] = useState<Record<string, unknown>>({})
+  const [savingMcpServer, setSavingMcpServer] = useState(false)
+
   useEffect(() => {
     void fetchTools()
   }, [])
@@ -445,6 +465,127 @@ export default function SkillsView() {
       }
     } catch {
       toast.error('Error toggling MCP server')
+    }
+  }
+
+  const openAddMcpServer = async () => {
+    if (!mcpServerSchema) {
+      try {
+        const schema = await fetchValidated(
+          '/api/enhanced/mcp/server-schema',
+          z.record(z.string(), z.unknown()) as unknown as z.ZodType<JsonSchema>,
+        )
+        setMcpServerSchema(schema)
+      } catch {
+        toast.error('Could not load the MCP server form schema')
+        return
+      }
+    }
+    setMcpServerEditValues({})
+    setMcpServerDialog({ mode: 'add', name: '' })
+  }
+
+  const openEditMcpServer = async (name: string) => {
+    try {
+      const [schema, current] = await Promise.all([
+        mcpServerSchema
+          ? Promise.resolve(mcpServerSchema)
+          : fetchValidated(
+              '/api/enhanced/mcp/server-schema',
+              z.record(z.string(), z.unknown()) as unknown as z.ZodType<JsonSchema>,
+            ),
+        fetchValidated(
+          `/api/enhanced/mcp/servers/${encodeURIComponent(name)}/config`,
+          z.record(z.string(), z.unknown()),
+        ),
+      ])
+      setMcpServerSchema(schema)
+      setMcpServerEditValues(current)
+    } catch {
+      toast.error(`Could not load the current settings for '${name}'`)
+      return
+    }
+    setMcpServerDialog({ mode: 'edit', name })
+  }
+
+  /** Page context the reused SchemaActionForm derives its prefill from. The
+   * server's ``name`` isn't part of the config schema (it's the catalog KEY,
+   * entered via its own field beside the form; see the dialog below) -- for
+   * 'edit', every OTHER field is prefilled by pushing the server's current
+   * config through ``filters`` (``contextualValue`` in capability-forms.ts
+   * checks ``name in context.filters`` before any other source), the same
+   * generic prefill seam capability actions already use for a fresh page
+   * selection. */
+  const mcpServerFormContext = (dialog: { mode: 'add' | 'edit'; name: string }): PageContextEnvelope => ({
+    schemaVersion: '1.0',
+    route: '/skills',
+    view: 'mcp-server-' + dialog.mode,
+    selection: [],
+    filters: dialog.mode === 'edit' ? (mcpServerEditValues as unknown as PageContextEnvelope['filters']) : {},
+    allowedActions: [],
+    capturedAt: new Date().toISOString(),
+  })
+
+  const submitMcpServer = async (dialog: { mode: 'add' | 'edit'; name: string }, config: Record<string, unknown>) => {
+    const name = dialog.name.trim()
+    if (!name) {
+      toast.error('Give the MCP server a name')
+      return
+    }
+    setSavingMcpServer(true)
+    try {
+      if (dialog.mode === 'add') {
+        const res = await fetch('/api/enhanced/mcp/servers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, config }),
+        })
+        if (!res.ok) {
+          toast.error('Failed to add MCP server -- check the command/url and try again')
+          return
+        }
+        toast.success(`MCP server '${name}' added`)
+      } else {
+        const res = await fetch(`/api/enhanced/mcp/servers/${encodeURIComponent(dialog.name)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config }),
+        })
+        if (!res.ok) {
+          toast.error('Failed to save MCP server changes')
+          return
+        }
+        toast.success(`MCP server '${dialog.name}' updated`)
+      }
+      setMcpServerDialog(null)
+      await fetchTools()
+    } catch {
+      toast.error('Error saving MCP server')
+    } finally {
+      setSavingMcpServer(false)
+    }
+  }
+
+  /** Destructive by nature: the default removal is a REVERSIBLE soft-disable
+   * (the entry stays in the catalog file, restorable via edit); permanently
+   * deleting the entry requires a second, explicit confirmation. */
+  const handleDeleteMcpServer = async (name: string) => {
+    if (!window.confirm(`Disable MCP server '${name}'? It stays in the catalog and can be re-enabled later.`)) return
+    const hard = window.confirm(
+      `Also permanently remove '${name}' from the catalog instead of just disabling it? This cannot be undone from the UI.`,
+    )
+    try {
+      const res = await fetch(`/api/enhanced/mcp/servers/${encodeURIComponent(name)}${hard ? '?hard=true' : ''}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        toast.error(`Failed to remove '${name}'`)
+        return
+      }
+      toast.success(hard ? `MCP server '${name}' permanently removed` : `MCP server '${name}' disabled`)
+      await fetchTools()
+    } catch {
+      toast.error(`Error removing '${name}'`)
     }
   }
 
@@ -656,6 +797,19 @@ export default function SkillsView() {
                 {/* 1. MCP Tools */}
                 {activeTab === 'mcp' && (
                   <div className="space-y-4">
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        onClick={() => {
+                          void openAddMcpServer()
+                        }}
+                      >
+                        <Plus className="size-3.5" />
+                        Add MCP Server
+                      </Button>
+                    </div>
                     {filteredMcp.length === 0 ? (
                       <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
                         <span className="text-muted-foreground text-sm">No MCP servers registered.</span>
@@ -707,8 +861,36 @@ export default function SkillsView() {
                                     >
                                       {server.enabled ? 'Disable' : 'Enable'}
                                     </button>
+                                    <button
+                                      title={`Edit ${server.name}`}
+                                      aria-label={`Edit ${server.name}`}
+                                      onClick={() => {
+                                        void openEditMcpServer(server.name)
+                                      }}
+                                      className="p-1.5 rounded border border-border/40 text-muted-foreground hover:text-foreground hover:border-border transition-all"
+                                    >
+                                      <Pencil className="size-3.5" />
+                                    </button>
+                                    <button
+                                      title={`Remove ${server.name}`}
+                                      aria-label={`Remove ${server.name}`}
+                                      onClick={() => {
+                                        void handleDeleteMcpServer(server.name)
+                                      }}
+                                      className="p-1.5 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-all"
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                    </button>
                                   </div>
                                 </div>
+                                {server.status === 'unavailable' && (
+                                  <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 mt-2 text-amber-300">
+                                    <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                                    <p className="text-xs">
+                                      {server.error ?? 'Unavailable for an unreported reason.'}
+                                    </p>
+                                  </div>
+                                )}
                                 {typeof server.tool_count === 'number' && (
                                   <div className="space-y-1.5 mt-2">
                                     <div className="text-xs text-muted-foreground">
@@ -744,7 +926,7 @@ export default function SkillsView() {
                                       {isLoadingTools ? (
                                         <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground font-medium">
                                           <RefreshCw className="size-3.5 animate-spin text-teal-400" />
-                                          <span>Discovering tools via stdio handshake...</span>
+                                          <span>Discovering tools...</span>
                                         </div>
                                       ) : serverTools.length === 0 ? (
                                         <div className="text-xs text-muted-foreground py-2">
@@ -975,6 +1157,53 @@ export default function SkillsView() {
           </ScrollArea>
         </CardContent>
       </Card>
+
+      {/* Add / Edit MCP Server -- schema-derived form (BUG-260 pattern): the
+          fields come from the live /mcp/server-schema response, never
+          hand-listed, matching LLMTemplatesView/ConfigurationView's approach. */}
+      <Dialog
+        open={mcpServerDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) setMcpServerDialog(null)
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{mcpServerDialog?.mode === 'edit' ? 'Edit MCP Server' : 'Add MCP Server'}</DialogTitle>
+          </DialogHeader>
+          {mcpServerDialog && mcpServerSchema && (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label htmlFor="mcp-server-name" className="text-sm font-medium">
+                  Name <span className="text-destructive">*</span>
+                </label>
+                <Input
+                  id="mcp-server-name"
+                  value={mcpServerDialog.name}
+                  disabled={mcpServerDialog.mode === 'edit'}
+                  placeholder="ansible-tower-mcp"
+                  onChange={(event) => {
+                    setMcpServerDialog({ ...mcpServerDialog, name: event.target.value })
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {mcpServerDialog.mode === 'edit'
+                    ? 'The catalog key -- not editable once created.'
+                    : 'A unique catalog key, e.g. matching the *-mcp deployment name.'}
+                </p>
+              </div>
+              <SchemaActionForm
+                schema={mcpServerSchema}
+                context={mcpServerFormContext(mcpServerDialog)}
+                busy={savingMcpServer}
+                onSubmit={(inputs) => {
+                  void submitMcpServer(mcpServerDialog, inputs)
+                }}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
