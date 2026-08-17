@@ -23,7 +23,7 @@ def temp_db():
 
 
 @pytest.fixture
-def mock_graph_engine():
+def mock_graph_engine(monkeypatch):
     """Mock intelligence graph engine.
 
     ``GraphComputeEngine.__init__`` -> ``resolve_routing_graph`` now requires
@@ -37,6 +37,40 @@ def mock_graph_engine():
     only, mirroring the pattern ``agent-utilities``' own ``tests/conftest.py``
     already uses for the same requirement -- this is a test fixture,
     not a request path, so it never reaches ``validate_carrier_claims()``.
+
+    That resolved the actor-context gate, but exposed a second, deeper gap:
+    a bare ``GraphComputeEngine()`` is not a test double at all -- its real
+    ``__init__`` (agent_utilities/knowledge_graph/core/graph_compute.py)
+    calls ``resolve_engine()`` and then
+    ``SyncEpistemicGraphClient.connect(**connect_kwargs)``, i.e. it opens a
+    real UDS/TCP socket to a live epistemic-graph coordinator. With no engine
+    running and autostart disabled that is ``ConnectionRefusedError``; without
+    the optional native ``epistemic_graph`` client package installed at all
+    (this repo does not depend on it) it is ``ModuleNotFoundError`` on the
+    ``from epistemic_graph.client import SyncEpistemicGraphClient`` import a
+    few lines into the same constructor. Either way, a fixture named "mock"
+    was constructing a live client.
+
+    ``agent-utilities``' own suite hits the mirror-image problem -- a REAL
+    engine must never leak identity/state across tests -- and solves it by
+    monkeypatching ``GraphComputeEngine.__init__``/``get_or_create`` *before*
+    construction rather than trusting the constructor to behave
+    (``agent-utilities`` ``tests/conftest.py::isolate_graph_compute_engine``'s
+    ``_isolated_init``/``_isolated_get_or_create``, tests/conftest.py:618-687
+    there). Port that same technique -- intercept the constructor at the
+    class level via ``monkeypatch.setattr`` rather than calling the real one
+    -- but push it all the way to a genuine double instead of an
+    isolated-namespace real engine: the replacement ``__init__`` never calls
+    ``resolve_engine()``, never imports ``epistemic_graph``, and never opens a
+    socket. It only sets the plain attributes this codebase's consumers
+    actually read off ``GraphComputeEngine`` instances (``graph_name``,
+    ``endpoint``, the private transport bookkeeping fields ``close()``
+    checks). The instance is still a real ``GraphComputeEngine`` (built via
+    the real class, just with a stubbed ``__init__``), so
+    ``isinstance(engine.graph, GraphComputeEngine)`` -- which is exactly what
+    ``PipelineContext`` (agent_utilities/knowledge_graph/pipeline/types.py,
+    ``graph: GraphComputeEngine`` under Pydantic
+    ``arbitrary_types_allowed=True``) validates -- still passes.
     """
     from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
 
@@ -63,6 +97,31 @@ def mock_graph_engine():
     )
     from agent_utilities.models.company_brain import ActorType
     from agent_utilities.security.brain_context import ActorContext, use_actor
+
+    def _double_init(self, graph_name: str | None = None, **_kwargs) -> None:
+        """No-network stand-in for ``GraphComputeEngine.__init__``.
+
+        Sets only what a constructed instance is actually read for in this
+        surface (isinstance checks, ``graph_name``/``endpoint`` display,
+        ``close()``'s idempotency guard) -- never resolves an engine
+        coordinator, never imports ``epistemic_graph``, never touches a
+        socket.
+        """
+        self.graph = {}
+        self.graph_name = graph_name or 'test-graph'
+        self.endpoint = 'test://mock-graph-engine-fixture'
+        self._process_root = self
+        self._client = MagicMock(name='GraphComputeEngine._client (test double)')
+        self._transport_client = None
+        self._transport_closed = True
+        self._event_bridge_stop = None
+        self._event_bridge_thread = None
+        self._event_bridge_loop = None
+        self._event_bridge_async_stop = None
+        self._server_ops = None
+        self._mode = 'test-double'
+
+    monkeypatch.setattr(GraphComputeEngine, '__init__', _double_init)
 
     test_actor = ActorContext(
         actor_id='test:agent-webui-fixture',
