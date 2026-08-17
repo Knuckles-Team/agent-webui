@@ -58,6 +58,7 @@ import { useConversationIdFromUrl } from './hooks/useConversationIdFromUrl'
 import { Part } from './Part'
 import { getToolIcon } from '@/lib/tool-icons'
 import { GraphActivity, type GraphEvent } from '@/components/ai-elements/graph-activity'
+import VoiceDictationButton from '@/components/VoiceDictationButton'
 import { pageContextSystemPrompt, type PageContextEnvelope } from '@/lib/page-context'
 import { useIdentity } from '@/lib/auth'
 import {
@@ -1434,6 +1435,13 @@ Available commands:
                 </TooltipTrigger>
                 <TooltipContent>Attach files</TooltipContent>
               </Tooltip>
+              <VoiceDictationButton
+                onTranscript={(text) => {
+                  if (!text) return
+                  setInput((prev) => (prev ? `${prev} ${text}` : text))
+                  textareaRef.current?.focus()
+                }}
+              />
               {availableTools.length > 0 && (
                 <DropdownMenu>
                   <Tooltip>
