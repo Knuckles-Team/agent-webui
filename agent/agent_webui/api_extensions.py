@@ -6423,30 +6423,40 @@ async def update_prompt_by_name(name: str, data: dict[str, Any]) -> dict[str, An
 
 @router.get('/ecosystem/services')
 async def list_ecosystem_services() -> list[str]:
-    """Dynamically scan installed MCP servers and backend packages."""
-    services = []
-    # Check directory listings under agent-packages/agents
-    agents_dir = get_agent_packages_dir() / 'agents'
-    if agents_dir.exists() and agents_dir.is_dir():
-        for index, p in enumerate(agents_dir.iterdir()):
-            if index >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                break
-            if p.is_dir():
-                services.append(p.name)
+    """Dynamically scan installed MCP servers and backend packages.
 
-    # Guarantee standard services for validation / UI fallback
-    for std in [
-        'tunnel-manager',
-        'systems-manager',
-        'container-manager-mcp',
-        'repository-manager',
-        'audio-transcriber',
-        'wger-agent',
-        'mealie-mcp',
-        'langfuse-agent',
-    ]:
-        if std not in services:
-            services.append(std)
+    This is the sole live-parity authority `src/lib/integrations-catalog.ts`
+    composes against, and its own module docstring is explicit about the
+    contract: "a package this endpoint does not report is never listed, and
+    every package it DOES report gets an item, full stop." Previously this
+    handler undermined that contract from the other direction -- after the
+    real directory scan, it unconditionally appended eight hardcoded package
+    names ("Guarantee standard services for validation / UI fallback") if
+    they were not already present. On a deployment where one of those eight
+    is genuinely not installed (a minimal profile, a partial checkout, a
+    misconfigured `AGENT_PACKAGES_ROOT`), that fabricated a live-looking
+    catalog entry for a package that does not exist -- the exact mirror of
+    BUG-018 (which silently DROPPED unknown packages instead of fabricating
+    known ones). Report only what the scan actually found.
+
+    Raises 503 rather than returning an empty list when the packages root
+    itself cannot be resolved, so a misconfigured deployment reads as
+    "unavailable", not as "zero packages installed" -- the same empty-vs-
+    unavailable distinction this catalog's design requires everywhere else.
+    """
+    agents_dir = get_agent_packages_dir() / 'agents'
+    if not (agents_dir.exists() and agents_dir.is_dir()):
+        raise HTTPException(
+            status_code=503,
+            detail=f'Agent packages directory not found at {agents_dir}',
+        )
+
+    services = []
+    for index, p in enumerate(agents_dir.iterdir()):
+        if index >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            break
+        if p.is_dir():
+            services.append(p.name)
 
     return services[:_MAX_EXTERNAL_COLLECTION_ITEMS]
 

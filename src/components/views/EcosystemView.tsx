@@ -652,6 +652,12 @@ export default function EcosystemView() {
         setNewHost({ alias: '', hostname: '', user: '', port: 22, password_ref: '' })
         setAddHostOpen(false)
         void fetchHosts()
+      } else {
+        // Previously fell through silently on a non-ok response (403/409/500/…):
+        // the dialog stayed open with no feedback at all, indistinguishable from
+        // a click that hadn't registered. A backend refusal must be visible.
+        const detail = await res.text().catch(() => '')
+        toast.error(`Failed to save host configuration: HTTP ${String(res.status)}${detail ? `: ${detail}` : ''}`)
       }
     } catch {
       console.error('Failed to save host configuration')
@@ -795,10 +801,20 @@ export default function EcosystemView() {
           setBulkActionRunning(false)
           void fetchRepos()
         }, 2000)
+      } else {
+        // Previously only reset on `res.ok` or a thrown exception: a non-ok
+        // HTTP response (403/409/500/…) left `bulkActionRunning` stuck `true`
+        // forever -- the refresh button showed a permanent spinner with no
+        // error, indistinguishable from "still working" for a request that had
+        // already failed.
+        const detail = await res.text().catch(() => '')
+        setBulkActionRunning(false)
+        toast.error(`Bulk ${action} failed: HTTP ${String(res.status)}${detail ? `: ${detail}` : ''}`)
       }
     } catch (err) {
       console.error(err)
       setBulkActionRunning(false)
+      toast.error(`Bulk ${action} failed: the request could not be reached`)
     }
   }
 
