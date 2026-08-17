@@ -3416,7 +3416,7 @@ async def list_kbs() -> list[dict[str, Any]]:
             deadline=10.0,
         )
         bases = await _invoke_governed_helper(
-            kb_engine.list_bases,
+            kb_engine.list_knowledge_bases,
             deadline=15.0,
         )
         bounded = _public_external_result(
@@ -7680,7 +7680,7 @@ async def execute_slash_command(payload: dict, request: Request):
         if sub == 'list':
             try:
                 bases = await _invoke_governed_helper(
-                    kb_engine.list_bases,
+                    kb_engine.list_knowledge_bases,
                     deadline=15.0,
                 )
             except Exception as e:  # noqa: BLE001

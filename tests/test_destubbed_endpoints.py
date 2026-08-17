@@ -516,7 +516,7 @@ def test_slash_kb_list_honest_empty(client, monkeypatch):
     _patch_engine(monkeypatch, engine)
     monkeypatch.setattr(
         'agent_webui.api_extensions.KBIngestionEngine',
-        lambda *a, **k: MagicMock(list_bases=lambda: []),
+        lambda *a, **k: MagicMock(list_knowledge_bases=lambda: []),
     )
     resp = client.post('/commands/execute', json={'command': '/kb list'})
     body = resp.json()['response_markdown']
