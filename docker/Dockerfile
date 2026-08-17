@@ -29,9 +29,10 @@
 # `au-src` is built into a wheel here (pure-Python + this repo's own
 # `build_backend.py`; no Rust toolchain needed -- the compiled engine ships
 # separately as `epistemic-graph`, installed from PyPI like any other
-# dependency: it's a hard base dependency of agent-utilities' own
-# pyproject.toml (`epistemic-graph[full]>=X,<3.0.0`), so `uv pip install`
-# resolves it transitively from the default index with no extra plumbing here.
+# dependency, pulled in via agent-utilities' opt-in `graphos` extra (GOC-73
+# moved it off the hard base dependency it used to be -- see BUG-258/BUG-262
+# below), so `uv pip install "...[graphos]"` resolves it transitively from
+# the default index with no extra plumbing here.
 # (2026-08-10: previously a SECOND build context, `wheelhouse`, supplied a
 # pre-built `epistemic_graph-*.whl` because PyPI's newest epistemic-graph
 # release was below agent-utilities' floor -- see CI's release.yml
@@ -40,9 +41,9 @@
 # deep inside a pip resolver, when that floor still isn't published.) Once
 # agent-utilities 2.x is published to PyPI too, DELETE the `au-wheel-build`
 # stage and its build-context and go back to a plain
-# `"agent-utilities[agent-headless,graph,metrics]>=2.0.0"` in the runtime
-# `uv pip install` (D-WD-6: `agent-headless` self-references the `mcp`
-# extra, required -- without it, fastmcp is absent and
+# `"agent-utilities[agent-headless,graph,graphos,metrics]>=2.0.0"` in the
+# runtime `uv pip install` (D-WD-6: `agent-headless` self-references the
+# `mcp` extra, required -- without it, fastmcp is absent and
 # register_graph_routes()'s canonical /api/graph|sessions|goals|tools mount
 # fails at startup with ModuleNotFoundError, degrading those routes to 404
 # for the life of the pod; `agent-headless` ALSO supplies
@@ -64,8 +65,8 @@
 #      specifically about `uv run`/`uv sync` workspace discovery).
 #   3. au-wheel-build (python+uv) -- same mechanism, over the `au-src` context.
 #   4. runtime (python, final) -- installs both built wheels; epistemic-graph
-#      (agent-utilities' own transitive dependency) and everything else
-#      (fastapi, pydantic-ai, etc.) resolve from the default PyPI index
+#      (pulled in via agent-utilities' opt-in `graphos` extra) and everything
+#      else (fastapi, pydantic-ai, etc.) resolve from the default PyPI index
 #      normally, no local wheelhouse involved.
 #
 # Runtime wiring: uvicorn binds loopback:8000 (agent_webui.server's own default
@@ -187,9 +188,7 @@ COPY --from=au-wheel-build /dist-au/*.whl /tmp/wheelhouse/
 # skill/runtime stack minus the frontend component libs" extra) already
 # self-references `mcp`, provides `pydantic-ai-harness`, and -- unlike
 # `agent-runtime` -- pulls neither `ag-ui` (agent-webui, this repo, would
-# depend on itself) nor `terminal` (agent-terminal-ui); it also carries NO
-# epistemic-graph reference (GOC-73's `graphos` extra is opt-in and not
-# among `agent-headless`'s transitive closure), so this stays eg-free.
+# depend on itself) nor `terminal` (agent-terminal-ui).
 # Verified: all ~50 `agent_utilities` submodules this repo imports resolve
 # cleanly under `[agent-headless,graph,metrics]` with epistemic-graph
 # absent, and a container built from this exact install line starts and
@@ -199,11 +198,26 @@ COPY --from=au-wheel-build /dist-au/*.whl /tmp/wheelhouse/
 # Referencing the wheel FILE directly (with the extras bracket appended to
 # the path, PEP 508's local-file-with-extras form) removes the ambiguity:
 # there is exactly one candidate for agent-utilities itself, and it is the
-# one this Dockerfile just built from source. epistemic-graph (agent-utilities'
-# own hard base dependency, `epistemic-graph[full]>=X,<3.0.0`) is NOT in
-# /tmp/wheelhouse -- it resolves from the default PyPI index like any normal
-# dependency; CI's release.yml `publish-docker` job verifies beforehand that a
-# satisfying release actually exists there (see that workflow for why).
+# one this Dockerfile just built from source.
+#
+# BUG-258/BUG-262 (2026-08-17): `graphos` ADDED to the extras list below --
+# "imports cleanly with epistemic-graph absent" (verified above) is a claim
+# about MODULE LOAD, not about this app's own KG/MCP routes working at
+# request time. GOC-73 moved `epistemic-graph` from agent-utilities' hard
+# base dependency to the opt-in `graphos` extra; before that this repo's
+# runtime install got the engine CLIENT for free as a transitive base dep
+# and never had to name it, so the omission was invisible until GOC-73
+# shipped. This app's `/graph/*` routes and MCP-servers inventory panel
+# resolve the engine at CALL time via `GraphComputeEngine`, which needs
+# `epistemic_graph.client` importable to reach `GRAPH_SERVICE_ENDPOINTS` --
+# confirmed live: a pod built without `graphos` logs "engine surface
+# discovery: 'epistemic_graph' client unavailable ... ModuleNotFoundError"
+# on every request that needs it, while `graph-os` (a separately, correctly
+# packaged process) reaches the identical engine fine. `graphos` pulls the
+# published `epistemic-graph[full]` wheel from the default PyPI index like
+# any other dependency -- it is NOT in /tmp/wheelhouse; CI's release.yml
+# `publish-docker` job verifies beforehand that a satisfying release exists
+# there (see that workflow for why).
 #
 # D-W5WR-2: pinning the real 2.x wheel then surfaced a SECOND, independent
 # gap -- its `[mcp]` extra declares `fastmcp>=4.0.0b1` (CONCEPT:AU-ECO.mcp.
@@ -230,7 +244,7 @@ RUN AU_WHEEL="$(ls /tmp/wheelhouse/agent_utilities-*.whl)" \
         > /tmp/au-overrides.txt \
     && uv pip install --system --no-cache --find-links /tmp/wheelhouse \
         --overrides /tmp/au-overrides.txt \
-        "${AU_WHEEL}[agent-headless,graph,metrics]" /tmp/agent-webui/*.whl \
+        "${AU_WHEEL}[agent-headless,graph,graphos,metrics]" /tmp/agent-webui/*.whl \
     && rm -rf /tmp/agent-webui /tmp/wheelhouse /tmp/au-overrides.txt
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

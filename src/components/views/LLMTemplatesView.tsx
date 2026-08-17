@@ -1,14 +1,23 @@
 /**
  * @file LLMTemplatesView.tsx
  * @description LLM Models / configuration section (D-AOBS-4, W-8 fix): the
- * PRIMARY, sidebar-bound list is the live `AgentConfig.chat_models` registry
- * (`GET /api/enhanced/llm/models` — the same registry `create_model` resolves
- * against), not the system-prompt store. Picking a model surfaces its actual
- * AgentConfig settings (provider, intelligence level, context window,
- * vision/reasoning/tools capability, routing/KG eligibility — e.g. the
- * `qwen` model's configured settings) in a read-only "Model configuration"
- * card, then optionally lets you pair it with generation parameters and a
- * system prompt into a saved template.
+ * PRIMARY, sidebar-bound list is the live `AgentConfig.chat_models`/
+ * `embedding_models` registries (`GET /api/enhanced/llm/models` and
+ * `/api/enhanced/llm/embedding-models` — the same registries `create_model`/
+ * the embedding factory resolve against), not the system-prompt store.
+ * Picking a model surfaces its actual AgentConfig settings in an EDITABLE
+ * "Model configuration" form (BUG-260), then optionally lets you pair the
+ * model with generation parameters and a system prompt into a saved
+ * template.
+ *
+ * BUG-260 — the model-settings form is schema-derived, not hand-maintained:
+ * `GET /api/enhanced/llm/model-schema` returns `ChatModelConfig`'s and
+ * `EmbeddingModelConfig`'s own `model_json_schema()` output, so the set of
+ * editable fields (and their types/required-ness) is whatever those Pydantic
+ * models actually declare — it cannot drift from what AgentConfig permits,
+ * for BOTH chat and embedding models. Saving validates against that exact
+ * schema server-side (`PUT /api/enhanced/llm/models` /
+ * `.../llm/embedding-models`) before anything is written.
  *
  * Before this fix the sidebar listed prompt documents from
  * `/api/enhanced/prompts` — i.e. system prompts — which is what the
@@ -27,7 +36,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { z } from 'zod'
-import { Cpu, Eye, Plus, RefreshCw, Save, Search, Sparkles, Wrench } from 'lucide-react'
+import { Cpu, Eye, Layers, Plus, RefreshCw, Save, Search, Sparkles, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -35,32 +44,34 @@ import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { Slider } from '@/components/ui/slider'
+import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
 import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
 
+type ModelKind = 'chat' | 'embedding'
+
 interface LLMModel {
   id: string
   provider: string
-  intelligence_level: string
-  vision: boolean
-  reasoning: boolean
-  tools_enabled: boolean
-  context_window: number | null
-  can_route: boolean
-  can_kg: boolean
+  intelligence_level?: string
+  vision?: boolean
+  reasoning?: boolean
+  tools_enabled?: boolean
+  context_window?: number | null
+  can_route?: boolean
+  can_kg?: boolean
+  chunk_size?: number
+  gpu_group?: string | null
 }
-const modelSchema: z.ZodType<LLMModel> = z.object({
+/** Loose: the two browse-list routes (`/llm/models`, `/llm/embedding-models`)
+ *  return different subsets of fields for chat vs. embedding models — this
+ *  view only needs `id`/`provider` plus whichever badges a given kind has. */
+const modelSchema: z.ZodType<LLMModel> = z.looseObject({
   id: z.string(),
   provider: z.string(),
-  intelligence_level: z.string(),
-  vision: z.boolean(),
-  reasoning: z.boolean(),
-  tools_enabled: z.boolean(),
-  context_window: z.number().nullable(),
-  can_route: z.boolean(),
-  can_kg: z.boolean(),
 })
 
 interface TemplateSummary {
@@ -111,15 +122,183 @@ const templateDetailSchema = z.looseObject({
     .optional(),
 })
 
+// ── BUG-260: schema-derived model-settings form ────────────────────────────
+// `ChatModelConfig`/`EmbeddingModelConfig` field types, as JSON Schema
+// (`model_json_schema()`) renders them: a plain `type`, or an `anyOf` of
+// `[<type>, {type: "null"}]` for an Optional field.
+interface JsonSchemaProperty {
+  type?: string
+  anyOf?: { type?: string }[]
+  default?: unknown
+  title?: string
+  description?: string
+}
+interface ModelJsonSchema {
+  properties: Record<string, JsonSchemaProperty>
+  required?: string[]
+}
+const jsonSchemaPropertySchema: z.ZodType<JsonSchemaProperty> = z.looseObject({
+  type: z.string().optional(),
+  anyOf: z.array(z.looseObject({ type: z.string().optional() })).optional(),
+  default: z.unknown().optional(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+})
+const modelJsonSchemaSchema: z.ZodType<ModelJsonSchema> = z.looseObject({
+  properties: z.record(z.string(), jsonSchemaPropertySchema),
+  required: z.array(z.string()).optional(),
+})
+const modelSchemasResponseSchema = z.object({
+  chat: modelJsonSchemaSchema,
+  embedding: modelJsonSchemaSchema,
+})
+type ModelSchemas = z.infer<typeof modelSchemasResponseSchema>
+
+type FieldKind = 'boolean' | 'integer' | 'number' | 'string' | 'json'
+
+function fieldKind(prop: JsonSchemaProperty): FieldKind {
+  const declared = prop.type ?? prop.anyOf?.find((entry) => entry.type && entry.type !== 'null')?.type
+  if (declared === 'boolean' || declared === 'integer' || declared === 'number' || declared === 'string') {
+    return declared
+  }
+  return 'json'
+}
+
+function fieldLabel(name: string, prop: JsonSchemaProperty): string {
+  return prop.title ?? name
+}
+
+/** One schema-derived input for a single AgentConfig model field. Which
+ *  fields exist, their order, types, and required-ness all come from
+ *  `schema` (BUG-260) — nothing here hand-lists a field name. */
+function ModelSettingsForm({
+  schema,
+  values,
+  onChange,
+}: {
+  schema: ModelJsonSchema
+  values: Record<string, unknown>
+  onChange: (field: string, value: unknown) => void
+}) {
+  const required = new Set(schema.required ?? [])
+  const entries = Object.entries(schema.properties).filter(([name]) => name !== 'id')
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {entries.map(([name, prop]) => {
+        const kind = fieldKind(prop)
+        const label = fieldLabel(name, prop)
+        const value = values[name]
+        const isRequired = required.has(name)
+
+        if (kind === 'boolean') {
+          return (
+            <div key={name} className="flex items-center justify-between rounded-md border border-border/40 p-2.5">
+              <label htmlFor={`model-field-${name}`} className="text-xs font-medium">
+                {label}
+              </label>
+              <Switch
+                id={`model-field-${name}`}
+                checked={Boolean(value)}
+                onCheckedChange={(checked) => {
+                  onChange(name, checked)
+                }}
+              />
+            </div>
+          )
+        }
+
+        if (kind === 'integer' || kind === 'number') {
+          return (
+            <div key={name} className="space-y-1.5">
+              <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
+                {label}
+                {isRequired && ' *'}
+              </label>
+              <Input
+                id={`model-field-${name}`}
+                type="number"
+                value={typeof value === 'number' ? value : ''}
+                onChange={(e) => {
+                  const raw = e.target.value
+                  if (raw === '') {
+                    onChange(name, null)
+                    return
+                  }
+                  const next = kind === 'integer' ? Number.parseInt(raw, 10) : Number.parseFloat(raw)
+                  if (Number.isFinite(next)) onChange(name, next)
+                }}
+                className="font-mono text-xs"
+              />
+            </div>
+          )
+        }
+
+        if (kind === 'json') {
+          return (
+            <div key={name} className="space-y-1.5 md:col-span-2">
+              <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
+                {label} (JSON)
+              </label>
+              <Textarea
+                id={`model-field-${name}`}
+                value={value == null ? '' : JSON.stringify(value, null, 2)}
+                onChange={(e) => {
+                  const raw = e.target.value
+                  if (raw.trim() === '') {
+                    onChange(name, null)
+                    return
+                  }
+                  try {
+                    onChange(name, JSON.parse(raw))
+                  } catch {
+                    // Leave the last-valid value in place until the JSON parses;
+                    // the field keeps the operator's raw text on screen via
+                    // `defaultValue`-less controlled input re-render is skipped
+                    // by React only re-rendering from `values`, so nothing here
+                    // needs to track invalid intermediate text separately.
+                  }
+                }}
+                rows={3}
+                className="font-mono text-xs"
+                placeholder="null"
+              />
+            </div>
+          )
+        }
+
+        return (
+          <div key={name} className="space-y-1.5">
+            <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
+              {label}
+              {isRequired && ' *'}
+            </label>
+            <Input
+              id={`model-field-${name}`}
+              value={typeof value === 'string' ? value : ''}
+              onChange={(e) => {
+                onChange(name, e.target.value)
+              }}
+              className="font-mono text-xs"
+            />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function ModelBadges({ model }: { model: LLMModel }) {
   return (
     <div className="flex flex-wrap gap-1">
       <Badge variant="outline" className="text-[9px]">
         {model.provider}
       </Badge>
-      <Badge variant="outline" className="text-[9px]">
-        {model.intelligence_level}
-      </Badge>
+      {model.intelligence_level && (
+        <Badge variant="outline" className="text-[9px]">
+          {model.intelligence_level}
+        </Badge>
+      )}
       {model.reasoning && (
         <Badge variant="secondary" className="text-[9px]">
           reasoning
@@ -140,12 +319,20 @@ function ModelBadges({ model }: { model: LLMModel }) {
           {(model.context_window / 1000).toFixed(0)}k ctx
         </Badge>
       )}
+      {model.chunk_size && (
+        <Badge variant="outline" className="text-[9px]">
+          chunk {model.chunk_size}
+        </Badge>
+      )}
     </div>
   )
 }
 
 export default function LLMTemplatesView() {
-  const [models, setModels] = useState<LLMModel[]>([])
+  const [kind, setKind] = useState<ModelKind>('chat')
+  const [chatModels, setChatModels] = useState<LLMModel[]>([])
+  const [embeddingModels, setEmbeddingModels] = useState<LLMModel[]>([])
+  const [schemas, setSchemas] = useState<ModelSchemas | null>(null)
   const [templates, setTemplates] = useState<TemplateSummary[]>([])
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [isNew, setIsNew] = useState(false)
@@ -157,19 +344,32 @@ export default function LLMTemplatesView() {
   const [parameters, setParameters] = useState<TemplateParameters>(DEFAULT_PARAMETERS)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [savingModel, setSavingModel] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [sessionExpired, setSessionExpired] = useState(false)
+
+  // BUG-260: the model's OWN AgentConfig settings, editable, schema-derived.
+  const [isNewModelEntry, setIsNewModelEntry] = useState(false)
+  const [newModelId, setNewModelId] = useState('')
+  const [newModelProvider, setNewModelProvider] = useState('')
+  const [modelSettings, setModelSettings] = useState<Record<string, unknown> | null>(null)
+
+  const models = kind === 'chat' ? chatModels : embeddingModels
 
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [m, t] = await Promise.all([
+      const [chat, embedding, t, s] = await Promise.all([
         fetchValidated('/api/enhanced/llm/models', looseArray(modelSchema)),
+        fetchValidated('/api/enhanced/llm/embedding-models', looseArray(modelSchema)),
         fetchValidated('/api/enhanced/prompts', looseArray(templateSummarySchema)),
+        fetchValidated('/api/enhanced/llm/model-schema', modelSchemasResponseSchema),
       ])
       setSessionExpired(false)
-      setModels(m)
+      setChatModels(chat)
+      setEmbeddingModels(embedding)
       setTemplates(t)
+      setSchemas(s)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setSessionExpired(true)
@@ -212,17 +412,110 @@ export default function LLMTemplatesView() {
   }
 
   /** Selecting a model from the (now primary) AgentConfig-bound sidebar list
-   * — starts a fresh, unsaved template scoped to that model so its
-   * configuration card renders immediately, without loading any prompt. */
-  const selectModel = (m: LLMModel) => {
+   * — starts a fresh, unsaved template scoped to that model, and loads the
+   * model's full editable settings (BUG-260) into the settings form. */
+  const selectModel = useCallback(
+    (m: LLMModel) => {
+      setSelectedName(null)
+      setIsNew(true)
+      setNewName('')
+      setTitle('')
+      setGoal('')
+      setCoreDirective('')
+      setModelId(m.id)
+      setParameters(DEFAULT_PARAMETERS)
+      setIsNewModelEntry(false)
+
+      void (async () => {
+        try {
+          const detail = await fetchValidated(
+            `/api/enhanced/llm/model-detail?kind=${kind}&model_id=${encodeURIComponent(m.id)}`,
+            z.record(z.string(), z.unknown()),
+          )
+          setModelSettings(detail)
+        } catch {
+          toast.error('Failed to load model settings')
+          setModelSettings(null)
+        }
+      })()
+    },
+    [kind],
+  )
+
+  /** Start defining a brand-new model entry (BUG-260's "creating a model")
+   *  rather than editing an existing one — every field defaults per the
+   *  schema (`default` on each property, or empty/false for one with none). */
+  const startNewModel = useCallback(() => {
     setSelectedName(null)
-    setIsNew(true)
-    setNewName('')
-    setTitle('')
-    setGoal('')
-    setCoreDirective('')
-    setModelId(m.id)
-    setParameters(DEFAULT_PARAMETERS)
+    setIsNew(false)
+    setIsNewModelEntry(true)
+    setNewModelId('')
+    setNewModelProvider('')
+    const schema = schemas?.[kind]
+    const defaults: Record<string, unknown> = {}
+    if (schema) {
+      for (const [name, prop] of Object.entries(schema.properties)) {
+        if (name === 'id') continue
+        defaults[name] = prop.default ?? null
+      }
+    }
+    setModelSettings(defaults)
+  }, [kind, schemas])
+
+  const handleSaveModelSettings = async () => {
+    const schema = schemas?.[kind]
+    if (!schema || !modelSettings) return
+    const targetId = isNewModelEntry ? newModelId.trim() : modelId
+    if (!targetId) {
+      toast.error('Give the model an id first')
+      return
+    }
+    const provider = isNewModelEntry ? newModelProvider.trim() : ((modelSettings.provider as string | undefined) ?? '')
+    if (!provider) {
+      toast.error('A provider is required')
+      return
+    }
+    setSavingModel(true)
+    try {
+      const payload = { ...modelSettings, id: targetId, provider }
+      const existing = kind === 'chat' ? chatModels : embeddingModels
+      const others = existing.filter((m) => m.id !== targetId)
+      const detailUrl = `/api/enhanced/llm/${kind === 'chat' ? 'models' : 'embedding-models'}`
+      // Upsert: fetch every OTHER model's full settings so the write is a
+      // faithful full-registry replace, not a partial that would drop them
+      // back to their schema defaults.
+      const otherDetails = await Promise.all(
+        others.map((m) =>
+          fetchValidated(
+            `/api/enhanced/llm/model-detail?kind=${kind}&model_id=${encodeURIComponent(m.id)}`,
+            z.record(z.string(), z.unknown()),
+          ),
+        ),
+      )
+      const res = await fetch(detailUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ models: [...otherDetails, payload] }),
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { detail?: string } | null
+        toast.error(body?.detail ?? 'Failed to save model settings')
+        return
+      }
+      toast.success(`Model "${targetId}" saved`)
+      setIsNewModelEntry(false)
+      setModelId(targetId)
+      await loadAll()
+      const refreshed = await fetchValidated(
+        `/api/enhanced/llm/model-detail?kind=${kind}&model_id=${encodeURIComponent(targetId)}`,
+        z.record(z.string(), z.unknown()),
+      )
+      setModelSettings(refreshed)
+    } catch {
+      toast.error('Error saving model settings')
+    } finally {
+      setSavingModel(false)
+    }
   }
 
   const handleSave = async () => {
@@ -268,9 +561,10 @@ export default function LLMTemplatesView() {
     (m) =>
       m.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       m.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.intelligence_level.toLowerCase().includes(searchQuery.toLowerCase()),
+      (m.intelligence_level ?? '').toLowerCase().includes(searchQuery.toLowerCase()),
   )
   const selectedModel = models.find((m) => m.id === modelId)
+  const activeSchema = schemas?.[kind] ?? null
 
   if (sessionExpired) {
     return <SessionExpiredNotice />
@@ -278,8 +572,9 @@ export default function LLMTemplatesView() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-12rem)]">
-      {/* 1. Sidebar - LLM Models (AgentConfig.chat_models — W-8: this is the
-          panel's primary binding, not the prompt/system-prompt store). */}
+      {/* 1. Sidebar - LLM Models (AgentConfig.chat_models/embedding_models —
+          W-8/BUG-260: this is the panel's primary binding, not the
+          prompt/system-prompt store, and covers BOTH model kinds). */}
       <Card className="lg:col-span-1 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -288,7 +583,13 @@ export default function LLMTemplatesView() {
               LLM Templates
             </CardTitle>
             <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={startNewTemplate}>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={startNewTemplate}
+                title="New template"
+              >
                 <Plus className="h-4 w-4" />
               </Button>
               <Button
@@ -303,7 +604,19 @@ export default function LLMTemplatesView() {
               </Button>
             </div>
           </div>
-          <CardDescription>Model/LLM configuration from AgentConfig&apos;s chat_models registry.</CardDescription>
+          <CardDescription>Model/LLM configuration from AgentConfig&apos;s chat/embedding registries.</CardDescription>
+          <Tabs
+            value={kind}
+            onValueChange={(v) => {
+              setKind(v as ModelKind)
+            }}
+            className="mt-1"
+          >
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="chat">Chat models</TabsTrigger>
+              <TabsTrigger value="embedding">Embedding models</TabsTrigger>
+            </TabsList>
+          </Tabs>
           <div className="relative mt-2">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -315,6 +628,10 @@ export default function LLMTemplatesView() {
               className="pl-8 h-9"
             />
           </div>
+          <Button variant="outline" size="sm" className="mt-2 w-full" onClick={startNewModel}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            New {kind === 'chat' ? 'chat' : 'embedding'} model
+          </Button>
         </CardHeader>
         <ScrollArea className="flex-1">
           <CardContent className="space-y-1 pt-0">
@@ -322,7 +639,7 @@ export default function LLMTemplatesView() {
               <div className="py-8 text-center text-sm text-muted-foreground">Loading models…</div>
             ) : filteredModels.length === 0 ? (
               <div className="py-8 text-center text-sm text-muted-foreground">
-                No models are configured in AgentConfig&apos;s `chat_models` yet.
+                No {kind} models are configured in AgentConfig yet.
               </div>
             ) : (
               filteredModels.map((m) => (
@@ -333,7 +650,7 @@ export default function LLMTemplatesView() {
                     selectModel(m)
                   }}
                   className={`w-full text-left rounded-md p-2 text-sm hover:bg-muted/40 ${
-                    modelId === m.id ? 'bg-muted/60' : ''
+                    modelId === m.id && !isNewModelEntry ? 'bg-muted/60' : ''
                   }`}
                 >
                   <div className="font-medium truncate">{m.id}</div>
@@ -354,11 +671,11 @@ export default function LLMTemplatesView() {
           <div>
             <CardTitle className="text-base font-bold flex items-center gap-2">
               <Sparkles className="size-4 text-emerald-400" />
-              {selectedModel ? selectedModel.id : 'Select a model'}
+              {isNewModelEntry ? `New ${kind} model` : selectedModel ? selectedModel.id : 'Select a model'}
             </CardTitle>
             <CardDescription>
-              Model configuration from AgentConfig, plus an optional saved template (generation parameters + system
-              prompt) that pairs with it.
+              Model configuration from AgentConfig (editable, BUG-260), plus an optional saved template (generation
+              parameters + system prompt) that pairs with it.
             </CardDescription>
           </div>
           <Button
@@ -375,27 +692,62 @@ export default function LLMTemplatesView() {
         </CardHeader>
         <ScrollArea className="flex-1">
           <CardContent className="space-y-5 pb-8">
-            {selectedModel && (
-              <div className="space-y-2 rounded-md border border-border/40 p-4">
-                <div className="flex items-center gap-2 text-sm font-semibold">
-                  <Cpu className="h-4 w-4 text-muted-foreground" />
-                  Model configuration
+            {(selectedModel ?? isNewModelEntry) && activeSchema && modelSettings && (
+              <div className="space-y-3 rounded-md border border-border/40 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <Layers className="h-4 w-4 text-muted-foreground" />
+                    Model configuration ({kind})
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      void handleSaveModelSettings()
+                    }}
+                    disabled={savingModel}
+                  >
+                    <Save className="size-3.5 mr-1.5" />
+                    {savingModel ? 'Saving...' : 'Save model settings'}
+                  </Button>
                 </div>
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                  <dt className="text-muted-foreground">Model id</dt>
-                  <dd className="font-mono">{selectedModel.id}</dd>
-                  <dt className="text-muted-foreground">Provider</dt>
-                  <dd>{selectedModel.provider}</dd>
-                  <dt className="text-muted-foreground">Intelligence level</dt>
-                  <dd>{selectedModel.intelligence_level}</dd>
-                  <dt className="text-muted-foreground">Context window</dt>
-                  <dd>{selectedModel.context_window ? `${String(selectedModel.context_window)} tokens` : '—'}</dd>
-                  <dt className="text-muted-foreground">Can route</dt>
-                  <dd>{selectedModel.can_route ? 'yes' : 'no'}</dd>
-                  <dt className="text-muted-foreground">Can serve KG queries</dt>
-                  <dd>{selectedModel.can_kg ? 'yes' : 'no'}</dd>
-                </dl>
-                <ModelBadges model={selectedModel} />
+
+                {isNewModelEntry ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">Model id *</label>
+                      <Input
+                        value={newModelId}
+                        onChange={(e) => {
+                          setNewModelId(e.target.value)
+                        }}
+                        placeholder="e.g. qwen/qwen3.6-27b"
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">Provider *</label>
+                      <Input
+                        value={newModelProvider}
+                        onChange={(e) => {
+                          setNewModelProvider(e.target.value)
+                        }}
+                        placeholder="openai"
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs font-mono text-muted-foreground">{selectedModel?.id}</div>
+                )}
+
+                <ModelSettingsForm
+                  schema={activeSchema}
+                  values={modelSettings}
+                  onChange={(field, value) => {
+                    setModelSettings((prev) => ({ ...(prev ?? {}), [field]: value }))
+                  }}
+                />
               </div>
             )}
 

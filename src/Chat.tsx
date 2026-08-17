@@ -807,6 +807,7 @@ const Chat = ({ pageContext }: ChatProps) => {
 
   // Load chat history from local storage or server on conversation ID change
   useLayoutEffect(() => {
+    let cancelled = false
     if (conversationId === '/') {
       setMessages([])
     } else {
@@ -817,10 +818,22 @@ const Chat = ({ pageContext }: ChatProps) => {
         const fetchMessages = async () => {
           try {
             const res = await fetch(`/api/enhanced/chats${conversationId}`)
-            if (res.ok) {
-              const data = (await res.json()) as ChatResponse
-              setMessages(data.messages)
-            }
+            if (!res.ok) return
+            const data = (await res.json()) as ChatResponse
+            if (cancelled) return
+            // BUG-259: starting a NEW conversation sets `conversationId` and
+            // calls `sendMessage(...)` in the same `handleSubmit` -- both of
+            // which change on this exact dependency and race this fetch. A
+            // brand-new conversation has no server history yet, so this
+            // resolves with `{messages: []}` -- unconditionally applying it
+            // used to CLOBBER the message `sendMessage` had already
+            // optimistically added, dropping `messages` back to `[]` and
+            // triggering the "no messages yet" guard below, which renders
+            // nothing at all -- the reported permanently blank chat window.
+            // Only apply the fetched history if nothing has populated
+            // `messages` in the meantime (functional update avoids a stale
+            // read of the `messages` closure).
+            setMessages((current) => (current.length > 0 ? current : data.messages))
           } catch (err) {
             console.error('Failed to fetch messages for conversation', err)
           }
@@ -829,6 +842,9 @@ const Chat = ({ pageContext }: ChatProps) => {
       }
     }
     textareaRef.current?.focus()
+    return () => {
+      cancelled = true
+    }
   }, [conversationId, userKey])
 
   /**

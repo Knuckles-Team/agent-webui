@@ -2837,7 +2837,17 @@ async def get_graph_stats() -> dict[str, Any]:
 
         total_rels_result = await _invoke_governed_helper(
             engine.backend.execute,
-            'MATCH ()-[r]->() RETURN count(r) as count',
+            # BUG-262: the engine's native Cypher parser rejects a relationship
+            # pattern with BOTH endpoints anonymous (`()-[r]->()`) -- it raised
+            # a masked PermissionError that this function's outer `except`
+            # turned into a 503 for the WHOLE stats response, so GraphView's
+            # "Nodes"/"Edges" summary badges stayed at their `0` default even
+            # when the graph held data (matches `/graph/relationships` below,
+            # which already uses named endpoints and works). Verified live
+            # against the cluster engine: the anonymous form fails with
+            # error_class=PermissionError/failing_layer=knowledge_graph; the
+            # named form returns the correct count (11,641 edges).
+            'MATCH (a)-[r]->(b) RETURN count(r) as count',
             deadline=10.0,
         )
         total_relationships = (
@@ -6086,6 +6096,199 @@ async def list_llm_models() -> list[dict[str, Any]]:
     except Exception as e:
         _log_failure('api_extension', e)
         return []
+
+
+@router.get('/llm/embedding-models')
+async def list_embedding_models() -> list[dict[str, Any]]:
+    """List the configured embedding models (BUG-260 sibling of `/llm/models`).
+
+    Mirrors `list_llm_models` for `AgentConfig.embedding_models`
+    (`core/config.py`'s `EmbeddingModelConfig`) — the LLM template composer's
+    "embedding model" tab picks from this the same way it picks a chat model
+    from `/llm/models`.
+    """
+    try:
+        from agent_utilities.core.config import config
+
+        models = []
+        for m in config.embedding_models:
+            models.append(
+                {
+                    'id': m.id,
+                    'provider': m.provider,
+                    'chunk_size': m.chunk_size,
+                    'context_window': m.context_window,
+                    'gpu_group': m.gpu_group,
+                }
+            )
+        return models
+    except Exception as e:
+        _log_failure('api_extension', e)
+        return []
+
+
+# BUG-260: the LLM template composer used to hand-pick a handful of display
+# fields (see the two list routes above) with no way to CREATE or EDIT a
+# model, so operators could pick from AgentConfig's `chat_models`/
+# `embedding_models` registries but never adjust the settings AgentConfig
+# actually permits. `/llm/model-schema` derives the editable field set
+# directly from `ChatModelConfig`/`EmbeddingModelConfig` (`.model_json_schema()`)
+# so the frontend form is generated from the same Pydantic contract
+# `create_model`/the embedding factory validate against -- it cannot drift
+# from what AgentConfig accepts, because it IS what AgentConfig accepts.
+_EDITABLE_MODEL_KINDS = ('chat', 'embedding')
+
+
+@router.get('/llm/model-schema')
+def _flatten_model_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a Pydantic `model_json_schema()` root `$ref` (emitted for a
+    self-referencing model — `EmbeddingModelConfig.fallback` points back at
+    `EmbeddingModelConfig` itself) into one flat schema with real
+    `properties`/`required` at the top level, so the frontend never needs its
+    own `$defs`/`$ref` resolver just to read a field list.
+    """
+    root_ref = schema.get('$ref')
+    if not isinstance(root_ref, str) or not root_ref.startswith('#/$defs/'):
+        return schema
+    defs = schema.get('$defs')
+    if not isinstance(defs, dict):
+        return schema
+    resolved = defs.get(root_ref.removeprefix('#/$defs/'))
+    return resolved if isinstance(resolved, dict) else schema
+
+
+async def get_llm_model_schema() -> dict[str, Any]:
+    """Return the JSON Schema for both model kinds AgentConfig registers.
+
+    `{"chat": <ChatModelConfig schema>, "embedding": <EmbeddingModelConfig
+    schema>}` — each schema's `properties`/`required` is the CANONICAL,
+    generated-not-hand-maintained field set the create/edit form in
+    `LLMTemplatesView.tsx` renders itself from.
+    """
+    from agent_utilities.core.config import ChatModelConfig, EmbeddingModelConfig
+
+    return {
+        'chat': _flatten_model_schema(ChatModelConfig.model_json_schema()),
+        'embedding': _flatten_model_schema(EmbeddingModelConfig.model_json_schema()),
+    }
+
+
+@router.get('/llm/model-detail')
+async def get_llm_model_detail(kind: str, model_id: str) -> dict[str, Any]:
+    """Return ONE model's full, editable field set (every field
+    `/llm/model-schema` declares, including `api_key_ref`/`headers_ref` —
+    runtime secret REFERENCES, not literal secrets, needed to actually edit a
+    model's auth wiring).
+
+    `model_id` is a query param, not a path segment: real model ids contain
+    `/` (e.g. `qwen/qwen3.6-27b`), which a path param cannot carry safely.
+    Deliberately separate from `/llm/models`/`/llm/embedding-models`, whose
+    browse-list shape intentionally excludes secret references
+    (`test_list_llm_models_reads_the_live_chat_models_registry_and_excludes_secrets`) —
+    this route is only ever called to populate the edit form for a model the
+    operator explicitly opened.
+    """
+    if kind not in _EDITABLE_MODEL_KINDS:
+        raise HTTPException(status_code=400, detail='Unknown model kind')
+    from agent_utilities.core.config import config
+
+    registry = config.chat_models if kind == 'chat' else config.embedding_models
+    for m in registry:
+        if m.id == model_id:
+            return m.model_dump(mode='json')
+    raise HTTPException(status_code=404, detail='Model not found')
+
+
+def _load_config_document() -> dict[str, Any]:
+    config_path = config_dir() / 'config.json'
+    if not config_path.exists():
+        return {}
+    data = _read_bounded_json(config_path)
+    return data if isinstance(data, dict) else {}
+
+
+def _write_model_registry(kind: str, models: list[dict[str, Any]]) -> None:
+    """Validate *models* against the matching AgentConfig model type, merge
+    them into the persisted document under the right registry key, validate
+    the WHOLE resulting document, and write it atomically.
+
+    Shared by the chat- and embedding-model upsert routes below so there is
+    exactly one persistence path for both (mirrors `update_config_file`'s
+    existing whole-document write, scoped to just the touched key so an
+    editor for one registry can never clobber the rest of AgentConfig).
+    """
+    import json
+
+    from agent_utilities.core.config import (
+        AgentConfig,
+        ChatModelConfig,
+        EmbeddingModelConfig,
+    )
+
+    if kind not in _EDITABLE_MODEL_KINDS:
+        raise HTTPException(status_code=400, detail='Unknown model kind')
+    registry_key = 'chat_models' if kind == 'chat' else 'embedding_models'
+    model_type = ChatModelConfig if kind == 'chat' else EmbeddingModelConfig
+
+    if not isinstance(models, list) or len(models) > _MAX_EXTERNAL_COLLECTION_ITEMS:
+        raise HTTPException(status_code=400, detail='Invalid model list')
+    try:
+        validated = [
+            model_type.model_validate(m).model_dump(mode='json') for m in models
+        ]
+    except Exception as e:
+        _log_failure(f'validate_{kind}_model', e)
+        raise HTTPException(
+            status_code=422, detail=f'Invalid {kind} model configuration'
+        ) from e
+
+    document = _load_config_document()
+    document[registry_key] = validated
+    try:
+        AgentConfig.model_validate(document)
+    except Exception as e:
+        _log_failure('validate_agent_config', e)
+        raise HTTPException(status_code=422, detail='Invalid AgentConfig') from e
+
+    target_dir = _private_directory(config_dir())
+    config_path = target_dir / 'config.json'
+    try:
+        payload = json.dumps(document, indent=2, sort_keys=True).encode('utf-8')
+        if len(payload) > _MAX_EXTERNAL_RESULT_BYTES:
+            raise ValueError('AgentConfig document exceeds its safety bound')
+        _atomic_private_write(config_path, payload)
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure(f'write_{kind}_models', e)
+        raise HTTPException(status_code=500, detail='Failed to save config') from e
+
+
+@router.put('/llm/models')
+async def update_llm_models(data: dict[str, Any]) -> dict[str, Any]:
+    """Replace the persisted `chat_models` registry.
+
+    `data['models']` is the FULL desired list (create = append a new entry,
+    edit = resubmit the list with that entry changed) -- each entry is
+    validated against `ChatModelConfig` (the same schema `/llm/model-schema`
+    exposes) before anything is written.
+    """
+    models = data.get('models')
+    if not isinstance(models, list):
+        raise HTTPException(status_code=400, detail="'models' must be a list")
+    _write_model_registry('chat', models)
+    return {'status': 'success'}
+
+
+@router.put('/llm/embedding-models')
+async def update_embedding_models(data: dict[str, Any]) -> dict[str, Any]:
+    """Replace the persisted `embedding_models` registry (BUG-260 sibling of
+    `update_llm_models`, validated against `EmbeddingModelConfig`)."""
+    models = data.get('models')
+    if not isinstance(models, list):
+        raise HTTPException(status_code=400, detail="'models' must be a list")
+    _write_model_registry('embedding', models)
+    return {'status': 'success'}
 
 
 @router.get('/prompts')
