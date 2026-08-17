@@ -2837,7 +2837,17 @@ async def get_graph_stats() -> dict[str, Any]:
 
         total_rels_result = await _invoke_governed_helper(
             engine.backend.execute,
-            'MATCH ()-[r]->() RETURN count(r) as count',
+            # BUG-262: the engine's native Cypher parser rejects a relationship
+            # pattern with BOTH endpoints anonymous (`()-[r]->()`) -- it raised
+            # a masked PermissionError that this function's outer `except`
+            # turned into a 503 for the WHOLE stats response, so GraphView's
+            # "Nodes"/"Edges" summary badges stayed at their `0` default even
+            # when the graph held data (matches `/graph/relationships` below,
+            # which already uses named endpoints and works). Verified live
+            # against the cluster engine: the anonymous form fails with
+            # error_class=PermissionError/failing_layer=knowledge_graph; the
+            # named form returns the correct count (11,641 edges).
+            'MATCH (a)-[r]->(b) RETURN count(r) as count',
             deadline=10.0,
         )
         total_relationships = (
