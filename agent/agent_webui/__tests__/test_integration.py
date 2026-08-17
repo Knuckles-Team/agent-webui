@@ -4,14 +4,21 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from agent_webui.server import create_agent_web_app
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def client(mock_agent, mock_workspace_helpers):
-    """Create test client."""
+def client(mock_agent, mock_workspace_helpers, authenticated_client_factory):
+    """Create test client.
+
+    ``create_agent_web_app`` installs ``WebUIActorIdentityMiddleware``
+    unconditionally, so every ``/api/*`` request now requires a verified
+    actor or is rejected 401. ``authenticated_client_factory`` (tests/
+    conftest.py) presents a legitimate, fully verified admin credential
+    through the REAL identity + authorization middleware stack -- see its
+    docstring and ``authenticated_asgi_app`` for why this is not a bypass.
+    """
     app = create_agent_web_app(mock_agent, mock_workspace_helpers)
-    return TestClient(app)
+    return authenticated_client_factory(app)
 
 
 class TestGraphWorkflowIntegration:

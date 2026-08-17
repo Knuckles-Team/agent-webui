@@ -143,8 +143,27 @@ def mock_kb_engine():
 
     engine = MagicMock(spec=KBIngestionEngine)
     engine.ingest = AsyncMock(return_value={'status': 'success', 'job_id': 'test_job'})
-    engine.list_bases.return_value = []
-    engine.search.return_value = []
+    # KBIngestionEngine's list method is `list_knowledge_bases` (see
+    # agent_utilities/knowledge_graph/kb/ingestion.py); it was renamed from
+    # `list_bases` and this fixture (plus api_extensions.py's own call sites,
+    # fixed alongside this) had drifted from the real class -- see this
+    # lane's report for the full defect writeup.
+    engine.list_knowledge_bases.return_value = []
+    # `search`, unlike `list_knowledge_bases`, is not a real KBIngestionEngine
+    # attribute at all (the real method is `search_knowledge_base`) -- assigned
+    # directly (like `ingest`/`health_check`/`update` immediately below) rather
+    # than set via `.search.return_value =`, since the latter requires `search`
+    # to already exist on the `spec=KBIngestionEngine` mock's real class and
+    # raises `AttributeError` at fixture-construction time otherwise (the same
+    # failure `list_bases` had). See this lane's report: `ingest`/`search`/
+    # `health_check`/`update` are ALL stale names api_extensions.py calls that
+    # do not exist on the real class (`ingest_directory`/`ingest_url`/
+    # `ingest_skill_graph`, `search_knowledge_base`, `run_health_check`,
+    # `update_kb`) -- a genuine, pre-existing defect in api_extensions.py this
+    # lane did not fix (it requires a real design decision about which
+    # `ingest_*` variant + argument mapping the generic `/kb/ingest` route
+    # should use, out of scope for a test-client auth fix).
+    engine.search = MagicMock(return_value=[])
     engine.get_article.return_value = None
     engine.health_check = AsyncMock(
         return_value={'health_status': 'healthy', 'issues': []}
@@ -471,3 +490,118 @@ def mock_workspace_helpers():
         'tools': [],
         'metadata': {},
     }
+
+
+@pytest.fixture
+def served_identity_config(monkeypatch):
+    """Configure the WebUI's identity/authorization boundary the way a real
+    deployment would.
+
+    ``create_agent_web_app`` installs ``WebUIActorIdentityMiddleware`` (server.py
+    ~1287) unconditionally -- every ``/api/*`` request now needs a verified actor
+    or it is rejected 401 (``agent_utilities.security.request_identity
+    .ActorIdentityMiddleware.__call__``, the ``actor is None`` branch, which is
+    NOT gated on any config -- see D-WA-1/verified-identity-carrier-contract).
+    Two further pieces of config are required *before* a verified actor can be
+    projected into a servable ``GraphSession`` at all:
+    ``agent_webui.graph_identity.mint_frontend_graph_session`` raises
+    ``PermissionError`` without both ``auth_jwt_audience`` and
+    ``kg_policy_version`` set. Also setting ``auth_jwt_jwks_uri`` /
+    ``auth_jwt_issuer`` makes ``_identity_enforced()`` True, which is what
+    turns on ``WebUIAuthorizationMiddleware``'s per-route role check -- so a
+    test built on this fixture exercises the REAL role gate, not a bypass of
+    it (mirrors ``test_security_boundaries.py``'s ``_drive_http``/``_drive_ws``
+    helpers and ``test_mcp_delegation_routes.py``'s ``served_authority``
+    fixture, both of which set the identical four fields for the identical
+    reason).
+    """
+    from agent_utilities.core.config import config
+
+    monkeypatch.setattr(
+        config,
+        'auth_jwt_jwks_uri',
+        'https://idp.test/.well-known/jwks.json',
+        raising=False,
+    )
+    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.test/', raising=False)
+    monkeypatch.setattr(
+        config, 'auth_jwt_audience', 'agent-webui-test', raising=False
+    )
+    monkeypatch.setattr(config, 'kg_policy_version', 'test-1', raising=False)
+    return config
+
+
+def authenticated_asgi_app(
+    app,
+    *,
+    scope: str = 'kg:read kg:write kg:admin',
+    sub: str = 'test-suite',
+    tenant: str = 'test-tenant',
+):
+    """Wrap ``app`` so every HTTP request arrives with a verified identity.
+
+    This is NOT a second, weaker auth path: it projects prevalidated JWT
+    claims onto ``scope['state']['user_claims']``, which is exactly the "an
+    outer HTTP authentication boundary already verified this credential" leg
+    ``WebUIActorIdentityMiddleware._authenticated_http_actor`` (server.py
+    ~1242) and the shared ``ActorIdentityMiddleware.__call__`` (agent_utilities
+    /security/request_identity.py ~663) both document and branch on
+    explicitly -- the same mechanism a real reverse-proxy/OIDC front door uses
+    to hand off an already-verified credential. From that point on, every real
+    check still runs: ``actor_from_claims`` parses the claims into an
+    ``ActorContext``, ``mint_frontend_graph_session`` mints a real
+    ``GraphSession`` with real scopes, and ``WebUIAuthorizationMiddleware``
+    evaluates the real per-route role ladder against those scopes. Nothing
+    about ``WebUIAuthorizationMiddleware`` or ``ActorIdentityMiddleware`` is
+    patched, monkeypatched, or skipped.
+
+    This is the same technique ``test_mcp_delegation_routes.py``'s private
+    ``_authenticated()`` helper already uses and that suite already passes
+    with -- promoted here to a shared helper so every WebUI ``TestClient``
+    fixture can present a legitimate credential instead of none at all.
+
+    Args:
+        app: The ASGI app (e.g. from ``create_agent_web_app``) to wrap.
+        scope: Space-separated KG scopes the synthetic credential carries.
+            Defaults to full admin (read+write+admin) so functional/business
+            -logic tests are not incidentally blocked by the role ladder;
+            pass a narrower value to exercise the role ladder itself.
+        sub: The credential's subject claim.
+        tenant: The credential's tenant claim.
+    """
+
+    async def with_identity(asgi_scope, receive, send):
+        if asgi_scope.get('type') == 'http':
+            asgi_scope = dict(asgi_scope)
+            state = dict(asgi_scope.get('state') or {})
+            state['user_claims'] = {
+                'auth_type': 'jwt',
+                'sub': sub,
+                'tenant_id': tenant,
+                'scope': scope,
+            }
+            asgi_scope['state'] = state
+        await app(asgi_scope, receive, send)
+
+    return with_identity
+
+
+@pytest.fixture
+def authenticated_client_factory(served_identity_config):
+    """Factory for a ``TestClient`` carrying a verified, real credential.
+
+    Built on :func:`authenticated_asgi_app` + :func:`served_identity_config`
+    -- see both for why this drives the real identity/authorization
+    middleware stack rather than replacing it.
+    """
+    # Depended on for its side effect (configuring `config` before any
+    # request is made), not its return value -- referenced here so it
+    # is not flagged as an unused fixture parameter.
+    _ = served_identity_config
+
+    def _make(app, *, scope: str = 'kg:read kg:write kg:admin', **kwargs):
+        from fastapi.testclient import TestClient
+
+        return TestClient(authenticated_asgi_app(app, scope=scope), **kwargs)
+
+    return _make
