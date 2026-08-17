@@ -36,11 +36,12 @@
 #                                     # see README.md "Coordinating concurrent deploys")
 #
 # Env overrides: see docker/build_and_push.sh for AU_SRC_PATH / IMAGE /
-# BUILDKIT_NAMESPACE / BUILDKIT_SERVICE / BUILDKIT_ADDR (build_and_push.sh builds
-# against the shared cluster-native buildkitd Deployment -- see
-# services/buildkit-service/ -- not a docker daemon; see that script's header for
-# the 2026-08-17 migration off r820's now-dead docker daemon). Additional ones for
-# this script:
+# EG_WHEELHOUSE_PATH / BUILD_BACKEND / DOCKER* / BUILDKIT* (build_and_push.sh
+# auto-detects a build backend -- a reachable docker daemon, OR the shared
+# cluster-native buildkitd Deployment (services/buildkit-service/) when no
+# docker daemon is reachable -- and prints which one it picked and why; see
+# that script's header for the full detection order and the 2026-08-17
+# migration off r820's now-dead docker daemon). Additional ones for this script:
 #   NAMESPACE           k8s namespace (default: apps)
 #   DEPLOYMENT          k8s Deployment name (default: agent-webui)
 #   CANONICAL_CHECKOUT  path to the agent-webui checkout that is NFS-exported to
@@ -150,8 +151,15 @@ if ! kubectl -n "${NAMESPACE}" rollout status "deploy/${DEPLOYMENT}" --timeout="
 fi
 
 # ── Step 4: verify the running pod actually holds the new digest ────────────────
+# `.items[0]` (no ordering) can grab a Terminating OLD pod during the brief overlap
+# right after `kubectl rollout status` reports success but before the old
+# ReplicaSet's pod is actually deleted -- observed for real running this script
+# (rollout status said "successfully rolled out", this then reported the OLD
+# digest). Sort by creationTimestamp and take the newest, so this always inspects
+# the pod the rollout just created, not whichever one the API happened to list first.
 POD_NAME="$(kubectl -n "${NAMESPACE}" get pods -l app="${DEPLOYMENT}" \
-  -o jsonpath='{.items[0].metadata.name}')"
+  --sort-by=.metadata.creationTimestamp \
+  -o jsonpath='{.items[-1:].metadata.name}')"
 POD_IMAGE_ID="$(kubectl -n "${NAMESPACE}" get pod "${POD_NAME}" \
   -o jsonpath='{.status.containerStatuses[0].imageID}')"
 POD_READY="$(kubectl -n "${NAMESPACE}" get pod "${POD_NAME}" \
