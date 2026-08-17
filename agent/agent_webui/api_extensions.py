@@ -4592,27 +4592,36 @@ async def get_backend_config() -> dict[str, Any]:
 
 @router.put('/config/backend')
 async def update_backend_config(data: dict[str, Any]) -> dict[str, Any]:
-    """Update backend configuration (requires restart).
+    """Reject a backend configuration write: no write path is wired.
+
+    GOC-28 (BUG-008-class fabrication): this handler previously accepted any
+    payload and unconditionally returned ``{"status": "success", ...}``
+    without writing an environment variable, config file, or anything else —
+    a mutation that always claims success no matter what it was asked to do
+    or whether the caller was even authorized to do it. That is exactly the
+    invariant this lane forbids: "a mocked response rendered where the
+    backend returned nothing is a defect, not a convenience." There is
+    currently no real backend-config write mechanism to delegate to (see
+    ``get_backend_config`` above, which only ever reads process env vars), so
+    the honest response is a typed failure, not a fabricated success — the
+    established 501 pattern this file already uses elsewhere for "not
+    wired" mutations (e.g. the tunnel-manager/MCP-app/ontology handlers).
 
     Args:
-        data: New backend configuration.
+        data: Requested backend configuration (unused — nothing is written).
 
-    Returns:
-        Success status (restart required).
+    Raises:
+        HTTPException: Always 501; no config-write path is implemented.
     """
-    try:
-        # This would typically update environment variables or config files
-        # For now, return success with restart warning
-        return {
-            'status': 'success',
-            'message': (
-                'Configuration updated. Server restart required '
-                'for changes to take effect.'
-            ),
-        }
-    except Exception as e:
-        _log_failure('api_extension', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            'Backend configuration cannot be updated: no config-write path '
+            'is wired. This endpoint previously returned a fabricated '
+            '"success" for any payload; it now reports the true unconfigured '
+            'state instead of a fake one.'
+        ),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────

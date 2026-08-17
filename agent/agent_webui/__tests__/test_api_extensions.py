@@ -2,10 +2,13 @@ from __future__ import annotations
 
 """Test API endpoints for agent-webui backend."""
 
+import asyncio
 from unittest.mock import MagicMock, patch
 
+import agent_webui.api_extensions as api_extensions
 import pytest
 from agent_webui.server import create_agent_web_app
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 
@@ -732,14 +735,30 @@ class TestExtendedEndpoints:
         data = response.json()
         assert 'backend_type' in data or 'status' in data
 
-    def test_update_backend_config_success(self, client, sample_backend_config):
-        """Test successful backend config update."""
-        response = client.put(
-            '/api/enhanced/config/backend', json=sample_backend_config
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data['status'] == 'success'
+    def test_update_backend_config_never_fabricates_success(
+        self, sample_backend_config
+    ):
+        """GOC-28 (BUG-008-class fabrication): `PUT /api/enhanced/config/backend`
+        used to accept ANY payload and unconditionally return
+        `{"status": "success", ...}` without writing an environment variable,
+        config file, or anything else -- a mocked response standing in for a
+        backend that did nothing, regardless of what the caller sent or
+        whether the write was even possible. This calls the real handler
+        function directly (not the fabricated response, not a stub) against
+        three known-bad inputs -- an ordinary-looking config payload, an
+        adversarial payload attempting to smuggle unrelated keys, and an
+        empty payload -- and proves every one of them now gets the honest
+        "no config-write path is wired" failure instead of a fake success.
+        """
+        for payload in (
+            sample_backend_config,
+            {'GRAPH_DB_PATH': '/etc/passwd', '__proto__': {'admin': True}},
+            {},
+        ):
+            with pytest.raises(HTTPException) as excinfo:
+                asyncio.run(api_extensions.update_backend_config(payload))
+            assert excinfo.value.status_code == 501
+            assert 'success' not in excinfo.value.detail.lower()
 
 
 class TestCoverageExpansion:
