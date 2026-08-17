@@ -586,9 +586,15 @@ class ApiClient {
 
   // Graph Methods
   getGraphStats = () =>
-    this.get<{ total_nodes: number; total_relationships: number; by_type: Record<string, number> }>(
-      '/api/enhanced/graph/stats',
-    )
+    this.get<{
+      total_nodes: number
+      total_relationships: number
+      by_type: Record<string, number>
+      // `false` means the server could not obtain a graph engine handle —
+      // distinct from a genuinely empty graph. Absent (older backend) means
+      // available.
+      available?: boolean
+    }>('/api/enhanced/graph/stats')
   getGraphRelationships = () => this.get<unknown[]>('/api/enhanced/graph/relationships')
 
   // Native visualization (D-VZ-1) — renders a ViewSpec through the eg-viz

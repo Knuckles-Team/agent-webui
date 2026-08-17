@@ -40,6 +40,10 @@ interface GraphStats {
   total_nodes: number
   total_relationships: number
   by_type: Record<string, number>
+  // Absent (older backend) is treated as available — only an explicit `false`
+  // means the engine reported itself unreachable/uninitialized. Distinct from
+  // a genuinely empty graph: see GraphLoadStatus's 'unavailable' kind below.
+  available?: boolean
 }
 
 // D-WUI-6 (hostile-payload update, additive to the pre-existing
@@ -63,6 +67,12 @@ const graphStatsSchema: z.ZodType<GraphStats> = z.object({
   total_nodes: z.number(),
   total_relationships: z.number(),
   by_type: z.record(z.string(), z.number()),
+  // Not stripped: `available: false` is how the backend distinguishes "the
+  // engine is unreachable/uninitialized" from a real, connected, empty graph
+  // (both otherwise render as total_nodes: 0). Dropping this field here was
+  // the actual bug — the API always returned it honestly, but the schema
+  // discarded it before the component ever saw it.
+  available: z.boolean().optional(),
 })
 
 // GOC-60-W05 (E1b layer 3 / E6): `fetchData` used to `.catch(() => null)` each of the
@@ -82,6 +92,14 @@ type GraphLoadStatus =
   | { kind: 'loading' }
   | { kind: 'ready' }
   | { kind: 'empty' }
+  // The `/graph/stats` request itself succeeded (HTTP 200, valid shape) but
+  // the backend honestly reported `available: false` — the engine handle
+  // could not be acquired server-side (e.g. an identity/authorization gap
+  // between the app and the graph engine). This is NOT the same as `empty`:
+  // an empty graph means "connected, genuinely zero nodes"; `unavailable`
+  // means "we don't actually know how many nodes there are." Rendering both
+  // the same way is the exact defect this kind exists to prevent.
+  | { kind: 'unavailable' }
   | { kind: 'degraded'; failed: string[]; forbidden: boolean }
   | { kind: 'error'; failed: string[]; forbidden: boolean }
 
@@ -180,6 +198,15 @@ export default function GraphView() {
             ? "You don't have permission to view the knowledge graph."
             : 'The knowledge graph is unavailable right now.',
         )
+      } else if (nextStats.available === false) {
+        // The backend answered (this wasn't a fetch failure) but explicitly
+        // disclaimed its own numbers: `available: false` means the graph
+        // engine handle could not be acquired server-side, so total_nodes: 0
+        // is not "the graph is empty" — it's "we don't know." Checked before
+        // the `empty` branch below so this honest signal isn't rendered as a
+        // connected-but-empty graph.
+        setLoadStatus({ kind: 'unavailable' })
+        toast.error('The knowledge graph engine is not available right now.')
       } else if (failed.length > 0) {
         setLoadStatus({ kind: 'degraded', failed, forbidden })
         toast.error(`Partial graph data: ${failed.join(', ')} failed to load.`)
@@ -265,10 +292,10 @@ export default function GraphView() {
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <Badge variant="outline" className="h-7 bg-muted/20 border-border/40 text-xs">
-            Nodes: {stats.total_nodes}
+            Nodes: {loadStatus.kind === 'unavailable' ? '—' : stats.total_nodes}
           </Badge>
           <Badge variant="outline" className="h-7 bg-muted/20 border-border/40 text-xs">
-            Edges: {stats.total_relationships}
+            Edges: {loadStatus.kind === 'unavailable' ? '—' : stats.total_relationships}
           </Badge>
           <Button
             variant="outline"
@@ -323,6 +350,17 @@ export default function GraphView() {
                   <Inbox className="size-10 text-muted-foreground/40" />
                   <p className="text-sm font-semibold text-muted-foreground">
                     The knowledge graph has no nodes yet.
+                  </p>
+                </div>
+              )}
+              {activeTab === 'visualization' && loadStatus.kind === 'unavailable' && (
+                <div className="flex flex-col items-center justify-center h-full text-center gap-2 p-8">
+                  <Database className="size-10 text-amber-500" />
+                  <p className="text-sm font-semibold">The knowledge graph engine is not available right now.</p>
+                  <p className="text-xs text-muted-foreground">
+                    The server could not obtain a graph engine handle for this request. This is not
+                    the same as an empty graph — retry shortly, or check the server's graph engine
+                    status if it persists.
                   </p>
                 </div>
               )}
