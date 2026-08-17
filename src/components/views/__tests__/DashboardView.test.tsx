@@ -7,6 +7,7 @@ import DashboardView, {
   nextBackoffDelayMs,
   jitteredReconnectDelayMs,
   ConnectionGeneration,
+  DATA_FRESHNESS_BANNER_ID,
 } from '@/components/views/DashboardView'
 
 /**
@@ -284,5 +285,138 @@ describe('DashboardView WebSocket end-to-end (BUG-019 forced-disconnect gap/dupl
       })
       expect(MockWebSocket.instances.length).toBe(before + 1)
     }
+  })
+})
+
+/**
+ * GOC-29: closing BUG-019's deferred backend half.
+ *
+ * `/ws/dashboard` (`agent_webui/server.py::_dashboard_ws`) now carries
+ * `stream_id` (minted fresh per accepted connection) and `sequence`
+ * (monotonic within a connection) on every message. These tests pin the two
+ * known-bad proofs the wire-protocol addition exists to satisfy:
+ *
+ * 1. A dropped connection must render as degraded/unknown, never as
+ *    frozen-but-plausible data with no visible change. KNOWN-BAD: before
+ *    this change, `onclose` only flipped the small header Live/Polling
+ *    badge -- the widget data itself, and the rest of the page, gave no
+ *    signal that it might be stale.
+ * 2. A message gap after reconnect must be DETECTED, not silently skipped.
+ *    KNOWN-BAD: before this change, the client had no `stream_id` to compare
+ *    -- a fresh snapshot after a forced disconnect was applied exactly like
+ *    an ordinary periodic update, so a caller had no way to know anything
+ *    had been missed.
+ */
+describe('DashboardView data-freshness (GOC-29 backend wire-protocol proofs)', () => {
+  let originalWebSocket: typeof WebSocket
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    MockWebSocket.instances = []
+    originalWebSocket = global.WebSocket
+    global.WebSocket = MockWebSocket as unknown as typeof WebSocket
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify(DASHBOARD_FULL_BODY), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    ) as unknown as typeof fetch
+  })
+
+  afterEach(() => {
+    global.WebSocket = originalWebSocket
+    vi.useRealTimers()
+  })
+
+  it('KNOWN-BAD PROOF 1: a dropped connection announces degraded data instead of staying silent', async () => {
+    const { getByText, queryByText } = renderDashboard()
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const socket = MockWebSocket.instances[0]
+    act(() => {
+      socket.serverOpen()
+      socket.serverMessage({
+        type: 'snapshot',
+        stream_id: 'stream-a',
+        sequence: 1,
+        data: { widgetA: { ...DASHBOARD_FULL_BODY.data.widgetA, fields: { count: 1 } } },
+      })
+    })
+    // Live, in-sequence data -> no degraded-data banner.
+    expect(queryByText(/reconnecting|reconnected/i)).toBeNull()
+
+    // The connection drops out from under the client (the exact scenario
+    // BUG-019's forced-disconnect campaign exercises).
+    act(() => {
+      socket.serverForceClose()
+    })
+
+    // Must be announced immediately -- not merely a header icon color swap.
+    const banner = getByText(/connection lost.*may be out of date/i)
+    expect(banner.id).toBe(DATA_FRESHNESS_BANNER_ID)
+    expect(banner.getAttribute('role')).toBe('status')
+    expect(banner.getAttribute('aria-live')).toBe('polite')
+  })
+
+  it('KNOWN-BAD PROOF 2: a reconnect with a new stream_id is detected and announced as a gap, then clears on the next live update', async () => {
+    const { getByText, queryByText } = renderDashboard()
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const first = MockWebSocket.instances[0]
+    act(() => {
+      first.serverOpen()
+      first.serverMessage({
+        type: 'snapshot',
+        stream_id: 'stream-a',
+        sequence: 1,
+        data: { widgetA: { ...DASHBOARD_FULL_BODY.data.widgetA, fields: { count: 1 } } },
+      })
+    })
+    expect(queryByText(/reconnected.*missed/i)).toBeNull()
+
+    act(() => {
+      first.serverForceClose()
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RECONNECT_BASE_DELAY_MS * 1.5)
+    })
+    expect(MockWebSocket.instances.length).toBe(2)
+    const second = MockWebSocket.instances[1]
+
+    // The reconnect's server-minted stream_id differs from the one this
+    // client last saw -- exactly what `_dashboard_ws` guarantees (a fresh
+    // UUID per accepted connection) since the endpoint cannot replay a
+    // cursor. This must be surfaced as a detected gap, not silently applied.
+    act(() => {
+      second.serverOpen()
+      second.serverMessage({
+        type: 'snapshot',
+        stream_id: 'stream-b',
+        sequence: 1,
+        data: { widgetA: { ...DASHBOARD_FULL_BODY.data.widgetA, fields: { count: 2 } } },
+      })
+    })
+    const gapBanner = getByText(/reconnected after a dropped connection.*missed/i)
+    expect(gapBanner.id).toBe(DATA_FRESHNESS_BANNER_ID)
+    expect(gapBanner.getAttribute('aria-live')).toBe('assertive')
+
+    // The following update on the SAME (new) stream_id is an ordinary
+    // in-sequence continuation -- the gap notice must clear, not persist
+    // forever and desensitize the operator to real future gaps.
+    act(() => {
+      second.serverMessage({
+        type: 'update',
+        stream_id: 'stream-b',
+        sequence: 2,
+        data: { widgetA: { ...DASHBOARD_FULL_BODY.data.widgetA, fields: { count: 3 } } },
+      })
+    })
+    expect(queryByText(/reconnected.*missed/i)).toBeNull()
   })
 })
