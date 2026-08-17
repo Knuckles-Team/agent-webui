@@ -6171,13 +6171,145 @@ async def get_config_field_groups() -> dict[str, Any]:
     fields it already reads from `/config` into the SAME sections
     `agent_utilities/core/config.py` itself organizes them under, instead of
     one flat "everything else" list.
+
+    `_config_field_groups()` parses the Python SOURCE, so it naturally keys
+    its map by attribute name (`openai_api_key`). The persisted document
+    (and `/config/schema`'s properties) are alias-keyed (`OPENAI_API_KEY`,
+    the majority of fields declare an explicit `Field(alias=...)`) -- this
+    route re-keys to match, otherwise every lookup against a real document
+    key would miss and every field would fall into "Other".
     """
 
+    from agent_utilities.core.config import AgentConfig
+
     groups = _config_field_groups()
+    aliased: dict[str, str] = {}
+    for attribute_name, section in groups.items():
+        field_info = AgentConfig.model_fields.get(attribute_name)
+        key = (
+            field_info.alias
+            if field_info is not None and field_info.alias
+            else attribute_name
+        )
+        aliased[key] = section
     return {
-        'fields': groups,
-        'field_count': len(groups),
+        'fields': aliased,
+        'field_count': len(aliased),
     }
+
+
+# `chat_models`/`embedding_models` already have their own dedicated,
+# schema-derived CRUD surface (`/llm/model-schema` + `/llm/models` +
+# `/llm/embedding-models`, BUG-260, rendered by `LLMTemplatesView.tsx`).
+# Rendering them a SECOND time here would be a second, divergent editor for
+# the same two AgentConfig fields, so the 1:1 form excludes them by name and
+# `/config/schema` reports the exclusion explicitly (never a silent drop).
+_CONFIG_FORM_EXCLUDED_FIELDS = frozenset({'chat_models', 'embedding_models'})
+
+
+@router.get('/config/schema')
+async def get_agent_config_schema() -> dict[str, Any]:
+    """Return AgentConfig's own `model_json_schema()` — the single source of
+    truth `ConfigurationView.tsx`'s 1:1 form renders itself from.
+
+    Every field AgentConfig accepts (~565 of them), its type, `enum` (for a
+    `Literal` field — the frontend renders these as a real dropdown, never a
+    free-text box), `default`, `description`, and required-ness all come
+    straight from the Pydantic model; nothing here hand-lists a field name,
+    so the form cannot drift the way a hand-maintained field list would the
+    moment `agent_utilities/core/config.py` gains or changes a field.
+
+    `secret_fields` names every property this route's sibling `/config` (via
+    `_is_inline_secret_key`) treats as literal-secret-shaped rather than a
+    `env://`/`secret://`/`vault://` reference — the SAME classification the
+    redaction/round-trip-preservation logic uses, exposed once here instead
+    of a second, drift-prone copy of that naming heuristic in TypeScript.
+    `secret_clear_sentinel` is likewise the ONE definition of the explicit-
+    clear value `PUT /config` (`_EXPLICIT_CLEAR_SENTINEL`) recognizes, so the
+    frontend never hand-copies that literal string either.
+    """
+
+    from agent_utilities.core.config import AgentConfig
+
+    # Default `by_alias=True`: AgentConfig (a `BaseSettings`) declares an
+    # env-var `alias` (e.g. `OPENAI_API_KEY`) on nearly every field, and
+    # `model_validate`/`model_dump` -- with no `populate_by_name` set --
+    # recognize ONLY that alias, not the Python attribute name
+    # (`openai_api_key`). The persisted `config.json` document (what `GET
+    # /config` returns and `PUT /config` writes) is alias-keyed to match, so
+    # this schema must be too, or the properties this form renders controls
+    # for would never line up with the values `/config` actually holds.
+    # `get_config_field_groups()` below re-keys its attribute-name-derived
+    # map to the same alias vocabulary for the same reason.
+    schema = AgentConfig.model_json_schema()
+    properties = schema.get('properties')
+    field_names = properties if isinstance(properties, dict) else {}
+    secret_fields = sorted(name for name in field_names if _is_inline_secret_key(name))
+    return {
+        'schema': schema,
+        'excluded_fields': sorted(_CONFIG_FORM_EXCLUDED_FIELDS),
+        'secret_fields': secret_fields,
+        'secret_clear_sentinel': _EXPLICIT_CLEAR_SENTINEL,
+    }
+
+
+@router.get('/config/secret-status')
+async def get_config_secret_status() -> dict[str, Any]:
+    """Presence-only signal for literal-secret-shaped AgentConfig fields.
+
+    `/config` (GET) redacts every secret-shaped value to `''`
+    (`_redact_inline_secrets`) so the browser never receives a stored
+    secret — but that makes "never configured" and "configured, and
+    correctly hidden" look identical in that response. This route answers
+    ONLY "is a non-empty value currently persisted for this key" — a
+    boolean, never the value itself — so the 1:1 form can render an honest
+    "Configured (redacted)" vs. "Not set" badge instead of collapsing both
+    states into the same blank input. A key absent from the returned map has
+    no persisted value (treat as not-set), matching `/config`'s own
+    "unset key is absent" convention.
+    """
+
+    document = _load_config_document()
+    status = {
+        key: value not in (None, '')
+        for key, value in document.items()
+        if _is_inline_secret_key(key)
+    }
+    return {'fields': status}
+
+
+# The `/config` GET response redacts every secret-shaped field to `''`
+# (`_redact_inline_secrets`) so a browser never sees a stored literal secret.
+# Left unhandled, that makes an UNEDITED round-trip through the 1:1
+# Configuration form indistinguishable from an explicit clear: the form loads
+# `''`, the operator saves without touching that field, and the PUT below
+# would blank a real secret it never should have touched. `_EXPLICIT_CLEAR_SENTINEL`
+# gives the form an explicit way to say "clear this one on purpose"; any other
+# blank/absent value for a secret-shaped key is treated as "left alone" and
+# the previously-persisted value is carried forward instead.
+_EXPLICIT_CLEAR_SENTINEL = '__agent_webui_clear_secret__'
+
+
+def _preserve_unedited_secrets(new: Any, existing: Any, key: str = '') -> Any:
+    """Resolve `_EXPLICIT_CLEAR_SENTINEL` and re-carry an untouched secret's
+    previously-persisted value through a `/config` write (see comment above).
+    Mirrors `_redact_inline_secrets`' own recursion so it covers the same
+    shapes that route redacts."""
+
+    if isinstance(new, dict):
+        existing_dict = existing if isinstance(existing, dict) else {}
+        return {
+            k: _preserve_unedited_secrets(v, existing_dict.get(k), str(k))
+            for k, v in new.items()
+        }
+    if isinstance(new, list):
+        return new
+    if _is_inline_secret_key(key):
+        if new == _EXPLICIT_CLEAR_SENTINEL:
+            return ''
+        if new in (None, '') and existing not in (None, ''):
+            return existing
+    return new
 
 
 @router.put('/config')
@@ -6186,24 +6318,40 @@ async def update_config_file(data: dict[str, Any]) -> dict[str, Any]:
     import json
 
     from agent_utilities.core.config import AgentConfig
-    from agent_utilities.core.paths import config_dir
+
+    # No local `config_dir` import here (unlike some other handlers in this
+    # file) -- it would shadow the module-level `config_dir` this function's
+    # sibling `_load_config_document()`/`get_config_secret_status()` use,
+    # which is exactly the name tests monkeypatch to redirect config I/O to
+    # a temp directory. A local re-import silently bypasses that and writes
+    # to the real XDG config path instead.
 
     def contains_inline_secret(value: Any, key: str = '') -> bool:
         if isinstance(value, dict):
             return any(contains_inline_secret(v, str(k)) for k, v in value.items())
         if isinstance(value, list):
             return any(contains_inline_secret(item, key) for item in value)
-        if not _is_inline_secret_key(key) or value in (None, ''):
+        if not _is_inline_secret_key(key) or value in (
+            None,
+            '',
+            _EXPLICIT_CLEAR_SENTINEL,
+        ):
             return False
         return True
 
+    # This guard must run on the CALLER's raw payload, before
+    # `_preserve_unedited_secrets` merges in whatever was already persisted
+    # -- checking the merged document instead would reject every save of a
+    # config that already has a legitimate literal secret on disk (the
+    # preserved value itself would look like a "new" inline secret).
     if contains_inline_secret(data):
         raise HTTPException(
             status_code=400,
             detail='Inline secrets are not accepted; configure secret references',
         )
+    document = _preserve_unedited_secrets(data, _load_config_document())
     try:
-        AgentConfig.model_validate(data)
+        AgentConfig.model_validate(document)
     except Exception as e:
         _log_failure('validate_agent_config', e)
         raise HTTPException(status_code=422, detail='Invalid AgentConfig') from e
@@ -6211,7 +6359,7 @@ async def update_config_file(data: dict[str, Any]) -> dict[str, Any]:
     target_dir = _private_directory(config_dir())
     config_path = target_dir / 'config.json'
     try:
-        payload = json.dumps(data, indent=2, sort_keys=True).encode('utf-8')
+        payload = json.dumps(document, indent=2, sort_keys=True).encode('utf-8')
         if len(payload) > _MAX_EXTERNAL_RESULT_BYTES:
             raise ValueError('AgentConfig document exceeds its safety bound')
         _atomic_private_write(config_path, payload)
