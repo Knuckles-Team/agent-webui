@@ -2994,6 +2994,12 @@ async def get_graph_stats() -> dict[str, Any]:
             'total_nodes': total_nodes,
             'total_relationships': total_relationships,
             'by_type': type_counts,
+            # Explicit counterpart to the two `available: False` degrade
+            # responses above -- the frontend schema now keeps this field
+            # (previously stripped by GraphView's zod schema, which made an
+            # unavailable engine render identically to a genuinely empty
+            # graph) rather than inferring "available" from its absence.
+            'available': True,
         }
     except HTTPException:
         raise
