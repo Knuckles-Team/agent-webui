@@ -25,6 +25,7 @@ const KNOWN_NON_ROUTE_COMPONENTS: Record<string, string> = {
   'dashboards/PanelShell.tsx': 'rendered by LiveDashboardsView',
   'dashboards/PromqlPanel.tsx': 'rendered by LiveDashboardsView',
   'dashboards/TracesPanel.tsx': 'rendered by LiveDashboardsView',
+  'dashboards/VizPanel.tsx': 'rendered by LiveDashboardsView',
   'admin/BackupPanel.tsx': 'rendered by AdminView',
   'admin/RbacPanel.tsx': 'rendered by AdminView',
   'admin/ShardsPanel.tsx': 'rendered by AdminView',
