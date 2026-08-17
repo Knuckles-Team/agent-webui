@@ -224,7 +224,7 @@ echo "Verifying build-info.txt inside the freshly pushed image (${VERIFY_REF})..
 VERIFY_POD="agent-webui-buildcheck-${BUILD_SHA}"
 kubectl -n "${BUILDKIT_NAMESPACE}" delete pod "${VERIFY_POD}" --ignore-not-found >&2
 BUILD_INFO="$(kubectl -n "${BUILDKIT_NAMESPACE}" run "${VERIFY_POD}" \
-  --image="${VERIFY_REF}" --restart=Never --rm --pod-running-timeout=120s \
+  --image="${VERIFY_REF}" --restart=Never --rm --attach --pod-running-timeout=120s \
   --command -- python3 -c \
   'import agent_webui, os
 p = os.path.join(os.path.dirname(agent_webui.__file__), "dist", "build-info.txt")
