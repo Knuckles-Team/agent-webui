@@ -444,10 +444,15 @@ builds shipped stale code to production three separate ways in one day
 docker/deploy.sh
 ```
 
-Builds the image on the r820 buildhost (always -- see the script's header for
-why, and why it never silently falls back to whatever daemon happens to be
-local), verifies the served bundle carries today's commit **before** pushing
-anything, pushes to Docker Hub by digest, deploys by that digest, waits out a
+Builds the image against `buildkitd`, a shared BuildKit Deployment running
+inside the k8s cluster (spread across `r510`/`r710` -- see
+`services/buildkit-service/` for the full design and why this replaced a
+`docker` daemon on `r820`, which was stopped in the 2026-07-11 Swarm->RKE2
+cutover and cannot safely be started back up there), verifies the served
+bundle carries today's commit (via a throwaway in-cluster pod, immediately
+after the build is pushed -- see `docker/build_and_push.sh`'s header for why
+that check moved after push under BuildKit's client/server model), pushes to
+Docker Hub by digest, deploys by that digest, waits out a
 60-second availability soak before Kubernetes will retire the old pod
 (`minReadySeconds: 60` on the Deployment), verifies the running pod's `imageID`
 actually changed, rebuilds the live-mounted frontend bundle on the canonical
@@ -462,9 +467,9 @@ docker/deploy.sh --skip-deploy   # build + verify + push; does NOT touch the clu
 
 `docker/build_and_push.sh` (called internally by `deploy.sh`) is the build-only
 half, kept as its own file for a standalone build-only smoke test. Do not
-hand-roll a `docker build`/`kubectl set image` sequence outside these two
+hand-roll a `buildctl build`/`kubectl set image` sequence outside these two
 scripts -- see their headers for the full contract, including every env var
-override (`AU_SRC_PATH`, `CANONICAL_CHECKOUT`, etc.).
+override (`AU_SRC_PATH`, `CANONICAL_CHECKOUT`, `BUILDKIT_NAMESPACE`, etc.).
 
 #### Coordinating concurrent deploys
 
