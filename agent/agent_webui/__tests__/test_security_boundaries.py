@@ -1542,3 +1542,168 @@ def test_get_llm_model_detail_404s_for_an_unknown_model(
             api_extensions.get_llm_model_detail(kind='chat', model_id='does-not-exist')
         )
     assert exc_info.value.status_code == 404
+
+
+# --------------------------------------- 1:1 AgentConfig form (GOC config-schema)
+
+
+def test_agent_config_schema_is_derived_from_agentconfig_not_hand_maintained() -> None:
+    """`/config/schema` must reflect `AgentConfig` directly
+    (`model_json_schema()`), the same discipline BUG-260 established for the
+    LLM model forms -- a field added/removed from AgentConfig shows up here
+    automatically, with no change to this route's own code."""
+
+    from agent_utilities.core.config import AgentConfig
+
+    result = asyncio.run(api_extensions.get_agent_config_schema())
+
+    properties = result['schema']['properties']
+    # AgentConfig (a BaseSettings) declares an env-var `alias` on nearly
+    # every field, and `model_validate`/`model_dump` recognize ONLY that
+    # alias (no `populate_by_name`) -- so does the persisted config.json
+    # document this schema must describe. `model_json_schema()`'s default
+    # `by_alias=True` must be left alone, or the two would speak different
+    # vocabularies.
+    expected_keys = {
+        (AgentConfig.model_fields[name].alias or name)
+        for name in AgentConfig.model_fields
+    }
+    assert set(properties) == expected_keys
+    # chat_models/embedding_models have their own dedicated CRUD surface
+    # (BUG-260's LLM Templates view) -- excluded here explicitly, not
+    # silently dropped. Neither declares an alias, so its schema/document
+    # key is its attribute name either way.
+    assert result['excluded_fields'] == ['chat_models', 'embedding_models']
+    # The literal-secret naming heuristic (`_is_inline_secret_key`) is
+    # exposed once here rather than duplicated in TypeScript.
+    assert 'OPENAI_API_KEY' in result['secret_fields']
+    assert 'ANTHROPIC_API_KEY' in result['secret_fields']
+    # A `_ref`-suffixed sibling is a reference, never a literal secret.
+    assert 'OPENAI_API_KEY_REF' not in result['secret_fields']
+    # The explicit-clear sentinel is exposed here so the frontend never
+    # hand-copies the literal string `update_config_file` recognizes.
+    assert result['secret_clear_sentinel'] == api_extensions._EXPLICIT_CLEAR_SENTINEL
+
+
+def test_config_field_groups_endpoint_is_keyed_by_the_same_alias_the_document_uses() -> (
+    None
+):
+    """`_config_field_groups()` parses attribute names out of the Python
+    source; the persisted document (and `/config/schema`) are alias-keyed.
+    The ROUTE must re-key to match, or every real field lookup misses and
+    everything falls into "Other" (D-AOBS-3's whole point, defeated)."""
+
+    api_extensions._config_field_groups_cache = None
+    result = asyncio.run(api_extensions.get_config_field_groups())
+    assert result['fields'].get('OPENAI_API_KEY', '').startswith('Provider API Keys')
+    # Attribute-name keys must NOT leak through unresolved.
+    assert 'openai_api_key' not in result['fields']
+
+
+def test_agent_config_schema_updates_when_agentconfig_gains_a_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent_utilities.core import config as config_module
+    from pydantic import BaseModel, ConfigDict
+
+    class _AgentConfigWithExtraField(BaseModel):
+        brand_new_setting: str = 'default-value'
+        model_config = ConfigDict(extra='forbid')
+
+    monkeypatch.setattr(config_module, 'AgentConfig', _AgentConfigWithExtraField)
+    result = asyncio.run(api_extensions.get_agent_config_schema())
+    assert 'brand_new_setting' in result['schema']['properties']
+
+
+def test_config_secret_status_reports_presence_never_values(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    config_path = _config_json_path(tmp_path, monkeypatch)
+    config_path.write_text(
+        json.dumps(
+            {
+                'OPENAI_API_KEY': 'sk-real-secret-value',
+                'OPENAI_API_KEY_REF': 'secret://provider/openai',
+                'ANTHROPIC_API_KEY': '',
+            }
+        )
+    )
+
+    result = asyncio.run(api_extensions.get_config_secret_status())
+
+    assert result['fields']['OPENAI_API_KEY'] is True
+    assert result['fields']['ANTHROPIC_API_KEY'] is False
+    # `_ref` fields are references, not literal secrets -- never reported here.
+    assert 'OPENAI_API_KEY_REF' not in result['fields']
+    # The literal value itself must never appear anywhere in the response.
+    assert 'sk-real-secret-value' not in str(result)
+
+
+def test_config_secret_status_empty_document_reports_no_fields(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _config_json_path(tmp_path, monkeypatch)  # config.json does not exist yet
+    result = asyncio.run(api_extensions.get_config_secret_status())
+    assert result['fields'] == {}
+
+
+def test_update_config_preserves_an_unedited_secret_across_a_save(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/config` GET redacts a literal secret to `''`; an unedited round-trip
+    through the 1:1 form must NOT blank the real, persisted value -- only an
+    explicit `_EXPLICIT_CLEAR_SENTINEL` may do that (next test)."""
+
+    import json
+
+    config_path = _config_json_path(tmp_path, monkeypatch)
+    config_path.write_text(
+        json.dumps({'OPENAI_API_KEY': 'sk-real-secret-value', 'LOG_LEVEL': 'INFO'})
+    )
+
+    result = asyncio.run(
+        api_extensions.update_config_file({'OPENAI_API_KEY': '', 'LOG_LEVEL': 'DEBUG'})
+    )
+    assert result == {'status': 'success'}
+
+    written = json.loads(config_path.read_text())
+    assert written['OPENAI_API_KEY'] == 'sk-real-secret-value'
+    assert written['LOG_LEVEL'] == 'DEBUG'
+
+
+def test_update_config_clears_a_secret_via_explicit_sentinel(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    config_path = _config_json_path(tmp_path, monkeypatch)
+    config_path.write_text(json.dumps({'OPENAI_API_KEY': 'sk-real-secret-value'}))
+
+    result = asyncio.run(
+        api_extensions.update_config_file(
+            {'OPENAI_API_KEY': api_extensions._EXPLICIT_CLEAR_SENTINEL}
+        )
+    )
+    assert result == {'status': 'success'}
+
+    written = json.loads(config_path.read_text())
+    assert written['OPENAI_API_KEY'] == ''
+
+
+def test_update_config_still_rejects_a_genuinely_new_literal_secret(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The secret-preservation fix must not weaken the existing guard: typing
+    a brand-new literal secret into a field that has no prior persisted
+    value is still rejected -- only a PRE-EXISTING value round-trips."""
+
+    config_path = _config_json_path(tmp_path, monkeypatch)
+
+    with pytest.raises(FastAPIHTTPException) as exc_info:
+        asyncio.run(
+            api_extensions.update_config_file({'OPENAI_API_KEY': 'brand-new-literal'})
+        )
+    assert exc_info.value.status_code == 400
+    assert not config_path.exists()

@@ -36,7 +36,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { z } from 'zod'
-import { Cpu, Eye, Layers, Plus, RefreshCw, Save, Search, Sparkles, Wrench } from 'lucide-react'
+import { Cpu, Eye, Layers, Plus, RefreshCw, Save, Search, Sparkles, Trash2, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -50,6 +50,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
 import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
+import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 
 type ModelKind = 'chat' | 'embedding'
 
@@ -128,7 +129,9 @@ const templateDetailSchema = z.looseObject({
 // `[<type>, {type: "null"}]` for an Optional field.
 interface JsonSchemaProperty {
   type?: string
-  anyOf?: { type?: string }[]
+  enum?: unknown[]
+  const?: unknown
+  anyOf?: { type?: string; enum?: unknown[]; const?: unknown }[]
   default?: unknown
   title?: string
   description?: string
@@ -139,7 +142,17 @@ interface ModelJsonSchema {
 }
 const jsonSchemaPropertySchema: z.ZodType<JsonSchemaProperty> = z.looseObject({
   type: z.string().optional(),
-  anyOf: z.array(z.looseObject({ type: z.string().optional() })).optional(),
+  enum: z.array(z.unknown()).optional(),
+  const: z.unknown().optional(),
+  anyOf: z
+    .array(
+      z.looseObject({
+        type: z.string().optional(),
+        enum: z.array(z.unknown()).optional(),
+        const: z.unknown().optional(),
+      }),
+    )
+    .optional(),
   default: z.unknown().optional(),
   title: z.string().optional(),
   description: z.string().optional(),
@@ -154,9 +167,40 @@ const modelSchemasResponseSchema = z.object({
 })
 type ModelSchemas = z.infer<typeof modelSchemasResponseSchema>
 
-type FieldKind = 'boolean' | 'integer' | 'number' | 'string' | 'json'
+type FieldKind = 'boolean' | 'integer' | 'number' | 'enum' | 'string' | 'json'
+
+/** A `Literal[...]` field's permitted values (`enum`, or a single-value
+ *  `const` for a one-member `Literal`) — resolved through an `Optional`
+ *  field's `anyOf` branch too. A constrained value set always wins into a
+ *  real dropdown over its base type, so a future enum-typed ChatModelConfig/
+ *  EmbeddingModelConfig field (there are none today) renders correctly with
+ *  no change to this form. */
+function fieldEnumValues(prop: JsonSchemaProperty): unknown[] | undefined {
+  if (prop.enum) return prop.enum
+  if (prop.const !== undefined) return [prop.const]
+  const branch = prop.anyOf?.find((entry) => entry.enum ?? entry.const !== undefined)
+  if (branch?.enum) return branch.enum
+  if (branch?.const !== undefined) return [branch.const]
+  return undefined
+}
+
+/** A JSON-value-safe `String()` -- an enum entry is typed `unknown` (straight
+ *  off the wire), and a plain object's default `toString()` silently renders
+ *  `[object Object]`. Primitives stringify normally; anything else falls
+ *  back to its JSON form. */
+function stringifyValue(value: unknown): string {
+  if (value == null) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return ''
+  }
+}
 
 function fieldKind(prop: JsonSchemaProperty): FieldKind {
+  if (fieldEnumValues(prop)) return 'enum'
   const declared = prop.type ?? prop.anyOf?.find((entry) => entry.type && entry.type !== 'null')?.type
   if (declared === 'boolean' || declared === 'integer' || declared === 'number' || declared === 'string') {
     return declared
@@ -230,6 +274,39 @@ function ModelSettingsForm({
                 }}
                 className="font-mono text-xs"
               />
+            </div>
+          )
+        }
+
+        if (kind === 'enum') {
+          const options = fieldEnumValues(prop) ?? []
+          return (
+            <div key={name} className="space-y-1.5">
+              <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
+                {label}
+                {isRequired && ' *'}
+              </label>
+              <select
+                id={`model-field-${name}`}
+                value={value == null ? '' : stringifyValue(value)}
+                onChange={(e) => {
+                  const raw = e.target.value
+                  if (raw === '') {
+                    onChange(name, null)
+                    return
+                  }
+                  const match = options.find((opt) => stringifyValue(opt) === raw)
+                  onChange(name, match ?? raw)
+                }}
+                className="w-full h-9 px-3 rounded-md border border-input bg-muted/20 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {!isRequired && <option value="">— unset —</option>}
+                {options.map((opt) => (
+                  <option key={stringifyValue(opt)} value={stringifyValue(opt)}>
+                    {stringifyValue(opt)}
+                  </option>
+                ))}
+              </select>
             </div>
           )
         }
@@ -343,8 +420,10 @@ export default function LLMTemplatesView() {
   const [modelId, setModelId] = useState('')
   const [parameters, setParameters] = useState<TemplateParameters>(DEFAULT_PARAMETERS)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [savingModel, setSavingModel] = useState(false)
+  const [deletingModel, setDeletingModel] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [sessionExpired, setSessionExpired] = useState(false)
 
@@ -358,6 +437,7 @@ export default function LLMTemplatesView() {
 
   const loadAll = useCallback(async () => {
     setLoading(true)
+    setLoadError(null)
     try {
       const [chat, embedding, t, s] = await Promise.all([
         fetchValidated('/api/enhanced/llm/models', looseArray(modelSchema)),
@@ -374,6 +454,10 @@ export default function LLMTemplatesView() {
       if (err instanceof ApiError && err.status === 401) {
         setSessionExpired(true)
       } else {
+        // Distinct from "zero models configured": the list below must never
+        // render an unreachable backend identically to a genuine empty
+        // registry (the honest-state requirement this view was flagged for).
+        setLoadError('Could not reach the LLM model registry.')
         toast.error('Error connecting to the LLM template composer')
       }
     } finally {
@@ -518,6 +602,50 @@ export default function LLMTemplatesView() {
     }
   }
 
+  /** Remove a model from AgentConfig's `chat_models`/`embedding_models`
+   *  registry — the "remove an LLM endpoint" half of native add/modify/
+   *  remove management. `PUT /llm/models`/`.../embedding-models` replace the
+   *  WHOLE registry (see the docstring on those routes), so "delete" is
+   *  "resubmit the list without this entry," the same full-registry-replace
+   *  discipline `handleSaveModelSettings` already uses for create/edit. */
+  const handleDeleteModel = async () => {
+    if (isNewModelEntry || !selectedModel) return
+    const targetId = selectedModel.id
+    if (!window.confirm(`Remove ${targetId} from the ${kind} model registry?`)) return
+    setDeletingModel(true)
+    try {
+      const existing = kind === 'chat' ? chatModels : embeddingModels
+      const others = existing.filter((m) => m.id !== targetId)
+      const detailUrl = `/api/enhanced/llm/${kind === 'chat' ? 'models' : 'embedding-models'}`
+      const otherDetails = await Promise.all(
+        others.map((m) =>
+          fetchValidated(
+            `/api/enhanced/llm/model-detail?kind=${kind}&model_id=${encodeURIComponent(m.id)}`,
+            z.record(z.string(), z.unknown()),
+          ),
+        ),
+      )
+      const res = await fetch(detailUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ models: otherDetails }),
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { detail?: string } | null
+        toast.error(body?.detail ?? 'Failed to remove model')
+        return
+      }
+      toast.success(`Model "${targetId}" removed`)
+      setModelSettings(null)
+      setModelId('')
+      await loadAll()
+    } catch {
+      toast.error('Error removing model')
+    } finally {
+      setDeletingModel(false)
+    }
+  }
+
   const handleSave = async () => {
     const targetName = isNew ? newName.trim() : selectedName
     if (!targetName) {
@@ -637,6 +765,10 @@ export default function LLMTemplatesView() {
           <CardContent className="space-y-1 pt-0">
             {loading ? (
               <div className="py-8 text-center text-sm text-muted-foreground">Loading models…</div>
+            ) : loadError ? (
+              <div className="py-8 px-2">
+                <UnavailableNotice what="The LLM model registry" />
+              </div>
             ) : filteredModels.length === 0 ? (
               <div className="py-8 text-center text-sm text-muted-foreground">
                 No {kind} models are configured in AgentConfig yet.
@@ -699,17 +831,33 @@ export default function LLMTemplatesView() {
                     <Layers className="h-4 w-4 text-muted-foreground" />
                     Model configuration ({kind})
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      void handleSaveModelSettings()
-                    }}
-                    disabled={savingModel}
-                  >
-                    <Save className="size-3.5 mr-1.5" />
-                    {savingModel ? 'Saving...' : 'Save model settings'}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {!isNewModelEntry && selectedModel && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-rose-400 hover:text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
+                        onClick={() => {
+                          void handleDeleteModel()
+                        }}
+                        disabled={deletingModel || savingModel}
+                      >
+                        <Trash2 className="size-3.5 mr-1.5" />
+                        {deletingModel ? 'Removing...' : 'Remove model'}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        void handleSaveModelSettings()
+                      }}
+                      disabled={savingModel || deletingModel}
+                    >
+                      <Save className="size-3.5 mr-1.5" />
+                      {savingModel ? 'Saving...' : 'Save model settings'}
+                    </Button>
+                  </div>
                 </div>
 
                 {isNewModelEntry ? (

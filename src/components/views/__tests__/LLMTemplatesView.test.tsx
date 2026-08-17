@@ -180,4 +180,58 @@ describe('LLMTemplatesView (BUG-260)', () => {
     expect(saved?.provider).toBe('openai')
     expect(saved?.chunk_size).toBe(512)
   })
+
+  it('a Literal-typed model field renders a real dropdown of its permitted values, not free text', async () => {
+    const ENUM_CHAT_SCHEMA = {
+      properties: {
+        id: { type: 'string', title: 'Id' },
+        provider: { type: 'string', title: 'Provider' },
+        intelligence_level: { type: 'string', enum: ['low', 'normal', 'high'], title: 'Intelligence Level' },
+      },
+      required: ['id', 'provider'],
+    }
+    mockFetch({
+      schema: () => jsonResponse({ chat: ENUM_CHAT_SCHEMA, embedding: EMBEDDING_SCHEMA }),
+      modelDetail: () => jsonResponse({ id: 'qwen/qwen3', provider: 'openai', intelligence_level: 'normal' }),
+    })
+    render(<LLMTemplatesView />)
+
+    const modelButton = await screen.findByText('qwen/qwen3')
+    await userEvent.click(modelButton)
+
+    const select = (await screen.findByLabelText('Intelligence Level')) as HTMLSelectElement
+    expect(select.tagName).toBe('SELECT')
+    const optionValues = Array.from(select.options).map((o) => o.value)
+    expect(optionValues).toEqual(expect.arrayContaining(['low', 'normal', 'high']))
+    expect(select.value).toBe('normal')
+  })
+
+  it('removing a model PUTs the registry WITHOUT it (native remove)', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const putCalls = mockFetch()
+    render(<LLMTemplatesView />)
+
+    const modelButton = await screen.findByText('qwen/qwen3')
+    await userEvent.click(modelButton)
+
+    const removeButton = await screen.findByRole('button', { name: /remove model/i })
+    await userEvent.click(removeButton)
+
+    await waitFor(() => {
+      expect(putCalls.some((c) => c.url.includes('/llm/models'))).toBe(true)
+    })
+    const call = putCalls.find((c) => c.url.includes('/llm/models'))
+    const body = call?.body as { models: { id: string }[] }
+    expect(body.models.some((m) => m.id === 'qwen/qwen3')).toBe(false)
+  })
+
+  it('an unreachable model registry renders a distinct unavailable state, not "no models configured"', async () => {
+    mockFetch({ models: () => jsonResponse({ detail: 'boom' }, 500) })
+    render(<LLMTemplatesView />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/could not be fetched/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/no chat models are configured/i)).not.toBeInTheDocument()
+  })
 })
