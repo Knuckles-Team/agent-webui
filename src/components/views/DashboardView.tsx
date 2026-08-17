@@ -161,6 +161,25 @@ export function jitteredReconnectDelayMs(delayMs: number, random: () => number =
   return Math.min(RECONNECT_MAX_DELAY_MS, Math.max(0, delayMs + jitter))
 }
 
+/* ── GOC-29: backend wire-protocol consumption (closing BUG-019's deferred half) ──
+ *
+ * `/ws/dashboard` (`agent_webui/server.py::_dashboard_ws`) now carries
+ * `stream_id` (minted fresh per accepted connection) and `sequence`
+ * (monotonic within that connection) on every message. This endpoint has no
+ * durable backlog to resume from -- every push is a fresh full poll, not a
+ * delta against an event log -- so a reconnect can never "replay" a gap, it
+ * can only detect one. `stream_id` is what makes that detection possible: a
+ * message whose `stream_id` differs from the last one this client saw
+ * proves, structurally, that whatever happened between the two was never
+ * delivered. The charter rule this exists to satisfy: a dropped or
+ * reconnecting realtime stream must surface as unknown/stale, never as
+ * confidently rendered stale data presented as live.
+ */
+export type DataFreshness = 'fresh' | 'stale' | 'reset'
+
+/** `id` of the live-region banner announcing non-fresh data; also wired via `aria-describedby`. */
+export const DATA_FRESHNESS_BANNER_ID = 'dashboard-freshness-banner'
+
 /**
  * Tracks which WebSocket "generation" (one per `connect()` attempt) is
  * currently authoritative. A stale/duplicate message or close/error event
@@ -372,31 +391,45 @@ function WidgetCard({ service, data, isLoading }: { service: ServiceConfig; data
 
 /* ── Service Group Section ───────────────────────────────────────── */
 
+/** Stable id-safe slug for a group name, used to wire `aria-controls`. */
+function groupPanelId(name: string): string {
+  return `dashboard-group-${name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')}`
+}
+
 function ServiceGroupSection({
   group,
   data,
   isLoading,
+  dataFreshness,
 }: {
   group: ServiceGroup
   data: Record<string, WidgetData>
   isLoading: boolean
+  dataFreshness: DataFreshness
 }) {
   const [collapsed, setCollapsed] = useState(group.collapsed)
+  const panelId = groupPanelId(group.name)
 
   const visibleServices = group.services.filter((s) => s.visible)
 
   return (
     <div className="mb-6">
       <button
+        type="button"
         className="flex items-center gap-2 mb-3 group/header cursor-pointer"
+        aria-expanded={!collapsed}
+        aria-controls={panelId}
         onClick={() => {
           setCollapsed(!collapsed)
         }}
       >
         {collapsed ? (
-          <ChevronRight className="size-4 text-muted-foreground" />
+          <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
         ) : (
-          <ChevronDown className="size-4 text-muted-foreground" />
+          <ChevronDown className="size-4 text-muted-foreground" aria-hidden="true" />
         )}
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground group-hover/header:text-foreground transition-colors">
           {group.name}
@@ -407,7 +440,14 @@ function ServiceGroupSection({
       </button>
 
       {!collapsed && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        <div
+          id={panelId}
+          className={cn(
+            'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 transition-opacity',
+            dataFreshness !== 'fresh' && 'opacity-60',
+          )}
+          aria-describedby={dataFreshness !== 'fresh' ? DATA_FRESHNESS_BANNER_ID : undefined}
+        >
           {visibleServices.map((service) => (
             <WidgetCard key={service.id} service={service} data={data[service.id]} isLoading={isLoading} />
           ))}
@@ -426,7 +466,23 @@ export default function DashboardView() {
   const [cardSize, setCardSize] = useState('medium')
   const [theme, setTheme] = useState('system')
   const [refreshInterval, setRefreshInterval] = useState(30)
+  // GOC-29: never render stale WebSocket data as if it were confidently
+  // live (program charter -- "never fabricate state"). Starts 'fresh'
+  // because the very first render is backed by a just-completed REST fetch,
+  // which is itself current data, not a stale replay -- the ordinary "still
+  // connecting" window before the socket opens is already communicated by
+  // the header's Live/Polling badge and does not need an alarming banner.
+  // Becomes 'reset' the moment a message's `stream_id` differs from the
+  // previously-seen one (a forced disconnect => a genuine, undeliverable gap
+  // for this endpoint, since it has no replay/cursor -- see the
+  // wire-protocol comment below), back to 'fresh' on the next message of
+  // that new stream, and 'stale' the instant a connection that HAD gone live
+  // drops (a socket that never managed to open once yet is "still
+  // connecting", not "lost").
+  const [dataFreshness, setDataFreshness] = useState<DataFreshness>('fresh')
   const wsRef = useRef<WebSocket | null>(null)
+  const lastStreamIdRef = useRef<string | null>(null)
+  const everLiveRef = useRef(false)
   const queryClient = useQueryClient()
 
   // Fetch full dashboard (layout + data) on mount
@@ -443,16 +499,17 @@ export default function DashboardView() {
 
   // WebSocket connection for real-time updates.
   //
-  // BUG-019 (GOC-29) partial fix, frontend-only scope: the backend
-  // `/ws/dashboard` handler (`agent_webui/server.py::_dashboard_ws`, out of
-  // this lane's file ownership) re-sends the ENTIRE dashboard payload on
-  // every push -- it carries no per-widget subscription protocol, sequence
-  // number, or cursor, so a true subscription-scoped fetch and a
-  // sequence-verified resume both require a backend wire-protocol change
-  // that is a separate reviewed increment, not something to slip in here
-  // (same "additive, not a shared-contract rewrite" judgement BUG-071 used).
-  // Two things ARE fully fixable within this repo's surface and are fixed
-  // here:
+  // BUG-019 (GOC-29): the frontend-only half (jittered exponential backoff +
+  // connection-generation guard) landed first. This closes the backend half
+  // that left open: `/ws/dashboard` (`agent_webui/server.py::_dashboard_ws`)
+  // now carries `stream_id` (minted fresh per accepted connection) and
+  // `sequence` (monotonic within that connection) on every message. The
+  // endpoint still has no durable backlog to replay -- each push is a fresh
+  // full poll, not a delta against an event log -- so a reconnect can never
+  // resume a cursor; `stream_id` is what lets this client tell a genuine
+  // reconnect-after-gap apart from an ordinary periodic update instead of
+  // silently treating a fresh snapshot as an in-sequence continuation.
+  // Three things are fixed here:
   //   1. Reconnect used a flat, un-jittered 5000ms retry -- every client
   //      that lost the connection at the same moment (a single dashboard
   //      pod restart affects all of them at once) would reconnect in
@@ -467,6 +524,14 @@ export default function DashboardView() {
   //      disconnect) -- each socket now closes over its own connection
   //      generation and is ignored once a newer generation exists, so a
   //      late-arriving stale message can never overwrite fresher data.
+  //   3. A dropped connection previously left the widget grid showing old
+  //      numbers with no visual change beyond a small header badge --
+  //      "frozen but plausible" data, which the program charter forbids.
+  //      `dataFreshness` now degrades to 'stale' the instant the socket
+  //      closes and to 'reset' the instant a reconnect's `stream_id` proves
+  //      a gap, and both states dim the widget grid and announce themselves
+  //      through a live region (`DATA_FRESHNESS_BANNER_ID`) instead of
+  //      staying silent.
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`
@@ -494,6 +559,7 @@ export default function DashboardView() {
         ws.onopen = () => {
           if (!generation.isCurrent(myGeneration)) return
           setIsConnected(true)
+          everLiveRef.current = true
           // A confirmed connection resets the backoff -- a run of failures
           // shouldn't keep the delay elevated after recovery.
           reconnectDelayMs = RECONNECT_BASE_DELAY_MS
@@ -504,8 +570,27 @@ export default function DashboardView() {
           // superseded (BUG-019 duplicate/stale guard).
           if (!generation.isCurrent(myGeneration)) return
           try {
-            const msg = JSON.parse(event.data as string) as { type?: string; data?: Record<string, WidgetData> }
+            const msg = JSON.parse(event.data as string) as {
+              type?: string
+              data?: Record<string, WidgetData>
+              stream_id?: string
+              sequence?: number
+            }
             if (msg.type === 'update' || msg.type === 'snapshot') {
+              const incomingStreamId = typeof msg.stream_id === 'string' ? msg.stream_id : null
+              // A `stream_id` different from the last one this client saw
+              // proves, structurally, that whatever changed between the two
+              // was never delivered -- the server mints a fresh id per
+              // connection because this endpoint has no backlog to resume
+              // from (see the wire-protocol comment above `_dashboard_ws`).
+              // `lastStreamIdRef.current === null` means this is the very
+              // first stream this tab has ever seen, which is not a gap.
+              const isReconnectGap =
+                incomingStreamId !== null &&
+                lastStreamIdRef.current !== null &&
+                incomingStreamId !== lastStreamIdRef.current
+              if (incomingStreamId !== null) lastStreamIdRef.current = incomingStreamId
+              setDataFreshness(isReconnectGap ? 'reset' : 'fresh')
               queryClient.setQueryData(
                 ['dashboard-full'],
                 (old: { layout: DashboardLayout; data: Record<string, WidgetData> } | undefined) => {
@@ -525,6 +610,13 @@ export default function DashboardView() {
         ws.onclose = () => {
           if (!generation.isCurrent(myGeneration)) return
           setIsConnected(false)
+          // GOC-29: the connection is gone -- whatever is on screen may
+          // already be out of date. Degrade immediately rather than let the
+          // widget grid keep presenting the last-known numbers as current.
+          // Only applies once the socket has actually gone live at least
+          // once; a still-connecting first attempt is not a "dropped"
+          // connection and is already communicated by the header badge.
+          if (everLiveRef.current) setDataFreshness('stale')
           wsRef.current = null
           scheduleReconnect()
         }
@@ -593,16 +685,18 @@ export default function DashboardView() {
             />
           </div>
 
-          {/* Connection status */}
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {/* Connection status -- GOC-29: role="status" + aria-live so a
+              screen reader hears "Live" <-> "Polling" transitions instead of
+              relying on the icon color alone. */}
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status" aria-live="polite">
             {isConnected ? (
               <>
-                <Wifi className="size-3.5 text-emerald-500" />
+                <Wifi className="size-3.5 text-emerald-500" aria-hidden="true" />
                 <span className="text-emerald-500">Live</span>
               </>
             ) : (
               <>
-                <WifiOff className="size-3.5 text-amber-500" />
+                <WifiOff className="size-3.5 text-amber-500" aria-hidden="true" />
                 <span className="text-amber-500">Polling</span>
               </>
             )}
@@ -633,6 +727,31 @@ export default function DashboardView() {
         </div>
       </div>
 
+      {/* GOC-29: explicit, announced degraded-data state -- never let the
+          widget grid keep showing old numbers with no visible or
+          screen-reader-audible signal that they may be wrong. 'stale' means
+          the socket is down (banner is advisory, `aria-live="polite"`);
+          'reset' means a reconnect proved a gap occurred (data was just
+          replaced by a fresh snapshot and may have skipped updates, so it is
+          announced immediately, `aria-live="assertive"`). */}
+      {dataFreshness !== 'fresh' && (
+        <div
+          id={DATA_FRESHNESS_BANNER_ID}
+          role="status"
+          aria-live={dataFreshness === 'reset' ? 'assertive' : 'polite'}
+          className={cn(
+            'px-6 py-1.5 text-xs border-b',
+            dataFreshness === 'reset'
+              ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
+              : 'bg-muted/50 text-muted-foreground border-border/40',
+          )}
+        >
+          {dataFreshness === 'reset'
+            ? 'Reconnected after a dropped connection — some updates may have been missed. Showing the latest snapshot.'
+            : 'Connection lost — the data below may be out of date while reconnecting.'}
+        </div>
+      )}
+
       {/* Dashboard Content */}
       <div className="flex-1 overflow-auto p-6">
         {isLoading ? (
@@ -658,6 +777,7 @@ export default function DashboardView() {
               group={group}
               data={dashboardData?.data ?? {}}
               isLoading={isLoading}
+              dataFreshness={dataFreshness}
             />
           ))
         )}

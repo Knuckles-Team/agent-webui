@@ -140,10 +140,62 @@ def test_ws_dashboard_streams_snapshot_then_update_from_the_full_dashboard_handl
         client = TestClient(app)
         with client.websocket_connect('/ws/dashboard') as ws:
             snapshot = ws.receive_json()
-            assert snapshot == {'type': 'snapshot', 'data': expected_data}
+            assert snapshot['type'] == 'snapshot'
+            assert snapshot['data'] == expected_data
+            assert isinstance(snapshot['stream_id'], str) and snapshot['stream_id']
+            assert snapshot['sequence'] == 1
 
             update = ws.receive_json()
-            assert update == {'type': 'update', 'data': expected_data}
+            assert update['type'] == 'update'
+            assert update['data'] == expected_data
+            # GOC-29: same connection -> same stream_id, monotonically
+            # incrementing sequence. A client uses this pair to detect a
+            # duplicate/out-of-order delivery within one connection.
+            assert update['stream_id'] == snapshot['stream_id']
+            assert update['sequence'] == 2
+
+
+def test_ws_dashboard_mints_a_new_stream_id_per_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GOC-29 (closing BUG-019's deferred backend half): this endpoint has no
+    durable backlog to resume from -- every reconnect is necessarily a fresh
+    full poll, not a delta continuation. Two independent connections (as a
+    reconnect after a forced disconnect produces) must mint two DIFFERENT
+    `stream_id`s and both must restart `sequence` at 1, so a client that
+    tracks the `stream_id` it last saw can positively detect "this is a new
+    stream; anything that happened between my last message and now was never
+    delivered" instead of silently treating the fresh snapshot as an
+    in-sequence continuation of the old one.
+
+    Known-bad proof: before this change the wire carried no `stream_id`/
+    `sequence` at all, so a client had no signal to distinguish a genuine
+    reconnect-after-gap from an ordinary periodic `update` -- this is exactly
+    the "message gap after reconnect must be detected, not silently skipped"
+    failure mode.
+    """
+
+    import agent_webui.server as server_module
+
+    monkeypatch.setattr(server_module, '_DASHBOARD_WS_PUSH_INTERVAL_SECONDS', 5.0)
+
+    sample = _sample_dashboard_response()
+    with patch(
+        'agent_utilities.gateway.api.get_full_dashboard',
+        new=AsyncMock(return_value=sample),
+    ):
+        app = _build_app()
+        client = TestClient(app)
+
+        with client.websocket_connect('/ws/dashboard') as first_ws:
+            first_snapshot = first_ws.receive_json()
+
+        with client.websocket_connect('/ws/dashboard') as second_ws:
+            second_snapshot = second_ws.receive_json()
+
+        assert first_snapshot['sequence'] == 1
+        assert second_snapshot['sequence'] == 1
+        assert first_snapshot['stream_id'] != second_snapshot['stream_id']
 
 
 def test_ws_dashboard_closes_cleanly_on_client_disconnect(

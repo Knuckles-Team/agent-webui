@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import time
+import uuid
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Any
@@ -1757,15 +1758,36 @@ def create_agent_web_app(
             `GET /api/dashboard/full`'s `data` field so the frontend's single
             `['dashboard-full']` query-cache merge (`DashboardView.tsx`)
             applies to either source unmodified.
+
+            GOC-29 (closing BUG-019's deferred backend half): every message
+            now also carries `stream_id` (a UUID minted fresh per accepted
+            connection) and `sequence` (monotonic within that connection,
+            starting at 1). This endpoint has no durable backlog to replay
+            from -- each push is a fresh full poll of `get_full_dashboard()`,
+            not a delta against an event log -- so there is no cursor a
+            reconnect could resume from. `stream_id` makes that honest on the
+            wire: a client that already held one `stream_id` and now receives
+            a *different* one knows, structurally, that whatever changed
+            between its last received message and this one was never
+            delivered (BUG-019's forced-disconnect gap) -- it must treat the
+            new snapshot as a reset, not as a continuation, and say so rather
+            than silently keep rendering the prior data as if it were still
+            live. `sequence` lets a client also detect a duplicate/out-of-order
+            delivery within one connection.
             """
             await websocket.accept()
+            stream_id = uuid.uuid4().hex
+            sequence = 0
             message_type = 'snapshot'
             try:
                 while True:
                     full = await get_full_dashboard()
+                    sequence += 1
                     await websocket.send_json(
                         {
                             'type': message_type,
+                            'stream_id': stream_id,
+                            'sequence': sequence,
                             'data': {
                                 widget_id: widget.model_dump(mode='json')
                                 for widget_id, widget in full.data.items()
