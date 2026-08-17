@@ -67,6 +67,12 @@ function defaultPanels(): PanelSpec[] {
     { id: nanoid(6), type: 'promql', title: 'p99 latency', query: DEFAULT_P99_QUERY },
     { id: nanoid(6), type: 'logs', title: 'Logs', query: '' },
     { id: nanoid(6), type: 'traces', title: 'Recent traces', query: '' },
+    // The native engine-rendering path (GOC-88) is now the default rendering
+    // surface, not an opt-in add — a Chart panel ships in the default set,
+    // same as every other panel type. Starts with an empty query (matches the
+    // Logs/Traces defaults' pattern) so it never fires a guessed SQL query on
+    // load; the panel's own honest-state handling covers the rest.
+    { id: nanoid(6), type: 'viz', title: 'Chart', query: '', vizSpec: 'scatter||' },
   ]
 }
 
