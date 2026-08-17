@@ -168,3 +168,24 @@ export async function apiPost<T>(path: string, body?: unknown, schema?: z.ZodTyp
     return { ok: false, data: null, unavailable: false, error: String(err) }
   }
 }
+
+/**
+ * POST a `FormData` body (a file upload) to an arbitrary `/api/...` route
+ * (relative to {@link API_BASE}) — e.g. `/enhanced/voice/transcribe`. Shares
+ * {@link apiPost}'s envelope-unwrapping and graceful `unavailable` (404/501)
+ * handling; the only difference is the body shape (no JSON `Content-Type`,
+ * so the browser sets its own multipart boundary). See {@link gatewayGet}
+ * for `schema`.
+ */
+export async function apiPostForm<T>(
+  path: string,
+  formData: FormData,
+  schema?: z.ZodType<T>,
+): Promise<GatewayResult<T>> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { method: 'POST', body: formData })
+    return await toResult<T>(res, `${API_BASE}${path}`, schema)
+  } catch (err) {
+    return { ok: false, data: null, unavailable: false, error: String(err) }
+  }
+}

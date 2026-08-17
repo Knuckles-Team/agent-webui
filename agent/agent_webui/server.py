@@ -2039,10 +2039,18 @@ def main() -> None:
     from agent_utilities.server.webui_mcp_delegation import (
         webui_mcp_delegation_helpers,
     )
+    from agent_utilities.server.webui_voice_delegation import (
+        webui_voice_delegation_helpers,
+    )
+
+    webui_helpers = {
+        **webui_mcp_delegation_helpers(),
+        **webui_voice_delegation_helpers(),
+    }
 
     app = create_agent_web_app(
         agent,
-        workspace_helpers=webui_mcp_delegation_helpers(),
+        workspace_helpers=webui_helpers,
         listener_host=host,
     )
 
