@@ -444,15 +444,20 @@ builds shipped stale code to production three separate ways in one day
 docker/deploy.sh
 ```
 
-Builds the image against `buildkitd`, a shared BuildKit Deployment running
-inside the k8s cluster (spread across `r510`/`r710` -- see
-`services/buildkit-service/` for the full design and why this replaced a
-`docker` daemon on `r820`, which was stopped in the 2026-07-11 Swarm->RKE2
-cutover and cannot safely be started back up there), verifies the served
-bundle carries today's commit (via a throwaway in-cluster pod, immediately
-after the build is pushed -- see `docker/build_and_push.sh`'s header for why
-that check moved after push under BuildKit's client/server model), pushes to
-Docker Hub by digest, deploys by that digest, waits out a
+Builds the image via an auto-detected backend: a reachable `docker` daemon (a
+dev host's own local daemon, or the `r820` context as a documented fallback)
+if one exists, otherwise the shared `buildkitd` Deployment running inside the
+k8s cluster (spread across `r510`/`r710` -- see `services/buildkit-service/`
+for the full design; `r820`'s own docker daemon was stopped in the
+2026-07-11 Swarm->RKE2 cutover and cannot safely be started back up there).
+`docker/build_and_push.sh` prints which backend it picked and why before
+building anything; force one with `--backend docker|buildkit` or
+`BUILD_BACKEND=docker|buildkit` if auto-detection picks the wrong one. Either
+way it verifies the served bundle carries today's commit (locally before push
+under docker; via a throwaway in-cluster pod immediately after push under
+BuildKit, which has no local image store to run against -- see
+`docker/build_and_push.sh`'s header), pushes to Docker Hub by digest, deploys
+by that digest, waits out a
 60-second availability soak before Kubernetes will retire the old pod
 (`minReadySeconds: 60` on the Deployment), verifies the running pod's `imageID`
 actually changed, rebuilds the live-mounted frontend bundle on the canonical
