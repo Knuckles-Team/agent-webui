@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { PromqlPanel } from '../PromqlPanel'
 import { LogsPanel } from '../LogsPanel'
 import { TracesPanel } from '../TracesPanel'
+import { VizPanel } from '../VizPanel'
 import { TIME_RANGES } from '../queries'
 
 const RANGE = TIME_RANGES.find((r) => r.id === '1h')!
@@ -145,5 +146,167 @@ describe('TracesPanel', () => {
       expect(screen.getByText('checkout')).toBeInTheDocument()
     })
     expect(screen.getByText('db.query')).toBeInTheDocument()
+  })
+})
+
+// A real (tiny, valid) 1x1 PNG, base64-encoded -- proves the panel decodes an
+// actual image, not just any string.
+const TINY_PNG_B64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+
+describe('VizPanel (GOC-88, D-VZ-1 V5)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('renders a real chart image + LOD metadata for an exact render', async () => {
+    global.fetch = mockFetch({
+      '/api/graph/viz': {
+        body: {
+          status: 'success',
+          result: {
+            surface: 'viz',
+            action: 'plot_from_query',
+            rows_returned: 3,
+            rows_rendered: 3,
+            result: {
+              view_result: { row_count: 3, lod_tier: 'Direct', exact: true, reduction: 'None', wall_time_ms: 2 },
+              format: 'png',
+              content_type: 'image/png',
+              bytes: { __bytes_b64__: TINY_PNG_B64 },
+            },
+          },
+        },
+      },
+    }) as unknown as typeof fetch
+    render(
+      <VizPanel
+        title="Chart"
+        initialQuery="SELECT a, b FROM nodes"
+        initialMark="scatter"
+        initialXField="a"
+        initialYField="b"
+        refreshSignal={0}
+      />,
+    )
+    const img = await waitFor(() => screen.getByTestId('viz-panel-image'))
+    expect(img).toHaveAttribute('src', expect.stringContaining('data:image/png;base64,'))
+    expect(screen.getByText('exact')).toBeInTheDocument()
+    expect(screen.getByText(/tier: Direct/)).toBeInTheDocument()
+    const spy = global.fetch as unknown as ReturnType<typeof vi.fn>
+    expect(spy.mock.calls.some((c) => String(c[0]).includes('/api/graph/viz'))).toBe(true)
+  })
+
+  it('never fabricates a chart when the query returns no usable rows -- shows the real reason instead', async () => {
+    global.fetch = mockFetch({
+      '/api/graph/viz': {
+        body: {
+          status: 'success',
+          result: {
+            surface: 'viz',
+            action: 'plot_from_query',
+            unavailable: true,
+            reason: "query returned 2 row(s); 0 had every one of ['a', 'b'] present",
+          },
+        },
+      },
+    }) as unknown as typeof fetch
+    render(
+      <VizPanel
+        title="Chart"
+        initialQuery="SELECT a, b FROM nodes"
+        initialMark="scatter"
+        initialXField="a"
+        initialYField="b"
+        refreshSignal={0}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByText(/0 had every one of/)).toBeInTheDocument()
+    })
+    expect(screen.getByText(/not a fabricated empty chart/)).toBeInTheDocument()
+    expect(screen.queryByTestId('viz-panel-image')).not.toBeInTheDocument()
+  })
+
+  it('shows the capability-not-activated notice when the route is unavailable (404)', async () => {
+    global.fetch = mockFetch({ '/api/graph/viz': { status: 404 } }) as unknown as typeof fetch
+    render(
+      <VizPanel
+        title="Chart"
+        initialQuery="SELECT a, b FROM nodes"
+        initialMark="scatter"
+        initialXField="a"
+        initialYField="b"
+        refreshSignal={0}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByText(/not activated/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('viz-panel-image')).not.toBeInTheDocument()
+  })
+
+  it('shows the capability-not-activated notice when the engine build lacks the viz surface (degraded)', async () => {
+    global.fetch = mockFetch({
+      '/api/graph/viz': {
+        body: {
+          status: 'success',
+          result: {
+            surface: 'viz',
+            action: 'plot_from_query',
+            degraded: true,
+            error: "engine surface 'viz' is not available in this engine build",
+            tried: ['client.viz'],
+          },
+        },
+      },
+    }) as unknown as typeof fetch
+    render(
+      <VizPanel
+        title="Chart"
+        initialQuery="SELECT a, b FROM nodes"
+        initialMark="scatter"
+        initialXField="a"
+        initialYField="b"
+        refreshSignal={0}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByText(/not activated/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('viz-panel-image')).not.toBeInTheDocument()
+  })
+
+  it('does not query until a query/x/y field is provided, and runs on refresh once they are', async () => {
+    global.fetch = mockFetch({
+      '/api/graph/viz': {
+        body: {
+          status: 'success',
+          result: {
+            surface: 'viz',
+            action: 'plot_from_query',
+            rows_returned: 1,
+            rows_rendered: 1,
+            result: {
+              view_result: { row_count: 1, lod_tier: 'Direct', exact: true, reduction: 'None', wall_time_ms: 1 },
+              format: 'png',
+              content_type: 'image/png',
+              bytes: { __bytes_b64__: TINY_PNG_B64 },
+            },
+          },
+        },
+      },
+    }) as unknown as typeof fetch
+    render(<VizPanel title="Chart" initialQuery="" initialMark="scatter" initialXField="" initialYField="" refreshSignal={0} />)
+    expect(screen.getByText(/Enter a query/)).toBeInTheDocument()
+    const spy = global.fetch as unknown as ReturnType<typeof vi.fn>
+    expect(spy.mock.calls.length).toBe(0)
+    fireEvent.change(screen.getByLabelText('SQL query'), { target: { value: 'SELECT a, b FROM nodes' } })
+    fireEvent.change(screen.getByLabelText('x field'), { target: { value: 'a' } })
+    fireEvent.change(screen.getByLabelText('y field'), { target: { value: 'b' } })
+    fireEvent.click(screen.getByRole('button', { name: /Refresh panel/i }))
+    await waitFor(() => {
+      expect(screen.getByTestId('viz-panel-image')).toBeInTheDocument()
+    })
   })
 })

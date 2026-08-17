@@ -197,6 +197,103 @@ export async function queryTraces(query: string, limit = 20): Promise<GatewayRes
  * resolves to `{ unavailable: true }` and the Logs panel renders a read-only
  * placeholder rather than fabricating log lines.
  */
+// ── Native visualization (D-VZ-1 V5, graph_viz) ─────────────────────────────
+
+/** Marks a flat SQL result set can drive (matches `_VIZ_QUERY_MARKS` in
+ * `agent_utilities/mcp/tools/engine_surface_tools.py` — 'graph' node-link
+ * marks need a node/edge dataset shape a query row set can't provide, so
+ * they're intentionally excluded from this panel). */
+export const VIZ_MARKS = ['scatter', 'line', 'bar', 'area', 'heatmap'] as const
+export type VizMark = (typeof VIZ_MARKS)[number]
+
+export interface VizPlotParams {
+  query: string
+  mark: VizMark
+  xField: string
+  yField: string
+  colorField?: string
+  sizeField?: string
+  title?: string
+  widthPx?: number
+  heightPx?: number
+  format?: 'png' | 'svg' | 'pdf'
+}
+
+/**
+ * Render a chart from a live KG SQL query over `POST /graph/viz`
+ * (`graph_viz` action='plot_from_query', D-VZ-1 V5, the `agent_utilities`
+ * MCP tool's REST twin). The engine build/route ITSELF being unavailable
+ * (404/501, or the tools' own `{degraded: true}` shape) is already resolved
+ * to `unavailable: true` by `gatewayPost`'s envelope handling; a query that
+ * ran fine but returned zero rows for the requested fields carries its OWN
+ * `{unavailable: true, reason}` inside `data` — see {@link vizUnavailableReason}.
+ */
+export async function plotFromQuery(params: VizPlotParams): Promise<GatewayResult<unknown>> {
+  return gatewayPost<unknown>('/viz', {
+    action: 'plot_from_query',
+    query: params.query,
+    mark: params.mark,
+    x_field: params.xField,
+    y_field: params.yField,
+    color_field: params.colorField ?? '',
+    size_field: params.sizeField ?? '',
+    title: params.title ?? '',
+    width_px: params.widthPx ?? 900,
+    height_px: params.heightPx ?? 560,
+    format: params.format ?? 'png',
+  })
+}
+
+/** When a successful (HTTP 200, `ok: true`) `graph_viz` response body is the
+ * tool's own explicit "the query returned no usable rows" answer, return the
+ * backend's reason string; otherwise `null` — this is the "0 rows is real
+ * information, not route unavailability" case `gatewayPost`'s own
+ * `unavailable` flag does not cover (that only catches a missing/degraded
+ * ROUTE, not an empty RESULT), so the panel must check for it explicitly
+ * rather than render nothing and call it done. */
+export function vizUnavailableReason(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null
+  const rec = body as Record<string, unknown>
+  if (rec.unavailable !== true) return null
+  return typeof rec.reason === 'string' ? rec.reason : 'the query returned no usable rows'
+}
+
+/** One rendered chart, decoded from a successful `graph_viz` response body
+ * (`plot_from_query`/`export_chart`). `null` for any shape this doesn't
+ * recognise — never guesses at an image from a partial/malformed payload. */
+export interface VizRenderInfo {
+  dataUrl: string
+  format: string
+  exact: boolean
+  lodTier: string
+  rowCount: number
+  rowsReturned?: number
+  rowsRendered?: number
+  wallTimeMs?: number
+}
+
+export function adaptVizResult(body: unknown): VizRenderInfo | null {
+  if (!body || typeof body !== 'object') return null
+  const rec = body as Record<string, unknown>
+  const result = rec.result as Record<string, unknown> | undefined
+  if (!result || typeof result !== 'object') return null
+  const bytesField = result.bytes as Record<string, unknown> | undefined
+  const b64 = bytesField && typeof bytesField.__bytes_b64__ === 'string' ? bytesField.__bytes_b64__ : undefined
+  if (!b64) return null
+  const contentType = typeof result.content_type === 'string' ? result.content_type : 'application/octet-stream'
+  const viewResult = (result.view_result ?? {}) as Record<string, unknown>
+  return {
+    dataUrl: `data:${contentType};base64,${b64}`,
+    format: typeof result.format === 'string' ? result.format : 'png',
+    exact: viewResult.exact === true,
+    lodTier: typeof viewResult.lod_tier === 'string' ? viewResult.lod_tier : 'unknown',
+    rowCount: typeof viewResult.row_count === 'number' ? viewResult.row_count : 0,
+    rowsReturned: typeof rec.rows_returned === 'number' ? rec.rows_returned : undefined,
+    rowsRendered: typeof rec.rows_rendered === 'number' ? rec.rows_rendered : undefined,
+    wallTimeMs: typeof viewResult.wall_time_ms === 'number' ? viewResult.wall_time_ms : undefined,
+  }
+}
+
 export async function queryLogs(
   stream: string,
   range: TimeRange,
