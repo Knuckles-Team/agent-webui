@@ -81,7 +81,26 @@ test = [
     # from a graceful no-op into real per-route request-count/duration series
     # on `GET /metrics` — reusing the EXISTING gateway metrics stack instead
     # of a bespoke usage-analytics store.
-    "agent-utilities[agent-headless,graph,metrics]>=2.0.0"
+    #
+    # BUG-258/BUG-262 (2026-08-17): "imports cleanly ... with epistemic-graph
+    # absent" (above) was true and is still true -- import-time cleanliness
+    # was never the question. GOC-73 moved `epistemic-graph` from
+    # agent-utilities' hard base dependency to the opt-in `graphos` extra;
+    # before GOC-73 this repo got the engine CLIENT for free as a transitive
+    # base dep, so nobody had to name it. This app's own KG/MCP surface
+    # (`agent_webui.api_extensions`'s `/graph/*` routes, the MCP-servers
+    # inventory panel) resolves the engine at CALL time via
+    # `agent_utilities.knowledge_graph.core.graph_compute.GraphComputeEngine`,
+    # which needs `epistemic_graph.client` importable to reach the deployed
+    # `GRAPH_SERVICE_ENDPOINTS`. Confirmed live (2026-08-17): a freshly
+    # restarted pod logs "engine surface discovery: 'epistemic_graph' client
+    # unavailable ... ModuleNotFoundError" for every request that needs it —
+    # `graph-os` (a separately, correctly-packaged process) reaches the SAME
+    # engine fine, proving this is a missing-dependency gap in THIS image's
+    # closure, not a cluster outage. `graphos` pulls the published
+    # `epistemic-graph[full]` wheel like any other PyPI dependency (see
+    # agent-utilities' own `graphos` extra comment for the full contract).
+    "agent-utilities[agent-headless,graph,graphos,metrics]>=2.0.0"
 ]
 
 [[project.authors]]
