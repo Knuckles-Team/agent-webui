@@ -576,6 +576,21 @@ export const ROUTES: readonly RouteDef[] = [
     mobile: 'unsupported',
     element: lazy(() => import('@/components/views/EcosystemView')),
   },
+  // GOC-25: single additive entry -- the dynamic, discovery-driven catalog
+  // of every live package (see IntegrationsView.tsx's module docstring for
+  // how this generalizes BUG-018 and complements, rather than replaces,
+  // Ecosystem Hub above).
+  {
+    id: 'integrations.catalog',
+    path: '/integrations',
+    label: 'Integrations',
+    section: 'integrations',
+    blurb: 'Browse every package the live catalog reports and see its real availability, discovered automatically.',
+    icon: Compass,
+    minRole: 'user',
+    mobile: 'adapted',
+    element: lazy(() => import('@/components/views/IntegrationsView')),
+  },
 
   // --------------------------------------------------------- Documentation
   {
