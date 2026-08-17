@@ -508,6 +508,17 @@ export const ROUTES: readonly RouteDef[] = [
     element: lazy(() => import('@/components/views/SystemStatusView')),
   },
   {
+    id: 'observability.graphos-readiness',
+    path: '/graphos-readiness',
+    label: 'GraphOS Readiness',
+    section: 'observability',
+    blurb: 'See the real, live-probed verdict on whether GraphOS can actually answer a query right now.',
+    icon: ShieldCheck,
+    minRole: 'reader',
+    mobile: 'full',
+    element: lazy(() => import('@/components/views/GraphOSReadinessView')),
+  },
+  {
     id: 'observability.observability',
     path: '/observability',
     label: 'Observability',
