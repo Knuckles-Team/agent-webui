@@ -85,6 +85,7 @@ describe('SkillsView zod schemas — domain/tags/runnable round-trip (GOC-60-W06
   it('toolsDataSchema round-trips the full /api/enhanced/tools payload including skill_unclassified and skill_classification', () => {
     const raw = {
       mcp_tools: [],
+      mcp_status: { source: 'multiplexer', error: null },
       builtin_tools: [],
       skills: [
         {
@@ -138,6 +139,7 @@ function mockFetch(body: unknown) {
 
 const GROUPED_PAYLOAD = {
   mcp_tools: [],
+  mcp_status: { source: 'multiplexer', error: null },
   builtin_tools: [],
   skills: [
     {

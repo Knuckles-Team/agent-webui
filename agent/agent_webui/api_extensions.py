@@ -1847,10 +1847,17 @@ async def list_all_tools() -> dict[str, Any]:
     mcp_tools: list[dict[str, Any]] = []
     mcp_source = 'multiplexer'
     mcp_error: str | None = None
+    mux_config_path: Path | None = None
     try:
         from agent_utilities.mcp.shared_multiplexer import get_shared_multiplexer
 
         mux = await get_shared_multiplexer()
+        # ``getattr`` -- the real ``MCPMultiplexer`` always carries this, but a
+        # test/alternate stand-in that only implements ``list_catalog`` must
+        # not be broken by this diagnostic-only read (a missing attribute here
+        # would wrongly turn a WORKING multiplexer probe into an 'unavailable'
+        # status via the broad except below).
+        mux_config_path = getattr(mux, 'config_path', None)
         catalog = await mux.list_catalog(server='', include_tools=False)
         for row in list(catalog.get('servers', []))[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
             name = row.get('server')
@@ -1923,6 +1930,31 @@ async def list_all_tools() -> dict[str, Any]:
                 _log_failure('mcp_config_static_fallback', e)
                 if mcp_error is None:
                     mcp_error = f'{type(e).__name__}: static MCP config fallback failed'
+    if not mcp_tools and mcp_error is None:
+        # The multiplexer parsed cleanly (no exception -- ``mcp_source`` is
+        # still ``'multiplexer'``) and returned zero servers, and the static
+        # fallback above also found nothing. Two very different situations
+        # produce that identical shape: a deployment that genuinely has no
+        # fleet configured, or a deployment whose fleet catalog file is
+        # simply not present/mounted at the paths this process looks in.
+        # Silently reporting bare zero with ``error: null`` is indistinguishable
+        # from "checked, and there truly are none" (the fail-closed rule this
+        # codebase enforces elsewhere: a degraded read must never look like a
+        # healthy empty result). Disambiguate by naming which files were
+        # actually missing, without leaking their absolute host paths.
+        missing = []
+        if mux_config_path is not None and not mux_config_path.exists():
+            missing.append('the MCP multiplexer fleet catalog config')
+        if _mcp_inventory_path() is None:
+            missing.append('any static mcp_config.json fallback')
+        if missing:
+            mcp_source = 'unavailable'
+            mcp_error = (
+                'No MCP servers found because '
+                + ' and '.join(missing)
+                + ' is not present in this deployment -- 0 is a missing-'
+                'configuration state, not a fleet with no servers.'
+            )
     mcp_status = {'source': mcp_source, 'error': mcp_error}
     # 2. Built-in Agent Tools
     builtin_tools = []

@@ -99,8 +99,19 @@ interface SkillClassificationSummary {
   unclassified_count: number
 }
 
+/** Why `mcp_tools` looks the way it does -- distinguishes a genuinely empty
+ * fleet from a degraded/missing data source (GOC-60 lane authority/invariant
+ * 1: a missing source is an ERROR/DEGRADED state, never an indistinguishable
+ * silent `[]`). `error` is `null` for a healthy result (including a real
+ * "this fleet has zero servers" answer); non-null names what was missing. */
+interface MCPStatus {
+  source: string
+  error: string | null
+}
+
 interface ToolsData {
   mcp_tools: MCPTool[]
+  mcp_status: MCPStatus
   builtin_tools: BuiltinTool[]
   skills: Skill[]
   skill_graphs: SkillGraph[]
@@ -181,8 +192,13 @@ const skillClassificationSummarySchema: z.ZodType<SkillClassificationSummary> = 
   describe_only_count: z.number(),
   unclassified_count: z.number(),
 })
+const mcpStatusSchema: z.ZodType<MCPStatus> = z.object({
+  source: z.string(),
+  error: z.string().nullable(),
+})
 const toolsDataSchema: z.ZodType<ToolsData> = z.object({
   mcp_tools: looseArray(mcpToolSchema),
+  mcp_status: mcpStatusSchema,
   builtin_tools: looseArray(builtinToolSchema),
   skills: looseArray(skillSchema),
   skill_graphs: looseArray(skillGraphSchema),
@@ -362,6 +378,7 @@ function CognitiveBox({
 export default function SkillsView() {
   const [data, setData] = useState<ToolsData>({
     mcp_tools: [],
+    mcp_status: { source: 'multiplexer', error: null },
     builtin_tools: [],
     skills: [],
     skill_graphs: [],
@@ -640,7 +657,19 @@ export default function SkillsView() {
                 {activeTab === 'mcp' && (
                   <div className="space-y-4">
                     {filteredMcp.length === 0 ? (
-                      <div className="text-center py-12 text-muted-foreground text-sm">No MCP servers registered.</div>
+                      <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+                        <span className="text-muted-foreground text-sm">No MCP servers registered.</span>
+                        {data.mcp_status.error ? (
+                          <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-amber-300 max-w-xl text-left">
+                            <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                            <p className="text-xs">{data.mcp_status.error}</p>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground/70">
+                            Checked the MCP fleet catalog — it genuinely has no servers configured.
+                          </span>
+                        )}
+                      </div>
                     ) : (
                       <div className="grid grid-cols-1 gap-4">
                         {filteredMcp.map((server) => {

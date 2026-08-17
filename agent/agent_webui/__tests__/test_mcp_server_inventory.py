@@ -192,6 +192,90 @@ async def test_list_all_tools_never_renders_a_multiplexer_failure_as_a_silent_em
 
 
 @pytest.mark.asyncio
+async def test_list_all_tools_names_a_missing_fleet_config_instead_of_a_bare_zero(
+    monkeypatch, bounded_engine, tmp_path, install_shared_multiplexer
+) -> None:
+    """The live-deployment shape that motivated this test: the multiplexer
+    constructs and probes CLEANLY (no exception -- ``mcp_source`` stays
+    ``'multiplexer'``) but its own fleet catalog config file is simply not
+    present in this deployment, so it legitimately parses to zero servers.
+    Before this fix that rendered identically to "this fleet genuinely has no
+    servers" (``error: None``) -- indistinguishable from a real outage/gap.
+    It must now name that the config file was missing, not silently report a
+    bare empty list with no explanation (GOC-60 lane authority/invariant 1,
+    extended: a MISSING SOURCE FILE is exactly as reportable as a missing
+    data source through an exception).
+    """
+    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+
+    missing_config = tmp_path / 'mcp_config.json'  # never written -- absent
+
+    class _EmptyMultiplexerWithConfigPath:
+        def __init__(self, config_path):
+            self.config_path = config_path
+
+        async def list_catalog(
+            self, server: str = '', include_tools: bool = True
+        ) -> dict:
+            assert server == ''
+            assert include_tools is False
+            return {'servers': []}  # exactly what a missing-file load_catalog() yields
+
+    async def _get_shared_multiplexer() -> Any:
+        return _EmptyMultiplexerWithConfigPath(missing_config)
+
+    install_shared_multiplexer(_get_shared_multiplexer)
+    # The static degraded fallback also finds nothing -- both paths genuinely
+    # have no file to read, matching the real deployment gap this reproduces.
+    monkeypatch.setattr(api_extensions, '_mcp_inventory_path', lambda: None)
+
+    result = await api_extensions.list_all_tools()
+
+    assert result['mcp_tools'] == []
+    assert result['mcp_status']['source'] == 'unavailable'
+    assert result['mcp_status']['error'] is not None
+    assert 'not present in this deployment' in result['mcp_status']['error']
+
+
+@pytest.mark.asyncio
+async def test_list_all_tools_reports_a_genuinely_empty_fleet_as_healthy(
+    monkeypatch, bounded_engine, tmp_path, install_shared_multiplexer
+) -> None:
+    """The complement of the test above: when the multiplexer's OWN config
+    file DOES exist (it was just read and genuinely declares zero servers)
+    and a static fallback file also genuinely exists with nothing in it, zero
+    servers is an honest, healthy answer -- ``mcp_status.error`` must stay
+    ``None`` rather than crying wolf about a missing file that is not, in
+    fact, missing."""
+    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+
+    present_but_empty_config = tmp_path / 'mcp_config.json'
+    present_but_empty_config.write_text('{"mcpServers": {}}')
+
+    class _EmptyMultiplexerWithConfigPath:
+        def __init__(self, config_path):
+            self.config_path = config_path
+
+        async def list_catalog(
+            self, server: str = '', include_tools: bool = True
+        ) -> dict:
+            return {'servers': []}
+
+    async def _get_shared_multiplexer() -> Any:
+        return _EmptyMultiplexerWithConfigPath(present_but_empty_config)
+
+    install_shared_multiplexer(_get_shared_multiplexer)
+    monkeypatch.setattr(
+        api_extensions, '_mcp_inventory_path', lambda: present_but_empty_config
+    )
+
+    result = await api_extensions.list_all_tools()
+
+    assert result['mcp_tools'] == []
+    assert result['mcp_status'] == {'source': 'multiplexer', 'error': None}
+
+
+@pytest.mark.asyncio
 async def test_list_all_tools_labels_the_static_fallback_as_degraded_not_equivalent(
     monkeypatch, bounded_engine, tmp_path, install_shared_multiplexer
 ) -> None:
