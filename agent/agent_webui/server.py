@@ -78,6 +78,10 @@ _REMOTE_DEFAULT_RATE = 20.0
 _REMOTE_DEFAULT_BURST = 40.0
 _MAX_WEBSOCKET_MESSAGE_BYTES = 1024 * 1024
 _MAX_BEARER_TOKEN_BYTES = 16 * 1024
+# BUG-019 (GOC-29): bound on how many widget ids a `/ws/dashboard` `subscribe`
+# message may name in one call -- matches api_extensions.py's
+# `_MAX_EXTERNAL_COLLECTION_ITEMS` bound on external collections generally.
+_MAX_DASHBOARD_SUBSCRIBE_WIDGET_IDS = 256
 # W-19: how often `/ws/dashboard` pushes an `update` message after its initial
 # `snapshot`. Matches the Aggregator's own short read cache (`agent_utilities.
 # gateway.api`'s 10s-TTL comment) so a push never re-fetches data the cache
@@ -1774,38 +1778,70 @@ def create_agent_web_app(
             than silently keep rendering the prior data as if it were still
             live. `sequence` lets a client also detect a duplicate/out-of-order
             delivery within one connection.
+
+            BUG-019 (GOC-29, subscription-scoped fetch): the client MAY send
+            `{"type": "subscribe", "widget_ids": [...]}` at any point -- the
+            reply used to be silently discarded (this receive was only ever
+            used to detect a dead socket). `DashboardView.tsx` sends one
+            whenever its visible widget set changes (a group collapses/
+            expands, or the search filter narrows it), naming exactly the
+            widget ids currently rendered on screen. Once a subscription is
+            received, every subsequent push (this endpoint still has to poll
+            the FULL dashboard internally -- `get_full_dashboard()` has no
+            per-widget query form -- but the `data` field on the wire is
+            filtered to the subscribed set, so a collapsed group's widgets
+            are computed but never sent. Before any subscribe message
+            arrives, the full set is sent (matches every pre-existing
+            caller/test that never subscribes at all).
             """
             await websocket.accept()
             stream_id = uuid.uuid4().hex
             sequence = 0
             message_type = 'snapshot'
+            subscribed_widget_ids: set[str] | None = None
             try:
                 while True:
                     full = await get_full_dashboard()
                     sequence += 1
+                    payload_data = {
+                        widget_id: widget.model_dump(mode='json')
+                        for widget_id, widget in full.data.items()
+                        if subscribed_widget_ids is None
+                        or widget_id in subscribed_widget_ids
+                    }
                     await websocket.send_json(
                         {
                             'type': message_type,
                             'stream_id': stream_id,
                             'sequence': sequence,
-                            'data': {
-                                widget_id: widget.model_dump(mode='json')
-                                for widget_id, widget in full.data.items()
-                            },
+                            'data': payload_data,
                         }
                     )
                     message_type = 'update'
                     try:
-                        # The client never sends anything meaningful (see
-                        # DashboardView.tsx — it only listens); this is purely
-                        # the cheapest way to notice a disconnect promptly
-                        # instead of blocking a full interval on a dead socket.
-                        await asyncio.wait_for(
+                        raw = await asyncio.wait_for(
                             websocket.receive_text(),
                             timeout=_DASHBOARD_WS_PUSH_INTERVAL_SECONDS,
                         )
                     except TimeoutError:
-                        pass
+                        continue
+                    try:
+                        parsed = json.loads(raw)
+                    except (TypeError, ValueError):
+                        continue
+                    if (
+                        not isinstance(parsed, dict)
+                        or parsed.get('type') != 'subscribe'
+                    ):
+                        continue
+                    widget_ids = parsed.get('widget_ids')
+                    if not isinstance(widget_ids, list):
+                        continue
+                    subscribed_widget_ids = {
+                        wid
+                        for wid in widget_ids[:_MAX_DASHBOARD_SUBSCRIBE_WIDGET_IDS]
+                        if isinstance(wid, str)
+                    }
             except WebSocketDisconnect:
                 pass
             except Exception as exc:  # noqa: BLE001
