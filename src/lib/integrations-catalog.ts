@@ -24,34 +24,43 @@
  *    This is the ONLY source of "what packages exist" -- a package this
  *    endpoint does not report is never listed, and every package it DOES
  *    report gets an item, full stop.
- * 2. `GET /api/enhanced/frontend-contributions` (GOC-24,
- *    `agent_utilities.core.frontend_providers.discover_frontend_contributions`)
- *    -- the DESCRIPTOR authority for a package's WebUI integration (title,
- *    version, read models, actions). As verified against `main` on
- *    2026-08-16, this route does not exist on the backend yet -- GOC-24's
- *    own consumer client (`frontend-contributions.ts`) is uncommitted work
- *    in a sibling worktree and its module docstring records the same gap
- *    ("this REST route does not exist on the backend yet"). This module
- *    treats that absence as a first-class, honest catalog state
+ * 2. `GET /api/enhanced/frontend-contributions` (GOC-24) -- the DESCRIPTOR
+ *    authority. This module does NOT re-implement that schema: it consumes
+ *    the canonical `fetchFrontendContributions()` client from
+ *    `./frontend-contributions.ts` (GOC-24, merged same wave), which owns
+ *    the full `FrontendContribution.v1` vendor contract and its own
+ *    "never fabricate state" structural guarantee (a `BLOCKED`/`MISSING`
+ *    record's `descriptor` is `null` at the TYPE level -- see that module's
+ *    docstring). Duplicating that schema here would be exactly the
+ *    "parallel lanes produce duplicate implementations" trap; this module
+ *    is a thin, catalog-shaped CONSUMER of it, nothing more.
+ *
+ *    As verified against `main` on 2026-08-16, the REST route itself
+ *    (`/api/enhanced/frontend-contributions`) does not exist on the backend
+ *    yet -- `frontend-contributions.ts`'s own module docstring records the
+ *    gap ("AU has no REST/MCP twin ... in this lane"). This module treats
+ *    that absence as a first-class, honest catalog state
  *    (`descriptorCatalogState: 'unavailable'`), never as a reason to hide
- *    the parity list, and never by fabricating a descriptor. When GOC-24
- *    ships the route this module's fetch simply starts succeeding -- no
- *    caller-side flag flip needed.
+ *    the parity list, and never by fabricating a descriptor. When GOC-24's
+ *    follow-up ships the route, `fetchFrontendContributions()` simply
+ *    starts succeeding -- no caller-side flag flip needed here.
  *
  * Charter rule enforced structurally: an item's `status` can be `'available'`
- * (or `'degraded'`) ONLY when a real, per-record schema-valid `OK`/`DEGRADED`
- * descriptor backs it. Every other case -- no descriptor catalog at all, no
- * record for this package, a record whose status is `BLOCKED`/`MISSING`, or
- * a record that fails THIS module's own schema check (a required field
- * missing or wrong-typed) -- resolves to `'blocked'`/`'not_configured'` with
- * an explicit `reason`, never a silently-omitted item and never an item that
- * *looks* available without backing data. A malformed record for package A
- * never blocks package B's descriptor (records are validated one at a time),
- * matching this module's "never let one bad actor hide the rest" precedent
- * (`EcosystemView.tsx`'s `classifyEcosystemList`).
+ * (or `'degraded'`) ONLY when `fetchFrontendContributions()` itself reports a
+ * real `OK`/`DEGRADED` record for that package -- this module never widens
+ * what that client already validated or rejected. Every other case -- no
+ * descriptor catalog at all, no record for this package, a record whose
+ * status is `BLOCKED`/`MISSING`, or the WHOLE descriptor catalog failing its
+ * own schema (GOC-24's schema validates the catalog atomically, so one
+ * malformed record fails every record, not just itself -- this module
+ * mirrors that atomicity rather than papering over it with a laxer,
+ * per-record fallback) -- resolves to `'blocked'`/`'not_configured'` with an
+ * explicit `reason`, never a silently-omitted item and never an item that
+ * *looks* available without backing data.
  */
 import { z } from 'zod'
 import { ApiError, ApiShapeError, fetchValidated, looseArray } from './api-validation'
+import { fetchFrontendContributions, type FrontendContributionRecord } from './frontend-contributions'
 
 export const INTEGRATION_STATUSES = ['available', 'degraded', 'blocked', 'not_configured'] as const
 export type IntegrationStatus = (typeof INTEGRATION_STATUSES)[number]
@@ -61,13 +70,13 @@ export type IntegrationStatus = (typeof INTEGRATION_STATUSES)[number]
  * independently here (no import) to keep this module view-free. */
 export type CatalogSourceState = 'ready' | 'empty' | 'unavailable' | 'error'
 
-/** The minimal, safe-to-render subset of a GOC-24 `FrontendContribution.v1`
- * descriptor this module extracts. Deliberately NOT a full mirror of that
- * schema (GOC-24 owns the full vendor contract) -- only fields this
- * catalog's list/detail surface actually renders. */
+/** The safe-to-render subset of a GOC-24 `FrontendContribution.v1`
+ * descriptor this catalog's list/detail surface actually renders. Field
+ * values are copied verbatim from `frontend-contributions.ts`'s validated
+ * record -- never re-derived or guessed. */
 export interface IntegrationDescriptor {
   title: string
-  packageVersion: string | null
+  packageVersion: string
   readModelIds: string[]
   actionIds: string[]
 }
@@ -93,7 +102,8 @@ export interface IntegrationsCatalog {
   observedAt: string
 }
 
-/** Resource budget (lane doc: "Browser catalog page ≤100 entries"). */
+/** Resource budget (lane doc: "Browser catalog page ≤100 entries"); matches
+ * `frontend-contributions.ts`'s own `.max(100)` on the descriptor catalog. */
 export const MAX_CATALOG_ITEMS = 100
 
 // ---------------------------------------------------------------------------
@@ -128,52 +138,22 @@ async function fetchLiveServiceCatalog(): Promise<LiveCatalogResult> {
 }
 
 // ---------------------------------------------------------------------------
-// Descriptor authority (GOC-24) -- best-effort, gap is expected today
+// Descriptor authority (GOC-24, consumed via `frontend-contributions.ts`)
 // ---------------------------------------------------------------------------
-
-const DESCRIPTOR_STATUSES = ['OK', 'DEGRADED', 'BLOCKED', 'MISSING'] as const
-
-/** Loose top-level envelope: only enough shape to iterate `packages` as
- * unknown records -- each record is validated on its own below so one bad
- * record can never invalidate the whole response. */
-const rawDescriptorCatalogSchema = z.object({
-  packages: looseArray(z.record(z.string(), z.unknown())),
-})
-
-const descriptorRecordSchema = z.object({
-  package_id: z.string().min(1).max(256),
-  status: z.enum(DESCRIPTOR_STATUSES),
-  reason: z.string().nullable().optional(),
-  descriptor: z
-    .object({
-      title: z.string().min(1).max(256),
-      package_version: z.string().min(1).max(128).nullable().optional(),
-      read_models: z.array(z.object({ id: z.string().min(1).max(128) })).optional(),
-      actions: z.array(z.object({ id: z.string().min(1).max(128) })).optional(),
-    })
-    .nullable()
-    .optional(),
-})
-type DescriptorRecord = z.infer<typeof descriptorRecordSchema>
-
-type DescriptorEntry = { valid: true; record: DescriptorRecord } | { valid: false; reason: string }
 
 interface DescriptorCatalogResult {
   state: CatalogSourceState
   reason: string | null
-  recordsById: Map<string, DescriptorEntry>
+  recordsById: Map<string, FrontendContributionRecord>
 }
 
 async function fetchDescriptorCatalog(): Promise<DescriptorCatalogResult> {
-  let res: Response
   try {
-    res = await fetch('/api/enhanced/frontend-contributions', { credentials: 'same-origin' })
-  } catch {
-    return { state: 'unavailable', reason: 'The descriptor catalog could not be reached.', recordsById: new Map() }
-  }
-
-  if (!res.ok) {
-    if (res.status === 404) {
+    const catalog = await fetchFrontendContributions()
+    const recordsById = new Map(catalog.packages.map((record) => [record.package_id, record]))
+    return { state: catalog.packages.length > 0 ? 'ready' : 'empty', reason: null, recordsById }
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
       // Expected today (GOC-24 gap, see module docstring) -- an honest
       // "not deployed yet", not an error.
       return {
@@ -182,48 +162,18 @@ async function fetchDescriptorCatalog(): Promise<DescriptorCatalogResult> {
         recordsById: new Map(),
       }
     }
-    const body = await res.text().catch(() => '')
-    return {
-      state: 'error',
-      reason: `Descriptor catalog HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ''}`,
-      recordsById: new Map(),
+    if (err instanceof ApiError) {
+      return {
+        state: 'error',
+        reason: `Descriptor catalog HTTP ${err.status}${err.body ? `: ${err.body.slice(0, 200)}` : ''}`,
+        recordsById: new Map(),
+      }
     }
-  }
-
-  let raw: unknown
-  try {
-    raw = await res.json()
-  } catch {
-    return { state: 'error', reason: 'Descriptor catalog response was not valid JSON.', recordsById: new Map() }
-  }
-
-  const parsedTop = rawDescriptorCatalogSchema.safeParse(raw)
-  if (!parsedTop.success) {
-    return {
-      state: 'error',
-      reason: 'Descriptor catalog response did not match the expected envelope (missing/invalid `packages`).',
-      recordsById: new Map(),
+    if (err instanceof ApiShapeError) {
+      return { state: 'error', reason: err.message, recordsById: new Map() }
     }
+    return { state: 'unavailable', reason: 'The descriptor catalog could not be reached.', recordsById: new Map() }
   }
-
-  const recordsById = new Map<string, DescriptorEntry>()
-  for (const rawRecord of parsedTop.data.packages) {
-    const idResult = z.string().min(1).max(256).safeParse(rawRecord.package_id)
-    if (!idResult.success) continue // cannot attribute to any package; safe to skip (not the parity source)
-    const parsed = descriptorRecordSchema.safeParse(rawRecord)
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0]
-      const path = issue.path.length > 0 ? issue.path.join('.') : '<root>'
-      recordsById.set(idResult.data, {
-        valid: false,
-        reason: `Descriptor record failed validation at '${path}': ${issue.message}.`,
-      })
-      continue
-    }
-    recordsById.set(idResult.data, { valid: true, record: parsed.data })
-  }
-
-  return { state: parsedTop.data.packages.length > 0 ? 'ready' : 'empty', reason: null, recordsById }
 }
 
 // ---------------------------------------------------------------------------
@@ -240,8 +190,8 @@ function composeItem(packageId: string, descriptors: DescriptorCatalogResult): I
     }
   }
 
-  const entry = descriptors.recordsById.get(packageId)
-  if (!entry) {
+  const record = descriptors.recordsById.get(packageId)
+  if (!record) {
     return {
       packageId,
       status: 'not_configured',
@@ -249,38 +199,24 @@ function composeItem(packageId: string, descriptors: DescriptorCatalogResult): I
       descriptor: null,
     }
   }
-  if (!entry.valid) {
-    return { packageId, status: 'blocked', reason: entry.reason, descriptor: null }
-  }
 
-  const record = entry.record
   if (record.status === 'BLOCKED' || record.status === 'MISSING') {
-    return {
-      packageId,
-      status: 'blocked',
-      reason: record.reason ?? 'The backend blocked this package.',
-      descriptor: null,
-    }
-  }
-  if (!record.descriptor) {
-    return {
-      packageId,
-      status: 'blocked',
-      reason: `Descriptor record reported '${record.status}' but carried no descriptor payload.`,
-      descriptor: null,
-    }
+    return { packageId, status: 'blocked', reason: record.reason, descriptor: null }
   }
 
+  // `record.status` is now narrowed to 'OK' | 'DEGRADED' -- `frontend-
+  // contributions.ts`'s discriminated union guarantees `descriptor` is
+  // non-null for both (structurally, not by convention).
   const descriptor: IntegrationDescriptor = {
     title: record.descriptor.title,
-    packageVersion: record.descriptor.package_version ?? null,
-    readModelIds: (record.descriptor.read_models ?? []).map((m) => m.id),
-    actionIds: (record.descriptor.actions ?? []).map((a) => a.id),
+    packageVersion: record.descriptor.package_version,
+    readModelIds: record.descriptor.read_models.map((m) => m.id),
+    actionIds: record.descriptor.actions.map((a) => a.id),
   }
   return {
     packageId,
     status: record.status === 'DEGRADED' ? 'degraded' : 'available',
-    reason: record.status === 'DEGRADED' ? (record.reason ?? 'This integration is degraded.') : null,
+    reason: record.status === 'DEGRADED' ? record.reason : null,
     descriptor,
   }
 }

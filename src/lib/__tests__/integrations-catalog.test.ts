@@ -3,8 +3,12 @@
  *
  * These prove the composition rules from the module docstring against
  * mocked `fetch`, matching this repo's existing convention for API-client
- * tests (`readiness-api.test.ts`, `McpAppsView.test.tsx`): no live network,
- * every branch driven by a synthetic response.
+ * tests (`readiness-api.test.ts`, `frontend-contributions.test.ts`): no live
+ * network, every branch driven by a synthetic response. Descriptor
+ * catalog fixtures follow `frontend-contributions.ts`'s real
+ * `FrontendContribution.v1` shape exactly (that module is the schema
+ * authority this client consumes -- see integrations-catalog.ts's
+ * docstring) rather than a simplified stand-in.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchIntegrationsCatalog, MAX_CATALOG_ITEMS } from '@/lib/integrations-catalog'
@@ -32,6 +36,56 @@ function mockFetch(handlers: { services?: () => Response; contributions?: () => 
     }
     return Promise.reject(new Error(`unexpected fetch: ${url}`))
   }) as unknown as typeof fetch
+}
+
+const DIGEST_A = `sha256:${'a'.repeat(64)}`
+const DIGEST_B = `sha256:${'b'.repeat(64)}`
+
+/** A fully valid `FrontendContribution.v1` descriptor -- every field
+ * `frontend-contributions.ts`'s `frontendContributionSchema` (a
+ * `.strictObject`, extra=forbid) requires. */
+function validDescriptor(packageId: string, title: string): Record<string, unknown> {
+  return {
+    schema_version: 'frontend-contribution.v1',
+    package_id: packageId,
+    package_version: '1.0.0',
+    descriptor_version: 1,
+    descriptor_digest: DIGEST_A,
+    title,
+    icon: 'plug',
+    nav: { section: 'integrations', order: 1 },
+    required_scopes: [],
+    read_models: [
+      { id: 'inventory', schema: 'Asset.v1', capability: `${packageId}.inventory`, renderer: 'data-table' },
+    ],
+    actions: [],
+    panels: [],
+    realtime_topics: [],
+    empty_state: 'No data reported.',
+    docs_ref: `pkg:${packageId}/docs/README.md`,
+    provenance: { source: 'package-entry-point', signer_key_id: 'key-1', artifact_digest: DIGEST_B },
+    extensions: {},
+  }
+}
+
+/** A valid record wrapping the descriptor above, for a given status. */
+function validRecord(
+  packageId: string,
+  title: string,
+  status: 'OK' | 'DEGRADED' | 'BLOCKED' | 'MISSING',
+  reason?: string,
+) {
+  const carriesDescriptor = status === 'OK' || status === 'DEGRADED'
+  return {
+    status,
+    package_id: packageId,
+    provider_name: `${packageId}-provider`,
+    reason: status === 'OK' ? null : (reason ?? `${status.toLowerCase()} reason`),
+    descriptor: carriesDescriptor ? validDescriptor(packageId, title) : null,
+    descriptor_digest: carriesDescriptor ? DIGEST_A : null,
+    registration_digest: 'reg-digest',
+    source_digest: carriesDescriptor ? 'src-digest' : null,
+  }
 }
 
 afterEach(() => {
@@ -66,21 +120,7 @@ describe('fetchIntegrationsCatalog', () => {
     mockFetch({
       services: () => jsonResponse(['gitlab-api']),
       contributions: () =>
-        jsonResponse({
-          packages: [
-            {
-              package_id: 'gitlab-api',
-              status: 'OK',
-              reason: null,
-              descriptor: {
-                title: 'GitLab',
-                package_version: '1.0.0',
-                read_models: [{ id: 'merge_requests' }],
-                actions: [{ id: 'gitlab.merge_request.review' }],
-              },
-            },
-          ],
-        }),
+        jsonResponse({ catalog_epoch: DIGEST_A, packages: [validRecord('gitlab-api', 'GitLab', 'OK')] }),
     })
 
     const catalog = await fetchIntegrationsCatalog()
@@ -91,57 +131,25 @@ describe('fetchIntegrationsCatalog', () => {
     expect(item?.descriptor).toEqual({
       title: 'GitLab',
       packageVersion: '1.0.0',
-      readModelIds: ['merge_requests'],
-      actionIds: ['gitlab.merge_request.review'],
+      readModelIds: ['inventory'],
+      actionIds: [],
     })
   })
 
-  it('KNOWN-BAD PROOF: a descriptor record missing its required title field is never rendered as available', async () => {
+  it('a DEGRADED record renders as degraded, carrying its reason and real descriptor', async () => {
     mockFetch({
-      services: () => jsonResponse(['broken-descriptor-pkg']),
+      services: () => jsonResponse(['flaky-pkg']),
       contributions: () =>
         jsonResponse({
-          packages: [
-            {
-              package_id: 'broken-descriptor-pkg',
-              status: 'OK',
-              reason: null,
-              // `title` (required by descriptorRecordSchema) is missing.
-              descriptor: { package_version: '2.0.0', read_models: [], actions: [] },
-            },
-          ],
+          catalog_epoch: DIGEST_A,
+          packages: [validRecord('flaky-pkg', 'Flaky', 'DEGRADED', 'a referenced capability is unavailable')],
         }),
     })
-
     const catalog = await fetchIntegrationsCatalog()
-    const item = catalog.items.find((i) => i.packageId === 'broken-descriptor-pkg')
-    expect(item).toBeDefined()
-    expect(item?.status).not.toBe('available')
-    expect(item?.status).toBe('blocked')
-    expect(item?.reason).toMatch(/failed validation/i)
-    expect(item?.descriptor).toBeNull()
-  })
-
-  it("KNOWN-BAD PROOF: one malformed descriptor record does not block a sibling package's valid descriptor", async () => {
-    mockFetch({
-      services: () => jsonResponse(['broken-pkg', 'healthy-pkg']),
-      contributions: () =>
-        jsonResponse({
-          packages: [
-            { package_id: 'broken-pkg', status: 'OK', reason: null, descriptor: { package_version: 'x' } },
-            {
-              package_id: 'healthy-pkg',
-              status: 'OK',
-              reason: null,
-              descriptor: { title: 'Healthy', package_version: '1.0.0', read_models: [], actions: [] },
-            },
-          ],
-        }),
-    })
-
-    const catalog = await fetchIntegrationsCatalog()
-    expect(catalog.items.find((i) => i.packageId === 'broken-pkg')?.status).toBe('blocked')
-    expect(catalog.items.find((i) => i.packageId === 'healthy-pkg')?.status).toBe('available')
+    const item = catalog.items.find((i) => i.packageId === 'flaky-pkg')
+    expect(item?.status).toBe('degraded')
+    expect(item?.reason).toBe('a referenced capability is unavailable')
+    expect(item?.descriptor?.title).toBe('Flaky')
   })
 
   it('a BLOCKED/MISSING descriptor record renders as blocked with its stated reason, not silently omitted', async () => {
@@ -149,9 +157,8 @@ describe('fetchIntegrationsCatalog', () => {
       services: () => jsonResponse(['locked-pkg']),
       contributions: () =>
         jsonResponse({
-          packages: [
-            { package_id: 'locked-pkg', status: 'BLOCKED', reason: 'signature verification failed', descriptor: null },
-          ],
+          catalog_epoch: DIGEST_A,
+          packages: [validRecord('locked-pkg', 'Locked', 'BLOCKED', 'signature verification failed')],
         }),
     })
 
@@ -159,6 +166,44 @@ describe('fetchIntegrationsCatalog', () => {
     const item = catalog.items.find((i) => i.packageId === 'locked-pkg')
     expect(item?.status).toBe('blocked')
     expect(item?.reason).toBe('signature verification failed')
+    expect(item?.descriptor).toBeNull()
+  })
+
+  it('KNOWN-BAD PROOF: a descriptor catalog missing a required field (title) never lets ANY item render as available', async () => {
+    const brokenDescriptor = validDescriptor('broken-descriptor-pkg', 'Broken')
+    delete brokenDescriptor.title // required by frontend-contributions.ts's strict schema
+
+    mockFetch({
+      services: () => jsonResponse(['broken-descriptor-pkg', 'sibling-pkg']),
+      contributions: () =>
+        jsonResponse({
+          catalog_epoch: DIGEST_A,
+          packages: [
+            {
+              status: 'OK',
+              package_id: 'broken-descriptor-pkg',
+              provider_name: 'p',
+              reason: null,
+              descriptor: brokenDescriptor,
+              descriptor_digest: DIGEST_A,
+              registration_digest: 'r',
+              source_digest: 's',
+            },
+            validRecord('sibling-pkg', 'Sibling', 'OK'),
+          ],
+        }),
+    })
+
+    const catalog = await fetchIntegrationsCatalog()
+    // GOC-24's own schema validates the descriptor catalog atomically (one
+    // malformed record fails the whole array) -- this client mirrors that,
+    // never inventing a laxer per-record fallback of its own.
+    expect(catalog.descriptorCatalogState).toBe('error')
+    for (const item of catalog.items) {
+      expect(item.status).not.toBe('available')
+      expect(item.status).toBe('not_configured')
+      expect(item.reason).toBeTruthy()
+    }
   })
 
   it('KNOWN-BAD PROOF: a live-catalog backend error renders as an explicit failure, never as an empty-looking success', async () => {
@@ -191,17 +236,15 @@ describe('fetchIntegrationsCatalog', () => {
     expect(catalog.items).toEqual([])
   })
 
-  it('a malformed descriptor-catalog envelope (packages not an array of objects) is an explicit error, not fabricated success', async () => {
+  it('a package with no descriptor record at all (present in live list, absent from descriptor catalog) is not_configured', async () => {
     mockFetch({
-      services: () => jsonResponse(['some-pkg']),
-      contributions: () => jsonResponse({ packages: 'not-an-array-of-objects' }),
+      services: () => jsonResponse(['undescribed-pkg']),
+      contributions: () => jsonResponse({ catalog_epoch: DIGEST_A, packages: [] }),
     })
     const catalog = await fetchIntegrationsCatalog()
-    expect(catalog.descriptorCatalogState).toBe('error')
-    // Base parity list must still be intact even though the descriptor
-    // authority failed -- the two authorities fail independently.
-    expect(catalog.items.map((i) => i.packageId)).toEqual(['some-pkg'])
-    expect(catalog.items[0].status).toBe('not_configured')
+    const item = catalog.items.find((i) => i.packageId === 'undescribed-pkg')
+    expect(item?.status).toBe('not_configured')
+    expect(item?.reason).toBeTruthy()
   })
 
   it('caps the catalog at MAX_CATALOG_ITEMS and sorts deterministically', async () => {

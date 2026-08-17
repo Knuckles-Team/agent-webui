@@ -33,6 +33,53 @@ function mockFetch(handlers: { services?: () => Response; contributions?: () => 
   }) as unknown as typeof fetch
 }
 
+const DIGEST_A = `sha256:${'a'.repeat(64)}`
+const DIGEST_B = `sha256:${'b'.repeat(64)}`
+
+/** A fully valid `FrontendContribution.v1` OK record, matching
+ * `frontend-contributions.ts`'s real (strict) schema -- see
+ * `integrations-catalog.test.ts` for the schema-authority rationale. */
+function validOkRecord(packageId: string, title: string) {
+  return {
+    status: 'OK',
+    package_id: packageId,
+    provider_name: `${packageId}-provider`,
+    reason: null,
+    descriptor: {
+      schema_version: 'frontend-contribution.v1',
+      package_id: packageId,
+      package_version: '1.0.0',
+      descriptor_version: 1,
+      descriptor_digest: DIGEST_A,
+      title,
+      icon: 'plug',
+      nav: { section: 'integrations', order: 1 },
+      required_scopes: [],
+      read_models: [
+        { id: 'inventory', schema: 'ChangeRequest.v1', capability: `${packageId}.mrs`, renderer: 'data-table' },
+      ],
+      actions: [
+        {
+          id: 'a',
+          capability: `${packageId}.review`,
+          placement: 'row',
+          confirm: 'preflight',
+          approval_class: 'change',
+        },
+      ],
+      panels: [],
+      realtime_topics: [],
+      empty_state: 'No data reported.',
+      docs_ref: `pkg:${packageId}/docs/README.md`,
+      provenance: { source: 'package-entry-point', signer_key_id: 'key-1', artifact_digest: DIGEST_B },
+      extensions: {},
+    },
+    descriptor_digest: DIGEST_A,
+    registration_digest: 'reg-digest',
+    source_digest: 'src-digest',
+  }
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
@@ -57,16 +104,7 @@ describe('IntegrationsView', () => {
     mockFetch({
       services: () => jsonResponse(['gitlab-api']),
       contributions: () =>
-        jsonResponse({
-          packages: [
-            {
-              package_id: 'gitlab-api',
-              status: 'OK',
-              reason: null,
-              descriptor: { title: 'GitLab', package_version: '1.0.0', read_models: [{ id: 'mrs' }], actions: [] },
-            },
-          ],
-        }),
+        jsonResponse({ catalog_epoch: DIGEST_A, packages: [validOkRecord('gitlab-api', 'GitLab')] }),
     })
 
     render(<IntegrationsView />)
@@ -92,21 +130,7 @@ describe('IntegrationsView', () => {
     mockFetch({
       services: () => jsonResponse(['gitlab-api']),
       contributions: () =>
-        jsonResponse({
-          packages: [
-            {
-              package_id: 'gitlab-api',
-              status: 'OK',
-              reason: null,
-              descriptor: {
-                title: 'GitLab',
-                package_version: '1.0.0',
-                read_models: [{ id: 'mrs' }],
-                actions: [{ id: 'a' }],
-              },
-            },
-          ],
-        }),
+        jsonResponse({ catalog_epoch: DIGEST_A, packages: [validOkRecord('gitlab-api', 'GitLab')] }),
     })
 
     render(<IntegrationsView />)
