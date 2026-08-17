@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render } from '@testing-library/react'
+import { render, waitFor } from '@testing-library/react'
+import { toast } from 'sonner'
 
 import WorkflowEditorView from '@/components/views/WorkflowEditorView'
 import { api } from '@/lib/api'
@@ -82,5 +83,22 @@ describe('WorkflowEditorView', () => {
   it('exposes the typed API surface the view consumes', () => {
     expect(typeof api.saveWorkflow).toBe('function')
     expect(typeof api.runWorkflow).toBe('function')
+  })
+
+  it('D-W5WR-4: shows a typed error instead of silently rendering an empty saved-workflow list on a real backend failure', async () => {
+    const toastErrorSpy = vi.spyOn(toast, 'error').mockImplementation(() => 'toast-id')
+    vi.mocked(api.listWorkflows).mockRejectedValueOnce(
+      new Error('Knowledge Graph workflow query failed'),
+    )
+
+    render(<WorkflowEditorView />)
+
+    await waitFor(() => {
+      expect(toastErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to load saved workflows'),
+      )
+    })
+
+    toastErrorSpy.mockRestore()
   })
 })

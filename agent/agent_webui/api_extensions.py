@@ -8006,7 +8006,8 @@ async def list_workflows() -> list[dict[str, Any]]:
     Returns a list of ``{id, name, steps, orchestrates, canvas}`` dicts. The
     canvas (editor node/edge/layout JSON) is loaded from the sibling
     ``:WorkflowCanvas`` node when present so the editor round-trips exactly.
-    Degrades to ``[]`` on any error.
+    A genuinely empty graph returns ``[]``; a backend failure (D-W5WR-4)
+    raises ``HTTPException(503)`` instead of masquerading as ``[]``.
     """
     import json
 
@@ -8088,8 +8089,21 @@ async def list_workflows() -> list[dict[str, Any]]:
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
+        # D-W5WR-4 / D-WD-7: this used to swallow ANY backend failure --
+        # including the authorization rejection (`PlacementAuthorityError`)
+        # confirmed live once D-WD-7 wired this route to the real engine --
+        # into a bare `[]`, indistinguishable from a genuinely empty
+        # Workflows list to both this route's caller and to
+        # WorkflowEditorView.tsx (same class of bug D-W6-10 already fixed
+        # for `/graph/nodes` and `/graph/relationships`). Raise instead, so
+        # the frontend's `loadWorkflowList` can show a typed error instead of
+        # silently rendering an empty canvas that looks identical to "no
+        # workflows saved yet".
         _log_failure('list_workflows', e)
-        return []
+        raise HTTPException(
+            status_code=503,
+            detail='Knowledge Graph workflow query failed',
+        ) from e
 
 
 @router.get('/workflows/capabilities')

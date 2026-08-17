@@ -24,7 +24,20 @@ def temp_db():
 
 @pytest.fixture
 def mock_graph_engine():
-    """Mock intelligence graph engine."""
+    """Mock intelligence graph engine.
+
+    ``GraphComputeEngine.__init__`` -> ``resolve_routing_graph`` now requires
+    a verified actor context (``agent_utilities.security.brain_context
+    .current_actor()``) since the verified-identity-carrier contract landed
+    (docs/architecture/verified-identity-carrier-contract.md) -- without one,
+    construction raises ``IdentityRequiredError`` and EVERY test in this file
+    that depends on this fixture errors at setup, before its own body ever
+    runs (confirmed live: ``TestGraphNodesEndpoint`` et al. broke the same
+    way). Scope a synthetic, clearly-fake test actor to fixture construction
+    only, mirroring the pattern ``agent-utilities``' own ``tests/conftest.py``
+    already uses for the same requirement -- this is a test fixture,
+    not a request path, so it never reaches ``validate_carrier_claims()``.
+    """
     from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
 
     engine = MagicMock(spec=IntelligenceGraphEngine)
@@ -48,8 +61,18 @@ def mock_graph_engine():
     from agent_utilities.knowledge_graph.core.graph_compute import (
         GraphComputeEngine,
     )
+    from agent_utilities.models.company_brain import ActorType
+    from agent_utilities.security.brain_context import ActorContext, use_actor
 
-    engine.graph = GraphComputeEngine()
+    test_actor = ActorContext(
+        actor_id='test:agent-webui-fixture',
+        actor_type=ActorType.AUTOMATED_SERVICE,
+        roles=('test',),
+        tenant_id='test-tenant',
+        authenticated=True,
+    )
+    with use_actor(test_actor):
+        engine.graph = GraphComputeEngine()
 
     return engine
 

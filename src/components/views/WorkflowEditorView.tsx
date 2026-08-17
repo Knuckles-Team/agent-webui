@@ -105,7 +105,16 @@ function WorkflowEditorInner() {
     try {
       setSaved(await api.listWorkflows())
     } catch (err) {
+      // D-W5WR-4: the backend now raises on a real failure (placement
+      // denial, timeout, malformed data) instead of degrading to `[]`, so an
+      // empty saved-workflow list here is trustworthy -- but this branch only
+      // runs on that real failure, and must say so instead of silently
+      // rendering the same empty state a genuinely-workflow-free graph would
+      // show (same class of fix GraphView.tsx already applies).
       console.error('Failed to list workflows', err)
+      toast.error(
+        `Failed to load saved workflows: ${err instanceof Error ? err.message : String(err)}`,
+      )
       setSaved([])
     }
   }, [])
