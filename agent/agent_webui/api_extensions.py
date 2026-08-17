@@ -1879,6 +1879,14 @@ async def list_all_tools() -> dict[str, Any]:
                     'enabled': mcp_enabled,
                     'tool_count': row.get('tool_count', 0),
                     'available': available,
+                    # Per-server stated reason (e.g. "stdio transport is not
+                    # permitted in this process") -- the multiplexer catalog
+                    # already threads this through (mcp/multiplexer.py
+                    # list_catalog); forwarding it here is what turns an
+                    # 'unavailable' status into an ACTIONABLE one instead of
+                    # an unexplained zero, matching the fail-closed-with-a-
+                    # reason rule (never silently drop why).
+                    'error': row.get('error'),
                 }
             )
     except HTTPException:
@@ -2134,6 +2142,216 @@ async def list_mcp_server_tools(server_name: str) -> list[dict[str, Any]]:
     except Exception as e:
         _log_failure('mcp_inventory_delegation', e)
         raise HTTPException(status_code=503, detail='MCP inventory unavailable')
+
+
+# ---------------------------------------------------------------------------
+# MCP server CRUD — add / modify / delete entries in the fleet catalog.
+#
+# THIN SEAM (persistence): the fleet catalog is currently the operator-owned
+# ``mcp_config.json`` the multiplexer itself reads (``_mcp_server_registry_path``
+# resolves it the identical way ``shared_multiplexer._default_config_path``
+# does) -- there is no separate "webui storage" here, this IS the real,
+# load-bearing catalog file that controls what the multiplexer spawns. A
+# sibling lane is building relational ``mcp_servers``/``mcp_tools``/...
+# tables in epistemic-graph as the primary store; swapping persistence to
+# that store means changing only ``_read_mcp_server_registry`` /
+# ``_write_mcp_server_registry`` below, never the routes or the frontend.
+#
+# Every entry is validated against ``MCPServerEntryModel`` (agent-utilities)
+# BEFORE it is written, so an invalid shape (e.g. both ``command`` and
+# ``url``) is rejected at CRUD time instead of only failing the next spawn.
+# A stdio-transport add/edit is additionally refused up front when this
+# deployment prohibits stdio children (``MCP_STDIO_PROHIBITED`` /
+# ``enforce_mcp_stdio_permitted``) -- the same stated-reason guard the
+# multiplexer itself enforces at spawn time, checked here too so the
+# operator sees it at save time, not only when the server is next probed.
+# ---------------------------------------------------------------------------
+
+
+def _mcp_server_registry_path() -> Path:
+    """Resolve the fleet ``mcp_config.json`` the SAME way the live
+    multiplexer does (``agent_utilities.mcp.shared_multiplexer.
+    _default_config_path``: explicit ``MCP_CONFIG`` setting, else
+    ``<config_dir>/mcp_config.json``). Writing through any other path would
+    silently diverge from what the running multiplexer actually reloads."""
+    from agent_utilities.core.config import setting
+
+    explicit = str(setting('MCP_CONFIG', '') or '').strip()
+    if explicit:
+        return Path(explicit)
+    return config_dir() / 'mcp_config.json'
+
+
+def _read_mcp_server_registry() -> dict[str, Any]:
+    """The live ``mcpServers`` map, or ``{}`` if the catalog file is absent."""
+    path = _mcp_server_registry_path()
+    if not path.exists():
+        return {}
+    data = _read_bounded_json(path)
+    servers = data.get('mcpServers') if isinstance(data, dict) else None
+    return dict(servers) if isinstance(servers, dict) else {}
+
+
+def _write_mcp_server_registry(servers: dict[str, Any]) -> None:
+    """Persist the full ``mcpServers`` map atomically, then hot-reload every
+    live multiplexer so the change is visible without a pod restart."""
+    import json
+
+    if len(servers) > _MAX_EXTERNAL_COLLECTION_ITEMS:
+        raise HTTPException(status_code=400, detail='MCP server registry is too large')
+    document = {'mcpServers': servers}
+    payload = json.dumps(document, indent=2, sort_keys=True).encode('utf-8')
+    if len(payload) > _MAX_EXTERNAL_RESULT_BYTES:
+        raise HTTPException(
+            status_code=400, detail='MCP server registry exceeds its safety bound'
+        )
+    registry_path = _mcp_server_registry_path()
+    target_dir = _private_directory(registry_path.parent)
+    try:
+        _atomic_private_write(target_dir / registry_path.name, payload)
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('write_mcp_server_registry', e)
+        raise HTTPException(
+            status_code=500, detail='Failed to save the MCP server catalog'
+        ) from e
+    try:
+        from agent_utilities.mcp.multiplexer import invalidate_live_catalogs
+
+        invalidate_live_catalogs()
+    except Exception as e:  # best-effort -- the write already succeeded
+        _log_failure('invalidate_mcp_catalog', e)
+
+
+def _validate_mcp_server_entry(server_name: str, config_payload: Any) -> dict[str, Any]:
+    """Validate one submitted server config; refuse stdio when prohibited."""
+    from agent_utilities.core.config import enforce_mcp_stdio_permitted
+    from agent_utilities.models.mcp import MCPServerEntryModel
+
+    if not isinstance(config_payload, dict):
+        raise HTTPException(status_code=400, detail="'config' must be an object")
+    try:
+        entry = MCPServerEntryModel.model_validate(config_payload)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    if entry.command:
+        try:
+            enforce_mcp_stdio_permitted(server_name=server_name)
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    return entry.model_dump(mode='json', exclude_none=True)
+
+
+@router.get('/mcp/server-schema')
+async def get_mcp_server_schema() -> dict[str, Any]:
+    """The JSON schema an add/edit form derives its fields from (matches the
+    ``/llm/model-schema`` pattern for ``ChatModelConfig``/``EmbeddingModelConfig``)."""
+    from agent_utilities.models.mcp import MCPServerEntryModel
+
+    return MCPServerEntryModel.model_json_schema()
+
+
+@router.get('/mcp/servers/{server_name}/config')
+async def get_mcp_server_config(server_name: str) -> dict[str, Any]:
+    """One server's raw catalog entry, typed through ``MCPServerEntryModel`` --
+    what an edit form prefills from (mirrors ``/llm/model-detail``)."""
+    from agent_utilities.models.mcp import MCPServerEntryModel
+
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
+        raise HTTPException(status_code=400, detail='Invalid MCP server name')
+    servers = _read_mcp_server_registry()
+    raw = servers.get(server_name)
+    if not isinstance(raw, dict):
+        raise HTTPException(
+            status_code=404, detail=f'MCP server {server_name!r} not found'
+        )
+    try:
+        entry = MCPServerEntryModel.model_validate(raw)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return entry.model_dump(mode='json', exclude_none=True)
+
+
+@router.post('/mcp/servers')
+async def create_mcp_server(data: dict[str, Any]) -> dict[str, Any]:
+    """Add one MCP server to the fleet catalog."""
+    name = str(data.get('name') or '').strip()
+    if not name or not _SAFE_DELEGATION_TOKEN.fullmatch(name):
+        raise HTTPException(status_code=400, detail='Invalid MCP server name')
+    validated = _validate_mcp_server_entry(name, data.get('config'))
+    try:
+        servers = _read_mcp_server_registry()
+        if name in servers:
+            raise HTTPException(
+                status_code=409, detail=f'MCP server {name!r} already exists'
+            )
+        servers[name] = validated
+        _write_mcp_server_registry(servers)
+        return {'status': 'success', 'name': name, 'config': validated}
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('create_mcp_server', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+@router.put('/mcp/servers/{server_name}')
+async def update_mcp_server(server_name: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Edit an existing MCP server's catalog entry."""
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
+        raise HTTPException(status_code=400, detail='Invalid MCP server name')
+    validated = _validate_mcp_server_entry(server_name, data.get('config'))
+    try:
+        servers = _read_mcp_server_registry()
+        if server_name not in servers:
+            raise HTTPException(
+                status_code=404, detail=f'MCP server {server_name!r} not found'
+            )
+        servers[server_name] = validated
+        _write_mcp_server_registry(servers)
+        return {'status': 'success', 'name': server_name, 'config': validated}
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('update_mcp_server', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+@router.delete('/mcp/servers/{server_name}')
+async def delete_mcp_server(server_name: str, hard: bool = False) -> dict[str, Any]:
+    """Remove an MCP server from the fleet catalog.
+
+    Destructive by nature, made explicit and REVERSIBLE where the storage
+    allows: the default (``hard=false``) sets ``disabled: true`` in place --
+    the entry stays in the catalog file, fully restorable via a normal
+    ``PUT``, and simply stops being mounted (matching the Agent Library's own
+    archive-not-delete convention). ``hard=true`` removes the entry from the
+    file entirely; the frontend requires a second, explicit confirmation
+    before ever sending it.
+    """
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
+        raise HTTPException(status_code=400, detail='Invalid MCP server name')
+    try:
+        servers = _read_mcp_server_registry()
+        if server_name not in servers:
+            raise HTTPException(
+                status_code=404, detail=f'MCP server {server_name!r} not found'
+            )
+        if hard:
+            del servers[server_name]
+        else:
+            entry = servers[server_name]
+            if isinstance(entry, dict):
+                entry = {**entry, 'disabled': True}
+            servers[server_name] = entry
+        _write_mcp_server_registry(servers)
+        return {'status': 'success', 'name': server_name, 'hard_deleted': hard}
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('delete_mcp_server', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
 @router.post('/mcp/tools/call')
@@ -4412,6 +4630,141 @@ async def create_library_agent(data: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:
         _log_failure('create_library_agent', e)
+        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+@router.put('/agent-library/agents/{agent_id:path}')
+async def update_library_agent(agent_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Edit a locally-composed Agent Library entry (the missing U of CRUD next
+    to POST/DELETE above). Same field contract and validation as ``POST
+    /agent-library/agents``; only a local entry this feature itself created
+    (``provider_ref == _AGENT_LIBRARY_PROVIDER_REF``) may be edited here — an
+    ingested/external ``A2A_AGENT`` has no editable ``instructions`` and is
+    edited at its own source, matching the same restriction ``DELETE``
+    already enforces for archiving.
+
+    ``tool_ids``/``bind_server`` fully REPLACE the bound tool set (not merge)
+    so the edited agent's tools always match exactly what was submitted.
+    """
+    agent_id = _validate_runtime_id(agent_id)
+    name = str(data.get('name') or '').strip()
+    description = str(data.get('description') or '').strip()
+    instructions = str(data.get('instructions') or '').strip()
+    bind_server = str(data.get('bind_server') or '').strip()
+    model_preference = str(data.get('model_preference') or '').strip()
+    tool_ids = _bounded_identifier_list(data.get('tool_ids'))
+
+    if not name or len(name) > 120:
+        raise HTTPException(status_code=422, detail='Agent name is required')
+    if not instructions:
+        raise HTTPException(status_code=422, detail='Agent instructions are required')
+    if len(instructions.encode('utf-8')) > _MAX_INSTRUCTIONS_BYTES:
+        raise HTTPException(
+            status_code=400, detail='Instructions exceed the safety bound'
+        )
+    if bind_server and not _SAFE_DELEGATION_TOKEN.fullmatch(bind_server):
+        raise HTTPException(status_code=400, detail='Invalid MCP server name')
+    if model_preference and not _SAFE_DELEGATION_TOKEN.fullmatch(model_preference):
+        raise HTTPException(status_code=400, detail='Invalid model id')
+
+    try:
+        engine = await _get_engine_bounded()
+        from agent_utilities.knowledge_graph.ingestion.skill_workflow_ingest import (
+            runnable_skill_digest,
+        )
+
+        def load_existing() -> tuple[str, str]:
+            rows = engine.backend.execute(
+                'MATCH (r:CallableResource {id: $id}) '
+                'RETURN r.resource_type AS rtype, r.provider_ref AS provider_ref, '
+                'r.source_ref AS source_ref',
+                {'id': agent_id},
+            )
+            if not rows or not isinstance(rows[0], dict):
+                raise HTTPException(status_code=404, detail='Agent not found')
+            rtype = str(rows[0].get('rtype') or '')
+            provider_ref = str(rows[0].get('provider_ref') or '')
+            if rtype != 'AGENT_SKILL' or provider_ref != _AGENT_LIBRARY_PROVIDER_REF:
+                raise HTTPException(
+                    status_code=403,
+                    detail='Only agents composed in the Agent Library can be edited here',
+                )
+            skill_id = str(rows[0].get('source_ref') or '').removeprefix('skill://')
+            return f'skill:{skill_id}', str(rows[0].get('source_ref') or '')
+
+        def persist_update() -> list[str]:
+            skill_id, source_ref = load_existing()
+            digest = runnable_skill_digest(instructions)
+            ts = datetime.now(timezone.utc).isoformat()
+            common: dict[str, Any] = {
+                'name': name,
+                'description': description or name,
+                'instruction_digest': digest,
+                'updated_at': ts,
+                'mcp_server': bind_server or None,
+                'model_preference': model_preference or None,
+            }
+            engine.backend.execute(
+                'MATCH (s:Skill {id: $id}) '
+                'SET s.name = $name, s.description = $description, '
+                's.instruction_digest = $instruction_digest, s.updated_at = $updated_at, '
+                's.mcp_server = $mcp_server, s.body = $instructions, '
+                's.instruction = $instructions',
+                {'id': skill_id, 'instructions': instructions, **common},
+            )
+            engine.backend.execute(
+                'MATCH (r:CallableResource {id: $id}) '
+                'SET r.name = $name, r.description = $description, '
+                'r.instruction_digest = $instruction_digest, r.updated_at = $updated_at, '
+                'r.mcp_server = $mcp_server, r.model_preference = $model_preference, '
+                'r.system_prompt = $instructions',
+                {'id': agent_id, 'instructions': instructions, **common},
+            )
+            # Full-replace: drop every existing binding then re-add exactly the
+            # submitted set, so the edited agent's tools never accumulate stale
+            # edges from a prior save.
+            engine.backend.execute(
+                'MATCH (r:CallableResource {id: $id})-[e:USES_TOOL]->() DELETE e',
+                {'id': agent_id},
+            )
+            resolved_tool_ids = list(tool_ids)
+            if bind_server:
+                server_rows = engine.backend.execute(
+                    'MATCH (t:Tool) WHERE t.mcp_server = $s RETURN t.id AS id',
+                    {'s': bind_server},
+                )
+                resolved_tool_ids.extend(
+                    str(r['id'])
+                    for r in (server_rows or [])
+                    if isinstance(r, dict) and r.get('id')
+                )
+            seen: set[str] = set()
+            for tool_id in resolved_tool_ids:
+                if tool_id in seen or len(seen) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                    continue
+                seen.add(tool_id)
+                engine.link_nodes(agent_id, tool_id, 'USES_TOOL')
+            _ = source_ref
+            return sorted(seen)
+
+        bound_tools = await _invoke_governed_helper(persist_update, deadline=30.0)
+        return _public_external_result(
+            {
+                'id': agent_id,
+                'name': name,
+                'description': description or name,
+                'kind': 'local',
+                'mcp_server': bind_server or None,
+                'model_preference': model_preference or None,
+                'tools': bound_tools,
+            }
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        _log_failure('update_library_agent', e)
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
