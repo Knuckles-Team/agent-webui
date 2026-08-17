@@ -81,3 +81,67 @@ export type McpAppToolCaller = (name: string, args: Record<string, unknown>) => 
  * server-declared annotation (`McpUiMeta.visibility` or anything else) --
  * see `bridge.ts`'s module docstring. */
 export type McpAppToolPolicy = (name: string) => boolean
+
+function asStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const strings = value.filter((item): item is string => typeof item === 'string')
+  return strings.length > 0 ? strings : undefined
+}
+
+function parseVisibility(value: unknown): ('app' | 'model')[] | undefined {
+  const strings = asStringArray(value)
+  if (!strings) return undefined
+  const visibility = strings.filter((item): item is 'app' | 'model' => item === 'app' || item === 'model')
+  return visibility.length > 0 ? visibility : undefined
+}
+
+function parseCsp(value: unknown): McpResourceCsp | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const raw = value as Record<string, unknown>
+  return {
+    connectDomains: asStringArray(raw.connectDomains),
+    resourceDomains: asStringArray(raw.resourceDomains),
+    frameDomains: asStringArray(raw.frameDomains),
+    baseUriDomains: asStringArray(raw.baseUriDomains),
+  }
+}
+
+function parsePermissions(value: unknown): McpResourcePermissions | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const raw = value as Record<string, unknown>
+  const permissions: McpResourcePermissions = {}
+  for (const key of ['camera', 'microphone', 'geolocation', 'clipboardWrite'] as const) {
+    if (raw[key] && typeof raw[key] === 'object') permissions[key] = {}
+  }
+  return permissions
+}
+
+/**
+ * Validate a tool descriptor's declared `meta` (the wire shape produced by
+ * `AppConfig`, `{ui: {...}}` on `Tool.meta` -- BUG-071) into a `McpUiMeta`,
+ * or `undefined` when the tool carries no usable app binding.
+ *
+ * `resourceUri` is the ONLY required field: a tool with a missing, blank, or
+ * non-string `resourceUri` is not an MCP App no matter what else `meta.ui`
+ * declares -- this is what makes a tool "launchable" for an app-launcher
+ * (`McpAppsView`) rather than rendered with a fabricated/empty frame. Every
+ * other field is untrusted server metadata, so each is individually
+ * type-checked and dropped (never defaulted to something fabricated) when
+ * malformed -- a hostile or buggy server cannot smuggle extra shape through.
+ */
+export function parseMcpUiMeta(meta: unknown): McpUiMeta | undefined {
+  if (!meta || typeof meta !== 'object') return undefined
+  const ui = (meta as Record<string, unknown>).ui
+  if (!ui || typeof ui !== 'object') return undefined
+  const raw = ui as Record<string, unknown>
+  const resourceUri = raw.resourceUri
+  if (typeof resourceUri !== 'string' || resourceUri.length === 0) return undefined
+  return {
+    resourceUri,
+    visibility: parseVisibility(raw.visibility),
+    csp: parseCsp(raw.csp),
+    permissions: parsePermissions(raw.permissions),
+    domain: typeof raw.domain === 'string' ? raw.domain : undefined,
+    prefersBorder: typeof raw.prefersBorder === 'boolean' ? raw.prefersBorder : undefined,
+  }
+}

@@ -14,6 +14,7 @@ import { createElement, lazy, type ComponentType, type LazyExoticComponent } fro
 import ChatPanel from '@/components/ChatPanel'
 import {
   Activity,
+  AppWindow,
   Bot,
   Book,
   BookOpen,
@@ -289,6 +290,17 @@ export const ROUTES: readonly RouteDef[] = [
     minRole: 'maintainer',
     mobile: 'unsupported',
     element: lazy(() => import('@/components/views/LLMTemplatesView')),
+  },
+  {
+    id: 'control-plane.mcp-apps',
+    path: '/mcp-apps',
+    label: 'MCP Apps',
+    section: 'control-plane',
+    blurb: 'Launch a rich, sandboxed UI that a fleet MCP tool declares for itself, discovered live from its tools.',
+    icon: AppWindow,
+    minRole: 'user',
+    mobile: 'unsupported',
+    element: lazy(() => import('@/components/views/McpAppsView')),
   },
 
   // ------------------------------------------------------------- Knowledge

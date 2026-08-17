@@ -94,6 +94,14 @@ export interface McpToolDescriptor {
   description: string
   input_schema: Record<string, unknown>
   enabled: boolean
+  /**
+   * The tool's declared MCP Apps UI binding (untrusted server metadata; the
+   * backend forwards it as-is when present, omits it otherwise -- BUG-071).
+   * Validate with {@link import('./mcp-apps/types').parseMcpUiMeta} before
+   * treating a tool as a launchable app; never assume this shape at face
+   * value.
+   */
+  meta?: unknown
 }
 
 function isValidToolDescriptor(value: unknown): value is McpToolDescriptor {

@@ -557,6 +557,84 @@ def _public_external_result(value: Any) -> Any:
     return clean
 
 
+_MCP_UI_CSP_DOMAIN_FIELDS = (
+    'connectDomains',
+    'resourceDomains',
+    'frameDomains',
+    'baseUriDomains',
+)
+_MCP_UI_PERMISSION_FIELDS = ('camera', 'microphone', 'geolocation', 'clipboardWrite')
+
+
+def _public_tool_ui_meta(meta: Any) -> dict[str, Any] | None:
+    """Shape-validate one tool's declared MCP Apps UI binding (``meta['ui']``).
+
+    CONCEPT:AU-ECO.mcp.webui-governed-mcp-delegation
+
+    BUG-071: ``_meta.ui.resourceUri`` is a ``tools/list``-time field
+    (``agent_utilities.mcp.shared_multiplexer._live_tools_for_server`` /
+    ``server.webui_mcp_delegation._list_mcp_server_tools`` already forward the
+    raw ``meta`` dict this reads), naming which ``ui://`` resource a WebUI
+    app-launcher should fetch and render via ``McpAppHost``/``McpAppFrame``
+    (``src/lib/mcp-apps/``). ``resourceUri`` is the ONLY required field -- a
+    tool without a usable, non-empty string ``resourceUri`` carries no app
+    binding and this returns ``None``, which is what makes a tool
+    non-launchable rather than rendered with a fabricated/empty frame.
+
+    Everything else here is untrusted server metadata (the docstrings in
+    ``mcp-apps/policy.ts`` and ``McpAppFrame.tsx`` already treat it that way
+    on the client): only the known ``McpUiMeta`` fields are passed through,
+    each individually type-checked, so a malformed or hostile ``meta['ui']``
+    cannot smuggle arbitrary extra keys into the API response.
+    """
+    if not isinstance(meta, dict):
+        return None
+    ui = meta.get('ui')
+    if not isinstance(ui, dict):
+        return None
+    resource_uri = ui.get('resourceUri')
+    if not isinstance(resource_uri, str) or not resource_uri:
+        return None
+
+    result: dict[str, Any] = {'resourceUri': resource_uri}
+
+    visibility = ui.get('visibility')
+    if isinstance(visibility, list):
+        allowed_visibility = [v for v in visibility if v in ('app', 'model')]
+        if allowed_visibility:
+            result['visibility'] = allowed_visibility
+
+    csp = ui.get('csp')
+    if isinstance(csp, dict):
+        clean_csp = {
+            field: [domain for domain in csp[field] if isinstance(domain, str)]
+            for field in _MCP_UI_CSP_DOMAIN_FIELDS
+            if isinstance(csp.get(field), list)
+        }
+        if clean_csp:
+            result['csp'] = clean_csp
+
+    permissions = ui.get('permissions')
+    if isinstance(permissions, dict):
+        clean_permissions: dict[str, dict[str, str]] = {
+            field: {}
+            for field in _MCP_UI_PERMISSION_FIELDS
+            if isinstance(permissions.get(field), dict)
+        }
+        if clean_permissions:
+            result['permissions'] = clean_permissions
+
+    domain = ui.get('domain')
+    if isinstance(domain, str) and domain:
+        result['domain'] = domain
+
+    prefers_border = ui.get('prefersBorder')
+    if isinstance(prefers_border, bool):
+        result['prefersBorder'] = prefers_border
+
+    return {'ui': result}
+
+
 def _validate_delegation_call(
     server_name: str, tool_name: str, arguments: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2003,14 +2081,20 @@ async def list_mcp_server_tools(server_name: str) -> list[dict[str, Any]]:
             tool_enabled = await get_toggle_state(
                 engine, 'mcp_tool', f'{server_name}:{tool_name}'
             )
-            enriched_tools.append(
-                {
-                    'name': tool_name,
-                    'description': t.get('description', ''),
-                    'input_schema': t.get('input_schema', {}),
-                    'enabled': tool_enabled,
-                }
-            )
+            enriched_entry: dict[str, Any] = {
+                'name': tool_name,
+                'description': t.get('description', ''),
+                'input_schema': t.get('input_schema', {}),
+                'enabled': tool_enabled,
+            }
+            # BUG-071: forward the tool's declared MCP Apps UI binding (if
+            # any) so a WebUI app-launcher can discover which tools are
+            # launchable via `meta.ui.resourceUri` -- omitted when absent so
+            # an ordinary tool's shape is unchanged.
+            ui_meta = _public_tool_ui_meta(t.get('meta'))
+            if ui_meta is not None:
+                enriched_entry['meta'] = ui_meta
+            enriched_tools.append(enriched_entry)
         return enriched_tools
 
     except HTTPException:
