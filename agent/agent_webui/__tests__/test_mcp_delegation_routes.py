@@ -18,6 +18,7 @@ and the resource route only ever reads the MCP Apps ``ui://`` scheme.
 from typing import Any
 
 import pytest
+from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
 from agent_webui.server import create_agent_web_app
 from fastapi.testclient import TestClient
 
@@ -28,7 +29,10 @@ APP_HTML = '<html><head></head><body><div id="jobId">-</div></body></html>'
 
 
 def _build_server() -> Any:
-    """A faithful stand-in for graph-os: one tool + one ui:// app resource."""
+    """A faithful stand-in for graph-os: a plain tool, one ui:// app resource,
+    and an MCP Apps ENTRY-POINT tool declaring that resource via `app=`
+    (mirrors `graph_task_progress_app` in
+    `agent_utilities/mcp/tools/mcp_apps.py`, BUG-071)."""
     server = fastmcp.FastMCP('graph-os-test')
 
     @server.tool(name='graph_jobs')
@@ -38,6 +42,15 @@ def _build_server() -> Any:
     @server.resource(uri=APP_URI, name='Task Progress', mime_type='text/html')
     async def task_progress() -> str:
         return APP_HTML
+
+    from fastmcp.apps.config import AppConfig
+
+    @server.tool(
+        name='graph_task_progress_app',
+        app=AppConfig(resource_uri=APP_URI, visibility=['model']),
+    )
+    async def graph_task_progress_app(job_id: str = '') -> dict[str, Any]:
+        return {'jobId': job_id}
 
     return server
 
@@ -69,9 +82,31 @@ def mcp_helpers() -> dict[str, Any]:
             'mimeType': getattr(first, 'mimeType', 'text/html'),
         }
 
+    async def list_mcp_server_tools(*, server_name: str) -> list[dict[str, Any]]:
+        """Mirrors `agent_utilities.server.webui_mcp_delegation._list_mcp_server_tools`'s
+        shape: `{name, description, input_schema, meta}`, `meta` omitted when
+        the tool declares none -- a real `tools/list` round trip, not a stub
+        that invents the shape."""
+        assert server_name == 'graph-os'
+        async with fastmcp.Client(server) as client:
+            tools = await client.list_tools()
+        out: list[dict[str, Any]] = []
+        for tool in tools:
+            entry: dict[str, Any] = {
+                'name': tool.name,
+                'description': tool.description or '',
+                'input_schema': tool.input_schema or {},
+            }
+            meta = getattr(tool, 'meta', None)
+            if meta:
+                entry['meta'] = meta
+            out.append(entry)
+        return out
+
     return {
         'call_mcp_tool': call_mcp_tool,
         'read_mcp_resource': read_mcp_resource,
+        'list_mcp_server_tools': list_mcp_server_tools,
     }
 
 
@@ -238,4 +273,55 @@ class TestAppResourceRoute:
             '/api/enhanced/mcp/apps/resource',
             json={'server': 'graph-os', 'uri': APP_URI},
         )
+        assert response.status_code == 501
+
+
+@pytest.fixture
+def bounded_engine(monkeypatch):
+    """Stub the engine ``list_mcp_server_tools`` needs only for
+    ``get_toggle_state``'s ``query_cypher`` call -- not a real KG, matching
+    ``test_mcp_server_inventory.py``'s ``stub_engine``/``bounded_engine``
+    pair."""
+    from unittest.mock import MagicMock
+
+    from agent_webui import api_extensions
+
+    engine = MagicMock(spec=IntelligenceGraphEngine)
+    engine.query_cypher.return_value = []
+
+    async def _get_engine() -> Any:
+        return engine
+
+    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    return engine
+
+
+class TestServerToolsRoute:
+    """GOC-26-W04: the tool-inventory route ``McpAppsView`` reads to discover
+    launchable MCP Apps. Proves BUG-071's forwarded ``meta.ui`` actually
+    reaches the WebUI's OWN ``/api/enhanced/mcp/servers/{server}/tools``
+    response, not just the ``agent-utilities`` catalog call sites."""
+
+    def test_a_tool_with_a_ui_resource_reports_its_app_binding(
+        self, client, bounded_engine
+    ):
+        response = client.get('/api/enhanced/mcp/servers/graph-os/tools')
+        assert response.status_code == 200, response.text
+        tools = {t['name']: t for t in response.json()}
+        assert tools['graph_task_progress_app']['meta'] == {
+            'ui': {'resourceUri': APP_URI, 'visibility': ['model']},
+        }
+
+    def test_a_tool_without_a_ui_resource_reports_no_app_binding(
+        self, client, bounded_engine
+    ):
+        response = client.get('/api/enhanced/mcp/servers/graph-os/tools')
+        assert response.status_code == 200, response.text
+        tools = {t['name']: t for t in response.json()}
+        assert 'meta' not in tools['graph_jobs']
+
+    def test_without_host_injection_the_route_refuses(
+        self, unwired_client, bounded_engine
+    ):
+        response = unwired_client.get('/api/enhanced/mcp/servers/graph-os/tools')
         assert response.status_code == 501
