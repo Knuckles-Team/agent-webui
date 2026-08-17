@@ -50,6 +50,24 @@
 # `pydantic-ai-harness`, required by `agent_utilities.capabilities.
 # content_guardrails` -- see the runtime install step below).
 #
+# ── 2026-08-17: the `wheelhouse` build-context is BACK, TEMPORARILY, for
+# epistemic-graph only ── BUG-258/BUG-262 (below) added the `graphos` extra,
+# which requires `epistemic-graph[full]>=2.23.2,<3.0.0` (see agent-utilities'
+# own pyproject.toml comment on that floor). Verified empirically the same day:
+# PyPI's newest published `epistemic-graph` is still 2.23.0 -- the floor is
+# UNSATISFIABLE from the index alone (`uv pip install` fails inside the
+# resolver naming exactly this, not a vague error). epistemic-graph's own repo
+# has released source up to 2.26.1 (tagged, changelogged) but its PyPI publish
+# pipeline hasn't kept pace -- a gap in THAT project's release plumbing, not
+# this one, and not something this Dockerfile can fix. Rather than block
+# BUG-258/BUG-262 on an unrelated repo's publish backlog, this build accepts a
+# pre-built `epistemic_graph-*.whl` (>=2.23.2,<3.0.0) via a THIRD local build
+# context, `eg-wheelhouse` (see docker/build_and_push.sh's `EG_WHEELHOUSE_PATH`).
+# DELETE this context and the `--find-links /tmp/eg-wheelhouse` below the
+# moment PyPI's `epistemic-graph` catches up to agent-utilities' declared
+# floor -- this is explicitly the same kind of workaround removed 2026-08-10
+# above, reintroduced only because history repeated for a different package.
+#
 # Stages (build in a builder, ship only the installed package + runtime deps
 # in the final image -- no node_modules/cargo/toolchain/source tree):
 #   1. frontend-build (node)   -- pnpm install --frozen-lockfile && pnpm build
@@ -174,6 +192,9 @@ ENV UV_SYSTEM_PYTHON=1 \
     PYTHONUNBUFFERED=1
 COPY --from=wheel-build /dist/*.whl /tmp/agent-webui/
 COPY --from=au-wheel-build /dist-au/*.whl /tmp/wheelhouse/
+# TEMPORARY (see header): a pre-built epistemic-graph wheel satisfying the
+# graphos extra's floor, fed via --find-links below alongside the au wheel.
+COPY --from=eg-wheelhouse . /tmp/eg-wheelhouse/
 # D-W5WR-1: naming the requirement as a bare "agent-utilities[graph,mcp]"
 # string let `uv pip install` resolve it against the DEFAULT PyPI index
 # (agent-utilities==1.26.4) instead of the locally-built wheel this stage
@@ -250,10 +271,11 @@ RUN AU_WHEEL="$(ls /tmp/wheelhouse/agent_utilities-*.whl)" \
         'fastmcp-slim[client,server]>=4.0.0b1' \
         'nltk>=3.10.0' \
         > /tmp/au-overrides.txt \
-    && uv pip install --system --no-cache --find-links /tmp/wheelhouse \
+    && uv pip install --system --no-cache \
+        --find-links /tmp/wheelhouse --find-links /tmp/eg-wheelhouse \
         --overrides /tmp/au-overrides.txt \
         "${AU_WHEEL}[agent-headless,graph,graphos,metrics]" /tmp/agent-webui/*.whl \
-    && rm -rf /tmp/agent-webui /tmp/wheelhouse /tmp/au-overrides.txt
+    && rm -rf /tmp/agent-webui /tmp/wheelhouse /tmp/eg-wheelhouse /tmp/au-overrides.txt
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)" || exit 1
