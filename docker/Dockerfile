@@ -87,11 +87,19 @@
 #   curl http://localhost:8080/health
 #   curl http://localhost:8080/build-info.txt   # confirms which commit is SERVED, not just built
 #
-# ── ONE standardized way to build+push+deploy this image (2026-08-07 consolidation) ──
-# Don't hand-roll a `docker build` invocation or a kubectl recipe -- use
-# `docker/build_and_push.sh`, the single command that builds on the r820 buildhost,
-# verifies the served bundle carries today's commit BEFORE pushing, pushes by digest,
-# and (unless `--build-only` is passed) deploys + verifies the rollout. See that
+# (the `docker build`/`docker run` pair above is an OPTIONAL manual path for a dev
+# host that happens to have its own local docker daemon -- most hosts in this
+# workspace don't; see docker/build_and_push.sh for the standardized path below,
+# which needs no local daemon at all.)
+#
+# ── ONE standardized way to build+push+deploy this image (2026-08-07 consolidation,
+#    migrated 2026-08-17 off r820's docker daemon onto cluster-native BuildKit) ──
+# Don't hand-roll a `docker build`/`buildctl build` invocation or a kubectl recipe --
+# use `docker/build_and_push.sh`, the single command that builds against the shared
+# `buildkitd` Deployment running inside the k8s cluster (see
+# services/buildkit-service/), verifies the served bundle carries today's commit
+# right after it's pushed, pushes by digest, and (unless `--build-only` is passed)
+# deploys + verifies the rollout. See that
 # script's own header and README.md's "Build & Deploy" section for the full contract.
 
 FROM node:22-slim AS frontend-build

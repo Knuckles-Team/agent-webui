@@ -36,7 +36,11 @@
 #                                     # see README.md "Coordinating concurrent deploys")
 #
 # Env overrides: see docker/build_and_push.sh for AU_SRC_PATH / IMAGE /
-# DOCKER_CONTEXT. Additional ones for this script:
+# BUILDKIT_NAMESPACE / BUILDKIT_SERVICE / BUILDKIT_ADDR (build_and_push.sh builds
+# against the shared cluster-native buildkitd Deployment -- see
+# services/buildkit-service/ -- not a docker daemon; see that script's header for
+# the 2026-08-17 migration off r820's now-dead docker daemon). Additional ones for
+# this script:
 #   NAMESPACE           k8s namespace (default: apps)
 #   DEPLOYMENT          k8s Deployment name (default: agent-webui)
 #   CANONICAL_CHECKOUT  path to the agent-webui checkout that is NFS-exported to
