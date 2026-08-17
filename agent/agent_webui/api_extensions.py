@@ -2261,8 +2261,17 @@ async def list_skills() -> list[dict[str, Any]]:
     if not skills:
         try:
             engine = await _get_engine_bounded()
-        except HTTPException:
-            raise
+        except HTTPException as exc:
+            # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- get_engine()
+            # raises HTTPException(501) for "no engine", not None, so a bare
+            # `except HTTPException: raise` here made the `if engine:` /
+            # get_helper() fallback below dead code: every no-engine request
+            # 501'd before ever reaching it. Only a genuine 503 (bounded-sync
+            # deadline/capacity) still hard-fails; "not initialized" degrades
+            # to the get_helper()/501 fallback chain already written below.
+            if exc.status_code != 501:
+                raise
+            engine = None
         except Exception:
             engine = None
         if engine:
@@ -2307,8 +2316,12 @@ async def toggle_skill(skill_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail='Invalid skill identifier')
     try:
         engine = await _get_engine_bounded()
-    except HTTPException:
-        raise
+    except HTTPException as exc:
+        # See the matching note in list_skills(): only a genuine 503 hard-
+        # fails; "no engine" (501) degrades to the toggle_helper fallback.
+        if exc.status_code != 501:
+            raise
+        engine = None
     except Exception:
         engine = None
     if engine:
@@ -2343,8 +2356,13 @@ async def reload_agent(request: Request) -> dict[str, Any]:
     try:
         try:
             engine = await _get_engine_bounded()
-        except HTTPException:
-            raise
+        except HTTPException as exc:
+            # See the matching note in list_skills(): only a genuine 503
+            # hard-fails; "no engine" (501) degrades to the legacy
+            # workspace-reload fallback below.
+            if exc.status_code != 501:
+                raise
+            engine = None
         except Exception:
             engine = None
         if engine:
@@ -2729,7 +2747,19 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
     if node_type and not _SAFE_GRAPH_LABEL.fullmatch(node_type):
         raise HTTPException(status_code=400, detail='Invalid graph node type')
     try:
-        engine = await _get_engine_bounded()
+        try:
+            engine = await _get_engine_bounded()
+        except HTTPException as exc:
+            # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- "no engine"
+            # (501) is a distinct condition from a query failing AFTER an
+            # engine was acquired (the D-W6-10 hardening below, which stays
+            # a hard 503 and is NOT touched by this). Only a genuine 503
+            # (bounded deadline/capacity) re-raises here; a still-absent
+            # engine degrades to an honest empty list -- the graph simply
+            # has nothing to show yet, not a backend malfunction.
+            if exc.status_code != 501:
+                raise
+            return []
 
         if node_type:
             # Identifier is validated against schema or trusted source before use
@@ -2785,7 +2815,16 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
         List of relationship dictionaries with source, target, and type.
     """
     try:
-        engine = await _get_engine_bounded()
+        try:
+            engine = await _get_engine_bounded()
+        except HTTPException as exc:
+            # See the matching note in get_graph_nodes() -- same fix, same
+            # reasoning: "no engine" degrades to an honest empty list; a
+            # genuine 503 still hard-fails, and D-W6-10's post-acquisition
+            # 503 hardening below is untouched.
+            if exc.status_code != 501:
+                raise
+            return []
 
         query = (
             'MATCH (a)-[r]->(b) RETURN a.id as source, '
@@ -2823,9 +2862,34 @@ async def get_graph_stats() -> dict[str, Any]:
         Dictionary with node counts by type and total counts.
     """
     try:
-        engine = await _get_engine_bounded()
+        try:
+            engine = await _get_engine_bounded()
+        except HTTPException as exc:
+            # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- get_engine()
+            # raises HTTPException(501) rather than returning None, so the
+            # `if not engine` degrade below was unreachable dead code (every
+            # no-engine request 501'd first). Only a genuine 503 (bounded
+            # deadline/capacity) still hard-fails here; "not initialized"
+            # (501) degrades to the explicitly-marked response below.
+            # `available: False` keeps this HONEST -- distinguishable from a
+            # real empty graph -- per the no-fabrication charter rule (see
+            # this lane's report; a sibling fabrication bug was fixed in this
+            # same file today in update_backend_config()).
+            if exc.status_code != 501:
+                raise
+            return {
+                'total_nodes': 0,
+                'total_relationships': 0,
+                'by_type': {},
+                'available': False,
+            }
         if not engine or not engine.backend:
-            return {'total_nodes': 0, 'total_relationships': 0, 'by_type': {}}
+            return {
+                'total_nodes': 0,
+                'total_relationships': 0,
+                'by_type': {},
+                'available': False,
+            }
 
         # Get total counts (Test expects these first)
         total_nodes_result = await _invoke_governed_helper(
@@ -3091,7 +3155,14 @@ async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
         )
         bounded = _public_external_result(list(results or [])[:top_k])
         return bounded if isinstance(bounded, list) else []
-    except HTTPException:
+    except HTTPException as exc:
+        # Unlike get_graph_nodes/relationships, this route has no D-W6-10
+        # hardening -- every other failure mode already degrades to []
+        # below. Treating "no engine" (501) the same way is consistent
+        # with that, not a new fabrication risk; a genuine 503 (bounded
+        # deadline/capacity) still hard-fails.
+        if exc.status_code == 501:
+            return []
         raise
     except Exception as e:
         _log_failure('search_graph', e)
@@ -3456,7 +3527,20 @@ async def search_kb(query: str, kb_id: str | None = None) -> list[dict[str, Any]
     if kb_id and not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
         raise HTTPException(status_code=400, detail='Invalid KB identifier')
     try:
-        engine = await _get_engine_bounded()
+        try:
+            engine = await _get_engine_bounded()
+        except HTTPException as exc:
+            # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- this route
+            # already anticipated a None engine below (`engine.graph if
+            # engine else None`), but `_get_engine_bounded()` raises rather
+            # than returning None, so that ternary was dead code. KB search
+            # is a separate subsystem from the graph engine's own live
+            # backend, so a still-absent engine degrades to None here
+            # (KBIngestionEngine is constructed with graph=None,
+            # backend=None); a genuine 503 still hard-fails.
+            if exc.status_code != 501:
+                raise
+            engine = None
 
         kb_engine = await _invoke_governed_helper(
             KBIngestionEngine,
@@ -3570,7 +3654,14 @@ async def update_kb(data: dict[str, Any]) -> dict[str, Any]:
         kb_id = data.get('kb_id')
         if not isinstance(kb_id, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
             raise HTTPException(status_code=400, detail='Invalid KB identifier')
-        engine = await _get_engine_bounded()
+        try:
+            engine = await _get_engine_bounded()
+        except HTTPException as exc:
+            # See the matching note in search_kb() -- same pre-existing dead
+            # `engine.graph if engine else None` ternary, same fix.
+            if exc.status_code != 501:
+                raise
+            engine = None
 
         kb_engine = await _invoke_governed_helper(
             KBIngestionEngine,
@@ -4432,7 +4523,19 @@ async def get_maintenance_status() -> dict[str, Any]:
         Maintenance operation status and history.
     """
     try:
-        engine = await _get_engine_bounded()
+        try:
+            engine = await _get_engine_bounded()
+        except HTTPException as exc:
+            # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- the
+            # `if not engine` degrade below was unreachable dead code for
+            # the same reason as get_graph_stats(); this route's degraded
+            # response already carries an honest 'unavailable' status
+            # distinct from 'idle'/other real states, so no shape change is
+            # needed here -- only making it reachable. A genuine 503
+            # (bounded deadline/capacity) still hard-fails.
+            if exc.status_code != 501:
+                raise
+            return {'status': 'unavailable', 'operations': {}}
         if not engine or not engine.backend:
             return {'status': 'unavailable', 'operations': {}}
 
