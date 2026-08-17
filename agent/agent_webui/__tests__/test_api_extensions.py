@@ -941,13 +941,21 @@ class TestCoverageExpansion:
             assert response.json()['id'] == 'agent1'
 
     def test_get_graph_stats_error(self, client):
+        """A REAL failure acquiring the engine (an exception, not merely
+        ``get_active()`` returning None) must stay a hard 503 -- D-W6-10
+        hardened this precisely so a genuine backend failure can never look
+        like a real empty/absent-engine graph (see the ``available: False``
+        degrade path exercised by ``test_get_graph_stats_no_engine`` below,
+        which is the "no engine at all" case and stays 200). This
+        expectation was stale (previously asserted 200); the code was
+        correct, per D-MQR/W7-ENGINE-FALLBACK-lane analysis -- see that
+        lane's report."""
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             side_effect=Exception('Stats failed'),
         ):
             response = client.get('/api/enhanced/graph/stats')
-            assert response.status_code == 200
-            assert response.json()['total_nodes'] == 0
+            assert response.status_code == 503
 
     def test_list_kbs_success(self, client, mock_graph_engine, mock_kb_engine):
         with patch(
