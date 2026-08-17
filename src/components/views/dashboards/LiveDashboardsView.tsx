@@ -10,6 +10,10 @@
  *   - Traces:           POST /graph/traces — LIVE (EG-163, KG-2.310)
  *   - Logs:             POST /graph/logs   — PLACEHOLDER / read-only until the
  *                       engine log-query surface (EG-162) is exposed as a REST twin.
+ *   - Chart (viz):      POST /graph/viz    — LIVE (GOC-88, D-VZ-1 V5): renders a
+ *                       live KG SQL query server-side through the eg-viz LOD
+ *                       pipeline (`Method::Viz`) — no client-side charting
+ *                       library, no matplotlib.
  *
  * Default metric panels query the engine's OWN telemetry (`src/metrics.rs`):
  * `epistemic_graph_requests_total{op}` (counter) and
@@ -18,22 +22,26 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { LayoutDashboard, LineChartIcon, Plus, ScrollTextIcon, GitBranchIcon } from 'lucide-react'
+import { LayoutDashboard, LineChartIcon, Plus, ScrollTextIcon, GitBranchIcon, ImageIcon } from 'lucide-react'
 import { nanoid } from 'nanoid'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PromqlPanel } from './PromqlPanel'
 import { LogsPanel } from './LogsPanel'
 import { TracesPanel } from './TracesPanel'
-import { TIME_RANGES, type TimeRange } from './queries'
+import { VizPanel } from './VizPanel'
+import { TIME_RANGES, type TimeRange, type VizMark } from './queries'
 
-type PanelType = 'promql' | 'logs' | 'traces'
+type PanelType = 'promql' | 'logs' | 'traces' | 'viz'
 
 interface PanelSpec {
   id: string
   type: PanelType
   title: string
   query: string
+  /** 'viz' panels only — mark + x/y fields, packed as "mark|x|y" (kept as a
+   * single string so PanelSpec stays one flat shape across all panel types). */
+  vizSpec?: string
 }
 
 /** Auto-refresh interval options (seconds; 0 = off). */
@@ -62,11 +70,37 @@ function defaultPanels(): PanelSpec[] {
   ]
 }
 
-const ADD_OPTIONS: { type: PanelType; label: string; icon: typeof LineChartIcon; title: string; query: string }[] = [
+const ADD_OPTIONS: {
+  type: PanelType
+  label: string
+  icon: typeof LineChartIcon
+  title: string
+  query: string
+  vizSpec?: string
+}[] = [
   { type: 'promql', label: 'Metrics', icon: LineChartIcon, title: 'New metric', query: DEFAULT_OP_RATE_QUERY },
   { type: 'logs', label: 'Logs', icon: ScrollTextIcon, title: 'New logs', query: '' },
   { type: 'traces', label: 'Traces', icon: GitBranchIcon, title: 'New traces', query: '' },
+  {
+    type: 'viz',
+    label: 'Chart',
+    icon: ImageIcon,
+    title: 'New chart',
+    query: '',
+    vizSpec: 'scatter||',
+  },
 ]
+
+/** Parse a `PanelSpec.vizSpec` ("mark|xField|yField") back into its parts, with
+ * a safe fallback so a malformed/missing spec never crashes the panel. */
+function parseVizSpec(spec: string | undefined): { mark: VizMark; xField: string; yField: string } {
+  const parts = (spec ?? 'scatter||').split('|')
+  const [mark = 'scatter', xField = '', yField = ''] = parts
+  const validMark: VizMark = (['scatter', 'line', 'bar', 'area', 'heatmap'] as const).includes(mark as VizMark)
+    ? (mark as VizMark)
+    : 'scatter'
+  return { mark: validMark, xField, yField }
+}
 
 export default function LiveDashboardsView() {
   const [panels, setPanels] = useState<PanelSpec[]>(defaultPanels)
@@ -97,7 +131,7 @@ export default function LiveDashboardsView() {
   const addPanel = (type: PanelType) => {
     const opt = ADD_OPTIONS.find((o) => o.type === type)
     if (!opt) return
-    setPanels((prev) => [...prev, { id: nanoid(6), type, title: opt.title, query: opt.query }])
+    setPanels((prev) => [...prev, { id: nanoid(6), type, title: opt.title, query: opt.query, vizSpec: opt.vizSpec }])
   }
 
   const removePanel = (id: string) => {
@@ -207,6 +241,23 @@ export default function LiveDashboardsView() {
                   key={p.id}
                   title={p.title}
                   range={range}
+                  refreshSignal={refreshSignal}
+                  onRemove={() => {
+                    removePanel(p.id)
+                  }}
+                />
+              )
+            }
+            if (p.type === 'viz') {
+              const { mark, xField, yField } = parseVizSpec(p.vizSpec)
+              return (
+                <VizPanel
+                  key={p.id}
+                  title={p.title}
+                  initialQuery={p.query}
+                  initialMark={mark}
+                  initialXField={xField}
+                  initialYField={yField}
                   refreshSignal={refreshSignal}
                   onRemove={() => {
                     removePanel(p.id)
