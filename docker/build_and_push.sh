@@ -73,6 +73,10 @@
 #
 # Env overrides (all optional):
 #   AU_SRC_PATH         path to an agent-utilities checkout (default: ../agent-utilities)
+#   EG_WHEELHOUSE_PATH  REQUIRED (temporary, see docker/Dockerfile header): a
+#                        directory containing a pre-built epistemic_graph-*.whl
+#                        at >=2.23.2,<3.0.0 -- PyPI's newest release (2.23.0)
+#                        does not yet satisfy agent-utilities' `graphos` extra
 #   IMAGE               image name:tag prefix (default: knucklessg1/agent-webui)
 #   BUILDKIT_NAMESPACE  k8s namespace hosting the buildkitd Service (default: image-build)
 #   BUILDKIT_SERVICE    Service name to resolve (default: buildkitd)
@@ -147,6 +151,29 @@ if ! grep -q '^name = "agent-utilities"' "${AU_SRC_PATH}/pyproject.toml" 2>/dev/
        "it must be a real source tree" >&2
   exit 66
 fi
+
+# ── TEMPORARY (see docker/Dockerfile header, 2026-08-17): epistemic-graph's
+# PyPI publishing has not caught up to agent-utilities' declared `graphos`
+# extra floor (>=2.23.2,<3.0.0; PyPI's newest is 2.23.0), so a pre-built wheel
+# must be supplied out of band. Delete this whole block (and the matching
+# Dockerfile context) once PyPI's epistemic-graph satisfies that floor.
+if [ -z "${EG_WHEELHOUSE_PATH:-}" ]; then
+  echo "FAILED: EG_WHEELHOUSE_PATH is not set." >&2
+  echo "epistemic-graph's PyPI releases (newest: 2.23.0) do not yet satisfy" \
+       "agent-utilities' graphos extra floor (>=2.23.2,<3.0.0) -- see" \
+       "docker/Dockerfile's header for the full explanation. Set" \
+       "EG_WHEELHOUSE_PATH to a directory containing a pre-built" \
+       "epistemic_graph-*.whl at a satisfying version (a shared one may" \
+       "already exist -- check for epistemic_graph-*.whl under a wheelhouse" \
+       "location other lanes populate, or build one from the epistemic-graph" \
+       "checkout with 'maturin build --release --features full')." >&2
+  exit 66
+fi
+if [ ! -d "${EG_WHEELHOUSE_PATH}" ] || ! ls "${EG_WHEELHOUSE_PATH}"/epistemic_graph-*.whl >/dev/null 2>&1; then
+  echo "EG_WHEELHOUSE_PATH does not contain an epistemic_graph-*.whl:" \
+       "${EG_WHEELHOUSE_PATH}" >&2
+  exit 66
+fi
 BUILD_SHA="$(cd "${REPO_ROOT}" && git rev-parse --short HEAD)"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -160,7 +187,7 @@ else
 fi
 
 echo "Building ${IMAGE}:${TAG} via buildkitd@${RESOLVED_ADDR}" \
-     "(au-src=${AU_SRC_PATH}, sha=${BUILD_SHA})" >&2
+     "(au-src=${AU_SRC_PATH}, eg-wheelhouse=${EG_WHEELHOUSE_PATH}, sha=${BUILD_SHA})" >&2
 METADATA_FILE="$(mktemp /var/tmp/agent-webui-build-meta.XXXXXX.json)"
 trap 'rm -f "${METADATA_FILE}"' EXIT
 "${BUILDCTL}" --addr "${RESOLVED_ADDR}" build \
@@ -169,6 +196,8 @@ trap 'rm -f "${METADATA_FILE}"' EXIT
   --local dockerfile="${REPO_ROOT}/docker" \
   --local au-src="${AU_SRC_PATH}" \
   --opt context:au-src=local:au-src \
+  --local eg-wheelhouse="${EG_WHEELHOUSE_PATH}" \
+  --opt context:eg-wheelhouse=local:eg-wheelhouse \
   --opt build-arg:BUILD_SHA="${BUILD_SHA}" \
   --opt build-arg:BUILD_TIME="${BUILD_TIME}" \
   --output "type=image,\"name=${OUTPUT_NAMES}\",push=true" \
