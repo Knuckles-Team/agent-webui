@@ -531,6 +531,39 @@ def served_identity_config(monkeypatch):
     return config
 
 
+@pytest.fixture(autouse=True)
+def _default_engine_admission_succeeds(monkeypatch):
+    """Default the engine-side tenant RBAC admission gate to a silent no-op.
+
+    ``agent_webui.graph_admission.ensure_tenant_admission`` runs a REAL
+    engine round trip (an RBAC-role read plus, on a brand-new principal, a
+    signed ``register_identity`` RPC) immediately after a session is minted
+    -- see that module's docstring. No unit test has a real epistemic-graph
+    engine or a seeded ``engine-admission/provisioner`` secret, the same
+    reason ``mock_graph_engine`` stands in for the graph engine itself
+    elsewhere in this suite. This is a genuinely separate boundary from
+    identity/authorization, so it does not weaken ``served_identity_config``'s
+    "the real role gate, not a bypass of it" guarantee -- ``ensure_tenant_
+    admission`` runs strictly after both the identity middleware and
+    ``WebUIAuthorizationMiddleware`` have already made their real decisions.
+
+    A test that wants to exercise admission success/failure behavior itself
+    overrides this within its own body -- a ``monkeypatch.setattr`` call
+    inside a test function runs after fixture setup, so it wins. See
+    ``agent_webui/__tests__/test_graph_admission.py`` and the "Engine-side
+    tenant admission" section of ``test_identity_middleware_boundary.py``.
+    """
+    try:
+        from agent_webui import graph_admission
+    except ImportError:
+        return
+
+    async def _noop(_actor, _session):
+        return None
+
+    monkeypatch.setattr(graph_admission, 'ensure_tenant_admission', _noop)
+
+
 def authenticated_asgi_app(
     app,
     *,

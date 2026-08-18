@@ -166,6 +166,7 @@ async def test_authenticated_request_binds_the_injected_minters_session(
         GraphSession,
         current_session,
     )
+    from agent_webui import graph_admission
 
     monkeypatch.setattr(
         config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
@@ -187,6 +188,14 @@ async def test_authenticated_request_binds_the_injected_minters_session(
         _shared, 'actor_from_bearer_token', _fake_actor_from_bearer_token
     )
     monkeypatch.setattr(_shared, 'mint_graph_session', _shared_minter_must_not_run)
+
+    async def _admission_noop(_actor: Any, _session: Any) -> None:
+        # Engine-side tenant admission is exercised on its own — see the
+        # "Engine-side tenant admission" tests below — this test is only
+        # about which minter's session gets bound.
+        return None
+
+    monkeypatch.setattr(graph_admission, 'ensure_tenant_admission', _admission_noop)
 
     expected = GraphSession(
         actor=actor, tenant='homelab', scopes=frozenset({'kg:read'})
@@ -267,3 +276,116 @@ async def test_an_invalid_credential_never_reaches_the_injected_minter(
 
     assert send.status == 401
     assert send.json_body == {'error': 'Token validation failed'}
+
+
+# ---------------------------------------------------------------------------
+# Engine-side tenant admission (agent_webui.graph_admission) — wiring
+#
+# These pin that a newly minted session is run through
+# ``ensure_tenant_admission`` BEFORE it is bound as the request's ambient
+# session (so a still-unadmitted principal's own engine calls never happen
+# under a session that was never actually admitted), and that its two
+# distinct failure modes map to distinct, honest HTTP statuses rather than a
+# collapsed 500 or a silent pass-through to a later ACCESS_DENIED.
+# ---------------------------------------------------------------------------
+
+
+def _authenticated_setup(monkeypatch: pytest.MonkeyPatch) -> ActorContext:
+    from agent_utilities.core.config import config
+
+    monkeypatch.setattr(
+        config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
+    )
+    actor = ActorContext(actor_id='subject-1', tenant_id='homelab', authenticated=True)
+
+    async def _fake_actor_from_bearer_token(_token: str) -> ActorContext:
+        return actor
+
+    monkeypatch.setattr(
+        _shared, 'actor_from_bearer_token', _fake_actor_from_bearer_token
+    )
+    return actor
+
+
+@pytest.mark.asyncio
+async def test_admission_runs_before_the_session_is_bound_ambient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent_utilities.knowledge_graph.core.session import (
+        GraphSession,
+        current_session,
+    )
+    from agent_webui import graph_admission
+
+    actor = _authenticated_setup(monkeypatch)
+    expected = GraphSession(actor=actor, tenant='homelab', scopes=frozenset())
+
+    observed_session_during_admission: list[Any] = []
+
+    async def _fake_ensure(candidate_actor: Any, candidate_session: Any) -> None:
+        assert candidate_actor is actor
+        assert candidate_session is expected
+        observed_session_during_admission.append(current_session())
+
+    monkeypatch.setattr(graph_admission, 'ensure_tenant_admission', _fake_ensure)
+
+    async def _inner(scope: dict, receive: Any, send: Any) -> None:
+        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
+        await send({'type': 'http.response.body', 'body': b'{}'})
+
+    send = _Recorder()
+    scope = _scope(headers=[(b'authorization', b'Bearer a-valid-looking-token')])
+    await _middleware(_inner, lambda _actor: expected)(scope, _receive, send)
+
+    assert send.status == 200
+    assert observed_session_during_admission == [None], (
+        'admission must run before the session is bound ambient'
+    )
+
+
+@pytest.mark.asyncio
+async def test_tenant_not_provisioned_is_a_distinct_403(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent_utilities.knowledge_graph.core.session import GraphSession
+    from agent_webui import graph_admission
+
+    actor = _authenticated_setup(monkeypatch)
+    session = GraphSession(actor=actor, tenant='homelab', scopes=frozenset())
+
+    async def _fake_ensure(_actor: Any, _session: Any) -> None:
+        raise graph_admission.TenantNotProvisionedError(
+            "tenant role for 'homelab' does not exist yet"
+        )
+
+    monkeypatch.setattr(graph_admission, 'ensure_tenant_admission', _fake_ensure)
+
+    send = _Recorder()
+    scope = _scope(headers=[(b'authorization', b'Bearer a-valid-looking-token')])
+    await _middleware(_never_called, lambda _actor: session)(scope, _receive, send)
+
+    assert send.status == 403
+    assert 'homelab' in send.json_body['error']
+
+
+@pytest.mark.asyncio
+async def test_engine_admission_unavailable_is_a_distinct_503(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent_utilities.knowledge_graph.core.session import GraphSession
+    from agent_webui import graph_admission
+
+    actor = _authenticated_setup(monkeypatch)
+    session = GraphSession(actor=actor, tenant='homelab', scopes=frozenset())
+
+    async def _fake_ensure(_actor: Any, _session: Any) -> None:
+        raise graph_admission.EngineAdmissionUnavailableError('engine unreachable')
+
+    monkeypatch.setattr(graph_admission, 'ensure_tenant_admission', _fake_ensure)
+
+    send = _Recorder()
+    scope = _scope(headers=[(b'authorization', b'Bearer a-valid-looking-token')])
+    await _middleware(_never_called, lambda _actor: session)(scope, _receive, send)
+
+    assert send.status == 503
+    assert 'engine unreachable' in send.json_body['error']
