@@ -171,16 +171,16 @@ requires-dist = [
     { name = "pydantic-ai-harness", extras = ["dynamic-workflow"], marker = "extra == 'dynamic-workflow'", specifier = ">=0.14.0,<0.15.0" },
     { name = "pydantic-ai-skills", marker = "extra == 'agent-headless'", specifier = ">=1.2.0" },
     { name = "pydantic-ai-skills", marker = "extra == 'agent-runtime'", specifier = ">=1.2.0" },
-    { name = "pydantic-ai-slim", extras = ["ag-ui", "cli", "mcp", "openai", "ui", "web"], marker = "extra == 'agent-runtime'", specifier = ">=2.14.1,<3.0.0" },
-    { name = "pydantic-ai-slim", extras = ["anthropic"], marker = "extra == 'agent-anthropic'", specifier = ">=2.14.1,<3.0.0" },
-    { name = "pydantic-ai-slim", extras = ["cli", "mcp", "openai", "web"], marker = "extra == 'agent-headless'", specifier = ">=2.14.1,<3.0.0" },
-    { name = "pydantic-ai-slim", extras = ["google"], marker = "extra == 'agent-google'", specifier = ">=2.14.1,<3.0.0" },
-    { name = "pydantic-ai-slim", extras = ["groq"], marker = "extra == 'agent-groq'", specifier = ">=2.14.1,<3.0.0" },
-    { name = "pydantic-ai-slim", extras = ["huggingface"], marker = "extra == 'agent-huggingface'", specifier = ">=2.14.1,<3.0.0" },
-    { name = "pydantic-ai-slim", extras = ["mistral"], marker = "extra == 'agent-mistral'", specifier = ">=2.14.1,<3.0.0" },
-    { name = "pydantic-ai-slim", extras = ["openai"], marker = "extra == 'mcp'", specifier = ">=2.14.1,<3.0.0" },
-    { name = "pydantic-graph", marker = "extra == 'agent-headless'", specifier = ">=2.14.1,<3.0.0" },
-    { name = "pydantic-graph", marker = "extra == 'agent-runtime'", specifier = ">=2.14.1,<3.0.0" },
+    { name = "pydantic-ai-slim", extras = ["ag-ui", "cli", "mcp", "openai", "ui", "web"], marker = "extra == 'agent-runtime'", specifier = "==2.29.0" },
+    { name = "pydantic-ai-slim", extras = ["anthropic"], marker = "extra == 'agent-anthropic'", specifier = "==2.29.0" },
+    { name = "pydantic-ai-slim", extras = ["cli", "mcp", "openai", "web"], marker = "extra == 'agent-headless'", specifier = "==2.29.0" },
+    { name = "pydantic-ai-slim", extras = ["google"], marker = "extra == 'agent-google'", specifier = "==2.29.0" },
+    { name = "pydantic-ai-slim", extras = ["groq"], marker = "extra == 'agent-groq'", specifier = "==2.29.0" },
+    { name = "pydantic-ai-slim", extras = ["huggingface"], marker = "extra == 'agent-huggingface'", specifier = "==2.29.0" },
+    { name = "pydantic-ai-slim", extras = ["mistral"], marker = "extra == 'agent-mistral'", specifier = "==2.29.0" },
+    { name = "pydantic-ai-slim", extras = ["openai"], marker = "extra == 'mcp'", specifier = "==2.29.0" },
+    { name = "pydantic-graph", marker = "extra == 'agent-headless'", specifier = "==2.29.0" },
+    { name = "pydantic-graph", marker = "extra == 'agent-runtime'", specifier = "==2.29.0" },
     { name = "pydantic-monty", marker = "extra == 'sandbox'", specifier = ">=0.0.18,<0.1.0" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "pyjwt", marker = "extra == 'mcp'", specifier = ">=2.13.0" },
@@ -1756,7 +1756,7 @@ wheels = [
 
 [[package]]
 name = "pydantic-ai-slim"
-version = "2.26.0"
+version = "2.29.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio", marker = "sys_platform == 'linux'" },
@@ -1768,9 +1768,9 @@ dependencies = [
     { name = "pydantic-graph", marker = "sys_platform == 'linux'" },
     { name = "typing-inspection", marker = "sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4f/51/dc39f52dd38c8bf7d8ad6601a936d22064c935505a897c1bf5060e278c95/pydantic_ai_slim-2.26.0.tar.gz", hash = "sha256:d41a40a976885d5f9c6848552fcd6732d5daa8294faf4d3e0138fb28118b6734", size = 1004525, upload-time = "2026-08-07T03:34:19.129Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6d/47/9ea38824b27efae7d19a34e2288697e0a84aa5cdd8c119ac85d030395ea3/pydantic_ai_slim-2.29.0.tar.gz", hash = "sha256:a5de25ebf8cf50187fe71be101e318e18e8ed469e5d8d1551d92b81ded1e3e99", size = 1197221, upload-time = "2026-08-13T04:16:29.027Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9f/ac/e09eb468ccec3180f73828b1e0c59b891cc9ee442be2d28410b02c1d09a3/pydantic_ai_slim-2.26.0-py3-none-any.whl", hash = "sha256:855a23f120328e7a12e8f4371db597d74f65925e20ce335d3a6db81203238f58", size = 1201143, upload-time = "2026-08-07T03:34:11.305Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/42/fda259cd11f88eb0ce7e54ee6a29011c0dd6a0af474403a2bb32d5dddb79/pydantic_ai_slim-2.29.0-py3-none-any.whl", hash = "sha256:cb5f5b7a941715b7f8894baae48ac178a603bdcf729726535964eaec25b07eb1", size = 1414034, upload-time = "2026-08-13T04:16:22.19Z" },
 ]
 
 [package.optional-dependencies]
@@ -1852,7 +1852,7 @@ wheels = [
 
 [[package]]
 name = "pydantic-graph"
-version = "2.26.0"
+version = "2.29.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio", marker = "sys_platform == 'linux'" },
@@ -1861,9 +1861,9 @@ dependencies = [
     { name = "pydantic", marker = "sys_platform == 'linux'" },
     { name = "typing-inspection", marker = "sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/39/64/05bf73d982dd778b5613ad224a58ca510aaccf622644d97af93e6006a680/pydantic_graph-2.26.0.tar.gz", hash = "sha256:12d9da6c5a0e2634d89f2795ca15783ee37250fdc295b33b5c14232576dafdac", size = 45181, upload-time = "2026-08-07T03:34:22.049Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/99/a4/364964ff4ca90fac651ffc969e04d75941389a39009fa2e950379bbcec93/pydantic_graph-2.29.0.tar.gz", hash = "sha256:078d2d7ab53ffb695e1a66c2a741880c88fef36611004736bf7313f8a5ec4465", size = 45180, upload-time = "2026-08-13T04:16:30.94Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bb/59/54302729598308ba437e250473c99ef51625e86997f7ae2ba6b61a2ad00f/pydantic_graph-2.26.0-py3-none-any.whl", hash = "sha256:4599a980747588faf17ac56cfa9c10b2a79723a5a20c3c7ee479e8366653097c", size = 52662, upload-time = "2026-08-07T03:34:14.831Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/d5/9a7e31a4895904c5d81989069630c47b7ef28d07256ae7ce1b8cda9964d1/pydantic_graph-2.29.0-py3-none-any.whl", hash = "sha256:afc81688c9abca9e93c4f7b81dd1112e8a7a8d4d41514413bd8d2c674bd2dfa1", size = 52661, upload-time = "2026-08-13T04:16:24.994Z" },
 ]
 
 [[package]]
