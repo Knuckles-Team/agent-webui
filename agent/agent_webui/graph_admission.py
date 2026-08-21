@@ -248,6 +248,69 @@ def _sync_ensure(tenant_slug: str, agent_id: str) -> None:
             _FAILURES.pop(key, None)
 
 
+_SERVICE_SESSION: Any = None
+_SERVICE_SESSION_LOCK = threading.Lock()
+
+
+def _service_authority() -> Any:
+    """This deployment's own verified graph authority, minted once per process.
+
+    Mirrors `kg_server._mint_process_session`: the identity provider issues a
+    bounded-expiry process token, which becomes the actor and session that
+    control-plane work runs under. Cached because minting it is a network round
+    trip and admission is on the connection path.
+
+    A failure here is an admission failure, not a silent downgrade to the
+    caller's identity -- falling back to the user's session is precisely the bug
+    this replaced, and it fails closed for every user rather than visibly for the
+    operator.
+    """
+
+    global _SERVICE_SESSION
+    with _SERVICE_SESSION_LOCK:
+        if _SERVICE_SESSION is not None:
+            return _SERVICE_SESSION
+        from agent_utilities.core.config import config
+        from agent_utilities.security.request_identity import (
+            acquire_process_identity_token,
+            mint_actor_from_token_sync,
+            mint_graph_session,
+        )
+
+        # The ADMIN BROKER credential, not a second process identity.
+        #
+        # `KG_ADMIN_BROKER_OAUTH2` is already provisioned for this deployment and
+        # exists precisely to let a frontend perform admin-capability work under
+        # its own principal instead of the caller's
+        # (CONCEPT:AU-OS.identity.idp-role-to-engine-capability-bridge). Using it
+        # here grants nothing new -- the alternative, `KG_AUTH_TOKEN_REF`/
+        # `KG_IDENTITY_OAUTH2`, is not configured for this pod at all, so a
+        # generic process identity would just fail differently.
+        #
+        # `_BrokerConfigView` mirrors `placement_catalog._broker_authority`: the
+        # broker's OAuth2 block rides the SAME `acquire_process_identity_token`
+        # resolver every other external process identity uses, so this is not a
+        # parallel trust mechanism.
+        oauth2 = getattr(config, "kg_admin_broker_oauth2", None)
+        if not oauth2:
+            raise EngineAdmissionUnavailableError(
+                "no admin broker identity is configured for this deployment "
+                "(KG_ADMIN_BROKER_OAUTH2); tenant admission cannot be verified "
+                "without one"
+            )
+
+        class _BrokerConfigView:
+            kg_auth_token_ref = None
+            kg_identity_oauth2 = oauth2
+
+        token = acquire_process_identity_token(_BrokerConfigView())
+        actor = mint_actor_from_token_sync(token)
+        session = mint_graph_session(actor)
+        session.engine_verified_context()
+        _SERVICE_SESSION = session
+        return session
+
+
 async def ensure_tenant_admission(actor: Any, session: Any) -> None:
     """Ensure ``actor``'s principal is admitted into ``session``'s tenant.
 
@@ -274,4 +337,33 @@ async def ensure_tenant_admission(actor: Any, session: Any) -> None:
         if key in _ADMITTED:
             return
 
-    await asyncio.to_thread(_sync_ensure, tenant_slug, agent_id)
+    # Admission runs under THIS SERVICE's identity, never the caller's.
+    #
+    # Two reasons, and the second is why the caller's session cannot work at all:
+    #
+    # 1. Admission is a control-plane decision about the caller. Performing it as
+    #    the caller is backwards -- the subject of an authorization decision
+    #    should not be the one authorized to make it.
+    # 2. The engine round trip inside `_sync_ensure` resolves a placement route,
+    #    which the engine gates on `cluster:placement-read`. A browser session can
+    #    never hold that scope: `mint_frontend_graph_session` intersects the
+    #    actor's roles with `_GRAPH_AUTH_SCOPES`, which is exactly
+    #    {kg:read, kg:write, kg:admin}. So running this as the caller failed for
+    #    EVERY user, always, with "could not verify engine RBAC role ...: engine
+    #    rbac.list() failed" -- a message describing a role problem when the real
+    #    condition was that the probe had no authority to look.
+    #
+    # The service identity is the same process authority graph-os itself mints
+    # (`acquire_process_identity_token` -> `mint_actor_from_token_sync` ->
+    # `mint_graph_session`), so this grants nothing new: it uses the credential
+    # this deployment already holds, instead of borrowing the user's.
+    #
+    # `asyncio.to_thread` copies the current context into the worker thread, so
+    # binding here (not inside `_sync_ensure`, which only ever receives strings)
+    # is what reaches the engine call.
+    service_session = _service_authority()
+    from agent_utilities.knowledge_graph.core.session import use_session
+    from agent_utilities.security.brain_context import use_actor
+
+    with use_actor(service_session.actor), use_session(service_session):
+        await asyncio.to_thread(_sync_ensure, tenant_slug, agent_id)
