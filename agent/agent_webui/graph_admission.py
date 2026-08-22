@@ -176,6 +176,32 @@ def _tenant_role_exists(tenant_slug: str) -> bool:
         ) from exc
 
 
+def _admission_route_debug() -> str:
+    """Describe the engine view and ambient session the admission RPC used.
+
+    Diagnostic only: never raises, never touches a credential, and is read
+    exclusively from an exception path.
+    """
+
+    try:
+        from agent_utilities.knowledge_graph.core.graph_compute import (
+            GraphComputeEngine,
+        )
+        from agent_utilities.knowledge_graph.core.session import current_session
+
+        engine = GraphComputeEngine.get_active()
+        client = getattr(engine, 'client', None)
+        session = current_session()
+        return (
+            f'engine.graph_name={getattr(engine, "graph_name", None)!r} '
+            f'client._fixed_graph={getattr(client, "_fixed_graph", None)!r} '
+            f'client._graph_name={getattr(client, "_graph_name", None)!r} '
+            f'session.graph={getattr(session, "graph", None)!r}'
+        )
+    except Exception as exc:  # noqa: BLE001 - diagnostics never mask the real error
+        return f'route-debug unavailable: {exc!r}'
+
+
 def _admit(tenant_slug: str, agent_id: str) -> None:
     """Enroll ``agent_id`` in ``tenant_slug``'s durable RBAC role.
 
@@ -195,6 +221,16 @@ def _admit(tenant_slug: str, agent_id: str) -> None:
     try:
         result = run_tenant_admission(tenant_slug, [principal], apply=True)
     except Exception as exc:  # noqa: BLE001 - converted to our own error type
+        # The wrapped message alone has repeatedly proven un-actionable: it
+        # names the tenant but not WHICH engine view refused, nor what graph
+        # the ambient session carried. Log the full chain plus both graph
+        # bindings once, at the only point where all three are in scope.
+        logger.exception(
+            'engine tenant admission FAILED: agent_id=%s tenant=%s %s',
+            agent_id,
+            tenant_slug,
+            _admission_route_debug(),
+        )
         raise EngineAdmissionUnavailableError(
             f'engine admission failed for {agent_id!r} in tenant {tenant_slug!r}: {exc}'
         ) from exc
@@ -270,6 +306,34 @@ def _service_authority() -> Any:
     with _SERVICE_SESSION_LOCK:
         if _SERVICE_SESSION is not None:
             return _SERVICE_SESSION
+
+        # In-process under graph-os, the ambient authority IS the right one and
+        # minting a second would be actively wrong.
+        #
+        # This dashboard runs as a graph-os co-service, on a thread that carries
+        # graph-os's verified actor and GraphSession for its whole lifetime. That
+        # principal is the one the engine's signer registry trusts, and the engine
+        # requires an admission's signer to BE the calling principal
+        # (`verify_register_identity_signature`, else SIGNER_TRUST_DENIED). So
+        # replacing it with a separately-minted broker identity would swap the one
+        # credential that can sign admission for one that cannot.
+        #
+        # The broker path below remains for a standalone deployment, where there is
+        # no ambient process authority to inherit.
+        from agent_utilities.knowledge_graph.core.session import current_session
+
+        ambient = current_session()
+        if ambient is not None and getattr(
+            getattr(ambient, 'actor', None), 'authenticated', False
+        ):
+            logger.debug(
+                'tenant admission will use the ambient process authority '
+                '(actor=%s); no separate broker identity is minted',
+                getattr(ambient.actor, 'actor_id', None),
+            )
+            _SERVICE_SESSION = ambient
+            return _SERVICE_SESSION
+
         from agent_utilities.core.config import config
         from agent_utilities.security.request_identity import (
             acquire_process_identity_token,
@@ -291,12 +355,12 @@ def _service_authority() -> Any:
         # broker's OAuth2 block rides the SAME `acquire_process_identity_token`
         # resolver every other external process identity uses, so this is not a
         # parallel trust mechanism.
-        oauth2 = getattr(config, "kg_admin_broker_oauth2", None)
+        oauth2 = getattr(config, 'kg_admin_broker_oauth2', None)
         if not oauth2:
             raise EngineAdmissionUnavailableError(
-                "no admin broker identity is configured for this deployment "
-                "(KG_ADMIN_BROKER_OAUTH2); tenant admission cannot be verified "
-                "without one"
+                'no admin broker identity is configured for this deployment '
+                '(KG_ADMIN_BROKER_OAUTH2); tenant admission cannot be verified '
+                'without one'
             )
 
         class _BrokerConfigView:

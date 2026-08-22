@@ -23,27 +23,59 @@ from agent_webui.graph_admission import (
 
 
 class _FakeActor:
-    def __init__(self, actor_id: str) -> None:
+    def __init__(self, actor_id: str, *, authenticated: bool = False) -> None:
         self.actor_id = actor_id
+        self.authenticated = authenticated
+
+    def ensure_credential_current(self) -> None:
+        """No-op: these fakes carry no expiring credential to revalidate."""
 
 
 class _FakeSession:
-    def __init__(self, tenant: str) -> None:
+    def __init__(self, tenant: str, *, actor: _FakeActor | None = None) -> None:
         self.tenant = tenant
+        self.actor = actor
+        self.graph = f'tenant__{tenant}____commons__'
+
+    # `use_session`/`use_actor` revalidate at the ambient boundary, so a fake
+    # bound there must answer the same two hooks a real GraphSession does.
+    def __post_init__(self) -> None:
+        """No-op: nothing to revalidate on a test double."""
+
+    def ensure_authority_current(self) -> None:
+        """No-op: this fake's authority never expires."""
 
 
 @pytest.fixture(autouse=True)
 def _reset_module_state():
-    """Every test gets a clean cache — the module-level dicts are process
-    lifetime state, and tests must not see each other's admissions."""
+    """Every test gets a clean cache and the in-process authority.
+
+    The module-level dicts are process-lifetime state, so tests must not see
+    each other's admissions. The ambient session is part of that reset: this
+    dashboard runs as a graph-os co-service, whose thread carries graph-os's
+    verified actor, and `_service_authority()` prefers exactly that — so the
+    ambient authority IS the primary path under test, not a stand-in for one.
+    """
+
+    from agent_utilities.knowledge_graph.core import session as session_module
 
     graph_admission._ADMITTED.clear()
     graph_admission._FAILURES.clear()
     graph_admission._KEY_LOCKS.clear()
-    yield
-    graph_admission._ADMITTED.clear()
-    graph_admission._FAILURES.clear()
-    graph_admission._KEY_LOCKS.clear()
+    graph_admission._SERVICE_SESSION = None
+
+    ambient = _FakeSession(
+        'homelab', actor=_FakeActor('graph-os:process', authenticated=True)
+    )
+    token = session_module._current.set(ambient)
+    try:
+        yield ambient
+    finally:
+        session_module._current.reset(token)
+        graph_admission._ADMITTED.clear()
+        graph_admission._FAILURES.clear()
+        graph_admission._KEY_LOCKS.clear()
+        graph_admission._SERVICE_SESSION = None
 
 
 def _stub_role_exists(monkeypatch: pytest.MonkeyPatch, *, exists: bool) -> list[str]:
