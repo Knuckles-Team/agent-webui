@@ -187,6 +187,135 @@ async def test_engine_unreachable_at_role_check_is_a_distinct_error(
 
 
 @pytest.mark.asyncio
+async def test_probe_denied_for_insufficient_privilege_falls_through_to_admit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The live-diagnosed shape: the probe (``rbac.list()``) is gated on
+    ``security:admin``, which this deployment's principal does not hold, even
+    though it CAN perform the admission itself. 'I can't look' must not be
+    treated as 'I can't admit' — admission is attempted anyway and succeeds."""
+
+    def _denied(_tenant_slug: str) -> bool:
+        # Reproduces the exact wrapped shape `_tenant_role_exists` produces:
+        # an `EngineAdmissionUnavailableError` whose `__cause__` chain (not
+        # its own top-level message) carries the engine's admin-capability
+        # denial text.
+        cause = RuntimeError(
+            'ACCESS_DENIED: verified principal lacks admin capability '
+            "required for 'security:admin'"
+        )
+        wrapped = EngineAdmissionUnavailableError(
+            "could not verify engine RBAC role 'tenant:homelab': "
+            'engine rbac.list() failed'
+        )
+        wrapped.__cause__ = cause
+        raise wrapped
+
+    monkeypatch.setattr(graph_admission, '_tenant_role_exists', _denied)
+    admit_calls = _stub_admit(monkeypatch)
+
+    await ensure_tenant_admission(_FakeActor('user-1'), _FakeSession('homelab'))
+
+    assert admit_calls == [('homelab', 'user-1')]
+    assert ('homelab', 'user-1') in graph_admission._ADMITTED
+
+
+def test_admin_capability_denied_matches_only_the_specific_denial() -> None:
+    """Never matches a network error, an unrelated ACCESS_DENIED (a scope
+    failure is a DIFFERENT message from a DIFFERENT check), or a bare
+    message with no chain — only the engine's specific admin-capability
+    text, anywhere in the `__cause__` chain."""
+
+    admin_denied = RuntimeError(
+        'ACCESS_DENIED: verified principal lacks admin capability required '
+        "for 'security:admin'"
+    )
+    wrapped = EngineAdmissionUnavailableError('could not verify engine RBAC role')
+    wrapped.__cause__ = admin_denied
+    assert graph_admission._admin_capability_denied(wrapped) is True
+
+    unreachable = EngineAdmissionUnavailableError('engine unreachable')
+    unreachable.__cause__ = ConnectionError('connection refused')
+    assert graph_admission._admin_capability_denied(unreachable) is False
+
+    scope_denied = EngineAdmissionUnavailableError('denied')
+    scope_denied.__cause__ = RuntimeError('lacks required scope')
+    assert graph_admission._admin_capability_denied(scope_denied) is False
+
+    assert graph_admission._admin_capability_denied(None) is False
+
+
+@pytest.mark.asyncio
+async def test_probe_denied_for_privilege_then_admit_fails_is_still_actionable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the probe cannot run and the fallback admission itself fails
+    (standing in for a genuinely unprovisioned tenant, or any other admit
+    failure), the error must stay specific — naming the tenant and agent —
+    never collapse into an unhelpful generic failure."""
+
+    def _denied(_tenant_slug: str) -> bool:
+        cause = RuntimeError(
+            'ACCESS_DENIED: verified principal lacks admin capability '
+            "required for 'security:admin'"
+        )
+        wrapped = EngineAdmissionUnavailableError('could not verify engine RBAC role')
+        wrapped.__cause__ = cause
+        raise wrapped
+
+    monkeypatch.setattr(graph_admission, '_tenant_role_exists', _denied)
+    _stub_admit(
+        monkeypatch,
+        error=EngineAdmissionUnavailableError(
+            "engine admission failed for 'user-1' in tenant 'homelab': "
+            'ACCESS_DENIED: unknown tenant'
+        ),
+    )
+
+    with pytest.raises(EngineAdmissionUnavailableError, match='user-1') as excinfo:
+        await ensure_tenant_admission(_FakeActor('user-1'), _FakeSession('homelab'))
+
+    assert 'homelab' in str(excinfo.value)
+    assert ('homelab', 'user-1') not in graph_admission._ADMITTED
+    # And the failure is cached/backed off exactly like any other failure.
+    key = ('homelab', 'user-1')
+    assert key in graph_admission._FAILURES
+
+
+@pytest.mark.asyncio
+async def test_probe_denied_for_privilege_respects_cache_and_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The privilege-denial fallback must not bypass the existing cache/
+    backoff contract: a successful admission is still cached forever, and a
+    failed one still backs off rather than re-probing every request."""
+
+    probe_calls: list[str] = []
+
+    def _denied(tenant_slug: str) -> bool:
+        probe_calls.append(tenant_slug)
+        cause = RuntimeError(
+            'ACCESS_DENIED: verified principal lacks admin capability '
+            "required for 'security:admin'"
+        )
+        wrapped = EngineAdmissionUnavailableError('could not verify engine RBAC role')
+        wrapped.__cause__ = cause
+        raise wrapped
+
+    monkeypatch.setattr(graph_admission, '_tenant_role_exists', _denied)
+    admit_calls = _stub_admit(monkeypatch)
+
+    actor = _FakeActor('user-1')
+    session = _FakeSession('homelab')
+    await ensure_tenant_admission(actor, session)
+    await ensure_tenant_admission(actor, session)
+    await ensure_tenant_admission(actor, session)
+
+    assert probe_calls == ['homelab'], 'a cached success must never re-probe'
+    assert admit_calls == [('homelab', 'user-1')]
+
+
+@pytest.mark.asyncio
 async def test_engine_unreachable_at_admit_is_a_distinct_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
