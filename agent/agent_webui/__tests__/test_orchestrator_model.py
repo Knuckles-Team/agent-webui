@@ -219,3 +219,95 @@ async def test_reply_stream_short_circuits_with_no_user_text(
 
     chunks = [chunk async for chunk in model.stream_function([], _FakeAgentInfo())]
     assert chunks == ['']
+
+
+@pytest.mark.asyncio
+async def test_reply_stream_routes_text_delta_events_as_plain_text_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The core's own token deltas (``agent_runner._stream_agent_run``,
+    ``ProgressEvent(stage="text_delta")``) arrive on the SAME ``progress_sink``
+    channel as every other checkpoint. ``_reply_stream`` must route those onto the
+    wire as ordinary ``str`` chunks -- NOT another ``DeltaThinkingPart`` reasoning
+    part -- so ``@ai-sdk/react`` appends them to the growing answer text instead of
+    the progress timeline. Proves incremental emission (four deltas -> four
+    chunks, never coalesced into one) and that the final ``run_task`` return value
+    is NOT re-yielded afterward (it would duplicate the already-streamed answer).
+    """
+    from agent_utilities.orchestration.agent_runner import ProgressEvent
+
+    class _FakeOrchestrator:
+        def __init__(self, engine: Any) -> None:
+            pass
+
+        async def execute_agent(self, **kwargs: Any) -> str:
+            sink = kwargs['progress_sink']
+            await sink(
+                ProgressEvent(run_id='run:t', stage='route', status='ok', detail='ok')
+            )
+            for delta in ('agent-', 'utilities is ', 'a platform.'):
+                await sink(
+                    ProgressEvent(
+                        run_id='run:t', stage='text_delta', status='ok', detail=delta
+                    )
+                )
+            await sink(
+                ProgressEvent(run_id='run:t', stage='done', status='ok', detail='')
+            )
+            return 'agent-utilities is a platform.'
+
+    _install_fake_orchestrator(monkeypatch, _FakeOrchestrator)
+    model = build_orchestrator_model(_fake_engine_provider)
+
+    chunks = [
+        chunk
+        async for chunk in model.stream_function(
+            [_user_message('what is agent-utilities')], _FakeAgentInfo()
+        )
+    ]
+
+    # route (dict/DeltaThinkingPart), 3 plain-str deltas, done (dict), and NOTHING
+    # after -- the final ``run_task`` text is suppressed because it was already
+    # streamed incrementally.
+    assert len(chunks) == 5
+    assert isinstance(chunks[0], dict)
+    assert chunks[1:4] == ['agent-', 'utilities is ', 'a platform.']
+    assert isinstance(chunks[4], dict)
+    # Concatenating the streamed text chunks, in emission order, reconstructs the
+    # full answer -- the ordering+count assertion the house style requires instead
+    # of a wall-clock one.
+    assert ''.join(chunks[1:4]) == 'agent-utilities is a platform.'
+
+
+@pytest.mark.asyncio
+async def test_reply_stream_falls_back_to_final_text_with_no_text_delta_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A run that never emits a ``text_delta`` (today: the full multi-agent-graph
+    shape, whose model call does not yet stream) keeps the prior fallback of
+    yielding the run's final return string in one chunk -- proving the two code
+    paths (streamed vs. not) do not duplicate OR drop the answer."""
+    from agent_utilities.orchestration.agent_runner import ProgressEvent
+
+    class _FakeOrchestrator:
+        def __init__(self, engine: Any) -> None:
+            pass
+
+        async def execute_agent(self, **kwargs: Any) -> str:
+            sink = kwargs['progress_sink']
+            await sink(ProgressEvent(run_id='run:u', stage='start', status='started'))
+            await sink(ProgressEvent(run_id='run:u', stage='done', status='ok'))
+            return 'ANSWER FROM THE GRAPH'
+
+    _install_fake_orchestrator(monkeypatch, _FakeOrchestrator)
+    model = build_orchestrator_model(_fake_engine_provider)
+
+    chunks = [
+        chunk
+        async for chunk in model.stream_function(
+            [_user_message('hi')], _FakeAgentInfo()
+        )
+    ]
+
+    assert chunks[-1] == 'ANSWER FROM THE GRAPH'
+    assert chunks.count('ANSWER FROM THE GRAPH') == 1
