@@ -115,37 +115,37 @@ class TestGraphNodesEndpoint:
     """Test graph nodes endpoint."""
 
     def test_get_graph_nodes_success(self, client, mock_graph_engine):
-        """Nodes are projected as explicit scalar/function columns (`n.id`,
-        `properties(n)`) -- never the whole node object (`RETURN n`), which
-        the engine's Cypher parser rejects with `ValueError` for the same
-        anonymous/whole-object reason `get_graph_stats` already documents.
+        """Nodes come from `nodes_by_label` -- the engine's native, non-Cypher
+        id+properties fetch -- never `properties(n)` (the engine's Cypher
+        grammar has no function-call syntax beyond a fixed aggregate set plus
+        `type(r)`; `properties(n)` fails to parse and raises
+        `CypherEngineError`) and never the whole node object (`RETURN n`,
+        rejected for the same anonymous/whole-object reason `get_graph_stats`
+        already documents).
         """
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             return_value=mock_graph_engine,
         ):
             mock_graph_engine.backend = MagicMock()
-            mock_graph_engine.backend.execute.return_value = [
-                {
-                    'id': 'node1',
-                    'props': {
+            mock_graph_engine.backend.nodes_by_label.return_value = [
+                (
+                    'node1',
+                    {
                         'node_type': 'Memory',
                         'content': 'Test memory',
                         'importance': 0.8,
                     },
-                },
-                {
-                    'id': 'node2',
-                    'props': {
+                ),
+                (
+                    'node2',
+                    {
                         'node_type': 'Person',
                         'labels': ['Admin', 'Person'],
                         'title': 'Test Article',
                     },
-                },
-                {
-                    'id': 'node3',
-                    'props': {'type': 'Article', 'title': 'Not a cypher label'},
-                },
+                ),
+                ('node3', {'type': 'Article', 'title': 'Not a cypher label'}),
             ]
 
             response = client.get('/api/enhanced/graph/nodes')
@@ -169,27 +169,29 @@ class TestGraphNodesEndpoint:
             # `type`/`node_type`/`label`". Reporting it would claim a label that
             # `MATCH (n:Article)` does not match, so filtering by node_type would
             # disagree with the unfiltered list. It stays an ordinary property.
+            # `nodes_by_label` itself matches the BROADER index, but this is
+            # the UNFILTERED call (no `node_type` param), so nothing is
+            # excluded -- node3 stays in the list with `type` as an ordinary
+            # property, not a label.
             assert by_id['node3']['labels'] == []
             assert by_id['node3']['properties'] == {
                 'type': 'Article',
                 'title': 'Not a cypher label',
             }
 
-            query = mock_graph_engine.backend.execute.call_args[0][0]
-            assert 'RETURN n LIMIT' not in query
-            assert 'properties(n)' in query
-            assert 'n.id AS id' in query
+            args = mock_graph_engine.backend.nodes_by_label.call_args[0]
+            assert args == ('', 256)
 
     def test_get_graph_nodes_with_filter(self, client, mock_graph_engine):
-        """Test graph nodes with type filter -- the label filter still uses
-        `MATCH (n:Memory)`, but the RETURN clause is scalar/function-only."""
+        """Test graph nodes with type filter -- `nodes_by_label` is called
+        with the requested label, bounded by the same collection cap."""
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             return_value=mock_graph_engine,
         ):
             mock_graph_engine.backend = MagicMock()
-            mock_graph_engine.backend.execute.return_value = [
-                {'id': 'node1', 'props': {'node_type': 'Memory'}}
+            mock_graph_engine.backend.nodes_by_label.return_value = [
+                ('node1', {'node_type': 'Memory'})
             ]
 
             response = client.get('/api/enhanced/graph/nodes?node_type=Memory')
@@ -197,10 +199,49 @@ class TestGraphNodesEndpoint:
             data = response.json()
             assert len(data) == 1
 
-            query = mock_graph_engine.backend.execute.call_args[0][0]
-            assert 'MATCH (n:Memory)' in query
-            assert 'RETURN n LIMIT' not in query
-            assert 'properties(n)' in query
+            args = mock_graph_engine.backend.nodes_by_label.call_args[0]
+            assert args == ('Memory', 256)
+
+    def test_get_graph_nodes_excludes_broader_index_only_matches(
+        self, client, mock_graph_engine
+    ):
+        """`nodes_by_label` indexes the BROADER `type`/`node_type`/`label`/
+        `labels` write-path contract; Cypher's own `(n:Label)` predicate is
+        deliberately narrower (`node_type` + `labels[]` only). A node
+        matched only via a bare `type` property must not appear in a
+        node_type-filtered result -- `MATCH (n:Article)` would not have
+        matched it either."""
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.backend = MagicMock()
+            mock_graph_engine.backend.nodes_by_label.return_value = [
+                ('node1', {'node_type': 'Article'}),
+                ('node2', {'type': 'Article', 'title': 'broader-index-only match'}),
+            ]
+
+            response = client.get('/api/enhanced/graph/nodes?node_type=Article')
+            assert response.status_code == 200
+            data = response.json()
+            assert [n['id'] for n in data] == ['node1']
+
+    def test_get_graph_nodes_no_native_helper_fails_closed(
+        self, client, mock_graph_engine
+    ):
+        """A backend without the native `nodes_by_label` seam (e.g. a
+        GraphBackend implementation that doesn't provide it) degrades to an
+        explicit 503, never a silent/empty success."""
+        from agent_utilities.knowledge_graph.backends.base import GraphBackend
+
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.backend = MagicMock(spec=GraphBackend)
+
+            response = client.get('/api/enhanced/graph/nodes')
+            assert response.status_code == 503
 
     def test_get_graph_nodes_no_engine(self, client):
         """Test graph nodes when engine not initialized."""

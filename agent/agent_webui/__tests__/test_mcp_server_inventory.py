@@ -333,3 +333,53 @@ async def test_list_all_tools_surfaces_the_sql_prompts_table(
         result = await api_extensions.list_all_tools()
 
     assert [p['name'] for p in result['mcp_prompts']] == ['greeting']
+
+
+@pytest.mark.asyncio
+async def test_list_all_tools_batches_toggle_state_reads_not_per_row(
+    monkeypatch, bounded_engine, stub_engine
+) -> None:
+    """Root-cause regression test for the ``/api/enhanced/tools`` hang that
+    never returned (measured live: >120s, timed out). ``list_all_tools``
+    used to call ``get_toggle_state`` -- one ``engine.query_cypher`` round
+    trip through ``_invoke_governed_helper``'s bounded synchronous executor
+    -- once PER ROW across servers/builtin_tools/skills, up to ~1000
+    sequential calls for a full catalog. ``_batch_toggle_states`` replaces
+    that with ONE round trip per toggle ``item_type``. However many rows the
+    catalog holds, the number of ``query_cypher`` calls must stay a small,
+    FIXED constant -- never scale with the listing size."""
+    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+
+    catalog = {
+        'servers': [_server_row(id=f'srv:{i}', name=f'server-{i}') for i in range(300)],
+        'discoveries': [],
+        'skills': [
+            {
+                'id': f'skill-{i}',
+                'name': f'skill-{i}',
+                'description': '',
+                'uri': '',
+                'skill_type': 'skill',
+                'classification': 'Atomic Skill',
+                'provider': '',
+                'mcp_server': '',
+                'enabled': True,
+            }
+            for i in range(300)
+        ],
+        'prompts': [],
+    }
+
+    with _patch_catalog(catalog):
+        result = await api_extensions.list_all_tools()
+
+    # Bounded to the collection cap, not the 300 rows fed in -- proves the
+    # route still returns a paged/bounded contract, not an ever-growing
+    # response.
+    assert len(result['mcp_tools']) == 256
+    assert len(result['skills']) == 256
+    # ONE `query_cypher` round trip per toggle item_type this route actually
+    # uses (mcp_server, builtin_tool, skill, skill_workflow, skill_graph) --
+    # never one per row, regardless of how many servers/skills the catalog
+    # holds.
+    assert stub_engine.query_cypher.call_count <= 5
