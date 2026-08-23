@@ -297,12 +297,70 @@ async def test_list_all_tools_classifies_skills_from_the_sql_skill_type_column(
     assert result['skill_workflows'][0]['runnable'] is False
     assert result['skill_workflows'][0]['resource_type'] == 'WORKFLOW_DEFINITION'
     assert [g['id'] for g in result['skill_graphs']] == ['graph-a']
-    assert result['skill_unclassified'] == []
     summary = result['skill_classification']
     assert summary['kg_reachable'] is True
     assert summary['runnable_count'] == 1
     assert summary['describe_only_count'] == 1
     assert summary['unclassified_count'] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_all_tools_flags_unclassified_skills_inside_skills_not_a_fourth_bucket(
+    monkeypatch, bounded_engine
+) -> None:
+    """An unclassified skill (a `skill_type` outside the recognized set) is
+    still a skill: it lands in `result['skills']` alongside every other
+    agent skill, flagged via `kg_classified: False`/`resource_type: None`,
+    never in a separate bucket (there is no `skill_unclassified` key at
+    all)."""
+    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+
+    with _patch_catalog(
+        {
+            'servers': [],
+            'discoveries': [],
+            'skills': [
+                {
+                    'id': 'skill-a',
+                    'name': 'skill-a',
+                    'description': '',
+                    'uri': '',
+                    'skill_type': 'skill',
+                    'classification': 'Atomic Skill',
+                    'provider': '',
+                    'mcp_server': '',
+                    'enabled': True,
+                },
+                {
+                    'id': 'mystery-a',
+                    'name': 'mystery-a',
+                    'description': '',
+                    'uri': '',
+                    'skill_type': 'mystery',
+                    'classification': 'Mystery',
+                    'provider': '',
+                    'mcp_server': '',
+                    'enabled': True,
+                },
+            ],
+            'prompts': [],
+        }
+    ):
+        result = await api_extensions.list_all_tools()
+
+    assert 'skill_unclassified' not in result
+    assert {s['id'] for s in result['skills']} == {'skill-a', 'mystery-a'}
+    by_id = {s['id']: s for s in result['skills']}
+    assert by_id['skill-a']['kg_classified'] is True
+    assert by_id['mystery-a']['kg_classified'] is False
+    assert by_id['mystery-a']['resource_type'] is None
+    assert by_id['mystery-a']['runnable'] is False
+    summary = result['skill_classification']
+    assert summary['unclassified_count'] == 1
+    # An unclassified row still counts toward the total agent-skill tally --
+    # it is not invisible to the summary just because it is unrecognized.
+    assert summary['kg_agent_skill_count'] == 2
+    assert summary['runnable_count'] == 1
 
 
 @pytest.mark.asyncio

@@ -1893,10 +1893,17 @@ async def list_all_tools() -> dict[str, Any]:
     # SQL catalog's own `skill_type` column (assigned by the sync job's
     # `classify_skill_type`, which never leaves it blank), never by
     # filesystem path or a separate KG cross-reference query.
+    #
+    # An unclassified skill (skill_type outside the recognized set) is still
+    # a skill -- it is NOT a fourth bucket. It lands in `skills` alongside
+    # every other agent skill, distinguished only by `kg_classified: False`
+    # (the UI renders that as an "Unclassified" flag -- see
+    # `RunnabilityBadge` in SkillsView.tsx) so it is discoverable as needing
+    # attention rather than hidden in a separate, easy-to-miss group.
     skills: list[dict[str, Any]] = []
     skill_graphs: list[dict[str, Any]] = []
     skill_workflows: list[dict[str, Any]] = []
-    skill_unclassified: list[dict[str, Any]] = []
+    unclassified_count = 0
     for row in skill_rows[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
         skill_id = row.get('id')
         if not isinstance(skill_id, str) or not skill_id:
@@ -1933,7 +1940,8 @@ async def list_all_tools() -> dict[str, Any]:
             entry['resource_type'] = None
             entry['kg_classified'] = False
             entry['enabled'] = await get_toggle_state(engine, 'skill', skill_id)
-            skill_unclassified.append(entry)
+            skills.append(entry)
+            unclassified_count += 1
 
     result = {
         'mcp_tools': mcp_tools,
@@ -1945,9 +1953,6 @@ async def list_all_tools() -> dict[str, Any]:
         'skill_workflows': sorted(
             skill_workflows, key=lambda x: x.get('name', '').lower()
         ),
-        'skill_unclassified': sorted(
-            skill_unclassified, key=lambda x: x.get('name', '').lower()
-        ),
         # Live catalog classification summary, computed fresh on every call.
         'skill_classification': {
             'source': 'sql_catalog',
@@ -1955,9 +1960,9 @@ async def list_all_tools() -> dict[str, Any]:
             'filesystem_skill_md_count': len(skill_rows),
             'kg_agent_skill_count': len(skills),
             'kg_workflow_definition_count': len(skill_workflows),
-            'runnable_count': len(skills),
+            'runnable_count': len(skills) - unclassified_count,
             'describe_only_count': len(skill_workflows),
-            'unclassified_count': len(skill_unclassified),
+            'unclassified_count': unclassified_count,
         },
     }
     bounded = _public_external_result(result)

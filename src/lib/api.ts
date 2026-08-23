@@ -671,6 +671,28 @@ class ApiClient {
       (r) => r.result,
     )
 
+  // Classify a skill (skill_type: skill|workflow|graph) and persist the
+  // choice (SkillsView, CONCEPT:AU-KG.ingest.skill-classification-writeback).
+  // Hits the canonical `/api/*` gateway surface directly, like
+  // `getOntologySchemaGraph` above -- `skill_classify` is agent-utilities
+  // core capability, reached here as a thin caller with no re-implemented
+  // logic. `persisted: false` in the result is a REFUSED write, not a
+  // network error -- callers must check it explicitly and never treat a 200
+  // response as success on its own (fail-closed).
+  classifySkill = (skillId: string, skillType: 'skill' | 'workflow' | 'graph') =>
+    this.post<{
+      status: string
+      result: {
+        persisted: boolean
+        reason: string | null
+        skill_type: string
+        classification: string
+        persisted_to_source_file: boolean
+        persisted_as_durable_override: boolean
+        catalog_refreshed: boolean
+      }
+    }>('/api/skill/classify', { skill_id: skillId, skill_type: skillType }).then((r) => r.result)
+
   // -------------------------------------------------------------------------
   // SPARQL bridge + SHACL validation report (coverage rows #9/#97 frontend
   // gaps). Both hit the canonical `/api/*` gateway surface directly, like
