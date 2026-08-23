@@ -54,8 +54,28 @@ a fresh part, so pydantic-ai's adapter emits a real ``reasoning-start`` /
 blob. ``@ai-sdk/react``'s ``useChat`` already renders reasoning parts
 distinctly from the answer text and flips ``status`` out of ``'submitted'``
 on the FIRST chunk of ANY kind -- so the spinner clears the instant routing
-starts, not when the whole run finishes. The final answer still streams as
-plain text, unchanged, once the run completes.
+starts, not when the whole run finishes.
+
+Token streaming (events AND the answer, concurrently): the core's model call
+sites (``agent_utilities.orchestration.agent_runner._stream_agent_run``) now
+stream the answer's OWN token deltas onto this SAME ``progress_sink`` channel
+as ``ProgressEvent(stage="text_delta")``. ``_reply_stream`` routes those onto
+the wire as ordinary ``str`` chunks (not another reasoning part), so
+``@ai-sdk/react`` appends each one to the assistant message's growing text
+part exactly like a normal streaming model reply -- while the surrounding
+route/tool_call/synthesis checkpoints keep streaming as reasoning parts on
+the SAME drain loop. Because both come off the ONE queue this generator
+already drains in arrival order, there is no second queue to reconcile and
+no interleaving hazard: a text delta can never be reordered relative to the
+checkpoint immediately before or after it. Not every run streams its answer
+token-by-token yet (the full multi-agent-graph shape's model call lives in
+``orchestration/engine.py`` and does not yet accept ``progress_sink`` --
+see ``agent_runner._execute_graph``'s docstring), so ``_reply_stream`` still
+falls back to yielding the run's final return string in one chunk whenever
+no ``text_delta`` event arrived -- covering that shape today and preserving
+the failure-path guarantee (the engine's own failure ``GraphResponse``
+message must still reach the user as a streamed terminal chunk, never
+silence) unconditionally.
 """
 
 from __future__ import annotations
@@ -253,10 +273,26 @@ def build_orchestrator_model(
         run_task = asyncio.create_task(_run())
         try:
             part_index = 0
+            streamed_answer = False
             while True:
                 event = await events.get()
                 if event is None:
                     break
+                # CONCEPT:AU-ORCH.execution.messaging-orchestration-transparency,
+                # token-streaming half -- the core now emits the answer's own token
+                # deltas on this SAME channel as ``stage="text_delta"`` events
+                # (``agent_runner._stream_agent_run``). Route those onto the wire as
+                # plain ``str`` chunks (FunctionModel's ordinary text-delta shape) so
+                # ``@ai-sdk/react`` appends them to the message's growing text part,
+                # INTERLEAVED with the reasoning-part checkpoints above/below in
+                # whatever order the core produced them -- both come off the ONE
+                # queue this generator drains, so there is no second stream to
+                # reconcile and no reordering hazard.
+                if event.stage == 'text_delta':
+                    if event.detail:
+                        streamed_answer = True
+                        yield event.detail
+                    continue
                 part_index += 1
                 yield {
                     part_index: DeltaThinkingPart(
@@ -273,7 +309,15 @@ def build_orchestrator_model(
             # still reaches the user as a real answer string, streamed here
             # like any other successful turn, never silently).
             text = await run_task
-            if text:
+            # A run whose model call streamed its own token deltas above (the
+            # single-server/focused-tools/direct-completion shapes) already put the
+            # full answer on the wire incrementally -- yielding ``text`` again here
+            # would duplicate it. A run that only ever streamed checkpoint events
+            # (today: the full multi-agent-graph shape, whose engine-side model call
+            # does not yet stream -- see agent_runner._execute_graph's docstring --
+            # and any failure path that never reached a model call) still needs this
+            # fallback so the answer/failure text reaches the wire at all.
+            if text and not streamed_answer:
                 yield text
         finally:
             if not run_task.done():
