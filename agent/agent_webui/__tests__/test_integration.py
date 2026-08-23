@@ -43,16 +43,13 @@ class TestGraphWorkflowIntegration:
             stats_data = stats_response.json()
             assert stats_data['total_nodes'] == 100
 
-            # Step 2: Get nodes
+            # Step 2: Get nodes -- `nodes_by_label` is the engine's native
+            # (non-Cypher) id+properties fetch `get_graph_nodes` now uses
+            # (see api_extensions.get_graph_nodes for why: no `properties()`
+            # function exists in the engine's Cypher grammar).
             mock_graph_engine.backend.execute.side_effect = None
-            mock_graph_engine.backend.execute.return_value = [
-                {
-                    'n': {
-                        'id': 'node1',
-                        'labels': ['Memory'],
-                        'properties': {'content': 'Test'},
-                    }
-                }
+            mock_graph_engine.backend.nodes_by_label.return_value = [
+                ('node1', {'node_type': 'Memory', 'content': 'Test'})
             ]
 
             nodes_response = client.get('/api/enhanced/graph/nodes')

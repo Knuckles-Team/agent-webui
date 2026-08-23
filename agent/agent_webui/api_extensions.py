@@ -1656,6 +1656,60 @@ async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
     return True  # Enabled by default: preference absent, or unreadable.
 
 
+async def _batch_toggle_states(engine: Any, item_type: str) -> dict[str, bool]:
+    """Bulk-read every toggle preference of ``item_type`` in ONE round trip.
+
+    Root cause of the ``/api/enhanced/tools`` hang that never returned
+    (measured live: >120s, timed out): ``list_all_tools`` called
+    ``get_toggle_state`` once PER ROW -- up to ~256 MCP servers, ~256
+    built-in tools, and ~256 skill-catalog rows, each a SEPARATE, serially
+    ``await``-ed ``engine.query_cypher`` round trip through
+    ``_invoke_governed_helper``'s bounded synchronous executor (a shared,
+    process-wide, fixed 4-worker/8-pending-slot budget --
+    ``_SYNC_WORK_EXECUTOR`` -- so this was never just slow for this one
+    request; a large enough listing could starve every other concurrent
+    request's synchronous KG work too). Up to ~768 sequential round trips,
+    each individually bounded but never batched or parallelized, is what
+    made the response practically never return.
+
+    One ``STARTS WITH`` scan over the ``preference:toggle:{item_type}:``
+    prefix replaces all of those with a single call, same fail-open
+    semantics as ``get_toggle_state``: a query failure degrades every item
+    of this ``item_type`` to "enabled by default" (the caller's ``.get(id,
+    True)`` lookup) rather than raising -- a toggle-preference outage must
+    never take the whole listing down, same reasoning ``get_toggle_state``
+    already documents for the single-item case.
+    """
+    if not engine:
+        return {}
+    prefix = f'preference:toggle:{item_type}:'
+    try:
+        res = await _invoke_governed_helper(
+            engine.query_cypher,
+            'MATCH (p:Preference) WHERE p.id STARTS WITH $prefix '
+            'RETURN p.id AS id, p.value AS value',
+            {'prefix': prefix},
+            deadline=10.0,
+        )
+    except HTTPException as e:
+        if e.status_code == 503:
+            raise
+        _log_failure('query_toggle_state_batch', e)
+        return {}
+    except Exception as e:
+        _log_failure('query_toggle_state_batch', e)
+        return {}
+    states: dict[str, bool] = {}
+    for row in res or []:
+        if not isinstance(row, dict):
+            continue
+        row_id = row.get('id')
+        if not isinstance(row_id, str) or not row_id.startswith(prefix):
+            continue
+        states[row_id[len(prefix) :]] = row.get('value') == 'enabled'
+    return states
+
+
 async def set_toggle_state(
     engine: Any, item_type: str, item_id: str, enabled: bool
 ) -> None:
@@ -1812,6 +1866,10 @@ async def list_all_tools() -> dict[str, Any]:
             if existing is None or observed_at > str(existing.get('observed_at') or ''):
                 latest_discovery[server_id] = row
 
+        # Batched ONCE for the whole listing (see `_batch_toggle_states`'s
+        # docstring) rather than once per server -- the root cause of this
+        # route never returning.
+        mcp_server_toggles = await _batch_toggle_states(engine, 'mcp_server')
         for row in server_rows[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
             name = row.get('name')
             if (
@@ -1821,7 +1879,7 @@ async def list_all_tools() -> dict[str, Any]:
             ):
                 continue
             server_id = str(row.get('id') or '')
-            enabled = await get_toggle_state(engine, 'mcp_server', name)
+            enabled = mcp_server_toggles.get(name, True)
             discovery = latest_discovery.get(server_id)
             reachable = discovery.get('reachable') if discovery else None
             tool_count = int(discovery.get('tool_count') or 0) if discovery else 0
@@ -1873,12 +1931,13 @@ async def list_all_tools() -> dict[str, Any]:
     builtin_tools = []
     tools_dir = get_agent_utilities_dir() / 'tools'
     if tools_dir.exists() and tools_dir.is_dir():
+        builtin_toggles = await _batch_toggle_states(engine, 'builtin_tool')
         for index, f in enumerate(tools_dir.glob('*.py')):
             if index >= _MAX_EXTERNAL_COLLECTION_ITEMS:
                 break
             if f.name.startswith('_'):
                 continue
-            builtin_enabled = await get_toggle_state(engine, 'builtin_tool', f.stem)
+            builtin_enabled = builtin_toggles.get(f.stem, True)
             builtin_tools.append(
                 {
                     'name': f.stem,
@@ -1897,6 +1956,17 @@ async def list_all_tools() -> dict[str, Any]:
     skill_graphs: list[dict[str, Any]] = []
     skill_workflows: list[dict[str, Any]] = []
     skill_unclassified: list[dict[str, Any]] = []
+    if skill_rows:
+        # Batched ONCE per toggle item_type (up to 3 calls total, never one
+        # per skill row -- same fix as the servers/builtin_tools loops
+        # above).
+        skill_toggles = await _batch_toggle_states(engine, 'skill')
+        skill_workflow_toggles = await _batch_toggle_states(engine, 'skill_workflow')
+        skill_graph_toggles = await _batch_toggle_states(engine, 'skill_graph')
+    else:
+        skill_toggles = {}
+        skill_workflow_toggles = {}
+        skill_graph_toggles = {}
     for row in skill_rows[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
         skill_id = row.get('id')
         if not isinstance(skill_id, str) or not skill_id:
@@ -1913,26 +1983,24 @@ async def list_all_tools() -> dict[str, Any]:
             entry['runnable'] = True
             entry['resource_type'] = 'AGENT_SKILL'
             entry['kg_classified'] = True
-            entry['enabled'] = await get_toggle_state(engine, 'skill', skill_id)
+            entry['enabled'] = skill_toggles.get(skill_id, True)
             skills.append(entry)
         elif skill_type == 'workflow':
             entry['file_path'] = row.get('uri') or ''
             entry['runnable'] = False
             entry['resource_type'] = 'WORKFLOW_DEFINITION'
             entry['kg_classified'] = True
-            entry['enabled'] = await get_toggle_state(
-                engine, 'skill_workflow', skill_id
-            )
+            entry['enabled'] = skill_workflow_toggles.get(skill_id, True)
             skill_workflows.append(entry)
         elif skill_type == 'graph':
             entry['file_path'] = row.get('uri') or ''
-            entry['enabled'] = await get_toggle_state(engine, 'skill_graph', skill_id)
+            entry['enabled'] = skill_graph_toggles.get(skill_id, True)
             skill_graphs.append(entry)
         else:
             entry['runnable'] = False
             entry['resource_type'] = None
             entry['kg_classified'] = False
-            entry['enabled'] = await get_toggle_state(engine, 'skill', skill_id)
+            entry['enabled'] = skill_toggles.get(skill_id, True)
             skill_unclassified.append(entry)
 
     result = {
@@ -2857,55 +2925,65 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                 raise
             return []
 
-        # BUG (this fix): `RETURN n` asks the engine to serialize the whole
-        # internal node object, the same anonymous/whole-object pattern
-        # `get_graph_stats` already documents (below) as rejected by the
-        # engine's Cypher parser -- it raised `ValueError`, caught by the
-        # blanket handler below, and always 503'd (live log:
-        # "get_graph_nodes failed: error_type=ValueError"). Mirror
-        # `get_graph_relationships`' fix: project explicit scalar/function
-        # columns off the named node instead -- `n.id` (a property access,
-        # like `a.id`/`b.id` below) and `properties(n)` (a function call
-        # returning a plain value, not the raw node object; already used
-        # this way in `tenant_sharing.promote_to_commons`).
-        if node_type:
-            # Identifier is validated against schema or trusted source before use
-            query = (
-                f'MATCH (n:{node_type}) RETURN n.id AS id, properties(n) AS props '
-                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+        # BUG (this fix): `properties(n)` asked the engine's Cypher RETURN
+        # clause to call a function it does not implement. `eg-query`'s
+        # `parse_proj_expr` (crates/eg-query/src/cypher/parser.rs) only
+        # recognizes a fixed aggregate set (count/collect/sum/avg/min/max)
+        # and the special-cased `type(r)` -- there is no general function-
+        # call grammar at all, so `properties(n)` fell through to being
+        # parsed as a bare `properties` variable followed by a stray `(`,
+        # a parse failure the native authority raises back as
+        # `CypherEngineError` (live log: "get_graph_nodes failed:
+        # error_type=CypherEngineError"). `RETURN n` is not the fix either
+        # (api_extensions.py's own history above: that whole-object
+        # projection is the ORIGINAL, still-broken bug -- parser-fragile,
+        # documented at `get_graph_stats`).
+        #
+        # There is no scalar-column way to ask Cypher for "all of a node's
+        # properties" (the grammar has no wildcard/`RETURN n.*`), so this
+        # does not go through Cypher at all: `nodes_by_label` is the
+        # engine's OWN purpose-built native replacement for exactly this
+        # `MATCH (n[:Label]) ... LIMIT k` shape -- ONE bounded round trip
+        # returning `(id, properties)` per node, already decoded
+        # (`GraphComputeEngine.get_nodes_by_label`'s docstring: "bounding
+        # the wire payload so a MATCH (n:Label) … LIMIT k never
+        # materializes the whole graph"). An empty label means "no filter"
+        # engine-side (`GraphCore.get_nodes_by_label_page`'s own doc), so
+        # `node_type or ''` also covers the unfiltered case in the SAME
+        # single call -- and, unlike the per-row toggle-state bug fixed
+        # elsewhere in this file, this was never an N-calls problem to
+        # begin with; it stays that way.
+        nodes_by_label = getattr(engine.backend, 'nodes_by_label', None)
+        if not callable(nodes_by_label):
+            raise HTTPException(
+                status_code=503,
+                detail='Knowledge Graph node query failed',
             )
-        else:
-            query = (
-                'MATCH (n) RETURN n.id AS id, properties(n) AS props '
-                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
-            )
-
-        result = await _invoke_governed_helper(
-            engine.backend.execute, query, deadline=10.0
+        rows = await _invoke_governed_helper(
+            nodes_by_label,
+            node_type or '',
+            _MAX_EXTERNAL_COLLECTION_ITEMS,
+            deadline=10.0,
         )
         nodes = []
-        for row in result:
-            if not isinstance(row, dict):
+        for row in rows or []:
+            if not isinstance(row, (tuple, list)) or len(row) != 2:
                 continue
-            node_id = row.get('id')
-            props = row.get('props')
+            node_id, props = row
             if not isinstance(props, dict):
                 props = {}
-            # The engine's Cypher `labels(n)` function is not implemented
-            # (always evaluates to null -- see `knowledge_graph/core/
-            # nl_query.py`'s `build_schema_context` docstring), so a node's
-            # cypher labels live in properties instead. Derive them from
-            # EXACTLY the two fields the engine's own matcher reads --
-            # `node_type` plus the explicit multi-label `labels` array (eg
-            # `crates/eg-query/src/cypher/exec.rs` `node_has_label`, and
-            # `build_cypher_label_index`, whose comment notes this set is
-            # "deliberately narrower than `GraphCore.label_index`'s
-            # `type`/`node_type`/`label`, which also serves the write path's
-            # broader contract"). Reading `type`/`label` here would report a
-            # label that `MATCH (n:<that>)` does NOT match, so filtering by
-            # node_type would disagree with the list it was filtered from.
-            # Both source keys are excluded from `properties` below so a
-            # label is never duplicated as an ordinary property.
+            # `nodes_by_label` indexes the BROADER `GraphCore.label_index`
+            # contract (a node's `type`/`node_type`/`label` scalar fields
+            # plus the multi-valued `labels` array -- `labels_of` in
+            # `crates/eg-core/src/graph.rs`). Cypher's own `(n:Label)`
+            # predicate is deliberately narrower -- EXACTLY `node_type` plus
+            # the explicit `labels` array (`node_has_label`/
+            # `build_cypher_label_index` in `crates/eg-query/src/cypher/
+            # exec.rs`, whose comment says this set is "deliberately
+            # narrower than `GraphCore.label_index`'s `type`/`node_type`/
+            # `label`"). Derive `labels` from EXACTLY those two narrower
+            # fields, same as before; both are excluded from `properties`
+            # below so a label is never duplicated as an ordinary property.
             labels: list[str] = []
             node_type_prop = props.get('node_type')
             if isinstance(node_type_prop, str) and node_type_prop:
@@ -2917,6 +2995,15 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                     for item in extra_labels
                     if isinstance(item, str) and item and item not in labels
                 )
+            if node_type and node_type not in labels:
+                # A broader-index-only match (e.g. a legacy node carrying a
+                # bare `type` property but no `node_type`/`labels`; writing
+                # `type` is retired going forward -- see
+                # `retired_node_type_property_error`). `MATCH (n:<node_type>)`
+                # would not have matched it, so a node_type-filtered result
+                # must not include it either (kept consistent with the
+                # unfiltered list this is filtered from).
+                continue
             nodes.append(
                 {
                     'id': node_id if isinstance(node_id, str) else '',
