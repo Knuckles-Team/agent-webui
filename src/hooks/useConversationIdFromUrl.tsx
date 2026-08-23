@@ -5,43 +5,19 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { matchRoute } from '@/lib/nav-registry'
+
 export const ACTIVE_CONVERSATION_STORAGE_KEY = 'activeConversationId'
 export const ACTIVE_CONVERSATION_CHANGED_EVENT = 'active-conversation-changed'
 
-const APPLICATION_ROUTES = new Set([
-  '/',
-  '/admin',
-  '/broker',
-  '/chat',
-  '/code-graph',
-  '/configuration',
-  '/cypher',
-  '/dashboards',
-  '/data-analyst',
-  '/ecosystem',
-  '/explorer',
-  '/extraction',
-  '/files',
-  '/fleet',
-  '/goals',
-  '/graph',
-  '/knowledge',
-  '/magma',
-  '/observability',
-  '/ops',
-  '/prompts',
-  '/scheduling',
-  '/sessions',
-  '/skills',
-  '/system-status',
-  '/temporal-graph',
-  '/usage',
-  '/vertex',
-  '/workflows',
-])
-
+// Application routes are NOT hand-maintained here: `nav-registry.ts`'s `ROUTES` is the
+// single source of truth for every registered page (including `/object/:id`), so a
+// pathname is a real page iff `matchRoute` resolves it there. A hand-kept duplicate list
+// previously drifted from the registry (see `src/lib/__tests__/nav-registry.test.ts` /
+// `useConversationIdFromUrl.test.ts` for the regression test), silently misreading pages
+// like `/llm-templates` as conversation ids.
 export function isApplicationRoute(pathname: string): boolean {
-  return APPLICATION_ROUTES.has(pathname) || pathname.startsWith('/object/')
+  return matchRoute(pathname) !== null
 }
 
 export function normalizeConversationId(value: string | null | undefined): string {
