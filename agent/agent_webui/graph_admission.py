@@ -82,6 +82,54 @@ not preserve some other role/team the identity may have gained through a
 completely separate admission path in the meantime. Acceptable for this
 WebUI's single-tenant deployment shape; see that module's own docstring for
 the full reasoning.
+
+The pre-flight role-existence probe is not the authorization boundary
+--------------------------------------------------------------------
+:func:`_tenant_role_exists` (below) reads the engine's RBAC policy via
+``RbacAdmin{op:"List"}`` (``rbac.list()``), which the engine gates on the
+``security:admin`` capability — a Tier-2 admin read. :func:`_admit`'s
+``RegisterIdentity`` RPC is authorized completely differently: the engine's
+own ``verify_register_identity_signature`` (``epistemic-graph``'s
+``src/server/auth.rs``) checks only that the signer equals the calling
+principal and that the signer's ``allowed_roles`` pattern covers the
+requested role (``registry.authorize_grant``) — it never consults, and is
+never gated by, ``security:admin``. So a deployment's service principal can
+legitimately hold enough authority to admit a tenant (``allowed_roles:
+["tenant:*"]``) while lacking the unrelated, more-privileged authority to
+*list* the RBAC policy — this is exactly the shape the live 503 outage had.
+
+Consequently, :func:`_sync_ensure` treats the probe's failure modes
+differently:
+
+* **The engine/RPC itself is unreachable or erroring** (anything other than
+  the admin-capability denial specifically) — fails closed exactly as
+  before: :class:`EngineAdmissionUnavailableError`, :func:`_admit` is never
+  attempted.
+* **The probe is denied for insufficient privilege** (the engine's
+  ``"...lacks admin capability..."`` denial, matched against the exception
+  chain by :func:`_admin_capability_denied`) — this means "I can't look",
+  not "I can't admit". :func:`_sync_ensure` proceeds straight to
+  :func:`_admit` and lets the engine's own, independent
+  ``verify_register_identity_signature``/``authorize_grant`` check be the
+  authority on whether the grant is allowed. This removes a redundant,
+  over-privileged pre-flight; it does not weaken authorization; because that
+  pre-flight's boolean result was never itself part of the engine's grant
+  decision.
+
+  One consequence worth naming: ``RegisterIdentity`` performs **no**
+  role-existence validation of its own (confirmed by reading
+  ``crates/eg-core/src/isolation.rs::try_register_agent_from_request`` — it
+  is a bare upsert into the identity map, and ``provision_tenant_access``'s
+  own docstring already documents this as a "legitimate no-op ordering" for
+  a tenant with no graph yet). So when the probe cannot run, admitting a
+  principal into a *genuinely* unprovisioned tenant is no longer detected at
+  admission time the way it is when the probe succeeds and finds the role
+  missing (:class:`TenantNotProvisionedError`) — it will instead surface
+  later, from the engine itself, the first time that principal actually
+  reads or writes a graph. This is not a new gap this change introduces:
+  it is the same gap :class:`TenantNotProvisionedError` already existed to
+  paper over when the probe *can* run; when it cannot, there is no
+  privileged-enough read left in this deployment to detect it earlier.
 """
 
 from __future__ import annotations
@@ -132,6 +180,14 @@ class TenantNotProvisionedError(RuntimeError):
     ACCESS_DENIED — exactly the silent-failure shape this module exists to
     avoid. Raised instead, naming what is missing, so the fix is "an
     operator provisions the tenant" and never "this module invents a role".
+
+    Only ever raised from a probe that actually ran and returned ``False`` —
+    see the module docstring's "The pre-flight role-existence probe is not
+    the authorization boundary" section for what happens when the probe
+    itself cannot run (denied for insufficient privilege rather than found
+    the role missing): admission is attempted anyway and the engine becomes
+    the authority, so this error is not raised on that path even for a
+    genuinely unprovisioned tenant.
     """
 
 
@@ -150,6 +206,44 @@ def _lock_for(key: tuple[str, str]) -> threading.Lock:
             lock = threading.Lock()
             _KEY_LOCKS[key] = lock
         return lock
+
+
+#: Substring of the engine's admin-capability denial
+#: (``epistemic-graph``'s ``src/server/access.rs::
+#: require_admin_capability_with_policy``: ``"ACCESS_DENIED: verified
+#: principal lacks admin capability required for '{action}'"`` — the same
+#: text a live pod reproduced for this exact probe: ``rbac.list() ->
+#: RuntimeError: ACCESS_DENIED: verified principal lacks admin capability
+#: required for 'security:admin'``). Matched literally against the raised
+#: exception chain, never guessed at, so the privilege-denial fallback below
+#: fires ONLY for this specific denial — a network failure, an unreachable
+#: engine, or any other ``EngineAdmissionUnavailableError`` must still fail
+#: closed. Mirrors ``knowledge_graph.core.placement_catalog``'s
+#: ``_ADMIN_CAPABILITY_DENIAL``/``_admin_capability_denied`` (same substring,
+#: same reasoning, same chain-walk shape) rather than importing that
+#: module-private helper across an unrelated subsystem.
+_ADMIN_CAPABILITY_DENIAL = 'lacks admin capability'
+
+
+def _admin_capability_denied(exc: BaseException | None) -> bool:
+    """True when ``exc`` (or a chained cause) is the engine's admin-capability
+    denial specifically — never a network error, an unrelated ACCESS_DENIED
+    (e.g. a scope failure, a different message entirely), or any other
+    reason the probe could not run. The denial is wrapped twice before it
+    reaches :func:`_tenant_role_exists`'s caller (``LiveRbacAdminClient.
+    existing_roles`` -> ``GrantApplicationError``, then this module's own
+    :class:`EngineAdmissionUnavailableError`), so the check walks the full
+    ``__cause__`` chain rather than the outermost message alone.
+    """
+
+    seen: set[int] = set()
+    current = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if _ADMIN_CAPABILITY_DENIAL in str(current):
+            return True
+        current = current.__cause__
+    return False
 
 
 def _tenant_role_exists(tenant_slug: str) -> bool:
@@ -265,7 +359,29 @@ def _sync_ensure(tenant_slug: str, agent_id: str) -> None:
                 raise cached_exc
 
         try:
-            if not _tenant_role_exists(tenant_slug):
+            try:
+                role_missing = not _tenant_role_exists(tenant_slug)
+            except EngineAdmissionUnavailableError as probe_exc:
+                if not _admin_capability_denied(probe_exc):
+                    # Engine unreachable / RPC erroring — an infrastructure
+                    # problem, not a privilege problem. Fail closed exactly
+                    # as before; never attempt admission on unverified
+                    # engine health.
+                    raise
+                # "I can't look" is not "I can't admit" — proceed and let the
+                # engine's own, independently-authorized RegisterIdentity
+                # decide (see the module docstring). Do NOT synthesize a
+                # role_missing verdict from an unanswered question.
+                logger.warning(
+                    'tenant role probe for %r denied for insufficient '
+                    'privilege (agent_id=%s); proceeding directly to '
+                    'admission and letting the engine authorize it: %s',
+                    tenant_slug,
+                    agent_id,
+                    probe_exc,
+                )
+                role_missing = False
+            if role_missing:
                 raise TenantNotProvisionedError(
                     f'tenant role for {tenant_slug!r} does not exist yet — an '
                     'operator must provision this tenant (create its first '
