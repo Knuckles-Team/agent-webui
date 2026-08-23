@@ -81,6 +81,105 @@ interface MessagePart {
 }
 
 /**
+ * One checkpoint of the core orchestrator's progress stream
+ * (`agent_utilities.orchestration.agent_runner.ProgressEvent`, CONCEPT:AU-ORCH.execution.
+ * messaging-orchestration-transparency), as adapted onto the wire by
+ * `agent/agent_webui/orchestrator_model.py::_progress_event_payload`.
+ *
+ * `_reply_stream` cannot emit a distinct SSE frame type for this (pydantic-ai's
+ * `FunctionModel.stream_function` only supports text/tool/thinking deltas), so each event
+ * arrives as its own `reasoning` message part whose `text` is this JSON, verbatim from the
+ * core. Rendering that JSON is the ONLY thing this file does with it -- no
+ * routing/stage/status decision lives here (Universal capability: the core decided, this
+ * entrypoint only adapts+renders).
+ */
+export interface ProgressEventPayload {
+  stage: string
+  status: string
+  detail?: string
+  evidence?: Record<string, unknown>
+}
+
+/**
+ * Parse one `reasoning` part's text as a core `ProgressEventPayload`.
+ *
+ * Returns `null` for anything that isn't shaped like one (an ordinary JSON parse failure,
+ * or genuine free-text "thinking" content from a reasoning-capable model) so a progress
+ * event and a real thinking block are never confused with each other.
+ */
+export function parseProgressEventPayload(text: string): ProgressEventPayload | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (
+    parsed !== null &&
+    typeof parsed === 'object' &&
+    typeof (parsed as Record<string, unknown>).stage === 'string' &&
+    typeof (parsed as Record<string, unknown>).status === 'string'
+  ) {
+    return parsed as ProgressEventPayload
+  }
+  return null
+}
+
+/** True for a `reasoning` part whose text is a progress-event payload (not free-text thinking). */
+export function isProgressEventPart(part: MessagePart): boolean {
+  return part.type === 'reasoning' && typeof part.text === 'string' && parseProgressEventPayload(part.text) !== null
+}
+
+/** Extract, in order, every progress-event payload carried by a message's `reasoning` parts. */
+export function extractProgressEvents(parts: MessagePart[] | undefined): ProgressEventPayload[] {
+  if (!Array.isArray(parts)) return []
+  const events: ProgressEventPayload[] = []
+  for (const part of parts) {
+    if (!isProgressEventPart(part)) continue
+    const payload = parseProgressEventPayload(part.text as string)
+    if (payload) events.push(payload)
+  }
+  return events
+}
+
+const PROGRESS_STAGE_LABEL: Record<string, string> = {
+  start: 'Starting',
+  route: 'Routing',
+  tool_call: 'Calling tool',
+  tool_result: 'Tool result',
+  evidence_gate: 'Evidence gate',
+  synthesis: 'Composing answer',
+  checkpoint: 'Checkpoint',
+  done: 'Done',
+  failure: 'Failed',
+}
+
+/**
+ * Compact, ordered timeline of a run's `ProgressEvent`s -- what makes the "the chat spins
+ * for minutes then answers" fix visible: the FIRST badge appears the instant routing
+ * starts (clearing `status === 'submitted'`'s spinner, see the Loader below), well before
+ * the final answer streams.
+ */
+export function ProgressTimeline({ events, isStreaming }: { events: ProgressEventPayload[]; isStreaming: boolean }) {
+  if (events.length === 0) return null
+  return (
+    <div className="my-1.5 flex flex-wrap items-center gap-1.5">
+      {events.map((ev, i) => (
+        <Badge
+          key={i}
+          variant={ev.status === 'failed' ? 'destructive' : 'outline'}
+          className="font-normal text-[10px]"
+        >
+          {PROGRESS_STAGE_LABEL[ev.stage] ?? ev.stage}
+          {ev.detail ? `: ${ev.detail}` : ''}
+        </Badge>
+      ))}
+      {isStreaming && <Loader size={12} />}
+    </div>
+  )
+}
+
+/**
  * Configuration for an available LLM model
  */
 interface ModelConfig {
@@ -387,7 +486,12 @@ function extractMessageText(message: UIMessage): string {
     if (part.type === 'text' && typeof part.text === 'string') {
       chunks.push(part.text)
     } else if (part.type === 'reasoning' && typeof part.text === 'string') {
-      chunks.push(part.text)
+      const progress = parseProgressEventPayload(part.text)
+      chunks.push(
+        progress
+          ? `[progress: ${progress.stage} ${progress.status}${progress.detail ? ` — ${progress.detail}` : ''}]`
+          : part.text,
+      )
     } else if (part.type === 'source-url' && typeof part.url === 'string') {
       chunks.push(`[source: ${part.url}]`)
     } else if (part.type.startsWith('tool-') || part.type === 'dynamic-tool') {
@@ -1254,19 +1358,32 @@ Available commands:
                       ))}
                   </Sources>
                 )}
-              {(message.parts as unknown as MessagePart[]).map((part, i: number) => (
-                <Part
-                  key={`${message.id}-${i}`}
-                  part={part as unknown as UIMessagePart<UIDataTypes, UITools>}
-                  message={message}
-                  status={status}
-                  regen={regen}
-                  index={i}
-                  lastMessage={throttledMessages.indexOf(message) === throttledMessages.length - 1}
-                  onApprove={handleApproveToolCall}
-                  onReject={handleRejectToolCall}
+              {message.role === 'assistant' && (
+                <ProgressTimeline
+                  events={extractProgressEvents(message.parts as unknown as MessagePart[])}
+                  isStreaming={
+                    status === 'streaming' && throttledMessages.indexOf(message) === throttledMessages.length - 1
+                  }
                 />
-              ))}
+              )}
+              {(message.parts as unknown as MessagePart[])
+                // Progress-event reasoning parts stream through ProgressTimeline above
+                // instead -- excluded here so they don't ALSO render as raw-JSON generic
+                // "Thinking" bubbles via <Part>'s default reasoning handling.
+                .filter((part) => !isProgressEventPart(part))
+                .map((part, i: number) => (
+                  <Part
+                    key={`${message.id}-${i}`}
+                    part={part as unknown as UIMessagePart<UIDataTypes, UITools>}
+                    message={message}
+                    status={status}
+                    regen={regen}
+                    index={i}
+                    lastMessage={throttledMessages.indexOf(message) === throttledMessages.length - 1}
+                    onApprove={handleApproveToolCall}
+                    onReject={handleRejectToolCall}
+                  />
+                ))}
 
               {(message as unknown as { annotations?: AppAnnotation[] }).annotations?.map((ann, idx: number) => {
                 const isApproval =

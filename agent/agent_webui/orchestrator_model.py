@@ -25,11 +25,44 @@ that calls ``Orchestrator(engine).execute_agent(...)`` keeps
 (it still owns transport) while making the actual reply come from the real
 graph orchestration path — the same one messaging, and the servicenow-skills
 delegation path, are already validated against.
+
+Progress streaming (D-W6-BSF-1-ish follow-up: "the chat spins for minutes then
+answers"): ``_reply_stream`` used to ``await`` the WHOLE orchestrated turn
+before yielding anything, so ``agent.to_web()``'s SSE stream carried exactly
+one chunk, at the very end -- a live turn that spent 264s inside
+``Orchestrator.execute_agent`` left the browser spinning for 264s with zero
+wire traffic. The core already has the fix built: ``execute_agent`` (and the
+``run_agent`` it forwards to,
+CONCEPT:AU-ORCH.execution.messaging-orchestration-transparency) accepts an
+optional ``progress_sink`` callback and emits a ``ProgressEvent`` at every
+existing checkpoint (routing decision, each fleet tool call/result, the
+evidence gate, synthesis, the terminal done/failure) -- built for the
+messaging entrypoint's live-edited status message. This module reuses that
+SAME core seam (no second progress mechanism) rather than inventing a
+webui-only one, per ``AGENTS.md``'s *Universal capability* rule: the core
+emits the events, this entrypoint only adapts them to its wire.
+
+``FunctionModel.stream_function`` may only yield ``str`` (a text delta),
+``DeltaToolCalls``, ``DeltaThinkingCalls``, or ``BuiltinToolCallsReturns`` --
+there is no generic custom-data channel available without subclassing
+pydantic-ai's Vercel-AI event-stream adapter, which is out of this module's
+reach (that lives inside ``agent.to_web()``, wired in ``server.py``). Each
+``ProgressEvent`` is therefore surfaced as its OWN reasoning
+(``DeltaThinkingPart``) part -- a distinct ``vendor_part_id`` per event opens
+a fresh part, so pydantic-ai's adapter emits a real ``reasoning-start`` /
+``reasoning-delta`` SSE chunk per checkpoint instead of one run-on "thinking"
+blob. ``@ai-sdk/react``'s ``useChat`` already renders reasoning parts
+distinctly from the answer text and flips ``status`` out of ``'submitted'``
+on the FIRST chunk of ANY kind -- so the spinner clears the instant routing
+starts, not when the whole run finishes. The final answer still streams as
+plain text, unchanged, once the run completes.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -40,10 +73,11 @@ from pydantic_ai.messages import (
     TextPart,
     UserPromptPart,
 )
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo, DeltaThinkingPart, FunctionModel
 
 if TYPE_CHECKING:
     from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
+    from agent_utilities.orchestration.agent_runner import ProgressEvent
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +116,31 @@ def _latest_user_text(messages: list[ModelMessage]) -> str:
         # Newest ModelRequest carried no user text (e.g. a tool-return-only
         # turn) -- keep walking backward for the most recent real user turn.
     return ''
+
+
+def _progress_event_payload(event: ProgressEvent) -> str:
+    """Serialize one core ``ProgressEvent`` to the JSON string a reasoning part carries.
+
+    Pure input-adaptation (CONCEPT:AU-ORCH.execution.messaging-orchestration-transparency,
+    webui half of *Universal capability* -- ``AGENTS.md``): every field comes straight off
+    the core's own event, unmodified and unfiltered, so no routing/stage/status logic lives
+    in this entrypoint -- ``src/Chat.tsx`` is the ONLY place that turns this into a rendered
+    stage badge. Falls back to a plain string on the near-impossible chance a field is not
+    JSON-serializable, so a rendering hiccup can never turn into a broken stream.
+    """
+    try:
+        return json.dumps(
+            {
+                'stage': event.stage,
+                'status': event.status,
+                'detail': event.detail,
+                'evidence': event.evidence,
+            }
+        )
+    except (TypeError, ValueError):
+        return json.dumps(
+            {'stage': event.stage, 'status': event.status, 'detail': event.detail}
+        )
 
 
 def _conversation_session_id(messages: list[ModelMessage]) -> str:
@@ -129,7 +188,10 @@ def build_orchestrator_model(
     resolved_agent_name = (agent_name or '').strip() or DEFAULT_WEBUI_AGENT_NAME
 
     async def _run_orchestrator_turn(
-        messages: list[ModelMessage], agent_info: AgentInfo
+        messages: list[ModelMessage],
+        agent_info: AgentInfo,
+        *,
+        progress_sink: Any = None,
     ) -> str:
         from agent_utilities.orchestration.manager import Orchestrator
         from agent_utilities.orchestration.run_identity import new_run_id
@@ -149,6 +211,7 @@ def build_orchestrator_model(
             execution_profile='chat',
             run_id=new_run_id(),
             context=agent_info.instructions,
+            progress_sink=progress_sink,
         )
         return str(reply_text or '').strip()
 
@@ -159,17 +222,62 @@ def build_orchestrator_model(
         return ModelResponse(parts=[TextPart(content=text)])
 
     async def _reply_stream(messages: list[ModelMessage], agent_info: AgentInfo):
-        # Orchestrator.execute_agent (like messaging's own _graph_agent_reply)
-        # returns one fully-composed reply, not a token stream -- so
-        # "streaming" here is one chunk carrying the whole answer once the
-        # orchestrated run completes. This is still a REAL streamed response
-        # (agent.to_web()'s AG-UI protocol gets a proper stream event, just
-        # with a single delta) rather than a crash: FunctionModel.request_stream
-        # requires a stream_function to be supplied at all, and asserts if
-        # one is not -- omitting this would fail every chat turn agent.to_web()
-        # drives through the streaming path.
-        text = await _run_orchestrator_turn(messages, agent_info)
-        yield text
+        # CONCEPT:AU-ORCH.execution.messaging-orchestration-transparency, webui half.
+        # Run the orchestrated turn as a background task and drain its
+        # ``ProgressEvent`` stream (the SAME core channel the messaging
+        # entrypoint's live-edited status message already reuses) through a
+        # queue, yielding one reasoning part per event AS THEY ARRIVE instead
+        # of awaiting the whole turn first. See the module docstring for why
+        # a reasoning part (not a custom data chunk) is the wire shape used.
+        task = _latest_user_text(messages)
+        if not task:
+            yield ''
+            return
+
+        events: asyncio.Queue[ProgressEvent | None] = asyncio.Queue()
+
+        async def _sink(event: ProgressEvent) -> None:
+            await events.put(event)
+
+        async def _run() -> str:
+            try:
+                return await _run_orchestrator_turn(
+                    messages, agent_info, progress_sink=_sink
+                )
+            finally:
+                # Always unblock the drain loop below, success or failure, so
+                # a run that raises still lets the generator observe every
+                # checkpoint emitted before the failure and then re-raise.
+                await events.put(None)
+
+        run_task = asyncio.create_task(_run())
+        try:
+            part_index = 0
+            while True:
+                event = await events.get()
+                if event is None:
+                    break
+                part_index += 1
+                yield {
+                    part_index: DeltaThinkingPart(
+                        content=_progress_event_payload(event)
+                    )
+                }
+
+            # Every checkpoint (including the terminal "done"/"failure" one --
+            # run_agent emits it BEFORE returning, CONCEPT:AU-ORCH.execution.messaging-orchestration-transparency)
+            # has now streamed. ``run_task`` is therefore already finished;
+            # ``await`` just collects its result (or re-raises its exception,
+            # which is exactly what a run that failed before producing any
+            # output should do -- the engine's own failure GraphResponse
+            # still reaches the user as a real answer string, streamed here
+            # like any other successful turn, never silently).
+            text = await run_task
+            if text:
+                yield text
+        finally:
+            if not run_task.done():
+                run_task.cancel()
 
     return FunctionModel(
         _reply,
