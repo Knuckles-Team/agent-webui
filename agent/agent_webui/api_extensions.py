@@ -2893,29 +2893,39 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                 props = {}
             # The engine's Cypher `labels(n)` function is not implemented
             # (always evaluates to null -- see `knowledge_graph/core/
-            # nl_query.py`'s `build_schema_context` docstring), so the
-            # node's cypher label lives in a property instead: checked in
-            # the same `node_type` -> `type` -> `label` priority order the
-            # engine's own label index and `nl_query.py` use. Whichever key
-            # supplied the label is excluded from `properties` below so the
-            # label is not duplicated as an ordinary property.
-            label_key = next(
-                (
-                    key
-                    for key in ('node_type', 'type', 'label')
-                    if isinstance(props.get(key), str) and props.get(key)
-                ),
-                None,
-            )
-            label = props.get(label_key) if label_key else None
+            # nl_query.py`'s `build_schema_context` docstring), so a node's
+            # cypher labels live in properties instead. Derive them from
+            # EXACTLY the two fields the engine's own matcher reads --
+            # `node_type` plus the explicit multi-label `labels` array (eg
+            # `crates/eg-query/src/cypher/exec.rs` `node_has_label`, and
+            # `build_cypher_label_index`, whose comment notes this set is
+            # "deliberately narrower than `GraphCore.label_index`'s
+            # `type`/`node_type`/`label`, which also serves the write path's
+            # broader contract"). Reading `type`/`label` here would report a
+            # label that `MATCH (n:<that>)` does NOT match, so filtering by
+            # node_type would disagree with the list it was filtered from.
+            # Both source keys are excluded from `properties` below so a
+            # label is never duplicated as an ordinary property.
+            labels: list[str] = []
+            node_type_prop = props.get('node_type')
+            if isinstance(node_type_prop, str) and node_type_prop:
+                labels.append(node_type_prop)
+            extra_labels = props.get('labels')
+            if isinstance(extra_labels, list):
+                labels.extend(
+                    item
+                    for item in extra_labels
+                    if isinstance(item, str) and item and item not in labels
+                )
             nodes.append(
                 {
                     'id': node_id if isinstance(node_id, str) else '',
-                    'labels': [label] if label else [],
+                    'labels': labels,
                     'properties': {
                         k: v
                         for k, v in props.items()
-                        if k != 'id' and k != label_key and not str(k).startswith('_')
+                        if k not in ('id', 'node_type', 'labels')
+                        and not str(k).startswith('_')
                     },
                 }
             )

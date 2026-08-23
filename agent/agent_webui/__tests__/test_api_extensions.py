@@ -136,7 +136,15 @@ class TestGraphNodesEndpoint:
                 },
                 {
                     'id': 'node2',
-                    'props': {'type': 'Article', 'title': 'Test Article'},
+                    'props': {
+                        'node_type': 'Person',
+                        'labels': ['Admin', 'Person'],
+                        'title': 'Test Article',
+                    },
+                },
+                {
+                    'id': 'node3',
+                    'props': {'type': 'Article', 'title': 'Not a cypher label'},
                 },
             ]
 
@@ -144,14 +152,28 @@ class TestGraphNodesEndpoint:
             assert response.status_code == 200
             data = response.json()
             assert isinstance(data, list)
-            assert len(data) == 2
+            assert len(data) == 3
             by_id = {n['id']: n for n in data}
             assert by_id['node1']['labels'] == ['Memory']
             assert by_id['node1']['properties'] == {
                 'content': 'Test memory',
                 'importance': 0.8,
             }
-            assert by_id['node2']['labels'] == ['Article']
+            # `node_type` plus the explicit multi-label `labels` array are the
+            # ONLY two fields the engine's `node_has_label` reads, deduped and
+            # with `node_type` first; neither leaks back into `properties`.
+            assert by_id['node2']['labels'] == ['Person', 'Admin']
+            assert by_id['node2']['properties'] == {'title': 'Test Article'}
+            # `type` is deliberately NOT a cypher label: `build_cypher_label_index`
+            # is "deliberately narrower than `GraphCore.label_index`'s
+            # `type`/`node_type`/`label`". Reporting it would claim a label that
+            # `MATCH (n:Article)` does not match, so filtering by node_type would
+            # disagree with the unfiltered list. It stays an ordinary property.
+            assert by_id['node3']['labels'] == []
+            assert by_id['node3']['properties'] == {
+                'type': 'Article',
+                'title': 'Not a cypher label',
+            }
 
             query = mock_graph_engine.backend.execute.call_args[0][0]
             assert 'RETURN n LIMIT' not in query
