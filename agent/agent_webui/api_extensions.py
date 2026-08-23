@@ -1074,13 +1074,6 @@ def get_agent_utilities_dir() -> Path:
     return Path(agent_utilities.__file__).resolve().parent
 
 
-def get_skills_packages_dir() -> Path:
-    configured = os.getenv('AGENT_SKILLS_ROOT')
-    if configured:
-        return Path(configured).expanduser().resolve()
-    return get_agent_packages_dir() / 'skills'
-
-
 def get_prompts_dir() -> Path:
     configured = os.getenv('AGENT_PROMPTS_ROOT')
     if configured:
@@ -1624,56 +1617,6 @@ async def list_agents() -> list[dict[str, Any]]:
         return []
 
 
-def _parse_skill_md(path: Path) -> dict[str, Any]:
-    """Parse YAML frontmatter from a SKILL.md file."""
-    import re
-
-    import yaml
-
-    try:
-        content = _read_bounded_text(path, limit=256 * 1024)
-        match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
-        metadata: dict[str, Any] = {}
-        if match:
-            try:
-                metadata = yaml.safe_load(match.group(1)) or {}
-            except Exception:
-                for line in match.group(1).splitlines():
-                    if ':' in line:
-                        k, v = line.split(':', 1)
-                        metadata[k.strip()] = v.strip()
-
-        name = metadata.get('name') or path.parent.name
-        description = metadata.get('description') or ''
-        domain = metadata.get('domain') or (
-            path.parent.parent.name if len(path.parts) > 2 else ''
-        )
-        tags = metadata.get('tags') or []
-        if isinstance(tags, str):
-            tags = [t.strip() for t in tags.split(',') if t.strip()]
-
-        return {
-            'id': name,
-            'name': name,
-            'description': description,
-            'domain': domain,
-            'tags': tags,
-            'enabled': True,
-            'file_path': f'skill://{name}',
-        }
-    except Exception as e:
-        _log_failure('parse_skill_metadata', e)
-        return {
-            'id': path.parent.name,
-            'name': path.parent.name,
-            'description': '',
-            'domain': '',
-            'tags': [],
-            'enabled': True,
-            'file_path': f'skill://{path.parent.name}',
-        }
-
-
 async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
     """Check if an item is enabled or disabled in the KG.
 
@@ -1742,80 +1685,94 @@ async def set_toggle_state(
         raise HTTPException(status_code=500, detail='Unable to persist toggle') from e
 
 
-async def _fetch_kg_skill_classification(engine: Any) -> dict[str, Any]:
-    """Batch-query the KG once for the runnability truth used to classify every
-    discovered ``SKILL.md`` (GOC-60-W06 / E7).
+_FLEET_CATALOG_DEADLINE_SECONDS = 10.0
 
-    The KG's ``CallableResource(resource_type='AGENT_SKILL')`` shape is what the
-    delegation binder actually requires to RUN a skill; a bare
-    ``WorkflowDefinition`` node (KG-2.97 ingestion,
-    ``docs/architecture/skill_workflow_ingestion.md``) can only be described, not
-    executed. Filesystem path (a literal ``workflows`` path segment) asserts
-    nothing about either and MUST NOT be used to decide the bucket — lane
-    invariant 4 ("KG resource_type is the authority for whether a skill is
-    runnable. Filesystem path is not evidence and may not be used for
-    classification.").
 
-    Both lookups are single batched Cypher calls (never a per-item round trip
-    — see AGENTS.md "batch every engine call"). A query failure is reported as
-    ``kg_reachable=False``, never silently treated as "no matching nodes": the
-    caller must render an explicit unclassified/unverified state rather than
-    falling back to the old path heuristic (lane invariant 1 + 5 — a missing
-    data source is a typed unavailable state, never a silent guess).
+async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | None:
+    """Read one or more fleet-catalog collections through the SAME
+    tenant/principal-scoped, fail-closed authority and shape-validation path
+    ``agent_utilities.gateway.registry_api`` uses for its own
+    ``GET /api/registry/{kind}`` routes
+    (CONCEPT:AU-KG.ingest.fleet-catalog-relational-tables). The SQL tables are
+    the single source of truth for the MCP/skill fleet catalog -- this never
+    re-derives tenant scoping, redaction, or shape validation; it reuses
+    registry_api's own private read path in-process (this app already mounts
+    ``register_graph_routes``, which mounts ``register_registry_routes`` on
+    this SAME app -- see ``server.py``'s ``create_agent_web_app``).
+
+    Every SQL round trip is bounded by ``_invoke_governed_helper`` (the same
+    deadline pattern every other engine call in this file uses -- previously
+    ``list_all_tools`` awaited the shared multiplexer with NO deadline,
+    hanging 45s before an infra timeout returned a 503).
+
+    Returns ``None`` when the catalog cannot be read at all (denied
+    authority, or the engine's SQL surface is unavailable/erroring) so
+    callers can render an explicit degraded state instead of a silent empty
+    result -- a degraded read must never look like "genuinely empty"
+    (fail-closed).
     """
+    from agent_utilities.gateway.registry_api import (
+        _KIND_SPECS,
+        CatalogUnavailable,
+        _authorized_rows,
+        _get_catalog_engine,
+        _require_catalog_authority,
+        _validate_item,
+    )
 
-    agent_skill_names: set[str] = set()
-    workflow_def_names: set[str] = set()
-    kg_reachable = False
-    if engine is None:
-        return {
-            'agent_skill_names': agent_skill_names,
-            'workflow_def_names': workflow_def_names,
-            'kg_reachable': kg_reachable,
-        }
     try:
-        skill_rows = await _invoke_governed_helper(
-            engine.query_cypher,
-            "MATCH (s:CallableResource) WHERE s.resource_type = 'AGENT_SKILL' "
-            'RETURN s.name AS name',
-            {},
-            deadline=10.0,
+        tenant, principal, grant_digests = _require_catalog_authority(
+            require_discovery_binding=True
         )
-        for row in skill_rows or []:
-            name = row.get('name') if isinstance(row, dict) else None
-            if isinstance(name, str) and name:
-                agent_skill_names.add(name.strip().lower())
+        engine = _get_catalog_engine()
+    except PermissionError as exc:
+        _log_failure('fleet_catalog_authority', exc)
+        return None
+    except Exception as exc:
+        _log_failure('fleet_catalog_authority', exc)
+        return None
 
-        workflow_rows = await _invoke_governed_helper(
-            engine.query_cypher,
-            "MATCH (w:WorkflowDefinition) WHERE w.source = 'universal-skills' "
-            'RETURN w.name AS name',
-            {},
-            deadline=10.0,
-        )
-        for row in workflow_rows or []:
-            name = row.get('name') if isinstance(row, dict) else None
-            if isinstance(name, str) and name:
-                workflow_def_names.add(name.strip().lower())
-
-        kg_reachable = True
-    except HTTPException as e:
-        if e.status_code == 503:
+    result: dict[str, list[dict[str, Any]]] = {}
+    for kind in kinds:
+        spec = _KIND_SPECS[kind]
+        try:
+            rows = await _invoke_governed_helper(
+                _authorized_rows,
+                kind,
+                tenant=tenant,
+                principal=principal,
+                grant_digests=grant_digests,
+                engine=engine,
+                deadline=_FLEET_CATALOG_DEADLINE_SECONDS,
+            )
+            result[kind] = [
+                _validate_item(kind, spec.model, row).model_dump() for row in rows
+            ]
+        except CatalogUnavailable as exc:
+            _log_failure(f'fleet_catalog_{kind}', exc)
+            return None
+        except HTTPException:
             raise
-        _log_failure('classify_skills_via_kg', e)
-    except Exception as e:
-        _log_failure('classify_skills_via_kg', e)
-
-    return {
-        'agent_skill_names': agent_skill_names,
-        'workflow_def_names': workflow_def_names,
-        'kg_reachable': kg_reachable,
-    }
+        except Exception as exc:
+            _log_failure(f'fleet_catalog_{kind}', exc)
+            return None
+    return result
 
 
 @router.get('/tools')
 async def list_all_tools() -> dict[str, Any]:
-    """Retrieve all MCP tools, built-in tools, skills, skill graphs, and workflows categorized."""
+    """Retrieve all MCP servers/tools, built-in tools, skills, skill graphs,
+    workflows, and MCP prompts -- categorized.
+
+    MCP servers, skills, and prompts are read from the SQL fleet catalog
+    (CONCEPT:AU-KG.ingest.fleet-catalog-relational-tables) -- the cheap,
+    single-source-of-truth read path -- via ``_read_fleet_catalog``, never
+    from a live multiplexer probe, a filesystem ``SKILL.md`` scan, or a
+    separate KG classification cross-reference. The catalog is populated by
+    the hourly ``fleet-tool-schema-sync`` job, so "not yet synced" is a real,
+    expected state and is reported explicitly via ``mcp_status`` -- never
+    silently indistinguishable from "genuinely empty".
+    """
     try:
         engine = await _get_engine_bounded()
     except HTTPException as exc:
@@ -1825,49 +1782,53 @@ async def list_all_tools() -> dict[str, Any]:
     except Exception:
         engine = None
 
-    # 1. MCP Tools — the multiplexer's fleet catalog is the discovered-fleet
-    # authority (GOC-60-W03/W04a). ``engine.get_all_mcp_servers()`` was called
-    # here previously; that method was never defined on ``RegistryMixin``
-    # (agent_utilities/core/registry/kg_adapter.py only ever exposed
-    # ``get_all_prompts``/``get_skills``/``get_tools``), so every call raised
-    # ``AttributeError`` that was silently swallowed into an empty list
-    # (GOC-60 lane evidence E2). ``agent_utilities.mcp.shared_multiplexer``
-    # reads the SAME dispatchable-truth catalog
-    # (``MCPMultiplexer.list_catalog``) the ``list_catalog``/``find_tools``
-    # MCP meta-tools use and the REST twin at ``/api/mcp/catalog``
-    # (GOC-60-W03) serves — strictly more accurate than either the
-    # nonexistent KG method or the static ``mcp_config.json``, which only
-    # ever holds LOCAL process-launch config for whatever servers happen to
-    # be declared next to this deployment, never the fleet-wide catalog.
-    #
-    # A missing/failed source is reported via ``mcp_status`` in the response,
-    # never silently downgraded to an indistinguishable empty list (GOC-60
-    # lane authority/invariant 1: "A missing data source is an ERROR/
-    # DEGRADED state, never []").
-    mcp_tools: list[dict[str, Any]] = []
-    mcp_source = 'multiplexer'
-    mcp_error: str | None = None
-    mux_config_path: Path | None = None
-    try:
-        from agent_utilities.mcp.shared_multiplexer import get_shared_multiplexer
+    catalog = await _read_fleet_catalog('servers', 'discoveries', 'skills', 'prompts')
 
-        mux = await get_shared_multiplexer()
-        # ``getattr`` -- the real ``MCPMultiplexer`` always carries this, but a
-        # test/alternate stand-in that only implements ``list_catalog`` must
-        # not be broken by this diagnostic-only read (a missing attribute here
-        # would wrongly turn a WORKING multiplexer probe into an 'unavailable'
-        # status via the broad except below).
-        mux_config_path = getattr(mux, 'config_path', None)
-        catalog = await mux.list_catalog(server='', include_tools=False)
-        for row in list(catalog.get('servers', []))[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-            name = row.get('server')
-            if not isinstance(name, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(name):
+    # 1. MCP servers -- desired registration (`servers`) joined with the most
+    # recent observed probe (`discoveries`, append-only: keep the row with the
+    # latest `observed_at` per server). A missing/failed catalog read is
+    # reported via `mcp_status`, never silently downgraded to an
+    # indistinguishable empty list (fail-closed).
+    mcp_tools: list[dict[str, Any]] = []
+    last_synced_at: str | None = None
+    if catalog is None:
+        mcp_status = {
+            'source': 'unavailable',
+            'error': 'The MCP fleet catalog could not be read.',
+            'last_synced_at': None,
+        }
+        mcp_prompts: list[dict[str, Any]] = []
+        skill_rows: list[dict[str, Any]] = []
+    else:
+        server_rows = catalog['servers']
+        discovery_rows = catalog['discoveries']
+        latest_discovery: dict[str, dict[str, Any]] = {}
+        for row in discovery_rows:
+            server_id = str(row.get('server_id') or '')
+            observed_at = str(row.get('observed_at') or '')
+            if last_synced_at is None or observed_at > last_synced_at:
+                last_synced_at = observed_at
+            existing = latest_discovery.get(server_id)
+            if existing is None or observed_at > str(existing.get('observed_at') or ''):
+                latest_discovery[server_id] = row
+
+        for row in server_rows[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+            name = row.get('name')
+            if (
+                not isinstance(name, str)
+                or not name
+                or not _SAFE_DELEGATION_TOKEN.fullmatch(name)
+            ):
                 continue
-            mcp_enabled = await get_toggle_state(engine, 'mcp_server', name)
-            available = row.get('available')
-            if not mcp_enabled:
+            server_id = str(row.get('id') or '')
+            enabled = await get_toggle_state(engine, 'mcp_server', name)
+            discovery = latest_discovery.get(server_id)
+            reachable = discovery.get('reachable') if discovery else None
+            tool_count = int(discovery.get('tool_count') or 0) if discovery else 0
+            last_error = discovery.get('last_error') if discovery else None
+            if not enabled:
                 status = 'disabled'
-            elif available is False:
+            elif discovery is not None and reachable is False:
                 status = 'unavailable'
             else:
                 status = 'active'
@@ -1876,95 +1837,39 @@ async def list_all_tools() -> dict[str, Any]:
                     'name': name,
                     'type': 'MCP Server',
                     'status': status,
-                    'enabled': mcp_enabled,
-                    'tool_count': row.get('tool_count', 0),
-                    'available': available,
-                    # Per-server stated reason (e.g. "stdio transport is not
-                    # permitted in this process") -- the multiplexer catalog
-                    # already threads this through (mcp/multiplexer.py
-                    # list_catalog); forwarding it here is what turns an
-                    # 'unavailable' status into an ACTIONABLE one instead of
-                    # an unexplained zero, matching the fail-closed-with-a-
-                    # reason rule (never silently drop why).
-                    'error': row.get('error'),
+                    'enabled': enabled,
+                    'tool_count': tool_count,
+                    'available': reachable,
+                    'error': last_error or None,
                 }
             )
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('mcp_catalog_multiplexer', e)
-        mcp_source = 'unavailable'
-        mcp_error = f'{type(e).__name__}: MCP fleet catalog unavailable'
-    if not mcp_tools:
-        # Demoted, EXPLICITLY-LABELLED degraded fallback: the static
-        # ``mcp_config.json`` only ever holds LOCAL process-launch config,
-        # never the fleet-wide catalog the multiplexer discovers, so falling
-        # back to it is a visible DEGRADE (``mcp_status.source`` below), not
-        # a silent equivalent substitute for the real source.
-        config_path = _mcp_inventory_path()
-        if config_path is not None:
-            try:
-                mcp_data = _read_bounded_json(config_path)
-                mcp_servers = mcp_data.get('mcpServers', {})
-                if (
-                    not mcp_servers
-                    and 'mcp_config' in mcp_data
-                    and isinstance(mcp_data['mcp_config'], dict)
-                ):
-                    mcp_servers = mcp_data['mcp_config'].get('mcpServers', {})
-                for name, cfg in list(mcp_servers.items())[
-                    :_MAX_EXTERNAL_COLLECTION_ITEMS
-                ]:
-                    if not isinstance(name, str) or not isinstance(cfg, dict):
-                        continue
-                    if not _SAFE_DELEGATION_TOKEN.fullmatch(name):
-                        continue
-                    mcp_enabled = await get_toggle_state(engine, 'mcp_server', name)
-                    # If configured as disabled in json, keep it disabled
-                    if cfg.get('disabled', False):
-                        mcp_enabled = False
-                    mcp_tools.append(
-                        {
-                            'name': name,
-                            'type': 'MCP Server',
-                            'status': 'active' if mcp_enabled else 'disabled',
-                            'enabled': mcp_enabled,
-                            'source': 'static-config-degraded',
-                        }
-                    )
-                if mcp_tools:
-                    mcp_source = 'static-config-degraded'
-            except Exception as e:
-                _log_failure('mcp_config_static_fallback', e)
-                if mcp_error is None:
-                    mcp_error = f'{type(e).__name__}: static MCP config fallback failed'
-    if not mcp_tools and mcp_error is None:
-        # The multiplexer parsed cleanly (no exception -- ``mcp_source`` is
-        # still ``'multiplexer'``) and returned zero servers, and the static
-        # fallback above also found nothing. Two very different situations
-        # produce that identical shape: a deployment that genuinely has no
-        # fleet configured, or a deployment whose fleet catalog file is
-        # simply not present/mounted at the paths this process looks in.
-        # Silently reporting bare zero with ``error: null`` is indistinguishable
-        # from "checked, and there truly are none" (the fail-closed rule this
-        # codebase enforces elsewhere: a degraded read must never look like a
-        # healthy empty result). Disambiguate by naming which files were
-        # actually missing, without leaking their absolute host paths.
-        missing = []
-        if mux_config_path is not None and not mux_config_path.exists():
-            missing.append('the MCP multiplexer fleet catalog config')
-        if _mcp_inventory_path() is None:
-            missing.append('any static mcp_config.json fallback')
-        if missing:
-            mcp_source = 'unavailable'
+
+        # MCP prompts -- the fleet catalog's own `mcp_prompts` table, never
+        # surfaced anywhere in this app before; already tenant-scoped and
+        # redacted by `_read_fleet_catalog` (registry_api's `_validate_item`).
+        mcp_prompts = list(catalog['prompts'])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+
+        if server_rows:
+            mcp_error = None
+        elif last_synced_at:
             mcp_error = (
-                'No MCP servers found because '
-                + ' and '.join(missing)
-                + ' is not present in this deployment -- 0 is a missing-'
-                'configuration state, not a fleet with no servers.'
+                'The MCP fleet catalog has been synced (last observed '
+                f'{last_synced_at}) but currently has no servers registered.'
             )
-    mcp_status = {'source': mcp_source, 'error': mcp_error}
-    # 2. Built-in Agent Tools
+        else:
+            mcp_error = (
+                'The MCP fleet catalog has no servers and no recorded sync -- '
+                'the hourly fleet-tool-schema-sync job may not have run yet.'
+            )
+        mcp_status = {
+            'source': 'sql_catalog',
+            'error': mcp_error,
+            'last_synced_at': last_synced_at,
+        }
+        skill_rows = catalog['skills']
+
+    # 2. Built-in Agent Tools -- bundled Python tool modules shipped with this
+    # app; unrelated to the MCP fleet catalog.
     builtin_tools = []
     tools_dir = get_agent_utilities_dir() / 'tools'
     if tools_dir.exists() and tools_dir.is_dir():
@@ -1984,102 +1889,75 @@ async def list_all_tools() -> dict[str, Any]:
                 }
             )
 
-    # 3. Skills & Workflows from installed packages — classified by the KG's own
-    # CallableResource/WorkflowDefinition truth (GOC-60-W06 / E7), not by
-    # filesystem path. See ``_fetch_kg_skill_classification`` docstring.
+    # 3. Skills / Skill Graphs / Skill Workflows -- classified directly by the
+    # SQL catalog's own `skill_type` column (assigned by the sync job's
+    # `classify_skill_type`, which never leaves it blank), never by
+    # filesystem path or a separate KG cross-reference query.
     skills: list[dict[str, Any]] = []
-    workflows: list[dict[str, Any]] = []
-    unclassified: list[dict[str, Any]] = []
-    filesystem_skill_md_count = 0
-    kg_index = await _fetch_kg_skill_classification(engine)
-    agent_skill_names = kg_index['agent_skill_names']
-    workflow_def_names = kg_index['workflow_def_names']
-    kg_reachable = kg_index['kg_reachable']
-    univ_skills_dir = (
-        get_skills_packages_dir() / 'universal-skills' / 'universal_skills'
-    )
-    if univ_skills_dir.exists():
-        for index, p in enumerate(univ_skills_dir.glob('**/SKILL.md')):
-            if index >= _MAX_LIST_FILES:
-                break
-            filesystem_skill_md_count += 1
-            skill_info = _parse_skill_md(p)
-            lookup_name = str(skill_info.get('name', '')).strip().lower()
-            is_agent_skill = kg_reachable and lookup_name in agent_skill_names
-            is_workflow_def = kg_reachable and lookup_name in workflow_def_names
-            skill_info['kg_classified'] = bool(is_agent_skill or is_workflow_def)
-
-            if is_agent_skill:
-                if len(skills) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                    continue
-                skill_info['type'] = 'Agent Skill'
-                skill_info['resource_type'] = 'AGENT_SKILL'
-                skill_info['runnable'] = True
-                skill_info['enabled'] = await get_toggle_state(
-                    engine, 'skill', skill_info['id']
-                )
-                skills.append(skill_info)
-            elif is_workflow_def:
-                if len(workflows) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                    continue
-                skill_info['type'] = 'Skill Workflow'
-                skill_info['resource_type'] = 'WORKFLOW_DEFINITION'
-                skill_info['runnable'] = False
-                skill_info['enabled'] = await get_toggle_state(
-                    engine, 'skill_workflow', skill_info['id']
-                )
-                workflows.append(skill_info)
-            else:
-                # No matching KG node (either genuinely un-ingested, or the KG
-                # was unreachable this request) — report it explicitly rather
-                # than guessing a bucket from its path (lane invariant 4/5).
-                if len(unclassified) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                    continue
-                skill_info['type'] = 'Unclassified'
-                skill_info['resource_type'] = None
-                skill_info['runnable'] = False
-                skill_info['enabled'] = await get_toggle_state(
-                    engine, 'skill', skill_info['id']
-                )
-                unclassified.append(skill_info)
-
-    # 4. Skill Graphs
-    graphs = []
-    graphs_dir = get_skills_packages_dir() / 'skill-graphs' / 'skill_graphs'
-    if graphs_dir.exists():
-        for index, p in enumerate(graphs_dir.glob('**/SKILL.md')):
-            if index >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                break
-            skill_info = _parse_skill_md(p)
-            skill_info['type'] = 'Skill Graph'
-            skill_info['enabled'] = await get_toggle_state(
-                engine, 'skill_graph', skill_info['id']
+    skill_graphs: list[dict[str, Any]] = []
+    skill_workflows: list[dict[str, Any]] = []
+    skill_unclassified: list[dict[str, Any]] = []
+    for row in skill_rows[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+        skill_id = row.get('id')
+        if not isinstance(skill_id, str) or not skill_id:
+            continue
+        skill_type = str(row.get('skill_type') or '').strip().lower()
+        classification = row.get('classification') or skill_type.title()
+        entry: dict[str, Any] = {
+            'id': skill_id,
+            'name': row.get('name', ''),
+            'description': row.get('description', ''),
+            'type': classification,
+        }
+        if skill_type in ('skill', 'mcp_skill'):
+            entry['runnable'] = True
+            entry['resource_type'] = 'AGENT_SKILL'
+            entry['kg_classified'] = True
+            entry['enabled'] = await get_toggle_state(engine, 'skill', skill_id)
+            skills.append(entry)
+        elif skill_type == 'workflow':
+            entry['file_path'] = row.get('uri') or ''
+            entry['runnable'] = False
+            entry['resource_type'] = 'WORKFLOW_DEFINITION'
+            entry['kg_classified'] = True
+            entry['enabled'] = await get_toggle_state(
+                engine, 'skill_workflow', skill_id
             )
-            graphs.append(skill_info)
+            skill_workflows.append(entry)
+        elif skill_type == 'graph':
+            entry['file_path'] = row.get('uri') or ''
+            entry['enabled'] = await get_toggle_state(engine, 'skill_graph', skill_id)
+            skill_graphs.append(entry)
+        else:
+            entry['runnable'] = False
+            entry['resource_type'] = None
+            entry['kg_classified'] = False
+            entry['enabled'] = await get_toggle_state(engine, 'skill', skill_id)
+            skill_unclassified.append(entry)
 
     result = {
         'mcp_tools': mcp_tools,
         'mcp_status': mcp_status,
+        'mcp_prompts': mcp_prompts,
         'builtin_tools': builtin_tools,
         'skills': sorted(skills, key=lambda x: x.get('name', '').lower()),
-        'skill_graphs': sorted(graphs, key=lambda x: x.get('name', '').lower()),
-        'skill_workflows': sorted(workflows, key=lambda x: x.get('name', '').lower()),
-        'skill_unclassified': sorted(
-            unclassified, key=lambda x: x.get('name', '').lower()
+        'skill_graphs': sorted(skill_graphs, key=lambda x: x.get('name', '').lower()),
+        'skill_workflows': sorted(
+            skill_workflows, key=lambda x: x.get('name', '').lower()
         ),
-        # Live filesystem-vs-KG reconciliation (GOC-60-W06b): computed fresh on
-        # every call, so a drift between what's on disk and what the KG has
-        # actually typed as runnable is always visible on this surface, never
-        # only discoverable via a one-off script.
+        'skill_unclassified': sorted(
+            skill_unclassified, key=lambda x: x.get('name', '').lower()
+        ),
+        # Live catalog classification summary, computed fresh on every call.
         'skill_classification': {
-            'source': 'kg_resource_type',
-            'kg_reachable': kg_reachable,
-            'filesystem_skill_md_count': filesystem_skill_md_count,
-            'kg_agent_skill_count': len(agent_skill_names),
-            'kg_workflow_definition_count': len(workflow_def_names),
+            'source': 'sql_catalog',
+            'kg_reachable': catalog is not None,
+            'filesystem_skill_md_count': len(skill_rows),
+            'kg_agent_skill_count': len(skills),
+            'kg_workflow_definition_count': len(skill_workflows),
             'runnable_count': len(skills),
-            'describe_only_count': len(workflows),
-            'unclassified_count': len(unclassified),
+            'describe_only_count': len(skill_workflows),
+            'unclassified_count': len(skill_unclassified),
         },
     }
     bounded = _public_external_result(result)
@@ -2479,97 +2357,41 @@ async def toggle_tool_status(data: dict[str, Any]) -> dict[str, Any]:
     return {'status': 'success', 'type': item_type, 'id': item_id, 'enabled': enabled}
 
 
-async def _classify_universal_skills_from_kg(
-    univ_skills_dir: Path, kg_index: dict[str, Any]
-) -> list[dict[str, Any]]:
-    """Scan ``univ_skills_dir`` for ``SKILL.md`` files and keep only the ones
-    the KG's own classification (``_fetch_kg_skill_classification``) types as
-    ``AGENT_SKILL`` (BUG-024: never a literal ``workflows`` path segment —
-    lane invariant 4). Isolated from ``list_skills`` so this logic can be
-    exercised directly against a fixture directory without needing to defeat
-    that route's ``is_testing`` real-filesystem guard.
-    """
-
-    agent_skill_names = kg_index['agent_skill_names']
-    kg_reachable = kg_index['kg_reachable']
-    skills: list[dict[str, Any]] = []
-    for index, p in enumerate(univ_skills_dir.glob('**/SKILL.md')):
-        if index >= _MAX_LIST_FILES or len(skills) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-            break
-        skill_info = _parse_skill_md(p)
-        lookup_name = str(skill_info.get('name', '')).strip().lower()
-        if kg_reachable and lookup_name in agent_skill_names:
-            skill_info['type'] = 'Agent Skill'
-            skills.append(skill_info)
-    return skills
-
-
 @router.get('/skills')
 async def list_skills() -> list[dict[str, Any]]:
-    """Retrieve the catalog of dynamic agent skills.
+    """Retrieve the catalog of MCP/skill-fleet skills.
 
     CONCEPT:WU-KG.compute.granular-resource-queries — Granular Resource Queries
+
+    Reads exclusively from the SQL fleet catalog's ``skills`` table via
+    ``_read_fleet_catalog`` — the same tenant-scoped, redacted, fail-closed
+    read path ``/tools`` and ``agent_utilities.gateway.registry_api`` use;
+    never a filesystem ``SKILL.md`` scan or a live-engine fallback chain. A
+    degraded/failed catalog read raises 503 rather than returning an
+    indistinguishable empty list (fail-closed); a genuinely empty catalog
+    (reachable, zero rows — e.g. the hourly ``fleet-tool-schema-sync`` job
+    has not run yet) returns an honest ``[]``.
 
     Returns:
         A list of skill definitions sorted alphabetically.
     """
-    skills: list[dict[str, Any]] = []
-    import sys
-
-    # See the matching note in get_engine(): 'unittest' alone is not a
-    # trustworthy test-mode signal in this process.
-    is_testing = 'pytest' in sys.modules
-    try:
-        engine = await _get_engine_bounded()
-    except HTTPException as exc:
-        # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- get_engine()
-        # raises HTTPException(501) for "no engine", not None, so a bare
-        # `except HTTPException: raise` here made the `if engine:` /
-        # get_helper() fallback below dead code: every no-engine request
-        # 501'd before ever reaching it. Only a genuine 503 (bounded-sync
-        # deadline/capacity) still hard-fails; "not initialized" degrades
-        # to the get_helper()/501 fallback chain already written below.
-        if exc.status_code != 501:
-            raise
-        engine = None
-    except Exception:
-        engine = None
-    univ_skills_dir = (
-        get_skills_packages_dir() / 'universal-skills' / 'universal_skills'
-    )
-    if not is_testing and univ_skills_dir.exists():
-        # BUG-024: classify by the KG's CallableResource(resource_type=...)
-        # truth, the same authority `/tools` already uses, never by a literal
-        # `workflows` path segment (lane invariant 4 -- see
-        # `_fetch_kg_skill_classification`'s docstring). When the KG is
-        # unreachable, `kg_reachable` is False and every candidate is left
-        # out here rather than guessed from path -- that falls through to
-        # the governed-helper fallback below instead of a silent path guess.
-        kg_index = await _fetch_kg_skill_classification(engine)
-        skills = await _classify_universal_skills_from_kg(univ_skills_dir, kg_index)
-    if not skills:
-        if engine:
-            skills_result = await _invoke_governed_helper(
-                engine.get_skills,
-                deadline=10.0,
-            )
-            skills = list(skills_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        if not skills:
-            list_skills_helper = get_helper('list_skills')
-            if list_skills_helper:
-                skills_result = await _invoke_governed_helper(
-                    list_skills_helper,
-                    deadline=10.0,
-                )
-                skills = list(skills_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-            else:
-                raise HTTPException(
-                    status_code=501, detail='Intelligence Graph Engine not initialized'
-                )
+    catalog = await _read_fleet_catalog('skills')
+    if catalog is None:
+        raise HTTPException(
+            status_code=503, detail='MCP/skill fleet catalog is unavailable'
+        )
+    skills = [
+        {
+            'id': row.get('id', ''),
+            'name': row.get('name', ''),
+            'description': row.get('description', ''),
+            'enabled': bool(row.get('enabled')),
+        }
+        for row in catalog['skills'][:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        if isinstance(row.get('id'), str) and row.get('id')
+    ]
     bounded = _public_external_result(
-        sorted(skills, key=lambda x: x.get('name', '').lower())[
-            :_MAX_EXTERNAL_COLLECTION_ITEMS
-        ]
+        sorted(skills, key=lambda x: x.get('name', '').lower())
     )
     return bounded if isinstance(bounded, list) else []
 
@@ -3035,32 +2857,78 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                 raise
             return []
 
+        # BUG (this fix): `RETURN n` asks the engine to serialize the whole
+        # internal node object, the same anonymous/whole-object pattern
+        # `get_graph_stats` already documents (below) as rejected by the
+        # engine's Cypher parser -- it raised `ValueError`, caught by the
+        # blanket handler below, and always 503'd (live log:
+        # "get_graph_nodes failed: error_type=ValueError"). Mirror
+        # `get_graph_relationships`' fix: project explicit scalar/function
+        # columns off the named node instead -- `n.id` (a property access,
+        # like `a.id`/`b.id` below) and `properties(n)` (a function call
+        # returning a plain value, not the raw node object; already used
+        # this way in `tenant_sharing.promote_to_commons`).
         if node_type:
             # Identifier is validated against schema or trusted source before use
             query = (
-                f'MATCH (n:{node_type}) RETURN n LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+                f'MATCH (n:{node_type}) RETURN n.id AS id, properties(n) AS props '
+                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
             )
         else:
-            query = f'MATCH (n) RETURN n LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+            query = (
+                'MATCH (n) RETURN n.id AS id, properties(n) AS props '
+                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+            )
 
         result = await _invoke_governed_helper(
             engine.backend.execute, query, deadline=10.0
         )
         nodes = []
         for row in result:
-            node_data = row.get('n', {})
-            if isinstance(node_data, dict):
-                nodes.append(
-                    {
-                        'id': node_data.get('id', ''),
-                        'labels': list(node_data.keys()),
-                        'properties': {
-                            k: v
-                            for k, v in node_data.items()
-                            if k != 'id' and not k.startswith('_')
-                        },
-                    }
+            if not isinstance(row, dict):
+                continue
+            node_id = row.get('id')
+            props = row.get('props')
+            if not isinstance(props, dict):
+                props = {}
+            # The engine's Cypher `labels(n)` function is not implemented
+            # (always evaluates to null -- see `knowledge_graph/core/
+            # nl_query.py`'s `build_schema_context` docstring), so a node's
+            # cypher labels live in properties instead. Derive them from
+            # EXACTLY the two fields the engine's own matcher reads --
+            # `node_type` plus the explicit multi-label `labels` array (eg
+            # `crates/eg-query/src/cypher/exec.rs` `node_has_label`, and
+            # `build_cypher_label_index`, whose comment notes this set is
+            # "deliberately narrower than `GraphCore.label_index`'s
+            # `type`/`node_type`/`label`, which also serves the write path's
+            # broader contract"). Reading `type`/`label` here would report a
+            # label that `MATCH (n:<that>)` does NOT match, so filtering by
+            # node_type would disagree with the list it was filtered from.
+            # Both source keys are excluded from `properties` below so a
+            # label is never duplicated as an ordinary property.
+            labels: list[str] = []
+            node_type_prop = props.get('node_type')
+            if isinstance(node_type_prop, str) and node_type_prop:
+                labels.append(node_type_prop)
+            extra_labels = props.get('labels')
+            if isinstance(extra_labels, list):
+                labels.extend(
+                    item
+                    for item in extra_labels
+                    if isinstance(item, str) and item and item not in labels
                 )
+            nodes.append(
+                {
+                    'id': node_id if isinstance(node_id, str) else '',
+                    'labels': labels,
+                    'properties': {
+                        k: v
+                        for k, v in props.items()
+                        if k not in ('id', 'node_type', 'labels')
+                        and not str(k).startswith('_')
+                    },
+                }
+            )
         return _public_external_result(nodes)
     except HTTPException:
         raise
@@ -3073,7 +2941,11 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
         # graph database nodes" toast (GraphView.tsx's own fetchData, already
         # wired, previously never fired because a 200 + `[]` looks like
         # success) fires on a REAL failure, and stays silent for a REAL empty
-        # graph (which never reaches this except block at all).
+        # graph (which never reaches this except block at all). `_log_failure`
+        # already logs the exception TYPE (e.g. `error_type=ValueError`) to
+        # the server log without the message/args, so the cause stays legible
+        # to an operator reading logs while nothing internal reaches the
+        # client response below.
         _log_failure('get_graph_nodes', e)
         raise HTTPException(
             status_code=503,
@@ -6805,7 +6677,6 @@ async def list_embedding_models() -> list[dict[str, Any]]:
 _EDITABLE_MODEL_KINDS = ('chat', 'embedding')
 
 
-@router.get('/llm/model-schema')
 def _flatten_model_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """Resolve a Pydantic `model_json_schema()` root `$ref` (emitted for a
     self-referencing model — `EmbeddingModelConfig.fallback` points back at
@@ -6823,6 +6694,7 @@ def _flatten_model_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return resolved if isinstance(resolved, dict) else schema
 
 
+@router.get('/llm/model-schema')
 async def get_llm_model_schema() -> dict[str, Any]:
     """Return the JSON Schema for both model kinds AgentConfig registers.
 

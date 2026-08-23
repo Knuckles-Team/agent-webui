@@ -1,41 +1,23 @@
-"""Failing-first + regression tests for the MCP-servers inventory (GOC-60-W04a).
+"""Fleet-catalog-backed tests for the MCP-servers inventory (`GET
+/api/enhanced/tools`, ``list_all_tools`` in ``api_extensions.py``).
 
-CONCEPT:AU-ECO.mcp.webui-mcp-server-inventory
-
-GOC-60 lane evidence E2 (break 1): ``api_extensions.list_all_tools`` called
-``engine.get_all_mcp_servers()`` -- at the time the lane was written,
-``RegistryMixin`` (``agent_utilities/core/registry/kg_adapter.py``) never
-defined that method (it only ever exposed ``get_all_prompts``/
-``get_skills``/``get_tools``), so every call raised ``AttributeError``,
-silently swallowed by a bare ``except Exception``, leaving ``mcp_tools``
-permanently ``[]`` -- "No MCP servers registered" was the EXPECTED
-steady-state output of ``GET /api/enhanced/tools``, not a transient outage.
-Reproduced live during this lane's RED capture (see the failing-first commit
-message for the exact ``error_type=AttributeError`` log line).
-
-NOTE ON A CONCURRENT LANDING: a separate, concurrent worker independently
-added a KG-node-sourced ``get_all_mcp_servers()`` to ``RegistryMixin``
-(``agent-utilities`` commit ``a1a9f173``, "placement catalog + engine-surface
-tools") while this lane was in flight, so the method now exists on current
-``main`` -- an AttributeError-pinning test against the live class would be
-stale and is intentionally NOT kept here. This lane's fix does not call that
-method either way: it sources ``mcp_tools`` from
-``agent_utilities.mcp.shared_multiplexer`` (GOC-60-W03), which the lane's own
-evidence (E5) identifies as the more accurate source -- LIVE, per-session
-dispatchable truth derived from the same predicate the real dispatch gate
-enforces, vs. the KG method's periodically-ingested ``:MCPServer`` nodes.
-``test_list_all_tools_sources_mcp_servers_from_the_shared_multiplexer`` below
-is the RED/GREEN test: it failed against the pre-fix code (which never even
-attempted to read the shared multiplexer) and passes once ``list_all_tools``
-is wired to it (GOC-60-W03/W04a).
+Historically ``mcp_tools`` was sourced from a live ``shared_multiplexer``
+probe (GOC-60-W03/W04a), with a filesystem ``SKILL.md`` scan for skills and a
+separate KG ``CallableResource``/``WorkflowDefinition`` cross-reference for
+classification -- THREE different sources for one response. The SQL fleet
+catalog (``agent_utilities.knowledge_graph.core.fleet_catalog_tables`` /
+``agent_utilities.gateway.registry_api``, CONCEPT:AU-KG.ingest.fleet-catalog-relational-tables)
+is now the single source of truth for all three, read in-process via
+``api_extensions._read_fleet_catalog``. These tests replace the old
+multiplexer-sourced suite; the invariant they still enforce -- a missing or
+failed data source is an ERROR/DEGRADED state, never a silent, indistinguishable
+``[]`` -- carries over unchanged, translated onto the new source.
 """
 
 from __future__ import annotations
 
-import sys
-import types
-from collections.abc import Callable
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
@@ -43,76 +25,10 @@ from agent_webui import api_extensions
 
 
 @pytest.fixture
-def install_shared_multiplexer(monkeypatch) -> Callable[[Callable[[], Any]], None]:
-    """Install a fake ``agent_utilities.mcp.shared_multiplexer`` module.
-
-    GOC-60-W03 (this lane) adds ``agent_utilities/mcp/shared_multiplexer.py``
-    in a SEPARATE worktree/branch of the ``agent-utilities`` repository (per
-    the program's per-repo worktree isolation rule -- these two repos are
-    developed and merged independently). This test suite must not depend on
-    that branch already being merged into the ``agent_utilities`` checkout
-    this environment resolves imports against, so the module is injected via
-    ``sys.modules`` rather than assumed to exist on disk. The injected
-    module's ``get_shared_multiplexer`` shape matches the real one built by
-    this lane 1:1 (see ``agent_utilities/tests/unit/server/test_mcp_catalog_routes.py``
-    and ``test_webui_mcp_delegation.py`` in the ``agent-utilities`` worktree
-    for the source-of-truth contract test).
-    """
-
-    def _install(get_shared_multiplexer: Callable[[], Any]) -> None:
-        fake_module = types.ModuleType('agent_utilities.mcp.shared_multiplexer')
-        fake_module.get_shared_multiplexer = get_shared_multiplexer  # type: ignore[attr-defined]
-        monkeypatch.setitem(
-            sys.modules, 'agent_utilities.mcp.shared_multiplexer', fake_module
-        )
-
-    return _install
-
-
-class _StubMultiplexer:
-    """Deterministic stand-in for ``agent_utilities.mcp.shared_multiplexer``'s
-    shared instance -- only the ``list_catalog`` surface ``list_all_tools``
-    consumes."""
-
-    def __init__(
-        self, servers: list[dict[str, Any]] | None = None, *, boom: bool = False
-    ):
-        self._servers = servers or []
-        self._boom = boom
-
-    async def list_catalog(self, server: str = '', include_tools: bool = True) -> dict:
-        if self._boom:
-            raise RuntimeError('catalog probe exploded')
-        assert server == ''  # the servers panel always does a fleet-wide browse
-        assert (
-            include_tools is False
-        )  # metadata-only: no whole-fleet probe from a list endpoint
-        return {
-            'total_servers': len(self._servers),
-            'total_tools': sum(s.get('tool_count', 0) for s in self._servers),
-            'servers_running': [],
-            'unavailable': [
-                s['server'] for s in self._servers if s.get('available') is False
-            ],
-            'servers': self._servers,
-        }
-
-
-@pytest.fixture
 def stub_engine():
     """A minimal ``spec``-bound engine double for ``get_toggle_state``'s
-    ``query_cypher`` call only.
-
-    Deliberately NOT the shared ``mock_graph_engine`` fixture
-    (``tests/conftest.py``): that fixture additionally constructs a real
-    ``GraphComputeEngine()``, whose ``__init__`` resolves a tenant-scoped
-    routing graph against ``current_actor()`` -- requiring a verified actor
-    context this focused unit test has no reason to stand up. ``list_all_tools``
-    only ever calls ``engine.query_cypher`` (via ``get_toggle_state``), so
-    that is the only surface stubbed here.
-    """
-    from unittest.mock import MagicMock
-
+    ``query_cypher`` call only -- see the equivalent fixture this replaces
+    for why this is not the shared ``mock_graph_engine`` fixture."""
     engine = MagicMock(spec=IntelligenceGraphEngine)
     engine.query_cypher.return_value = []
     return engine
@@ -126,181 +42,294 @@ def bounded_engine(stub_engine):
     return _get_engine
 
 
-@pytest.mark.asyncio
-async def test_list_all_tools_sources_mcp_servers_from_the_shared_multiplexer(
-    monkeypatch, bounded_engine, install_shared_multiplexer
-) -> None:
-    """RED before the GOC-60-W04a fix (mcp_tools stays [] because the code
-    never reads the shared multiplexer at all); GREEN after."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
-
-    stub = _StubMultiplexer(
-        [
-            {
-                'server': 'github-api',
-                'tool_count': 12,
-                'enabled_count': 12,
-                'process_running': False,
-                'probed': True,
-                'available': True,
-            },
-            {
-                'server': 'servicenow-secops',
-                'tool_count': 6,
-                'enabled_count': 4,
-                'process_running': True,
-                'probed': True,
-                'available': True,
-            },
-        ]
+def _patch_catalog(rows: dict[str, list[dict[str, Any]]] | None):
+    return patch(
+        'agent_webui.api_extensions._read_fleet_catalog',
+        AsyncMock(return_value=rows),
     )
 
-    async def _get_shared_multiplexer() -> Any:
-        return stub
 
-    install_shared_multiplexer(_get_shared_multiplexer)
+def _server_row(
+    *, id: str, name: str, enabled: bool = True, transport: str = 'http', url: str = ''
+) -> dict[str, Any]:
+    return {
+        'id': id,
+        'name': name,
+        'transport': transport,
+        'url': url,
+        'enabled': enabled,
+    }
 
-    result = await api_extensions.list_all_tools()
+
+def _discovery_row(
+    *,
+    server_id: str,
+    server_name: str,
+    reachable: bool,
+    tool_count: int = 0,
+    last_error: str = '',
+    observed_at: str = '2026-08-22T00:00:00Z',
+) -> dict[str, Any]:
+    return {
+        'id': f'disc:{server_id}:{observed_at}',
+        'server_id': server_id,
+        'server_name': server_name,
+        'reachable': reachable,
+        'last_error': last_error,
+        'tool_count': tool_count,
+        'skill_count': 0,
+        'prompt_count': 0,
+        'resource_count': 0,
+        'observed_at': observed_at,
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_all_tools_sources_mcp_servers_from_the_sql_catalog(
+    monkeypatch, bounded_engine
+) -> None:
+    """``mcp_tools`` is read from the SQL `servers`/`discoveries` tables,
+    never the shared multiplexer."""
+    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+
+    catalog = {
+        'servers': [
+            _server_row(id='srv:github-api', name='github-api'),
+            _server_row(id='srv:servicenow-secops', name='servicenow-secops'),
+        ],
+        'discoveries': [
+            _discovery_row(
+                server_id='srv:github-api',
+                server_name='github-api',
+                reachable=True,
+                tool_count=12,
+            ),
+            _discovery_row(
+                server_id='srv:servicenow-secops',
+                server_name='servicenow-secops',
+                reachable=True,
+                tool_count=6,
+            ),
+        ],
+        'skills': [],
+        'prompts': [],
+    }
+
+    with _patch_catalog(catalog):
+        result = await api_extensions.list_all_tools()
 
     names = {row['name'] for row in result['mcp_tools']}
     assert names == {'github-api', 'servicenow-secops'}
-    assert result['mcp_status'] == {'source': 'multiplexer', 'error': None}
+    assert result['mcp_status']['source'] == 'sql_catalog'
+    assert result['mcp_status']['error'] is None
+    by_name = {row['name']: row for row in result['mcp_tools']}
+    assert by_name['github-api']['tool_count'] == 12
+    assert by_name['github-api']['status'] == 'active'
 
 
 @pytest.mark.asyncio
-async def test_list_all_tools_never_renders_a_multiplexer_failure_as_a_silent_empty_list(
-    monkeypatch, bounded_engine, tmp_path, install_shared_multiplexer
+async def test_list_all_tools_never_renders_a_catalog_failure_as_a_silent_empty_list(
+    monkeypatch, bounded_engine
 ) -> None:
-    """GOC-60 lane authority/invariant 1: a missing data source is an
-    ERROR/DEGRADED state, never a silent ``[]``. With BOTH the multiplexer
-    and the static-config fallback unavailable, ``mcp_tools`` is legitimately
-    empty -- but ``mcp_status`` must say so explicitly.
-    """
+    """A failed/denied catalog read (``_read_fleet_catalog`` -> ``None``) is
+    an ERROR/DEGRADED state, never a silent ``[]`` with ``error: null``."""
     monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
 
-    async def _boom() -> Any:
-        raise RuntimeError('shared multiplexer failed to construct')
-
-    install_shared_multiplexer(_boom)
-    monkeypatch.setattr(api_extensions, '_mcp_inventory_path', lambda: None)
-
-    result = await api_extensions.list_all_tools()
+    with _patch_catalog(None):
+        result = await api_extensions.list_all_tools()
 
     assert result['mcp_tools'] == []
     assert result['mcp_status']['source'] == 'unavailable'
-    assert 'RuntimeError' in (result['mcp_status']['error'] or '')
+    assert result['mcp_status']['error']
+    assert result['skill_classification']['kg_reachable'] is False
 
 
 @pytest.mark.asyncio
-async def test_list_all_tools_names_a_missing_fleet_config_instead_of_a_bare_zero(
-    monkeypatch, bounded_engine, tmp_path, install_shared_multiplexer
+async def test_list_all_tools_distinguishes_not_yet_synced_from_genuinely_empty(
+    monkeypatch, bounded_engine
 ) -> None:
-    """The live-deployment shape that motivated this test: the multiplexer
-    constructs and probes CLEANLY (no exception -- ``mcp_source`` stays
-    ``'multiplexer'``) but its own fleet catalog config file is simply not
-    present in this deployment, so it legitimately parses to zero servers.
-    Before this fix that rendered identically to "this fleet genuinely has no
-    servers" (``error: None``) -- indistinguishable from a real outage/gap.
-    It must now name that the config file was missing, not silently report a
-    bare empty list with no explanation (GOC-60 lane authority/invariant 1,
-    extended: a MISSING SOURCE FILE is exactly as reportable as a missing
-    data source through an exception).
-    """
+    """The catalog tables are populated by the hourly
+    ``fleet-tool-schema-sync`` job -- a reachable catalog with zero rows and
+    NO recorded discovery observation must say "not yet synced", never read
+    identically to a real, healthy, empty fleet."""
     monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
 
-    missing_config = tmp_path / 'mcp_config.json'  # never written -- absent
-
-    class _EmptyMultiplexerWithConfigPath:
-        def __init__(self, config_path):
-            self.config_path = config_path
-
-        async def list_catalog(
-            self, server: str = '', include_tools: bool = True
-        ) -> dict:
-            assert server == ''
-            assert include_tools is False
-            return {'servers': []}  # exactly what a missing-file load_catalog() yields
-
-    async def _get_shared_multiplexer() -> Any:
-        return _EmptyMultiplexerWithConfigPath(missing_config)
-
-    install_shared_multiplexer(_get_shared_multiplexer)
-    # The static degraded fallback also finds nothing -- both paths genuinely
-    # have no file to read, matching the real deployment gap this reproduces.
-    monkeypatch.setattr(api_extensions, '_mcp_inventory_path', lambda: None)
-
-    result = await api_extensions.list_all_tools()
+    with _patch_catalog(
+        {'servers': [], 'discoveries': [], 'skills': [], 'prompts': []}
+    ):
+        result = await api_extensions.list_all_tools()
 
     assert result['mcp_tools'] == []
-    assert result['mcp_status']['source'] == 'unavailable'
+    assert result['mcp_status']['source'] == 'sql_catalog'
     assert result['mcp_status']['error'] is not None
-    assert 'not present in this deployment' in result['mcp_status']['error']
+    assert 'fleet-tool-schema-sync' in result['mcp_status']['error']
+    assert result['mcp_status']['last_synced_at'] is None
 
 
 @pytest.mark.asyncio
 async def test_list_all_tools_reports_a_genuinely_empty_fleet_as_healthy(
-    monkeypatch, bounded_engine, tmp_path, install_shared_multiplexer
+    monkeypatch, bounded_engine
 ) -> None:
-    """The complement of the test above: when the multiplexer's OWN config
-    file DOES exist (it was just read and genuinely declares zero servers)
-    and a static fallback file also genuinely exists with nothing in it, zero
-    servers is an honest, healthy answer -- ``mcp_status.error`` must stay
-    ``None`` rather than crying wolf about a missing file that is not, in
-    fact, missing."""
+    """The complement of the test above: the catalog HAS been synced (a
+    discovery observation is on record) and genuinely found zero servers --
+    that is an honest, healthy answer, not a missing-sync warning."""
     monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
 
-    present_but_empty_config = tmp_path / 'mcp_config.json'
-    present_but_empty_config.write_text('{"mcpServers": {}}')
-
-    class _EmptyMultiplexerWithConfigPath:
-        def __init__(self, config_path):
-            self.config_path = config_path
-
-        async def list_catalog(
-            self, server: str = '', include_tools: bool = True
-        ) -> dict:
-            return {'servers': []}
-
-    async def _get_shared_multiplexer() -> Any:
-        return _EmptyMultiplexerWithConfigPath(present_but_empty_config)
-
-    install_shared_multiplexer(_get_shared_multiplexer)
-    monkeypatch.setattr(
-        api_extensions, '_mcp_inventory_path', lambda: present_but_empty_config
-    )
-
-    result = await api_extensions.list_all_tools()
+    # A discovery row can outlive its server (append-only history), so its
+    # presence alone is evidence a sync ran even though `servers` is empty.
+    with _patch_catalog(
+        {
+            'servers': [],
+            'discoveries': [
+                _discovery_row(
+                    server_id='srv:removed',
+                    server_name='removed-server',
+                    reachable=False,
+                    observed_at='2026-08-22T01:00:00Z',
+                )
+            ],
+            'skills': [],
+            'prompts': [],
+        }
+    ):
+        result = await api_extensions.list_all_tools()
 
     assert result['mcp_tools'] == []
-    assert result['mcp_status'] == {'source': 'multiplexer', 'error': None}
+    assert result['mcp_status']['source'] == 'sql_catalog'
+    assert result['mcp_status']['last_synced_at'] == '2026-08-22T01:00:00Z'
+    assert 'no servers registered' in result['mcp_status']['error']
 
 
 @pytest.mark.asyncio
-async def test_list_all_tools_labels_the_static_fallback_as_degraded_not_equivalent(
-    monkeypatch, bounded_engine, tmp_path, install_shared_multiplexer
+async def test_list_all_tools_marks_an_unreachable_server_from_its_latest_discovery(
+    monkeypatch, bounded_engine
 ) -> None:
-    """When the multiplexer is down, the static ``mcp_config.json`` fallback
-    must stay VISIBLE as a narrower, degraded source (GOC-60-W04a) -- not a
-    silent equivalent substitute for the fleet-wide catalog."""
-    import json
-
+    """`status` reflects the MOST RECENT discovery row per server (the
+    discovery table is append-only), not an arbitrary/first one."""
     monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
 
-    async def _boom() -> Any:
-        raise RuntimeError('multiplexer down')
+    with _patch_catalog(
+        {
+            'servers': [_server_row(id='srv:flaky', name='flaky-mcp')],
+            'discoveries': [
+                _discovery_row(
+                    server_id='srv:flaky',
+                    server_name='flaky-mcp',
+                    reachable=True,
+                    observed_at='2026-08-22T00:00:00Z',
+                ),
+                _discovery_row(
+                    server_id='srv:flaky',
+                    server_name='flaky-mcp',
+                    reachable=False,
+                    last_error='unavailable',
+                    observed_at='2026-08-22T02:00:00Z',
+                ),
+            ],
+            'skills': [],
+            'prompts': [],
+        }
+    ):
+        result = await api_extensions.list_all_tools()
 
-    install_shared_multiplexer(_boom)
+    row = result['mcp_tools'][0]
+    assert row['status'] == 'unavailable'
+    assert row['error'] == 'unavailable'
 
-    config_path = tmp_path / 'mcp_config.json'
-    config_path.write_text(
-        json.dumps({'mcpServers': {'legacy-fs': {'command': 'true'}}})
-    )
-    monkeypatch.setattr(api_extensions, '_mcp_inventory_path', lambda: config_path)
 
-    result = await api_extensions.list_all_tools()
+@pytest.mark.asyncio
+async def test_list_all_tools_classifies_skills_from_the_sql_skill_type_column(
+    monkeypatch, bounded_engine
+) -> None:
+    """Skills/graphs/workflows are bucketed directly from the catalog's own
+    `skill_type` column (written by the sync job's `classify_skill_type`) --
+    never a filesystem scan or a separate KG resource-type cross-reference."""
+    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
 
-    assert [row['name'] for row in result['mcp_tools']] == ['legacy-fs']
-    assert result['mcp_status']['source'] == 'static-config-degraded'
-    # The underlying multiplexer failure stays visible even though the
-    # degraded fallback produced usable data.
-    assert 'RuntimeError' in (result['mcp_status']['error'] or '')
+    with _patch_catalog(
+        {
+            'servers': [],
+            'discoveries': [],
+            'skills': [
+                {
+                    'id': 'skill-a',
+                    'name': 'skill-a',
+                    'description': '',
+                    'uri': '',
+                    'skill_type': 'skill',
+                    'classification': 'Atomic Skill',
+                    'provider': '',
+                    'mcp_server': '',
+                    'enabled': True,
+                },
+                {
+                    'id': 'workflow-a',
+                    'name': 'workflow-a',
+                    'description': '',
+                    'uri': 'skill://workflow-a',
+                    'skill_type': 'workflow',
+                    'classification': 'Workflow',
+                    'provider': '',
+                    'mcp_server': '',
+                    'enabled': True,
+                },
+                {
+                    'id': 'graph-a',
+                    'name': 'graph-a',
+                    'description': '',
+                    'uri': 'skill://graph-a',
+                    'skill_type': 'graph',
+                    'classification': 'Skill Graph',
+                    'provider': '',
+                    'mcp_server': '',
+                    'enabled': True,
+                },
+            ],
+            'prompts': [],
+        }
+    ):
+        result = await api_extensions.list_all_tools()
+
+    assert [s['id'] for s in result['skills']] == ['skill-a']
+    assert result['skills'][0]['runnable'] is True
+    assert result['skills'][0]['resource_type'] == 'AGENT_SKILL'
+    assert [w['id'] for w in result['skill_workflows']] == ['workflow-a']
+    assert result['skill_workflows'][0]['runnable'] is False
+    assert result['skill_workflows'][0]['resource_type'] == 'WORKFLOW_DEFINITION'
+    assert [g['id'] for g in result['skill_graphs']] == ['graph-a']
+    assert result['skill_unclassified'] == []
+    summary = result['skill_classification']
+    assert summary['kg_reachable'] is True
+    assert summary['runnable_count'] == 1
+    assert summary['describe_only_count'] == 1
+    assert summary['unclassified_count'] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_all_tools_surfaces_the_sql_prompts_table(
+    monkeypatch, bounded_engine
+) -> None:
+    """`mcp_prompts` -- previously never surfaced anywhere in this app --
+    comes straight from the SQL catalog's `prompts` kind."""
+    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+
+    with _patch_catalog(
+        {
+            'servers': [],
+            'discoveries': [],
+            'skills': [],
+            'prompts': [
+                {
+                    'id': 'prompt:1',
+                    'server_id': 'srv:a',
+                    'server_name': 'server-a',
+                    'name': 'greeting',
+                    'description': 'A greeting prompt',
+                    'uri': '',
+                }
+            ],
+        }
+    ):
+        result = await api_extensions.list_all_tools()
+
+    assert [p['name'] for p in result['mcp_prompts']] == ['greeting']

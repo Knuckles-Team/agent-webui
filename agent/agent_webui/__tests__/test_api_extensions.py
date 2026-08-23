@@ -3,7 +3,7 @@ from __future__ import annotations
 """Test API endpoints for agent-webui backend."""
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import agent_webui.api_extensions as api_extensions
 import pytest
@@ -114,41 +114,93 @@ class TestGraphStatsEndpoint:
 class TestGraphNodesEndpoint:
     """Test graph nodes endpoint."""
 
-    def test_get_graph_nodes_success(
-        self, client, mock_graph_engine, sample_graph_data
-    ):
-        """Test successful graph nodes retrieval."""
+    def test_get_graph_nodes_success(self, client, mock_graph_engine):
+        """Nodes are projected as explicit scalar/function columns (`n.id`,
+        `properties(n)`) -- never the whole node object (`RETURN n`), which
+        the engine's Cypher parser rejects with `ValueError` for the same
+        anonymous/whole-object reason `get_graph_stats` already documents.
+        """
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             return_value=mock_graph_engine,
         ):
             mock_graph_engine.backend = MagicMock()
             mock_graph_engine.backend.execute.return_value = [
-                {'n': sample_graph_data['nodes'][0]},
-                {'n': sample_graph_data['nodes'][1]},
+                {
+                    'id': 'node1',
+                    'props': {
+                        'node_type': 'Memory',
+                        'content': 'Test memory',
+                        'importance': 0.8,
+                    },
+                },
+                {
+                    'id': 'node2',
+                    'props': {
+                        'node_type': 'Person',
+                        'labels': ['Admin', 'Person'],
+                        'title': 'Test Article',
+                    },
+                },
+                {
+                    'id': 'node3',
+                    'props': {'type': 'Article', 'title': 'Not a cypher label'},
+                },
             ]
 
             response = client.get('/api/enhanced/graph/nodes')
             assert response.status_code == 200
             data = response.json()
             assert isinstance(data, list)
-            assert len(data) == 2
+            assert len(data) == 3
+            by_id = {n['id']: n for n in data}
+            assert by_id['node1']['labels'] == ['Memory']
+            assert by_id['node1']['properties'] == {
+                'content': 'Test memory',
+                'importance': 0.8,
+            }
+            # `node_type` plus the explicit multi-label `labels` array are the
+            # ONLY two fields the engine's `node_has_label` reads, deduped and
+            # with `node_type` first; neither leaks back into `properties`.
+            assert by_id['node2']['labels'] == ['Person', 'Admin']
+            assert by_id['node2']['properties'] == {'title': 'Test Article'}
+            # `type` is deliberately NOT a cypher label: `build_cypher_label_index`
+            # is "deliberately narrower than `GraphCore.label_index`'s
+            # `type`/`node_type`/`label`". Reporting it would claim a label that
+            # `MATCH (n:Article)` does not match, so filtering by node_type would
+            # disagree with the unfiltered list. It stays an ordinary property.
+            assert by_id['node3']['labels'] == []
+            assert by_id['node3']['properties'] == {
+                'type': 'Article',
+                'title': 'Not a cypher label',
+            }
 
-    def test_get_graph_nodes_with_filter(
-        self, client, mock_graph_engine, sample_graph_data
-    ):
-        """Test graph nodes with type filter."""
+            query = mock_graph_engine.backend.execute.call_args[0][0]
+            assert 'RETURN n LIMIT' not in query
+            assert 'properties(n)' in query
+            assert 'n.id AS id' in query
+
+    def test_get_graph_nodes_with_filter(self, client, mock_graph_engine):
+        """Test graph nodes with type filter -- the label filter still uses
+        `MATCH (n:Memory)`, but the RETURN clause is scalar/function-only."""
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             return_value=mock_graph_engine,
         ):
             mock_graph_engine.backend = MagicMock()
             mock_graph_engine.backend.execute.return_value = [
-                {'n': sample_graph_data['nodes'][0]}
+                {'id': 'node1', 'props': {'node_type': 'Memory'}}
             ]
 
             response = client.get('/api/enhanced/graph/nodes?node_type=Memory')
             assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 1
+
+            query = mock_graph_engine.backend.execute.call_args[0][0]
+            assert 'MATCH (n:Memory)' in query
+            assert 'RETURN n LIMIT' not in query
+            assert 'properties(n)' in query
 
     def test_get_graph_nodes_no_engine(self, client):
         """Test graph nodes when engine not initialized."""
@@ -909,15 +961,63 @@ class TestCoverageExpansion:
             assert response.json() == {}
 
     def test_list_skills_success(self, client):
-        with patch('agent_webui.api_extensions.get_helper', return_value=lambda: []):
+        """`/api/enhanced/skills` reads exclusively from the SQL fleet
+        catalog's `skills` table (via `_read_fleet_catalog`) -- not a
+        filesystem scan or a live-engine fallback chain."""
+        catalog_rows = {
+            'skills': [
+                {
+                    'id': 'wger-agent-docs',
+                    'name': 'wger-agent-docs',
+                    'description': 'Wger docs',
+                    'enabled': True,
+                },
+                {
+                    'id': 'a-skill',
+                    'name': 'a-skill',
+                    'description': '',
+                    'enabled': False,
+                },
+            ]
+        }
+        with patch(
+            'agent_webui.api_extensions._read_fleet_catalog',
+            AsyncMock(return_value=catalog_rows),
+        ):
+            response = client.get('/api/enhanced/skills')
+            assert response.status_code == 200
+            data = response.json()
+            # sorted alphabetically by name
+            assert [item['id'] for item in data] == ['a-skill', 'wger-agent-docs']
+            assert data[1] == {
+                'id': 'wger-agent-docs',
+                'name': 'wger-agent-docs',
+                'description': 'Wger docs',
+                'enabled': True,
+            }
+
+    def test_list_skills_empty_catalog_is_an_honest_empty_list(self, client):
+        """A reachable catalog with zero rows (e.g. the hourly
+        fleet-tool-schema-sync job has not run yet) is a genuine `[]`, never
+        conflated with a read failure."""
+        with patch(
+            'agent_webui.api_extensions._read_fleet_catalog',
+            AsyncMock(return_value={'skills': []}),
+        ):
             response = client.get('/api/enhanced/skills')
             assert response.status_code == 200
             assert response.json() == []
 
-    def test_list_skills_not_init(self, client):
-        with patch('agent_webui.api_extensions.get_helper', return_value=None):
+    def test_list_skills_catalog_unavailable_fails_closed(self, client):
+        """A failed/denied catalog read (`_read_fleet_catalog` returning
+        `None`) must raise 503, never render as an indistinguishable empty
+        list -- a degraded read must never look like "all clear"."""
+        with patch(
+            'agent_webui.api_extensions._read_fleet_catalog',
+            AsyncMock(return_value=None),
+        ):
             response = client.get('/api/enhanced/skills')
-            assert response.status_code == 501
+            assert response.status_code == 503
 
     def test_toggle_skill_success(self, client):
         mock_toggle = MagicMock(return_value={'status': 'enabled'})
@@ -1153,6 +1253,43 @@ class TestWorkflowsEndpointFailsHonestly:
 
         assert response.status_code == 200
         assert response.json() == []
+
+
+class TestLlmModelSchemaEndpoint:
+    """`GET /api/enhanced/llm/model-schema` -- the `@router.get(...)`
+    decorator was previously attached to the private helper
+    `_flatten_model_schema(schema: dict)` instead of the real handler
+    `get_llm_model_schema()` immediately below it (dead code, undecorated).
+    FastAPI therefore registered the HELPER, treating its `schema` param as a
+    REQUIRED query parameter -- the frontend sends none, so every real
+    request 422'd. This proves the real handler is what is now routed, with
+    no query parameters required.
+    """
+
+    def test_model_schema_returns_200_with_no_query_params(self, client):
+        response = client.get('/api/enhanced/llm/model-schema')
+
+        assert response.status_code == 200
+        data = response.json()
+        assert set(data) == {'chat', 'embedding'}
+        # Each side is a flattened JSON Schema with real top-level
+        # properties/required, not a `$ref`/`$defs` wrapper.
+        assert 'properties' in data['chat']
+        assert 'properties' in data['embedding']
+
+    def test_model_schema_rejects_no_longer_taking_a_schema_query_param(self, client):
+        """Regression guard for the exact bug: passing the OLD helper's
+        `schema` query param must not be required, and must not change the
+        response shape (the real handler ignores query params entirely)."""
+        response = client.get('/api/enhanced/llm/model-schema')
+        assert response.status_code == 200
+        # The route function is the real handler, not `_flatten_model_schema`
+        from agent_webui.api_extensions import router
+
+        route = next(
+            r for r in router.routes if getattr(r, 'path', None) == '/llm/model-schema'
+        )
+        assert route.endpoint.__name__ == 'get_llm_model_schema'
 
 
 class TestServerIntegration:
