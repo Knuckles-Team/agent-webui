@@ -2928,19 +2928,50 @@ async def delete_chat(chat_id: str) -> dict[str, Any]:
 
 
 _MAX_CANVAS_PROPERTY_CHARS = 512
+_MAX_CANVAS_NODE_BYTES = 4096
 
 
 def _canvas_property(value: Any) -> Any:
     """Shrink one node property to something a graph canvas can render.
 
     The canvas shows `properties.name` and lets an operator edit fields; it
-    never needs a whole document body. Long strings are the only thing that
-    makes a node page large enough to matter, so truncate those and leave
-    every other value untouched.
+    never needs a whole document body. Truncating long strings covers the
+    common case; `_canvas_node` enforces the actual byte bound, because a
+    property can also be a deeply nested list/dict this never sees inside.
     """
     if isinstance(value, str) and len(value) > _MAX_CANVAS_PROPERTY_CHARS:
         return value[:_MAX_CANVAS_PROPERTY_CHARS] + '…'
     return value
+
+
+def _node_bytes(node: dict[str, Any]) -> int:
+    return len(
+        json.dumps(node, separators=(',', ':'), ensure_ascii=False, default=str).encode(
+            'utf-8'
+        )
+    )
+
+
+def _canvas_node(node: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Bound ONE node by serialized size, returning it with its byte cost.
+
+    Per-property truncation is not sufficient on its own: a property value can
+    be a nested list or dict whose leaves `_canvas_property` never inspects, so
+    a node can still serialize to hundreds of kilobytes. Measuring the real
+    encoded node is the only bound that holds regardless of shape. A node over
+    the cap keeps its identity, its labels and its display name -- everything
+    the canvas actually draws -- and drops the rest rather than being omitted.
+    """
+    size = _node_bytes(node)
+    if size <= _MAX_CANVAS_NODE_BYTES:
+        return node, size
+    name = node['properties'].get('name')
+    trimmed = {
+        'id': node['id'],
+        'labels': node['labels'],
+        'properties': {'name': name} if isinstance(name, str) else {},
+    }
+    return trimmed, _node_bytes(trimmed)
 
 
 async def _distinct_graph_labels(engine: Any) -> list[str]:
@@ -3055,7 +3086,7 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
             )
         budget = _MAX_EXTERNAL_COLLECTION_ITEMS
         # Leave headroom under the serialized ceiling for the JSON envelope.
-        budget_bytes = (_MAX_EXTERNAL_RESULT_BYTES * 9) // 10
+        budget_bytes = (_MAX_EXTERNAL_RESULT_BYTES * 3) // 4
         if node_type:
             rows = await _invoke_governed_helper(
                 nodes_by_label, node_type, budget, deadline=10.0
@@ -3154,11 +3185,8 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
             # failure looked like an engine error but was entirely ours. Keep a
             # running estimate and stop at the budget so the canvas renders
             # what fits instead of nothing at all.
-            budget_bytes -= len(
-                json.dumps(node, separators=(',', ':'), ensure_ascii=False).encode(
-                    'utf-8'
-                )
-            )
+            node, node_size = _canvas_node(node)
+            budget_bytes -= node_size
             if budget_bytes <= 0:
                 logger.warning(
                     'graph canvas truncated at %d nodes by the result size bound',
