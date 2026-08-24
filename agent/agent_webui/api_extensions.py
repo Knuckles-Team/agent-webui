@@ -1767,10 +1767,12 @@ async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | 
     """
     from agent_utilities.gateway.registry_api import (
         _KIND_SPECS,
+        _MAX_LIMIT,
         CatalogUnavailable,
-        _authorized_rows,
+        _authorized_page,
         _get_catalog_engine,
         _require_catalog_authority,
+        _row_key,
         _validate_item,
     )
 
@@ -1790,15 +1792,30 @@ async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | 
     for kind in kinds:
         spec = _KIND_SPECS[kind]
         try:
-            rows = await _invoke_governed_helper(
-                _authorized_rows,
-                kind,
-                tenant=tenant,
-                principal=principal,
-                grant_digests=grant_digests,
-                engine=engine,
-                deadline=_FLEET_CATALOG_DEADLINE_SECONDS,
-            )
+            # registry_api pushes LIMIT/keyset/filter/authz into SQL, so a
+            # page transfers only its own rows. Walk the keyset until the
+            # catalog is exhausted rather than asking for the whole table.
+            rows: list[dict[str, Any]] = []
+            after: tuple[str, str] | None = None
+            while True:
+                page = await _invoke_governed_helper(
+                    _authorized_page,
+                    kind,
+                    tenant=tenant,
+                    principal=principal,
+                    grant_digests=grant_digests,
+                    query='',
+                    after=after,
+                    limit=_MAX_LIMIT,
+                    engine=engine,
+                    deadline=_FLEET_CATALOG_DEADLINE_SECONDS,
+                )
+                if not page:
+                    break
+                rows.extend(page)
+                if len(page) < _MAX_LIMIT:
+                    break
+                after = _row_key(spec, page[-1])
             result[kind] = [
                 _validate_item(kind, spec.model, row).model_dump() for row in rows
             ]
