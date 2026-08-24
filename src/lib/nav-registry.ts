@@ -305,9 +305,9 @@ export const ROUTES: readonly RouteDef[] = [
   {
     id: 'control-plane.llm-templates',
     path: '/llm-templates',
-    label: 'LLM Templates',
+    label: 'Models',
     section: 'control-plane',
-    blurb: 'Pick a model, tune its parameters, and pair it with a system prompt to build a reusable agent template.',
+    blurb: 'Browse and configure your chat and embedding models, then optionally pair one with a system prompt as a reusable template.',
     icon: SlidersHorizontal,
     minRole: 'maintainer',
     mobile: 'unsupported',
