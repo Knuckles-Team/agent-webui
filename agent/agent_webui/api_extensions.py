@@ -11,6 +11,7 @@ import re
 import secrets
 import stat
 import threading
+import time
 from concurrent import futures as _futures
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -3228,6 +3229,230 @@ async def _distinct_graph_labels(engine: Any) -> list[str]:
     return labels
 
 
+# ---------------------------------------------------------------------------
+# Commons/tenant union read (FIX LANE Priority 1)
+#
+# Measured, same pod, same moment: a webui session sees a strict SUBSET of
+# the knowledge graph an MCP caller sees (25,116 vs 56,853 total nodes; 0 vs
+# 2,941 `:Tool`; 58 vs 361 `:CallableResource`). This is BY DESIGN --
+# `agent_utilities.knowledge_graph.core.tenant_sharing`'s module docstring:
+# "the default graph is the COMMONS. It is readable across orgs" -- and the
+# fleet/tool catalog is exactly `tenant_sharing.COMMONS_SHAREABLE_NODE_TYPES`.
+# The bug is that `tenant_sharing.accessible_graphs()`/`read_union()` -- the
+# union-read primitive built for exactly this -- had ZERO callers anywhere
+# in the codebase. This section wires it into this file's Cypher/SQL graph
+# reads, in place of a bare `session.graph`-only read.
+#
+# `agent_webui.graph_identity.frontend_accessible_graphs(actor)` is the
+# sanctioned seam for this (branch `fix/tenant-graph-scoping`, commit
+# `77458f9`) -- it re-exports `tenant_sharing.accessible_graphs()` verbatim.
+# That branch is not yet merged into this lane's base as of this change, so
+# `_accessible_graphs()` below imports the underlying `tenant_sharing`
+# primitive directly and falls back to `.graph_identity`'s seam once it
+# exists (import success is checked at call time, not cached, so merging
+# that branch later needs no further change here). NOTE FOR THE MERGE OWNER:
+# once `fix/tenant-graph-scoping` lands on this lane's base, the `except
+# ImportError` branch below becomes dead and may be deleted.
+#
+# READS ONLY. `session.graph` (the tenant shard) remains the sole write
+# target everywhere in this file -- nothing here is reachable from a write
+# path. Widening a write target to the union would be a tenant data leak;
+# the parallel `graph_identity` lane explicitly rejected that and pinned an
+# equivalence test for it (`test_graph_identity.py`).
+def _accessible_graphs(actor: Any) -> list[str]:
+    """Ordered, de-duplicated graphs `actor` may READ (tenant shard first,
+    ancestors, commons last) -- see the module-level note above for why this
+    resolves the seam dynamically (`getattr`, not a static `from .graph_identity
+    import frontend_accessible_graphs`) so this file type-checks cleanly both
+    before AND after `fix/tenant-graph-scoping` merges that name in -- a static
+    import of a not-yet-existing name would need a `# type: ignore` this repo's
+    own rules forbid.
+    """
+    from . import graph_identity
+
+    resolve = getattr(graph_identity, 'frontend_accessible_graphs', None)
+    if resolve is not None:
+        return resolve(actor)
+    from agent_utilities.knowledge_graph.core.tenant_sharing import (
+        accessible_graphs,
+    )
+
+    return accessible_graphs(actor)
+
+
+def _graph_union_executor(engine: Any) -> Any:
+    """`tenant_sharing.read_union` executor: run `cypher` against ONE named
+    graph by temporarily retargeting the ambient `GraphSession` to it.
+
+    `GraphSession.with_graph()` + the session module's own `use_session()`
+    context manager is the documented, audited way to scope one block of
+    work to a specific verified session (`session.py::use_session`
+    docstring). This never fabricates authority -- it is the SAME actor's
+    session, just pointed at another graph that actor's own
+    `accessible_graphs()` already says it may read.
+    """
+    from agent_utilities.knowledge_graph.core.session import (
+        current_session,
+        use_session,
+    )
+
+    def _execute(
+        graph_name: str, cypher: str, params: dict[str, Any] | None
+    ) -> list[dict[str, Any]]:
+        session = current_session()
+        if session is None or graph_name == session.graph:
+            return list(engine.query_cypher(cypher, params) or [])
+        with use_session(session.with_graph(graph_name)):
+            return list(engine.query_cypher(cypher, params) or [])
+
+    return _execute
+
+
+async def _read_union_cypher(
+    engine: Any,
+    cypher: str,
+    params: dict[str, Any] | None,
+    *,
+    deadline: float,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Run a row-shaped Cypher read across every graph this actor may read,
+    de-duplicated by node id (`tenant_sharing.read_union` -- the actor's own
+    tenant graph wins on a duplicate id; commons rows fill in the rest).
+
+    Falls back to exactly today's single-graph (`session.graph`-only) read
+    when there is no verified ambient `GraphSession` -- this NEVER widens
+    authority beyond what the SAME caller could already reach; it degrades
+    to "as narrow as before" rather than raising or fabricating a union.
+
+    Returns `(rows, source_graphs)` -- `source_graphs` is the observability
+    half of this fix (see the module note above): which physical graph(s) a
+    response actually drew from, so a narrowed view can never again look
+    identical to a complete one.
+    """
+    from agent_utilities.knowledge_graph.core.session import current_session
+    from agent_utilities.knowledge_graph.core.tenant_sharing import read_union
+
+    def _run() -> tuple[list[dict[str, Any]], list[str]]:
+        session = current_session()
+        if session is None:
+            return list(engine.query_cypher(cypher, params) or []), []
+        actor = session.actor
+        graphs = _accessible_graphs(actor)
+        rows = read_union(cypher, params, _graph_union_executor(engine), actor)
+        return rows, graphs
+
+    return await _invoke_governed_helper(_run, deadline=deadline)
+
+
+def _rows_per_accessible_graph(
+    engine_call: Any,
+) -> list[tuple[str, Any]] | None:
+    """Invoke `engine_call(graph_name)` once per graph the ambient actor may
+    read, each under that graph's own scoped `GraphSession` (same mechanism
+    `_graph_union_executor` uses). Returns `None` when there is no ambient
+    verified session -- callers fall back to a single unscoped call.
+
+    Unlike `_read_union_cypher`, this does not de-duplicate by row id: it is
+    for AGGREGATE reads (counts, `GROUP BY`), where a merged-by-id union is
+    meaningless (an aggregate row carries no per-row node id) and would be
+    wrong even if forced -- physically partitioned graphs (GOC-61) never
+    share a node id, so the correct merge of independent per-graph
+    aggregates is for the CALLER to sum/merge them, not de-dup them.
+    """
+    from agent_utilities.knowledge_graph.core.session import (
+        current_session,
+        use_session,
+    )
+
+    session = current_session()
+    if session is None:
+        return None
+    graphs = _accessible_graphs(session.actor)
+    per_graph: list[tuple[str, Any]] = []
+    for graph_name in graphs:
+        if graph_name == session.graph:
+            per_graph.append((graph_name, engine_call(graph_name)))
+        else:
+            with use_session(session.with_graph(graph_name)):
+                per_graph.append((graph_name, engine_call(graph_name)))
+    return per_graph
+
+
+async def _read_union_scalar_sum(
+    engine: Any,
+    cypher: str,
+    params: dict[str, Any] | None,
+    *,
+    field: str,
+    deadline: float,
+) -> tuple[int, list[str]]:
+    """Sum a scalar Cypher aggregate (e.g. `count(n)`) across every graph
+    this actor may read. See `_rows_per_accessible_graph` for why a sum,
+    not `read_union`'s dedup, is the correct merge here."""
+
+    def _run() -> tuple[int, list[str]]:
+        per_graph = _rows_per_accessible_graph(
+            lambda _g: engine.query_cypher(cypher, params) or []
+        )
+        if per_graph is None:
+            rows = engine.query_cypher(cypher, params) or []
+            total = int(rows[0].get(field, 0)) if rows else 0
+            return total, []
+        total = 0
+        graphs: list[str] = []
+        for graph_name, rows in per_graph:
+            graphs.append(graph_name)
+            if rows:
+                value = rows[0].get(field, 0)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    total += value
+        return total, graphs
+
+    return await _invoke_governed_helper(_run, deadline=deadline)
+
+
+async def _read_union_sql_group_counts(
+    engine: Any,
+    statement: str,
+    *,
+    key: str,
+    count_field: str,
+    deadline: float,
+) -> tuple[dict[str, int], list[str]]:
+    """Run a `GROUP BY` SQL aggregate (`engine.graph_compute.sql_exec`)
+    against every graph this actor may read and merge by SUMMING counts per
+    `key`. The `nodes`/`edges` SQL tables are the SAME RLS-filtered graph
+    snapshot Cypher reads (`fleet_catalog_tables.py`: "only the nodes/edges
+    graph snapshot is RLS-filtered via IsolationLayer::filter_view"), scoped
+    by the SAME ambient session/graph `_read_union_cypher` uses.
+    """
+
+    def _run() -> tuple[dict[str, int], list[str]]:
+        per_graph = _rows_per_accessible_graph(
+            lambda _g: engine.graph_compute.sql_exec(statement) or []
+        )
+        if per_graph is None:
+            per_graph = [('', engine.graph_compute.sql_exec(statement) or [])]
+            graphs: list[str] = []
+        else:
+            graphs = [graph_name for graph_name, _rows in per_graph]
+        merged: dict[str, int] = {}
+        for _graph_name, rows in per_graph:
+            for row in rows or []:
+                if not isinstance(row, dict):
+                    continue
+                k = row.get(key)
+                n = row.get(count_field)
+                if not isinstance(k, str) or not k:
+                    continue
+                if not isinstance(n, int) or isinstance(n, bool):
+                    continue
+                merged[k] = merged.get(k, 0) + n
+        return merged, graphs
+
+    return await _invoke_governed_helper(_run, deadline=deadline)
+
+
 @router.get('/graph/nodes')
 async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
     """Query Knowledge Graph for nodes of a specific type or all nodes.
@@ -3487,6 +3712,13 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
         ) from e
 
 
+# Bounds the `by_type` breakdown's `GROUP BY` result (FIX LANE Priority 2).
+# The node-type/label vocabulary is a finite, curated ontology -- 50 is
+# generous headroom over any realistic cardinality while still bounding a
+# pathological/malformed `type` property fan-out.
+_GRAPH_STATS_BY_TYPE_LIMIT = 50
+
+
 @router.get('/graph/stats')
 async def get_graph_stats() -> dict[str, Any]:
     """Get statistics about the Knowledge Graph.
@@ -3524,16 +3756,22 @@ async def get_graph_stats() -> dict[str, Any]:
                 'available': False,
             }
 
-        # Get total counts (Test expects these first)
-        total_nodes_result = await _invoke_governed_helper(
-            engine.backend.execute,
+        # Get total counts (Test expects these first). FIX LANE Priority 1:
+        # summed across every graph this actor may read (tenant shard +
+        # commons/ancestors -- `_read_union_scalar_sum`), not `session.graph`
+        # alone, so the fleet/tool catalog (written to commons by design,
+        # `tenant_sharing.COMMONS_SHAREABLE_NODE_TYPES`) is actually counted
+        # instead of silently invisible to this endpoint.
+        total_nodes, node_source_graphs = await _read_union_scalar_sum(
+            engine,
             'MATCH (n) RETURN count(n) as count',
+            None,
+            field='count',
             deadline=10.0,
         )
-        total_nodes = total_nodes_result[0].get('count', 0) if total_nodes_result else 0
 
-        total_rels_result = await _invoke_governed_helper(
-            engine.backend.execute,
+        total_relationships, rel_source_graphs = await _read_union_scalar_sum(
+            engine,
             # BUG-262: the engine's native Cypher parser rejects a relationship
             # pattern with BOTH endpoints anonymous (`()-[r]->()`) -- it raised
             # a masked PermissionError that this function's outer `except`
@@ -3545,28 +3783,54 @@ async def get_graph_stats() -> dict[str, Any]:
             # error_class=PermissionError/failing_layer=knowledge_graph; the
             # named form returns the correct count (11,641 edges).
             'MATCH (a)-[r]->(b) RETURN count(r) as count',
+            None,
+            field='count',
             deadline=10.0,
         )
-        total_relationships = (
-            total_rels_result[0].get('count', 0) if total_rels_result else 0
+
+        # Get node counts by type. FIX LANE Priority 2: a real `GROUP BY`
+        # aggregate over the `nodes` SQL table -- the previous version was a
+        # hardcoded two-item allowlist (`['Memory', 'Article']`) that could
+        # structurally never report any other type, and an `if count > 0`
+        # that discarded genuine zeros too. `type` is a node PROPERTY here,
+        # not a `label` column (filtering on `label` silently returns 0 rows
+        # instead of erroring), and `labels(n)` is unsupported by this
+        # engine -- both verified live. This also can't go through this
+        # file's own `/graph/query` route (`_validate_read_only_cypher`
+        # rejects `SELECT` outright); `engine.graph_compute.sql_exec` is
+        # called directly, same as the production precedent in
+        # `fleet_catalog_tables.py`. Scoped by the SAME union as the totals
+        # above (`_read_union_sql_group_counts`) so the breakdown sums
+        # against the same universe `total_nodes` counts.
+        try:
+            type_counts, type_source_graphs = await _read_union_sql_group_counts(
+                engine,
+                f'SELECT type, COUNT(*) AS n FROM nodes GROUP BY type '
+                f'ORDER BY n DESC LIMIT {_GRAPH_STATS_BY_TYPE_LIMIT}',
+                key='type',
+                count_field='n',
+                deadline=10.0,
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            # A `by_type` failure must not take down the whole stats
+            # response -- mirrors the previous per-node-type loop's own
+            # narrower degrade, just for the one aggregate call now doing
+            # that loop's job.
+            _log_failure('api_extension', e, level=logging.DEBUG)
+            type_counts, type_source_graphs = {}, []
+
+        # Observability requirement (FIX LANE Priority 1): which physical
+        # graph(s) this response actually drew from, additive so a narrowed
+        # view can never again look identical to a complete one without
+        # anyone noticing. Non-strict frontend zod schemas (`graphStatsSchema`
+        # et al.) tolerate an unrecognized field -- see this lane's report
+        # for whether a frontend change is wanted to surface it.
+        source_graphs = sorted(
+            set(node_source_graphs) | set(rel_source_graphs) | set(type_source_graphs)
         )
 
-        # Get node counts by type (Test expects Memory then Article)
-        type_counts = {}
-        for node_type in ['Memory', 'Article']:
-            try:
-                result = await _invoke_governed_helper(
-                    engine.backend.execute,
-                    f'MATCH (n:{node_type}) RETURN count(n) as count',
-                    deadline=10.0,
-                )
-                count = result[0].get('count', 0) if result else 0
-                if count > 0:
-                    type_counts[node_type] = count
-            except HTTPException:
-                raise
-            except Exception as e:
-                _log_failure('api_extension', e, level=logging.DEBUG)
         return {
             'total_nodes': total_nodes,
             'total_relationships': total_relationships,
@@ -3577,6 +3841,7 @@ async def get_graph_stats() -> dict[str, Any]:
             # unavailable engine render identically to a genuinely empty
             # graph) rather than inferring "available" from its absence.
             'available': True,
+            'source_graphs': source_graphs,
         }
     except HTTPException:
         raise
@@ -5930,7 +6195,6 @@ async def toggle_graph_tool(tool_id: str, request: Request) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────
 
 import sqlite3
-import time
 import uuid
 
 from agent_utilities.models.goal import GoalIteration, GoalSpec, GoalStatus

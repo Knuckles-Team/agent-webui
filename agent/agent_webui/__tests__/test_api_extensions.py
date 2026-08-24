@@ -78,25 +78,56 @@ class TestGraphStatsEndpoint:
     """Test graph statistics endpoint."""
 
     def test_get_graph_stats_success(self, client, mock_graph_engine):
-        """Test successful graph stats retrieval."""
+        """Test successful graph stats retrieval.
+
+        FIX LANE Priority 1/2: `get_graph_stats` now unions the read across
+        every graph the real, middleware-minted test session may access
+        (tenant shard + commons -- `_accessible_graphs`, unmocked here so
+        this exercises the real resolution) rather than reading
+        `engine.backend.execute` once. `engine.query_cypher` (totals) and
+        `engine.graph_compute.sql_exec` (`by_type`) are mocked with a
+        `side_effect` keyed on the query TEXT / statement rather than a
+        fixed call-order sequence, since the union issues one call per
+        accessible graph -- order- and count-independent by construction.
+        Each graph reports the SAME per-call values below, so the summed
+        totals are an exact multiple of the number of accessible graphs.
+        """
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             return_value=mock_graph_engine,
         ):
             mock_graph_engine.backend = MagicMock()
-            mock_graph_engine.backend.execute.side_effect = [
-                [{'count': 100}],  # total nodes
-                [{'count': 200}],  # total relationships
-                [{'count': 50}],  # Memory type
-                [{'count': 30}],  # Article type
+
+            def _query_cypher(cypher, params=None):
+                if 'count(n)' in cypher:
+                    return [{'count': 100}]
+                if 'count(r)' in cypher:
+                    return [{'count': 200}]
+                return []
+
+            mock_graph_engine.query_cypher.side_effect = _query_cypher
+            # `graph_compute` is an instance attribute IntelligenceGraphEngine
+            # sets in `__init__` (not a class-level member), so it is outside
+            # `MagicMock(spec=IntelligenceGraphEngine)`'s auto-speccing and
+            # must be attached explicitly.
+            mock_graph_engine.graph_compute = MagicMock()
+            mock_graph_engine.graph_compute.sql_exec.return_value = [
+                {'type': 'Memory', 'n': 50},
+                {'type': 'Article', 'n': 30},
             ]
 
             response = client.get('/api/enhanced/graph/stats')
             assert response.status_code == 200
             data = response.json()
-            assert data['total_nodes'] == 100
-            assert data['total_relationships'] == 200
+            graph_count = max(len(data.get('source_graphs') or []), 1)
+            assert data['total_nodes'] == 100 * graph_count
+            assert data['total_relationships'] == 200 * graph_count
             assert 'by_type' in data
+            assert data['by_type'] == {
+                'Memory': 50 * graph_count,
+                'Article': 30 * graph_count,
+            }
+            assert 'source_graphs' in data
 
     def test_get_graph_stats_no_engine(self, client):
         """Test graph stats when engine not initialized."""
