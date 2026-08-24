@@ -74,6 +74,13 @@ cache-after** design:
   (``asyncio.to_thread``): the underlying engine client is a synchronous
   facade, and this is the one path that may need a real network round trip.
 
+This "forever" cache is the ``(tenant, agent_id)`` **admission outcome** —
+whether a principal is enrolled — which genuinely does not expire. It is a
+separate concern from :func:`_service_authority`'s cache, which holds the
+*credential this module authenticates admission calls with* and, unlike the
+admission outcome, has a bounded lifetime and must be renewed — see that
+function's docstring.
+
 Known limitation (inherited from ``provision_tenant_access`` itself, not
 introduced here): the engine exposes no "read one identity back" RPC, so a
 re-admission (e.g. after a WebUI restart clears this process's in-memory
@@ -246,6 +253,39 @@ def _admin_capability_denied(exc: BaseException | None) -> bool:
     return False
 
 
+def _session_expired_cause(exc: BaseException | None) -> bool:
+    """True when ``exc`` (or a chained cause) is a `SessionExpiredError` --
+    this deployment's OWN service credential ran out mid-call, not a genuine
+    authorization denial from the engine.
+
+    Distinguishes the two exactly the way :func:`_admin_capability_denied`
+    distinguishes "can't look" from "can't admit": it walks the full
+    ``__cause__`` chain, because `SessionExpiredError` is wrapped at least
+    once before it reaches :func:`ensure_tenant_admission` -- both
+    :func:`_tenant_role_exists` and :func:`_admit` convert every exception
+    they see, including this one, into :class:`EngineAdmissionUnavailableError`.
+
+    Matched by *type*, not by message substring (unlike
+    ``_ADMIN_CAPABILITY_DENIAL``): this module raises `SessionExpiredError`
+    itself and controls its exact type, so there is no opaque cross-process
+    string to match against. A genuine 401/403 denial from the engine is a
+    completely different exception (an ``ACCESS_DENIED``-shaped error, never
+    `SessionExpiredError`), so it never matches here and this retry path can
+    never turn a real authorization failure into a false success.
+    """
+
+    from agent_utilities.knowledge_graph.core.session import SessionExpiredError
+
+    seen: set[int] = set()
+    current = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, SessionExpiredError):
+            return True
+        current = current.__cause__
+    return False
+
+
 def _tenant_role_exists(tenant_slug: str) -> bool:
     """Read-only check: has the engine ever provisioned ``tenant:<slug>``?
 
@@ -353,8 +393,22 @@ def _admit(tenant_slug: str, agent_id: str) -> None:
     )
 
 
-def _sync_ensure(tenant_slug: str, agent_id: str) -> None:
-    """The blocking check-and-admit critical section. Runs off the event loop."""
+def _sync_ensure(
+    tenant_slug: str, agent_id: str, *, bypass_cached_failure: bool = False
+) -> None:
+    """The blocking check-and-admit critical section. Runs off the event loop.
+
+    ``bypass_cached_failure`` skips the negative-outcome cache for this one
+    call only. Used exactly once, by :func:`ensure_tenant_admission`'s
+    reactive retry after a :class:`SessionExpiredError`-caused failure: that
+    failure reflects THIS module's own now-replaced service credential, not
+    the tenant's or engine's actual state, so it must not count against
+    ``_FAILURE_BACKOFF_SECONDS`` the way a genuine infra/provisioning failure
+    does — without this, the retry would immediately re-raise the very
+    exception it exists to recover from, since the first attempt already
+    wrote it into ``_FAILURES`` before the retry runs. The retry still
+    records its own fresh success/failure into the cache normally.
+    """
 
     key = (tenant_slug, agent_id)
     with _STATE_LOCK:
@@ -366,7 +420,7 @@ def _sync_ensure(tenant_slug: str, agent_id: str) -> None:
         with _STATE_LOCK:
             if key in _ADMITTED:
                 return
-            failure = _FAILURES.get(key)
+            failure = None if bypass_cached_failure else _FAILURES.get(key)
         if failure is not None:
             attempted_at, cached_exc = failure
             if time.monotonic() - attempted_at < _FAILURE_BACKOFF_SECONDS:
@@ -417,92 +471,182 @@ def _sync_ensure(tenant_slug: str, agent_id: str) -> None:
 _SERVICE_SESSION: Any = None
 _SERVICE_SESSION_LOCK = threading.Lock()
 
+#: Renew this deployment's own service authority once its bounded credential
+#: has this many seconds or fewer left, rather than waiting for it to expire
+#: outright. **The measured Keycloak access-token TTL in this deployment is
+#: 300 seconds.** 60s (a fifth of that TTL) leaves headroom for the gap
+#: between this function's proactive check and the actual admission RPC --
+#: and for a request already in flight -- to complete under the credential it
+#: started with, rather than the two straddling the expiry instant. This
+#: margin cannot close that race entirely (an RPC slower than the margin
+#: itself can still straddle it); :func:`ensure_tenant_admission`'s reactive
+#: fallback covers the residual case.
+_SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS = 60
 
-def _service_authority() -> Any:
-    """This deployment's own verified graph authority, minted once per process.
 
-    Mirrors `kg_server._mint_process_session`: the identity provider issues a
+def _mint_service_authority() -> Any:
+    """Mint this deployment's own verified graph authority (never cached here).
+
+    Called only from :func:`_service_authority`, while holding
+    ``_SERVICE_SESSION_LOCK`` — either for the very first mint, or to replace
+    a cached session whose bounded credential has run out (or is within
+    :data:`_SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS` of doing so). Mirrors
+    `kg_server._mint_process_session`: the identity provider issues a
     bounded-expiry process token, which becomes the actor and session that
-    control-plane work runs under. Cached because minting it is a network round
-    trip and admission is on the connection path.
+    control-plane work runs under.
+    """
+
+    # In-process under graph-os, the ambient authority IS the right one and
+    # minting a second would be actively wrong.
+    #
+    # This dashboard runs as a graph-os co-service, on a thread that carries
+    # graph-os's verified actor and GraphSession for its whole lifetime. That
+    # principal is the one the engine's signer registry trusts, and the engine
+    # requires an admission's signer to BE the calling principal
+    # (`verify_register_identity_signature`, else SIGNER_TRUST_DENIED). So
+    # replacing it with a separately-minted broker identity would swap the one
+    # credential that can sign admission for one that cannot.
+    #
+    # The broker path below remains for a standalone deployment, where there is
+    # no ambient process authority to inherit. Re-deriving `current_session()`
+    # on every mint (rather than assuming it never changes once seen) means a
+    # renewal after the ambient authority itself rotates picks up graph-os's
+    # own fresh context instead of re-checking a stale snapshot of it.
+    from agent_utilities.knowledge_graph.core.session import current_session
+
+    ambient = current_session()
+    if ambient is not None and getattr(
+        getattr(ambient, 'actor', None), 'authenticated', False
+    ):
+        logger.debug(
+            'tenant admission will use the ambient process authority '
+            '(actor=%s); no separate broker identity is minted',
+            getattr(ambient.actor, 'actor_id', None),
+        )
+        return ambient
+
+    from agent_utilities.core.config import config
+    from agent_utilities.security.request_identity import (
+        acquire_process_identity_token,
+        mint_actor_from_token_sync,
+        mint_graph_session,
+    )
+
+    # The ADMIN BROKER credential, not a second process identity.
+    #
+    # `KG_ADMIN_BROKER_OAUTH2` is already provisioned for this deployment and
+    # exists precisely to let a frontend perform admin-capability work under
+    # its own principal instead of the caller's
+    # (CONCEPT:AU-OS.identity.idp-role-to-engine-capability-bridge). Using it
+    # here grants nothing new -- the alternative, `KG_AUTH_TOKEN_REF`/
+    # `KG_IDENTITY_OAUTH2`, is not configured for this pod at all, so a
+    # generic process identity would just fail differently.
+    #
+    # `_BrokerConfigView` mirrors `placement_catalog._broker_authority`: the
+    # broker's OAuth2 block rides the SAME `acquire_process_identity_token`
+    # resolver every other external process identity uses, so this is not a
+    # parallel trust mechanism.
+    oauth2 = getattr(config, 'kg_admin_broker_oauth2', None)
+    if not oauth2:
+        raise EngineAdmissionUnavailableError(
+            'no admin broker identity is configured for this deployment '
+            '(KG_ADMIN_BROKER_OAUTH2); tenant admission cannot be verified '
+            'without one'
+        )
+
+    class _BrokerConfigView:
+        kg_auth_token_ref = None
+        kg_identity_oauth2 = oauth2
+
+    token = acquire_process_identity_token(_BrokerConfigView())
+    actor = mint_actor_from_token_sync(token)
+    del token
+    session = mint_graph_session(actor)
+    session.engine_verified_context()
+    return session
+
+
+def _service_authority(*, refresh_after: Any = None) -> Any:
+    """This deployment's own verified graph authority, renewed before its
+    bounded credential expires rather than cached forever.
+
+    **Real behavior, replacing an earlier version of this docstring that
+    claimed "never expires on success":** this deployment's own service
+    credential (the broker OAuth2 token, or an inherited ambient process
+    authority carrying its own bounded expiry) has a finite lifetime — the
+    measured Keycloak access-token TTL in this deployment is 300 seconds — so
+    caching it indefinitely guaranteed eventual failure with no way to
+    recover short of a process restart. Renewal is two-layered:
+
+    * **Proactive** — every call checks the cached session's remaining TTL
+      (via ``ensure_authority_current(minimum_ttl_seconds=...)``) against
+      :data:`_SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS` before reusing it,
+      and mints a replacement once fewer than that many seconds remain,
+      rather than waiting for an actual expired-credential failure.
+    * **Reactive** (see :func:`ensure_tenant_admission`) — the proactive
+      check can still race a slow admission RPC, so a caller that gets a
+      `SessionExpiredError`-caused failure back anyway re-mints once, passing
+      the session that just failed as ``refresh_after``, and retries. This is
+      NOT the authorization boundary: a genuine ACCESS_DENIED from the engine
+      is never a `SessionExpiredError` and is therefore never matched or
+      retried into a false success — see :func:`_session_expired_cause`.
+
+    ``refresh_after`` lets a caller that already refreshed past the specific
+    session that failed for it reuse that fresher session instead of minting
+    a second time for the same underlying failure (see the concurrency note
+    below) — pass the exact session object that raised, never a session
+    identity/tenant pair, since only object identity distinguishes "still the
+    one that failed" from "already replaced by someone else".
+
+    Concurrency: the whole check-or-mint decision runs under
+    ``_SERVICE_SESSION_LOCK``, a plain, non-reentrant ``threading.Lock`` —
+    this file already uses the same shape for ``_STATE_LOCK``/``_KEY_LOCKS``,
+    and nothing here needs re-entrant or async-aware semantics: the lock is
+    only ever taken for this short, synchronous check-then-maybe-mint
+    section, never held across the `asyncio.to_thread`-dispatched admission
+    RPC itself (see :func:`ensure_tenant_admission`). Holding it across the
+    (rare, slow) mint — rather than releasing it before minting — is exactly
+    what collapses concurrent expiries onto exactly one mint: every other
+    caller blocks on the lock, and by the time each acquires it,
+    ``_SERVICE_SESSION`` is already the freshly minted one, is not identical
+    to that caller's ``refresh_after`` (or is comfortably within its TTL for
+    the proactive path), so it is reused without a second mint.
+
+    Unlike `kg_server._refresh_process_authority` /
+    `daemon.refresh_process_identity`, this function does not need a mutable
+    `CredentialLease` to renew a session in place: nothing in this module
+    keeps a long-lived raw reference to ``_SERVICE_SESSION.actor`` outside of
+    calls to this function itself (every caller re-fetches through this
+    accessor), so simply swapping the module global under the lock is
+    sufficient and simpler here — an in-flight caller that already fetched a
+    session before a swap keeps using that same, still-valid object; it is
+    never mutated out from under it.
 
     A failure here is an admission failure, not a silent downgrade to the
-    caller's identity -- falling back to the user's session is precisely the bug
-    this replaced, and it fails closed for every user rather than visibly for the
-    operator.
+    caller's identity -- falling back to the user's session is precisely the
+    bug this replaced, and it fails closed for every user rather than
+    visibly for the operator.
     """
 
     global _SERVICE_SESSION
+    from agent_utilities.knowledge_graph.core.session import SessionExpiredError
+
     with _SERVICE_SESSION_LOCK:
-        if _SERVICE_SESSION is not None:
-            return _SERVICE_SESSION
-
-        # In-process under graph-os, the ambient authority IS the right one and
-        # minting a second would be actively wrong.
-        #
-        # This dashboard runs as a graph-os co-service, on a thread that carries
-        # graph-os's verified actor and GraphSession for its whole lifetime. That
-        # principal is the one the engine's signer registry trusts, and the engine
-        # requires an admission's signer to BE the calling principal
-        # (`verify_register_identity_signature`, else SIGNER_TRUST_DENIED). So
-        # replacing it with a separately-minted broker identity would swap the one
-        # credential that can sign admission for one that cannot.
-        #
-        # The broker path below remains for a standalone deployment, where there is
-        # no ambient process authority to inherit.
-        from agent_utilities.knowledge_graph.core.session import current_session
-
-        ambient = current_session()
-        if ambient is not None and getattr(
-            getattr(ambient, 'actor', None), 'authenticated', False
-        ):
-            logger.debug(
-                'tenant admission will use the ambient process authority '
-                '(actor=%s); no separate broker identity is minted',
-                getattr(ambient.actor, 'actor_id', None),
-            )
-            _SERVICE_SESSION = ambient
-            return _SERVICE_SESSION
-
-        from agent_utilities.core.config import config
-        from agent_utilities.security.request_identity import (
-            acquire_process_identity_token,
-            mint_actor_from_token_sync,
-            mint_graph_session,
-        )
-
-        # The ADMIN BROKER credential, not a second process identity.
-        #
-        # `KG_ADMIN_BROKER_OAUTH2` is already provisioned for this deployment and
-        # exists precisely to let a frontend perform admin-capability work under
-        # its own principal instead of the caller's
-        # (CONCEPT:AU-OS.identity.idp-role-to-engine-capability-bridge). Using it
-        # here grants nothing new -- the alternative, `KG_AUTH_TOKEN_REF`/
-        # `KG_IDENTITY_OAUTH2`, is not configured for this pod at all, so a
-        # generic process identity would just fail differently.
-        #
-        # `_BrokerConfigView` mirrors `placement_catalog._broker_authority`: the
-        # broker's OAuth2 block rides the SAME `acquire_process_identity_token`
-        # resolver every other external process identity uses, so this is not a
-        # parallel trust mechanism.
-        oauth2 = getattr(config, 'kg_admin_broker_oauth2', None)
-        if not oauth2:
-            raise EngineAdmissionUnavailableError(
-                'no admin broker identity is configured for this deployment '
-                '(KG_ADMIN_BROKER_OAUTH2); tenant admission cannot be verified '
-                'without one'
-            )
-
-        class _BrokerConfigView:
-            kg_auth_token_ref = None
-            kg_identity_oauth2 = oauth2
-
-        token = acquire_process_identity_token(_BrokerConfigView())
-        actor = mint_actor_from_token_sync(token)
-        session = mint_graph_session(actor)
-        session.engine_verified_context()
-        _SERVICE_SESSION = session
-        return session
+        if _SERVICE_SESSION is not None and _SERVICE_SESSION is not refresh_after:
+            try:
+                _SERVICE_SESSION.ensure_authority_current(
+                    minimum_ttl_seconds=_SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS
+                )
+                return _SERVICE_SESSION
+            except SessionExpiredError:
+                logger.info(
+                    'cached tenant-admission service authority is within %ss '
+                    'of expiry (or already expired); minting a replacement '
+                    'before reuse',
+                    _SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS,
+                )
+        _SERVICE_SESSION = _mint_service_authority()
+        return _SERVICE_SESSION
 
 
 async def ensure_tenant_admission(actor: Any, session: Any) -> None:
@@ -559,5 +703,36 @@ async def ensure_tenant_admission(actor: Any, session: Any) -> None:
     from agent_utilities.knowledge_graph.core.session import use_session
     from agent_utilities.security.brain_context import use_actor
 
-    with use_actor(service_session.actor), use_session(service_session):
-        await asyncio.to_thread(_sync_ensure, tenant_slug, agent_id)
+    try:
+        with use_actor(service_session.actor), use_session(service_session):
+            await asyncio.to_thread(_sync_ensure, tenant_slug, agent_id)
+    except EngineAdmissionUnavailableError as exc:
+        if not _session_expired_cause(exc):
+            # A real infra failure or a genuine engine denial -- never a
+            # stale-credential race. Propagate exactly as before; retrying
+            # this would risk turning a real authorization failure into a
+            # false success, which is worse than the bug this module fixes.
+            raise
+        # Reactive fallback: `_service_authority`'s proactive check said this
+        # session had comfortable TTL left, but it expired before (or during)
+        # this RPC anyway -- e.g. a slow admission round trip straddling the
+        # renewal margin, or a burst of concurrent requests all reading the
+        # same about-to-expire session before any of them noticed it was
+        # stale. Re-mint once, bypass the negative-outcome cache the failed
+        # attempt above just wrote (it reflects OUR now-replaced credential,
+        # not the tenant's or the engine's actual state -- see
+        # `_sync_ensure`'s `bypass_cached_failure`), and retry exactly once:
+        # a second failure here propagates for real rather than looping.
+        logger.warning(
+            'tenant admission RPC failed on an expired service session '
+            '(agent_id=%s tenant=%s); re-minting service authority and '
+            'retrying once: %s',
+            agent_id,
+            tenant_slug,
+            exc,
+        )
+        service_session = _service_authority(refresh_after=service_session)
+        with use_actor(service_session.actor), use_session(service_session):
+            await asyncio.to_thread(
+                _sync_ensure, tenant_slug, agent_id, bypass_cached_failure=True
+            )
