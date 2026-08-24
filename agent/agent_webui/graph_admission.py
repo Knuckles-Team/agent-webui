@@ -311,7 +311,21 @@ def _admit(tenant_slug: str, agent_id: str) -> None:
     from agent_utilities.security.tenant_admission_cli import run_tenant_admission
     from agent_utilities.security.tenant_rbac_admission import TenantPrincipal
 
-    principal = TenantPrincipal(agent_id=agent_id)
+    # `existing_roles=()` is an affirmative statement, not a default: a WebUI
+    # principal is a signed-in human whose authorization comes from their OIDC
+    # claims (kg:read / kg:write / kg:admin, normalized by
+    # `agent_utilities.security.request_identity`), NOT from the engine's own
+    # RBAC identity store. The only engine-side role such a principal ever
+    # holds is its tenant membership, which is exactly what this call grants.
+    # So there is no prior engine role set for `RegisterIdentity` to drop.
+    #
+    # This is deliberately NOT the same claim as "this principal is new". The
+    # one principal that DOES carry other engine roles is graph-os's own
+    # service identity (it holds `control:system`), and admitting that one is
+    # short-circuited in `provision_tenant_access` before this value is read
+    # -- see `tenant_rbac_admission`'s self-admission skip. Passing `()` here
+    # is therefore safe for every principal that actually reaches this line.
+    principal = TenantPrincipal(agent_id=agent_id, existing_roles=())
     try:
         result = run_tenant_admission(tenant_slug, [principal], apply=True)
     except Exception as exc:  # noqa: BLE001 - converted to our own error type
