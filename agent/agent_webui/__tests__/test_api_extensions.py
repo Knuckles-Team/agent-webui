@@ -475,6 +475,65 @@ class TestGraphQueryEndpoint:
             response = client.post('/api/enhanced/graph/query', json=query_data)
             assert response.status_code == 400
 
+    def test_execute_cypher_forwards_the_query_text_under_the_query_keyword(
+        self, client, mock_graph_engine
+    ):
+        """Defect D investigation (FIX LANE 2): a live pod observation
+        reported ``/api/graph/query`` and ``/api/enhanced/graph/query`` both
+        500ing with ``UnsupportedToolFieldError: Tool 'graph_query' does not
+        accept field(s): query`` and attributed both to ``execute_cypher``
+        here.
+
+        That does NOT reproduce on this route.
+        ``/api/enhanced/graph/query`` (this app's own ``execute_cypher``,
+        mounted by ``server.py`` at ``app.include_router(enhanced_router,
+        prefix='/api/enhanced')``) calls ``engine.query_cypher`` -- the
+        native ``IntelligenceGraphEngine``/``QueryMixin`` method, whose
+        first parameter is literally named ``query`` (see
+        ``agent_utilities/knowledge_graph/orchestration/engine_query.py``)
+        -- DIRECTLY, never through the MCP ``graph_query`` TOOL's
+        ``_execute_tool``/field-validation dispatch that raises
+        ``UnsupportedToolFieldError`` (that dispatch, and its `cypher`-named
+        parameter, lives entirely in ``agent_utilities/mcp/kg_server.py``).
+        The frontend's three callers of this route
+        (``CypherReplView.tsx``, ``TemporalGraphView.tsx``,
+        ``GraphView.tsx``) all POST ``{"query": ...}`` -- exactly matching
+        what this route reads and forwards.
+
+        The plain (non-``/enhanced``) ``/api/graph/query`` route is NOT
+        served by this file at all -- it is mounted by
+        ``agent_utilities.gateway.graph_api.register_graph_routes`` ->
+        ``kg_server._mount_rest_routes`` -> ``graph_query_endpoint``, which
+        DOES forward the raw request body as ``**kwargs`` into
+        ``_execute_tool("graph_query", **body)`` and IS where a `query`
+        vs `cypher` field mismatch would actually raise
+        ``UnsupportedToolFieldError``. That file lives in
+        ``agent-utilities`` and is out of scope for this lane (owns only
+        ``agent_webui/api_extensions.py``); if the live defect is real it
+        needs a fix there, not here. This test is a regression guard so a
+        future "fix" does not rename this route's forwarded field to
+        ``cypher`` and break its actually-correct, frontend-verified
+        contract with the real ``QueryMixin.query_cypher(self, query, ...)``
+        signature.
+        """
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            with patch.object(
+                mock_graph_engine, 'query_cypher', return_value=[]
+            ) as mock_query_cypher:
+                response = client.post(
+                    '/api/enhanced/graph/query',
+                    json={'query': 'MATCH (n) RETURN n LIMIT 1', 'params': {}},
+                )
+
+        assert response.status_code == 200
+        assert mock_query_cypher.call_args.kwargs['query'] == (
+            'MATCH (n) RETURN n LIMIT 1'
+        )
+        assert 'cypher' not in mock_query_cypher.call_args.kwargs
+
 
 class TestKnowledgeBaseEndpoints:
     """Test knowledge base endpoints."""
@@ -1056,6 +1115,23 @@ class TestCoverageExpansion:
         with patch(
             'agent_webui.api_extensions._read_fleet_catalog',
             AsyncMock(return_value=None),
+        ):
+            response = client.get('/api/enhanced/skills')
+            assert response.status_code == 503
+
+    def test_list_skills_this_kind_unavailable_within_a_mapping_also_fails_closed(
+        self, client
+    ):
+        """Per-kind degradation (FIX LANE 2, Defect A): `_read_fleet_catalog`
+        now returns a MAPPING (never a bare `None`) once authority is
+        granted, with a per-kind `None` for a kind whose own read failed.
+        `list_skills` only ever requests the `skills` kind, so THAT kind
+        failing is equivalent to the old whole-catalog failure and must
+        still raise 503, not render `catalog['skills']` as if it were an
+        honest empty list."""
+        with patch(
+            'agent_webui.api_extensions._read_fleet_catalog',
+            AsyncMock(return_value={'skills': None}),
         ):
             response = client.get('/api/enhanced/skills')
             assert response.status_code == 503
