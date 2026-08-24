@@ -1636,6 +1636,16 @@ async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
     it -- not a partial degrade, a hard 500 the frontend renders as an empty
     view + a toast, for any caller who is not a cluster admin. A single
     toggle-preference lookup failing must not take down the whole list.
+
+    FIX LANE Priority 4 (BUG: a written-disabled preference read back as
+    "enabled", proven end to end): this query used to ``RETURN p.value as
+    value`` with NO id projection at all. Row-governance
+    (``secured_reads.row_node_ids()``) REQUIRES every row to carry an
+    ``id``/``node_id``/``n.id``/``_id`` column or it raises ``PermissionError:
+    Graph result contains a row without a governed node id`` -- which the
+    broad ``except Exception`` below silently swallowed into this function's
+    OWN fail-open ``return True``, indistinguishable from "no preference
+    set". ``p.id AS id`` is added to the RETURN so every row is governable.
     """
     if not engine:
         return True
@@ -1643,7 +1653,8 @@ async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
     try:
         res = await _invoke_governed_helper(
             engine.query_cypher,
-            'MATCH (p:Preference) WHERE p.id = $pref_id RETURN p.value as value',
+            'MATCH (p:Preference) WHERE p.id = $pref_id '
+            'RETURN p.id AS id, p.value AS value',
             {'pref_id': pref_id},
             deadline=5.0,
         )
@@ -1688,9 +1699,10 @@ def _log_toggle_batch_failure(item_type: str, error: BaseException) -> None:
 
 
 async def _batch_toggle_states(
-    engine: Any, item_type: str
+    engine: Any, item_type: str, item_ids: list[str]
 ) -> tuple[dict[str, bool], bool]:
-    """Bulk-read every toggle preference of ``item_type`` in ONE round trip.
+    """Bulk-read the toggle preference of every one of ``item_ids`` (all of
+    ``item_type``) in ONE round trip.
 
     Root cause of the ``/api/enhanced/tools`` hang that never returned
     (measured live: >120s, timed out): ``list_all_tools`` called
@@ -1705,36 +1717,40 @@ async def _batch_toggle_states(
     each individually bounded but never batched or parallelized, is what
     made the response practically never return.
 
-    One ``STARTS WITH`` scan over the ``preference:toggle:{item_type}:``
-    prefix replaces all of those with a single call, same fail-open
-    semantics as ``get_toggle_state``: a query failure degrades every item
-    of this ``item_type`` to "enabled by default" (the caller's ``.get(id,
-    True)`` lookup) rather than raising -- a toggle-preference outage must
-    never take the whole listing down, same reasoning ``get_toggle_state``
-    already documents for the single-item case.
+    FIX LANE Priority 4: a single ``WHERE p.id IN $ids`` scan, built from the
+    EXACT ids the caller is about to render, replaces both the old N
+    sequential round trips AND an intermediate ``STARTS WITH $prefix`` scan
+    that does not parse on the deployed engine at all (``STARTS WITH`` with
+    a bound-parameter operand fails 5/5, live) -- every toggle read appeared
+    to work while being non-functional fleet-wide. ``IN $ids`` is also
+    index-servable and O(items rendered) rather than O(every preference in
+    the graph), same fail-open semantics as ``get_toggle_state``: a query
+    failure degrades every item of this ``item_type`` to "enabled by
+    default" (the caller's ``.get(id, True)`` lookup) rather than raising --
+    a toggle-preference outage must never take the whole listing down, same
+    reasoning ``get_toggle_state`` already documents for the single-item
+    case.
 
     Returns ``(states, ok)``. ``ok`` is ``False`` when the underlying scan
     failed -- ``states`` is still the (fail-open, all-``True``-by-default)
     mapping callers can safely use, but ``ok=False`` lets the caller surface
     that the toggle read itself is broken rather than silently reporting
-    "everything enabled" as if it were a real, verified answer (observed
-    live: this scan raised ``CypherEngineError`` on 100% of calls, so every
-    enable/disable toggle appeared to work while being non-functional
-    fleet-wide). A previous version re-raised a 503
-    ``_invoke_governed_helper`` timeout/capacity ``HTTPException`` here,
-    which took the ENTIRE ``/api/enhanced/tools`` response down over a
-    toggle-preference outage alone; that is now degraded the same as any
-    other failure.
+    "everything enabled" as if it were a real, verified answer. A previous
+    version re-raised a 503 ``_invoke_governed_helper`` timeout/capacity
+    ``HTTPException`` here, which took the ENTIRE ``/api/enhanced/tools``
+    response down over a toggle-preference outage alone; that is now
+    degraded the same as any other failure.
     """
-    if not engine:
+    if not engine or not item_ids:
         return {}, True
     prefix = f'preference:toggle:{item_type}:'
+    pref_to_item = {f'{prefix}{item_id}': item_id for item_id in item_ids}
     try:
         res = await _invoke_governed_helper(
             engine.query_cypher,
-            'MATCH (p:Preference) WHERE p.id STARTS WITH $prefix '
+            'MATCH (p:Preference) WHERE p.id IN $ids '
             'RETURN p.id AS id, p.value AS value',
-            {'prefix': prefix},
+            {'ids': list(pref_to_item.keys())},
             deadline=10.0,
         )
     except HTTPException as e:
@@ -1748,14 +1764,17 @@ async def _batch_toggle_states(
         if not isinstance(row, dict):
             continue
         row_id = row.get('id')
-        if not isinstance(row_id, str) or not row_id.startswith(prefix):
+        if not isinstance(row_id, str):
             continue
-        states[row_id[len(prefix) :]] = row.get('value') == 'enabled'
+        item_id = pref_to_item.get(row_id)
+        if item_id is None:
+            continue
+        states[item_id] = row.get('value') == 'enabled'
     return states, True
 
 
 async def _batch_toggle_states_many(
-    engine: Any, item_types: list[str]
+    engine: Any, item_types_and_ids: dict[str, list[str]]
 ) -> dict[str, tuple[dict[str, bool], bool]]:
     """Run one ``_batch_toggle_states`` scan per ``item_type`` CONCURRENTLY.
 
@@ -1768,11 +1787,20 @@ async def _batch_toggle_states_many(
     lengths). ``asyncio.gather`` cuts that to the slowest single scan instead
     of the sum of all of them -- an immediate ~5x reduction on this path with
     no change to what any consumer that DOES read ``enabled`` sees.
+
+    Args:
+        item_types_and_ids: ``{item_type: [exact ids about to be rendered]}``
+            (FIX LANE Priority 4) -- each scan is now ``WHERE p.id IN $ids``
+            against exactly this list, not a graph-wide prefix scan.
     """
-    if not item_types:
+    if not item_types_and_ids:
         return {}
+    item_types = list(item_types_and_ids.keys())
     results = await asyncio.gather(
-        *(_batch_toggle_states(engine, item_type) for item_type in item_types)
+        *(
+            _batch_toggle_states(engine, item_type, item_types_and_ids[item_type])
+            for item_type in item_types
+        )
     )
     return dict(zip(item_types, results, strict=True))
 
@@ -2176,16 +2204,61 @@ async def list_all_tools() -> dict[str, Any]:
     # instead of the previous up-to-5 SEQUENTIAL round trips, which measured
     # live as the critical-path long pole for data the dashboard tile never
     # even reads.
+    #
+    # FIX LANE Priority 4: `_batch_toggle_states` now takes the EXACT item
+    # ids being rendered (`WHERE p.id IN $ids`, not a `STARTS WITH $prefix`
+    # scan -- the deployed engine does not parse `STARTS WITH` with a
+    # bound-parameter operand at all, failing 5/5). That means the id lists
+    # below must be computed BEFORE the toggle batch runs, from the same
+    # catalog rows the entry-building loops further down classify again --
+    # a small, deliberate duplication of the classification logic (skill
+    # `skill_type` bucketing, server-name validation) rather than a larger
+    # restructuring that would move toggle reads after entry-building.
     tools_dir = get_agent_utilities_dir() / 'tools'
     builtin_dir_present = tools_dir.exists() and tools_dir.is_dir()
-    toggle_types_needed: list[str] = []
+
+    mcp_server_ids = [
+        name
+        for row in (server_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        if isinstance(name := row.get('name'), str)
+        and name
+        and _SAFE_DELEGATION_TOKEN.fullmatch(name)
+    ]
+    builtin_tool_ids = (
+        [f.stem for f in tools_dir.glob('*.py') if not f.name.startswith('_')][
+            :_MAX_EXTERNAL_COLLECTION_ITEMS
+        ]
+        if builtin_dir_present
+        else []
+    )
+    # Same three-way `skill_type` bucketing the entry-building loop (below)
+    # uses -- an unclassified row (the `else` branch there) still reads the
+    # `skill` toggle namespace, so its id belongs in `skill_ids` too.
+    skill_ids: list[str] = []
+    skill_workflow_ids: list[str] = []
+    skill_graph_ids: list[str] = []
+    for row in (skill_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+        skill_id = row.get('id')
+        if not isinstance(skill_id, str) or not skill_id:
+            continue
+        skill_type = str(row.get('skill_type') or '').strip().lower()
+        if skill_type == 'workflow':
+            skill_workflow_ids.append(skill_id)
+        elif skill_type == 'graph':
+            skill_graph_ids.append(skill_id)
+        else:
+            skill_ids.append(skill_id)
+
+    item_types_and_ids: dict[str, list[str]] = {}
     if server_rows is not None:
-        toggle_types_needed.append('mcp_server')
+        item_types_and_ids['mcp_server'] = mcp_server_ids
     if builtin_dir_present:
-        toggle_types_needed.append('builtin_tool')
+        item_types_and_ids['builtin_tool'] = builtin_tool_ids
     if skill_rows:
-        toggle_types_needed.extend(('skill', 'skill_workflow', 'skill_graph'))
-    toggle_states = await _batch_toggle_states_many(engine, toggle_types_needed)
+        item_types_and_ids['skill'] = skill_ids
+        item_types_and_ids['skill_workflow'] = skill_workflow_ids
+        item_types_and_ids['skill_graph'] = skill_graph_ids
+    toggle_states = await _batch_toggle_states_many(engine, item_types_and_ids)
     mcp_server_toggles, _mcp_server_toggles_ok = toggle_states.get(
         'mcp_server', ({}, True)
     )
@@ -2194,6 +2267,18 @@ async def list_all_tools() -> dict[str, Any]:
     skill_workflow_toggles, _ = toggle_states.get('skill_workflow', ({}, True))
     skill_graph_toggles, _ = toggle_states.get('skill_graph', ({}, True))
     toggles_ok = all(ok for _states, ok in toggle_states.values())
+    # FIX LANE Priority 4 (item 3): `ok` is already threaded per item_type,
+    # but every per-ITEM fallback in the entry-building loops below is a
+    # bare `.get(id, True)` -- during a real toggle-read outage that still
+    # renders every item "enabled", indistinguishable from a genuine
+    # preference. `degraded_item_types` is additive (never removes/retypes
+    # a field) and names exactly which item_type(s)' enabled/disabled state
+    # below is not to be trusted, so a caller can render a degraded state
+    # per item instead of a silently-wrong "enabled". Frontend rendering of
+    # this is out of scope for this file -- see this lane's report.
+    degraded_item_types = sorted(
+        item_type for item_type, (_states, ok) in toggle_states.items() if not ok
+    )
     toggle_status = {
         'source': 'sql_catalog',
         'error': (
@@ -2205,6 +2290,7 @@ async def list_all_tools() -> dict[str, Any]:
                 'real persisted preference.'
             )
         ),
+        'degraded_item_types': degraded_item_types,
     }
 
     # 1. MCP servers -- desired registration (`servers`) joined with the most
