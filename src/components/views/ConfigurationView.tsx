@@ -18,7 +18,7 @@
  *
  * Two fields — `chat_models`/`embedding_models` — are excluded on purpose:
  * they already have their own dedicated, schema-derived CRUD surface (the
- * LLM Endpoints page, BUG-260). The backend reports the exclusion explicitly
+ * Models page, BUG-260). The backend reports the exclusion explicitly
  * (`excluded_fields`) and this view surfaces it as a link-out card rather
  * than silently omitting them.
  *
@@ -768,10 +768,10 @@ export default function ConfigurationView() {
                   <p className="text-xs text-muted-foreground">
                     <span className="font-mono">{schemaResp.excluded_fields.join(', ')}</span>{' '}
                     {schemaResp.excluded_fields.length === 1 ? 'has' : 'have'} a dedicated schema-derived editor — the
-                    LLM Endpoints page — instead of a second copy here.
+                    Models page — instead of a second copy here.
                   </p>
                   <Button variant="outline" size="sm" onClick={goToLlmEndpoints} className="shrink-0">
-                    <ExternalLink className="size-3.5 mr-1.5" /> Open LLM Endpoints
+                    <ExternalLink className="size-3.5 mr-1.5" /> Open Models
                   </Button>
                 </CardContent>
               </Card>

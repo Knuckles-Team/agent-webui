@@ -151,7 +151,7 @@ describe('ConfigurationView (1:1 AgentConfig form)', () => {
     render(<ConfigurationView />)
 
     expect(await screen.findByText(/chat_models, embedding_models/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /open llm endpoints/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /open models/i })).toBeInTheDocument()
   })
 
   it('an unreachable schema/config renders a distinct unavailable state, not an empty form', async () => {
