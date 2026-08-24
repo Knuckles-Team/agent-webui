@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 from typing import Any
 
 import pytest
@@ -42,8 +43,62 @@ class _FakeSession:
     def __post_init__(self) -> None:
         """No-op: nothing to revalidate on a test double."""
 
-    def ensure_authority_current(self) -> None:
-        """No-op: this fake's authority never expires."""
+    def ensure_authority_current(self, *, minimum_ttl_seconds: int = 0) -> None:
+        """No-op: this fake's authority never expires.
+
+        Accepts ``minimum_ttl_seconds`` (unused) to match the real
+        `GraphSession.ensure_authority_current` signature, since
+        `_service_authority`'s proactive renewal check calls it that way.
+        """
+
+
+class _FakeExpiringActor(_FakeActor):
+    """A `_FakeActor` that also carries a controllable bounded expiry, the
+    way a real service-authority actor does."""
+
+    def __init__(
+        self,
+        actor_id: str,
+        *,
+        authenticated: bool = True,
+        credential_expires_at: float | None = None,
+    ) -> None:
+        super().__init__(actor_id, authenticated=authenticated)
+        self.credential_expires_at = credential_expires_at
+
+
+class _FakeExpiringSession(_FakeSession):
+    """A session whose `ensure_authority_current` actually enforces an
+    expiry against a caller-controlled clock, the way the real
+    `GraphSession` enforces it against `actor.credential_expires_at` --
+    unlike `_FakeSession`, which never expires. Used by the
+    `_service_authority` renewal tests below; ``now`` is an injected clock
+    reading rather than the real one, so these tests need no real sleeping.
+    """
+
+    def __init__(self, tenant: str, *, actor: _FakeExpiringActor, now: float) -> None:
+        super().__init__(tenant, actor=actor)
+        # `_FakeSession.actor` is typed `_FakeActor | None`; keep a narrowly
+        # typed reference to the actual `_FakeExpiringActor` here so
+        # `credential_expires_at` type-checks without a cast/getattr.
+        self._expiring_actor = actor
+        self._now = now
+
+    def ensure_authority_current(self, *, minimum_ttl_seconds: int = 0) -> None:
+        from agent_utilities.knowledge_graph.core.session import (
+            SessionExpiredError,
+        )
+
+        expiry = self._expiring_actor.credential_expires_at
+        if expiry is not None and self._now + minimum_ttl_seconds >= expiry:
+            raise SessionExpiredError('expired')
+
+
+def _expiring_session(
+    *, now: float, expires_at: float | None, tenant: str = 'homelab'
+) -> _FakeExpiringSession:
+    actor = _FakeExpiringActor('service-authority', credential_expires_at=expires_at)
+    return _FakeExpiringSession(tenant, actor=actor, now=now)
 
 
 @pytest.fixture(autouse=True)
@@ -541,3 +596,284 @@ def test_admit_delegates_to_run_tenant_admission_with_apply_true(
             'apply': True,
         }
     ]
+
+
+# ---------------------------------------------------------------------------
+# LANE 8: `_service_authority` proactive/reactive renewal + concurrency.
+#
+# `_reset_module_state` already binds a fake ambient session for every test
+# above, which is why those tests never touch `_service_authority`'s renewal
+# path at all (the ambient branch of `_mint_service_authority` short-circuits
+# before any credential/expiry logic runs). The tests below drive
+# `_service_authority`/`ensure_tenant_admission` directly against a
+# controllable, expiring session so the renewal behavior itself is covered
+# independent of which branch of `_mint_service_authority` produced it.
+# ---------------------------------------------------------------------------
+
+
+def test_service_authority_remints_a_session_past_its_expiry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cached session whose bounded credential has already run out (or is
+    within the renewal margin) is replaced, not reused."""
+
+    stale = _expiring_session(now=1_000_000, expires_at=1_000_000 - 1)
+    fresh = _expiring_session(now=1_000_000, expires_at=1_000_000 + 3_600)
+    graph_admission._SERVICE_SESSION = stale
+
+    mint_calls: list[None] = []
+
+    def _fake_mint() -> Any:
+        mint_calls.append(None)
+        return fresh
+
+    monkeypatch.setattr(graph_admission, '_mint_service_authority', _fake_mint)
+
+    result = graph_admission._service_authority()
+
+    assert result is fresh
+    assert len(mint_calls) == 1
+
+
+def test_service_authority_remints_when_within_the_renewal_margin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Proactive renewal fires BEFORE the hard expiry, once fewer than
+    `_SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS` remain -- not only after the
+    credential has actually expired."""
+
+    margin = graph_admission._SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS
+    about_to_expire = _expiring_session(
+        now=1_000_000, expires_at=1_000_000 + (margin - 1)
+    )
+    fresh = _expiring_session(now=1_000_000, expires_at=1_000_000 + 3_600)
+    graph_admission._SERVICE_SESSION = about_to_expire
+
+    mint_calls: list[None] = []
+
+    def _fake_mint() -> Any:
+        mint_calls.append(None)
+        return fresh
+
+    monkeypatch.setattr(graph_admission, '_mint_service_authority', _fake_mint)
+
+    assert graph_admission._service_authority() is fresh
+    assert len(mint_calls) == 1
+
+
+def test_service_authority_reuses_a_session_comfortably_within_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A session with plenty of TTL left is reused as-is -- proving the fix
+    does not replace the old always-cache bug with a mint-storm on every
+    call."""
+
+    current = _expiring_session(now=1_000_000, expires_at=1_000_000 + 3_600)
+    graph_admission._SERVICE_SESSION = current
+
+    def _must_not_mint() -> Any:
+        raise AssertionError(
+            'must not mint while the cached session is still comfortably current'
+        )
+
+    monkeypatch.setattr(graph_admission, '_mint_service_authority', _must_not_mint)
+
+    for _ in range(5):
+        assert graph_admission._service_authority() is current
+
+
+def test_service_authority_concurrent_expired_callers_mint_exactly_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """N callers racing an expired cached session must produce exactly one
+    mint, with every caller ending up on the SAME fresh session -- not one
+    mint per racing thread.
+
+    Real `threading.Thread`s (not asyncio tasks) so the module's actual
+    `threading.Lock` is what is under test, not cooperative scheduling.
+    """
+
+    stale = _expiring_session(now=1_000_000, expires_at=1_000_000 - 1)
+    fresh = _expiring_session(now=1_000_000, expires_at=1_000_000 + 3_600)
+    graph_admission._SERVICE_SESSION = stale
+
+    mint_calls: list[None] = []
+    mint_calls_lock = threading.Lock()
+
+    def _slow_mint() -> Any:
+        # A real network mint is slow; sleeping here (releasing the GIL)
+        # gives every other blocked thread a chance to queue up on
+        # `_SERVICE_SESSION_LOCK` while this one is "in flight" -- if the
+        # lock did not serialize them, more than one would reach here.
+        time.sleep(0.02)
+        with mint_calls_lock:
+            mint_calls.append(None)
+        return fresh
+
+    monkeypatch.setattr(graph_admission, '_mint_service_authority', _slow_mint)
+
+    results: list[Any] = []
+    results_lock = threading.Lock()
+
+    def _call() -> None:
+        session = graph_admission._service_authority()
+        with results_lock:
+            results.append(session)
+
+    threads = [threading.Thread(target=_call) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert len(mint_calls) == 1, 'concurrent expired callers must mint exactly once'
+    assert len(results) == 8
+    assert all(result is fresh for result in results)
+
+
+def test_session_expired_cause_matches_only_session_expiry() -> None:
+    """Mirrors `test_admin_capability_denied_matches_only_the_specific_denial`
+    for the reactive-retry gate: only a `SessionExpiredError` anywhere in the
+    chain counts, never a network error or a genuine authorization denial."""
+
+    from agent_utilities.knowledge_graph.core.session import SessionExpiredError
+
+    expired = EngineAdmissionUnavailableError('engine admission failed')
+    expired.__cause__ = SessionExpiredError('expired')
+    assert graph_admission._session_expired_cause(expired) is True
+
+    denied = EngineAdmissionUnavailableError('engine admission failed')
+    denied.__cause__ = RuntimeError(
+        'ACCESS_DENIED: verified principal lacks Write access to graph '
+        "'tenant__homelab____commons__'"
+    )
+    assert graph_admission._session_expired_cause(denied) is False
+
+    unreachable = EngineAdmissionUnavailableError('engine unreachable')
+    unreachable.__cause__ = ConnectionError('connection refused')
+    assert graph_admission._session_expired_cause(unreachable) is False
+
+    assert graph_admission._session_expired_cause(None) is False
+
+
+@pytest.mark.asyncio
+async def test_genuine_denial_is_not_retried_into_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real ACCESS_DENIED from the engine (never a `SessionExpiredError`)
+    must propagate as a failure -- it must never be mistaken for a
+    stale-session race and silently retried into a false success."""
+
+    _stub_role_exists(monkeypatch, exists=True)
+
+    denial = EngineAdmissionUnavailableError("engine admission failed for 'user-1'")
+    denial.__cause__ = RuntimeError(
+        'ACCESS_DENIED: verified principal lacks Write access to graph '
+        "'tenant__homelab____commons__'"
+    )
+    admit_calls = _stub_admit(monkeypatch, error=denial)
+
+    with pytest.raises(EngineAdmissionUnavailableError):
+        await ensure_tenant_admission(_FakeActor('user-1'), _FakeSession('homelab'))
+
+    assert admit_calls == [('homelab', 'user-1')], (
+        'a genuine denial must be attempted exactly once, never retried'
+    )
+    assert ('homelab', 'user-1') not in graph_admission._ADMITTED
+
+
+@pytest.mark.asyncio
+async def test_session_expired_failure_is_retried_once_and_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reactive fallback: a `SessionExpiredError`-caused failure re-mints
+    the service authority and retries the SAME admission attempt once,
+    bypassing the negative-outcome backoff cache for that one retry -- the
+    failure reflects OUR stale credential, not the tenant's or engine's
+    state, so it must not be treated like a genuine provisioning/infra
+    failure (which would otherwise make the retry immediately re-raise the
+    very exception it exists to recover from)."""
+
+    from agent_utilities.knowledge_graph.core.session import SessionExpiredError
+
+    _stub_role_exists(monkeypatch, exists=True)
+
+    attempts: list[None] = []
+
+    def _flaky_admit(tenant_slug: str, agent_id: str) -> None:
+        attempts.append(None)
+        if len(attempts) == 1:
+            wrapped = EngineAdmissionUnavailableError('engine admission failed')
+            wrapped.__cause__ = SessionExpiredError('expired mid-call')
+            raise wrapped
+        # Second attempt (after the re-mint below) succeeds.
+
+    monkeypatch.setattr(graph_admission, '_admit', _flaky_admit)
+
+    sessions = [
+        _FakeSession(
+            'homelab', actor=_FakeActor('graph-os:process', authenticated=True)
+        ),
+        _FakeSession(
+            'homelab', actor=_FakeActor('graph-os:process', authenticated=True)
+        ),
+    ]
+    mint_calls: list[None] = []
+
+    def _fake_mint() -> Any:
+        mint_calls.append(None)
+        return sessions[len(mint_calls) - 1]
+
+    monkeypatch.setattr(graph_admission, '_mint_service_authority', _fake_mint)
+
+    await ensure_tenant_admission(_FakeActor('user-1'), _FakeSession('homelab'))
+
+    assert len(attempts) == 2, 'must retry exactly once after a session-expiry failure'
+    assert len(mint_calls) == 2, 'must re-mint before the retry'
+    assert ('homelab', 'user-1') in graph_admission._ADMITTED
+
+
+@pytest.mark.asyncio
+async def test_session_expired_retry_happens_at_most_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A retry that ALSO fails on session expiry must propagate rather than
+    loop -- proves this is a single bounded retry, not a retry-until-success
+    loop that could hide a persistently broken renewal path."""
+
+    from agent_utilities.knowledge_graph.core.session import SessionExpiredError
+
+    _stub_role_exists(monkeypatch, exists=True)
+
+    attempts: list[None] = []
+
+    def _always_expired(tenant_slug: str, agent_id: str) -> None:
+        attempts.append(None)
+        wrapped = EngineAdmissionUnavailableError('engine admission failed')
+        wrapped.__cause__ = SessionExpiredError('expired mid-call')
+        raise wrapped
+
+    monkeypatch.setattr(graph_admission, '_admit', _always_expired)
+
+    # One mint feeds the FIRST `ensure_tenant_admission` attempt (module cache
+    # starts empty per-test); the reactive fallback then mints exactly once
+    # more for its single retry. If the retry itself looped, this would be
+    # called a third time.
+    mint_calls: list[None] = []
+
+    def _fake_mint() -> Any:
+        mint_calls.append(None)
+        return _FakeSession(
+            'homelab', actor=_FakeActor('graph-os:process', authenticated=True)
+        )
+
+    monkeypatch.setattr(graph_admission, '_mint_service_authority', _fake_mint)
+
+    with pytest.raises(EngineAdmissionUnavailableError):
+        await ensure_tenant_admission(_FakeActor('user-1'), _FakeSession('homelab'))
+
+    assert len(attempts) == 2, 'the initial attempt plus exactly one retry, never more'
+    assert len(mint_calls) == 2, (
+        'the initial mint plus exactly one re-mint for the retry, never a loop'
+    )
+    assert ('homelab', 'user-1') not in graph_admission._ADMITTED
