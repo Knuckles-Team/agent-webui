@@ -10,11 +10,20 @@ test below must fail rather than let the two silently diverge.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from agent_utilities.knowledge_graph.core import placement_catalog as _placement_catalog
+from agent_utilities.knowledge_graph.core.shard_topology import (
+    default_graph_name,
+    tenant_graph_name,
+)
 from agent_utilities.security import request_identity as _shared
 from agent_utilities.security.brain_context import ActorContext
-from agent_webui.graph_identity import mint_frontend_graph_session
+from agent_webui.graph_identity import (
+    frontend_accessible_graphs,
+    mint_frontend_graph_session,
+)
 
 AUDIENCE = 'agent-services'
 POLICY = 'homelab-v1'
@@ -163,3 +172,105 @@ def test_missing_server_audience_is_refused(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(config, 'mcp_jwt_audience', '', raising=False)
     with pytest.raises(PermissionError):
         mint_frontend_graph_session(_actor('kg:read'))
+
+
+# --- D-TGS-1: tenant-graph-scoping divergence (webui REST vs MCP) ----------
+#
+# Regression coverage for the measured divergence: same bearer, same moment,
+# `MATCH (n) RETURN count(n)` returned 25,116 over the webui REST session but
+# 56,853 over MCP; `MATCH (t:Tool) RETURN count(t)` returned 0 vs 2,941. Root
+# cause: `session.graph` is (correctly) pinned to the actor's own tenant
+# shard, a physically distinct graph from the shared `__commons__` catalog
+# graph the fleet's :Tool/:CallableResource nodes live in by design
+# (`agent_utilities/knowledge_graph/core/tenant_sharing.py`). These tests
+# prove three things: (1) the write-target graph is untouched — still one
+# tenant shard, identical to the shared minter's own resolution: tenant
+# isolation for genuinely tenant-owned data is not weakened; (2) a second
+# tenant's shard is never reachable from the new read-graph seam — cross-
+# tenant isolation holds; (3) the new seam's read-graph set includes the
+# shared commons graph, so a query executor built on it (owned by a parallel
+# lane; not this module) reads the divergence case consistently instead of
+# silently narrowing to zero.
+
+
+def test_session_graph_remains_the_tenant_shard_write_target() -> None:
+    """The write target is unchanged: still the caller's own physical shard."""
+
+    session = mint_frontend_graph_session(_actor('kg:write', tenant='homelab'))
+    assert session.graph == tenant_graph_name('homelab', base=default_graph_name())
+    assert session.graph != default_graph_name()  # never silently widened to commons
+
+
+def test_two_tenants_mint_distinct_write_target_graphs() -> None:
+    """Two tenants' sessions must never be pinned to the same physical shard."""
+
+    homelab = mint_frontend_graph_session(_actor('kg:read', tenant='homelab'))
+    other = mint_frontend_graph_session(_actor('kg:read', tenant='other-co'))
+    assert homelab.graph != other.graph
+    assert homelab.tenant != other.tenant
+
+
+def test_frontend_accessible_graphs_never_reaches_a_second_tenants_shard() -> None:
+    """A second tenant's genuinely-owned data must stay invisible.
+
+    `frontend_accessible_graphs` is the seam a union-read executor is meant to
+    consume instead of `session.graph` alone. If it ever leaked a sibling
+    tenant's own shard into that set, a query executor built on it would read
+    another org's private data — exactly the tenant data-leak the brief warns
+    a wrong call here would create. Assert it never does, for two distinct
+    tenants in both directions.
+    """
+
+    homelab_graphs = frontend_accessible_graphs(_actor('kg:read', tenant='homelab'))
+    other_graphs = frontend_accessible_graphs(_actor('kg:read', tenant='other-co'))
+
+    homelab_shard = tenant_graph_name('homelab', base=default_graph_name())
+    other_shard = tenant_graph_name('other-co', base=default_graph_name())
+
+    assert homelab_shard in homelab_graphs
+    assert other_shard not in homelab_graphs  # homelab never sees other-co's shard
+
+    assert other_shard in other_graphs
+    assert homelab_shard not in other_graphs  # other-co never sees homelab's shard
+
+
+def test_frontend_accessible_graphs_includes_commons_last() -> None:
+    """The read-graph set reaches the shared catalog graph, ordered after the
+    actor's own shard — this is what resolves the measured divergence: a
+    union read across this set (owned by a parallel lane) sees the fleet's
+    :Tool/:CallableResource catalog the same way the MCP surface already
+    does, instead of the webui's previous single-shard read seeing none of
+    it."""
+
+    graphs = frontend_accessible_graphs(_actor('kg:read', tenant='homelab'))
+    assert graphs[-1] == default_graph_name()
+    assert graphs[0] == tenant_graph_name('homelab', base=default_graph_name())
+    assert len(set(graphs)) == len(graphs)  # de-duplicated
+
+
+def test_frontend_accessible_graphs_requires_verified_tenant() -> None:
+    actor = ActorContext(actor_id='subject-1', tenant_id='', authenticated=True)
+    with pytest.raises(PermissionError):
+        frontend_accessible_graphs(actor)
+
+
+def test_mint_logs_the_resolved_scope_for_observability(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A session confined to one physical shard must never look, from the
+    logs, identical to one that can see everything — the observability
+    requirement this fix must satisfy in every case. Assert the mint emits a
+    record naming the resolved graph and whether it is the shared commons."""
+
+    with caplog.at_level(logging.INFO, logger='agent_webui.graph_identity'):
+        session = mint_frontend_graph_session(_actor('kg:read', tenant='homelab'))
+
+    records = [
+        r for r in caplog.records if 'frontend graph session minted' in r.message
+    ]
+    assert records, 'expected an observable log record for the minted graph scope'
+    record = records[-1]
+    assert record.tenant == 'homelab'
+    assert record.graph == session.graph
+    assert record.is_commons_graph is False
+    assert record.commons_graph == default_graph_name()
