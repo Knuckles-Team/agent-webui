@@ -11,6 +11,7 @@ import re
 import secrets
 import stat
 import threading
+import time
 from concurrent import futures as _futures
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -1635,6 +1636,16 @@ async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
     it -- not a partial degrade, a hard 500 the frontend renders as an empty
     view + a toast, for any caller who is not a cluster admin. A single
     toggle-preference lookup failing must not take down the whole list.
+
+    FIX LANE Priority 4 (BUG: a written-disabled preference read back as
+    "enabled", proven end to end): this query used to ``RETURN p.value as
+    value`` with NO id projection at all. Row-governance
+    (``secured_reads.row_node_ids()``) REQUIRES every row to carry an
+    ``id``/``node_id``/``n.id``/``_id`` column or it raises ``PermissionError:
+    Graph result contains a row without a governed node id`` -- which the
+    broad ``except Exception`` below silently swallowed into this function's
+    OWN fail-open ``return True``, indistinguishable from "no preference
+    set". ``p.id AS id`` is added to the RETURN so every row is governable.
     """
     if not engine:
         return True
@@ -1642,7 +1653,8 @@ async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
     try:
         res = await _invoke_governed_helper(
             engine.query_cypher,
-            'MATCH (p:Preference) WHERE p.id = $pref_id RETURN p.value as value',
+            'MATCH (p:Preference) WHERE p.id = $pref_id '
+            'RETURN p.id AS id, p.value AS value',
             {'pref_id': pref_id},
             deadline=5.0,
         )
@@ -1687,9 +1699,10 @@ def _log_toggle_batch_failure(item_type: str, error: BaseException) -> None:
 
 
 async def _batch_toggle_states(
-    engine: Any, item_type: str
+    engine: Any, item_type: str, item_ids: list[str]
 ) -> tuple[dict[str, bool], bool]:
-    """Bulk-read every toggle preference of ``item_type`` in ONE round trip.
+    """Bulk-read the toggle preference of every one of ``item_ids`` (all of
+    ``item_type``) in ONE round trip.
 
     Root cause of the ``/api/enhanced/tools`` hang that never returned
     (measured live: >120s, timed out): ``list_all_tools`` called
@@ -1704,36 +1717,40 @@ async def _batch_toggle_states(
     each individually bounded but never batched or parallelized, is what
     made the response practically never return.
 
-    One ``STARTS WITH`` scan over the ``preference:toggle:{item_type}:``
-    prefix replaces all of those with a single call, same fail-open
-    semantics as ``get_toggle_state``: a query failure degrades every item
-    of this ``item_type`` to "enabled by default" (the caller's ``.get(id,
-    True)`` lookup) rather than raising -- a toggle-preference outage must
-    never take the whole listing down, same reasoning ``get_toggle_state``
-    already documents for the single-item case.
+    FIX LANE Priority 4: a single ``WHERE p.id IN $ids`` scan, built from the
+    EXACT ids the caller is about to render, replaces both the old N
+    sequential round trips AND an intermediate ``STARTS WITH $prefix`` scan
+    that does not parse on the deployed engine at all (``STARTS WITH`` with
+    a bound-parameter operand fails 5/5, live) -- every toggle read appeared
+    to work while being non-functional fleet-wide. ``IN $ids`` is also
+    index-servable and O(items rendered) rather than O(every preference in
+    the graph), same fail-open semantics as ``get_toggle_state``: a query
+    failure degrades every item of this ``item_type`` to "enabled by
+    default" (the caller's ``.get(id, True)`` lookup) rather than raising --
+    a toggle-preference outage must never take the whole listing down, same
+    reasoning ``get_toggle_state`` already documents for the single-item
+    case.
 
     Returns ``(states, ok)``. ``ok`` is ``False`` when the underlying scan
     failed -- ``states`` is still the (fail-open, all-``True``-by-default)
     mapping callers can safely use, but ``ok=False`` lets the caller surface
     that the toggle read itself is broken rather than silently reporting
-    "everything enabled" as if it were a real, verified answer (observed
-    live: this scan raised ``CypherEngineError`` on 100% of calls, so every
-    enable/disable toggle appeared to work while being non-functional
-    fleet-wide). A previous version re-raised a 503
-    ``_invoke_governed_helper`` timeout/capacity ``HTTPException`` here,
-    which took the ENTIRE ``/api/enhanced/tools`` response down over a
-    toggle-preference outage alone; that is now degraded the same as any
-    other failure.
+    "everything enabled" as if it were a real, verified answer. A previous
+    version re-raised a 503 ``_invoke_governed_helper`` timeout/capacity
+    ``HTTPException`` here, which took the ENTIRE ``/api/enhanced/tools``
+    response down over a toggle-preference outage alone; that is now
+    degraded the same as any other failure.
     """
-    if not engine:
+    if not engine or not item_ids:
         return {}, True
     prefix = f'preference:toggle:{item_type}:'
+    pref_to_item = {f'{prefix}{item_id}': item_id for item_id in item_ids}
     try:
         res = await _invoke_governed_helper(
             engine.query_cypher,
-            'MATCH (p:Preference) WHERE p.id STARTS WITH $prefix '
+            'MATCH (p:Preference) WHERE p.id IN $ids '
             'RETURN p.id AS id, p.value AS value',
-            {'prefix': prefix},
+            {'ids': list(pref_to_item.keys())},
             deadline=10.0,
         )
     except HTTPException as e:
@@ -1747,14 +1764,17 @@ async def _batch_toggle_states(
         if not isinstance(row, dict):
             continue
         row_id = row.get('id')
-        if not isinstance(row_id, str) or not row_id.startswith(prefix):
+        if not isinstance(row_id, str):
             continue
-        states[row_id[len(prefix) :]] = row.get('value') == 'enabled'
+        item_id = pref_to_item.get(row_id)
+        if item_id is None:
+            continue
+        states[item_id] = row.get('value') == 'enabled'
     return states, True
 
 
 async def _batch_toggle_states_many(
-    engine: Any, item_types: list[str]
+    engine: Any, item_types_and_ids: dict[str, list[str]]
 ) -> dict[str, tuple[dict[str, bool], bool]]:
     """Run one ``_batch_toggle_states`` scan per ``item_type`` CONCURRENTLY.
 
@@ -1767,11 +1787,20 @@ async def _batch_toggle_states_many(
     lengths). ``asyncio.gather`` cuts that to the slowest single scan instead
     of the sum of all of them -- an immediate ~5x reduction on this path with
     no change to what any consumer that DOES read ``enabled`` sees.
+
+    Args:
+        item_types_and_ids: ``{item_type: [exact ids about to be rendered]}``
+            (FIX LANE Priority 4) -- each scan is now ``WHERE p.id IN $ids``
+            against exactly this list, not a graph-wide prefix scan.
     """
-    if not item_types:
+    if not item_types_and_ids:
         return {}
+    item_types = list(item_types_and_ids.keys())
     results = await asyncio.gather(
-        *(_batch_toggle_states(engine, item_type) for item_type in item_types)
+        *(
+            _batch_toggle_states(engine, item_type, item_types_and_ids[item_type])
+            for item_type in item_types
+        )
     )
     return dict(zip(item_types, results, strict=True))
 
@@ -1954,6 +1983,171 @@ async def _read_fleet_catalog(
     return result
 
 
+# ---------------------------------------------------------------------------
+# Fleet-catalog TTL + single-flight cache (FIX LANE Priority 3)
+#
+# Measured: `/api/enhanced/tools` (73 KiB) at 20.89s; `/api/registry/skills
+# ?limit=1` (1,234 bytes) at 9.84s; 5 identical back-to-back calls at
+# 9.51/10.45/3.36/11.67/2.96s -- no warm-up, no caching, cost fixed PER CALL
+# rather than proportional to row volume. A realistic dashboard burst
+# (concurrency 4) timed out past 60s and `/api/enhanced/skills`, `/graph/
+# nodes`, `/graph/stats` all returned 503 under it. `_read_fleet_catalog` is
+# populated by the HOURLY `fleet-tool-schema-sync` job (see its own
+# docstring), so a read that is up to `_FLEET_CATALOG_CACHE_TTL_SECONDS`
+# stale is indistinguishable from a live one to any real caller.
+#
+# Cached PER KIND (not the whole multi-kind response), so one kind's hit
+# stands alone while another is mid-refresh. Single-flight per kind
+# (`asyncio.Lock`) is mandatory, not an optimization: without it a cache-
+# expiry moment under a multi-panel dashboard burst still stampedes the
+# bounded sync-work pool into the same 503s caching was meant to fix.
+#
+# Staleness disclosure (documented, deliberate trade-off -- see this lane's
+# report): a cache HIT's `mcp_status`/`skill_status`/`toggle_status` error
+# fields reflect the moment the cache was FILLED, not the request moment. A
+# real outage that recovers mid-TTL can still render as a stale error for up
+# to the TTL. Chosen because the underlying data is itself only hourly-fresh
+# -- "fast" strictly dominates "always-current" here.
+_FLEET_CATALOG_CACHE_TTL_SECONDS = 60.0
+
+
+class _FleetCatalogCacheEntry:
+    __slots__ = ('rows', 'fetched_at')
+
+    def __init__(self, rows: list[dict[str, Any]], fetched_at: float) -> None:
+        self.rows = rows
+        self.fetched_at = fetched_at
+
+
+_fleet_catalog_cache: dict[str, _FleetCatalogCacheEntry] = {}
+_fleet_catalog_cache_guard = threading.Lock()
+_fleet_catalog_kind_locks: dict[str, asyncio.Lock] = {}
+_fleet_catalog_kind_locks_guard = threading.Lock()
+# The last `mcp_status.last_synced_at` ANY request has observed (computed by
+# `list_all_tools` from the `discoveries` kind's own rows -- a signal this
+# cache gets for free, never an extra engine call). The hourly sync job
+# advancing this timestamp means fresher data landed than what is cached;
+# `note_fleet_catalog_sync_time` uses it to expire the cache EARLY instead of
+# making the next request wait out the rest of the TTL for data the sync job
+# has already superseded.
+_fleet_catalog_last_synced_seen: str | None = None
+
+
+def _fleet_catalog_kind_lock(kind: str) -> asyncio.Lock:
+    """Return the single-flight lock for `kind`, creating it on first use."""
+    with _fleet_catalog_kind_locks_guard:
+        lock = _fleet_catalog_kind_locks.get(kind)
+        if lock is None:
+            lock = asyncio.Lock()
+            _fleet_catalog_kind_locks[kind] = lock
+        return lock
+
+
+def reset_fleet_catalog_cache() -> None:
+    """Clear every cached kind and the single-flight lock table.
+
+    Test-only reset hook (also useful for an operator forcing an immediate
+    resync) -- production code never needs to call this; the TTL and the
+    `note_fleet_catalog_sync_time` early-expiry path are the only intended
+    invalidation.
+    """
+    global _fleet_catalog_last_synced_seen
+    with _fleet_catalog_cache_guard:
+        _fleet_catalog_cache.clear()
+        _fleet_catalog_last_synced_seen = None
+    with _fleet_catalog_kind_locks_guard:
+        _fleet_catalog_kind_locks.clear()
+
+
+def note_fleet_catalog_sync_time(last_synced_at: str | None) -> None:
+    """Record an observed `mcp_status.last_synced_at` and expire the cache
+    early if it advanced past what the cache was last filled with.
+
+    Called by `list_all_tools` with the value it already computes from
+    `discoveries` rows -- no additional engine round trip. A no-op the first
+    time (nothing to compare against yet) or when the value is unknown/
+    unchanged.
+    """
+    global _fleet_catalog_last_synced_seen
+    if not last_synced_at:
+        return
+    with _fleet_catalog_cache_guard:
+        if (
+            _fleet_catalog_last_synced_seen is not None
+            and last_synced_at > _fleet_catalog_last_synced_seen
+        ):
+            # The sync job landed a newer catalog than what is cached --
+            # drop every cached kind so the NEXT request refetches instead of
+            # serving a now-superseded snapshot for the rest of the TTL.
+            _fleet_catalog_cache.clear()
+        _fleet_catalog_last_synced_seen = last_synced_at
+
+
+def _fleet_catalog_cache_hit(kind: str) -> tuple[bool, list[dict[str, Any]] | None]:
+    with _fleet_catalog_cache_guard:
+        entry = _fleet_catalog_cache.get(kind)
+        if entry is None:
+            return False, None
+        if time.monotonic() - entry.fetched_at >= _FLEET_CATALOG_CACHE_TTL_SECONDS:
+            return False, None
+        return True, entry.rows
+
+
+def _fleet_catalog_cache_store(kind: str, rows: list[dict[str, Any]]) -> None:
+    with _fleet_catalog_cache_guard:
+        _fleet_catalog_cache[kind] = _FleetCatalogCacheEntry(rows, time.monotonic())
+
+
+async def _refresh_fleet_catalog_kind(kind: str) -> list[dict[str, Any]] | None:
+    """Single-flight refresh of one kind: at most one concurrent engine read
+    per kind, regardless of how many requests arrive while it is in flight.
+    """
+    lock = _fleet_catalog_kind_lock(kind)
+    async with lock:
+        # Re-check inside the lock: a request that waited for it may find
+        # another caller already refreshed this kind while it waited --
+        # collapsing N concurrent misses into ONE fetch, not N.
+        hit, cached_rows = _fleet_catalog_cache_hit(kind)
+        if hit:
+            return cached_rows
+        result = await _read_fleet_catalog(kind)
+        rows = (result or {}).get(kind)
+        if rows is not None:
+            _fleet_catalog_cache_store(kind, rows)
+        return rows
+
+
+async def _read_fleet_catalog_cached(
+    *kinds: str,
+) -> dict[str, list[dict[str, Any]] | None]:
+    """TTL + single-flight cached counterpart of `_read_fleet_catalog`.
+
+    Every kind independently: a cache hit costs ZERO engine calls; a miss (or
+    an expired kind) refreshes under that kind's own `asyncio.Lock`
+    (`_refresh_fleet_catalog_kind`). Unlike `_read_fleet_catalog`, this never
+    returns `None` for the whole mapping -- a total-authority-denial failure
+    (the one case `_read_fleet_catalog` reports that way) surfaces here as
+    every requested kind independently resolving to `None`, which is the
+    SAME per-kind shape every partial failure already uses, so callers
+    (`list_all_tools`) do not need a separate "whole thing failed" branch.
+    """
+    result: dict[str, list[dict[str, Any]] | None] = {}
+    to_refresh: list[str] = []
+    for kind in kinds:
+        hit, rows = _fleet_catalog_cache_hit(kind)
+        if hit:
+            result[kind] = rows
+        else:
+            to_refresh.append(kind)
+    if to_refresh:
+        refreshed = await asyncio.gather(
+            *(_refresh_fleet_catalog_kind(kind) for kind in to_refresh)
+        )
+        for kind, rows in zip(to_refresh, refreshed, strict=True):
+            result[kind] = rows
+    return result
+
+
 @router.get('/tools')
 async def list_all_tools() -> dict[str, Any]:
     """Retrieve all MCP servers/tools, built-in tools, skills, skill graphs,
@@ -1987,18 +2181,16 @@ async def list_all_tools() -> dict[str, Any]:
     except Exception:
         engine = None
 
-    catalog = await _read_fleet_catalog('servers', 'discoveries', 'skills', 'prompts')
-    if catalog is None:
-        # Total failure (denied authority / catalog engine unavailable,
-        # before any kind-specific read was even attempted): normalize to
-        # "every requested kind failed" so the per-kind logic below is the
-        # ONLY code path -- no separate whole-catalog branch to keep in sync.
-        catalog = {
-            'servers': None,
-            'discoveries': None,
-            'skills': None,
-            'prompts': None,
-        }
+    # FIX LANE Priority 3: TTL + single-flight cached, not a fresh engine
+    # read on every call -- see `_read_fleet_catalog_cached`'s docstring.
+    # Unlike `_read_fleet_catalog`, this never returns `None` for the whole
+    # mapping (a total-authority-denial failure already surfaces as every
+    # requested kind independently `None`), so the per-kind logic below is
+    # the ONLY code path with no separate whole-catalog branch to keep in
+    # sync.
+    catalog = await _read_fleet_catalog_cached(
+        'servers', 'discoveries', 'skills', 'prompts'
+    )
 
     server_rows = catalog.get('servers')
     discovery_rows = catalog.get('discoveries')
@@ -2012,16 +2204,61 @@ async def list_all_tools() -> dict[str, Any]:
     # instead of the previous up-to-5 SEQUENTIAL round trips, which measured
     # live as the critical-path long pole for data the dashboard tile never
     # even reads.
+    #
+    # FIX LANE Priority 4: `_batch_toggle_states` now takes the EXACT item
+    # ids being rendered (`WHERE p.id IN $ids`, not a `STARTS WITH $prefix`
+    # scan -- the deployed engine does not parse `STARTS WITH` with a
+    # bound-parameter operand at all, failing 5/5). That means the id lists
+    # below must be computed BEFORE the toggle batch runs, from the same
+    # catalog rows the entry-building loops further down classify again --
+    # a small, deliberate duplication of the classification logic (skill
+    # `skill_type` bucketing, server-name validation) rather than a larger
+    # restructuring that would move toggle reads after entry-building.
     tools_dir = get_agent_utilities_dir() / 'tools'
     builtin_dir_present = tools_dir.exists() and tools_dir.is_dir()
-    toggle_types_needed: list[str] = []
+
+    mcp_server_ids = [
+        name
+        for row in (server_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        if isinstance(name := row.get('name'), str)
+        and name
+        and _SAFE_DELEGATION_TOKEN.fullmatch(name)
+    ]
+    builtin_tool_ids = (
+        [f.stem for f in tools_dir.glob('*.py') if not f.name.startswith('_')][
+            :_MAX_EXTERNAL_COLLECTION_ITEMS
+        ]
+        if builtin_dir_present
+        else []
+    )
+    # Same three-way `skill_type` bucketing the entry-building loop (below)
+    # uses -- an unclassified row (the `else` branch there) still reads the
+    # `skill` toggle namespace, so its id belongs in `skill_ids` too.
+    skill_ids: list[str] = []
+    skill_workflow_ids: list[str] = []
+    skill_graph_ids: list[str] = []
+    for row in (skill_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+        skill_id = row.get('id')
+        if not isinstance(skill_id, str) or not skill_id:
+            continue
+        skill_type = str(row.get('skill_type') or '').strip().lower()
+        if skill_type == 'workflow':
+            skill_workflow_ids.append(skill_id)
+        elif skill_type == 'graph':
+            skill_graph_ids.append(skill_id)
+        else:
+            skill_ids.append(skill_id)
+
+    item_types_and_ids: dict[str, list[str]] = {}
     if server_rows is not None:
-        toggle_types_needed.append('mcp_server')
+        item_types_and_ids['mcp_server'] = mcp_server_ids
     if builtin_dir_present:
-        toggle_types_needed.append('builtin_tool')
+        item_types_and_ids['builtin_tool'] = builtin_tool_ids
     if skill_rows:
-        toggle_types_needed.extend(('skill', 'skill_workflow', 'skill_graph'))
-    toggle_states = await _batch_toggle_states_many(engine, toggle_types_needed)
+        item_types_and_ids['skill'] = skill_ids
+        item_types_and_ids['skill_workflow'] = skill_workflow_ids
+        item_types_and_ids['skill_graph'] = skill_graph_ids
+    toggle_states = await _batch_toggle_states_many(engine, item_types_and_ids)
     mcp_server_toggles, _mcp_server_toggles_ok = toggle_states.get(
         'mcp_server', ({}, True)
     )
@@ -2030,6 +2267,18 @@ async def list_all_tools() -> dict[str, Any]:
     skill_workflow_toggles, _ = toggle_states.get('skill_workflow', ({}, True))
     skill_graph_toggles, _ = toggle_states.get('skill_graph', ({}, True))
     toggles_ok = all(ok for _states, ok in toggle_states.values())
+    # FIX LANE Priority 4 (item 3): `ok` is already threaded per item_type,
+    # but every per-ITEM fallback in the entry-building loops below is a
+    # bare `.get(id, True)` -- during a real toggle-read outage that still
+    # renders every item "enabled", indistinguishable from a genuine
+    # preference. `degraded_item_types` is additive (never removes/retypes
+    # a field) and names exactly which item_type(s)' enabled/disabled state
+    # below is not to be trusted, so a caller can render a degraded state
+    # per item instead of a silently-wrong "enabled". Frontend rendering of
+    # this is out of scope for this file -- see this lane's report.
+    degraded_item_types = sorted(
+        item_type for item_type, (_states, ok) in toggle_states.items() if not ok
+    )
     toggle_status = {
         'source': 'sql_catalog',
         'error': (
@@ -2041,6 +2290,7 @@ async def list_all_tools() -> dict[str, Any]:
                 'real persisted preference.'
             )
         ),
+        'degraded_item_types': degraded_item_types,
     }
 
     # 1. MCP servers -- desired registration (`servers`) joined with the most
@@ -2127,6 +2377,14 @@ async def list_all_tools() -> dict[str, Any]:
             'error': mcp_error,
             'last_synced_at': last_synced_at,
         }
+
+    # Free early-invalidation signal for the fleet-catalog cache (FIX LANE
+    # Priority 3): `last_synced_at` is already computed above from
+    # `discoveries` rows -- no extra engine call. A no-op when `None`/
+    # unchanged; when the hourly sync job has advanced it, the cache is
+    # cleared so the NEXT request refetches instead of serving a
+    # now-superseded snapshot for the rest of the TTL.
+    note_fleet_catalog_sync_time(last_synced_at)
 
     # MCP prompts -- the fleet catalog's own `mcp_prompts` table, never
     # surfaced anywhere in this app before; already tenant-scoped and
@@ -3228,6 +3486,230 @@ async def _distinct_graph_labels(engine: Any) -> list[str]:
     return labels
 
 
+# ---------------------------------------------------------------------------
+# Commons/tenant union read (FIX LANE Priority 1)
+#
+# Measured, same pod, same moment: a webui session sees a strict SUBSET of
+# the knowledge graph an MCP caller sees (25,116 vs 56,853 total nodes; 0 vs
+# 2,941 `:Tool`; 58 vs 361 `:CallableResource`). This is BY DESIGN --
+# `agent_utilities.knowledge_graph.core.tenant_sharing`'s module docstring:
+# "the default graph is the COMMONS. It is readable across orgs" -- and the
+# fleet/tool catalog is exactly `tenant_sharing.COMMONS_SHAREABLE_NODE_TYPES`.
+# The bug is that `tenant_sharing.accessible_graphs()`/`read_union()` -- the
+# union-read primitive built for exactly this -- had ZERO callers anywhere
+# in the codebase. This section wires it into this file's Cypher/SQL graph
+# reads, in place of a bare `session.graph`-only read.
+#
+# `agent_webui.graph_identity.frontend_accessible_graphs(actor)` is the
+# sanctioned seam for this (branch `fix/tenant-graph-scoping`, commit
+# `77458f9`) -- it re-exports `tenant_sharing.accessible_graphs()` verbatim.
+# That branch is not yet merged into this lane's base as of this change, so
+# `_accessible_graphs()` below imports the underlying `tenant_sharing`
+# primitive directly and falls back to `.graph_identity`'s seam once it
+# exists (import success is checked at call time, not cached, so merging
+# that branch later needs no further change here). NOTE FOR THE MERGE OWNER:
+# once `fix/tenant-graph-scoping` lands on this lane's base, the `except
+# ImportError` branch below becomes dead and may be deleted.
+#
+# READS ONLY. `session.graph` (the tenant shard) remains the sole write
+# target everywhere in this file -- nothing here is reachable from a write
+# path. Widening a write target to the union would be a tenant data leak;
+# the parallel `graph_identity` lane explicitly rejected that and pinned an
+# equivalence test for it (`test_graph_identity.py`).
+def _accessible_graphs(actor: Any) -> list[str]:
+    """Ordered, de-duplicated graphs `actor` may READ (tenant shard first,
+    ancestors, commons last) -- see the module-level note above for why this
+    resolves the seam dynamically (`getattr`, not a static `from .graph_identity
+    import frontend_accessible_graphs`) so this file type-checks cleanly both
+    before AND after `fix/tenant-graph-scoping` merges that name in -- a static
+    import of a not-yet-existing name would need a `# type: ignore` this repo's
+    own rules forbid.
+    """
+    from . import graph_identity
+
+    resolve = getattr(graph_identity, 'frontend_accessible_graphs', None)
+    if resolve is not None:
+        return resolve(actor)
+    from agent_utilities.knowledge_graph.core.tenant_sharing import (
+        accessible_graphs,
+    )
+
+    return accessible_graphs(actor)
+
+
+def _graph_union_executor(engine: Any) -> Any:
+    """`tenant_sharing.read_union` executor: run `cypher` against ONE named
+    graph by temporarily retargeting the ambient `GraphSession` to it.
+
+    `GraphSession.with_graph()` + the session module's own `use_session()`
+    context manager is the documented, audited way to scope one block of
+    work to a specific verified session (`session.py::use_session`
+    docstring). This never fabricates authority -- it is the SAME actor's
+    session, just pointed at another graph that actor's own
+    `accessible_graphs()` already says it may read.
+    """
+    from agent_utilities.knowledge_graph.core.session import (
+        current_session,
+        use_session,
+    )
+
+    def _execute(
+        graph_name: str, cypher: str, params: dict[str, Any] | None
+    ) -> list[dict[str, Any]]:
+        session = current_session()
+        if session is None or graph_name == session.graph:
+            return list(engine.query_cypher(cypher, params) or [])
+        with use_session(session.with_graph(graph_name)):
+            return list(engine.query_cypher(cypher, params) or [])
+
+    return _execute
+
+
+async def _read_union_cypher(
+    engine: Any,
+    cypher: str,
+    params: dict[str, Any] | None,
+    *,
+    deadline: float,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Run a row-shaped Cypher read across every graph this actor may read,
+    de-duplicated by node id (`tenant_sharing.read_union` -- the actor's own
+    tenant graph wins on a duplicate id; commons rows fill in the rest).
+
+    Falls back to exactly today's single-graph (`session.graph`-only) read
+    when there is no verified ambient `GraphSession` -- this NEVER widens
+    authority beyond what the SAME caller could already reach; it degrades
+    to "as narrow as before" rather than raising or fabricating a union.
+
+    Returns `(rows, source_graphs)` -- `source_graphs` is the observability
+    half of this fix (see the module note above): which physical graph(s) a
+    response actually drew from, so a narrowed view can never again look
+    identical to a complete one.
+    """
+    from agent_utilities.knowledge_graph.core.session import current_session
+    from agent_utilities.knowledge_graph.core.tenant_sharing import read_union
+
+    def _run() -> tuple[list[dict[str, Any]], list[str]]:
+        session = current_session()
+        if session is None:
+            return list(engine.query_cypher(cypher, params) or []), []
+        actor = session.actor
+        graphs = _accessible_graphs(actor)
+        rows = read_union(cypher, params, _graph_union_executor(engine), actor)
+        return rows, graphs
+
+    return await _invoke_governed_helper(_run, deadline=deadline)
+
+
+def _rows_per_accessible_graph(
+    engine_call: Any,
+) -> list[tuple[str, Any]] | None:
+    """Invoke `engine_call(graph_name)` once per graph the ambient actor may
+    read, each under that graph's own scoped `GraphSession` (same mechanism
+    `_graph_union_executor` uses). Returns `None` when there is no ambient
+    verified session -- callers fall back to a single unscoped call.
+
+    Unlike `_read_union_cypher`, this does not de-duplicate by row id: it is
+    for AGGREGATE reads (counts, `GROUP BY`), where a merged-by-id union is
+    meaningless (an aggregate row carries no per-row node id) and would be
+    wrong even if forced -- physically partitioned graphs (GOC-61) never
+    share a node id, so the correct merge of independent per-graph
+    aggregates is for the CALLER to sum/merge them, not de-dup them.
+    """
+    from agent_utilities.knowledge_graph.core.session import (
+        current_session,
+        use_session,
+    )
+
+    session = current_session()
+    if session is None:
+        return None
+    graphs = _accessible_graphs(session.actor)
+    per_graph: list[tuple[str, Any]] = []
+    for graph_name in graphs:
+        if graph_name == session.graph:
+            per_graph.append((graph_name, engine_call(graph_name)))
+        else:
+            with use_session(session.with_graph(graph_name)):
+                per_graph.append((graph_name, engine_call(graph_name)))
+    return per_graph
+
+
+async def _read_union_scalar_sum(
+    engine: Any,
+    cypher: str,
+    params: dict[str, Any] | None,
+    *,
+    field: str,
+    deadline: float,
+) -> tuple[int, list[str]]:
+    """Sum a scalar Cypher aggregate (e.g. `count(n)`) across every graph
+    this actor may read. See `_rows_per_accessible_graph` for why a sum,
+    not `read_union`'s dedup, is the correct merge here."""
+
+    def _run() -> tuple[int, list[str]]:
+        per_graph = _rows_per_accessible_graph(
+            lambda _g: engine.query_cypher(cypher, params) or []
+        )
+        if per_graph is None:
+            rows = engine.query_cypher(cypher, params) or []
+            total = int(rows[0].get(field, 0)) if rows else 0
+            return total, []
+        total = 0
+        graphs: list[str] = []
+        for graph_name, rows in per_graph:
+            graphs.append(graph_name)
+            if rows:
+                value = rows[0].get(field, 0)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    total += value
+        return total, graphs
+
+    return await _invoke_governed_helper(_run, deadline=deadline)
+
+
+async def _read_union_sql_group_counts(
+    engine: Any,
+    statement: str,
+    *,
+    key: str,
+    count_field: str,
+    deadline: float,
+) -> tuple[dict[str, int], list[str]]:
+    """Run a `GROUP BY` SQL aggregate (`engine.graph_compute.sql_exec`)
+    against every graph this actor may read and merge by SUMMING counts per
+    `key`. The `nodes`/`edges` SQL tables are the SAME RLS-filtered graph
+    snapshot Cypher reads (`fleet_catalog_tables.py`: "only the nodes/edges
+    graph snapshot is RLS-filtered via IsolationLayer::filter_view"), scoped
+    by the SAME ambient session/graph `_read_union_cypher` uses.
+    """
+
+    def _run() -> tuple[dict[str, int], list[str]]:
+        per_graph = _rows_per_accessible_graph(
+            lambda _g: engine.graph_compute.sql_exec(statement) or []
+        )
+        if per_graph is None:
+            per_graph = [('', engine.graph_compute.sql_exec(statement) or [])]
+            graphs: list[str] = []
+        else:
+            graphs = [graph_name for graph_name, _rows in per_graph]
+        merged: dict[str, int] = {}
+        for _graph_name, rows in per_graph:
+            for row in rows or []:
+                if not isinstance(row, dict):
+                    continue
+                k = row.get(key)
+                n = row.get(count_field)
+                if not isinstance(k, str) or not k:
+                    continue
+                if not isinstance(n, int) or isinstance(n, bool):
+                    continue
+                merged[k] = merged.get(k, 0) + n
+        return merged, graphs
+
+    return await _invoke_governed_helper(_run, deadline=deadline)
+
+
 @router.get('/graph/nodes')
 async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
     """Query Knowledge Graph for nodes of a specific type or all nodes.
@@ -3487,6 +3969,13 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
         ) from e
 
 
+# Bounds the `by_type` breakdown's `GROUP BY` result (FIX LANE Priority 2).
+# The node-type/label vocabulary is a finite, curated ontology -- 50 is
+# generous headroom over any realistic cardinality while still bounding a
+# pathological/malformed `type` property fan-out.
+_GRAPH_STATS_BY_TYPE_LIMIT = 50
+
+
 @router.get('/graph/stats')
 async def get_graph_stats() -> dict[str, Any]:
     """Get statistics about the Knowledge Graph.
@@ -3524,16 +4013,22 @@ async def get_graph_stats() -> dict[str, Any]:
                 'available': False,
             }
 
-        # Get total counts (Test expects these first)
-        total_nodes_result = await _invoke_governed_helper(
-            engine.backend.execute,
+        # Get total counts (Test expects these first). FIX LANE Priority 1:
+        # summed across every graph this actor may read (tenant shard +
+        # commons/ancestors -- `_read_union_scalar_sum`), not `session.graph`
+        # alone, so the fleet/tool catalog (written to commons by design,
+        # `tenant_sharing.COMMONS_SHAREABLE_NODE_TYPES`) is actually counted
+        # instead of silently invisible to this endpoint.
+        total_nodes, node_source_graphs = await _read_union_scalar_sum(
+            engine,
             'MATCH (n) RETURN count(n) as count',
+            None,
+            field='count',
             deadline=10.0,
         )
-        total_nodes = total_nodes_result[0].get('count', 0) if total_nodes_result else 0
 
-        total_rels_result = await _invoke_governed_helper(
-            engine.backend.execute,
+        total_relationships, rel_source_graphs = await _read_union_scalar_sum(
+            engine,
             # BUG-262: the engine's native Cypher parser rejects a relationship
             # pattern with BOTH endpoints anonymous (`()-[r]->()`) -- it raised
             # a masked PermissionError that this function's outer `except`
@@ -3545,28 +4040,54 @@ async def get_graph_stats() -> dict[str, Any]:
             # error_class=PermissionError/failing_layer=knowledge_graph; the
             # named form returns the correct count (11,641 edges).
             'MATCH (a)-[r]->(b) RETURN count(r) as count',
+            None,
+            field='count',
             deadline=10.0,
         )
-        total_relationships = (
-            total_rels_result[0].get('count', 0) if total_rels_result else 0
+
+        # Get node counts by type. FIX LANE Priority 2: a real `GROUP BY`
+        # aggregate over the `nodes` SQL table -- the previous version was a
+        # hardcoded two-item allowlist (`['Memory', 'Article']`) that could
+        # structurally never report any other type, and an `if count > 0`
+        # that discarded genuine zeros too. `type` is a node PROPERTY here,
+        # not a `label` column (filtering on `label` silently returns 0 rows
+        # instead of erroring), and `labels(n)` is unsupported by this
+        # engine -- both verified live. This also can't go through this
+        # file's own `/graph/query` route (`_validate_read_only_cypher`
+        # rejects `SELECT` outright); `engine.graph_compute.sql_exec` is
+        # called directly, same as the production precedent in
+        # `fleet_catalog_tables.py`. Scoped by the SAME union as the totals
+        # above (`_read_union_sql_group_counts`) so the breakdown sums
+        # against the same universe `total_nodes` counts.
+        try:
+            type_counts, type_source_graphs = await _read_union_sql_group_counts(
+                engine,
+                f'SELECT type, COUNT(*) AS n FROM nodes GROUP BY type '
+                f'ORDER BY n DESC LIMIT {_GRAPH_STATS_BY_TYPE_LIMIT}',
+                key='type',
+                count_field='n',
+                deadline=10.0,
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            # A `by_type` failure must not take down the whole stats
+            # response -- mirrors the previous per-node-type loop's own
+            # narrower degrade, just for the one aggregate call now doing
+            # that loop's job.
+            _log_failure('api_extension', e, level=logging.DEBUG)
+            type_counts, type_source_graphs = {}, []
+
+        # Observability requirement (FIX LANE Priority 1): which physical
+        # graph(s) this response actually drew from, additive so a narrowed
+        # view can never again look identical to a complete one without
+        # anyone noticing. Non-strict frontend zod schemas (`graphStatsSchema`
+        # et al.) tolerate an unrecognized field -- see this lane's report
+        # for whether a frontend change is wanted to surface it.
+        source_graphs = sorted(
+            set(node_source_graphs) | set(rel_source_graphs) | set(type_source_graphs)
         )
 
-        # Get node counts by type (Test expects Memory then Article)
-        type_counts = {}
-        for node_type in ['Memory', 'Article']:
-            try:
-                result = await _invoke_governed_helper(
-                    engine.backend.execute,
-                    f'MATCH (n:{node_type}) RETURN count(n) as count',
-                    deadline=10.0,
-                )
-                count = result[0].get('count', 0) if result else 0
-                if count > 0:
-                    type_counts[node_type] = count
-            except HTTPException:
-                raise
-            except Exception as e:
-                _log_failure('api_extension', e, level=logging.DEBUG)
         return {
             'total_nodes': total_nodes,
             'total_relationships': total_relationships,
@@ -3577,6 +4098,7 @@ async def get_graph_stats() -> dict[str, Any]:
             # unavailable engine render identically to a genuinely empty
             # graph) rather than inferring "available" from its absence.
             'available': True,
+            'source_graphs': source_graphs,
         }
     except HTTPException:
         raise
@@ -5930,7 +6452,6 @@ async def toggle_graph_tool(tool_id: str, request: Request) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────
 
 import sqlite3
-import time
 import uuid
 
 from agent_utilities.models.goal import GoalIteration, GoalSpec, GoalStatus

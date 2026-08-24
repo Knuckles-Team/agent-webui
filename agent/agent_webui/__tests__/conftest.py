@@ -34,3 +34,26 @@ if _SHARED_FIXTURES_SRC.is_file() and _MODULE_NAME not in sys.modules:
         _spec.loader.exec_module(_mod)
 
 pytest_plugins = [_MODULE_NAME]
+
+
+import pytest as _pytest
+
+
+@_pytest.fixture(autouse=True)
+def _reset_fleet_catalog_cache():
+    """Clear the module-level fleet-catalog TTL cache before every test.
+
+    `api_extensions._fleet_catalog_cache`/`_fleet_catalog_last_synced_seen`
+    (FIX LANE Priority 3) are process-lifetime module state, not per-request
+    -- without this, a test earlier in the same pytest session that
+    populates the cache for a `kind` makes a LATER test's patch of
+    `_read_fleet_catalog`/`registry_api` silently never take effect (a cache
+    hit skips the engine read entirely), which would look like the patched
+    test is exercising the read path when it is actually reading stale data
+    left over from a different test.
+    """
+    from agent_webui import api_extensions
+
+    api_extensions.reset_fleet_catalog_cache()
+    yield
+    api_extensions.reset_fleet_catalog_cache()
