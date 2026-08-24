@@ -1742,12 +1742,14 @@ async def set_toggle_state(
 _FLEET_CATALOG_DEADLINE_SECONDS = 10.0
 
 
-# `_MAX_LIMIT` (100) is the PUBLIC per-request paging cap for /api/registry/*.
-# This internal read wants the whole catalog for one view, so paging at 100 turns
-# ~2500 tools into ~26 sequential engine round trips (measured: 21s for
-# /api/enhanced/tools). Page in bulk instead -- still keyset-paginated and still
-# bounded by the engine-side `_MAX_CATALOG_ROWS` ceiling, just far fewer trips.
-_FLEET_CATALOG_PAGE_ROWS = 1000
+# `_authorized_page` clamps every request to `_MAX_LIMIT` (100) internally
+# (`fetch = min(min(limit, _MAX_LIMIT) + 1, ...)`), so asking for more per page
+# does NOT get more -- it just makes `len(page) < requested` true on the first
+# page and silently truncates the read. Page at exactly the cap and stop on the
+# CALLER's ceiling instead: every consumer of this read renders through
+# `_public_external_result`, which caps at `_MAX_EXTERNAL_COLLECTION_ITEMS`, so
+# draining all ~2500 rows only to discard all but 256 was ~26 sequential engine
+# round trips for nothing (measured: 21s for /api/enhanced/tools).
 
 
 async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | None:
@@ -1775,6 +1777,7 @@ async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | 
     """
     from agent_utilities.gateway.registry_api import (
         _KIND_SPECS,
+        _MAX_LIMIT,
         CatalogUnavailable,
         _authorized_page,
         _get_catalog_engine,
@@ -1813,14 +1816,17 @@ async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | 
                     grant_digests=grant_digests,
                     query='',
                     after=after,
-                    limit=_FLEET_CATALOG_PAGE_ROWS,
+                    limit=_MAX_LIMIT,
                     engine=engine,
                     deadline=_FLEET_CATALOG_DEADLINE_SECONDS,
                 )
                 if not page:
                     break
                 rows.extend(page)
-                if len(page) < _FLEET_CATALOG_PAGE_ROWS:
+                if (
+                    len(page) < _MAX_LIMIT
+                    or len(rows) >= _MAX_EXTERNAL_COLLECTION_ITEMS
+                ):
                     break
                 after = _row_key(spec, page[-1])
             result[kind] = [
@@ -3033,7 +3039,7 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
             )
         else:
             rows = []
-            for label in (*await _distinct_graph_labels(engine), ''):
+            for label in await _distinct_graph_labels(engine):
                 remaining = budget - len(rows)
                 if remaining <= 0:
                     break
@@ -3041,6 +3047,22 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                     nodes_by_label, label, remaining, deadline=10.0
                 )
                 rows.extend(page or [])
+            # The genuinely-unlabeled bucket (`label=''`) is best-effort: the
+            # DEPLOYED engine build rejects an empty label argument outright
+            # (ValueError), even though `GraphCore::get_nodes_by_label_page`
+            # in source handles it via `collect_unlabeled`. Nodes with no
+            # label at all are a rounding error next to the labeled graph, so
+            # a build that refuses the query must not fail the whole canvas.
+            remaining = budget - len(rows)
+            if remaining > 0:
+                try:
+                    page = await _invoke_governed_helper(
+                        nodes_by_label, '', remaining, deadline=10.0
+                    )
+                except Exception:
+                    logger.debug('engine rejects empty-label read; skipping unlabeled')
+                else:
+                    rows.extend(page or [])
         nodes = []
         for row in rows or []:
             if not isinstance(row, (tuple, list)) or len(row) != 2:
