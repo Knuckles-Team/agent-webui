@@ -3539,7 +3539,27 @@ def _accessible_graphs(actor: Any) -> list[str]:
 
 def _graph_union_executor(engine: Any) -> Any:
     """`tenant_sharing.read_union` executor: run `cypher` against ONE named
-    graph by temporarily retargeting the ambient `GraphSession` to it.
+    graph by (a) obtaining a backend/view actually BOUND to that graph and
+    (b) retargeting the ambient `GraphSession` to match it.
+
+    FIX (root cause, verified live in-pod): `engine`/`engine.backend` here is
+    itself already a graph-scoped view pinned to the CALLER's original graph
+    (`EpistemicGraphBackend.graph_name` / `_SessionRoutedAsyncClient
+    ._fixed_graph`, `graph_compute.py::_send_routed`). Retargeting only the
+    *session* via `with_graph()`+`use_session()` while continuing to call
+    methods on that SAME pinned `engine` reproduces exactly the masked
+    failure this lane was asked to fix: `PermissionError: "A graph-scoped
+    view cannot retarget the verified GraphSession"` (session.graph no
+    longer equals the view's fixed graph). The sanctioned production seam
+    for a *different* graph is `IntelligenceGraphEngine.for_graph(graph_name)`
+    (`knowledge_graph/core/engine.py`) -- "a graph-scoped facade over the one
+    process client... safe for unified read fan-out", the exact "control
+    authority already bound to its own graph" shape used by
+    `core/schedule_engine.py::_control_backend`/`_control_session_scope` and
+    `knowledge_graph/pipeline/__init__.py`'s `RegistryPipeline`. Both moves
+    -- a NEW view bound to `graph_name`, AND the session retargeted onto that
+    same `graph_name` -- must happen together; retargeting either one alone
+    reproduces the mismatch guard (from the opposite side).
 
     `GraphSession.with_graph()` + the session module's own `use_session()`
     context manager is the documented, audited way to scope one block of
@@ -3559,8 +3579,9 @@ def _graph_union_executor(engine: Any) -> Any:
         session = current_session()
         if session is None or graph_name == session.graph:
             return list(engine.query_cypher(cypher, params) or [])
+        scoped_engine = engine.for_graph(graph_name)
         with use_session(session.with_graph(graph_name)):
-            return list(engine.query_cypher(cypher, params) or [])
+            return list(scoped_engine.query_cypher(cypher, params) or [])
 
     return _execute
 
@@ -3602,12 +3623,15 @@ async def _read_union_cypher(
 
 
 def _rows_per_accessible_graph(
+    engine: Any,
     engine_call: Any,
-) -> list[tuple[str, Any]] | None:
-    """Invoke `engine_call(graph_name)` once per graph the ambient actor may
-    read, each under that graph's own scoped `GraphSession` (same mechanism
-    `_graph_union_executor` uses). Returns `None` when there is no ambient
-    verified session -- callers fall back to a single unscoped call.
+) -> tuple[list[tuple[str, Any]], list[str]] | None:
+    """Invoke `engine_call(scoped_engine)` once per graph the ambient actor
+    may read, each against a backend/view actually BOUND to that graph
+    (`engine.for_graph(graph_name)` -- see `_graph_union_executor`'s
+    docstring for why retargeting the session alone is not enough) under
+    that graph's own scoped `GraphSession`. Returns `None` when there is no
+    ambient verified session -- callers fall back to a single unscoped call.
 
     Unlike `_read_union_cypher`, this does not de-duplicate by row id: it is
     for AGGREGATE reads (counts, `GROUP BY`), where a merged-by-id union is
@@ -3615,6 +3639,18 @@ def _rows_per_accessible_graph(
     wrong even if forced -- physically partitioned graphs (GOC-61) never
     share a node id, so the correct merge of independent per-graph
     aggregates is for the CALLER to sum/merge them, not de-dup them.
+
+    FAIL-SOFT (matches `tenant_sharing.read_union`'s own documented
+    contract, `core/tenant_sharing.py:457`: "A per-graph failure is logged
+    and skipped -- a missing commons graph degrades to org-only, never an
+    error"). A single graph's read failing (offline shard, mid-rebuild
+    `PARTIAL_MATERIALIZATION`, a column this graph's projection doesn't
+    carry, ...) must never 503 the whole caller -- it previously did,
+    because this loop had no per-graph exception boundary at all. Returns
+    `(succeeded, degraded)`: `succeeded` is `(graph_name, result)` for every
+    graph that answered; `degraded` is the `graph_name`s that were skipped,
+    so a caller can report a partial read as partial (never silently as
+    complete -- the sibling half of this same fix).
     """
     from agent_utilities.knowledge_graph.core.session import (
         current_session,
@@ -3625,14 +3661,22 @@ def _rows_per_accessible_graph(
     if session is None:
         return None
     graphs = _accessible_graphs(session.actor)
-    per_graph: list[tuple[str, Any]] = []
+    succeeded: list[tuple[str, Any]] = []
+    degraded: list[str] = []
     for graph_name in graphs:
-        if graph_name == session.graph:
-            per_graph.append((graph_name, engine_call(graph_name)))
-        else:
-            with use_session(session.with_graph(graph_name)):
-                per_graph.append((graph_name, engine_call(graph_name)))
-    return per_graph
+        try:
+            if graph_name == session.graph:
+                result = engine_call(engine)
+            else:
+                scoped_engine = engine.for_graph(graph_name)
+                with use_session(session.with_graph(graph_name)):
+                    result = engine_call(scoped_engine)
+        except Exception as exc:  # noqa: BLE001 — one graph down ≠ whole read down (mirrors tenant_sharing.read_union's own per-graph guard)
+            _log_failure('read_union.per_graph', exc, level=logging.DEBUG)
+            degraded.append(graph_name)
+            continue
+        succeeded.append((graph_name, result))
+    return succeeded, degraded
 
 
 async def _read_union_scalar_sum(
@@ -3642,19 +3686,27 @@ async def _read_union_scalar_sum(
     *,
     field: str,
     deadline: float,
-) -> tuple[int, list[str]]:
+) -> tuple[int, list[str], list[str]]:
     """Sum a scalar Cypher aggregate (e.g. `count(n)`) across every graph
     this actor may read. See `_rows_per_accessible_graph` for why a sum,
-    not `read_union`'s dedup, is the correct merge here."""
+    not `read_union`'s dedup, is the correct merge here.
 
-    def _run() -> tuple[int, list[str]]:
-        per_graph = _rows_per_accessible_graph(
-            lambda _g: engine.query_cypher(cypher, params) or []
+    Returns `(total, source_graphs, degraded_graphs)` -- `source_graphs` is
+    only the graphs that actually contributed to `total`; `degraded_graphs`
+    is any accessible graph whose read failed and was skipped
+    (`_rows_per_accessible_graph`'s fail-soft contract), so a partial sum is
+    never reported identically to a complete one.
+    """
+
+    def _run() -> tuple[int, list[str], list[str]]:
+        result = _rows_per_accessible_graph(
+            engine, lambda scoped: scoped.query_cypher(cypher, params) or []
         )
-        if per_graph is None:
+        if result is None:
             rows = engine.query_cypher(cypher, params) or []
             total = int(rows[0].get(field, 0)) if rows else 0
-            return total, []
+            return total, [], []
+        per_graph, degraded = result
         total = 0
         graphs: list[str] = []
         for graph_name, rows in per_graph:
@@ -3663,7 +3715,7 @@ async def _read_union_scalar_sum(
                 value = rows[0].get(field, 0)
                 if isinstance(value, int) and not isinstance(value, bool):
                     total += value
-        return total, graphs
+        return total, graphs, degraded
 
     return await _invoke_governed_helper(_run, deadline=deadline)
 
@@ -3675,23 +3727,45 @@ async def _read_union_sql_group_counts(
     key: str,
     count_field: str,
     deadline: float,
-) -> tuple[dict[str, int], list[str]]:
+) -> tuple[dict[str, int], list[str], list[str]]:
     """Run a `GROUP BY` SQL aggregate (`engine.graph_compute.sql_exec`)
     against every graph this actor may read and merge by SUMMING counts per
     `key`. The `nodes`/`edges` SQL tables are the SAME RLS-filtered graph
     snapshot Cypher reads (`fleet_catalog_tables.py`: "only the nodes/edges
     graph snapshot is RLS-filtered via IsolationLayer::filter_view"), scoped
     by the SAME ambient session/graph `_read_union_cypher` uses.
+
+    Returns `(merged, source_graphs, degraded_graphs)` -- see
+    `_read_union_scalar_sum` for the same `degraded_graphs` contract.
+
+    KNOWN GAP (found live in-pod while verifying this fix lane, NOT one of
+    the three defects this lane was scoped to; out of `agent_webui`'s
+    ownership -- flagged for routing against `agent_utilities`, not fixed
+    here): `engine.graph_compute.sql_exec` does not appear to honor the
+    per-request/view `graph` target the way `query_cypher` does. Verified
+    live: `engine.for_graph("__commons__")` correctly makes `query_cypher`
+    return DIFFERENT results from the caller's own graph (0 vs 25,117 nodes
+    at time of test), but the identically-scoped `.graph_compute.sql_exec`
+    returned the CALLER'S OWN row counts again under the `__commons__`
+    label (verified with textually distinct SQL to rule out a query-text
+    cache). Practical consequence: until the engine/wire-client SQL surface
+    is fixed to route by graph, this function's cross-graph SUM may
+    over-count identical data once for each accessible graph whose SQL
+    surface aliases to the same underlying rows -- a data-quality gap, not
+    a crash; `total_nodes`/`total_relationships` (the Cypher-based
+    `_read_union_scalar_sum` calls in `get_graph_stats`) are unaffected.
     """
 
-    def _run() -> tuple[dict[str, int], list[str]]:
-        per_graph = _rows_per_accessible_graph(
-            lambda _g: engine.graph_compute.sql_exec(statement) or []
+    def _run() -> tuple[dict[str, int], list[str], list[str]]:
+        result = _rows_per_accessible_graph(
+            engine, lambda scoped: scoped.graph_compute.sql_exec(statement) or []
         )
-        if per_graph is None:
+        if result is None:
             per_graph = [('', engine.graph_compute.sql_exec(statement) or [])]
             graphs: list[str] = []
+            degraded: list[str] = []
         else:
+            per_graph, degraded = result
             graphs = [graph_name for graph_name, _rows in per_graph]
         merged: dict[str, int] = {}
         for _graph_name, rows in per_graph:
@@ -3705,7 +3779,7 @@ async def _read_union_sql_group_counts(
                 if not isinstance(n, int) or isinstance(n, bool):
                     continue
                 merged[k] = merged.get(k, 0) + n
-        return merged, graphs
+        return merged, graphs, degraded
 
     return await _invoke_governed_helper(_run, deadline=deadline)
 
@@ -4018,8 +4092,12 @@ async def get_graph_stats() -> dict[str, Any]:
         # commons/ancestors -- `_read_union_scalar_sum`), not `session.graph`
         # alone, so the fleet/tool catalog (written to commons by design,
         # `tenant_sharing.COMMONS_SHAREABLE_NODE_TYPES`) is actually counted
-        # instead of silently invisible to this endpoint.
-        total_nodes, node_source_graphs = await _read_union_scalar_sum(
+        # instead of silently invisible to this endpoint. `_degraded` is
+        # this call's OWN accessible-but-unreadable graphs (e.g. a shard
+        # mid-`PARTIAL_MATERIALIZATION` rebuild) -- merged into the response
+        # below alongside the other two calls' degraded sets so a partial
+        # total is never reported identically to a complete one.
+        total_nodes, node_source_graphs, node_degraded = await _read_union_scalar_sum(
             engine,
             'MATCH (n) RETURN count(n) as count',
             None,
@@ -4027,7 +4105,11 @@ async def get_graph_stats() -> dict[str, Any]:
             deadline=10.0,
         )
 
-        total_relationships, rel_source_graphs = await _read_union_scalar_sum(
+        (
+            total_relationships,
+            rel_source_graphs,
+            rel_degraded,
+        ) = await _read_union_scalar_sum(
             engine,
             # BUG-262: the engine's native Cypher parser rejects a relationship
             # pattern with BOTH endpoints anonymous (`()-[r]->()`) -- it raised
@@ -4049,22 +4131,48 @@ async def get_graph_stats() -> dict[str, Any]:
         # aggregate over the `nodes` SQL table -- the previous version was a
         # hardcoded two-item allowlist (`['Memory', 'Article']`) that could
         # structurally never report any other type, and an `if count > 0`
-        # that discarded genuine zeros too. `type` is a node PROPERTY here,
-        # not a `label` column (filtering on `label` silently returns 0 rows
-        # instead of erroring), and `labels(n)` is unsupported by this
-        # engine -- both verified live. This also can't go through this
-        # file's own `/graph/query` route (`_validate_read_only_cypher`
+        # that discarded genuine zeros too.
+        #
+        # FIX (root cause, verified live in-pod): the column is `node_type`,
+        # not `type` -- `SELECT type, ... FROM nodes` fails outright
+        # ("Schema error: No field named type"; the `nodes` SQL projection
+        # has no `type` column at all). The engine stores a node's class
+        # under exactly ONE canonical property,
+        # `models.knowledge_graph.GRAPH_NODE_TYPE_PROPERTY = "node_type"`
+        # ("Registry models... carry the node-class discriminator as `type`
+        # ...however[,] a raw `model_dump()` can never be handed to a graph
+        # write -- it always carries the retired spelling" --
+        # `RegistryNode.to_graph_properties()` is the one place that
+        # translates `type` -> `node_type` on write). The wide `nodes` table
+        # also carries an UNRELATED `kind` column -- verified live it holds
+        # values like `engine_latency`/`ingest_task`/`installed-skill-
+        # provider` (RuntimeSignal/WorkItem sub-classification), not the
+        # node's class -- and querying `kind` on `:Tool` data returns
+        # nothing resembling a type breakdown, while `node_type` reproduces
+        # the exact known label set (`RuntimeSignal`, `WorkItem`, `Concept`,
+        # ..., `NativeTool`, `CallableResource`, ...). `label` silently
+        # returns 0 rows instead of erroring, and `labels(n)` is unsupported
+        # by this engine -- both verified live. This also can't go through
+        # this file's own `/graph/query` route (`_validate_read_only_cypher`
         # rejects `SELECT` outright); `engine.graph_compute.sql_exec` is
         # called directly, same as the production precedent in
         # `fleet_catalog_tables.py`. Scoped by the SAME union as the totals
         # above (`_read_union_sql_group_counts`) so the breakdown sums
-        # against the same universe `total_nodes` counts.
+        # against the same universe `total_nodes` counts. The column set
+        # DIFFERS per graph (verified live: `__commons__`'s SQL projection
+        # can itself be mid-rebuild) -- `_read_union_sql_group_counts`'s own
+        # per-graph fail-soft handles that; the outer `try/except` here is
+        # only a second-line safety net for a totally unexpected failure.
         try:
-            type_counts, type_source_graphs = await _read_union_sql_group_counts(
+            (
+                type_counts,
+                type_source_graphs,
+                type_degraded,
+            ) = await _read_union_sql_group_counts(
                 engine,
-                f'SELECT type, COUNT(*) AS n FROM nodes GROUP BY type '
+                f'SELECT node_type, COUNT(*) AS n FROM nodes GROUP BY node_type '
                 f'ORDER BY n DESC LIMIT {_GRAPH_STATS_BY_TYPE_LIMIT}',
-                key='type',
+                key='node_type',
                 count_field='n',
                 deadline=10.0,
             )
@@ -4076,7 +4184,7 @@ async def get_graph_stats() -> dict[str, Any]:
             # narrower degrade, just for the one aggregate call now doing
             # that loop's job.
             _log_failure('api_extension', e, level=logging.DEBUG)
-            type_counts, type_source_graphs = {}, []
+            type_counts, type_source_graphs, type_degraded = {}, [], []
 
         # Observability requirement (FIX LANE Priority 1): which physical
         # graph(s) this response actually drew from, additive so a narrowed
@@ -4086,6 +4194,14 @@ async def get_graph_stats() -> dict[str, Any]:
         # for whether a frontend change is wanted to surface it.
         source_graphs = sorted(
             set(node_source_graphs) | set(rel_source_graphs) | set(type_source_graphs)
+        )
+        # FIX LANE Priority 2 (Defect 2): the sibling half of the fail-soft
+        # fix -- every accessible graph that was skipped by ANY of the three
+        # union reads above, so a partial response is never indistinguishable
+        # from a complete one. Non-empty exactly when this response is a
+        # degrade, not a full union.
+        degraded_graphs = sorted(
+            set(node_degraded) | set(rel_degraded) | set(type_degraded)
         )
 
         return {
@@ -4099,6 +4215,8 @@ async def get_graph_stats() -> dict[str, Any]:
             # graph) rather than inferring "available" from its absence.
             'available': True,
             'source_graphs': source_graphs,
+            'degraded_graphs': degraded_graphs,
+            'partial': bool(degraded_graphs),
         }
     except HTTPException:
         raise

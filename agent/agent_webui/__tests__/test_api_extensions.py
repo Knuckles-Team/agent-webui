@@ -111,9 +111,13 @@ class TestGraphStatsEndpoint:
             # `MagicMock(spec=IntelligenceGraphEngine)`'s auto-speccing and
             # must be attached explicitly.
             mock_graph_engine.graph_compute = MagicMock()
+            # FIX LANE Priority 2 (Defect 3): the real `nodes` SQL projection
+            # has no `type` column at all ("Schema error: No field named
+            # type", verified live) -- the node-class discriminator is
+            # `node_type` (`models.knowledge_graph.GRAPH_NODE_TYPE_PROPERTY`).
             mock_graph_engine.graph_compute.sql_exec.return_value = [
-                {'type': 'Memory', 'n': 50},
-                {'type': 'Article', 'n': 30},
+                {'node_type': 'Memory', 'n': 50},
+                {'node_type': 'Article', 'n': 30},
             ]
 
             response = client.get('/api/enhanced/graph/stats')
