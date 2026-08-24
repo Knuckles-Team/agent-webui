@@ -1742,6 +1742,14 @@ async def set_toggle_state(
 _FLEET_CATALOG_DEADLINE_SECONDS = 10.0
 
 
+# `_MAX_LIMIT` (100) is the PUBLIC per-request paging cap for /api/registry/*.
+# This internal read wants the whole catalog for one view, so paging at 100 turns
+# ~2500 tools into ~26 sequential engine round trips (measured: 21s for
+# /api/enhanced/tools). Page in bulk instead -- still keyset-paginated and still
+# bounded by the engine-side `_MAX_CATALOG_ROWS` ceiling, just far fewer trips.
+_FLEET_CATALOG_PAGE_ROWS = 1000
+
+
 async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | None:
     """Read one or more fleet-catalog collections through the SAME
     tenant/principal-scoped, fail-closed authority and shape-validation path
@@ -1767,7 +1775,6 @@ async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | 
     """
     from agent_utilities.gateway.registry_api import (
         _KIND_SPECS,
-        _MAX_LIMIT,
         CatalogUnavailable,
         _authorized_page,
         _get_catalog_engine,
@@ -1806,14 +1813,14 @@ async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | 
                     grant_digests=grant_digests,
                     query='',
                     after=after,
-                    limit=_MAX_LIMIT,
+                    limit=_FLEET_CATALOG_PAGE_ROWS,
                     engine=engine,
                     deadline=_FLEET_CATALOG_DEADLINE_SECONDS,
                 )
                 if not page:
                     break
                 rows.extend(page)
-                if len(page) < _MAX_LIMIT:
+                if len(page) < _FLEET_CATALOG_PAGE_ROWS:
                     break
                 after = _row_key(spec, page[-1])
             result[kind] = [
@@ -2914,6 +2921,33 @@ async def delete_chat(chat_id: str) -> dict[str, Any]:
     return h(chat_id) if h else {'status': 'error'}
 
 
+async def _distinct_graph_labels(engine: Any) -> list[str]:
+    """Every label the engine currently knows, via its own `db.labels()`.
+
+    `db.labels()` is a real Cypher procedure in the engine
+    (`DbLabels` in `crates/eg-query/src/cypher/proc.rs`, backed by
+    `distinct_labels`), so this is one bounded round trip and not a scan
+    this process performs. A build without the procedure yields no labels
+    rather than failing the whole request -- the caller still returns the
+    unlabeled bucket, which is strictly better than a 503.
+    """
+    try:
+        result = await _invoke_governed_helper(
+            engine.backend.execute,
+            'CALL db.labels() YIELD label RETURN label',
+            deadline=10.0,
+        )
+    except Exception:
+        logger.warning('db.labels() unavailable; graph nodes limited to unlabeled')
+        return []
+    labels: list[str] = []
+    for row in result or []:
+        label = row.get('label') if isinstance(row, dict) else None
+        if isinstance(label, str) and label and label not in labels:
+            labels.append(label)
+    return labels
+
+
 @router.get('/graph/nodes')
 async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
     """Query Knowledge Graph for nodes of a specific type or all nodes.
@@ -2964,24 +2998,49 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
         # returning `(id, properties)` per node, already decoded
         # (`GraphComputeEngine.get_nodes_by_label`'s docstring: "bounding
         # the wire payload so a MATCH (n:Label) … LIMIT k never
-        # materializes the whole graph"). An empty label means "no filter"
-        # engine-side (`GraphCore.get_nodes_by_label_page`'s own doc), so
-        # `node_type or ''` also covers the unfiltered case in the SAME
-        # single call -- and, unlike the per-row toggle-state bug fixed
-        # elsewhere in this file, this was never an N-calls problem to
-        # begin with; it stays that way.
+        # materializes the whole graph").
+        #
+        # BUG (this fix): the previous revision passed `node_type or ''`,
+        # believing an empty label meant "no filter" engine-side. It does
+        # not. `GraphCore::get_nodes_by_label_page`
+        # (`crates/eg-core/src/graph.rs`) opens with
+        # `if label.is_empty() { return self.collect_unlabeled(after, limit) }`
+        # -- an empty label selects ONLY nodes carrying no label at all,
+        # which is the opposite of "everything". So the unfiltered canvas
+        # (the default, `node_type=None`) asked for the one bucket the KG
+        # has almost nothing in, and the deployed engine build rejected the
+        # empty argument outright (live log: "get_graph_nodes failed:
+        # error_type=ValueError") -- a 503 on the graph canvas.
+        #
+        # There is no single "all nodes with properties" engine call, so the
+        # unfiltered case enumerates the labels via the engine's own
+        # `db.labels()` procedure (`crates/eg-query/src/cypher/proc.rs`) and
+        # fans out `nodes_by_label` per label under ONE shared item budget,
+        # stopping as soon as the budget is full. The empty-label bucket is
+        # queried last, on purpose and for what it actually means: the
+        # genuinely unlabeled nodes. A `node_type`-filtered request stays
+        # exactly what it was -- a single round trip.
         nodes_by_label = getattr(engine.backend, 'nodes_by_label', None)
         if not callable(nodes_by_label):
             raise HTTPException(
                 status_code=503,
                 detail='Knowledge Graph node query failed',
             )
-        rows = await _invoke_governed_helper(
-            nodes_by_label,
-            node_type or '',
-            _MAX_EXTERNAL_COLLECTION_ITEMS,
-            deadline=10.0,
-        )
+        budget = _MAX_EXTERNAL_COLLECTION_ITEMS
+        if node_type:
+            rows = await _invoke_governed_helper(
+                nodes_by_label, node_type, budget, deadline=10.0
+            )
+        else:
+            rows = []
+            for label in (*await _distinct_graph_labels(engine), ''):
+                remaining = budget - len(rows)
+                if remaining <= 0:
+                    break
+                page = await _invoke_governed_helper(
+                    nodes_by_label, label, remaining, deadline=10.0
+                )
+                rows.extend(page or [])
         nodes = []
         for row in rows or []:
             if not isinstance(row, (tuple, list)) or len(row) != 2:
