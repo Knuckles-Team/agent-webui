@@ -2937,20 +2937,25 @@ async def _distinct_graph_labels(engine: Any) -> list[str]:
     rather than failing the whole request -- the caller still returns the
     unlabeled bucket, which is strictly better than a 503.
     """
+    labels: list[str] = []
     try:
         result = await _invoke_governed_helper(
             engine.backend.execute,
             'CALL db.labels() YIELD label RETURN label',
             deadline=10.0,
         )
-    except Exception:
-        logger.warning('db.labels() unavailable; graph nodes limited to unlabeled')
+        # Materializing the result stays INSIDE the try. `execute` can hand
+        # back a lazy cursor, so the engine-side failure surfaces on the first
+        # iteration rather than from the call itself -- with the loop outside,
+        # that ValueError escaped the handler and 503'd the whole canvas even
+        # though this helper is documented to degrade instead.
+        for row in result or []:
+            label = row.get('label') if isinstance(row, dict) else None
+            if isinstance(label, str) and label and label not in labels:
+                labels.append(label)
+    except Exception as labels_error:
+        _log_failure('get_graph_nodes.db_labels', labels_error, level=logging.WARNING)
         return []
-    labels: list[str] = []
-    for row in result or []:
-        label = row.get('label') if isinstance(row, dict) else None
-        if isinstance(label, str) and label and label not in labels:
-            labels.append(label)
     return labels
 
 
