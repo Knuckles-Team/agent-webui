@@ -3043,9 +3043,26 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                 remaining = budget - len(rows)
                 if remaining <= 0:
                     break
-                page = await _invoke_governed_helper(
-                    nodes_by_label, label, remaining, deadline=10.0
-                )
+                # One label must not be able to blank the whole canvas. A
+                # single label's page can fail while its siblings are fine
+                # -- measured live: `node_type=Concept` returns 256 rows in
+                # 0.18s while `node_type=Skill` raises ValueError out of the
+                # engine's decode path, and the unfiltered read touches
+                # both. Degrading to "every label that COULD be read" is the
+                # honest answer; failing all of them because one is
+                # undecodable is not. The label is named in the log so the
+                # underlying data defect stays findable.
+                try:
+                    page = await _invoke_governed_helper(
+                        nodes_by_label, label, remaining, deadline=10.0
+                    )
+                except Exception as label_error:
+                    _log_failure(
+                        f'get_graph_nodes.label.{label}',
+                        label_error,
+                        level=logging.WARNING,
+                    )
+                    continue
                 rows.extend(page or [])
             # The genuinely-unlabeled bucket (`label=''`) is best-effort: the
             # DEPLOYED engine build rejects an empty label argument outright
