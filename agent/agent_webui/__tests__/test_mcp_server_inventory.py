@@ -16,6 +16,7 @@ failed data source is an ERROR/DEGRADED state, never a silent, indistinguishable
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -42,7 +43,7 @@ def bounded_engine(stub_engine):
     return _get_engine
 
 
-def _patch_catalog(rows: dict[str, list[dict[str, Any]]] | None):
+def _patch_catalog(rows: Mapping[str, list[dict[str, Any]] | None] | None):
     return patch(
         'agent_webui.api_extensions._read_fleet_catalog',
         AsyncMock(return_value=rows),
@@ -383,3 +384,146 @@ async def test_list_all_tools_batches_toggle_state_reads_not_per_row(
     # never one per row, regardless of how many servers/skills the catalog
     # holds.
     assert stub_engine.query_cypher.call_count <= 5
+
+
+# ---------------------------------------------------------------------------
+# Defect A/B (FIX LANE 2): per-kind-independent catalog degradation, and an
+# unambiguous, non-nested failure signal for `skills` matching `mcp_tools`'s
+# existing `mcp_status.error`.
+#
+# Live root cause: `_read_fleet_catalog` fetched `servers`, `discoveries`,
+# `skills`, `prompts` SEQUENTIALLY and returned `None` (discarding
+# everything) the instant ANY one of them failed. `skills` was read third,
+# so a `servers` hiccup alone produced THREE simultaneously-reported bugs
+# from one cause: "No MCP servers registered", "The MCP fleet catalog could
+# not be read", and an empty skills list -- skills was never even attempted.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_all_tools_a_failed_servers_kind_does_not_discard_a_healthy_skills_kind(
+    monkeypatch, bounded_engine
+) -> None:
+    """Reproduces, then proves fixed, the exact live pattern: `servers`
+    failed (`None`) while `skills` succeeded. Before the fix this was
+    unreachable -- `_read_fleet_catalog` returned a single `None` for the
+    whole four-kind read the moment `servers` failed, so `skills` was never
+    read at all regardless of its own health."""
+    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+
+    with _patch_catalog(
+        {
+            'servers': None,
+            'discoveries': None,
+            'skills': [
+                {
+                    'id': 'skill-a',
+                    'name': 'skill-a',
+                    'description': '',
+                    'uri': '',
+                    'skill_type': 'skill',
+                    'classification': 'Atomic Skill',
+                    'provider': '',
+                    'mcp_server': '',
+                    'enabled': True,
+                }
+            ],
+            'prompts': [],
+        }
+    ):
+        result = await api_extensions.list_all_tools()
+
+    # The failed kind is reported as a genuine, unambiguous error...
+    assert result['mcp_tools'] == []
+    assert result['mcp_status']['source'] == 'unavailable'
+    assert result['mcp_status']['error']
+    # ...while the healthy kind, fetched independently, is NOT discarded.
+    assert [s['id'] for s in result['skills']] == ['skill-a']
+    assert result['skill_status']['source'] == 'sql_catalog'
+    assert result['skill_status']['error'] is None
+    assert result['skill_classification']['kg_reachable'] is True
+
+
+@pytest.mark.asyncio
+async def test_list_all_tools_skill_status_is_a_top_level_unambiguous_failure_signal(
+    monkeypatch, bounded_engine
+) -> None:
+    """Defect B: `skills` previously had NO signal of its own for "the read
+    failed" other than `skill_classification.kg_reachable`, three levels
+    deep. `skill_status` now mirrors `mcp_status`'s shape at the SAME top
+    level, so a caller can check `.error` the same way for either."""
+    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+
+    with _patch_catalog(
+        {'servers': [], 'discoveries': [], 'skills': None, 'prompts': []}
+    ):
+        failed = await api_extensions.list_all_tools()
+
+    assert failed['skill_status']['source'] == 'unavailable'
+    assert failed['skill_status']['error']
+    assert failed['skill_classification']['kg_reachable'] is False
+    assert failed['skills'] == []
+
+    with _patch_catalog(
+        {'servers': [], 'discoveries': [], 'skills': [], 'prompts': []}
+    ):
+        empty = await api_extensions.list_all_tools()
+
+    # The complement: a reachable, genuinely empty skills catalog is healthy
+    # -- distinguishable from the failure case above by `.error`, not by
+    # `skills == []` (both cases have an empty list; only `skill_status`
+    # tells them apart).
+    assert empty['skill_status']['source'] == 'sql_catalog'
+    assert empty['skill_status']['error'] is None
+    assert empty['skill_classification']['kg_reachable'] is True
+    assert empty['skills'] == []
+
+
+@pytest.mark.asyncio
+async def test_list_all_tools_prompts_kind_degrades_independently(
+    monkeypatch, bounded_engine
+) -> None:
+    """`prompts` failing must not affect `servers`/`skills`, and vice versa
+    -- each of the four requested kinds is independent."""
+    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+
+    with _patch_catalog(
+        {
+            'servers': [_server_row(id='srv:a', name='server-a')],
+            'discoveries': [],
+            'skills': [],
+            'prompts': None,
+        }
+    ):
+        result = await api_extensions.list_all_tools()
+
+    assert result['mcp_prompts'] == []
+    assert result['mcp_prompts_status']['error']
+    # Unaffected by the `prompts` failure.
+    assert [t['name'] for t in result['mcp_tools']] == ['server-a']
+    assert result['mcp_status']['error'] is None
+
+
+@pytest.mark.asyncio
+async def test_list_all_tools_discoveries_failure_is_noted_but_servers_still_list(
+    monkeypatch, bounded_engine
+) -> None:
+    """`discoveries` failing independently of `servers` still lists the
+    known servers (best-effort -- registration is still real data) but
+    flags that their live health/reachability could not be read, rather
+    than silently reporting them as healthy."""
+    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+
+    with _patch_catalog(
+        {
+            'servers': [_server_row(id='srv:a', name='server-a')],
+            'discoveries': None,
+            'skills': [],
+            'prompts': [],
+        }
+    ):
+        result = await api_extensions.list_all_tools()
+
+    assert [t['name'] for t in result['mcp_tools']] == ['server-a']
+    assert result['mcp_status']['error']
+    assert 'discovery' in result['mcp_status']['error'].lower()

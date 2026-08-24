@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import contextvars
 import hashlib
@@ -1656,7 +1657,38 @@ async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
     return True  # Enabled by default: preference absent, or unreadable.
 
 
-async def _batch_toggle_states(engine: Any, item_type: str) -> dict[str, bool]:
+def _log_toggle_batch_failure(item_type: str, error: BaseException) -> None:
+    """Log a toggle-batch scan failure, including the TRUE underlying cause
+    when it is safely available, without violating ``_log_failure``'s
+    established privacy contract (query text/params are never logged).
+
+    Live pod observation: every ``_batch_toggle_states`` sub-call (5/5, every
+    request) raised ``CypherEngineError`` -- a deliberately opaque wrapper
+    (``epistemic_graph_backend.CypherEngineError``) that hides query text and
+    parameters but DOES carry a non-sensitive ``error_type`` attribute (the
+    underlying native-engine exception's class name, e.g. ``KeyError`` /
+    ``PlacementAuthorityError``). ``_log_failure`` alone only ever logs
+    ``CypherEngineError`` itself (the wrapper type), which was not enough to
+    tell an operator anything about the real failure. Logging that inner
+    ``error_type`` too -- still no query text, no params, no stack trace --
+    is the same redaction discipline, more diagnostic.
+    """
+    inner_type = getattr(error, 'error_type', None)
+    if isinstance(inner_type, str) and inner_type:
+        safe_item_type = re.sub(r'[^a-z0-9_.-]+', '_', item_type.lower())[:64]
+        logger.error(
+            'toggle_batch_%s failed: error_type=%s inner_error_type=%s',
+            safe_item_type or 'item',
+            type(error).__name__,
+            inner_type,
+        )
+    else:
+        _log_failure(f'toggle_batch_{item_type}', error)
+
+
+async def _batch_toggle_states(
+    engine: Any, item_type: str
+) -> tuple[dict[str, bool], bool]:
     """Bulk-read every toggle preference of ``item_type`` in ONE round trip.
 
     Root cause of the ``/api/enhanced/tools`` hang that never returned
@@ -1679,9 +1711,22 @@ async def _batch_toggle_states(engine: Any, item_type: str) -> dict[str, bool]:
     True)`` lookup) rather than raising -- a toggle-preference outage must
     never take the whole listing down, same reasoning ``get_toggle_state``
     already documents for the single-item case.
+
+    Returns ``(states, ok)``. ``ok`` is ``False`` when the underlying scan
+    failed -- ``states`` is still the (fail-open, all-``True``-by-default)
+    mapping callers can safely use, but ``ok=False`` lets the caller surface
+    that the toggle read itself is broken rather than silently reporting
+    "everything enabled" as if it were a real, verified answer (observed
+    live: this scan raised ``CypherEngineError`` on 100% of calls, so every
+    enable/disable toggle appeared to work while being non-functional
+    fleet-wide). A previous version re-raised a 503
+    ``_invoke_governed_helper`` timeout/capacity ``HTTPException`` here,
+    which took the ENTIRE ``/api/enhanced/tools`` response down over a
+    toggle-preference outage alone; that is now degraded the same as any
+    other failure.
     """
     if not engine:
-        return {}
+        return {}, True
     prefix = f'preference:toggle:{item_type}:'
     try:
         res = await _invoke_governed_helper(
@@ -1692,13 +1737,11 @@ async def _batch_toggle_states(engine: Any, item_type: str) -> dict[str, bool]:
             deadline=10.0,
         )
     except HTTPException as e:
-        if e.status_code == 503:
-            raise
-        _log_failure('query_toggle_state_batch', e)
-        return {}
+        _log_toggle_batch_failure(item_type, e)
+        return {}, False
     except Exception as e:
-        _log_failure('query_toggle_state_batch', e)
-        return {}
+        _log_toggle_batch_failure(item_type, e)
+        return {}, False
     states: dict[str, bool] = {}
     for row in res or []:
         if not isinstance(row, dict):
@@ -1707,7 +1750,30 @@ async def _batch_toggle_states(engine: Any, item_type: str) -> dict[str, bool]:
         if not isinstance(row_id, str) or not row_id.startswith(prefix):
             continue
         states[row_id[len(prefix) :]] = row.get('value') == 'enabled'
-    return states
+    return states, True
+
+
+async def _batch_toggle_states_many(
+    engine: Any, item_types: list[str]
+) -> dict[str, tuple[dict[str, bool], bool]]:
+    """Run one ``_batch_toggle_states`` scan per ``item_type`` CONCURRENTLY.
+
+    ``list_all_tools`` previously issued up to 5 of these scans -- one per
+    item_type (``mcp_server``, ``builtin_tool``, ``skill``,
+    ``skill_workflow``, ``skill_graph``) -- SEQUENTIALLY, each individually
+    deadline-bound but never run in parallel: measured live, this was the
+    critical-path long pole (``/api/enhanced/tools`` at 11-17s, later 503 at
+    35-41s) for data the dashboard tile never even reads (it only sums array
+    lengths). ``asyncio.gather`` cuts that to the slowest single scan instead
+    of the sum of all of them -- an immediate ~5x reduction on this path with
+    no change to what any consumer that DOES read ``enabled`` sees.
+    """
+    if not item_types:
+        return {}
+    results = await asyncio.gather(
+        *(_batch_toggle_states(engine, item_type) for item_type in item_types)
+    )
+    return dict(zip(item_types, results, strict=True))
 
 
 async def set_toggle_state(
@@ -1741,6 +1807,19 @@ async def set_toggle_state(
 
 _FLEET_CATALOG_DEADLINE_SECONDS = 10.0
 
+# Overall wall-clock budget across the WHOLE multi-kind walk performed by
+# `_read_fleet_catalog`, on top of (never instead of) each individual page's
+# own `_FLEET_CATALOG_DEADLINE_SECONDS` bound. `skills` alone can need ~9
+# paginated round trips to drain (841 rows at `_MAX_LIMIT`=100), each
+# independently deadline-bound at up to 10s -- with no total cap, a caller
+# asking for all four kinds could in the worst case wait minutes before ever
+# seeing a response, which is what actually produced the observed 35-41s
+# 503s. Once this budget is exhausted, any kind not yet FULLY read (including
+# one that has drained some pages but not finished) is reported as failed
+# (`None`) rather than raising -- kinds already finished keep their real
+# data (see the per-kind independence contract below).
+_FLEET_CATALOG_TOTAL_DEADLINE_SECONDS = 30.0
+
 
 # `_authorized_page` clamps every request to `_MAX_LIMIT` (100) internally
 # (`fetch = min(min(limit, _MAX_LIMIT) + 1, ...)`), so asking for more per page
@@ -1752,7 +1831,9 @@ _FLEET_CATALOG_DEADLINE_SECONDS = 10.0
 # round trips for nothing (measured: 21s for /api/enhanced/tools).
 
 
-async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | None:
+async def _read_fleet_catalog(
+    *kinds: str,
+) -> dict[str, list[dict[str, Any]] | None] | None:
     """Read one or more fleet-catalog collections through the SAME
     tenant/principal-scoped, fail-closed authority and shape-validation path
     ``agent_utilities.gateway.registry_api`` uses for its own
@@ -1769,11 +1850,23 @@ async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | 
     ``list_all_tools`` awaited the shared multiplexer with NO deadline,
     hanging 45s before an infra timeout returned a 503).
 
-    Returns ``None`` when the catalog cannot be read at all (denied
-    authority, or the engine's SQL surface is unavailable/erroring) so
-    callers can render an explicit degraded state instead of a silent empty
-    result -- a degraded read must never look like "genuinely empty"
-    (fail-closed).
+    Each requested ``kind`` degrades INDEPENDENTLY (the root-cause fix for
+    the observed live pattern where a ``servers`` hiccup discarded an
+    otherwise-healthy ``skills`` catalog before it was even attempted --
+    ``skills`` was read third of four, so any earlier failure meant it was
+    never reached at all). A kind that fails is reported as ``None`` in the
+    returned mapping; a kind that succeeds -- including with zero rows -- is
+    a real (possibly empty) ``list``. Callers must check each kind's value
+    individually rather than assuming "some data" means "all requested kinds
+    loaded".
+
+    Returns ``None`` (the WHOLE mapping, not a per-kind value) only when the
+    catalog cannot be reached AT ALL -- authority denied or the catalog
+    engine itself is unavailable, before any kind-specific read is even
+    attempted. This preserves the original fail-closed contract for that
+    total-failure case (every existing caller's "no catalog at all" handling
+    is unchanged); the new per-kind ``None`` granularity is additive, for
+    the partial-failure case that previously discarded healthy kinds.
     """
     from agent_utilities.gateway.registry_api import (
         _KIND_SPECS,
@@ -1798,8 +1891,17 @@ async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | 
         _log_failure('fleet_catalog_authority', exc)
         return None
 
-    result: dict[str, list[dict[str, Any]]] = {}
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    result: dict[str, list[dict[str, Any]] | None] = dict.fromkeys(kinds)
     for kind in kinds:
+        remaining_total = _FLEET_CATALOG_TOTAL_DEADLINE_SECONDS - (
+            loop.time() - started
+        )
+        if remaining_total <= 0:
+            _log_failure(f'fleet_catalog_{kind}_total_budget', TimeoutError(kind))
+            continue  # Leaves result[kind] at its `None` default.
         spec = _KIND_SPECS[kind]
         try:
             # registry_api pushes LIMIT/keyset/filter/authz into SQL, so a
@@ -1808,6 +1910,11 @@ async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | 
             rows: list[dict[str, Any]] = []
             after: tuple[str, str] | None = None
             while True:
+                remaining_total = _FLEET_CATALOG_TOTAL_DEADLINE_SECONDS - (
+                    loop.time() - started
+                )
+                if remaining_total <= 0:
+                    raise TimeoutError('overall fleet catalog deadline exceeded')
                 page = await _invoke_governed_helper(
                     _authorized_page,
                     kind,
@@ -1818,7 +1925,7 @@ async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | 
                     after=after,
                     limit=_MAX_LIMIT,
                     engine=engine,
-                    deadline=_FLEET_CATALOG_DEADLINE_SECONDS,
+                    deadline=min(_FLEET_CATALOG_DEADLINE_SECONDS, remaining_total),
                 )
                 if not page:
                     break
@@ -1834,12 +1941,16 @@ async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | 
             ]
         except CatalogUnavailable as exc:
             _log_failure(f'fleet_catalog_{kind}', exc)
-            return None
-        except HTTPException:
-            raise
+            # Independent degradation: this kind failed, but earlier/later
+            # kinds must not be discarded because of it (result[kind] stays
+            # `None`, the rest of the loop continues).
+        except HTTPException as exc:
+            _log_failure(f'fleet_catalog_{kind}', exc)
+            # A per-call 503 (capacity exhausted / deadline exceeded from
+            # `_invoke_governed_helper`) used to propagate and kill the
+            # WHOLE multi-kind read. Degrade just this one kind instead.
         except Exception as exc:
             _log_failure(f'fleet_catalog_{kind}', exc)
-            return None
     return result
 
 
@@ -1856,6 +1967,16 @@ async def list_all_tools() -> dict[str, Any]:
     the hourly ``fleet-tool-schema-sync`` job, so "not yet synced" is a real,
     expected state and is reported explicitly via ``mcp_status`` -- never
     silently indistinguishable from "genuinely empty".
+
+    ``servers``, ``discoveries``, ``skills``, and ``prompts`` degrade
+    INDEPENDENTLY (``_read_fleet_catalog``'s per-kind contract): a failure
+    reading one never discards an already-healthy read of another. This
+    route ALWAYS returns 200 -- never a hard failure for one degraded
+    section -- but every section's failure is reported explicitly and
+    UNAMBIGUOUSLY: ``mcp_status.error`` for MCP servers (unchanged) and the
+    new ``skill_status.error`` for skills, both at the SAME top level and
+    the SAME shape, rather than skills' only signal being the
+    three-levels-deep ``skill_classification.kg_reachable`` boolean.
     """
     try:
         engine = await _get_engine_bounded()
@@ -1867,6 +1988,60 @@ async def list_all_tools() -> dict[str, Any]:
         engine = None
 
     catalog = await _read_fleet_catalog('servers', 'discoveries', 'skills', 'prompts')
+    if catalog is None:
+        # Total failure (denied authority / catalog engine unavailable,
+        # before any kind-specific read was even attempted): normalize to
+        # "every requested kind failed" so the per-kind logic below is the
+        # ONLY code path -- no separate whole-catalog branch to keep in sync.
+        catalog = {
+            'servers': None,
+            'discoveries': None,
+            'skills': None,
+            'prompts': None,
+        }
+
+    server_rows = catalog.get('servers')
+    discovery_rows = catalog.get('discoveries')
+    skill_rows = catalog.get('skills')
+    prompt_rows = catalog.get('prompts')
+
+    # 0. Toggle-preference reads (mcp_server/builtin_tool/skill/
+    # skill_workflow/skill_graph) are independent of each other and of the
+    # catalog read above -- gather whichever ones this request actually
+    # needs CONCURRENTLY (`asyncio.gather` via `_batch_toggle_states_many`)
+    # instead of the previous up-to-5 SEQUENTIAL round trips, which measured
+    # live as the critical-path long pole for data the dashboard tile never
+    # even reads.
+    tools_dir = get_agent_utilities_dir() / 'tools'
+    builtin_dir_present = tools_dir.exists() and tools_dir.is_dir()
+    toggle_types_needed: list[str] = []
+    if server_rows is not None:
+        toggle_types_needed.append('mcp_server')
+    if builtin_dir_present:
+        toggle_types_needed.append('builtin_tool')
+    if skill_rows:
+        toggle_types_needed.extend(('skill', 'skill_workflow', 'skill_graph'))
+    toggle_states = await _batch_toggle_states_many(engine, toggle_types_needed)
+    mcp_server_toggles, _mcp_server_toggles_ok = toggle_states.get(
+        'mcp_server', ({}, True)
+    )
+    builtin_toggles, _builtin_toggles_ok = toggle_states.get('builtin_tool', ({}, True))
+    skill_toggles, _skill_toggles_ok = toggle_states.get('skill', ({}, True))
+    skill_workflow_toggles, _ = toggle_states.get('skill_workflow', ({}, True))
+    skill_graph_toggles, _ = toggle_states.get('skill_graph', ({}, True))
+    toggles_ok = all(ok for _states, ok in toggle_states.values())
+    toggle_status = {
+        'source': 'sql_catalog',
+        'error': (
+            None
+            if toggles_ok
+            else (
+                'One or more toggle-preference reads failed; enable/disable '
+                'state below defaults to "enabled" and may not reflect the '
+                'real persisted preference.'
+            )
+        ),
+    }
 
     # 1. MCP servers -- desired registration (`servers`) joined with the most
     # recent observed probe (`discoveries`, append-only: keep the row with the
@@ -1875,19 +2050,15 @@ async def list_all_tools() -> dict[str, Any]:
     # indistinguishable empty list (fail-closed).
     mcp_tools: list[dict[str, Any]] = []
     last_synced_at: str | None = None
-    if catalog is None:
+    if server_rows is None:
         mcp_status = {
             'source': 'unavailable',
-            'error': 'The MCP fleet catalog could not be read.',
+            'error': 'The MCP server catalog could not be read.',
             'last_synced_at': None,
         }
-        mcp_prompts: list[dict[str, Any]] = []
-        skill_rows: list[dict[str, Any]] = []
     else:
-        server_rows = catalog['servers']
-        discovery_rows = catalog['discoveries']
         latest_discovery: dict[str, dict[str, Any]] = {}
-        for row in discovery_rows:
+        for row in discovery_rows or []:
             server_id = str(row.get('server_id') or '')
             observed_at = str(row.get('observed_at') or '')
             if last_synced_at is None or observed_at > last_synced_at:
@@ -1896,10 +2067,6 @@ async def list_all_tools() -> dict[str, Any]:
             if existing is None or observed_at > str(existing.get('observed_at') or ''):
                 latest_discovery[server_id] = row
 
-        # Batched ONCE for the whole listing (see `_batch_toggle_states`'s
-        # docstring) rather than once per server -- the root cause of this
-        # route never returning.
-        mcp_server_toggles = await _batch_toggle_states(engine, 'mcp_server')
         for row in server_rows[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
             name = row.get('name')
             if (
@@ -1932,11 +2099,6 @@ async def list_all_tools() -> dict[str, Any]:
                 }
             )
 
-        # MCP prompts -- the fleet catalog's own `mcp_prompts` table, never
-        # surfaced anywhere in this app before; already tenant-scoped and
-        # redacted by `_read_fleet_catalog` (registry_api's `_validate_item`).
-        mcp_prompts = list(catalog['prompts'])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-
         if server_rows:
             mcp_error = None
         elif last_synced_at:
@@ -1949,19 +2111,46 @@ async def list_all_tools() -> dict[str, Any]:
                 'The MCP fleet catalog has no servers and no recorded sync -- '
                 'the hourly fleet-tool-schema-sync job may not have run yet.'
             )
+        if discovery_rows is None and mcp_error is None:
+            # Servers loaded fine, but the discovery/health probe kind
+            # independently failed -- servers are listed (best-effort) but
+            # their `available`/`tool_count`/`error` fields are unknown
+            # rather than falsely healthy. Report it rather than staying
+            # silent about the degraded (not missing) health data.
+            mcp_error = (
+                'MCP server discovery/health data could not be read; server '
+                'status below reflects registration only, not live '
+                'reachability.'
+            )
         mcp_status = {
             'source': 'sql_catalog',
             'error': mcp_error,
             'last_synced_at': last_synced_at,
         }
-        skill_rows = catalog['skills']
+
+    # MCP prompts -- the fleet catalog's own `mcp_prompts` table, never
+    # surfaced anywhere in this app before; already tenant-scoped and
+    # redacted by `_read_fleet_catalog` (registry_api's `_validate_item`).
+    # Degrades independently of every other kind: a `prompts` failure never
+    # discards `servers`/`discoveries`/`skills`, and vice versa.
+    mcp_prompts: list[dict[str, Any]] = (
+        []
+        if prompt_rows is None
+        else list(prompt_rows)[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+    )
+    mcp_prompts_status = {
+        'source': 'sql_catalog' if prompt_rows is not None else 'unavailable',
+        'error': (
+            None
+            if prompt_rows is not None
+            else 'The MCP prompts catalog could not be read.'
+        ),
+    }
 
     # 2. Built-in Agent Tools -- bundled Python tool modules shipped with this
     # app; unrelated to the MCP fleet catalog.
     builtin_tools = []
-    tools_dir = get_agent_utilities_dir() / 'tools'
-    if tools_dir.exists() and tools_dir.is_dir():
-        builtin_toggles = await _batch_toggle_states(engine, 'builtin_tool')
+    if builtin_dir_present:
         for index, f in enumerate(tools_dir.glob('*.py')):
             if index >= _MAX_EXTERNAL_COLLECTION_ITEMS:
                 break
@@ -1981,23 +2170,24 @@ async def list_all_tools() -> dict[str, Any]:
     # 3. Skills / Skill Graphs / Skill Workflows -- classified directly by the
     # SQL catalog's own `skill_type` column (assigned by the sync job's
     # `classify_skill_type`, which never leaves it blank), never by
-    # filesystem path or a separate KG cross-reference query.
+    # filesystem path or a separate KG cross-reference query. Degrades
+    # independently of `servers`/`discoveries`/`prompts` -- a servers hiccup
+    # (the live-observed root cause of "No MCP servers registered" AND "The
+    # MCP fleet catalog could not be read" AND an empty skills list, all
+    # from ONE `servers` failure) no longer discards an otherwise-healthy
+    # skills read, since `skill_rows` is this kind's OWN result, not a
+    # shared all-or-nothing `catalog`.
     skills: list[dict[str, Any]] = []
     skill_graphs: list[dict[str, Any]] = []
     skill_workflows: list[dict[str, Any]] = []
     skill_unclassified: list[dict[str, Any]] = []
-    if skill_rows:
-        # Batched ONCE per toggle item_type (up to 3 calls total, never one
-        # per skill row -- same fix as the servers/builtin_tools loops
-        # above).
-        skill_toggles = await _batch_toggle_states(engine, 'skill')
-        skill_workflow_toggles = await _batch_toggle_states(engine, 'skill_workflow')
-        skill_graph_toggles = await _batch_toggle_states(engine, 'skill_graph')
-    else:
-        skill_toggles = {}
-        skill_workflow_toggles = {}
-        skill_graph_toggles = {}
-    for row in skill_rows[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+    skill_status = {
+        'source': 'sql_catalog' if skill_rows is not None else 'unavailable',
+        'error': (
+            None if skill_rows is not None else 'The skills catalog could not be read.'
+        ),
+    }
+    for row in (skill_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
         skill_id = row.get('id')
         if not isinstance(skill_id, str) or not skill_id:
             continue
@@ -2037,6 +2227,12 @@ async def list_all_tools() -> dict[str, Any]:
         'mcp_tools': mcp_tools,
         'mcp_status': mcp_status,
         'mcp_prompts': mcp_prompts,
+        # Additive (not in the frontend's `toolsDataSchema` yet -- zod
+        # ignores unrecognized keys by default, so this is safe to ship
+        # ahead of a frontend change): the `mcp_prompts` analogue of
+        # `mcp_status`, since `prompts` is now an independently-degradable
+        # kind with no other visible failure signal.
+        'mcp_prompts_status': mcp_prompts_status,
         'builtin_tools': builtin_tools,
         'skills': sorted(skills, key=lambda x: x.get('name', '').lower()),
         'skill_graphs': sorted(skill_graphs, key=lambda x: x.get('name', '').lower()),
@@ -2046,11 +2242,30 @@ async def list_all_tools() -> dict[str, Any]:
         'skill_unclassified': sorted(
             skill_unclassified, key=lambda x: x.get('name', '').lower()
         ),
+        # Defect B fix: skills previously had NO signal of their own for "the
+        # skills catalog read failed" other than the deeply-nested
+        # `skill_classification.kg_reachable` boolean -- unlike `mcp_tools`,
+        # which has always had `mcp_status.error` at the top level. This is
+        # the SAME shape as `mcp_status`, at the SAME top level, so a caller
+        # can check `data.skill_status.error` exactly like
+        # `data.mcp_status.error` without reading anything nested.
+        'skill_status': skill_status,
+        # Same signal, additive, for the batched toggle-preference reads
+        # (Defect C): `CypherEngineError` on 100% of observed live calls
+        # made every enable/disable toggle look like it worked while being
+        # non-functional fleet-wide, with no visible indication anywhere in
+        # the response. `toggle_status.error` is non-null whenever ANY of
+        # this request's toggle-preference batches failed.
+        'toggle_status': toggle_status,
         # Live catalog classification summary, computed fresh on every call.
         'skill_classification': {
             'source': 'sql_catalog',
-            'kg_reachable': catalog is not None,
-            'filesystem_skill_md_count': len(skill_rows),
+            # Per-kind now (was `catalog is not None`, the whole 4-kind
+            # catalog): a `servers`/`discoveries`/`prompts` failure no
+            # longer reports skills as unreachable when the `skills` kind
+            # itself loaded fine, and vice versa.
+            'kg_reachable': skill_rows is not None,
+            'filesystem_skill_md_count': len(skill_rows or []),
             'kg_agent_skill_count': len(skills),
             'kg_workflow_definition_count': len(skill_workflows),
             'runnable_count': len(skills),
@@ -2474,7 +2689,14 @@ async def list_skills() -> list[dict[str, Any]]:
         A list of skill definitions sorted alphabetically.
     """
     catalog = await _read_fleet_catalog('skills')
-    if catalog is None:
+    # `catalog is None` is total failure (denied authority / catalog engine
+    # unavailable); `catalog['skills'] is None` is this specific kind
+    # failing while `_read_fleet_catalog` still returned a mapping (the new
+    # per-kind-degradable contract -- here only one kind was ever
+    # requested, so a kind-level failure is equivalent to a whole-catalog
+    # failure for this endpoint, and still fails closed).
+    skill_rows = None if catalog is None else catalog.get('skills')
+    if skill_rows is None:
         raise HTTPException(
             status_code=503, detail='MCP/skill fleet catalog is unavailable'
         )
@@ -2485,7 +2707,7 @@ async def list_skills() -> list[dict[str, Any]]:
             'description': row.get('description', ''),
             'enabled': bool(row.get('enabled')),
         }
-        for row in catalog['skills'][:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        for row in skill_rows[:_MAX_EXTERNAL_COLLECTION_ITEMS]
         if isinstance(row.get('id'), str) and row.get('id')
     ]
     bounded = _public_external_result(
@@ -5707,7 +5929,6 @@ async def toggle_graph_tool(tool_id: str, request: Request) -> dict[str, Any]:
 #  Sessions & Autonomous Goals Parity (TUI-20, ORCH-5.0)
 # ─────────────────────────────────────────────────────────────────────────
 
-import asyncio
 import sqlite3
 import time
 import uuid
