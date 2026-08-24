@@ -2927,6 +2927,22 @@ async def delete_chat(chat_id: str) -> dict[str, Any]:
     return h(chat_id) if h else {'status': 'error'}
 
 
+_MAX_CANVAS_PROPERTY_CHARS = 512
+
+
+def _canvas_property(value: Any) -> Any:
+    """Shrink one node property to something a graph canvas can render.
+
+    The canvas shows `properties.name` and lets an operator edit fields; it
+    never needs a whole document body. Long strings are the only thing that
+    makes a node page large enough to matter, so truncate those and leave
+    every other value untouched.
+    """
+    if isinstance(value, str) and len(value) > _MAX_CANVAS_PROPERTY_CHARS:
+        return value[:_MAX_CANVAS_PROPERTY_CHARS] + '…'
+    return value
+
+
 async def _distinct_graph_labels(engine: Any) -> list[str]:
     """Every label the engine currently knows, via its own `db.labels()`.
 
@@ -3038,6 +3054,8 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                 detail='Knowledge Graph node query failed',
             )
         budget = _MAX_EXTERNAL_COLLECTION_ITEMS
+        # Leave headroom under the serialized ceiling for the JSON envelope.
+        budget_bytes = (_MAX_EXTERNAL_RESULT_BYTES * 9) // 10
         if node_type:
             rows = await _invoke_governed_helper(
                 nodes_by_label, node_type, budget, deadline=10.0
@@ -3048,15 +3066,10 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                 remaining = budget - len(rows)
                 if remaining <= 0:
                     break
-                # One label must not be able to blank the whole canvas. A
-                # single label's page can fail while its siblings are fine
-                # -- measured live: `node_type=Concept` returns 256 rows in
-                # 0.18s while `node_type=Skill` raises ValueError out of the
-                # engine's decode path, and the unfiltered read touches
-                # both. Degrading to "every label that COULD be read" is the
-                # honest answer; failing all of them because one is
-                # undecodable is not. The label is named in the log so the
-                # underlying data defect stays findable.
+                # One label must not be able to blank the whole canvas.
+                # Degrading to "every label that COULD be read" is the honest
+                # answer; failing all of them because one failed is not. The
+                # label is named in the log so the cause stays findable.
                 try:
                     page = await _invoke_governed_helper(
                         nodes_by_label, label, remaining, deadline=10.0
@@ -3085,7 +3098,7 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                     logger.debug('engine rejects empty-label read; skipping unlabeled')
                 else:
                     rows.extend(page or [])
-        nodes = []
+        nodes: list[dict[str, Any]] = []
         for row in rows or []:
             if not isinstance(row, (tuple, list)) or len(row) != 2:
                 continue
@@ -3124,18 +3137,35 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                 # must not include it either (kept consistent with the
                 # unfiltered list this is filtered from).
                 continue
-            nodes.append(
-                {
-                    'id': node_id if isinstance(node_id, str) else '',
-                    'labels': labels,
-                    'properties': {
-                        k: v
-                        for k, v in props.items()
-                        if k not in ('id', 'node_type', 'labels')
-                        and not str(k).startswith('_')
-                    },
-                }
+            node = {
+                'id': node_id if isinstance(node_id, str) else '',
+                'labels': labels,
+                'properties': {
+                    k: _canvas_property(v)
+                    for k, v in props.items()
+                    if k not in ('id', 'node_type', 'labels')
+                    and not str(k).startswith('_')
+                },
+            }
+            # `_public_external_result` enforces a hard serialized-size bound
+            # and raises ValueError past it. That bound is what actually broke
+            # this endpoint: a `Skill` node carries its whole SKILL.md body, so
+            # 256 of them blow the 2 MiB ceiling and the canvas 503'd -- the
+            # failure looked like an engine error but was entirely ours. Keep a
+            # running estimate and stop at the budget so the canvas renders
+            # what fits instead of nothing at all.
+            budget_bytes -= len(
+                json.dumps(node, separators=(',', ':'), ensure_ascii=False).encode(
+                    'utf-8'
+                )
             )
+            if budget_bytes <= 0:
+                logger.warning(
+                    'graph canvas truncated at %d nodes by the result size bound',
+                    len(nodes),
+                )
+                break
+            nodes.append(node)
         return _public_external_result(nodes)
     except HTTPException:
         raise
