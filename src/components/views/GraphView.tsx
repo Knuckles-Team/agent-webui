@@ -105,6 +105,23 @@ type GraphLoadStatus =
 
 const GRAPH_FETCH_LABELS = ['stats', 'nodes', 'relationships'] as const
 
+// Defect A fix: `stats.total_nodes`/`stats.total_relationships` sit at their
+// `useState` initial value of `0` until a stats fetch actually resolves —
+// `setStats()` only ever runs on the fulfilled branch. That 0 is
+// indistinguishable from a real, connected, empty graph unless the render
+// also checks whether the fetch that would have supplied a real number
+// actually succeeded. `'unavailable'` already means "the request succeeded
+// but the backend honestly disclaimed the number" — this extends the same
+// treatment to `'degraded'`/`'error'`, but only when the stats request
+// itself is one of the ones that failed (a `degraded` load where only
+// nodes/relationships failed still has a trustworthy stats number and
+// should keep showing it).
+function isStatsUnreliable(status: GraphLoadStatus): boolean {
+  if (status.kind === 'unavailable') return true
+  if (status.kind === 'degraded' || status.kind === 'error') return status.failed.includes('stats')
+  return false
+}
+
 export default function GraphView() {
   const [stats, setStats] = useState<GraphStats>({ total_nodes: 0, total_relationships: 0, by_type: {} })
   const [nodes, setNodes] = useState<GraphNode[]>([])
@@ -292,10 +309,10 @@ export default function GraphView() {
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <Badge variant="outline" className="h-7 bg-muted/20 border-border/40 text-xs">
-            Nodes: {loadStatus.kind === 'unavailable' ? '—' : stats.total_nodes}
+            Nodes: {isStatsUnreliable(loadStatus) ? '—' : stats.total_nodes}
           </Badge>
           <Badge variant="outline" className="h-7 bg-muted/20 border-border/40 text-xs">
-            Edges: {loadStatus.kind === 'unavailable' ? '—' : stats.total_relationships}
+            Edges: {isStatsUnreliable(loadStatus) ? '—' : stats.total_relationships}
           </Badge>
           <Button
             variant="outline"

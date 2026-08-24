@@ -144,6 +144,28 @@ export const knowledgeGraphToGraphology = (
     0,
   )
 
+  // Defect B (canvas crash on a duplicate node id): graphology's `addNode`
+  // throws SYNCHRONOUSLY on a duplicate key ("... node already exist in the
+  // graph"), uncaught, which trips the view's error boundary and destroys
+  // the whole canvas over ONE bad id. The known live cause is a backend
+  // privacy redactor collapsing distinct uuids into the literal
+  // `[REDACTED_IBAN]` (a parallel lane owns that root fix in
+  // agent-utilities); this adapter's job is to degrade gracefully for ANY
+  // duplicate, not just that one. Mirrors the `hasNode`/`hasEdge` guard the
+  // edge loop below already uses. Duplicates are counted and logged — never
+  // silently absorbed — because silently de-duping would hide exactly the
+  // upstream corruption the other lane is trying to surface and fix.
+  let duplicateNodeCount = 0
+  const skippedDuplicateIds: string[] = []
+  const addNodeSafely = (id: string, attrs: SigmaNodeAttributes): void => {
+    if (graph.hasNode(id)) {
+      duplicateNodeCount += 1
+      skippedDuplicateIds.push(id)
+      return
+    }
+    graph.addNode(id, attrs)
+  }
+
   // Place structural nodes in a circle
   structuralNodes.forEach((node, idx) => {
     const angle = (idx / Math.max(structuralNodes.length, 1)) * Math.PI * 2
@@ -152,7 +174,7 @@ export const knowledgeGraphToGraphology = (
 
     const mainLabel = node.labels[0] || 'Unknown'
     const { size, color } = nodeVisual(node, mainLabel, 15, maxDegree)
-    graph.addNode(node.id, {
+    addNodeSafely(node.id, {
       x,
       y,
       size,
@@ -167,7 +189,7 @@ export const knowledgeGraphToGraphology = (
   otherNodes.forEach((node) => {
     const mainLabel = node.labels[0] || 'Unknown'
     const { size, color } = nodeVisual(node, mainLabel, 8, maxDegree)
-    graph.addNode(node.id, {
+    addNodeSafely(node.id, {
       x: (Math.random() - 0.5) * spread * 0.5,
       y: (Math.random() - 0.5) * spread * 0.5,
       size,
@@ -177,6 +199,19 @@ export const knowledgeGraphToGraphology = (
       mass: getNodeMass(mainLabel),
     })
   })
+
+  if (duplicateNodeCount > 0) {
+    console.warn(
+      `knowledgeGraphToGraphology: skipped ${duplicateNodeCount} duplicate node id(s) ` +
+        `(kept the first occurrence of each): ${skippedDuplicateIds.join(', ')}`,
+    )
+  }
+  // Exposed as a graph-level attribute (rather than widening this function's
+  // return type) so callers that want it — the future UI surfacing this to
+  // the user, or a test — can read `graph.getAttribute('duplicateNodeCount')`
+  // without every existing call site needing to change shape.
+  graph.setAttribute('duplicateNodeCount', duplicateNodeCount)
+  graph.setAttribute('skippedDuplicateNodeIds', skippedDuplicateIds)
 
   relationships.forEach((edge) => {
     if (graph.hasNode(edge.source) && graph.hasNode(edge.target)) {
