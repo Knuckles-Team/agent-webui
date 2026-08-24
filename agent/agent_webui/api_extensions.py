@@ -1955,6 +1955,171 @@ async def _read_fleet_catalog(
     return result
 
 
+# ---------------------------------------------------------------------------
+# Fleet-catalog TTL + single-flight cache (FIX LANE Priority 3)
+#
+# Measured: `/api/enhanced/tools` (73 KiB) at 20.89s; `/api/registry/skills
+# ?limit=1` (1,234 bytes) at 9.84s; 5 identical back-to-back calls at
+# 9.51/10.45/3.36/11.67/2.96s -- no warm-up, no caching, cost fixed PER CALL
+# rather than proportional to row volume. A realistic dashboard burst
+# (concurrency 4) timed out past 60s and `/api/enhanced/skills`, `/graph/
+# nodes`, `/graph/stats` all returned 503 under it. `_read_fleet_catalog` is
+# populated by the HOURLY `fleet-tool-schema-sync` job (see its own
+# docstring), so a read that is up to `_FLEET_CATALOG_CACHE_TTL_SECONDS`
+# stale is indistinguishable from a live one to any real caller.
+#
+# Cached PER KIND (not the whole multi-kind response), so one kind's hit
+# stands alone while another is mid-refresh. Single-flight per kind
+# (`asyncio.Lock`) is mandatory, not an optimization: without it a cache-
+# expiry moment under a multi-panel dashboard burst still stampedes the
+# bounded sync-work pool into the same 503s caching was meant to fix.
+#
+# Staleness disclosure (documented, deliberate trade-off -- see this lane's
+# report): a cache HIT's `mcp_status`/`skill_status`/`toggle_status` error
+# fields reflect the moment the cache was FILLED, not the request moment. A
+# real outage that recovers mid-TTL can still render as a stale error for up
+# to the TTL. Chosen because the underlying data is itself only hourly-fresh
+# -- "fast" strictly dominates "always-current" here.
+_FLEET_CATALOG_CACHE_TTL_SECONDS = 60.0
+
+
+class _FleetCatalogCacheEntry:
+    __slots__ = ('rows', 'fetched_at')
+
+    def __init__(self, rows: list[dict[str, Any]], fetched_at: float) -> None:
+        self.rows = rows
+        self.fetched_at = fetched_at
+
+
+_fleet_catalog_cache: dict[str, _FleetCatalogCacheEntry] = {}
+_fleet_catalog_cache_guard = threading.Lock()
+_fleet_catalog_kind_locks: dict[str, asyncio.Lock] = {}
+_fleet_catalog_kind_locks_guard = threading.Lock()
+# The last `mcp_status.last_synced_at` ANY request has observed (computed by
+# `list_all_tools` from the `discoveries` kind's own rows -- a signal this
+# cache gets for free, never an extra engine call). The hourly sync job
+# advancing this timestamp means fresher data landed than what is cached;
+# `note_fleet_catalog_sync_time` uses it to expire the cache EARLY instead of
+# making the next request wait out the rest of the TTL for data the sync job
+# has already superseded.
+_fleet_catalog_last_synced_seen: str | None = None
+
+
+def _fleet_catalog_kind_lock(kind: str) -> asyncio.Lock:
+    """Return the single-flight lock for `kind`, creating it on first use."""
+    with _fleet_catalog_kind_locks_guard:
+        lock = _fleet_catalog_kind_locks.get(kind)
+        if lock is None:
+            lock = asyncio.Lock()
+            _fleet_catalog_kind_locks[kind] = lock
+        return lock
+
+
+def reset_fleet_catalog_cache() -> None:
+    """Clear every cached kind and the single-flight lock table.
+
+    Test-only reset hook (also useful for an operator forcing an immediate
+    resync) -- production code never needs to call this; the TTL and the
+    `note_fleet_catalog_sync_time` early-expiry path are the only intended
+    invalidation.
+    """
+    global _fleet_catalog_last_synced_seen
+    with _fleet_catalog_cache_guard:
+        _fleet_catalog_cache.clear()
+        _fleet_catalog_last_synced_seen = None
+    with _fleet_catalog_kind_locks_guard:
+        _fleet_catalog_kind_locks.clear()
+
+
+def note_fleet_catalog_sync_time(last_synced_at: str | None) -> None:
+    """Record an observed `mcp_status.last_synced_at` and expire the cache
+    early if it advanced past what the cache was last filled with.
+
+    Called by `list_all_tools` with the value it already computes from
+    `discoveries` rows -- no additional engine round trip. A no-op the first
+    time (nothing to compare against yet) or when the value is unknown/
+    unchanged.
+    """
+    global _fleet_catalog_last_synced_seen
+    if not last_synced_at:
+        return
+    with _fleet_catalog_cache_guard:
+        if (
+            _fleet_catalog_last_synced_seen is not None
+            and last_synced_at > _fleet_catalog_last_synced_seen
+        ):
+            # The sync job landed a newer catalog than what is cached --
+            # drop every cached kind so the NEXT request refetches instead of
+            # serving a now-superseded snapshot for the rest of the TTL.
+            _fleet_catalog_cache.clear()
+        _fleet_catalog_last_synced_seen = last_synced_at
+
+
+def _fleet_catalog_cache_hit(kind: str) -> tuple[bool, list[dict[str, Any]] | None]:
+    with _fleet_catalog_cache_guard:
+        entry = _fleet_catalog_cache.get(kind)
+        if entry is None:
+            return False, None
+        if time.monotonic() - entry.fetched_at >= _FLEET_CATALOG_CACHE_TTL_SECONDS:
+            return False, None
+        return True, entry.rows
+
+
+def _fleet_catalog_cache_store(kind: str, rows: list[dict[str, Any]]) -> None:
+    with _fleet_catalog_cache_guard:
+        _fleet_catalog_cache[kind] = _FleetCatalogCacheEntry(rows, time.monotonic())
+
+
+async def _refresh_fleet_catalog_kind(kind: str) -> list[dict[str, Any]] | None:
+    """Single-flight refresh of one kind: at most one concurrent engine read
+    per kind, regardless of how many requests arrive while it is in flight.
+    """
+    lock = _fleet_catalog_kind_lock(kind)
+    async with lock:
+        # Re-check inside the lock: a request that waited for it may find
+        # another caller already refreshed this kind while it waited --
+        # collapsing N concurrent misses into ONE fetch, not N.
+        hit, cached_rows = _fleet_catalog_cache_hit(kind)
+        if hit:
+            return cached_rows
+        result = await _read_fleet_catalog(kind)
+        rows = (result or {}).get(kind)
+        if rows is not None:
+            _fleet_catalog_cache_store(kind, rows)
+        return rows
+
+
+async def _read_fleet_catalog_cached(
+    *kinds: str,
+) -> dict[str, list[dict[str, Any]] | None]:
+    """TTL + single-flight cached counterpart of `_read_fleet_catalog`.
+
+    Every kind independently: a cache hit costs ZERO engine calls; a miss (or
+    an expired kind) refreshes under that kind's own `asyncio.Lock`
+    (`_refresh_fleet_catalog_kind`). Unlike `_read_fleet_catalog`, this never
+    returns `None` for the whole mapping -- a total-authority-denial failure
+    (the one case `_read_fleet_catalog` reports that way) surfaces here as
+    every requested kind independently resolving to `None`, which is the
+    SAME per-kind shape every partial failure already uses, so callers
+    (`list_all_tools`) do not need a separate "whole thing failed" branch.
+    """
+    result: dict[str, list[dict[str, Any]] | None] = {}
+    to_refresh: list[str] = []
+    for kind in kinds:
+        hit, rows = _fleet_catalog_cache_hit(kind)
+        if hit:
+            result[kind] = rows
+        else:
+            to_refresh.append(kind)
+    if to_refresh:
+        refreshed = await asyncio.gather(
+            *(_refresh_fleet_catalog_kind(kind) for kind in to_refresh)
+        )
+        for kind, rows in zip(to_refresh, refreshed, strict=True):
+            result[kind] = rows
+    return result
+
+
 @router.get('/tools')
 async def list_all_tools() -> dict[str, Any]:
     """Retrieve all MCP servers/tools, built-in tools, skills, skill graphs,
@@ -1988,18 +2153,16 @@ async def list_all_tools() -> dict[str, Any]:
     except Exception:
         engine = None
 
-    catalog = await _read_fleet_catalog('servers', 'discoveries', 'skills', 'prompts')
-    if catalog is None:
-        # Total failure (denied authority / catalog engine unavailable,
-        # before any kind-specific read was even attempted): normalize to
-        # "every requested kind failed" so the per-kind logic below is the
-        # ONLY code path -- no separate whole-catalog branch to keep in sync.
-        catalog = {
-            'servers': None,
-            'discoveries': None,
-            'skills': None,
-            'prompts': None,
-        }
+    # FIX LANE Priority 3: TTL + single-flight cached, not a fresh engine
+    # read on every call -- see `_read_fleet_catalog_cached`'s docstring.
+    # Unlike `_read_fleet_catalog`, this never returns `None` for the whole
+    # mapping (a total-authority-denial failure already surfaces as every
+    # requested kind independently `None`), so the per-kind logic below is
+    # the ONLY code path with no separate whole-catalog branch to keep in
+    # sync.
+    catalog = await _read_fleet_catalog_cached(
+        'servers', 'discoveries', 'skills', 'prompts'
+    )
 
     server_rows = catalog.get('servers')
     discovery_rows = catalog.get('discoveries')
@@ -2128,6 +2291,14 @@ async def list_all_tools() -> dict[str, Any]:
             'error': mcp_error,
             'last_synced_at': last_synced_at,
         }
+
+    # Free early-invalidation signal for the fleet-catalog cache (FIX LANE
+    # Priority 3): `last_synced_at` is already computed above from
+    # `discoveries` rows -- no extra engine call. A no-op when `None`/
+    # unchanged; when the hourly sync job has advanced it, the cache is
+    # cleared so the NEXT request refetches instead of serving a
+    # now-superseded snapshot for the rest of the TTL.
+    note_fleet_catalog_sync_time(last_synced_at)
 
     # MCP prompts -- the fleet catalog's own `mcp_prompts` table, never
     # surfaced anywhere in this app before; already tenant-scoped and
