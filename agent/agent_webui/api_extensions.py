@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import contextlib
 import contextvars
 import hashlib
 import inspect
@@ -3471,35 +3472,57 @@ def _canvas_node(node: dict[str, Any]) -> tuple[dict[str, Any], int]:
 
 
 async def _distinct_graph_labels(engine: Any) -> list[str]:
-    """Every label the engine currently knows, via its own `db.labels()`.
+    """Every label known across every graph this actor may read, via each
+    graph's own `db.labels()`.
 
     `db.labels()` is a real Cypher procedure in the engine
     (`DbLabels` in `crates/eg-query/src/cypher/proc.rs`, backed by
-    `distinct_labels`), so this is one bounded round trip and not a scan
-    this process performs. A build without the procedure yields no labels
+    `distinct_labels`), so this is one bounded round trip per graph and not a
+    scan this process performs. A build without the procedure yields no labels
     rather than failing the whole request -- the caller still returns the
     unlabeled bucket, which is strictly better than a 503.
+
+    FIX LANE Priority 1: fanned out across `_accessible_graphs` (via
+    `_rows_per_accessible_graph`) rather than `engine.backend`-only --
+    otherwise a label that exists ONLY in commons (e.g. `Tool`, which the
+    caller's own tenant graph carries none of) would never even be
+    enumerated, so `get_graph_nodes`' per-label fan-out below would never be
+    asked for it regardless of how well THAT part unions. A plain label name
+    is not sensitive (it is schema, not row data), so no commons-catalog
+    filtering applies here -- the row-level restriction happens once, per
+    node, in `_union_nodes_by_label`.
     """
-    labels: list[str] = []
-    try:
-        result = await _invoke_governed_helper(
-            engine.backend.execute,
-            'CALL db.labels() YIELD label RETURN label',
-            deadline=10.0,
-        )
-        # Materializing the result stays INSIDE the try. `execute` can hand
-        # back a lazy cursor, so the engine-side failure surfaces on the first
-        # iteration rather than from the call itself -- with the loop outside,
-        # that ValueError escaped the handler and 503'd the whole canvas even
-        # though this helper is documented to degrade instead.
+
+    def _labels_for(scoped_engine: Any) -> list[str]:
+        labels: list[str] = []
+        try:
+            result = scoped_engine.backend.execute(
+                'CALL db.labels() YIELD label RETURN label'
+            )
+        except Exception as labels_error:  # noqa: BLE001 — per-graph fail-soft
+            _log_failure(
+                'get_graph_nodes.db_labels', labels_error, level=logging.WARNING
+            )
+            return []
         for row in result or []:
             label = row.get('label') if isinstance(row, dict) else None
             if isinstance(label, str) and label and label not in labels:
                 labels.append(label)
-    except Exception as labels_error:
-        _log_failure('get_graph_nodes.db_labels', labels_error, level=logging.WARNING)
-        return []
-    return labels
+        return labels
+
+    def _run() -> list[str]:
+        result = _rows_per_accessible_graph(engine, _labels_for)
+        if result is None:
+            return _labels_for(engine)
+        per_graph, _degraded = result
+        labels: list[str] = []
+        for _graph_name, graph_labels in per_graph:
+            for label in graph_labels or []:
+                if label not in labels:
+                    labels.append(label)
+        return labels
+
+    return await _invoke_governed_helper(_run, deadline=10.0)
 
 
 # ---------------------------------------------------------------------------
@@ -3593,11 +3616,71 @@ def _graph_union_executor(engine: Any) -> Any:
         graph_name: str, cypher: str, params: dict[str, Any] | None
     ) -> list[dict[str, Any]]:
         session = current_session()
+        exec_cypher, exec_params = cypher, dict(params or {})
+        is_commons = False
+        if session is not None:
+            from agent_utilities.knowledge_graph.core.tenant_sharing import (
+                apply_commons_catalog_restriction,
+                commons_graph_name,
+            )
+
+            is_commons = graph_name == commons_graph_name()
+            if is_commons:
+                # Push the commons READ catalog restriction (2026-08-09 owner
+                # ruling; `COMMONS_SHAREABLE_NODE_TYPES`) INTO the query text so
+                # the engine filters, not this process -- `read_union`/
+                # `filter_commons_catalog` were built for a post-hoc Python
+                # filter, but that pulls every commons row over the wire first.
+                # `apply_commons_catalog_restriction` is the companion primitive
+                # built for exactly this pushdown (its own docstring: "closes
+                # the label/type-index half of the existence-leak... injected
+                # into the query TEXT"). Best-effort: a query shape it can't
+                # inject into (no bound variable, `UnscopableQueryError`, or any
+                # other failure) leaves `exec_cypher` unchanged and is caught
+                # below by the row-level fallback -- this must never fail OPEN.
+                try:
+                    exec_cypher, extra_params = apply_commons_catalog_restriction(
+                        cypher, session.actor, graph_name
+                    )
+                    exec_params.update(extra_params)
+                except Exception as exc:  # noqa: BLE001 — pushdown is best-effort; the row-level fallback below is the safety net
+                    _log_failure(
+                        'graph_union.commons_restriction', exc, level=logging.DEBUG
+                    )
+                    exec_cypher, exec_params = cypher, dict(params or {})
+        # `query=`/`params=` are passed as KEYWORDS, not positionally: the
+        # real `QueryMixin.query_cypher(self, query, params=None, ...)`
+        # signature (`engine_query.py:137`) binds either way, but this route
+        # is pinned to the `query` keyword specifically (see
+        # `test_execute_cypher_forwards_the_query_text_under_the_query_keyword`)
+        # to distinguish it from the MCP tool surface's `cypher`-named field
+        # -- a future accidental rename to `cypher=` must fail loudly here,
+        # which a positional call would silently paper over.
         if session is None or graph_name == session.graph:
-            return list(engine.query_cypher(cypher, params) or [])
-        scoped_engine = engine.for_graph(graph_name)
-        with use_session(session.with_graph(graph_name)):
-            return list(scoped_engine.query_cypher(cypher, params) or [])
+            rows = list(
+                engine.query_cypher(query=exec_cypher, params=exec_params) or []
+            )
+        else:
+            scoped_engine = engine.for_graph(graph_name)
+            with use_session(session.with_graph(graph_name)):
+                rows = list(
+                    scoped_engine.query_cypher(query=exec_cypher, params=exec_params)
+                    or []
+                )
+        if is_commons and exec_cypher == cypher:
+            # The pushdown above did not change the query text -- either it
+            # legitimately doesn't apply (privileged actor, no WHERE/RETURN
+            # site) or it failed -- so apply the row-level allowlist as the
+            # fallback. `filter_commons_catalog` itself no-ops for a
+            # privileged actor, so this is a no-op in the common "legitimately
+            # doesn't apply" case and the actual safety net in the "it failed"
+            # case; it never widens access relative to the pushdown succeeding.
+            from agent_utilities.knowledge_graph.core.tenant_sharing import (
+                filter_commons_catalog,
+            )
+
+            rows = filter_commons_catalog(rows, session.actor, graph_name)
+        return rows
 
     return _execute
 
@@ -3638,6 +3721,15 @@ async def _read_union_cypher(
     return await _invoke_governed_helper(_run, deadline=deadline)
 
 
+# Bound on concurrent per-graph fan-out (`_rows_per_accessible_graph` below).
+# `_accessible_graphs` is small today (tenant graph + commons = 2) and stays
+# small (ordered, de-duplicated; ancestors are a short chain in practice) --
+# this cap just keeps a pathological tenancy tree from spawning an unbounded
+# thread pool, matching the "must not degrade linearly if ancestors are
+# added" requirement without over-provisioning for a case that doesn't exist.
+_READ_UNION_MAX_WORKERS = 8
+
+
 def _rows_per_accessible_graph(
     engine: Any,
     engine_call: Any,
@@ -3655,6 +3747,21 @@ def _rows_per_accessible_graph(
     wrong even if forced -- physically partitioned graphs (GOC-61) never
     share a node id, so the correct merge of independent per-graph
     aggregates is for the CALLER to sum/merge them, not de-dup them.
+
+    CONCURRENT, BOUNDED (`_READ_UNION_MAX_WORKERS`): each graph's read is
+    genuinely independent (a separate `for_graph` view + a separately
+    retargeted session), so running them sequentially would make every
+    union-read route's latency scale with the number of accessible graphs
+    for no reason -- exactly the linear-degradation shape this fix is
+    required not to introduce. `contextvars.copy_context()` per submission is
+    load-bearing, not decoration: `current_session`/`use_session` are
+    `ContextVar`-backed, and a bare `ThreadPoolExecutor.submit` would hand
+    the callable a FRESH context with no ambient session at all, silently
+    breaking every graph but the one the caller's own thread happens to
+    still be on. Results are re-sorted back into `_accessible_graphs`'
+    ordering (tenant graph first) after the fan-out completes, regardless of
+    which thread finished first, so downstream "tenant wins on a duplicate
+    id" merges stay correct.
 
     FAIL-SOFT (matches `tenant_sharing.read_union`'s own documented
     contract, `core/tenant_sharing.py:457`: "A per-graph failure is logged
@@ -3677,21 +3784,40 @@ def _rows_per_accessible_graph(
     if session is None:
         return None
     graphs = _accessible_graphs(session.actor)
+
+    def _one(graph_name: str) -> Any:
+        if graph_name == session.graph:
+            return engine_call(engine)
+        scoped_engine = engine.for_graph(graph_name)
+        with use_session(session.with_graph(graph_name)):
+            return engine_call(scoped_engine)
+
     succeeded: list[tuple[str, Any]] = []
     degraded: list[str] = []
-    for graph_name in graphs:
-        try:
-            if graph_name == session.graph:
-                result = engine_call(engine)
-            else:
-                scoped_engine = engine.for_graph(graph_name)
-                with use_session(session.with_graph(graph_name)):
-                    result = engine_call(scoped_engine)
-        except Exception as exc:  # noqa: BLE001 — one graph down ≠ whole read down (mirrors tenant_sharing.read_union's own per-graph guard)
-            _log_failure('read_union.per_graph', exc, level=logging.DEBUG)
-            degraded.append(graph_name)
-            continue
-        succeeded.append((graph_name, result))
+    if len(graphs) <= 1:
+        for graph_name in graphs:
+            try:
+                succeeded.append((graph_name, _one(graph_name)))
+            except Exception as exc:  # noqa: BLE001 — one graph down ≠ whole read down (mirrors tenant_sharing.read_union's own per-graph guard)
+                _log_failure('read_union.per_graph', exc, level=logging.DEBUG)
+                degraded.append(graph_name)
+        return succeeded, degraded
+
+    max_workers = min(len(graphs), _READ_UNION_MAX_WORKERS)
+    with _futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        pending = {
+            pool.submit(contextvars.copy_context().run, _one, graph_name): graph_name
+            for graph_name in graphs
+        }
+        for future in pending:
+            graph_name = pending[future]
+            try:
+                succeeded.append((graph_name, future.result()))
+            except Exception as exc:  # noqa: BLE001 — one graph down ≠ whole read down (mirrors tenant_sharing.read_union's own per-graph guard)
+                _log_failure('read_union.per_graph', exc, level=logging.DEBUG)
+                degraded.append(graph_name)
+    order = {graph_name: idx for idx, graph_name in enumerate(graphs)}
+    succeeded.sort(key=lambda pair: order[pair[0]])
     return succeeded, degraded
 
 
@@ -3800,6 +3926,115 @@ async def _read_union_sql_group_counts(
     return await _invoke_governed_helper(_run, deadline=deadline)
 
 
+def _union_nodes_by_label(
+    engine: Any, label: str, limit: int
+) -> tuple[list[tuple[str, dict[str, Any]]], list[str], list[str]]:
+    """Fan `engine.backend.nodes_by_label(label, limit)` out across every graph
+    this actor may read and merge, de-duped by node id.
+
+    `nodes_by_label` is a native engine call (`GraphComputeEngine
+    .get_nodes_by_label`), not Cypher, so it cannot go through
+    `_read_union_cypher` -- this is exactly the "call the engine once per
+    accessible graph via `_rows_per_accessible_graph` and merge" case the fix
+    lane's own instructions anticipate. Uses `_rows_per_accessible_graph` for
+    the per-graph fan-out (same `engine.for_graph`/`use_session` retargeting
+    contract as every other union helper here), then applies the commons READ
+    catalog restriction (`tenant_sharing.filter_commons_catalog`) to ONLY the
+    commons graph's rows before merging -- `nodes_by_label` has no Cypher form
+    `apply_commons_catalog_restriction` could inject into, so the row-level
+    allowlist function is applied directly here instead (verified: `read_union`
+    itself does not call it, so it is this call site's job).
+
+    Returns `(rows, source_graphs, degraded_graphs)`, the same shape
+    `_read_union_scalar_sum` returns, so callers can accumulate source/degraded
+    sets identically.
+    """
+    from agent_utilities.knowledge_graph.core.session import current_session
+    from agent_utilities.knowledge_graph.core.tenant_sharing import (
+        commons_graph_name,
+        filter_commons_catalog,
+    )
+
+    def _call(scoped_engine: Any) -> list[tuple[str, dict[str, Any]]]:
+        fn = getattr(scoped_engine.backend, 'nodes_by_label', None)
+        if not callable(fn):
+            return []
+        return list(fn(label, limit) or [])
+
+    result = _rows_per_accessible_graph(engine, _call)
+    if result is None:
+        return list(_call(engine)), [], []
+    per_graph, degraded = result
+    session = current_session()
+    actor = session.actor if session is not None else None
+    commons = commons_graph_name()
+    merged: list[tuple[str, dict[str, Any]]] = []
+    seen: set[str] = set()
+    source_graphs: list[str] = []
+    for graph_name, rows in per_graph:
+        source_graphs.append(graph_name)
+        clean_rows = [
+            (row[0], row[1])
+            for row in (rows or [])
+            if isinstance(row, (tuple, list)) and len(row) == 2
+        ]
+        if graph_name == commons and actor is not None:
+            props_only = [p if isinstance(p, dict) else {} for _nid, p in clean_rows]
+            allowed = filter_commons_catalog(props_only, actor, graph_name)
+            allowed_ids = {id(p) for p in allowed}
+            clean_rows = [(nid, p) for nid, p in clean_rows if id(p) in allowed_ids]
+        for nid, props in clean_rows:
+            if isinstance(nid, str):
+                if nid in seen:
+                    continue
+                seen.add(nid)
+            merged.append((nid, props))
+    return merged, source_graphs, degraded
+
+
+def _union_engine_call(
+    engine: Any, actor: Any, call: Any, *, id_key: str = 'id'
+) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+    """Fan a native (non-Cypher) engine READ call `call(scoped_engine)` out
+    across every graph this actor may read, merging row-shaped dict results
+    de-duped by `id_key` (tenant graph wins, matching `read_union`'s own
+    semantic; `_rows_per_accessible_graph` already orders its output tenant-
+    first). The commons READ catalog restriction (`filter_commons_catalog`)
+    is applied to only the commons graph's rows before merging -- same
+    reasoning as `_union_nodes_by_label`, for any native call whose results
+    are already row/dict-shaped (e.g. `search_hybrid`, `query_impact`) rather
+    than the `(id, props)` tuples `nodes_by_label` returns.
+    """
+    from agent_utilities.knowledge_graph.core.tenant_sharing import (
+        commons_graph_name,
+        filter_commons_catalog,
+    )
+
+    result = _rows_per_accessible_graph(engine, call)
+    if result is None:
+        return list(call(engine) or []), [], []
+    per_graph, degraded = result
+    commons = commons_graph_name()
+    merged: list[dict[str, Any]] = []
+    seen: set[Any] = set()
+    source_graphs: list[str] = []
+    for graph_name, rows in per_graph:
+        source_graphs.append(graph_name)
+        rows = [r for r in (rows or []) if isinstance(r, dict)]
+        if graph_name == commons and actor is not None:
+            rows = filter_commons_catalog(rows, actor, graph_name)
+        for row in rows:
+            rid = row.get(id_key)
+            if rid is None:
+                merged.append(row)
+                continue
+            if rid in seen:
+                continue
+            seen.add(rid)
+            merged.append(row)
+    return merged, source_graphs, degraded
+
+
 @router.get('/graph/nodes')
 async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
     """Query Knowledge Graph for nodes of a specific type or all nodes.
@@ -3881,12 +4116,26 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
         budget = _MAX_EXTERNAL_COLLECTION_ITEMS
         # Leave headroom under the serialized ceiling for the JSON envelope.
         budget_bytes = (_MAX_EXTERNAL_RESULT_BYTES * 3) // 4
+        # FIX LANE Priority 1: every `nodes_by_label` call below is fanned out
+        # across `_accessible_graphs` and merged (`_union_nodes_by_label`,
+        # de-duped by node id, tenant wins, commons READ catalog allowlist
+        # applied to commons rows) -- see that helper's docstring for why this
+        # goes through `_rows_per_accessible_graph` rather than
+        # `_read_union_cypher` (no Cypher form for this native call).
+        # `_union_nodes_by_label` itself is a plain sync callable (mirrors
+        # `nodes_by_label`'s own shape), so it goes through
+        # `_invoke_governed_helper` exactly like the un-unioned call it
+        # replaces.
         if node_type:
-            rows = await _invoke_governed_helper(
-                nodes_by_label, node_type, budget, deadline=10.0
+            rows, node_sources, node_degraded = await _invoke_governed_helper(
+                _union_nodes_by_label, engine, node_type, budget, deadline=10.0
             )
+            source_graphs = set(node_sources)
+            degraded_graphs = set(node_degraded)
         else:
             rows = []
+            source_graphs = set()
+            degraded_graphs = set()
             for label in await _distinct_graph_labels(engine):
                 remaining = budget - len(rows)
                 if remaining <= 0:
@@ -3896,8 +4145,12 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                 # answer; failing all of them because one failed is not. The
                 # label is named in the log so the cause stays findable.
                 try:
-                    page = await _invoke_governed_helper(
-                        nodes_by_label, label, remaining, deadline=10.0
+                    page, label_sources, label_degraded = await _invoke_governed_helper(
+                        _union_nodes_by_label,
+                        engine,
+                        label,
+                        remaining,
+                        deadline=10.0,
                     )
                 except Exception as label_error:
                     _log_failure(
@@ -3907,6 +4160,8 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                     )
                     continue
                 rows.extend(page or [])
+                source_graphs.update(label_sources)
+                degraded_graphs.update(label_degraded)
             # The genuinely-unlabeled bucket (`label=''`) is best-effort: the
             # DEPLOYED engine build rejects an empty label argument outright
             # (ValueError), even though `GraphCore::get_nodes_by_label_page`
@@ -3916,13 +4171,32 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
             remaining = budget - len(rows)
             if remaining > 0:
                 try:
-                    page = await _invoke_governed_helper(
-                        nodes_by_label, '', remaining, deadline=10.0
+                    page, empty_sources, empty_degraded = await _invoke_governed_helper(
+                        _union_nodes_by_label,
+                        engine,
+                        '',
+                        remaining,
+                        deadline=10.0,
                     )
                 except Exception:
                     logger.debug('engine rejects empty-label read; skipping unlabeled')
                 else:
                     rows.extend(page or [])
+                    source_graphs.update(empty_sources)
+                    degraded_graphs.update(empty_degraded)
+        # `source_graphs`/`degraded_graphs` are computed above for
+        # observability parity with `get_graph_stats`, but this route's
+        # response is a bare JSON array (`list[dict]`, consumed directly by
+        # GraphView.tsx's node list) -- there is no envelope field to carry
+        # them without breaking that contract. Logged instead so the union's
+        # effect stays visible operationally even though it can't ride the
+        # response body.
+        if degraded_graphs:
+            logger.warning(
+                'get_graph_nodes: degraded graphs %s (source graphs: %s)',
+                sorted(degraded_graphs),
+                sorted(source_graphs),
+            )
         nodes: list[dict[str, Any]] = []
         for row in rows or []:
             if not isinstance(row, (tuple, list)) or len(row) != 2:
@@ -4035,8 +4309,17 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
             'MATCH (a)-[r]->(b) RETURN a.id as source, '
             f'type(r) as type, b.id as target LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
         )
-        result = await _invoke_governed_helper(
-            engine.backend.execute, query, deadline=10.0
+        # FIX LANE Priority 1: unioned across every graph this actor may read
+        # (`_read_union_cypher` -- `tenant_sharing.read_union`, same primitive
+        # `get_graph_stats` already uses), not `engine.backend.execute` alone,
+        # so relationships among commons-graph nodes (e.g. `Tool`-to-`Server`
+        # edges) are visible here too. A relationship row carries no single
+        # `id` column, so `read_union`'s id-dedup is a no-op for every row here
+        # (its own documented behaviour for an unclassifiable id -- "keep,
+        # never drop") -- which is correct: two physically partitioned graphs
+        # (GOC-61) never share an edge, so nothing needs de-duplicating.
+        result, _source_graphs = await _read_union_cypher(
+            engine, query, None, deadline=10.0
         )
         relationships = []
         for row in result:
@@ -4445,8 +4728,26 @@ async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
     try:
         engine = await _get_engine_bounded()
 
-        results = await _invoke_governed_helper(
-            engine.search_hybrid, query, top_k=top_k, deadline=15.0
+        # FIX LANE Priority 1: `search_hybrid` is a native ranked-retrieval
+        # call with no Cypher form (`_read_union_cypher` does not apply), so
+        # this fans it out per accessible graph via `_union_engine_call`
+        # (`_rows_per_accessible_graph` underneath) and merges by node id --
+        # the fleet/tool catalog is otherwise invisible to hybrid search from
+        # a webui session exactly like it was to `/graph/nodes`. `top_k` is
+        # pushed down to EACH per-graph call (not fetched unbounded then
+        # sliced) -- the merge below still trims to the caller's `top_k` after
+        # de-duping, since the union of two `top_k`-bounded shards can exceed
+        # `top_k`.
+        from agent_utilities.knowledge_graph.core.session import current_session
+
+        session = current_session()
+        actor = session.actor if session is not None else None
+
+        def _call(scoped_engine: Any) -> list[dict[str, Any]]:
+            return list(scoped_engine.search_hybrid(query, top_k=top_k) or [])
+
+        results, _source_graphs, _degraded = await _invoke_governed_helper(
+            _union_engine_call, engine, actor, _call, deadline=15.0
         )
         bounded = _public_external_result(list(results or [])[:top_k])
         return bounded if isinstance(bounded, list) else []
@@ -4479,8 +4780,23 @@ async def get_impact(symbol: str) -> list[dict[str, Any]]:
     try:
         engine = await _get_engine_bounded()
 
-        impact_set = await _invoke_governed_helper(
-            engine.query_impact, symbol, deadline=15.0
+        # FIX LANE Priority 1: `query_impact` is a native BFS-traversal call
+        # with no Cypher form, fanned out per accessible graph and merged by
+        # node id (`_union_engine_call`), same reasoning as `hybrid_search`
+        # above. The traversal itself is graph-local (edges never cross a
+        # GOC-61 graph boundary), so `symbol` resolves in at most one
+        # accessible graph -- the other graph(s) cheaply return `[]` via
+        # `query_impact`'s own `has_node` early-return, not an error.
+        from agent_utilities.knowledge_graph.core.session import current_session
+
+        session = current_session()
+        actor = session.actor if session is not None else None
+
+        def _call(scoped_engine: Any) -> list[dict[str, Any]]:
+            return list(scoped_engine.query_impact(symbol) or [])
+
+        impact_set, _source_graphs, _degraded = await _invoke_governed_helper(
+            _union_engine_call, engine, actor, _call, deadline=15.0
         )
         bounded = _public_external_result(
             list(impact_set or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
@@ -4509,11 +4825,16 @@ async def execute_cypher(data: dict[str, Any]) -> list[dict[str, Any]]:
 
         engine = await _get_engine_bounded()
 
-        result = await _invoke_governed_helper(
-            engine.query_cypher,
-            deadline=15.0,
-            query=query,
-            params=params,
+        # FIX LANE Priority 1: unioned across every graph this actor may read
+        # (`_read_union_cypher`). Safe to union unconditionally -- unlike a
+        # general Cypher surface, `_validate_read_only_cypher` above has
+        # ALREADY rejected any mutating clause (CREATE/MERGE/DELETE/SET/
+        # REMOVE/CALL/...); every query reaching this point is a bounded read,
+        # so there is no write-vs-read branch to preserve here (the union
+        # helper itself never touches `session.graph`'s write path either
+        # way).
+        result, _source_graphs = await _read_union_cypher(
+            engine, query, params, deadline=15.0
         )
         if not isinstance(result, list):
             raise ValueError('Graph query returned an invalid result shape')
@@ -10403,6 +10724,29 @@ async def _get_ontology_kg_bounded() -> Any:
     return await _invoke_governed_helper(get_ontology_kg, deadline=10.0)
 
 
+def _ontology_facade_for(engine: Any, scoped_engine: Any) -> tuple[Any, Any] | None:
+    """Resolve the `(kg, ontology)` facade pair for one `_rows_per_accessible_graph`
+    call-site: the tenant-pinned singleton (`get_ontology_kg()`) when
+    `scoped_engine` is the ambient (unscoped) `engine` itself, else a
+    throwaway facade over `scoped_engine.backend` (a graph-scoped view
+    `_rows_per_accessible_graph` already retargeted the ambient session onto
+    -- see `_graph_union_executor`'s docstring for why both moves are
+    required together). Returns `None` when the ontology layer is
+    unavailable for that graph, so callers can degrade a single graph rather
+    than raise.
+    """
+    if scoped_engine is engine:
+        return get_ontology_kg()
+    from agent_utilities.knowledge_graph.facade import KnowledgeGraph
+
+    kg = KnowledgeGraph()
+    kg._store = scoped_engine.backend
+    ontology = kg.ontology
+    if ontology is None:
+        return None
+    return kg, ontology
+
+
 def _actor_id_from_request(request: Request | None) -> str:
     """Return only the server-minted ambient actor, never caller headers/body."""
 
@@ -10544,6 +10888,66 @@ def _node_links(backend: Any, object_id: str) -> dict[str, list[dict[str, Any]]]
     return {'out': out_links, 'in': in_links}
 
 
+def _session_scoped_to(session: Any, graph_name: str | None) -> Any:
+    """Context manager retargeting the ambient session onto ``graph_name``.
+
+    A no-op (`contextlib.nullcontext`) when there is no ambient session or
+    ``graph_name`` already matches it -- otherwise `use_session` +
+    `session.with_graph` (the same dual-retarget `_rows_per_accessible_graph`
+    /`_graph_union_executor` already use). Needed by `get_ontology_object`/
+    `derive_ontology_property`, which locate an object's home graph ONCE
+    (`_locate_object_graph`) and then must run every remaining store/ontology
+    read in that same scope -- see `_graph_union_executor`'s docstring for why
+    a scoped backend view and a retargeted session are required TOGETHER.
+    """
+    if session is None or graph_name is None or graph_name == session.graph:
+        return contextlib.nullcontext()
+    from agent_utilities.knowledge_graph.core.session import use_session
+
+    return use_session(session.with_graph(graph_name))
+
+
+def _locate_object_graph(
+    engine: Any, object_id: str
+) -> tuple[str | None, Any, dict[str, Any]] | None:
+    """Resolve which accessible graph holds ``object_id``.
+
+    An object's edges never cross a GOC-61 graph boundary, so at most one
+    accessible graph legitimately holds a given id. Fans `_node_properties`
+    out across every graph this actor may read via
+    `_rows_per_accessible_graph` and returns the first non-empty match in
+    `_accessible_graphs` order (tenant graph first) -- on the impossible case
+    of more than one graph matching, tenant wins, the same semantic
+    `read_union`'s own de-dup already applies on a duplicate id. Returns
+    ``(graph_name, scoped_engine, props)``, or ``None`` when no accessible
+    graph holds the object. Falls back to the plain `session.graph`-only
+    lookup when there is no verified ambient session, matching every other
+    union helper in this file.
+    """
+    from agent_utilities.knowledge_graph.core.session import current_session
+
+    def _call(scoped_engine: Any) -> dict[str, Any]:
+        return _node_properties(scoped_engine.backend, object_id)
+
+    session = current_session()
+    result = _rows_per_accessible_graph(engine, _call)
+    if result is None:
+        props = _call(engine)
+        if not props:
+            return None
+        return (session.graph if session is not None else None), engine, props
+    per_graph, _degraded = result
+    for graph_name, props in per_graph:
+        if props:
+            scoped_engine = (
+                engine
+                if session is not None and graph_name == session.graph
+                else engine.for_graph(graph_name)
+            )
+            return graph_name, scoped_engine, props
+    return None
+
+
 @router.get('/ontology/object-types')
 async def list_object_types() -> list[dict[str, Any]]:
     """List ontology object/node types (registry types + interface implementers).
@@ -10553,8 +10957,7 @@ async def list_object_types() -> list[dict[str, Any]]:
     labels present in the store. Each entry carries the interfaces it implements.
     """
     try:
-        kg, ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
+        _kg, ontology = await _get_ontology_kg_bounded()
 
         # Concrete types declared as interface implementers (programmatic targets).
         implementers_by_type: dict[str, list[str]] = {}
@@ -10565,12 +10968,21 @@ async def list_object_types() -> list[dict[str, Any]]:
             except Exception:  # noqa: BLE001
                 continue
 
-        # Live node labels present in the store.
+        # Live node labels present in the store. FIX LANE Priority 1: unioned
+        # across every graph this actor may read (`_read_union_cypher`), not
+        # `backend.execute`/`kg.store` alone -- otherwise the commons-only
+        # catalog types (`Tool`, `Skill`, ...) never appear in the Object
+        # Explorer's type list at all. The commons READ catalog restriction is
+        # pushed into the query text automatically by `_graph_union_executor`
+        # (see its docstring) so a foreign tenant's count here is already
+        # scoped to `COMMONS_SHAREABLE_NODE_TYPES`.
         live_types: dict[str, int] = {}
         try:
-            rows = await _invoke_governed_helper(
-                backend.execute,
+            engine = await _get_engine_bounded()
+            rows, _source_graphs = await _read_union_cypher(
+                engine,
                 'MATCH (n) RETURN labels(n) as labels, count(n) as count',
+                None,
                 deadline=15.0,
             )
             for row in rows or []:
@@ -10728,24 +11140,42 @@ async def ontology_object_set_search(
                     )
                 )
 
-        def execute_search() -> list[dict[str, Any]]:
+        # FIX LANE Priority 1: fanned out across every graph this actor may
+        # read (`_union_engine_call` -- `_rows_per_accessible_graph` under a
+        # per-graph `(kg, ontology)` facade, `_ontology_facade_for`) and
+        # merged by object id -- the ontology layer has no Cypher seam
+        # (`_read_union_cypher` does not apply), so this is the "call the
+        # engine once per accessible graph and merge" case. `limit` is pushed
+        # down to EACH graph's `.search(...)` call (not fetched unbounded then
+        # sliced); the merge is re-trimmed to `limit` below since the union of
+        # two `limit`-bounded per-graph results can exceed it.
+        engine = await _get_engine_bounded()
+
+        def execute_search(scoped_engine: Any) -> list[dict[str, Any]]:
+            facade = _ontology_facade_for(engine, scoped_engine)
+            if facade is None:
+                return []
+            _scoped_kg, scoped_ontology = facade
             remaining_filters = filters
             if kind:
-                base = ontology.object_set_of_type(str(kind))
+                base = scoped_ontology.object_set_of_type(str(kind))
             elif filters:
-                base = ontology.dynamic_object_set(filters=filters)
+                base = scoped_ontology.dynamic_object_set(filters=filters)
                 remaining_filters = []  # already applied to the base set
             else:
                 # Graph-wide: a dynamic set over a permissive predicate.
-                base = ontology.dynamic_object_set(lambda props: True)
+                base = scoped_ontology.dynamic_object_set(lambda props: True)
             result = base.search(
                 query,
                 filters=remaining_filters or None,
                 limit=limit,
             )
-            return _object_set_rows(ontology, result, actor, limit=limit)
+            return _object_set_rows(scoped_ontology, result, actor, limit=limit)
 
-        rows = await _invoke_governed_helper(execute_search, deadline=30.0)
+        rows, _source_graphs, _degraded = await _invoke_governed_helper(
+            _union_engine_call, engine, actor, execute_search, deadline=30.0
+        )
+        rows = rows[:limit]
         return _public_external_result(
             {
                 'ids': [r.get('id') for r in rows],
@@ -10769,7 +11199,6 @@ async def ontology_object_set_search_around(
     Body: ``{ids, link_type, hops, cap, direction}``.
     """
     try:
-        _kg, ontology = await _get_ontology_kg_bounded()
         actor = _actor_context(request)
         ids = _bounded_identifier_list(data.get('ids'), required=True)
         link_type = data.get('link_type')
@@ -10788,17 +11217,32 @@ async def ontology_object_set_search_around(
         ):
             raise HTTPException(status_code=400, detail='Invalid link type')
 
-        def execute_search_around() -> list[dict[str, Any]]:
-            base = ontology.object_set(ids)
+        # FIX LANE Priority 1: fanned out per accessible graph and merged by
+        # object id, same reasoning as `ontology_object_set_search` above. A
+        # seed id only resolves related objects in the ONE graph it (and its
+        # links) physically live in (GOC-61: edges never cross a graph
+        # boundary) -- the other graph(s) cheaply return `[]` for a seed id
+        # they don't hold, not an error.
+        engine = await _get_engine_bounded()
+
+        def execute_search_around(scoped_engine: Any) -> list[dict[str, Any]]:
+            facade = _ontology_facade_for(engine, scoped_engine)
+            if facade is None:
+                return []
+            _scoped_kg, scoped_ontology = facade
+            base = scoped_ontology.object_set(ids)
             related = base.search_around(
                 link_type,
                 hops=hops,
                 direction=direction,
                 cap=cap,
             )
-            return _object_set_rows(ontology, related, actor, limit=cap)
+            return _object_set_rows(scoped_ontology, related, actor, limit=cap)
 
-        rows = await _invoke_governed_helper(execute_search_around, deadline=30.0)
+        rows, _source_graphs, _degraded = await _invoke_governed_helper(
+            _union_engine_call, engine, actor, execute_search_around, deadline=30.0
+        )
+        rows = rows[:cap]
         return _public_external_result(
             {
                 'ids': [r.get('id') for r in rows],
@@ -10813,14 +11257,50 @@ async def ontology_object_set_search_around(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _ids_present_in_graph(backend: Any, ids: list[str]) -> set[str]:
+    """Return the subset of ``ids`` that exist as nodes in ``backend``'s graph.
+
+    A single batched existence check. A STATIC :class:`ObjectSet`'s
+    ``ids()``/``objects()`` returns every id verbatim regardless of
+    existence -- a nonexistent id still yields a ``{"id": nid}`` stub -- so
+    fanning `/ontology/object-set/aggregate` out per accessible graph with
+    the SAME full ``ids`` list unfiltered would double/triple-count any id
+    that only lives in ONE of those graphs (each graph's run would count
+    every id, present or not). Narrowing to the ids each graph actually
+    holds first avoids that.
+    """
+    if not ids:
+        return set()
+    try:
+        rows = backend.execute(
+            'MATCH (n) WHERE n.id IN $ids RETURN n.id AS id', {'ids': ids}
+        )
+    except Exception:  # noqa: BLE001
+        return set()
+    present: set[str] = set()
+    for row in rows or []:
+        node_id = row.get('id') if isinstance(row, dict) else None
+        if isinstance(node_id, str):
+            present.add(node_id)
+    return present
+
+
 @router.post('/ontology/object-set/pivot')
 async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
     """Pivot an object set across a link type, grouping the linked set.
 
     Body: ``{ids, link_type, group_by, direction}``.
+
+    FIX LANE Priority 1: fanned out per accessible graph (same seed-id
+    reasoning as `/ontology/object-set/search-around` -- a seed id only
+    resolves linked objects in the ONE graph it and its links physically
+    live in, GOC-61, so a graph that doesn't hold a given seed id cheaply
+    contributes an empty pivot rather than an error) and the group buckets
+    merged by group value, deduped by linked-object id (tenant wins on a
+    duplicate id, matching every other union merge in this file).
     """
     try:
-        _kg, ontology = await _get_ontology_kg_bounded()
+        _kg, _ontology = await _get_ontology_kg_bounded()
         ids = _bounded_identifier_list(data.get('ids'))
         link_type = data.get('link_type')
         group_by = str(data.get('group_by', '') or '')
@@ -10834,19 +11314,48 @@ async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
         ):
             raise HTTPException(status_code=400, detail='Invalid link type')
 
-        pivot = await _invoke_governed_helper(
-            lambda: ontology.object_set(ids).pivot(
+        engine = await _get_engine_bounded()
+
+        def execute_pivot(scoped_engine: Any) -> Any:
+            facade = _ontology_facade_for(engine, scoped_engine)
+            if facade is None:
+                return None
+            _scoped_kg, scoped_ontology = facade
+            return scoped_ontology.object_set(ids).pivot(
                 link_type,
                 group_by,
                 direction=direction,
-            ),
-            deadline=30.0,
-        )
+            )
+
+        def _run() -> list[tuple[str | None, Any]]:
+            result = _rows_per_accessible_graph(engine, execute_pivot)
+            if result is None:
+                return [(None, execute_pivot(engine))]
+            per_graph, _degraded = result
+            return [(graph_name, value) for graph_name, value in per_graph]
+
+        per_graph = await _invoke_governed_helper(_run, deadline=30.0)
+
+        resolved_link_type = link_type or '*'
+        merged_groups: dict[Any, list[str]] = {}
+        seen: set[str] = set()
+        for _graph_name, pivot in per_graph:
+            if pivot is None:
+                continue
+            resolved_link_type = pivot.link_type
+            for key, member_ids in pivot.groups.items():
+                bucket = merged_groups.setdefault(key, [])
+                for member_id in member_ids:
+                    if member_id in seen:
+                        continue
+                    seen.add(member_id)
+                    bucket.append(member_id)
+
         return _public_external_result(
             {
-                'link_type': pivot.link_type,
-                'group_by': pivot.group_by,
-                'groups': {str(k): v for k, v in pivot.groups.items()},
+                'link_type': resolved_link_type,
+                'group_by': group_by,
+                'groups': {str(k): v for k, v in merged_groups.items()},
             }
         )
     except HTTPException:
@@ -10861,30 +11370,113 @@ async def ontology_object_set_aggregate(data: dict[str, Any]) -> dict[str, Any]:
     """Aggregate an object set (count/sum/avg/min/max), optionally grouped.
 
     Body: ``{ids, group_by, metric, field}``.
+
+    FIX LANE Priority 1: an id in ``ids`` lives in at most one accessible
+    graph (GOC-61 -- edges never cross a graph boundary), so this fans the
+    aggregate out per accessible graph (`_rows_per_accessible_graph`, via a
+    per-graph ``(kg, ontology)`` facade, `_ontology_facade_for`) over ONLY
+    the ids that graph actually holds (`_ids_present_in_graph` -- a STATIC
+    ObjectSet's ``.aggregate()`` counts every id verbatim whether it exists
+    in that graph or not, so an unfiltered full-``ids`` fan-out would
+    double-count), then merges the per-graph ``AggregationResult``s:
+
+    * ``count``/``sum`` -- SUM the per-graph group values; independent
+      partitions of the same set sum correctly by definition.
+    * ``min``/``max`` -- merge directly (min-of-mins / max-of-maxes); these
+      ARE reconstructable from independent partitions, unlike avg, so
+      scoping them to only the tenant graph (as a prior pass here did)
+      was over-cautious.
+    * ``avg`` -- requested as its ``sum``+``count`` components per graph and
+      divided AFTER merging, because ``AggregationResult`` exposes only the
+      final per-group value, not the underlying sum/count a correct avg
+      merge needs (a plain average-of-averages would be wrong whenever the
+      per-graph group sizes differ).
     """
     try:
-        _kg, ontology = await _get_ontology_kg_bounded()
+        _kg, _ontology = await _get_ontology_kg_bounded()
         ids = _bounded_identifier_list(data.get('ids'))
         metric = str(data.get('metric', 'count') or 'count')
         group_by = data.get('group_by')
         field = data.get('field')
+        if metric not in {'count', 'sum', 'avg', 'min', 'max'}:
+            raise HTTPException(
+                status_code=422, detail=f'unsupported metric {metric!r}'
+            )
+        if metric != 'count' and not field:
+            raise HTTPException(
+                status_code=422, detail=f'metric {metric!r} requires a numeric field'
+            )
 
-        agg = await _invoke_governed_helper(
-            lambda: ontology.object_set(ids).aggregate(
-                metric,
-                field=field,
-                group_by=group_by,
-            ),
-            deadline=30.0,
-        )
+        engine = await _get_engine_bounded()
+        # avg needs its components (sum + count), not the final per-group
+        # average, to merge correctly across graphs.
+        component_metrics = ('sum', 'count') if metric == 'avg' else (metric,)
+
+        def execute_aggregate(scoped_engine: Any) -> Any:
+            facade = _ontology_facade_for(engine, scoped_engine)
+            if facade is None:
+                return None
+            _scoped_kg, scoped_ontology = facade
+            present = _ids_present_in_graph(scoped_engine.backend, ids)
+            if not present:
+                return None
+            scoped_ids = [i for i in ids if i in present]
+            object_set = scoped_ontology.object_set(scoped_ids)
+            return {
+                m: object_set.aggregate(m, field=field, group_by=group_by)
+                for m in component_metrics
+            }
+
+        def _run() -> list[tuple[str | None, Any]]:
+            result = _rows_per_accessible_graph(engine, execute_aggregate)
+            if result is None:
+                return [(None, execute_aggregate(engine))]
+            per_graph, _degraded = result
+            return [(graph_name, value) for graph_name, value in per_graph]
+
+        per_graph = await _invoke_governed_helper(_run, deadline=30.0)
+
+        total_objects = 0
+        groups: dict[Any, float] = {}
+        sums: dict[Any, float] = {}
+        counts: dict[Any, float] = {}
+        for _graph_name, agg_map in per_graph:
+            if not agg_map:
+                continue
+            if metric == 'avg':
+                sum_res = agg_map['sum']
+                count_res = agg_map['count']
+                total_objects += sum_res.total_objects
+                for k, v in sum_res.groups.items():
+                    sums[k] = sums.get(k, 0.0) + v
+                for k, v in count_res.groups.items():
+                    counts[k] = counts.get(k, 0.0) + v
+            else:
+                agg = agg_map[metric]
+                total_objects += agg.total_objects
+                for k, v in agg.groups.items():
+                    if metric in ('count', 'sum'):
+                        groups[k] = groups.get(k, 0.0) + v
+                    elif metric == 'min':
+                        groups[k] = v if k not in groups else min(groups[k], v)
+                    elif metric == 'max':
+                        groups[k] = v if k not in groups else max(groups[k], v)
+
+        if metric == 'avg':
+            for k, s in sums.items():
+                c = counts.get(k, 0.0)
+                if c:
+                    groups[k] = s / c
+
+        value = None if group_by is not None else groups.get(None)
         return _public_external_result(
             {
-                'metric': agg.metric,
-                'field': agg.field,
-                'group_by': agg.group_by,
-                'groups': {str(k): v for k, v in agg.groups.items()},
-                'value': agg.value,
-                'total_objects': agg.total_objects,
+                'metric': metric,
+                'field': field,
+                'group_by': group_by,
+                'groups': {str(k): v for k, v in groups.items()},
+                'value': value,
+                'total_objects': total_objects,
             }
         )
     except HTTPException:
@@ -11416,93 +12008,117 @@ async def get_ontology_object(
     composition for that type when one has been saved (falling back to standard
     when none exists). The selection is a real change in the returned payload —
     the same affordance the Explorer's layout toggle reaches.
+
+    FIX LANE Priority 1: locates which accessible graph holds the object
+    (`_locate_object_graph`) ONCE, then re-scopes every remaining read
+    (links, derived properties, edit history) to that SAME graph
+    (`_ontology_facade_for` + `_session_scoped_to`) -- otherwise a
+    commons-resident object would come back with right properties but
+    wrong-graph (empty) links/derived/history, worse than the tenant-only
+    status quo.
     """
     object_id = _validate_runtime_id(object_id)
     if layout not in {'standard', 'configured'}:
         raise HTTPException(status_code=400, detail='Invalid object layout')
     try:
+        from agent_utilities.knowledge_graph.core.session import current_session
         from agent_utilities.knowledge_graph.ontology.permissioning import (
             enforce,
             markings_for,
         )
 
-        kg, ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
-        actor = _actor_context(request)
-
-        props = await _invoke_governed_helper(
-            _node_properties, backend, object_id, deadline=15.0
+        engine = await _get_engine_bounded()
+        located = await _invoke_governed_helper(
+            _locate_object_graph, engine, object_id, deadline=15.0
         )
-        props.setdefault('id', object_id)
-        enforced = enforce([props], actor)
-        if not enforced:
+        if located is None:
             raise HTTPException(status_code=404, detail='Object not found or denied')
-        view_props = enforced[0]
+        graph_name, scoped_engine, props = located
+        facade = _ontology_facade_for(engine, scoped_engine)
+        if facade is None:
+            raise HTTPException(status_code=501, detail='Ontology layer unavailable')
+        _scoped_kg, ontology = facade
+        backend = scoped_engine.backend
+        actor = _actor_context(request)
+        session = current_session()
 
-        object_type = (
-            view_props.get('type')
-            or view_props.get('_type')
-            or view_props.get('object_type')
-        )
-        try:
-            derived = await _invoke_governed_helper(
-                ontology.derive_all,
-                view_props,
-                object_type=object_type,
-                actor_id=actor.actor_id,
-                deadline=30.0,
-            )
-        except Exception:  # noqa: BLE001
-            derived = {}
-        try:
-            markings = sorted(markings_for(object_id))
-        except Exception:  # noqa: BLE001
-            markings = []
-        # Prefer the durable, cross-request audit trail from the store; fall
-        # back to the in-process ledger mirror when nothing was persisted.
-        history = await _invoke_governed_helper(
-            _durable_edit_history, backend, object_id, deadline=15.0
-        )
-        if not history:
-            try:
-                fallback_history = await _invoke_governed_helper(
-                    ontology.history,
-                    object_id,
-                    deadline=15.0,
+        with _session_scoped_to(session, graph_name):
+            props.setdefault('id', object_id)
+            enforced = enforce([props], actor)
+            if not enforced:
+                raise HTTPException(
+                    status_code=404, detail='Object not found or denied'
                 )
-                history = [e.model_dump(mode='json') for e in fallback_history]
-            except Exception:  # noqa: BLE001
-                history = []
+            view_props = enforced[0]
 
-        # Resolve the requested layout into a concrete view payload. ``configured``
-        # serves the stored ObjectView widget composition for this type (when one
-        # exists); ``standard`` derives the layout from the type's interface
-        # schema. The selection genuinely changes the returned ``view``.
-        layout_choice = (layout or 'standard').strip().lower()
-        view: dict[str, Any] = {}
-        if object_type:
-            configured = (
-                _load_object_views().get(str(object_type))
-                if layout_choice == 'configured'
-                else None
+            object_type = (
+                view_props.get('type')
+                or view_props.get('_type')
+                or view_props.get('object_type')
             )
-            if configured is not None:
-                view = {
-                    'object_type': object_type,
-                    'view_type': 'configured',
-                    **configured,
-                }
-            else:
-                view = _standard_object_view(ontology, str(object_type))
+            try:
+                derived = await _invoke_governed_helper(
+                    ontology.derive_all,
+                    view_props,
+                    object_type=object_type,
+                    actor_id=actor.actor_id,
+                    deadline=30.0,
+                )
+            except Exception:  # noqa: BLE001
+                derived = {}
+            try:
+                markings = sorted(markings_for(object_id))
+            except Exception:  # noqa: BLE001
+                markings = []
+            # Prefer the durable, cross-request audit trail from the store;
+            # fall back to the in-process ledger mirror when nothing was
+            # persisted.
+            history = await _invoke_governed_helper(
+                _durable_edit_history, backend, object_id, deadline=15.0
+            )
+            if not history:
+                try:
+                    fallback_history = await _invoke_governed_helper(
+                        ontology.history,
+                        object_id,
+                        deadline=15.0,
+                    )
+                    history = [e.model_dump(mode='json') for e in fallback_history]
+                except Exception:  # noqa: BLE001
+                    history = []
+
+            # Resolve the requested layout into a concrete view payload.
+            # ``configured`` serves the stored ObjectView widget composition
+            # for this type (when one exists); ``standard`` derives the
+            # layout from the type's interface schema. The selection
+            # genuinely changes the returned ``view``.
+            layout_choice = (layout or 'standard').strip().lower()
+            view: dict[str, Any] = {}
+            if object_type:
+                configured = (
+                    _load_object_views().get(str(object_type))
+                    if layout_choice == 'configured'
+                    else None
+                )
+                if configured is not None:
+                    view = {
+                        'object_type': object_type,
+                        'view_type': 'configured',
+                        **configured,
+                    }
+                else:
+                    view = _standard_object_view(ontology, str(object_type))
+
+            links = await _invoke_governed_helper(
+                _node_links, backend, object_id, deadline=15.0
+            )
 
         return _public_external_result(
             {
                 'id': object_id,
                 'object_type': object_type,
                 'properties': view_props,
-                'links': await _invoke_governed_helper(
-                    _node_links, backend, object_id, deadline=15.0
-                ),
+                'links': links,
                 'derived': derived,
                 'markings': markings[:_MAX_EXTERNAL_COLLECTION_ITEMS],
                 'history': history[:_MAX_EXTERNAL_COLLECTION_ITEMS],
@@ -11741,15 +12357,28 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
 
     Body: ``{object_id, derived_name, object_type}``. Resolves the object's
     live property map from the store (a UI convenience — the canonical tool
-    takes the object dict), then dispatches through the canonical
-    ``ontology_derive`` tool — the same implementation behind the gateway's
-    ``POST /ontology/derive`` — so derive semantics cannot drift.
+    takes the object dict).
+
+    FIX LANE Priority 1: locates which accessible graph holds the object
+    (`_locate_object_graph`) and computes the derived property against a
+    facade bound to THAT graph (`_ontology_facade_for`). This bypasses the
+    canonical ``ontology_derive`` tool dispatch this route previously used --
+    that tool always resolves its OWN unscoped, tenant-fixed
+    ``kg_server._ontology_system()``, so a CYPHER-backed derived property
+    (``derived_properties.py``: evaluated through the facade's "tenant-
+    scoped" ``KnowledgeGraph.query`` read path) can never be re-scoped to a
+    commons-resident object through it -- retargeting only the ambient
+    session while the tool keeps calling its own pinned engine reproduces
+    the exact masked failure `_graph_union_executor` documents
+    (``PermissionError: "A graph-scoped view cannot retarget the verified
+    GraphSession"``), or worse, silently computes against the wrong graph.
+    ``ontology.derive()`` is the SAME primitive the tool itself calls
+    (``ont.derive(obj, name, object_type=otype)``), just bound to the
+    correct graph.
     """
     import json
 
     try:
-        kg, _ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
         object_id = data.get('object_id')
         derived_name = data.get('derived_name')
         if not isinstance(object_id, str) or not isinstance(derived_name, str):
@@ -11760,9 +12389,20 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
         if not _SAFE_DELEGATION_TOKEN.fullmatch(derived_name):
             raise HTTPException(status_code=400, detail='Invalid derived property')
 
-        props = await _invoke_governed_helper(
-            _node_properties, backend, str(object_id), deadline=15.0
+        from agent_utilities.knowledge_graph.core.session import current_session
+
+        engine = await _get_engine_bounded()
+        located = await _invoke_governed_helper(
+            _locate_object_graph, engine, str(object_id), deadline=15.0
         )
+        if located is None:
+            raise HTTPException(status_code=404, detail='Object not found')
+        graph_name, scoped_engine, props = located
+        facade = _ontology_facade_for(engine, scoped_engine)
+        if facade is None:
+            raise HTTPException(status_code=501, detail='Ontology layer unavailable')
+        _scoped_kg, ontology = facade
+
         props.setdefault('id', str(object_id))
         object_type = (
             data.get('object_type')
@@ -11771,21 +12411,18 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
             or props.get('object_type')
         )
         bounded_props = _bounded_query_params(props)
-        result = await _invoke_governed_helper(
-            _canonical_kg_tool,
-            deadline=30.0,
-            tool_name='ontology_derive',
-            action='compute',
-            object_json=json.dumps(
+        session = current_session()
+        with _session_scoped_to(session, graph_name):
+            result = await _invoke_governed_helper(
+                ontology.derive,
                 bounded_props,
-                separators=(',', ':'),
-                allow_nan=False,
-            ),
-            name=derived_name,
-            object_type=str(object_type or ''),
+                derived_name,
+                object_type=str(object_type or '') or None,
+                deadline=30.0,
+            )
+        bounded = _public_external_result(
+            json.loads(json.dumps(result.model_dump(), default=str))
         )
-        _raise_canonical_error(result)
-        bounded = _public_external_result(result)
         if not isinstance(bounded, dict):
             raise HTTPException(status_code=422, detail='Invalid derived result')
         return bounded

@@ -296,13 +296,26 @@ class TestGraphRelationshipsEndpoint:
     def test_get_graph_relationships_success(
         self, client, mock_graph_engine, sample_graph_data
     ):
-        """Test successful graph relationships retrieval."""
+        """Test successful graph relationships retrieval.
+
+        FIX LANE Priority 1: the route now unions the read across every
+        accessible graph via `_read_union_cypher`, which calls
+        `engine.query_cypher` (`_graph_union_executor`) -- never
+        `engine.backend.execute` -- same primitive `get_graph_stats` already
+        exercises (`TestGraphStatsEndpoint.test_get_graph_stats_success`).
+        The real, middleware-minted test session may access more than one
+        graph (tenant shard + commons, unmocked here so this exercises the
+        real `_accessible_graphs` resolution) and a relationship row carries
+        no `id` column, so `read_union`'s id-dedup is a documented no-op for
+        every row here -- the SAME mocked row can legitimately come back
+        once per accessible graph. This asserts on content/shape, not a
+        graph-count-dependent row total.
+        """
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             return_value=mock_graph_engine,
         ):
-            mock_graph_engine.backend = MagicMock()
-            mock_graph_engine.backend.execute.return_value = [
+            mock_graph_engine.query_cypher.return_value = [
                 sample_graph_data['relationships'][0]
             ]
 
@@ -310,8 +323,11 @@ class TestGraphRelationshipsEndpoint:
             assert response.status_code == 200
             data = response.json()
             assert isinstance(data, list)
-            assert len(data) == 1
-            assert data[0]['type'] == 'REFERENCES'
+            assert len(data) >= 1
+            assert all(
+                row == {'source': 'node1', 'type': 'REFERENCES', 'target': 'node2'}
+                for row in data
+            )
 
     def test_get_graph_relationships_no_engine(self, client):
         """Test graph relationships when engine not initialized."""
