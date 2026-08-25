@@ -21,7 +21,7 @@ import { ApiError, validateShape, looseArray } from './api-validation'
 // Re-exported for backward compatibility — every existing `import { ApiError }
 // from '@/lib/api'` call site keeps working unchanged. The class now lives in
 // api-validation.ts so that module (the shared validation boundary used by
-// gateway.ts/capabilities-api.ts too) never has to import back from here.
+// gateway.ts too) never has to import back from here.
 export { ApiError }
 
 /** Body accepted by `POST /workflows`. */

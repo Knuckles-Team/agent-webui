@@ -1,5 +1,25 @@
-import type { JsonSchema } from './capabilities-api'
 import type { PageContextEnvelope } from './page-context'
+
+/** A (subset of) JSON Schema, as returned by the fleet's live schema-introspection routes. */
+export interface JsonSchema {
+  $ref?: string
+  $defs?: Record<string, JsonSchema>
+  anyOf?: JsonSchema[]
+  oneOf?: JsonSchema[]
+  type?: string | string[]
+  title?: string
+  description?: string
+  format?: string
+  default?: unknown
+  const?: unknown
+  enum?: unknown[]
+  properties?: Record<string, JsonSchema>
+  required?: string[]
+  items?: JsonSchema
+  additionalProperties?: boolean | JsonSchema
+  writeOnly?: boolean
+  'x-sensitive'?: boolean
+}
 
 export type SchemaFormValue = string | boolean
 export type SchemaFormState = Record<string, SchemaFormValue>
@@ -156,29 +176,4 @@ export function materializeSchemaInputs(schema: JsonSchema, state: SchemaFormSta
   }
 
   return { inputs, issues }
-}
-
-/** Rank capabilities that match explicit actions and vocabulary from the current view. */
-export function contextualCapabilityScore(
-  capability: { id: string; title: string; actions: { id: string }[]; typed_io: { tags: string[] } },
-  context: PageContextEnvelope,
-): number {
-  const actionIds = new Set(context.allowedActions.map((action) => action.id.toLowerCase()))
-  let score = capability.actions.reduce(
-    (total, action) => total + (actionIds.has(action.id.toLowerCase()) ? 100 : 0),
-    0,
-  )
-  const terms = [
-    capability.id,
-    capability.title,
-    ...capability.typed_io.tags,
-    ...capability.actions.map((action) => action.id),
-  ]
-    .join(' ')
-    .toLowerCase()
-  if (terms.includes(context.view.toLowerCase())) score += 20
-  for (const selected of context.selection) {
-    if (terms.includes(selected.kind.toLowerCase())) score += 10
-  }
-  return score
 }

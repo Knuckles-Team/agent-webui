@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { contextualCapabilityScore, createSchemaFormState, materializeSchemaInputs } from '../capability-forms'
-import type { JsonSchema } from '../capabilities-api'
+import { createSchemaFormState, materializeSchemaInputs, type JsonSchema } from '../capability-forms'
 import type { PageContextEnvelope } from '../page-context'
 
 const context: PageContextEnvelope = {
@@ -67,17 +66,5 @@ describe('schema-generated contextual forms', () => {
         { field: 'filters', message: 'Expected valid JSON object' },
       ]),
     )
-  })
-
-  it('ranks actions explicitly allowed by the current view above vocabulary-only matches', () => {
-    const explicit = contextualCapabilityScore(
-      { id: 'object-reader', title: 'Reader', actions: [{ id: 'inspect-object' }], typed_io: { tags: [] } },
-      context,
-    )
-    const vocabularyOnly = contextualCapabilityScore(
-      { id: 'object-search', title: 'Object search', actions: [{ id: 'search' }], typed_io: { tags: [] } },
-      context,
-    )
-    expect(explicit).toBeGreaterThan(vocabularyOnly)
   })
 })

@@ -1,7 +1,7 @@
 /**
  * @file api-validation.ts
  * @description The ONE runtime-validation boundary every API client module in
- * this repo (api.ts, gateway.ts, admin-api.ts, capabilities-api.ts) and every
+ * this repo (api.ts, gateway.ts, admin-api.ts) and every
  * view that still calls `fetch()` directly routes through.
  *
  * Why this exists (PROGRAM.md R2 / D-WUI-7..25, D-WUI-6): 21 of 39 routes
@@ -68,7 +68,7 @@ export class ApiShapeError extends Error {
  * typed) value, or throws {@link ApiShapeError} naming `endpoint` and the
  * mismatch. This is the single call every validated client path goes
  * through — `getValidated`/`postValidated` in api.ts, `toResult` in
- * gateway.ts, and `requestJson` in capabilities-api.ts all call this same
+ * gateway.ts, and every other validated client path all call this same
  * function rather than re-implementing shape checking.
  */
 export function validateShape<T>(schema: z.ZodType<T>, raw: unknown, endpoint: string): T {

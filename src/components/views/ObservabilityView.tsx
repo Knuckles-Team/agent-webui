@@ -6,21 +6,29 @@
  *   1. PromQL — run an instant/range PromQL query against `/graph/promql` and
  *      render the returned series as an inline SVG line chart (no chart
  *      dependency) plus a raw series table.
- *   2. Traces — search recent traces via `/graph/traces` and render a simple
- *      span waterfall for the selected trace.
+ *   2. Runs — chat/agent execution runs, backed by the ALWAYS-ON KG-native
+ *      trace sink via `POST /graph/traces` (`agent_utilities.mcp.tools
+ *      .engine_surface_tools.graph_traces`, action `search`/`waterfall`).
+ *      Each run is one KG trace; selecting one fetches its `waterfall` —
+ *      a flattened Span/Generation node list with a `parentId` per node —
+ *      and renders it as a nested-duration DAG (there is no independent
+ *      `/api/runs` platform; this IS the run/DAG surface, see PROGRAM.md
+ *      Phase D).
  *
  * Both degrade gracefully to a "capability not yet activated" notice when the
- * backend has not wired the dedicated route yet (see lib/gateway.ts).
+ * backend has not wired the dedicated route yet (see lib/gateway.ts), and
+ * that "route not activated" state is always rendered distinctly from a
+ * genuinely empty result set — never collapsed into the same blank panel.
  */
 
-import { useEffect, useMemo, useState } from 'react'
-import { Activity, AlertTriangle, GitBranch, Loader2, Play, Search } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Activity, AlertTriangle, ChevronRight, GitBranch, Loader2, Play, Search, Workflow } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { gatewayGet, gatewayPost } from '@/lib/gateway'
+import { gatewayPost } from '@/lib/gateway'
 
 /** A single metric time-series distilled from the PromQL response. */
 interface MetricSeries {
@@ -28,22 +36,44 @@ interface MetricSeries {
   points: { t: number; v: number }[]
 }
 
-/** One span in a trace (start/duration are seconds/ms as reported upstream). */
-interface TraceSpan {
-  name: string
-  start: number
-  duration: number
-  service?: string
-  status?: string
-}
-
-/** A trace summary + its spans. */
-interface TraceRecord {
+/** One row from `graph_traces action='search'` — one execution run per trace. */
+interface RunRow {
   trace_id: string
   name?: string
+  status?: string
   duration?: number
-  span_count?: number
-  spans?: TraceSpan[]
+  error?: string
+}
+
+/** One Span/Generation node from `graph_traces action='waterfall'`. Durations are
+ * NESTED (each node's own latency relative to its parent), not absolute offsets —
+ * the KG-native trace sink never fabricates concurrent start times it doesn't have. */
+interface DagNode {
+  id: string
+  parentId: string | null
+  kind: string
+  name: string
+  latencyMs: number
+  error?: string | null
+  model?: string
+  costUsd?: number
+  inputTokens?: number
+  outputTokens?: number
+}
+
+/** A run's summary header + its full DAG (`graph_traces action='waterfall'`'s `result`). */
+interface RunWaterfall {
+  trace: {
+    id: string
+    name?: string
+    status?: string
+    latencyMs?: number | null
+    costUsd?: number
+    inputTokens?: number
+    outputTokens?: number
+    toolCalls?: number
+  }
+  nodes: DagNode[]
 }
 
 const DEFAULT_PROMQL = 'rate(kg_requests_total[5m])'
@@ -141,38 +171,176 @@ function LineChart({ series }: { series: MetricSeries[] }) {
   )
 }
 
-/** Span waterfall for a single trace, positioned by start offset + duration. */
-function Waterfall({ trace }: { trace: TraceRecord }) {
-  const spans = trace.spans ?? []
-  if (spans.length === 0) return <p className="text-muted-foreground text-sm">No spans recorded for this trace.</p>
-  const starts = spans.map((s) => s.start)
-  const ends = spans.map((s) => s.start + s.duration)
-  const t0 = Math.min(...starts)
-  const t1 = Math.max(...ends)
-  const span = t1 - t0 || 1
+/** Unwrap the `graph_traces`/`graph_promql` engine-surface tools' own
+ * `{surface, action, result}` envelope, which sits one layer inside the
+ * canonical `{status, result}` envelope `gatewayPost` already strips (see
+ * `lib/gateway.ts`'s `isDegradedSurfacePayload` doc comment). Returns `null`
+ * for a shape that doesn't match (defensive — never throws on live data). */
+function surfaceResult(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return null
+  const obj = raw as Record<string, unknown>
+  return 'result' in obj ? obj.result : null
+}
+
+function adaptRunRows(raw: unknown): RunRow[] {
+  const result = surfaceResult(raw)
+  if (!Array.isArray(result)) return []
+  return (result as Record<string, unknown>[]).map((r) => ({
+    trace_id: asStr(r.trace_id) || asStr(r.id),
+    name: typeof r.name === 'string' ? r.name : undefined,
+    status: typeof r.status === 'string' ? r.status : undefined,
+    duration: typeof r.duration === 'number' ? r.duration : undefined,
+    error: typeof r.error === 'string' ? r.error : undefined,
+  }))
+}
+
+function adaptWaterfall(raw: unknown, fallbackId: string): RunWaterfall | null {
+  const result = surfaceResult(raw)
+  if (!result || typeof result !== 'object') return null
+  const obj = result as Record<string, unknown>
+  const t = (obj.trace ?? {}) as Record<string, unknown>
+  const nodesRaw = Array.isArray(obj.nodes) ? (obj.nodes as Record<string, unknown>[]) : []
+  return {
+    trace: {
+      id: asStr(t.id, fallbackId),
+      name: typeof t.name === 'string' ? t.name : undefined,
+      status: typeof t.status === 'string' ? t.status : undefined,
+      latencyMs: typeof t.latencyMs === 'number' ? t.latencyMs : null,
+      costUsd: typeof t.costUsd === 'number' ? t.costUsd : undefined,
+      inputTokens: typeof t.inputTokens === 'number' ? t.inputTokens : undefined,
+      outputTokens: typeof t.outputTokens === 'number' ? t.outputTokens : undefined,
+      toolCalls: typeof t.toolCalls === 'number' ? t.toolCalls : undefined,
+    },
+    nodes: nodesRaw.map((n) => ({
+      id: asStr(n.id),
+      parentId: typeof n.parentId === 'string' ? n.parentId : null,
+      kind: asStr(n.kind, 'span'),
+      name: asStr(n.name, 'unnamed'),
+      latencyMs: asNumber(n.latencyMs),
+      error: typeof n.error === 'string' ? n.error : null,
+      model: typeof n.model === 'string' ? n.model : undefined,
+      costUsd: typeof n.costUsd === 'number' ? n.costUsd : undefined,
+      inputTokens: typeof n.inputTokens === 'number' ? n.inputTokens : undefined,
+      outputTokens: typeof n.outputTokens === 'number' ? n.outputTokens : undefined,
+    })),
+  }
+}
+
+/** One node in the rendered DAG, recursively rendering its own children (looked
+ * up from `childrenByParent`) so the tree is a single self-contained component
+ * rather than a coordinator/row split. */
+function DagNodeRow({
+  node,
+  depth,
+  childrenByParent,
+}: {
+  node: DagNode
+  depth: number
+  childrenByParent: Map<string, DagNode[]>
+}) {
+  const [open, setOpen] = useState(true)
+  const kids = childrenByParent.get(node.id) ?? []
+  const failed = node.error != null && node.error !== ''
+  return (
+    <li>
+      <div
+        className="flex items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/40"
+        style={{ paddingLeft: `${String(depth * 16)}px` }}
+      >
+        {kids.length > 0 ? (
+          <button
+            type="button"
+            aria-label={open ? 'Collapse' : 'Expand'}
+            onClick={() => {
+              setOpen((v) => !v)
+            }}
+            className="shrink-0 text-muted-foreground"
+          >
+            <ChevronRight className={open ? 'size-3 rotate-90 transition-transform' : 'size-3 transition-transform'} />
+          </button>
+        ) : (
+          <span className="inline-block size-3 shrink-0" />
+        )}
+        <Badge variant={failed ? 'destructive' : 'outline'} className="shrink-0 font-mono text-[10px]">
+          {node.kind}
+        </Badge>
+        <span className="truncate font-mono" title={node.name}>
+          {node.name}
+        </span>
+        {node.model && <span className="shrink-0 text-muted-foreground">({node.model})</span>}
+        <span className="ml-auto shrink-0 font-mono text-muted-foreground">{node.latencyMs}ms</span>
+        {typeof node.costUsd === 'number' && (
+          <span className="shrink-0 font-mono text-muted-foreground">${node.costUsd.toFixed(4)}</span>
+        )}
+      </div>
+      {failed && (
+        <div
+          className="text-destructive/90 truncate text-[11px]"
+          style={{ paddingLeft: `${String(depth * 16 + 24)}px` }}
+        >
+          {node.error}
+        </div>
+      )}
+      {open && kids.length > 0 && (
+        <ul>
+          {kids.map((child) => (
+            <DagNodeRow key={child.id} node={child} depth={depth + 1} childrenByParent={childrenByParent} />
+          ))}
+        </ul>
+      )}
+    </li>
+  )
+}
+
+/** Render a run's Span/Generation nodes as a nested-duration DAG, built from each
+ * node's `parentId` (the KG-native sink reports nesting, not concurrent start
+ * offsets — see {@link RunWaterfall}'s doc comment). Never assumes a single root:
+ * any node whose parent isn't itself in the node set is rendered at depth 0 too,
+ * so a malformed/partial graph still shows every node rather than silently
+ * dropping some. */
+function RunDag({ waterfall }: { waterfall: RunWaterfall }) {
+  const { trace, nodes } = waterfall
+  if (nodes.length === 0) return <p className="text-muted-foreground text-sm">No spans recorded for this run.</p>
+
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const childrenByParent = new Map<string, DagNode[]>()
+  const roots: DagNode[] = []
+  for (const node of nodes) {
+    const parent = node.parentId
+    if (parent && parent !== trace.id && byId.has(parent)) {
+      const list = childrenByParent.get(parent) ?? []
+      list.push(node)
+      childrenByParent.set(parent, list)
+    } else {
+      roots.push(node)
+    }
+  }
 
   return (
-    <div className="space-y-1">
-      {spans.map((s, i) => {
-        const left = ((s.start - t0) / span) * 100
-        const width = Math.max((s.duration / span) * 100, 1)
-        const failed = (s.status ?? '').toLowerCase().includes('err')
-        return (
-          <div key={`${s.name}-${String(i)}`} className="flex items-center gap-2 text-xs">
-            <span className="w-40 truncate font-mono text-muted-foreground" title={s.name}>
-              {s.name}
-            </span>
-            <div className="relative flex-1 h-4 rounded bg-muted/40">
-              <div
-                className={failed ? 'absolute h-4 rounded bg-destructive' : 'absolute h-4 rounded bg-primary'}
-                style={{ left: `${String(left)}%`, width: `${String(width)}%` }}
-                title={`${s.service ?? 'span'} · ${String(s.duration)}`}
-              />
-            </div>
-            <span className="w-16 text-right font-mono text-muted-foreground">{s.duration}</span>
-          </div>
-        )
-      })}
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+        <div className="rounded-md bg-muted/40 p-2">
+          <div className="text-muted-foreground">Status</div>
+          <div className="font-semibold">{trace.status ?? '—'}</div>
+        </div>
+        <div className="rounded-md bg-muted/40 p-2">
+          <div className="text-muted-foreground">Latency</div>
+          <div className="font-semibold">{trace.latencyMs ?? '—'}ms</div>
+        </div>
+        <div className="rounded-md bg-muted/40 p-2">
+          <div className="text-muted-foreground">Tool calls</div>
+          <div className="font-semibold">{trace.toolCalls ?? nodes.length}</div>
+        </div>
+        <div className="rounded-md bg-muted/40 p-2">
+          <div className="text-muted-foreground">Cost</div>
+          <div className="font-semibold">{trace.costUsd ? `$${trace.costUsd.toFixed(4)}` : '—'}</div>
+        </div>
+      </div>
+      <ul className="max-h-96 space-y-0.5 overflow-auto rounded-md border p-2" aria-label="Run execution DAG">
+        {roots.map((node) => (
+          <DagNodeRow key={node.id} node={node} depth={0} childrenByParent={childrenByParent} />
+        ))}
+      </ul>
     </div>
   )
 }
@@ -196,11 +364,16 @@ export default function ObservabilityView() {
   const [metricUnavailable, setMetricUnavailable] = useState(false)
   const [metricError, setMetricError] = useState<string | null>(null)
 
-  const [traceQuery, setTraceQuery] = useState('')
-  const [traces, setTraces] = useState<TraceRecord[]>([])
-  const [selectedTrace, setSelectedTrace] = useState<string | null>(null)
-  const [traceLoading, setTraceLoading] = useState(false)
-  const [traceUnavailable, setTraceUnavailable] = useState(false)
+  const [runQuery, setRunQuery] = useState('')
+  const [runs, setRuns] = useState<RunRow[]>([])
+  const [selectedRun, setSelectedRun] = useState<string | null>(null)
+  const [runsLoading, setRunsLoading] = useState(false)
+  const [runsUnavailable, setRunsUnavailable] = useState(false)
+
+  const [dag, setDag] = useState<RunWaterfall | null>(null)
+  const [dagLoading, setDagLoading] = useState(false)
+  const [dagUnavailable, setDagUnavailable] = useState(false)
+  const [dagError, setDagError] = useState<string | null>(null)
 
   const runPromql = async () => {
     setMetricLoading(true)
@@ -221,45 +394,52 @@ export default function ObservabilityView() {
     setMetricLoading(false)
   }
 
-  const loadTraces = async () => {
-    setTraceLoading(true)
-    const qs = traceQuery.trim() ? `?q=${encodeURIComponent(traceQuery.trim())}` : ''
-    const r = await gatewayGet<unknown>(`/traces${qs}`)
-    setTraceUnavailable(r.unavailable)
-    if (r.ok && r.data) {
-      const raw = r.data as Record<string, unknown>
-      const list = (Array.isArray(raw) ? raw : (raw.traces ?? [])) as Record<string, unknown>[]
-      const parsed: TraceRecord[] = list.map((t) => ({
-        trace_id: asStr(t.trace_id) || asStr(t.id),
-        name: typeof t.name === 'string' ? t.name : undefined,
-        duration: typeof t.duration === 'number' ? t.duration : undefined,
-        span_count:
-          typeof t.span_count === 'number' ? t.span_count : Array.isArray(t.spans) ? t.spans.length : undefined,
-        spans: Array.isArray(t.spans)
-          ? (t.spans as Record<string, unknown>[]).map((s) => ({
-              name: asStr(s.name, 'span'),
-              start: asNumber(s.start),
-              duration: asNumber(s.duration),
-              service: typeof s.service === 'string' ? s.service : undefined,
-              status: typeof s.status === 'string' ? s.status : undefined,
-            }))
-          : undefined,
-      }))
-      setTraces(parsed)
-      setSelectedTrace(parsed[0]?.trace_id ?? null)
+  /** List execution runs — each KG-native trace IS one run (one chat/agent-graph
+   * execution): `POST /graph/traces {action:'search'}` (`graph_traces`,
+   * CONCEPT:AU-KG.coordination.engine-message-broker). There is no separate
+   * `/api/runs` platform (see PROGRAM.md Phase D) — this is the run list. */
+  const loadRuns = async () => {
+    setRunsLoading(true)
+    const r = await gatewayPost<unknown>('/traces', { action: 'search', query: runQuery.trim(), limit: 50 })
+    setRunsUnavailable(r.unavailable)
+    if (r.ok) {
+      const parsed = adaptRunRows(r.data)
+      setRuns(parsed)
+      setSelectedRun(parsed[0]?.trace_id ?? null)
     } else {
-      setTraces([])
-      setSelectedTrace(null)
+      setRuns([])
+      setSelectedRun(null)
     }
-    setTraceLoading(false)
+    setRunsLoading(false)
+  }
+
+  /** Fetch one run's full DAG: `POST /graph/traces {action:'waterfall', trace_id}`
+   * — the same tool's flattened Span/Generation node list, parent-linked. */
+  const loadDag = async (traceId: string) => {
+    setDagLoading(true)
+    setDagError(null)
+    const r = await gatewayPost<unknown>('/traces', { action: 'waterfall', trace_id: traceId })
+    setDagUnavailable(r.unavailable)
+    if (r.ok) {
+      const parsed = adaptWaterfall(r.data, traceId)
+      setDag(parsed)
+      if (!parsed && !r.unavailable) setDagError('Run DAG response did not match the expected shape.')
+    } else {
+      setDag(null)
+      if (!r.unavailable) setDagError(r.error ?? 'Failed to load run DAG')
+    }
+    setDagLoading(false)
   }
 
   useEffect(() => {
     void runPromql()
-    void loadTraces()
+    void loadRuns()
   }, [])
 
-  const activeTrace = useMemo(() => traces.find((t) => t.trace_id === selectedTrace) ?? null, [traces, selectedTrace])
+  useEffect(() => {
+    if (selectedRun) void loadDag(selectedRun)
+    else setDag(null)
+  }, [selectedRun])
 
   return (
     <div className="space-y-6" data-testid="observability-view">
@@ -268,7 +448,9 @@ export default function ObservabilityView() {
           <Activity className="size-6" />
           Observability
         </h1>
-        <p className="text-muted-foreground text-sm">PromQL metrics and distributed traces over the KG gateway.</p>
+        <p className="text-muted-foreground text-sm">
+          PromQL metrics and chat/agent-graph execution runs over the KG gateway.
+        </p>
       </div>
 
       <Tabs defaultValue="metrics">
@@ -277,9 +459,9 @@ export default function ObservabilityView() {
             <Activity className="size-4" />
             Metrics (PromQL)
           </TabsTrigger>
-          <TabsTrigger value="traces" className="gap-2">
+          <TabsTrigger value="runs" className="gap-2">
             <GitBranch className="size-4" />
-            Traces
+            Runs
           </TabsTrigger>
         </TabsList>
 
@@ -350,71 +532,96 @@ export default function ObservabilityView() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="traces" className="space-y-4">
+        <TabsContent value="runs" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <div>
-                <CardTitle>Trace Search</CardTitle>
-                <CardDescription>Searches `/graph/traces` and renders a span waterfall.</CardDescription>
+                <CardTitle>Execution Runs</CardTitle>
+                <CardDescription>
+                  Chat and agent-graph execution runs, from `/graph/traces` — select one to see its DAG.
+                </CardDescription>
               </div>
               <Button
                 onClick={() => {
-                  void loadTraces()
+                  void loadRuns()
                 }}
-                disabled={traceLoading}
+                disabled={runsLoading}
               >
-                {traceLoading ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Search className="size-4 mr-2" />}
+                {runsLoading ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Search className="size-4 mr-2" />}
                 Search
               </Button>
             </CardHeader>
             <CardContent className="space-y-4">
               <Input
-                aria-label="Trace search"
+                aria-label="Run search"
                 placeholder="service, operation, or trace id…"
-                value={traceQuery}
+                value={runQuery}
                 onChange={(e) => {
-                  setTraceQuery(e.target.value)
+                  setRunQuery(e.target.value)
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') void loadTraces()
+                  if (e.key === 'Enter') void loadRuns()
                 }}
               />
-              {traceUnavailable ? (
+              {runsUnavailable ? (
                 <CapabilityNotice label="/graph/traces" />
-              ) : traces.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No traces found.</p>
+              ) : runs.length === 0 ? (
+                <p className="text-muted-foreground text-sm" data-testid="observability-runs-empty">
+                  {runsLoading ? 'Loading runs…' : 'No runs found.'}
+                </p>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-[16rem_1fr] gap-4">
-                  <div className="space-y-1">
-                    {traces.map((t) => (
+                  <div className="space-y-1" aria-label="Run list">
+                    {runs.map((run) => (
                       <button
                         type="button"
-                        key={t.trace_id}
+                        key={run.trace_id}
                         onClick={() => {
-                          setSelectedTrace(t.trace_id)
+                          setSelectedRun(run.trace_id)
                         }}
                         className={
                           'w-full text-left rounded border p-2 hover:bg-muted/50 transition-colors ' +
-                          (t.trace_id === selectedTrace ? 'bg-accent' : '')
+                          (run.trace_id === selectedRun ? 'bg-accent' : '')
                         }
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="truncate font-mono text-xs">{t.name ?? t.trace_id}</span>
-                          <Badge variant="outline">{t.span_count ?? 0}</Badge>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate font-mono text-xs">{run.name ?? run.trace_id}</span>
+                          {run.status && (
+                            <Badge variant={run.status.toLowerCase().includes('err') ? 'destructive' : 'outline'}>
+                              {run.status}
+                            </Badge>
+                          )}
                         </div>
-                        {t.duration !== undefined && (
-                          <span className="text-xs text-muted-foreground">{t.duration} total</span>
+                        {run.duration !== undefined && (
+                          <span className="text-xs text-muted-foreground">{run.duration} total</span>
                         )}
                       </button>
                     ))}
                   </div>
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">
-                        {activeTrace?.name ?? activeTrace?.trace_id ?? 'Trace'}
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Workflow className="size-4" />
+                        {dag?.trace.name ?? selectedRun ?? 'Run DAG'}
                       </CardTitle>
                     </CardHeader>
-                    <CardContent>{activeTrace ? <Waterfall trace={activeTrace} /> : null}</CardContent>
+                    <CardContent>
+                      {dagLoading ? (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Loader2 className="size-4 animate-spin" /> Loading run DAG…
+                        </div>
+                      ) : dagUnavailable ? (
+                        <CapabilityNotice label="/graph/traces (waterfall)" />
+                      ) : dagError ? (
+                        <pre className="rounded border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive whitespace-pre-wrap break-words">
+                          {dagError}
+                        </pre>
+                      ) : dag ? (
+                        <RunDag waterfall={dag} />
+                      ) : (
+                        <p className="text-muted-foreground text-sm">Select a run to see its execution DAG.</p>
+                      )}
+                    </CardContent>
                   </Card>
                 </div>
               )}
