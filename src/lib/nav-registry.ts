@@ -42,7 +42,6 @@ import {
   Shapes,
   SlidersHorizontal,
   ShieldCheck,
-  Sparkles,
   Terminal,
   Waypoints,
   Workflow,
@@ -289,25 +288,12 @@ export const ROUTES: readonly RouteDef[] = [
     element: lazy(() => import('@/components/views/AgentLibraryView')),
   },
   {
-    id: 'control-plane.unified-agent-view',
-    path: '/agent-view',
-    label: 'Unified Agent View',
-    section: 'control-plane',
-    blurb: 'Browse and try every action, tool, and skill your agents can use, and watch runs execute live.',
-    icon: Sparkles,
-    minRole: 'user',
-    mobile: 'unsupported',
-    // Replaces the floating "Capabilities" button — same component, now a page.
-    element: lazy(() =>
-      import('@/components/capabilities/CapabilityWorkbench').then((mod) => ({ default: mod.CapabilityWorkbench })),
-    ),
-  },
-  {
     id: 'control-plane.llm-templates',
     path: '/llm-templates',
     label: 'Models',
     section: 'control-plane',
-    blurb: 'Browse and configure your chat and embedding models, then optionally pair one with a system prompt as a reusable template.',
+    blurb:
+      'Browse and configure your chat and embedding models, then optionally pair one with a system prompt as a reusable template.',
     icon: SlidersHorizontal,
     minRole: 'maintainer',
     mobile: 'unsupported',

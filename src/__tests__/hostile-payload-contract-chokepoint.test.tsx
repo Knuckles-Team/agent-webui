@@ -21,7 +21,7 @@ import { stubFetch, expectSurvives, HOSTILE_FIXTURES } from './hostile-payload-c
  * `src/lib/admin-api.ts`'s `fetchCodeInstances` for the validated call sites.
  *
  * Landed as its own batch (queue candidate) because it depends on nothing but
- * `src/lib/{api,api-validation,gateway,admin-api,capabilities-api}.ts` —
+ * `src/lib/{api,api-validation,gateway,admin-api}.ts` —
  * smallest, most self-contained candidate of this lane's changes.
  */
 describe('hostile-payload contract — chokepoint-only fixes', () => {

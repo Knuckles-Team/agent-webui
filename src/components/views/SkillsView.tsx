@@ -31,7 +31,7 @@ import { toast } from 'sonner'
 import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
 import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
 import { SchemaActionForm } from '@/components/capabilities/SchemaActionForm'
-import type { JsonSchema } from '@/lib/capabilities-api'
+import type { JsonSchema } from '@/lib/capability-forms'
 import type { PageContextEnvelope } from '@/lib/page-context'
 
 interface MCPTool {
