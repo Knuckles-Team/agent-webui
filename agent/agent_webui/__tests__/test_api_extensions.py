@@ -1079,11 +1079,37 @@ class TestCoverageExpansion:
             assert response.status_code == 500
 
     def test_hybrid_search_error(self, client, mock_graph_engine):
+        """A REAL backend failure must raise 503, not a fabricated `200 []`.
+
+        D-W6-10 (same class of fix as get_graph_nodes/get_graph_relationships/
+        list_workflows -- see `TestWorkflowsEndpointFailsHonestly`): this
+        route used to swallow ANY `search_hybrid` exception into a bare
+        `[]`, indistinguishable from a search that genuinely matched
+        nothing -- root cause of the observed live non-determinism (item C/F:
+        identical successive `/graph/search` calls returning 5 results then
+        0, because a transient per-call failure silently became a fake empty
+        result instead of a distinguishable error). This expectation was
+        stale (previously asserted 200 + []); see api_extensions.hybrid_search
+        for the fix.
+        """
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             return_value=mock_graph_engine,
         ):
             mock_graph_engine.search_hybrid.side_effect = Exception('Search failed')
+            response = client.get('/api/enhanced/graph/search?query=test')
+            assert response.status_code == 503
+            assert response.json() != []
+
+    def test_hybrid_search_genuinely_empty_is_200(self, client, mock_graph_engine):
+        """A real search with zero matches still returns `200 []` -- the
+        D-W6-10 fix above must not turn a genuinely empty result set into a
+        false failure."""
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.search_hybrid.return_value = []
             response = client.get('/api/enhanced/graph/search?query=test')
             assert response.status_code == 200
             assert response.json() == []

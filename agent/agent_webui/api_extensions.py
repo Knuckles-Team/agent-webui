@@ -4746,23 +4746,53 @@ async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
         def _call(scoped_engine: Any) -> list[dict[str, Any]]:
             return list(scoped_engine.search_hybrid(query, top_k=top_k) or [])
 
-        results, _source_graphs, _degraded = await _invoke_governed_helper(
+        results, _source_graphs, degraded = await _invoke_governed_helper(
             _union_engine_call, engine, actor, _call, deadline=15.0
         )
+        if not results and degraded:
+            # ROOT CAUSE of the observed live non-determinism (item C/F:
+            # identical successive `/graph/search` calls returning 5 results,
+            # then 0): `_union_engine_call` -> `_rows_per_accessible_graph`
+            # fan-out is fail-SOFT per graph by design (a per-graph exception
+            # is logged and the graph is added to `degraded`, never raised --
+            # see that function's own docstring). This route used to discard
+            # `degraded` entirely (`_degraded`), so when EVERY accessible
+            # graph's `search_hybrid` call happened to fail on a given
+            # request (contention/timeout), the union quietly degraded to a
+            # legitimate-looking `results=[]` -- a 200 indistinguishable from
+            # "reachable, genuinely zero matches". The very next identical
+            # request, with no failure this time, returned the real hits.
+            # Distinguish the two: zero results with at least one graph that
+            # could not even be read is a failure (503, same D-W6-10 class as
+            # get_graph_nodes/get_graph_relationships/list_workflows), not an
+            # honest empty answer. Zero results with `degraded` empty (every
+            # accessible graph was actually read) stays a genuine 200 [].
+            _log_failure('search_graph', RuntimeError(f'degraded graphs: {degraded}'))
+            raise HTTPException(
+                status_code=503,
+                detail='Knowledge Graph search failed',
+            )
         bounded = _public_external_result(list(results or [])[:top_k])
         return bounded if isinstance(bounded, list) else []
     except HTTPException as exc:
-        # Unlike get_graph_nodes/relationships, this route has no D-W6-10
-        # hardening -- every other failure mode already degrades to []
-        # below. Treating "no engine" (501) the same way is consistent
-        # with that, not a new fabrication risk; a genuine 503 (bounded
-        # deadline/capacity) still hard-fails.
+        # "No engine" (501) degrades to an honest empty list -- same as
+        # get_graph_nodes/relationships/workflows treat it (D-W6-10); a
+        # genuine 503 (bounded deadline/capacity, or the all-graphs-degraded
+        # case just above) still hard-fails below.
         if exc.status_code == 501:
             return []
         raise
     except Exception as e:
+        # D-W6-10 (same class of fix as get_graph_nodes/get_graph_relationships/
+        # list_workflows): a failure raised OUTSIDE the fail-soft per-graph
+        # fan-out above (e.g. `_invoke_governed_helper`'s own deadline/capacity
+        # handling, or an error before/after the union call) must also surface
+        # as a distinguishable failure, not a fabricated `200 []`.
         _log_failure('search_graph', e)
-        return []
+        raise HTTPException(
+            status_code=503,
+            detail='Knowledge Graph search failed',
+        ) from e
 
 
 @router.get('/graph/impact/{symbol}')

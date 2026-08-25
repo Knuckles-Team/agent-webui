@@ -161,3 +161,49 @@ def test_unknown_client_route_still_falls_back_to_spa_shell(
 
     assert response.status_code == 200
     assert 'spa-shell-marker' in response.text
+
+
+def test_bare_root_still_serves_the_spa_shell_authenticated(
+    app, authenticated_client_factory
+):
+    """Regression guard for a suspected (but unconfirmed) BUG-PE-004 regression.
+
+    An authenticated `GET /` was independently reported live as a 404 JSON
+    `{"detail":"Request failed"}` instead of the SPA shell. This fix's own
+    route registration order was the prime suspect (explicit `/health*`
+    routes were added, via `app.add_route`, immediately before the SPA
+    `Mount('/', ...)` in `create_agent_web_app` -- server.py). Reproduced
+    here against the real app exactly as `test_unknown_client_route_still_
+    falls_back_to_spa_shell` above does: this passes on the code as it
+    stands, which means route registration order is NOT the cause of that
+    live 404 -- `/` still resolves to `SPAStaticFiles`'s `html=True` index
+    fallback, unaffected by the new `/health`/`/healthz`/`/health/ready`/
+    `/api/healthz` routes registered just before the SPA mount. The live 404
+    has a different cause (see the investigation report); this guard exists
+    so a FUTURE regression in route ordering is caught immediately instead
+    of requiring another live repro.
+    """
+    authed_client = authenticated_client_factory(app)
+
+    response = authed_client.get('/')
+
+    assert response.status_code == 200
+    assert 'spa-shell-marker' in response.text
+    content_type = response.headers.get('content-type', '')
+    assert 'html' in content_type.lower()
+
+
+def test_bare_root_unauthenticated_is_401_not_404(app):
+    """`/` is not in `_PUBLIC_LIVENESS_PATHS` -- an unauthenticated request
+    must be rejected with 401 by the identity boundary, never reach
+    `SPAStaticFiles` at all, and never come back as the privacy-safe 404
+    JSON shape (`{"detail":"Request failed"}`) that a genuine unmatched
+    route produces. Distinguishes "no credential" from "route not found" for
+    the same live symptom investigated above."""
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    response = client.get('/')
+
+    assert response.status_code == 401
+    assert response.json() != {'detail': 'Request failed'}
