@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import contextlib
 import contextvars
 import hashlib
 import inspect
@@ -3647,12 +3648,25 @@ def _graph_union_executor(engine: Any) -> Any:
                         'graph_union.commons_restriction', exc, level=logging.DEBUG
                     )
                     exec_cypher, exec_params = cypher, dict(params or {})
+        # `query=`/`params=` are passed as KEYWORDS, not positionally: the
+        # real `QueryMixin.query_cypher(self, query, params=None, ...)`
+        # signature (`engine_query.py:137`) binds either way, but this route
+        # is pinned to the `query` keyword specifically (see
+        # `test_execute_cypher_forwards_the_query_text_under_the_query_keyword`)
+        # to distinguish it from the MCP tool surface's `cypher`-named field
+        # -- a future accidental rename to `cypher=` must fail loudly here,
+        # which a positional call would silently paper over.
         if session is None or graph_name == session.graph:
-            rows = list(engine.query_cypher(exec_cypher, exec_params) or [])
+            rows = list(
+                engine.query_cypher(query=exec_cypher, params=exec_params) or []
+            )
         else:
             scoped_engine = engine.for_graph(graph_name)
             with use_session(session.with_graph(graph_name)):
-                rows = list(scoped_engine.query_cypher(exec_cypher, exec_params) or [])
+                rows = list(
+                    scoped_engine.query_cypher(query=exec_cypher, params=exec_params)
+                    or []
+                )
         if is_commons and exec_cypher == cypher:
             # The pushdown above did not change the query text -- either it
             # legitimately doesn't apply (privileged actor, no WHERE/RETURN
@@ -10874,6 +10888,66 @@ def _node_links(backend: Any, object_id: str) -> dict[str, list[dict[str, Any]]]
     return {'out': out_links, 'in': in_links}
 
 
+def _session_scoped_to(session: Any, graph_name: str | None) -> Any:
+    """Context manager retargeting the ambient session onto ``graph_name``.
+
+    A no-op (`contextlib.nullcontext`) when there is no ambient session or
+    ``graph_name`` already matches it -- otherwise `use_session` +
+    `session.with_graph` (the same dual-retarget `_rows_per_accessible_graph`
+    /`_graph_union_executor` already use). Needed by `get_ontology_object`/
+    `derive_ontology_property`, which locate an object's home graph ONCE
+    (`_locate_object_graph`) and then must run every remaining store/ontology
+    read in that same scope -- see `_graph_union_executor`'s docstring for why
+    a scoped backend view and a retargeted session are required TOGETHER.
+    """
+    if session is None or graph_name is None or graph_name == session.graph:
+        return contextlib.nullcontext()
+    from agent_utilities.knowledge_graph.core.session import use_session
+
+    return use_session(session.with_graph(graph_name))
+
+
+def _locate_object_graph(
+    engine: Any, object_id: str
+) -> tuple[str | None, Any, dict[str, Any]] | None:
+    """Resolve which accessible graph holds ``object_id``.
+
+    An object's edges never cross a GOC-61 graph boundary, so at most one
+    accessible graph legitimately holds a given id. Fans `_node_properties`
+    out across every graph this actor may read via
+    `_rows_per_accessible_graph` and returns the first non-empty match in
+    `_accessible_graphs` order (tenant graph first) -- on the impossible case
+    of more than one graph matching, tenant wins, the same semantic
+    `read_union`'s own de-dup already applies on a duplicate id. Returns
+    ``(graph_name, scoped_engine, props)``, or ``None`` when no accessible
+    graph holds the object. Falls back to the plain `session.graph`-only
+    lookup when there is no verified ambient session, matching every other
+    union helper in this file.
+    """
+    from agent_utilities.knowledge_graph.core.session import current_session
+
+    def _call(scoped_engine: Any) -> dict[str, Any]:
+        return _node_properties(scoped_engine.backend, object_id)
+
+    session = current_session()
+    result = _rows_per_accessible_graph(engine, _call)
+    if result is None:
+        props = _call(engine)
+        if not props:
+            return None
+        return (session.graph if session is not None else None), engine, props
+    per_graph, _degraded = result
+    for graph_name, props in per_graph:
+        if props:
+            scoped_engine = (
+                engine
+                if session is not None and graph_name == session.graph
+                else engine.for_graph(graph_name)
+            )
+            return graph_name, scoped_engine, props
+    return None
+
+
 @router.get('/ontology/object-types')
 async def list_object_types() -> list[dict[str, Any]]:
     """List ontology object/node types (registry types + interface implementers).
@@ -11183,14 +11257,50 @@ async def ontology_object_set_search_around(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _ids_present_in_graph(backend: Any, ids: list[str]) -> set[str]:
+    """Return the subset of ``ids`` that exist as nodes in ``backend``'s graph.
+
+    A single batched existence check. A STATIC :class:`ObjectSet`'s
+    ``ids()``/``objects()`` returns every id verbatim regardless of
+    existence -- a nonexistent id still yields a ``{"id": nid}`` stub -- so
+    fanning `/ontology/object-set/aggregate` out per accessible graph with
+    the SAME full ``ids`` list unfiltered would double/triple-count any id
+    that only lives in ONE of those graphs (each graph's run would count
+    every id, present or not). Narrowing to the ids each graph actually
+    holds first avoids that.
+    """
+    if not ids:
+        return set()
+    try:
+        rows = backend.execute(
+            'MATCH (n) WHERE n.id IN $ids RETURN n.id AS id', {'ids': ids}
+        )
+    except Exception:  # noqa: BLE001
+        return set()
+    present: set[str] = set()
+    for row in rows or []:
+        node_id = row.get('id') if isinstance(row, dict) else None
+        if isinstance(node_id, str):
+            present.add(node_id)
+    return present
+
+
 @router.post('/ontology/object-set/pivot')
 async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
     """Pivot an object set across a link type, grouping the linked set.
 
     Body: ``{ids, link_type, group_by, direction}``.
+
+    FIX LANE Priority 1: fanned out per accessible graph (same seed-id
+    reasoning as `/ontology/object-set/search-around` -- a seed id only
+    resolves linked objects in the ONE graph it and its links physically
+    live in, GOC-61, so a graph that doesn't hold a given seed id cheaply
+    contributes an empty pivot rather than an error) and the group buckets
+    merged by group value, deduped by linked-object id (tenant wins on a
+    duplicate id, matching every other union merge in this file).
     """
     try:
-        _kg, ontology = await _get_ontology_kg_bounded()
+        _kg, _ontology = await _get_ontology_kg_bounded()
         ids = _bounded_identifier_list(data.get('ids'))
         link_type = data.get('link_type')
         group_by = str(data.get('group_by', '') or '')
@@ -11204,19 +11314,48 @@ async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
         ):
             raise HTTPException(status_code=400, detail='Invalid link type')
 
-        pivot = await _invoke_governed_helper(
-            lambda: ontology.object_set(ids).pivot(
+        engine = await _get_engine_bounded()
+
+        def execute_pivot(scoped_engine: Any) -> Any:
+            facade = _ontology_facade_for(engine, scoped_engine)
+            if facade is None:
+                return None
+            _scoped_kg, scoped_ontology = facade
+            return scoped_ontology.object_set(ids).pivot(
                 link_type,
                 group_by,
                 direction=direction,
-            ),
-            deadline=30.0,
-        )
+            )
+
+        def _run() -> list[tuple[str | None, Any]]:
+            result = _rows_per_accessible_graph(engine, execute_pivot)
+            if result is None:
+                return [(None, execute_pivot(engine))]
+            per_graph, _degraded = result
+            return [(graph_name, value) for graph_name, value in per_graph]
+
+        per_graph = await _invoke_governed_helper(_run, deadline=30.0)
+
+        resolved_link_type = link_type or '*'
+        merged_groups: dict[Any, list[str]] = {}
+        seen: set[str] = set()
+        for _graph_name, pivot in per_graph:
+            if pivot is None:
+                continue
+            resolved_link_type = pivot.link_type
+            for key, member_ids in pivot.groups.items():
+                bucket = merged_groups.setdefault(key, [])
+                for member_id in member_ids:
+                    if member_id in seen:
+                        continue
+                    seen.add(member_id)
+                    bucket.append(member_id)
+
         return _public_external_result(
             {
-                'link_type': pivot.link_type,
-                'group_by': pivot.group_by,
-                'groups': {str(k): v for k, v in pivot.groups.items()},
+                'link_type': resolved_link_type,
+                'group_by': group_by,
+                'groups': {str(k): v for k, v in merged_groups.items()},
             }
         )
     except HTTPException:
@@ -11231,30 +11370,113 @@ async def ontology_object_set_aggregate(data: dict[str, Any]) -> dict[str, Any]:
     """Aggregate an object set (count/sum/avg/min/max), optionally grouped.
 
     Body: ``{ids, group_by, metric, field}``.
+
+    FIX LANE Priority 1: an id in ``ids`` lives in at most one accessible
+    graph (GOC-61 -- edges never cross a graph boundary), so this fans the
+    aggregate out per accessible graph (`_rows_per_accessible_graph`, via a
+    per-graph ``(kg, ontology)`` facade, `_ontology_facade_for`) over ONLY
+    the ids that graph actually holds (`_ids_present_in_graph` -- a STATIC
+    ObjectSet's ``.aggregate()`` counts every id verbatim whether it exists
+    in that graph or not, so an unfiltered full-``ids`` fan-out would
+    double-count), then merges the per-graph ``AggregationResult``s:
+
+    * ``count``/``sum`` -- SUM the per-graph group values; independent
+      partitions of the same set sum correctly by definition.
+    * ``min``/``max`` -- merge directly (min-of-mins / max-of-maxes); these
+      ARE reconstructable from independent partitions, unlike avg, so
+      scoping them to only the tenant graph (as a prior pass here did)
+      was over-cautious.
+    * ``avg`` -- requested as its ``sum``+``count`` components per graph and
+      divided AFTER merging, because ``AggregationResult`` exposes only the
+      final per-group value, not the underlying sum/count a correct avg
+      merge needs (a plain average-of-averages would be wrong whenever the
+      per-graph group sizes differ).
     """
     try:
-        _kg, ontology = await _get_ontology_kg_bounded()
+        _kg, _ontology = await _get_ontology_kg_bounded()
         ids = _bounded_identifier_list(data.get('ids'))
         metric = str(data.get('metric', 'count') or 'count')
         group_by = data.get('group_by')
         field = data.get('field')
+        if metric not in {'count', 'sum', 'avg', 'min', 'max'}:
+            raise HTTPException(
+                status_code=422, detail=f'unsupported metric {metric!r}'
+            )
+        if metric != 'count' and not field:
+            raise HTTPException(
+                status_code=422, detail=f'metric {metric!r} requires a numeric field'
+            )
 
-        agg = await _invoke_governed_helper(
-            lambda: ontology.object_set(ids).aggregate(
-                metric,
-                field=field,
-                group_by=group_by,
-            ),
-            deadline=30.0,
-        )
+        engine = await _get_engine_bounded()
+        # avg needs its components (sum + count), not the final per-group
+        # average, to merge correctly across graphs.
+        component_metrics = ('sum', 'count') if metric == 'avg' else (metric,)
+
+        def execute_aggregate(scoped_engine: Any) -> Any:
+            facade = _ontology_facade_for(engine, scoped_engine)
+            if facade is None:
+                return None
+            _scoped_kg, scoped_ontology = facade
+            present = _ids_present_in_graph(scoped_engine.backend, ids)
+            if not present:
+                return None
+            scoped_ids = [i for i in ids if i in present]
+            object_set = scoped_ontology.object_set(scoped_ids)
+            return {
+                m: object_set.aggregate(m, field=field, group_by=group_by)
+                for m in component_metrics
+            }
+
+        def _run() -> list[tuple[str | None, Any]]:
+            result = _rows_per_accessible_graph(engine, execute_aggregate)
+            if result is None:
+                return [(None, execute_aggregate(engine))]
+            per_graph, _degraded = result
+            return [(graph_name, value) for graph_name, value in per_graph]
+
+        per_graph = await _invoke_governed_helper(_run, deadline=30.0)
+
+        total_objects = 0
+        groups: dict[Any, float] = {}
+        sums: dict[Any, float] = {}
+        counts: dict[Any, float] = {}
+        for _graph_name, agg_map in per_graph:
+            if not agg_map:
+                continue
+            if metric == 'avg':
+                sum_res = agg_map['sum']
+                count_res = agg_map['count']
+                total_objects += sum_res.total_objects
+                for k, v in sum_res.groups.items():
+                    sums[k] = sums.get(k, 0.0) + v
+                for k, v in count_res.groups.items():
+                    counts[k] = counts.get(k, 0.0) + v
+            else:
+                agg = agg_map[metric]
+                total_objects += agg.total_objects
+                for k, v in agg.groups.items():
+                    if metric in ('count', 'sum'):
+                        groups[k] = groups.get(k, 0.0) + v
+                    elif metric == 'min':
+                        groups[k] = v if k not in groups else min(groups[k], v)
+                    elif metric == 'max':
+                        groups[k] = v if k not in groups else max(groups[k], v)
+
+        if metric == 'avg':
+            for k, s in sums.items():
+                c = counts.get(k, 0.0)
+                if c:
+                    groups[k] = s / c
+
+        value = None if group_by is not None else groups.get(None)
         return _public_external_result(
             {
-                'metric': agg.metric,
-                'field': agg.field,
-                'group_by': agg.group_by,
-                'groups': {str(k): v for k, v in agg.groups.items()},
-                'value': agg.value,
-                'total_objects': agg.total_objects,
+                'metric': metric,
+                'field': field,
+                'group_by': group_by,
+                'groups': {str(k): v for k, v in groups.items()},
+                'value': value,
+                'total_objects': total_objects,
             }
         )
     except HTTPException:
@@ -11786,93 +12008,117 @@ async def get_ontology_object(
     composition for that type when one has been saved (falling back to standard
     when none exists). The selection is a real change in the returned payload —
     the same affordance the Explorer's layout toggle reaches.
+
+    FIX LANE Priority 1: locates which accessible graph holds the object
+    (`_locate_object_graph`) ONCE, then re-scopes every remaining read
+    (links, derived properties, edit history) to that SAME graph
+    (`_ontology_facade_for` + `_session_scoped_to`) -- otherwise a
+    commons-resident object would come back with right properties but
+    wrong-graph (empty) links/derived/history, worse than the tenant-only
+    status quo.
     """
     object_id = _validate_runtime_id(object_id)
     if layout not in {'standard', 'configured'}:
         raise HTTPException(status_code=400, detail='Invalid object layout')
     try:
+        from agent_utilities.knowledge_graph.core.session import current_session
         from agent_utilities.knowledge_graph.ontology.permissioning import (
             enforce,
             markings_for,
         )
 
-        kg, ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
-        actor = _actor_context(request)
-
-        props = await _invoke_governed_helper(
-            _node_properties, backend, object_id, deadline=15.0
+        engine = await _get_engine_bounded()
+        located = await _invoke_governed_helper(
+            _locate_object_graph, engine, object_id, deadline=15.0
         )
-        props.setdefault('id', object_id)
-        enforced = enforce([props], actor)
-        if not enforced:
+        if located is None:
             raise HTTPException(status_code=404, detail='Object not found or denied')
-        view_props = enforced[0]
+        graph_name, scoped_engine, props = located
+        facade = _ontology_facade_for(engine, scoped_engine)
+        if facade is None:
+            raise HTTPException(status_code=501, detail='Ontology layer unavailable')
+        _scoped_kg, ontology = facade
+        backend = scoped_engine.backend
+        actor = _actor_context(request)
+        session = current_session()
 
-        object_type = (
-            view_props.get('type')
-            or view_props.get('_type')
-            or view_props.get('object_type')
-        )
-        try:
-            derived = await _invoke_governed_helper(
-                ontology.derive_all,
-                view_props,
-                object_type=object_type,
-                actor_id=actor.actor_id,
-                deadline=30.0,
-            )
-        except Exception:  # noqa: BLE001
-            derived = {}
-        try:
-            markings = sorted(markings_for(object_id))
-        except Exception:  # noqa: BLE001
-            markings = []
-        # Prefer the durable, cross-request audit trail from the store; fall
-        # back to the in-process ledger mirror when nothing was persisted.
-        history = await _invoke_governed_helper(
-            _durable_edit_history, backend, object_id, deadline=15.0
-        )
-        if not history:
-            try:
-                fallback_history = await _invoke_governed_helper(
-                    ontology.history,
-                    object_id,
-                    deadline=15.0,
+        with _session_scoped_to(session, graph_name):
+            props.setdefault('id', object_id)
+            enforced = enforce([props], actor)
+            if not enforced:
+                raise HTTPException(
+                    status_code=404, detail='Object not found or denied'
                 )
-                history = [e.model_dump(mode='json') for e in fallback_history]
-            except Exception:  # noqa: BLE001
-                history = []
+            view_props = enforced[0]
 
-        # Resolve the requested layout into a concrete view payload. ``configured``
-        # serves the stored ObjectView widget composition for this type (when one
-        # exists); ``standard`` derives the layout from the type's interface
-        # schema. The selection genuinely changes the returned ``view``.
-        layout_choice = (layout or 'standard').strip().lower()
-        view: dict[str, Any] = {}
-        if object_type:
-            configured = (
-                _load_object_views().get(str(object_type))
-                if layout_choice == 'configured'
-                else None
+            object_type = (
+                view_props.get('type')
+                or view_props.get('_type')
+                or view_props.get('object_type')
             )
-            if configured is not None:
-                view = {
-                    'object_type': object_type,
-                    'view_type': 'configured',
-                    **configured,
-                }
-            else:
-                view = _standard_object_view(ontology, str(object_type))
+            try:
+                derived = await _invoke_governed_helper(
+                    ontology.derive_all,
+                    view_props,
+                    object_type=object_type,
+                    actor_id=actor.actor_id,
+                    deadline=30.0,
+                )
+            except Exception:  # noqa: BLE001
+                derived = {}
+            try:
+                markings = sorted(markings_for(object_id))
+            except Exception:  # noqa: BLE001
+                markings = []
+            # Prefer the durable, cross-request audit trail from the store;
+            # fall back to the in-process ledger mirror when nothing was
+            # persisted.
+            history = await _invoke_governed_helper(
+                _durable_edit_history, backend, object_id, deadline=15.0
+            )
+            if not history:
+                try:
+                    fallback_history = await _invoke_governed_helper(
+                        ontology.history,
+                        object_id,
+                        deadline=15.0,
+                    )
+                    history = [e.model_dump(mode='json') for e in fallback_history]
+                except Exception:  # noqa: BLE001
+                    history = []
+
+            # Resolve the requested layout into a concrete view payload.
+            # ``configured`` serves the stored ObjectView widget composition
+            # for this type (when one exists); ``standard`` derives the
+            # layout from the type's interface schema. The selection
+            # genuinely changes the returned ``view``.
+            layout_choice = (layout or 'standard').strip().lower()
+            view: dict[str, Any] = {}
+            if object_type:
+                configured = (
+                    _load_object_views().get(str(object_type))
+                    if layout_choice == 'configured'
+                    else None
+                )
+                if configured is not None:
+                    view = {
+                        'object_type': object_type,
+                        'view_type': 'configured',
+                        **configured,
+                    }
+                else:
+                    view = _standard_object_view(ontology, str(object_type))
+
+            links = await _invoke_governed_helper(
+                _node_links, backend, object_id, deadline=15.0
+            )
 
         return _public_external_result(
             {
                 'id': object_id,
                 'object_type': object_type,
                 'properties': view_props,
-                'links': await _invoke_governed_helper(
-                    _node_links, backend, object_id, deadline=15.0
-                ),
+                'links': links,
                 'derived': derived,
                 'markings': markings[:_MAX_EXTERNAL_COLLECTION_ITEMS],
                 'history': history[:_MAX_EXTERNAL_COLLECTION_ITEMS],
@@ -12111,15 +12357,28 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
 
     Body: ``{object_id, derived_name, object_type}``. Resolves the object's
     live property map from the store (a UI convenience — the canonical tool
-    takes the object dict), then dispatches through the canonical
-    ``ontology_derive`` tool — the same implementation behind the gateway's
-    ``POST /ontology/derive`` — so derive semantics cannot drift.
+    takes the object dict).
+
+    FIX LANE Priority 1: locates which accessible graph holds the object
+    (`_locate_object_graph`) and computes the derived property against a
+    facade bound to THAT graph (`_ontology_facade_for`). This bypasses the
+    canonical ``ontology_derive`` tool dispatch this route previously used --
+    that tool always resolves its OWN unscoped, tenant-fixed
+    ``kg_server._ontology_system()``, so a CYPHER-backed derived property
+    (``derived_properties.py``: evaluated through the facade's "tenant-
+    scoped" ``KnowledgeGraph.query`` read path) can never be re-scoped to a
+    commons-resident object through it -- retargeting only the ambient
+    session while the tool keeps calling its own pinned engine reproduces
+    the exact masked failure `_graph_union_executor` documents
+    (``PermissionError: "A graph-scoped view cannot retarget the verified
+    GraphSession"``), or worse, silently computes against the wrong graph.
+    ``ontology.derive()`` is the SAME primitive the tool itself calls
+    (``ont.derive(obj, name, object_type=otype)``), just bound to the
+    correct graph.
     """
     import json
 
     try:
-        kg, _ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
         object_id = data.get('object_id')
         derived_name = data.get('derived_name')
         if not isinstance(object_id, str) or not isinstance(derived_name, str):
@@ -12130,9 +12389,20 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
         if not _SAFE_DELEGATION_TOKEN.fullmatch(derived_name):
             raise HTTPException(status_code=400, detail='Invalid derived property')
 
-        props = await _invoke_governed_helper(
-            _node_properties, backend, str(object_id), deadline=15.0
+        from agent_utilities.knowledge_graph.core.session import current_session
+
+        engine = await _get_engine_bounded()
+        located = await _invoke_governed_helper(
+            _locate_object_graph, engine, str(object_id), deadline=15.0
         )
+        if located is None:
+            raise HTTPException(status_code=404, detail='Object not found')
+        graph_name, scoped_engine, props = located
+        facade = _ontology_facade_for(engine, scoped_engine)
+        if facade is None:
+            raise HTTPException(status_code=501, detail='Ontology layer unavailable')
+        _scoped_kg, ontology = facade
+
         props.setdefault('id', str(object_id))
         object_type = (
             data.get('object_type')
@@ -12141,21 +12411,18 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
             or props.get('object_type')
         )
         bounded_props = _bounded_query_params(props)
-        result = await _invoke_governed_helper(
-            _canonical_kg_tool,
-            deadline=30.0,
-            tool_name='ontology_derive',
-            action='compute',
-            object_json=json.dumps(
+        session = current_session()
+        with _session_scoped_to(session, graph_name):
+            result = await _invoke_governed_helper(
+                ontology.derive,
                 bounded_props,
-                separators=(',', ':'),
-                allow_nan=False,
-            ),
-            name=derived_name,
-            object_type=str(object_type or ''),
+                derived_name,
+                object_type=str(object_type or '') or None,
+                deadline=30.0,
+            )
+        bounded = _public_external_result(
+            json.loads(json.dumps(result.model_dump(), default=str))
         )
-        _raise_canonical_error(result)
-        bounded = _public_external_result(result)
         if not isinstance(bounded, dict):
             raise HTTPException(status_code=422, detail='Invalid derived result')
         return bounded

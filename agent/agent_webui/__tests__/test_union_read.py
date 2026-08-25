@@ -117,13 +117,19 @@ class _PinnedGraphEngine:
         sql_data: dict[str, list[dict[str, Any]]] | None = None,
         fail_graphs: frozenset[str] = frozenset(),
         visited: list[str] | None = None,
+        node_data: dict[str, dict[str, dict[str, Any]]] | None = None,
     ) -> None:
         self.graph_name = pinned_graph
         self._cypher_data = cypher_data or {}
         self._sql_data = sql_data or {}
         self._fail_graphs = fail_graphs
         self._visited = visited if visited is not None else []
+        # {graph_name: {node_id: props}} -- backs `.backend.execute` for the
+        # object-locate helpers (`_node_properties`/`_locate_object_graph`/
+        # `_ids_present_in_graph`), same pinning-guard shape as `cypher_data`.
+        self._node_data = node_data or {}
         self.graph_compute = _PinnedGraphCompute(self)
+        self.backend = _PinnedGraphBackend(self)
 
     def for_graph(self, graph_name: str) -> _PinnedGraphEngine:
         if graph_name == self.graph_name:
@@ -134,6 +140,7 @@ class _PinnedGraphEngine:
             self._sql_data,
             self._fail_graphs,
             visited=self._visited,
+            node_data=self._node_data,
         )
 
     def _assert_pinned_and_record(self) -> None:
@@ -147,8 +154,14 @@ class _PinnedGraphEngine:
             raise RuntimeError(f'simulated backend failure: {self.graph_name}')
 
     def query_cypher(
-        self, cypher: str, params: dict[str, Any] | None = None
+        self, query: str, params: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
+        # Parameter is named ``query`` (not ``cypher``) to match the real
+        # ``QueryMixin.query_cypher(self, query, params=None, ...)``
+        # signature (`engine_query.py:137`) -- `_graph_union_executor` calls
+        # it under that keyword deliberately (see
+        # `test_execute_cypher_forwards_the_query_text_under_the_query_keyword`
+        # in `test_api_extensions.py`), so this double must accept it.
         self._assert_pinned_and_record()
         return self._cypher_data.get(self.graph_name, [])
 
@@ -164,6 +177,32 @@ class _PinnedGraphCompute:
     def sql_exec(self, statement: str) -> list[dict[str, Any]]:
         self._owner._assert_pinned_and_record()
         return self._owner._sql_data.get(self._owner.graph_name, [])
+
+
+class _PinnedGraphBackend:
+    """``engine.backend`` half of ``_PinnedGraphEngine`` -- same pinning
+    guard, backs the two Cypher shapes ``_locate_object_graph``/
+    ``_node_properties``/``_ids_present_in_graph`` actually issue against
+    ``_node_data`` (query-shape-aware, not a real parser -- mirrors how
+    ``query_cypher`` above answers from pre-seeded data keyed by graph)."""
+
+    def __init__(self, owner: _PinnedGraphEngine) -> None:
+        self._owner = owner
+
+    def execute(
+        self, query: str, params: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
+        self._owner._assert_pinned_and_record()
+        nodes = self._owner._node_data.get(self._owner.graph_name, {})
+        params = params or {}
+        if 'id' in params:
+            # `_node_properties`: MATCH (n {id: $id}) RETURN n LIMIT 1
+            node = nodes.get(params['id'])
+            return [{'n': dict(node)}] if node is not None else []
+        if 'ids' in params:
+            # `_ids_present_in_graph`: MATCH (n) WHERE n.id IN $ids RETURN n.id AS id
+            return [{'id': nid} for nid in params['ids'] if nid in nodes]
+        return []
 
 
 class TestReadUnionCypher:
@@ -546,3 +585,324 @@ class TestRowsPerAccessibleGraph:
         succeeded, degraded = result
         assert succeeded == [(_TENANT_GRAPH, [{'id': 'n1'}])]
         assert degraded == []
+
+
+class TestLocateObjectGraph:
+    """`_locate_object_graph` -- the union-read fix `get_ontology_object`
+    (``GET /ontology/object/{object_id}``) and `derive_ontology_property`
+    (``POST /ontology/derive``) share: resolves which accessible graph holds
+    an object id ONCE, before scoping the rest of either route's reads to
+    it. Regression coverage for the concrete acceptance criterion -- a
+    commons-resident object must resolve, not 404 -- neither route had
+    before this lane."""
+
+    def test_finds_a_commons_only_object_absent_from_the_tenant_graph(self):
+        """A `:Tool` node that lives ONLY in commons must still resolve --
+        the concrete defect this fix closes (a tenant-only lookup 404s it)."""
+        engine = _PinnedGraphEngine(
+            _TENANT_GRAPH,
+            node_data={
+                _TENANT_GRAPH: {},
+                _COMMONS_GRAPH: {
+                    'tool-1': {'id': 'tool-1', 'node_type': 'Tool', 'name': 'Tool-A'}
+                },
+            },
+        )
+
+        with use_session(_session()):
+            located = api_extensions._locate_object_graph(engine, 'tool-1')
+
+        assert located is not None
+        graph_name, scoped_engine, props = located
+        assert graph_name == _COMMONS_GRAPH
+        assert scoped_engine.graph_name == _COMMONS_GRAPH
+        assert props['name'] == 'Tool-A'
+
+    def test_tenant_only_object_needs_no_for_graph_retarget(self):
+        """Mirrors `TestRowsPerAccessibleGraph::test_own_graph_is_called_
+        without_a_for_graph_retarget` -- when the object lives in the
+        caller's own graph, the SAME engine object is returned (no
+        `.for_graph()` view constructed)."""
+        engine = _PinnedGraphEngine(
+            _TENANT_GRAPH,
+            node_data={
+                _TENANT_GRAPH: {'n1': {'id': 'n1', 'name': 'tenant-node'}},
+                _COMMONS_GRAPH: {},
+            },
+        )
+
+        with use_session(_session()):
+            located = api_extensions._locate_object_graph(engine, 'n1')
+
+        assert located is not None
+        graph_name, scoped_engine, props = located
+        assert graph_name == _TENANT_GRAPH
+        assert scoped_engine is engine
+        assert props['name'] == 'tenant-node'
+
+    def test_tenant_wins_on_the_impossible_duplicate_id(self):
+        """Two physically partitioned graphs (GOC-61) never legitimately
+        share a node id, but if one somehow did, tenant wins -- the same
+        semantic `read_union`'s own de-dup already applies on a duplicate
+        id."""
+        engine = _PinnedGraphEngine(
+            _TENANT_GRAPH,
+            node_data={
+                _TENANT_GRAPH: {'dup': {'id': 'dup', 'source': 'tenant'}},
+                _COMMONS_GRAPH: {'dup': {'id': 'dup', 'source': 'commons'}},
+            },
+        )
+
+        with use_session(_session()):
+            located = api_extensions._locate_object_graph(engine, 'dup')
+
+        assert located is not None
+        graph_name, _scoped_engine, props = located
+        assert graph_name == _TENANT_GRAPH
+        assert props['source'] == 'tenant'
+
+    def test_object_not_found_in_any_accessible_graph(self):
+        engine = _PinnedGraphEngine(
+            _TENANT_GRAPH, node_data={_TENANT_GRAPH: {}, _COMMONS_GRAPH: {}}
+        )
+
+        with use_session(_session()):
+            located = api_extensions._locate_object_graph(engine, 'ghost')
+
+        assert located is None
+
+
+class _DuckGraph:
+    """Minimal in-memory graph `ObjectSet`/`GraphView` can read directly --
+    the "Raw GraphComputeEngine / in-memory duck graph" fallback branch of
+    `object_set.py::_view_for` -- no engine, no store, no session guard.
+    Used to prove `/ontology/object-set/pivot`'s and `/aggregate`'s per-graph
+    fan-out + merge logic without standing up the real engine singleton
+    `_ontology_facade_for` binds to on the tenant leg (`get_ontology_kg()` ->
+    `IntelligenceGraphEngine.get_active()`).
+    """
+
+    def __init__(
+        self,
+        nodes: dict[str, dict[str, Any]],
+        edges: list[tuple[str, str, str]] | None = None,
+    ) -> None:
+        self._nodes = nodes
+        self._edges = edges or []
+
+    def node_ids(self) -> list[str]:
+        return list(self._nodes)
+
+    def _get_node_properties(self, node_id: str) -> dict[str, Any]:
+        return dict(self._nodes.get(node_id, {}))
+
+    def has_node(self, node_id: str) -> bool:
+        return node_id in self._nodes
+
+    def out_edges(
+        self, node_id: str, data: bool = True
+    ) -> list[tuple[str, str, dict[str, Any]]]:
+        del data
+        return [
+            (s, t, {'relationship': et}) for s, t, et in self._edges if s == node_id
+        ]
+
+    def in_edges(
+        self, node_id: str, data: bool = True
+    ) -> list[tuple[str, str, dict[str, Any]]]:
+        del data
+        return [
+            (s, t, {'relationship': et}) for s, t, et in self._edges if t == node_id
+        ]
+
+
+_GraphFixture = dict[str, tuple[dict[str, dict[str, Any]], list[tuple[str, str, str]]]]
+
+
+def _fake_facade_for(graphs: _GraphFixture) -> Any:
+    """Build an `_ontology_facade_for(engine, scoped_engine)` replacement
+    bound to per-graph `_DuckGraph` data, keyed by `scoped_engine.graph_name`."""
+    from agent_utilities.knowledge_graph.ontology import OntologySystem
+
+    def _facade(_engine: Any, scoped_engine: Any) -> Any:
+        nodes, edges = graphs.get(scoped_engine.graph_name, ({}, []))
+        return None, OntologySystem(graph=_DuckGraph(nodes, edges))
+
+    return _facade
+
+
+def _node_data_from_graphs(
+    graphs: _GraphFixture,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """`_PinnedGraphEngine.backend`'s existence-check data
+    (`_ids_present_in_graph`) for the SAME per-graph id sets `_fake_facade_for`
+    serves -- the aggregate route narrows to only the ids each graph actually
+    holds before aggregating, so this must agree with `graphs` or every
+    per-graph aggregate call sees an empty present-id set."""
+    return {
+        graph_name: {node_id: {} for node_id in nodes}
+        for graph_name, (nodes, _edges) in graphs.items()
+    }
+
+
+def _async_return(value: Any) -> Any:
+    """An async callable ignoring its arguments and returning ``value`` --
+    used to stub `_get_engine_bounded`/`_get_ontology_kg_bounded` for the
+    pivot/aggregate route tests below."""
+
+    async def _fn(*_args: Any, **_kwargs: Any) -> Any:
+        return value
+
+    return _fn
+
+
+class TestOntologyObjectSetPivot:
+    """``POST /ontology/object-set/pivot`` -- proves a seed id's link into a
+    commons-resident object surfaces in the merged pivot groups (the concrete
+    union-read acceptance criterion), same seed-id reasoning as
+    ``/ontology/object-set/search-around``."""
+
+    def test_merges_commons_linked_objects_into_the_pivot_groups(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        graphs: _GraphFixture = {
+            _TENANT_GRAPH: (
+                {
+                    'seed1': {'id': 'seed1'},
+                    'tenant-tool': {'id': 'tenant-tool', 'category': 'tenant'},
+                },
+                [('seed1', 'tenant-tool', 'USES')],
+            ),
+            _COMMONS_GRAPH: (
+                {
+                    'seed1': {'id': 'seed1'},
+                    'commons-tool': {'id': 'commons-tool', 'category': 'commons'},
+                },
+                [('seed1', 'commons-tool', 'USES')],
+            ),
+        }
+        monkeypatch.setattr(
+            api_extensions, '_ontology_facade_for', _fake_facade_for(graphs)
+        )
+        monkeypatch.setattr(
+            api_extensions, '_get_ontology_kg_bounded', _async_return((None, None))
+        )
+        engine = _PinnedGraphEngine(_TENANT_GRAPH)
+        monkeypatch.setattr(
+            api_extensions, '_get_engine_bounded', _async_return(engine)
+        )
+
+        async def _run() -> Any:
+            with use_session(_session()):
+                return await api_extensions.ontology_object_set_pivot(
+                    {'ids': ['seed1'], 'link_type': 'USES', 'group_by': 'category'}
+                )
+
+        import asyncio
+
+        result = asyncio.run(_run())
+
+        assert result['groups'] == {
+            'tenant': ['tenant-tool'],
+            'commons': ['commons-tool'],
+        }
+
+
+class TestOntologyObjectSetAggregate:
+    """``POST /ontology/object-set/aggregate`` -- proves count/sum/avg/min/max
+    correctly merge a tenant + commons split of ``ids``, the concrete
+    union-read acceptance criterion for this route (and the correctness
+    argument for NOT scoping min/max to only the tenant, which a prior
+    lane's over-caution here would have hidden the commons-held extreme)."""
+
+    def _graphs(self) -> _GraphFixture:
+        return {
+            _TENANT_GRAPH: (
+                {
+                    'tenant-a': {'id': 'tenant-a', 'cost': 10.0},
+                    'tenant-b': {'id': 'tenant-b', 'cost': 20.0},
+                },
+                [],
+            ),
+            _COMMONS_GRAPH: (
+                {'commons-tool': {'id': 'commons-tool', 'cost': 5.0}},
+                [],
+            ),
+        }
+
+    def _patch(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+        graphs = self._graphs()
+        monkeypatch.setattr(
+            api_extensions, '_ontology_facade_for', _fake_facade_for(graphs)
+        )
+        monkeypatch.setattr(
+            api_extensions, '_get_ontology_kg_bounded', _async_return((None, None))
+        )
+        engine = _PinnedGraphEngine(
+            _TENANT_GRAPH, node_data=_node_data_from_graphs(graphs)
+        )
+        monkeypatch.setattr(
+            api_extensions, '_get_engine_bounded', _async_return(engine)
+        )
+        return ['tenant-a', 'tenant-b', 'commons-tool']
+
+    @staticmethod
+    def _aggregate(ids: list[str], **body: Any) -> Any:
+        async def _run() -> Any:
+            with use_session(_session()):
+                return await api_extensions.ontology_object_set_aggregate(
+                    {'ids': ids, **body}
+                )
+
+        import asyncio
+
+        return asyncio.run(_run())
+
+    def test_count_unions_across_graphs_without_double_counting(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """3 ids split 2 tenant / 1 commons must come back as 3, never 6 (3
+        ids x 2 graphs) -- proves `_ids_present_in_graph` narrows each
+        graph's run to the ids it actually holds before a STATIC
+        ObjectSet's `.aggregate()` (which counts every id verbatim, present
+        or not) runs against it."""
+        ids = self._patch(monkeypatch)
+
+        result = self._aggregate(ids, metric='count')
+
+        assert result['value'] == 3
+        assert result['total_objects'] == 3
+
+    def test_sum_sums_across_graphs(self, monkeypatch: pytest.MonkeyPatch):
+        ids = self._patch(monkeypatch)
+
+        result = self._aggregate(ids, metric='sum', field='cost')
+
+        assert result['value'] == 35.0
+
+    def test_avg_merges_via_sum_and_count_not_average_of_averages(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """A naive average-of-per-graph-averages would give
+        ``(15.0 + 5.0) / 2 == 10.0`` -- wrong, since the graphs hold
+        different group sizes (2 vs 1). The correct merge -- sum/count from
+        each graph, divided AFTER merging -- gives
+        ``(10 + 20 + 5) / 3 == 11.67``."""
+        ids = self._patch(monkeypatch)
+
+        result = self._aggregate(ids, metric='avg', field='cost')
+
+        assert result['value'] == pytest.approx(35.0 / 3)
+
+    def test_min_and_max_merge_directly_across_graphs(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The commons-only id holds the global min; a tenant-scoped-only
+        aggregate (a prior over-cautious pass here) would have missed it."""
+        ids = self._patch(monkeypatch)
+
+        min_result = self._aggregate(ids, metric='min', field='cost')
+        max_result = self._aggregate(ids, metric='max', field='cost')
+
+        assert min_result['value'] == 5.0
+        assert max_result['value'] == 20.0
