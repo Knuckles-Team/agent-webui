@@ -4349,6 +4349,43 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
 _GRAPH_STATS_BY_TYPE_LIMIT = 50
 
 
+async def _by_type_call(
+    engine: Any,
+) -> tuple[dict[str, int], list[str], list[str]]:
+    """Run `get_graph_stats`'s `by_type` aggregate with its own fail-soft
+    degrade, isolated from the two total-count calls it now runs alongside
+    via `asyncio.gather` in `get_graph_stats`.
+
+    Kept as a standalone coroutine (rather than inlined) specifically so its
+    `try/except` cannot let a `by_type` failure propagate out of `gather` --
+    `asyncio.gather` (without `return_exceptions=True`) re-raises the FIRST
+    exception any of its awaitables raises, which would otherwise turn a
+    should-degrade `by_type` failure into a full-route 503, same as letting
+    it raise out of a bare `await` would. This preserves the exact pre-fix
+    contract: `by_type` failing degrades to `({}, [], [])`; the two
+    total-count calls failing still surfaces as a 503 via the caller's own
+    outer `except`.
+    """
+    try:
+        return await _read_union_sql_group_counts(
+            engine,
+            f'SELECT node_type, COUNT(*) AS n FROM nodes GROUP BY node_type '
+            f'ORDER BY n DESC LIMIT {_GRAPH_STATS_BY_TYPE_LIMIT}',
+            key='node_type',
+            count_field='n',
+            deadline=10.0,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # A `by_type` failure must not take down the whole stats
+        # response -- mirrors the previous per-node-type loop's own
+        # narrower degrade, just for the one aggregate call now doing
+        # that loop's job.
+        _log_failure('api_extension', e, level=logging.DEBUG)
+        return {}, [], []
+
+
 @router.get('/graph/stats')
 async def get_graph_stats() -> dict[str, Any]:
     """Get statistics about the Knowledge Graph.
@@ -4396,94 +4433,135 @@ async def get_graph_stats() -> dict[str, Any]:
         # mid-`PARTIAL_MATERIALIZATION` rebuild) -- merged into the response
         # below alongside the other two calls' degraded sets so a partial
         # total is never reported identically to a complete one.
-        total_nodes, node_source_graphs, node_degraded = await _read_union_scalar_sum(
-            engine,
-            'MATCH (n) RETURN count(n) as count',
-            None,
-            field='count',
-            deadline=10.0,
-        )
-
-        (
-            total_relationships,
-            rel_source_graphs,
-            rel_degraded,
-        ) = await _read_union_scalar_sum(
-            engine,
-            # BUG-262: the engine's native Cypher parser rejects a relationship
-            # pattern with BOTH endpoints anonymous (`()-[r]->()`) -- it raised
-            # a masked PermissionError that this function's outer `except`
-            # turned into a 503 for the WHOLE stats response, so GraphView's
-            # "Nodes"/"Edges" summary badges stayed at their `0` default even
-            # when the graph held data (matches `/graph/relationships` below,
-            # which already uses named endpoints and works). Verified live
-            # against the cluster engine: the anonymous form fails with
-            # error_class=PermissionError/failing_layer=knowledge_graph; the
-            # named form returns the correct count (11,641 edges).
-            'MATCH (a)-[r]->(b) RETURN count(r) as count',
-            None,
-            field='count',
-            deadline=10.0,
-        )
-
-        # Get node counts by type. FIX LANE Priority 2: a real `GROUP BY`
-        # aggregate over the `nodes` SQL table -- the previous version was a
-        # hardcoded two-item allowlist (`['Memory', 'Article']`) that could
-        # structurally never report any other type, and an `if count > 0`
-        # that discarded genuine zeros too.
         #
-        # FIX (root cause, verified live in-pod): the column is `node_type`,
-        # not `type` -- `SELECT type, ... FROM nodes` fails outright
-        # ("Schema error: No field named type"; the `nodes` SQL projection
-        # has no `type` column at all). The engine stores a node's class
-        # under exactly ONE canonical property,
-        # `models.knowledge_graph.GRAPH_NODE_TYPE_PROPERTY = "node_type"`
-        # ("Registry models... carry the node-class discriminator as `type`
-        # ...however[,] a raw `model_dump()` can never be handed to a graph
-        # write -- it always carries the retired spelling" --
-        # `RegistryNode.to_graph_properties()` is the one place that
-        # translates `type` -> `node_type` on write). The wide `nodes` table
-        # also carries an UNRELATED `kind` column -- verified live it holds
-        # values like `engine_latency`/`ingest_task`/`installed-skill-
-        # provider` (RuntimeSignal/WorkItem sub-classification), not the
-        # node's class -- and querying `kind` on `:Tool` data returns
-        # nothing resembling a type breakdown, while `node_type` reproduces
-        # the exact known label set (`RuntimeSignal`, `WorkItem`, `Concept`,
-        # ..., `NativeTool`, `CallableResource`, ...). `label` silently
-        # returns 0 rows instead of erroring, and `labels(n)` is unsupported
-        # by this engine -- both verified live. This also can't go through
-        # this file's own `/graph/query` route (`_validate_read_only_cypher`
-        # rejects `SELECT` outright); `engine.graph_compute.sql_exec` is
-        # called directly, same as the production precedent in
-        # `fleet_catalog_tables.py`. Scoped by the SAME union as the totals
-        # above (`_read_union_sql_group_counts`) so the breakdown sums
-        # against the same universe `total_nodes` counts. The column set
-        # DIFFERS per graph (verified live: `__commons__`'s SQL projection
-        # can itself be mid-rebuild) -- `_read_union_sql_group_counts`'s own
-        # per-graph fail-soft handles that; the outer `try/except` here is
-        # only a second-line safety net for a totally unexpected failure.
-        try:
-            (
-                type_counts,
-                type_source_graphs,
-                type_degraded,
-            ) = await _read_union_sql_group_counts(
+        # PERF (this fix lane): the three aggregate calls below are each
+        # independently expensive engine-side (measured 8-12s total for a
+        # ~25k-node tenant, serialized) and share no state, so they now run
+        # CONCURRENTLY via `asyncio.gather` instead of being awaited one
+        # after another -- roughly a 3x wall-clock reduction with no change
+        # to per-call engine cost. This is safe for ambient-session
+        # propagation without any extra plumbing here: each coroutine
+        # `asyncio.gather` schedules becomes its own `asyncio.Task`, and
+        # asyncio's own `Task` creation already snapshots the CURRENT
+        # `contextvars.Context` at creation time (stdlib behaviour, not
+        # something this call site has to arrange) -- so all three tasks
+        # see the SAME `current_session()` this request already has bound,
+        # exactly as the sequential `await` chain did. Underneath, each of
+        # the three still goes through `_invoke_governed_helper` ->
+        # `_SYNC_WORK_EXECUTOR.submit()`, which ALSO does its own
+        # `contextvars.copy_context()` per submission (see that class'
+        # `submit()` above) before crossing into a worker thread -- the
+        # same load-bearing pattern `_rows_per_accessible_graph` uses for
+        # its inner per-graph fan-out. Verified directly (not just by
+        # reading the stdlib docs) in
+        # `__tests__/test_api_extensions.py::test_get_graph_stats_concurrent_calls_preserve_session`,
+        # which asserts the actor bound to the ambient session is visible
+        # inside all three concurrently-running calls.
+        #
+        # ENGINE-BREAKER / CAPACITY: this does multiply the worst-case
+        # in-flight fan-out for ONE request (3 outer calls x up to
+        # `_READ_UNION_MAX_WORKERS`=8 inner per-graph threads = up to 24
+        # transient threads, vs 8 today) -- but it does not bypass the
+        # existing admission control. All three outer calls still go
+        # through the SAME shared, bounded `_SYNC_WORK_EXECUTOR`
+        # (`_MAX_SYNC_WORKERS`=4, `_MAX_SYNC_PENDING`=8): once that budget
+        # is exhausted, `.submit()` raises `SyncWorkCapacityError`, which
+        # `_invoke_governed_helper` already converts into a clean 503
+        # ("Synchronous backend capacity is exhausted") rather than
+        # unbounded engine fan-out. The engine's own circuit breaker
+        # (`agent_utilities...core.engine_breaker.CircuitBreaker`) only
+        # trips on transport-level failures (`OSError`/`EOFError` -- a dead
+        # or unreachable socket), never on call volume alone, so 3x'ing
+        # this one route's demand on an already-bounded pool does not by
+        # itself risk tripping it. The one real cost: while a
+        # `get_graph_stats` request is in flight, it now holds up to 3 of
+        # the 4 global `_SYNC_WORK_EXECUTOR` slots at once (vs 1 before),
+        # so a second concurrent caller of THIS route (or of any other sync
+        # route sharing that pool) has less headroom and is more likely to
+        # see that capacity 503 under concurrent load on this one endpoint.
+        # Kept deliberately simple: no new semaphore/bound was added here,
+        # because the existing shared executor is already the intended
+        # single choke point for this class of resource, and it already
+        # fails honestly (503) rather than silently overloading anything.
+        (
+            (total_nodes, node_source_graphs, node_degraded),
+            (total_relationships, rel_source_graphs, rel_degraded),
+            (type_counts, type_source_graphs, type_degraded),
+        ) = await asyncio.gather(
+            _read_union_scalar_sum(
                 engine,
-                f'SELECT node_type, COUNT(*) AS n FROM nodes GROUP BY node_type '
-                f'ORDER BY n DESC LIMIT {_GRAPH_STATS_BY_TYPE_LIMIT}',
-                key='node_type',
-                count_field='n',
+                'MATCH (n) RETURN count(n) as count',
+                None,
+                field='count',
                 deadline=10.0,
-            )
-        except HTTPException:
-            raise
-        except Exception as e:
-            # A `by_type` failure must not take down the whole stats
-            # response -- mirrors the previous per-node-type loop's own
-            # narrower degrade, just for the one aggregate call now doing
-            # that loop's job.
-            _log_failure('api_extension', e, level=logging.DEBUG)
-            type_counts, type_source_graphs, type_degraded = {}, [], []
+            ),
+            _read_union_scalar_sum(
+                engine,
+                # BUG-262: the engine's native Cypher parser rejects a
+                # relationship pattern with BOTH endpoints anonymous
+                # (`()-[r]->()`) -- it raised a masked PermissionError that
+                # this function's outer `except` turned into a 503 for the
+                # WHOLE stats response, so GraphView's "Nodes"/"Edges"
+                # summary badges stayed at their `0` default even when the
+                # graph held data (matches `/graph/relationships` below,
+                # which already uses named endpoints and works). Verified
+                # live against the cluster engine: the anonymous form fails
+                # with error_class=PermissionError/failing_layer=
+                # knowledge_graph; the named form returns the correct count
+                # (11,641 edges).
+                'MATCH (a)-[r]->(b) RETURN count(r) as count',
+                None,
+                field='count',
+                deadline=10.0,
+            ),
+            # Get node counts by type. FIX LANE Priority 2: a real
+            # `GROUP BY` aggregate over the `nodes` SQL table -- the
+            # previous version was a hardcoded two-item allowlist
+            # (`['Memory', 'Article']`) that could structurally never
+            # report any other type, and an `if count > 0` that discarded
+            # genuine zeros too.
+            #
+            # FIX (root cause, verified live in-pod): the column is
+            # `node_type`, not `type` -- `SELECT type, ... FROM nodes`
+            # fails outright ("Schema error: No field named type"; the
+            # `nodes` SQL projection has no `type` column at all). The
+            # engine stores a node's class under exactly ONE canonical
+            # property, `models.knowledge_graph.GRAPH_NODE_TYPE_PROPERTY =
+            # "node_type"` ("Registry models... carry the node-class
+            # discriminator as `type` ...however[,] a raw `model_dump()`
+            # can never be handed to a graph write -- it always carries the
+            # retired spelling" -- `RegistryNode.to_graph_properties()` is
+            # the one place that translates `type` -> `node_type` on
+            # write). The wide `nodes` table also carries an UNRELATED
+            # `kind` column -- verified live it holds values like
+            # `engine_latency`/`ingest_task`/`installed-skill-provider`
+            # (RuntimeSignal/WorkItem sub-classification), not the node's
+            # class -- and querying `kind` on `:Tool` data returns nothing
+            # resembling a type breakdown, while `node_type` reproduces the
+            # exact known label set (`RuntimeSignal`, `WorkItem`,
+            # `Concept`, ..., `NativeTool`, `CallableResource`, ...).
+            # `label` silently returns 0 rows instead of erroring, and
+            # `labels(n)` is unsupported by this engine -- both verified
+            # live. This also can't go through this file's own
+            # `/graph/query` route (`_validate_read_only_cypher` rejects
+            # `SELECT` outright); `engine.graph_compute.sql_exec` is called
+            # directly, same as the production precedent in
+            # `fleet_catalog_tables.py`. Scoped by the SAME union as the
+            # totals above (`_read_union_sql_group_counts`) so the
+            # breakdown sums against the same universe `total_nodes`
+            # counts. The column set DIFFERS per graph (verified live:
+            # `__commons__`'s SQL projection can itself be mid-rebuild) --
+            # `_read_union_sql_group_counts`'s own per-graph fail-soft
+            # handles that; `_by_type_call`'s own `try/except` below is
+            # only a second-line safety net for a totally unexpected
+            # failure, mirroring what used to be this call's own local
+            # `try/except` before the three calls ran concurrently -- a
+            # `by_type` failure must still degrade on its own and must
+            # never take down the whole stats response, so it cannot be
+            # allowed to propagate out of `asyncio.gather` like the two
+            # total-count calls above are allowed to.
+            _by_type_call(engine),
+        )
 
         # Observability requirement (FIX LANE Priority 1): which physical
         # graph(s) this response actually drew from, additive so a narrowed
