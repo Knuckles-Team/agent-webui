@@ -48,6 +48,13 @@ from fastapi.responses import Response
 # Global constant for agent directory
 
 router = APIRouter()
+# Chat-session history CRUD, mounted separately at the top-level `/api/chats`
+# resource (prefix='/api', paths below already spell `/chats...`) rather than
+# under `/api/enhanced` -- see PHASE B/C unify-chat-resource. Kept as its own
+# `APIRouter` (not folded into `router`) so the mount prefix in `server.py`
+# can differ from the rest of the webui-only `/api/enhanced/*` surface
+# without special-casing individual routes at inclusion time.
+chats_router = APIRouter()
 logger = logging.getLogger(__name__)
 _REFERENCE_KEY = secrets.token_bytes(32)
 _MAX_CONTAINER_RECORDS = 256
@@ -3307,7 +3314,7 @@ async def download_file(filename: str) -> Response:
     )
 
 
-@router.get('/chats')
+@chats_router.get('/chats')
 async def list_chats() -> list[dict[str, Any]]:
     """List historical chat sessions stored on the server.
 
@@ -3324,7 +3331,7 @@ async def list_chats() -> list[dict[str, Any]]:
     return bounded if isinstance(bounded, list) else []
 
 
-@router.get('/chats/{chat_id}')
+@chats_router.get('/chats/{chat_id}')
 async def get_chat(chat_id: str) -> dict[str, Any]:
     """Retrieve a specific chat session's message history.
 
@@ -3345,7 +3352,7 @@ async def get_chat(chat_id: str) -> dict[str, Any]:
     return bounded
 
 
-@router.post('/chats')
+@chats_router.post('/chats')
 async def save_chat(data: dict[str, Any]) -> dict[str, Any]:
     """Persist a new or updated chat session.
 
@@ -3368,9 +3375,18 @@ async def save_chat(data: dict[str, Any]) -> dict[str, Any]:
     return bounded_result if isinstance(bounded_result, dict) else {'status': 'error'}
 
 
-@router.put('/chats/{chat_id}/title')
-async def update_chat_title(chat_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    """Update the display title of a specific chat session.
+@chats_router.put('/chats/{chat_id}')
+async def update_chat(chat_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Update a chat session record -- today, its display title.
+
+    Folded from the old, separate ``PUT /chats/{chat_id}/title`` path: this
+    IS the general chat-record update route, not a title-only alias. It
+    currently only accepts a ``title`` field because that is the only field
+    the ``update_chat_title`` workspace helper's contract accepts; a
+    ``data`` payload without a valid ``title`` is rejected rather than
+    silently accepted as a no-op, so this stays a real update endpoint
+    (not a disguised rename-only one) the moment the helper grows more
+    fields.
 
     Args:
         chat_id: The identifier of the chat session.
@@ -3387,14 +3403,14 @@ async def update_chat_title(chat_id: str, data: dict[str, Any]) -> dict[str, Any
     return h(chat_id, {'title': title}) if h else {'status': 'error'}
 
 
-@router.delete('/chats/{chat_id}')
+@chats_router.delete('/chats/{chat_id}')
 async def delete_chat(chat_id: str) -> dict[str, Any]:
     """Permanently delete a chat session record.
 
     Uses the canonical REST verb DELETE against ``/chats/{chat_id}``. The
     old ``GET /chats/{chat_id}/title`` alias was non-idiomatic (GET is
     expected to be safe/idempotent-read) and collided conceptually with
-    the sibling ``PUT /chats/{chat_id}/title`` rename endpoint.
+    the sibling ``PUT /chats/{chat_id}`` update endpoint.
 
     Args:
         chat_id: The identifier of the chat to remove.

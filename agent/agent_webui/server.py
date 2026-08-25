@@ -34,11 +34,12 @@ from starlette.routing import Mount
 from starlette.routing import Route as StarletteRoute
 
 from .api_extensions import (
-    router as enhanced_router,
-)
-from .api_extensions import (
+    chats_router,
     set_workspace_helpers,
     sync_work_status,
+)
+from .api_extensions import (
+    router as enhanced_router,
 )
 from .observability import (
     CORRELATION_RESPONSE_HEADER,
@@ -115,7 +116,12 @@ _ADMIN_ROUTE_PREFIXES = (
     '/api/fleet',
     '/api/enhanced/agents',
     '/api/enhanced/backend',
-    '/api/enhanced/chats',
+    # PHASE B/C unify-chat-resource: was `/api/enhanced/chats`, moved to the
+    # canonical `/api/chats` resource. `_is_admin_route` below carves the
+    # pydantic-ai message-transport sub-route (`/api/chats/messages`) back
+    # OUT of this prefix -- sending a chat message is an ordinary `kg:write`
+    # action, not chat-history administration.
+    '/api/chats',
     '/api/enhanced/commands',
     '/api/enhanced/code',
     '/api/enhanced/config',
@@ -190,6 +196,13 @@ _WEBSOCKET_READ_ONLY_PATHS = frozenset({'/ws/dashboard'})
 _PUBLIC_LIVENESS_PATHS = frozenset(
     {'/health', '/healthz', '/api/health', '/api/healthz'}
 )
+# PHASE B/C unify-chat-resource: the pydantic-ai chat-message transport,
+# remounted from `/api/chat` to `/api/chats/messages` so it sits under the
+# same `/api/chats` resource as the chat-history CRUD. It is a sibling
+# capability, not chat-history administration -- exempt it from the
+# `/api/chats` entry in `_ADMIN_ROUTE_PREFIXES` so sending a message still
+# only requires `kg:write`, exactly as `/api/chat` did before the move.
+_CHAT_MESSAGES_PATH = '/api/chats/messages'
 _SECURITY_RESPONSE_HEADERS = (
     (b'referrer-policy', b'no-referrer'),
     (b'x-content-type-options', b'nosniff'),
@@ -757,6 +770,8 @@ class WebUIAuthorizationMiddleware:
 
     @staticmethod
     def _is_admin_route(path: str) -> bool:
+        if path == _CHAT_MESSAGES_PATH:
+            return False
         return any(
             path == prefix or path.startswith(f'{prefix}/')
             for prefix in _ADMIN_ROUTE_PREFIXES
@@ -1767,6 +1782,13 @@ def create_agent_web_app(
     # Mount the enhanced API extensions (ACP/A2A/Management)
     app.include_router(enhanced_router, prefix='/api/enhanced')
 
+    # Mount chat-session history CRUD at the canonical `/api/chats` resource
+    # (PHASE B/C unify-chat-resource). `chats_router`'s own route paths
+    # already spell `/chats...`, so the prefix here is `/api`, not
+    # `/api/enhanced` -- this is the SAME handler code that used to live at
+    # `/api/enhanced/chats*`, just remounted; no shim, no alias.
+    app.include_router(chats_router, prefix='/api')
+
     # Mount the service dashboard API if available (optional dependency)
     try:
         from agent_utilities.gateway.api import (
@@ -1967,6 +1989,23 @@ def create_agent_web_app(
     def add_pydantic_routes(routes, prefix=''):
         """Recursively discover and mount Pydantic-AI internal routes.
 
+        PHASE B/C unify-chat-resource: pydantic-ai's `to_web()` always
+        serves its chat-message transport at `POST /api/chat` (plus its
+        `OPTIONS /api/chat` CORS preflight sibling) -- that path is remapped
+        below to `/api/chats/messages` so the transport lives under the
+        same `/api/chats` resource as the chat-history CRUD, instead of a
+        confusingly-near-identical sibling path. `/api/configure`,
+        `/api/health`, `/`, and `/{id}` are untouched.
+
+        The remap is a pure path substitution, not a wrapper: pydantic-ai's
+        `post_chat`/`options_chat` closures take only `request: Request` and
+        never read `request.path_params`, so there is nothing for a
+        `{id}` path segment to bind to -- mounting at `.../{id}/messages`
+        would add a path parameter the handler silently ignores. The
+        Vercel AI SDK transport already puts the conversation id in the
+        JSON body (`Chat.tsx`'s `prepareSendMessagesRequest` sends `id`
+        alongside `messages`), so `/api/chats/messages` loses nothing.
+
         Args:
             routes: List of routes to process.
             prefix: URL prefix for the current route layer.
@@ -1977,6 +2016,8 @@ def create_agent_web_app(
             elif isinstance(route, StarletteRoute):
                 full_path = prefix + route.path
                 full_path = '/' + full_path.strip('/')
+                if full_path == '/api/chat':
+                    full_path = _CHAT_MESSAGES_PATH
 
                 # Only bridge routes that match the dashboard's functional scope
                 if (

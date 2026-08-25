@@ -710,7 +710,7 @@ const Chat = ({ pageContext }: ChatProps) => {
   const transport = useMemo(
     () =>
       new DefaultChatTransport<UIMessage>({
-        api: '/api/chat',
+        api: '/api/chats/messages',
         prepareSendMessagesRequest: ({ id, messages, body, trigger, messageId }) => {
           const context = pageContextRef.current
           const contextMessage: UIMessage = {
@@ -922,7 +922,7 @@ const Chat = ({ pageContext }: ChatProps) => {
       } else {
         const fetchMessages = async () => {
           try {
-            const res = await fetch(`/api/enhanced/chats${conversationId}`)
+            const res = await fetch(`/api/chats${conversationId}`)
             if (!res.ok) return
             const data = (await res.json()) as ChatResponse
             if (cancelled) return
