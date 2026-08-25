@@ -1727,8 +1727,32 @@ def create_agent_web_app(
 
     @app.exception_handler(_errors.HTTPException)
     async def _privacy_safe_http_error(_request, exc: _errors.HTTPException):
-        """Prevent upstream exception detail from being reflected to clients."""
+        """Prevent upstream exception detail from being reflected to clients.
 
+        Masking the CLIENT-facing detail is a deliberate privacy control and
+        stays. Discarding it entirely was not: the owner's post-sign-in
+        ``{"detail": "Request failed"}`` was a plain 404 "Not Found" from the
+        SPA mount, and because this handler logged nothing, that one-line
+        diagnosis cost a multi-hour investigation (the third time in this
+        program a swallowed cause has done so). Log the REAL status and detail
+        server-side first, against the ambient correlation id that already
+        appears in this request's access-log line (and in the
+        ``x-correlation-id`` response header the browser received), so the
+        masked response the user reports is one ``kubectl logs`` away from its
+        real cause.
+        """
+
+        logger.warning(
+            'Request failed; client detail masked '
+            '(correlation_id=%s, status=%s, detail=%s)',
+            current_correlation_id() or '-',
+            exc.status_code,
+            exc.detail,
+            extra={
+                'event': 'masked_http_error',
+                'status_code': exc.status_code,
+            },
+        )
         detail = (
             'Request failed' if exc.status_code < 500 else 'Internal request failed'
         )
@@ -1739,9 +1763,24 @@ def create_agent_web_app(
         )
 
     @app.exception_handler(RequestValidationError)
-    async def _privacy_safe_validation_error(_request, _exc: RequestValidationError):
-        """Do not reflect submitted values or schema internals in validation errors."""
+    async def _privacy_safe_validation_error(_request, exc: RequestValidationError):
+        """Do not reflect submitted values or schema internals in validation errors.
 
+        Same hole as ``_privacy_safe_http_error`` above: the masked 422 told
+        nobody WHICH field failed. Log the validator's own error list (field
+        location + error type, never the submitted value) server-side.
+        """
+
+        logger.warning(
+            'Request validation failed; client detail masked '
+            '(correlation_id=%s, errors=%s)',
+            current_correlation_id() or '-',
+            [
+                {'loc': error.get('loc'), 'type': error.get('type')}
+                for error in exc.errors()
+            ],
+            extra={'event': 'masked_validation_error'},
+        )
         return JSONResponse(
             status_code=422,
             content={'detail': 'Request could not be processed'},
@@ -2100,16 +2139,37 @@ def create_agent_web_app(
 
     # Fallback to serving the built React dashboard if no custom source provided
     if not html_source:
-        if dist_path.exists():
+        if not dist_path.is_dir():
+            logger.warning(
+                'Static assets were not found at the configured location. '
+                'Dashboard UI will not be served.'
+            )
+        else:
+            # A directory check alone is NOT enough. `index.html` is the LAST
+            # file the frontend build writes, so an interrupted or partial
+            # build leaves a dist directory full of hashed assets with no
+            # entrypoint. That state used to mount silently: assets and
+            # favicons served 200, while `/` and every client-side route fell
+            # through SPAStaticFiles' index.html fallback to a bare 404 that
+            # `_privacy_safe_http_error` then masked as
+            # `{"detail": "Request failed"}` -- exactly what a signed-in user
+            # saw on the production deployment (which live-mounts this
+            # directory rather than using the packaged wheel, so a broken
+            # build on the mount source breaks the dashboard immediately).
+            # Serving the assets is still better than serving nothing, but the
+            # missing entrypoint must be reported loudly rather than inferred
+            # from a masked 404.
+            if not (dist_path / 'index.html').is_file():
+                logger.error(
+                    'The built dashboard entrypoint index.html is missing from '
+                    'the static asset directory. Asset requests will still be '
+                    'served, but "/" and every client-side route will return '
+                    '404. Re-run the frontend build to regenerate it.'
+                )
             app.mount(
                 '/',
                 SPAStaticFiles(directory=str(dist_path), html=True),
                 name='dashboard',
-            )
-        else:
-            logger.warning(
-                'Static assets were not found at the configured location. '
-                'Dashboard UI will not be served.'
             )
 
     if _LOGFIRE_ENABLED:
