@@ -25,7 +25,7 @@ import type { ConversationEntry } from '@/types'
 import { DEV_IDENTITY_USER_KEY } from './auth'
 import { fetchValidated, looseArray } from './api-validation'
 
-// D-WUI-28: /api/enhanced/chats can answer null/{}/an error envelope instead
+// D-WUI-28: /api/chats can answer null/{}/an error envelope instead
 // of an array. The raw cast previously used here happened to never crash
 // (the throwing `.map()` sat in the same `try` as `setRemote`, so a bad
 // shape threw before any state was ever written -- see the register item's
@@ -147,7 +147,7 @@ export function deleteConversationEntry(userKey: string, conversationId: string)
 /**
  * The ONE hook the nav "Active Chats" list and the floating chat launcher both
  * call. Merges `userKey`'s local index with the server-side conversation list
- * (`GET /api/enhanced/chats`, already scoped to the authenticated caller),
+ * (`GET /api/chats`, already scoped to the authenticated caller),
  * local entries winning only where the server has not (yet) recorded that id.
  */
 export function useConversations(userKey: string): ConversationEntry[] {
@@ -162,7 +162,7 @@ export function useConversations(userKey: string): ConversationEntry[] {
     let cancelled = false
     const fetchRemote = async () => {
       try {
-        const data = await fetchValidated('/api/enhanced/chats', looseArray(rawConversationEntrySchema))
+        const data = await fetchValidated('/api/chats', looseArray(rawConversationEntrySchema))
         if (cancelled) return
         setRemote(
           data.map((entry) => {

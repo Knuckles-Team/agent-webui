@@ -26,7 +26,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from agent_webui.api_extensions import router
+from agent_webui.api_extensions import chats_router, router
 from fastapi.routing import APIRoute
 
 pytestmark = pytest.mark.integration
@@ -41,6 +41,7 @@ ALLOWED_URL_PREFIXES = (
     '/ag-ui',
     '/stream',
     '/chats',
+    '/api/chats',
     '/health',
     '/api/approve',
 )
@@ -191,8 +192,18 @@ class TestViewFetchEndpoints:
         normalisation regresses).
         """
         assert '/api/enhanced/graph/stats' in registered_routes
-        assert '/api/enhanced/chats' in registered_routes
         assert '/api/enhanced/sdd/specs' in registered_routes
+
+    def test_chats_router_registers_the_canonical_resource(self) -> None:
+        """Chat-history CRUD lives on ``chats_router`` (mounted at ``/api``,
+        not ``/api/enhanced``) since PHASE B/C unify-chat-resource -- guards
+        against the route silently vanishing from either router during a
+        future refactor.
+        """
+        chats_paths = {
+            route.path for route in chats_router.routes if isinstance(route, APIRoute)
+        }
+        assert chats_paths == {'/chats', '/chats/{chat_id}'}
 
     def test_scan_found_fetch_calls(self, view_fetches: list[tuple[Path, str]]) -> None:
         """At least one fetch call must be discovered in the views tree.
