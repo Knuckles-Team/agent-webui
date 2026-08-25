@@ -3,6 +3,7 @@ from __future__ import annotations
 """Test API endpoints for agent-webui backend."""
 
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import agent_webui.api_extensions as api_extensions
@@ -144,6 +145,149 @@ class TestGraphStatsEndpoint:
             data = response.json()
             assert data['total_nodes'] == 0
             assert data['total_relationships'] == 0
+
+
+class TestGraphStatsConcurrency:
+    """PERF fix lane: `get_graph_stats`'s three aggregate calls (node count,
+    relationship count, `by_type` GROUP BY) now run CONCURRENTLY via
+    `asyncio.gather` instead of one after another. This proves the two
+    things a regression here could silently break:
+
+    1. Wall-clock now tracks the SLOWEST of the three calls, not their SUM
+       -- the entire justification for the change.
+    2. The ambient `GraphSession`/actor this request was verified under is
+       still visible inside all three calls despite them now running as
+       separate `asyncio.gather` tasks / `_SYNC_WORK_EXECUTOR` threads --
+       getting this wrong would be a silent authorization bug (the wrong,
+       or no, principal), which the fix lane's own instructions call out as
+       far worse than the latency being fixed. Each fake call below reads
+       `current_session()` from INSIDE the worker thread it actually runs
+       on (not the test's own thread) and records the actor id it sees --
+       exactly the failure mode a bare `ThreadPoolExecutor.submit()`
+       (dropping the ambient `contextvars.Context`) would produce.
+    """
+
+    def test_three_aggregate_calls_run_concurrently_with_session_intact(
+        self,
+    ):
+        import threading
+        import time
+
+        from agent_utilities.knowledge_graph.core.session import (
+            GraphSession,
+            current_session,
+            use_session,
+        )
+        from agent_utilities.security.brain_context import ActorContext
+
+        actor = ActorContext(
+            actor_id='concurrency-test-actor',
+            tenant_id='acme',
+            roles=('kg:read',),
+            authenticated=True,
+        )
+        graph_name = 'tenant__acme____commons__'
+        session = GraphSession(
+            actor=actor,
+            tenant='acme',
+            scopes=frozenset({'kg:read'}),
+            graph=graph_name,
+        )
+
+        call_delay = 0.2
+        lock = threading.Lock()
+        observed_actor_ids: list[str | None] = []
+        call_intervals: list[tuple[float, float]] = []
+
+        def _record_call() -> None:
+            start = time.monotonic()
+            sess = current_session()
+            with lock:
+                observed_actor_ids.append(
+                    sess.actor.actor_id if sess is not None else None
+                )
+            time.sleep(call_delay)
+            with lock:
+                call_intervals.append((start, time.monotonic()))
+
+        class _GraphCompute:
+            def sql_exec(self, statement: str) -> list[dict[str, Any]]:
+                _record_call()
+                return [{'node_type': 'Memory', 'n': 3}]
+
+        class _Engine:
+            def __init__(self) -> None:
+                self.backend = object()  # truthy; no attributes read on it
+                self.graph_compute = _GraphCompute()
+
+            def for_graph(self, name: str) -> _Engine:
+                assert name == graph_name
+                return self
+
+            def query_cypher(
+                self, query: str, params: dict[str, Any] | None = None
+            ) -> list[dict[str, Any]]:
+                _record_call()
+                if 'count(n)' in query:
+                    return [{'count': 5}]
+                return [{'count': 7}]
+
+        engine = _Engine()
+
+        def _fake_accessible_graphs(actor_arg: Any) -> list[str]:
+            assert actor_arg is not None
+            return [graph_name]
+
+        with (
+            patch.object(api_extensions, '_accessible_graphs', _fake_accessible_graphs),
+            patch(
+                'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+                return_value=engine,
+            ),
+        ):
+
+            async def _run() -> dict[str, Any]:
+                with use_session(session):
+                    return await api_extensions.get_graph_stats()
+
+            wall_start = time.monotonic()
+            result = asyncio.run(_run())
+            wall_elapsed = time.monotonic() - wall_start
+
+        assert result['available'] is True
+        assert result['total_nodes'] == 5
+        assert result['total_relationships'] == 7
+        assert result['by_type'] == {'Memory': 3}
+
+        # Context propagation: all three calls ran under the SAME actor
+        # this request was verified under -- never None, never a stray
+        # default/no-session identity.
+        assert observed_actor_ids == ['concurrency-test-actor'] * 3
+
+        # Concurrency, wall-clock proof: three genuinely serialized 0.2s
+        # calls take >= 0.6s; run concurrently, wall time tracks the
+        # SLOWEST single call. A 0.5s bound is well under the serialized
+        # floor and well above a single call, so this can only pass if the
+        # three calls actually overlapped.
+        assert wall_elapsed < 0.5, (
+            f'expected concurrent execution (~{call_delay}s), measured '
+            f'{wall_elapsed:.3f}s -- the three aggregate calls appear to '
+            'be serialized again'
+        )
+
+        # Concurrency, direct overlap proof (stronger than the wall-clock
+        # bound alone): at least two of the three recorded (start, end)
+        # intervals overlap in time.
+        assert len(call_intervals) == 3
+
+        def _overlaps(a: tuple[float, float], b: tuple[float, float]) -> bool:
+            return a[0] < b[1] and b[0] < a[1]
+
+        assert any(
+            _overlaps(call_intervals[i], call_intervals[j])
+            for i in range(3)
+            for j in range(i + 1, 3)
+        ), 'no two of the three aggregate calls overlapped in time'
 
 
 class TestGraphNodesEndpoint:
