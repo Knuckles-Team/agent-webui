@@ -193,8 +193,21 @@ _ADMIN_MUTATION_ROUTE_PREFIXES = (
 # default; add a path here only when the same receive-only property is verified true
 # of the socket, not merely assumed.
 _WEBSOCKET_READ_ONLY_PATHS = frozenset({'/ws/dashboard'})
+# BUG-PE-004: this MUST stay a superset-or-equal match of the shared
+# ``ActorIdentityMiddleware``'s own unauthenticated-path set
+# (``agent_utilities.security.request_identity.UNAUTHENTICATED_PATHS`` ==
+# ``{'/health', '/health/ready', '/healthz', '/api/health',
+# '/api/healthz'}``). That middleware runs OUTSIDE this one
+# (``WebUIAuthorizationMiddleware``) in the stack, so any path it already
+# treats as unauthenticated reaches this layer regardless of what this set
+# says -- if this set omits one (as it omitted ``/health/ready`` until this
+# fix), `_identity_enforced()` still gates it here inconsistently with the
+# outer layer, and with identity unenforced it falls through routing
+# unauthenticated with no exempt SPA route to answer it, landing on
+# ``SPAStaticFiles``'s 404-to-``index.html`` fallback like ``/health``
+# itself did.
 _PUBLIC_LIVENESS_PATHS = frozenset(
-    {'/health', '/healthz', '/api/health', '/api/healthz'}
+    {'/health', '/health/ready', '/healthz', '/api/health', '/api/healthz'}
 )
 # PHASE B/C unify-chat-resource: the pydantic-ai chat-message transport,
 # remounted from `/api/chat` to `/api/chats/messages` so it sits under the
@@ -2029,6 +2042,37 @@ def create_agent_web_app(
                     app.add_route(full_path, route.endpoint, methods=route.methods)
 
     add_pydantic_routes(pydantic_app.routes)
+
+    async def _webui_liveness(request: Any) -> JSONResponse:
+        """Real liveness payload for this listener's bare `/health*` paths.
+
+        BUG-PE-004: every path in ``_PUBLIC_LIVENESS_PATHS`` is treated as an
+        unauthenticated liveness check by ``ActorIdentityMiddleware`` -- but
+        before this route existed, only ``/api/health`` (mounted above by
+        ``add_pydantic_routes``) had a real handler. ``/health`` and
+        ``/healthz`` have no ``.`` and match none of ``SPAStaticFiles``'s
+        exempt prefixes (``api``/``chat``/``configure``/``mcp``/``a2a``/
+        ``ag-ui``), so they fell through its 404-to-``index.html`` fallback:
+        a probe pointed at bare ``/health`` got a 200 with the dashboard's
+        HTML shell and could never observe a failure. Registering explicit
+        routes here -- before the catch-all SPA ``Mount('/', ...)`` below --
+        gives them the same real payload as ``/api/health`` instead.
+
+        This is the SPA/dashboard listener's OWN liveness (port
+        ``GRAPH_OS_WEBUI_PORT``, default 8080 -- see
+        ``agent_utilities.server.webui_co_service``). It is a different
+        listener from the graph-os gateway's `/health`/`/health/ready` on
+        port 8000 (`agent_utilities/server/routers/core.py`), which k8s's
+        liveness/readiness/startup probes target and which this route does
+        not touch.
+        """
+        return JSONResponse({'ok': True})
+
+    # `/api/health` is excluded: pydantic-ai's own handler (mounted above by
+    # `add_pydantic_routes`) already serves it and starts with the SPA's
+    # exempt `api` prefix, so it was never swallowed.
+    for _liveness_path in ('/health', '/health/ready', '/healthz', '/api/healthz'):
+        app.add_route(_liveness_path, _webui_liveness, methods=['GET'])
 
     dist_path = Path(__file__).parent / 'dist'
 
