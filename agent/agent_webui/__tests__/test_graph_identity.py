@@ -65,7 +65,6 @@ def _actor(
         ('kg:admin',),
         ('kg:read', 'kg:write'),
         ('kg:read', 'unrelated-application-role'),
-        (),
     ],
 )
 def test_authority_matches_the_shared_minter(
@@ -133,8 +132,187 @@ def test_scope_hierarchy_is_expanded() -> None:
 
 
 def test_non_graph_roles_never_become_scopes() -> None:
+    """A generic ``admin`` realm role is deliberately NOT equivalent to the
+    explicit ``kg:admin`` capability (this file's own established
+    distinction — see ``_GRAPH_AUTH_SCOPES``'s docstring). This actor still
+    lands on the AUTHZ LANE B default floor (``kg:read``) because it has no
+    ``kg:*`` claim at all — never zero, and never more than read."""
+
     session = mint_frontend_graph_session(_actor('admin', 'offline_access'))
-    assert session.scopes == frozenset()
+    assert session.scopes == frozenset({'kg:read'})
+
+
+# --- AUTHZ LANE B: default kg:read + durable admin elevation --------------
+
+
+def test_authority_diverges_from_shared_minter_only_in_default_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The one deliberate divergence from the shared minter: a verified
+    human with no ``kg:*`` claim at all gets ``kg:read`` here (never
+    nothing), while the shared (routed) minter is untouched by this lane and
+    still produces empty scopes for the same input. Every OTHER authority
+    field still matches exactly."""
+
+    def _fake_resolve_placement(
+        *_args: object, **_kwargs: object
+    ) -> _placement_catalog.PlacementResult:
+        return _placement_catalog.PlacementResult(
+            endpoint='tls://engine.invalid:9100',
+            epoch=7,
+            group=3,
+            fencing_token=3,
+            placed=True,
+        )
+
+    monkeypatch.setattr(
+        _placement_catalog, 'resolve_placement', _fake_resolve_placement
+    )
+
+    actor = _actor()  # no roles at all
+    shared = _shared.mint_graph_session(actor)
+    frontend = mint_frontend_graph_session(actor)
+
+    assert shared.scopes == frozenset(), 'the shared minter is unchanged by this lane'
+    assert frontend.scopes == frozenset({'kg:read'})
+    assert frontend.tenant == shared.tenant
+    assert frontend.graph == shared.graph
+    assert frontend.policy_version == shared.policy_version
+    assert frontend.audience == shared.audience
+
+
+def test_default_scope_for_verified_human_with_no_special_claims() -> None:
+    """Requirement 1: a verified human is admitted with `kg:read`, not a
+    role that grants nothing — never admin."""
+
+    session = mint_frontend_graph_session(_actor())
+    assert session.scopes == frozenset({'kg:read'})
+    assert 'kg:admin' not in session.scopes
+    assert 'kg:write' not in session.scopes
+
+
+def test_admin_claim_from_token_is_the_intended_long_term_path() -> None:
+    """A real IdP `kg:admin` realm role already flows through with no
+    allowlist involved — path (a) in the module docstring."""
+
+    session = mint_frontend_graph_session(_actor('kg:admin'))
+    assert session.scopes == frozenset({'kg:admin', 'kg:read', 'kg:write'})
+    assert 'kg:admin' in session.actor.roles
+
+
+def test_configured_allowlist_elevates_the_named_principal_to_admin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Requirement 3: the one specific principal in the configured allowlist
+    is admitted WITH admin — via the bootstrap escape hatch, path (b)."""
+
+    monkeypatch.setenv(
+        'KG_ADMIN_PRINCIPAL_IDS', '9343d67e-369b-4e09-bf9d-50bb80565fe4, other-id'
+    )
+
+    session = mint_frontend_graph_session(
+        _actor(subject='9343d67e-369b-4e09-bf9d-50bb80565fe4')
+    )
+
+    assert session.scopes == frozenset({'kg:admin', 'kg:read', 'kg:write'})
+    # Both gates must see it: `rbac.resolve_webui_role` reads the actor's raw
+    # roles directly, independent of `session.scopes` — see the module
+    # docstring on why the effective actor is augmented, not just the scopes.
+    assert 'kg:admin' in session.actor.roles
+
+
+def test_configured_allowlist_never_touches_the_verified_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The augmentation is WebUI-local: the original actor object passed in
+    is never mutated (it's frozen) and other roles the token DID carry
+    survive alongside the added `kg:admin`."""
+
+    monkeypatch.setenv('KG_ADMIN_PRINCIPAL_IDS', 'admin-principal')
+
+    original = _actor('some-other-claim', subject='admin-principal')
+    session = mint_frontend_graph_session(original)
+
+    assert original.roles == frozenset({'some-other-claim'})  # untouched
+    assert 'some-other-claim' in session.actor.roles
+    assert 'kg:admin' in session.actor.roles
+    assert session.actor is not original  # a new, augmented copy was used
+
+
+def test_principal_not_in_allowlist_and_without_claim_never_becomes_admin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Requirement: never admin unless allowlisted or genuinely claimed —
+    including when the allowlist is configured for a DIFFERENT principal."""
+
+    monkeypatch.setenv('KG_ADMIN_PRINCIPAL_IDS', 'some-other-principal')
+
+    session = mint_frontend_graph_session(_actor(subject='not-the-admin'))
+
+    assert session.scopes == frozenset({'kg:read'})
+    assert 'kg:admin' not in session.actor.roles
+
+
+def test_unconfigured_allowlist_never_grants_admin_to_anyone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv('KG_ADMIN_PRINCIPAL_IDS', raising=False)
+
+    session = mint_frontend_graph_session(
+        _actor(subject='9343d67e-369b-4e09-bf9d-50bb80565fe4')
+    )
+
+    assert session.scopes == frozenset({'kg:read'})
+    assert 'kg:admin' not in session.actor.roles
+
+
+def test_forged_claim_on_a_non_allowlisted_principal_is_not_admin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-``kg:admin`` claim that merely LOOKS privileged (e.g. an
+    attacker-controlled string that happens to read 'admin') must never be
+    treated as the explicit `kg:admin` capability, and the allowlist check
+    is keyed on the verified `actor_id` alone — never on anything else the
+    actor carries."""
+
+    monkeypatch.setenv('KG_ADMIN_PRINCIPAL_IDS', 'the-real-admin')
+
+    forged = _actor('admin', 'kg-admin', 'KG:ADMIN', subject='attacker-id')
+    session = mint_frontend_graph_session(forged)
+
+    assert 'kg:admin' not in session.scopes
+    assert 'kg:admin' not in session.actor.roles
+    assert session.scopes == frozenset({'kg:read'})
+
+
+def test_admin_elevation_is_durable_across_repeated_minting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """THE LOAD-BEARING DURABILITY TEST.
+
+    `graph_admission.py`'s engine-side admission is vulnerable to
+    `RegisterIdentity` replacing a principal's whole role set on
+    re-registration, because it treats a grant as something to persist and
+    later trust back. This module's admin elevation cannot suffer that
+    failure mode BY CONSTRUCTION: it is derived fresh from the verified
+    actor + live config on every single call, never cached, never read back
+    from a mutable store. Simulate two independent "sign-ins" (repeated
+    calls, as a re-registration/restart/cache-clear would produce) and
+    prove the elevation survives identically both times — with nothing in
+    between that could have "preserved" it, because nothing was stored.
+    """
+
+    monkeypatch.setenv('KG_ADMIN_PRINCIPAL_IDS', '9343d67e-369b-4e09-bf9d-50bb80565fe4')
+    subject = '9343d67e-369b-4e09-bf9d-50bb80565fe4'
+
+    first = mint_frontend_graph_session(_actor(subject=subject))
+    # A brand-new ActorContext each time, exactly like a fresh sign-in would
+    # produce — nothing here shares state with `first`.
+    second = mint_frontend_graph_session(_actor(subject=subject))
+
+    for session in (first, second):
+        assert session.scopes == frozenset({'kg:admin', 'kg:read', 'kg:write'})
+        assert 'kg:admin' in session.actor.roles
 
 
 def test_unauthenticated_actor_is_refused() -> None:

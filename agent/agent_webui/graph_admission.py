@@ -137,6 +137,47 @@ differently:
   it is the same gap :class:`TenantNotProvisionedError` already existed to
   paper over when the probe *can* run; when it cannot, there is no
   privileged-enough read left in this deployment to detect it earlier.
+
+Why "admin" is NOT a distinct engine grant this module ever produces
+----------------------------------------------------------------------
+AUTHZ LANE B (default ``kg:read``, durable admin elevation for one
+configured principal) is implemented entirely in ``graph_identity.py``'s
+:func:`~agent_webui.graph_identity.mint_frontend_graph_session`, not here —
+on purpose, and the reasoning is worth recording so a future change does not
+try to "complete" the feature by widening this module instead:
+
+* The ``tenant:<slug>`` role this module enrolls every ordinary principal
+  into already grants **Read AND Write**, uniformly, on every graph that
+  tenant owns (``IsolationLayer::provision_tenant_graph_access``,
+  ``crates/eg-core/src/isolation.rs``). The engine's own ``check_access``
+  for a non-``System`` identity evaluates only ``Read``/``Write`` against
+  that role — there is no finer "read-only" vs "admin" tier reachable
+  through tenant-role membership at all. So there is no engine RBAC lever
+  this module could pull to make one tenant member "more admin" than
+  another via the SAME ``tenant:<slug>`` role it already grants everyone.
+* A genuinely distinct, narrower engine grant (e.g. an ``Admin``
+  ``RbacAction`` scoped to this tenant's own graphs) would require creating
+  a NEW role/grant via ``RbacAdmin.AddGrant`` — an action gated behind the
+  engine's ``security:admin`` Tier-2 capability, per this module's own
+  docstring above ("The pre-flight role-existence probe is not the
+  authorization boundary"). This module's admin-authority credential does
+  **not** hold that capability (that is precisely why its own read-only
+  probe, ``_tenant_role_exists``, so often gets denied for insufficient
+  privilege) — so this module has no authority to grant one even if it
+  tried, short of widening its own credential toward Tier-2/``System``,
+  which is exactly the boundary this module's docstring already refuses to
+  cross ("never grants ``System``/admin authority to an ordinary
+  principal").
+* Consequently, ``_admit`` sends the **identical** ``TenantPrincipal``
+  shape — ``role="Agent"``, the ordinary tenant role only — for every
+  principal it admits, admin-allowlisted or not; there is nothing for
+  ``_admit`` to differentiate. ``kg:admin`` in this deployment is
+  therefore a WebUI-local authorization concept only (which WebUI pages/
+  routes a browser session may reach — see ``rbac.py``/
+  ``WebUIAuthorizationMiddleware`` in ``server.py``), never an
+  engine-granted data-access tier. This is reported here, not silently
+  assumed, per this repository's "report entanglement rather than widen
+  the boundary" rule.
 """
 
 from __future__ import annotations

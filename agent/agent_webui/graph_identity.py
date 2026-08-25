@@ -99,11 +99,113 @@ a query executor (owned by a parallel lane; this module does not execute
 queries) to consume that existing mechanism instead of reading only
 ``session.graph`` — so the safety boundary is the one already audited in
 ``tenant_sharing.py``, not a new one invented here.
+
+Default scope + durable admin elevation (AUTHZ LANE B)
+--------------------------------------------------------
+Before this section's changes, a verified human whose token carried no
+``kg:*`` role at all (the common case for a first sign-in: the tenant claim
+is present, but nothing populates ``realm_access.roles`` with a KG scope)
+minted a session with **empty** ``scopes``. ``WebUIActorIdentityMiddleware``
+(`server.py`) denies every GET route unless ``'kg:read' in session.scopes``
+-- see ``oidc_session.py``'s own note, *"a user without ``kg:read`` cannot
+even load the SPA"* -- so that human saw 0 tools, 0 skills, and a
+heavily-filtered graph, indistinguishable from a misconfigured account.
+
+Two changes fix this, both scoped to `mint_frontend_graph_session` alone:
+
+1. **Default to ``kg:read``, never to nothing.** A verified, tenant-scoped
+   human with no ``kg:*`` claim now gets the floor every other authenticated
+   surface in this file already assumes exists: ordinary GET/view access to
+   the WebUI's own ``/api/enhanced/*`` routes and dashboards. It does **not**
+   grant ``kg:write`` (mutations) or reach ``kg:admin``-gated admin routes --
+   see `WebUIAuthorizationMiddleware`/`rbac.resolve_webui_role`, both
+   untouched by this module. This mirrors ``rbac.resolve_webui_role``'s own
+   independent, pre-existing default (any authenticated identity with no
+   matching claim -> the WebUI page role ``'reader'``) -- this file's default
+   is the graph-authority-scope sibling of that same "never zero, never more
+   than read" posture, not a new one invented here.
+
+2. **Admin elevation is DERIVED, never stored — so it survives
+   ``RegisterIdentity``'s role-set replacement by construction.**
+   ``plans/auth-unification/AUTH-UNIFICATION-DESIGN.md`` S3 specifies the
+   subject set a grant should evaluate against as *"org roles from the
+   verified token"* -- re-derived on every sign-in, never persisted as a
+   separate grant a later admission could blindly overwrite.
+   ``graph_admission.py``'s own docstring documents exactly that hazard for
+   the ENGINE's identity store: ``RegisterIdentity`` replaces a principal's
+   *whole* role set, so an out-of-band grant is silently wiped the next time
+   that module re-admits the principal. This module's admin elevation is
+   immune to that hazard **because it never calls `RegisterIdentity` (or any
+   engine RPC) at all** -- `mint_frontend_graph_session` is a pure
+   claims-to-session projection, re-run from scratch on every request/
+   sign-in, so "durable across re-registration" is automatic here: there is
+   nothing to wipe, because nothing is ever stored.
+
+   Two ways a principal is elevated, evaluated in this order:
+
+   a. **The intended long-term mechanism — an IdP realm role.** A Keycloak
+      ``kg:admin`` realm role already flows into ``actor.roles`` via
+      :func:`agent_utilities.security.identity.base_capabilities` with no
+      code change here (the same union this file's own scope-hierarchy
+      expansion below already reads). Per this module's own established
+      distinction (see `_GRAPH_AUTH_SCOPES`'s docstring in
+      ``request_identity.py``): only the **explicit** ``kg:admin`` capability
+      counts; a generic realm role literally named ``admin`` is deliberately
+      NOT treated as equivalent -- this file does not weaken that boundary.
+   b. **The bootstrap escape hatch — a configured allowlist.**
+      :func:`_configured_admin_principal_ids` reads an operator-configured,
+      non-secret list of principal ids (``KG_ADMIN_PRINCIPAL_IDS``) that are
+      admin regardless of their realm roles. This exists ONLY because
+      Keycloak may not be editable from this lane; it is a bootstrap, not a
+      replacement for (a) -- an operator should migrate a listed principal to
+      a real ``kg:admin`` realm role and drop it from the allowlist as soon
+      as Keycloak access allows. No principal id is ever hardcoded in this
+      module; the allowlist is entirely configuration.
+
+   Path (b) needs one more step beyond scopes: ``rbac.resolve_webui_role``
+   (the WebUI's *page*-role ladder, a separate axis `server.py` enforces
+   independently of ``session.scopes``) reads the actor's raw,
+   un-filtered ``roles`` directly -- not the ``kg:*``-filtered
+   ``GraphSession.scopes`` this function produces. So an allowlisted
+   principal's effective actor carries an AUGMENTED ``roles`` tuple (`kg:
+   admin` appended via ``dataclasses.replace`` -- the exact idiom
+   ``request_identity.py`` already uses to produce a derived
+   ``ActorContext``), not just augmented scopes, so both gates agree. This
+   augmentation is WebUI-local: it changes nothing about the verified JWT
+   itself, and it never reaches the ENGINE's own RBAC identity store --
+   ``crates/eg-core/src/isolation.rs::check_access`` authorizes graph
+   Read/Write against its OWN durable, ``RegisterIdentity``-populated
+   identity map, keyed only by ``agent_id``, and never consults a per-request
+   ``roles``/``scopes`` claim for that decision (confirmed by reading that
+   function) -- so this elevation cannot, by construction, grant this
+   principal any additional DATA access at the engine beyond what
+   `graph_admission.py` already provisions identically for every tenant
+   member (Read+Write on the tenant's own graphs). It only changes which
+   WebUI pages/routes this principal's browser session may reach.
+
+   **Trust boundary, stated plainly:** every input this elevation logic
+   reads (``actor.roles``, ``actor.actor_id``, ``actor.authenticated``) is
+   populated ONLY by this WebUI's OWN server-side JWT validation
+   (``WebUIActorIdentityMiddleware`` / ``ActorIdentityMiddleware``, verified
+   against ``AUTH_JWT_JWKS_URI``/``AUTH_JWT_ISSUER``) before this function is
+   ever called -- never from request JSON, headers, or any other
+   caller-supplied value. That boundary is independent of, and unaffected
+   by, the ENGINE's own (currently disabled, per
+   ``AUTH-UNIFICATION-DESIGN.md`` Workstream A) ``EPISTEMIC_GRAPH_REQUIRE_OIDC``
+   / ``EPISTEMIC_GRAPH_OIDC_JWT_ISSUER`` -- that flag gates the Rust engine's
+   OWN independent re-verification of the ``eg2.`` wire envelope between
+   graph-os and the engine, a different hop this module never reaches. If a
+   future change (Workstream B) teaches the engine to evaluate per-request
+   claims directly for `check_access` rather than only its durable identity
+   store, THAT mechanism's trustworthiness would depend on
+   `EPISTEMIC_GRAPH_REQUIRE_OIDC` being on; today's engine does not do that,
+   so it does not apply to the elevation implemented here.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -111,7 +213,38 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 logger = logging.getLogger(__name__)
 
-__all__ = ['frontend_accessible_graphs', 'mint_frontend_graph_session']
+__all__ = [
+    'frontend_accessible_graphs',
+    'mint_frontend_graph_session',
+]
+
+#: Bootstrap escape hatch for AUTHZ LANE B requirement 3 (see the module
+#: docstring, "Admin elevation is DERIVED, never stored"). A comma-separated
+#: list of principal ids (OIDC ``sub`` values, i.e. ``ActorContext.actor_id``)
+#: that are treated as holding ``kg:admin`` regardless of their realm roles.
+#: The INTENDED long-term mechanism is a Keycloak ``kg:admin`` realm role
+#: (see the module docstring) -- this allowlist exists only because Keycloak
+#: may not be reachable from every deployment lane. No principal id is ever
+#: hardcoded here; an operator configures this via ``KG_ADMIN_PRINCIPAL_IDS``
+#: (env var / XDG ``config.json`` -- see ``core/config.py``'s
+#: "Configuration discipline").
+_ADMIN_PRINCIPAL_IDS_SETTING = 'KG_ADMIN_PRINCIPAL_IDS'
+
+
+def _configured_admin_principal_ids() -> frozenset[str]:
+    """Read the bootstrap admin allowlist fresh from config on every call.
+
+    Deliberately NOT cached at import/module scope: this must observe a
+    config change (env var, or XDG ``config.json`` edit + reload) without a
+    process restart, exactly like every other live ``config.setting(...)``
+    read in this codebase. Returns an empty set (denies everyone via this
+    path) when unset -- never guesses, never widens on a malformed value.
+    """
+
+    from agent_utilities.core.config import setting
+
+    raw = str(setting(_ADMIN_PRINCIPAL_IDS_SETTING, '') or '')
+    return frozenset(item.strip() for item in raw.split(',') if item.strip())
 
 
 def mint_frontend_graph_session(actor: Any) -> GraphSession:
@@ -149,10 +282,35 @@ def mint_frontend_graph_session(actor: Any) -> GraphSession:
         raise PermissionError(
             'A GraphSession can only be minted from authenticated identity'
         )
-    if not str(getattr(actor, 'actor_id', '') or '').strip():
+    actor_id = str(getattr(actor, 'actor_id', '') or '').strip()
+    if not actor_id:
         raise PermissionError('Verified identity is missing its subject')
 
-    scopes = frozenset(str(role) for role in actor.roles) & _GRAPH_AUTH_SCOPES
+    token_scopes = frozenset(str(role) for role in actor.roles) & _GRAPH_AUTH_SCOPES
+
+    # AUTHZ LANE B — admin elevation, re-derived on EVERY mint (never stored;
+    # see the module docstring, "Admin elevation is DERIVED, never stored").
+    if 'kg:admin' in token_scopes:
+        # (a) The intended long-term mechanism: an IdP `kg:admin` realm role
+        # already flows into `actor.roles` with no code here.
+        effective_actor = actor
+    elif actor_id in _configured_admin_principal_ids():
+        # (b) The configured bootstrap escape hatch. Augment the ROLES this
+        # session's actor carries (not the verified token) so that both this
+        # function's scope hierarchy below AND `rbac.resolve_webui_role`
+        # (which reads `session.actor.roles` directly, independent of
+        # `session.scopes`) agree the principal is admin — see the module
+        # docstring for why both must see it, and why this augmentation
+        # cannot widen ENGINE-side data access.
+        effective_actor = replace(actor, roles=tuple({*actor.roles, 'kg:admin'}))
+        logger.info(
+            'admin elevation applied via configured allowlist: actor_id=%s',
+            actor_id,
+        )
+    else:
+        effective_actor = actor
+
+    scopes = frozenset(str(role) for role in effective_actor.roles) & _GRAPH_AUTH_SCOPES
     # Coarse KG scopes are hierarchical: an administrator implies write+read and
     # a writer implies the authorization-safe precondition reads it must make.
     # Expanded here exactly as the shared minter expands it.
@@ -160,7 +318,13 @@ def mint_frontend_graph_session(actor: Any) -> GraphSession:
         scopes |= frozenset({'kg:read', 'kg:write'})
     elif 'kg:write' in scopes:
         scopes |= frozenset({'kg:read'})
+    elif not scopes:
+        # Default for a verified human with no `kg:*` claim at all: READ, not
+        # nothing (AUTHZ LANE B requirement 1) — see the module docstring,
+        # "Default scope + durable admin elevation".
+        scopes = frozenset({'kg:read'})
 
+    actor = effective_actor
     tenant = str(getattr(actor, 'tenant_id', '') or '').strip()
     if not tenant:
         raise PermissionError(

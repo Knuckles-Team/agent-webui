@@ -599,6 +599,139 @@ def test_admit_delegates_to_run_tenant_admission_with_apply_true(
 
 
 # ---------------------------------------------------------------------------
+# AUTHZ LANE B: engine-side admission is intentionally UNCHANGED by admin
+# status — see graph_admission.py's own docstring, "Why 'admin' is NOT a
+# distinct engine grant this module ever produces". `kg:admin` is a
+# WebUI-local concept (`graph_identity.py`); the engine's `tenant:<slug>`
+# role already grants Read+Write uniformly and this module has no authority
+# to mint a finer grant without widening toward Tier-2/System, which it
+# deliberately refuses to do. These tests pin that non-widening as a
+# regression contract, and prove durability the way this module's own
+# vocabulary states it: identical, ordinary admission on every call —
+# nothing here is "wiped" by a later re-registration because nothing here
+# was ever differentiated by admin status to begin with.
+# ---------------------------------------------------------------------------
+
+
+def test_admit_never_grants_a_distinct_role_for_the_admin_allowlisted_principal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The admin principal (per `graph_identity.py`'s `KG_ADMIN_PRINCIPAL_IDS`
+    allowlist) is admitted through the IDENTICAL ordinary-tenant-role path as
+    any other principal — `_admit` has no notion of "this one is admin" at
+    all, and must never grow one that widens toward System/Tier-2."""
+
+    calls: list[dict[str, Any]] = []
+
+    class _Result:
+        all_admitted = True
+
+    def _fake_run_tenant_admission(
+        tenant_slug: str, principals: list[Any], *, apply: bool = False
+    ) -> Any:
+        calls.append(
+            {
+                'agent_ids': [p.agent_id for p in principals],
+                'roles': [p.role for p in principals],
+                'existing_roles': [p.existing_roles for p in principals],
+            }
+        )
+        return _Result()
+
+    monkeypatch.setattr(
+        'agent_utilities.security.tenant_admission_cli.run_tenant_admission',
+        _fake_run_tenant_admission,
+    )
+
+    # The exact id AUTHZ LANE B names as the one principal that must be
+    # admin — admitted here with no special handling whatsoever.
+    graph_admission._admit('homelab', '9343d67e-369b-4e09-bf9d-50bb80565fe4')
+
+    assert calls == [
+        {
+            'agent_ids': ['9343d67e-369b-4e09-bf9d-50bb80565fe4'],
+            'roles': ['Agent'],  # never "System", never a distinct admin role
+            'existing_roles': [()],
+        }
+    ]
+
+
+def test_admit_is_identical_across_a_simulated_re_registration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Simulate `RegisterIdentity` being called twice for the same principal
+    (a cache-clear/restart forcing `_admit` to run again). Because `_admit`
+    never differentiates on admin status, the two calls are byte-for-byte
+    identical — there is nothing an out-of-band grant could add here for a
+    later re-registration to wipe, which is exactly why this module's own
+    docstring says any such distinction must live in `graph_identity.py`
+    instead (re-derived every mint, never stored)."""
+
+    calls: list[dict[str, Any]] = []
+
+    class _Result:
+        all_admitted = True
+
+    def _fake_run_tenant_admission(
+        tenant_slug: str, principals: list[Any], *, apply: bool = False
+    ) -> Any:
+        calls.append(
+            {
+                'agent_ids': [p.agent_id for p in principals],
+                'roles': [p.role for p in principals],
+            }
+        )
+        return _Result()
+
+    monkeypatch.setattr(
+        'agent_utilities.security.tenant_admission_cli.run_tenant_admission',
+        _fake_run_tenant_admission,
+    )
+
+    admin_id = '9343d67e-369b-4e09-bf9d-50bb80565fe4'
+    graph_admission._admit('homelab', admin_id)
+    graph_admission._admit('homelab', admin_id)
+
+    assert calls[0] == calls[1]
+    assert calls[0] == {'agent_ids': [admin_id], 'roles': ['Agent']}
+
+
+def test_admit_never_registers_system_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression pin for the refusal `graph_admission.py`'s docstring
+    states explicitly: this module never grants `System`/admin authority to
+    an ordinary principal. `TenantPrincipal` itself refuses `role="System"`
+    (`tenant_rbac_admission.py`), so this proves `_admit` never even
+    attempts it — for the ordinary principal AND the admin-allowlisted one."""
+
+    from agent_utilities.security.tenant_rbac_admission import TenantPrincipal
+
+    with pytest.raises(ValueError, match='System'):
+        TenantPrincipal(agent_id='whoever', role='System')
+
+    calls: list[str] = []
+
+    class _Result:
+        all_admitted = True
+
+    def _fake_run_tenant_admission(
+        tenant_slug: str, principals: list[Any], *, apply: bool = False
+    ) -> Any:
+        calls.extend(p.role for p in principals)
+        return _Result()
+
+    monkeypatch.setattr(
+        'agent_utilities.security.tenant_admission_cli.run_tenant_admission',
+        _fake_run_tenant_admission,
+    )
+
+    graph_admission._admit('homelab', '9343d67e-369b-4e09-bf9d-50bb80565fe4')
+    graph_admission._admit('homelab', 'ordinary-user')
+
+    assert calls == ['Agent', 'Agent']
+    assert 'System' not in calls
+
+
+# ---------------------------------------------------------------------------
 # LANE 8: `_service_authority` proactive/reactive renewal + concurrency.
 #
 # `_reset_module_state` already binds a fake ambient session for every test
