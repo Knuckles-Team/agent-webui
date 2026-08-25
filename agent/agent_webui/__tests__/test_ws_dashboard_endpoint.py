@@ -422,47 +422,45 @@ def test_full_app_admits_a_valid_kg_admin_bearer_session(
             assert snapshot['data']['jellyfin']['status'] == 'ok'
 
 
-def test_full_app_denies_a_scopeless_bearer_session(
+def test_full_app_admits_a_scopeless_bearer_session_via_the_default_read_floor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A caller with no KG scope at all must still be refused end-to-end
-    through the real app.
+    """AUTHZ LANE B (`agent_webui.graph_identity.mint_frontend_graph_session`):
+    a verified caller with NO `kg:*` claim at all is no longer refused
+    end-to-end -- it now lands on the default `kg:read` floor (never zero
+    access for a verified human; see that module's docstring, "Default scope
+    + durable admin elevation"), which is sufficient for `/ws/dashboard`
+    (`_WEBSOCKET_READ_ONLY_PATHS` requires only `kg:read`).
 
-    NOT `kg:write`: `_mint_graph_session` (`agent_utilities.security.
-    request_identity`) deliberately expands the coarse scope hierarchy at the
-    trusted-claims boundary -- a `kg:write` grant always also carries
-    `kg:read` ("a writer necessarily performs authorization-safe
-    precondition reads"). `/ws/dashboard` requires only `kg:read`
-    (`_WEBSOCKET_READ_ONLY_PATHS`), so a `kg:write`-only session is a
-    documented ADMIT, not a negative control -- proven independently by
-    `test_role_matrix_dashboard_websocket_agrees_with_reader_nav` in
-    `test_security_boundaries.py`, and already corrected to the same
-    scopeless-session negative control in
-    `test_ws_dashboard_denial_diagnostics.py`'s
-    `test_authorization_denies_and_logs_scope_missing_for_a_resolved_session`
-    (which drives a stub inner app; this test proves the identical outcome
-    through the REAL app `create_agent_web_app` builds)."""
-
-    from starlette.websockets import WebSocketDisconnect
+    This test used to be the negative control proving a scopeless session is
+    denied; AUTHZ LANE B deliberately changes that premise, so this is now
+    the positive proof of the SAME default-read floor
+    `test_default_scope_for_verified_human_with_no_special_claims`
+    (`test_graph_identity.py`) proves at the unit level -- through the REAL
+    app `create_agent_web_app` builds, not a stub inner app. Genuine denial
+    (no credential at all / an invalid token) is still covered by
+    `test_ws_dashboard_denial_diagnostics.py`'s no-cookie/no-token tests,
+    untouched by this lane."""
 
     _configure_jwt_verifier(monkeypatch)
     _fake_actor(monkeypatch, roles=frozenset())
 
+    sample = _sample_dashboard_response()
     with patch(
         'agent_utilities.gateway.api.get_full_dashboard',
-        new=AsyncMock(side_effect=AssertionError('must not be reached')),
+        new=AsyncMock(return_value=sample),
     ):
         app = _build_app()
         client = TestClient(app)
-        with pytest.raises(WebSocketDisconnect) as exc_info:
-            with client.websocket_connect(
-                '/ws/dashboard',
-                headers={
-                    'Authorization': 'Bearer placeholder-users-own-credential',
-                    'Origin': 'https://au.arpa',
-                    'Host': 'testserver',
-                },
-            ) as ws:
-                ws.receive_json()
-
-        assert exc_info.value.code == 4403
+        with client.websocket_connect(
+            '/ws/dashboard',
+            headers={
+                'Authorization': 'Bearer placeholder-users-own-credential',
+                'Origin': 'https://au.arpa',
+                'Host': 'testserver',
+            },
+        ) as ws:
+            snapshot = ws.receive_json()
+            assert snapshot['type'] == 'snapshot'
+            status = snapshot['data']['jellyfin']['status']
+            assert status == 'ok'

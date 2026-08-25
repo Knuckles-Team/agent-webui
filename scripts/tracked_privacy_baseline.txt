@@ -56,8 +56,8 @@ agent/agent_webui/__tests__/test_ws_dashboard_denial_diagnostics.py	215	hard-cod
 agent/agent_webui/__tests__/test_ws_dashboard_denial_diagnostics.py	325	hard-coded internal endpoint in runtime source	7f2722d545b13e74	1
 agent/agent_webui/__tests__/test_ws_dashboard_denial_diagnostics.py	388	hard-coded internal endpoint in runtime source	bb14bc46e0f252ef	0
 agent/agent_webui/__tests__/test_ws_dashboard_endpoint.py	416	hard-coded internal endpoint in runtime source	0941da1773eaf9a4	0
+agent/agent_webui/__tests__/test_ws_dashboard_endpoint.py	459	hard-coded internal endpoint in runtime source	0941da1773eaf9a4	1
 agent/agent_webui/__tests__/test_ws_dashboard_endpoint.py	101	hard-coded internal endpoint in runtime source	1ace2eda9f9df0e8	0
-agent/agent_webui/__tests__/test_ws_dashboard_endpoint.py	462	hard-coded internal endpoint in runtime source	a532f4fe559adfe7	0
 agent/agent_webui/oidc_session.py	208	hard-coded internal endpoint in runtime source	ae3e5d2a1a81e23c	0
 agent/agent_webui/oidc_session.py	223	hard-coded internal endpoint in runtime source	eda85253be9b705d	0
 docker/build_and_push.sh	39	local account or host identifier in runtime source	a9b9b4d2fe5eb0ad	0
