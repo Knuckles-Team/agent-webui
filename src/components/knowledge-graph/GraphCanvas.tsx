@@ -5,8 +5,10 @@ import forceAtlas2 from 'graphology-layout-forceatlas2'
 import type { SigmaNodeAttributes, SigmaEdgeAttributes, GraphNode, GraphRelationship } from './GraphAdapter'
 import { knowledgeGraphToGraphology } from './GraphAdapter'
 import { GraphOverlayUI } from './GraphOverlayUI'
+import { GraphLegend } from './GraphLegend'
 import { GRAPH_ENGINE_RENDER_NODE_THRESHOLD, renderGraphNodesOnlyViaEngine } from './engineGraphRender'
 import { adaptVizResult } from '../views/dashboards/queries'
+import { pickReadableTextColor, resolveThemeColors, useIsDarkMode } from './theme-colors'
 
 interface GraphCanvasProps {
   nodes: GraphNode[]
@@ -29,14 +31,99 @@ interface GraphCanvasProps {
 /** Stable key for an edge, matching graphology's source/target ordering. */
 export const edgeKey = (source: string, target: string): string => `${source}|${target}`
 
+// Minimal shape of what sigma's hover-drawing function actually reads —
+// looser than sigma's own (unexported) `NodeHoverDrawingFunction` type so
+// this file doesn't need to reach into sigma's internal declaration paths.
+interface HoverDrawData {
+  x: number
+  y: number
+  size: number
+  label?: string | null
+}
+interface HoverDrawSettings {
+  labelSize: number
+  labelFont: string
+  labelWeight: string
+}
+
+/**
+ * Themed replacement for sigma's built-in `drawDiscNodeHover`
+ * (`sigma/dist/index-*.esm.js`), which hardcodes the hover box to a fixed
+ * white fill (`context.fillStyle = "#FFF"`) — fine with black text in light
+ * mode, but the previous canvas already forced light node-label text for
+ * dark-mode legibility, so hovering a node in dark mode drew that same
+ * light text on the ALWAYS-white hover box: invisible. This mirrors the
+ * original's exact box geometry (pill for wide labels, disc otherwise) but
+ * fills it with the current theme's card color and picks its own text color
+ * against THAT fill, so hover stays readable in both themes independent of
+ * the canvas-background label color used elsewhere.
+ */
+function drawThemedNodeHover(
+  context: CanvasRenderingContext2D,
+  data: HoverDrawData,
+  settings: HoverDrawSettings,
+  isDark: boolean,
+): void {
+  const size = settings.labelSize
+  const font = settings.labelFont
+  const weight = settings.labelWeight
+  context.font = `${weight} ${String(size)}px ${font}`
+
+  const theme = resolveThemeColors(isDark)
+  const boxColor = theme.card
+  const textColor = pickReadableTextColor(boxColor)
+
+  context.fillStyle = boxColor
+  context.strokeStyle = theme.border
+  context.lineWidth = 1
+  context.shadowOffsetX = 0
+  context.shadowOffsetY = 0
+  context.shadowBlur = 8
+  context.shadowColor = isDark ? '#000000' : 'rgba(15, 23, 42, 0.35)'
+
+  const PADDING = 2
+  if (typeof data.label === 'string') {
+    const textWidth = context.measureText(data.label).width
+    const boxWidth = Math.round(textWidth + 5)
+    const boxHeight = Math.round(size + 2 * PADDING)
+    const radius = Math.max(data.size, size / 2) + PADDING
+    const angleRadian = Math.asin(boxHeight / 2 / radius)
+    const xDeltaCoord = Math.sqrt(Math.abs(Math.pow(radius, 2) - Math.pow(boxHeight / 2, 2)))
+    context.beginPath()
+    context.moveTo(data.x + xDeltaCoord, data.y + boxHeight / 2)
+    context.lineTo(data.x + radius + boxWidth, data.y + boxHeight / 2)
+    context.lineTo(data.x + radius + boxWidth, data.y - boxHeight / 2)
+    context.lineTo(data.x + xDeltaCoord, data.y - boxHeight / 2)
+    context.arc(data.x, data.y, radius, angleRadian, -angleRadian)
+    context.closePath()
+    context.fill()
+    context.stroke()
+  } else {
+    context.beginPath()
+    context.arc(data.x, data.y, data.size + PADDING, 0, Math.PI * 2)
+    context.closePath()
+    context.fill()
+    context.stroke()
+  }
+  context.shadowOffsetX = 0
+  context.shadowOffsetY = 0
+  context.shadowBlur = 0
+
+  if (data.label) {
+    context.fillStyle = textColor
+    context.fillText(data.label, data.x + data.size + 3, data.y + size / 3)
+  }
+}
+
 /**
  * Composite sigma's layered canvases (edges/nodes/labels/hovers/…, each a
  * separate `<canvas>` — `Sigma.getCanvases()`) into a single PNG data URL, so
  * a "Download PNG" button works for ANY view built on this canvas (report
  * row #31: PNG/screenshot export). Draws each layer 1:1 at its own native
  * pixel size (no CSS-vs-devicePixelRatio rescaling needed) over an opaque
- * background matching the canvas's `bg-slate-900` so the export isn't
- * transparent. Returns `null` when sigma has no layers yet (nothing rendered).
+ * background matching the canvas's current theme background so the export
+ * isn't transparent. Returns `null` when sigma has no layers yet (nothing
+ * rendered).
  */
 export function compositeSigmaCanvasesToPngDataUrl(
   canvases: Record<string, HTMLCanvasElement>,
@@ -80,6 +167,11 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
   const sigmaRef = useRef<Sigma<SigmaNodeAttributes, SigmaEdgeAttributes> | null>(null)
   const [graph, setGraph] = useState<Graph<SigmaNodeAttributes, SigmaEdgeAttributes> | null>(null)
   const [isLayoutRunning, setIsLayoutRunning] = useState(false)
+  // Live theme: drives node/edge/label colors below and re-renders the
+  // canvas the instant the user (or the system) toggles dark/light — see
+  // theme-colors.ts's module doc for why sigma needs this pushed to it
+  // explicitly (it draws on raw <canvas>, which can't see CSS variables).
+  const isDark = useIsDarkMode()
 
   // ── Renderer mode seam (D-VZ-1/GOC-88 KG-view adoption) ──────────────────
   // Below GRAPH_ENGINE_RENDER_NODE_THRESHOLD, sigma's client-side force layout
@@ -142,15 +234,21 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
   expiredEdgesRef.current = expiredEdges
   expiredEdgeColorRef.current = expiredEdgeColor
 
+  // Same ref pattern as expiredEdgesRef above: the hover renderer is
+  // registered once at Sigma construction, so it reads theme through a ref
+  // rather than closing over a stale `isDark` from its first render.
+  const isDarkRef = useRef<boolean>(isDark)
+  isDarkRef.current = isDark
+
   // Initialize graph data — skipped in engine-preview mode: building the full
   // graphology graph + running forceAtlas2 is exactly the client-side cost
   // this mode exists to avoid for a graph too large to lay out interactively.
   useEffect(() => {
     if (nodes.length === 0 || effectiveMode !== 'interactive') return
-    const newGraph = knowledgeGraphToGraphology(nodes, relationships)
+    const newGraph = knowledgeGraphToGraphology(nodes, relationships, isDark)
     setGraph(newGraph)
     setIsLayoutRunning(true)
-  }, [nodes, relationships, effectiveMode])
+  }, [nodes, relationships, effectiveMode, isDark])
 
   // Initialize Sigma
   useEffect(() => {
@@ -161,6 +259,27 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
       sigmaRef.current = new Sigma<SigmaNodeAttributes, SigmaEdgeAttributes>(graph, containerRef.current, {
         renderEdgeLabels: true,
         allowInvalidContainer: true,
+        // THE FIX for the reported defect: sigma's own default is
+        // `labelColor: { color: "#000" }` — pure black, unconditionally
+        // (`sigma/settings`'s `DEFAULT_SETTINGS`). `{ attribute: 'labelColor'
+        // }` makes it read each node's own `labelColor` attribute instead,
+        // which GraphAdapter's `knowledgeGraphToGraphology` always sets to a
+        // WCAG-AA color against the canvas background for the CURRENT theme
+        // (see that function's comment for why "canvas background" is the
+        // right target, not the node fill). `color` here is only the
+        // fallback for the one case a node's own attribute is somehow
+        // missing — resolved fresh so it still matches the initial theme.
+        labelColor: {
+          attribute: 'labelColor',
+          color: pickReadableTextColor(resolveThemeColors(isDarkRef.current).card),
+        },
+        // Sigma's built-in hover renderer hardcodes a white box — see
+        // `drawThemedNodeHover`'s doc comment above for why that breaks in
+        // dark mode. `isDarkRef` (not the `isDark` prop) so this stays live
+        // across theme toggles without re-constructing the Sigma instance.
+        defaultDrawNodeHover: (context, data, settings) => {
+          drawThemedNodeHover(context, data, settings, isDarkRef.current)
+        },
         // Grey + thin edges that are expired at the current scrubber instant.
         // D-WUI-6: this used to also set `type: 'dashed'`, but Sigma only
         // renders edge types it has a registered WebGL program for (`line`/
@@ -212,6 +331,21 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
     }
   }, [expiredEdges, expiredEdgeColor])
 
+  // Keep the Sigma-instance-level label-color fallback in sync with the live
+  // theme too (belt-and-braces: every node's own `labelColor` attribute is
+  // already recomputed on theme change via the graph-rebuild effect above,
+  // so this only matters for the rare node missing that attribute).
+  // `defaultDrawNodeHover` doesn't need a matching update — it already reads
+  // theme live through `isDarkRef` on every hover paint.
+  useEffect(() => {
+    if (!sigmaRef.current) return
+    sigmaRef.current.setSetting('labelColor', {
+      attribute: 'labelColor',
+      color: pickReadableTextColor(resolveThemeColors(isDark).card),
+    })
+    sigmaRef.current.refresh()
+  }, [isDark])
+
   // Cleanup Sigma entirely only when component unmounts
   useEffect(() => {
     return () => {
@@ -242,7 +376,11 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
 
   const downloadPng = () => {
     if (!sigmaRef.current) return
-    const dataUrl = compositeSigmaCanvasesToPngDataUrl(sigmaRef.current.getCanvases())
+    // Match the exported PNG's background to whatever the canvas is
+    // actually showing right now (theme-resolved), not a permanently-dark
+    // default — a light-mode export with a dark-navy background would look
+    // broken next to the on-screen canvas.
+    const dataUrl = compositeSigmaCanvasesToPngDataUrl(sigmaRef.current.getCanvases(), resolveThemeColors(isDark).card)
     if (!dataUrl) return
     const link = document.createElement('a')
     link.href = dataUrl
@@ -251,7 +389,12 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
   }
 
   return (
-    <div className="relative w-full h-full bg-slate-900 rounded-lg overflow-hidden z-0">
+    // `bg-card` (not a hardcoded slate) — this is the fix for the reported
+    // defect: the canvas background now tracks the active theme (light/dark/
+    // glass), and every color drawn onto it below (node fills, labels, edges)
+    // is computed against THIS token, so they stay legible regardless of
+    // which theme is active.
+    <div className="relative w-full h-full bg-card rounded-lg overflow-hidden z-0">
       {/* The sigma container stays mounted in BOTH modes (never unmount/remount
           it — sigma's own ref would otherwise go stale) — it's simply given no
           graph to attach to while in engine-preview mode (see the gated
@@ -322,6 +465,8 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
             </button>
           </div>
 
+          <GraphLegend nodes={nodes} isDark={isDark} />
+
           <GraphOverlayUI
             selectedNode={selectedNodeExternally ?? null}
             onClose={() => {
@@ -339,13 +484,13 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
           />
         </>
       ) : (
-        <div className="absolute inset-0 z-10 flex items-center justify-center p-6 bg-slate-900">
+        <div className="absolute inset-0 z-10 flex items-center justify-center p-6 bg-card">
           <div className="max-w-lg w-full space-y-3 text-sm">
             <div className="rounded-md border border-amber-500/50 bg-amber-50/10 p-3 flex items-start gap-2">
               <span aria-hidden className="mt-0.5">
                 ⚠
               </span>
-              <p className="text-slate-200">
+              <p className="text-foreground">
                 {String(nodes.length)} nodes exceeds the interactive layout's recommended size. The engine's
                 graph-native render surface can preview node positions at scale, but{' '}
                 <strong>cannot yet accept the graph&apos;s edges</strong> — a real, currently-open engine wire-
@@ -368,11 +513,11 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
                 </button>
               </div>
             ) : enginePreview.status === 'loading' ? (
-              <p className="text-slate-400">Rendering…</p>
+              <p className="text-muted-foreground">Rendering…</p>
             ) : enginePreview.status === 'unavailable' ? (
               <div
                 data-testid="graph-engine-preview-unavailable"
-                className="rounded-md border border-amber-500/50 bg-amber-50/10 p-3 text-slate-200"
+                className="rounded-md border border-amber-500/50 bg-amber-50/10 p-3 text-foreground"
               >
                 The <span className="font-mono">/graph/viz</span> route is not activated on this backend yet.{' '}
                 {enginePreview.detail}
@@ -380,7 +525,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
             ) : enginePreview.status === 'no-data' ? (
               <div
                 data-testid="graph-engine-preview-no-data"
-                className="rounded-md border border-amber-500/50 bg-amber-50/10 p-3 text-slate-200"
+                className="rounded-md border border-amber-500/50 bg-amber-50/10 p-3 text-foreground"
               >
                 The engine returned zero rendered nodes for this dataset — not a fabricated empty image.
               </div>
@@ -396,7 +541,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
                 <img
                   src={enginePreview.dataUrl}
                   alt={`Engine node-position preview of ${String(enginePreview.rowCount)} nodes (no edges)`}
-                  className="max-w-full rounded-md border border-slate-700"
+                  className="max-w-full rounded-md border border-border"
                   data-testid="graph-engine-preview-image"
                 />
                 <p className="text-slate-400 text-xs">
