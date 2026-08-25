@@ -3471,35 +3471,57 @@ def _canvas_node(node: dict[str, Any]) -> tuple[dict[str, Any], int]:
 
 
 async def _distinct_graph_labels(engine: Any) -> list[str]:
-    """Every label the engine currently knows, via its own `db.labels()`.
+    """Every label known across every graph this actor may read, via each
+    graph's own `db.labels()`.
 
     `db.labels()` is a real Cypher procedure in the engine
     (`DbLabels` in `crates/eg-query/src/cypher/proc.rs`, backed by
-    `distinct_labels`), so this is one bounded round trip and not a scan
-    this process performs. A build without the procedure yields no labels
+    `distinct_labels`), so this is one bounded round trip per graph and not a
+    scan this process performs. A build without the procedure yields no labels
     rather than failing the whole request -- the caller still returns the
     unlabeled bucket, which is strictly better than a 503.
+
+    FIX LANE Priority 1: fanned out across `_accessible_graphs` (via
+    `_rows_per_accessible_graph`) rather than `engine.backend`-only --
+    otherwise a label that exists ONLY in commons (e.g. `Tool`, which the
+    caller's own tenant graph carries none of) would never even be
+    enumerated, so `get_graph_nodes`' per-label fan-out below would never be
+    asked for it regardless of how well THAT part unions. A plain label name
+    is not sensitive (it is schema, not row data), so no commons-catalog
+    filtering applies here -- the row-level restriction happens once, per
+    node, in `_union_nodes_by_label`.
     """
-    labels: list[str] = []
-    try:
-        result = await _invoke_governed_helper(
-            engine.backend.execute,
-            'CALL db.labels() YIELD label RETURN label',
-            deadline=10.0,
-        )
-        # Materializing the result stays INSIDE the try. `execute` can hand
-        # back a lazy cursor, so the engine-side failure surfaces on the first
-        # iteration rather than from the call itself -- with the loop outside,
-        # that ValueError escaped the handler and 503'd the whole canvas even
-        # though this helper is documented to degrade instead.
+
+    def _labels_for(scoped_engine: Any) -> list[str]:
+        labels: list[str] = []
+        try:
+            result = scoped_engine.backend.execute(
+                'CALL db.labels() YIELD label RETURN label'
+            )
+        except Exception as labels_error:  # noqa: BLE001 — per-graph fail-soft
+            _log_failure(
+                'get_graph_nodes.db_labels', labels_error, level=logging.WARNING
+            )
+            return []
         for row in result or []:
             label = row.get('label') if isinstance(row, dict) else None
             if isinstance(label, str) and label and label not in labels:
                 labels.append(label)
-    except Exception as labels_error:
-        _log_failure('get_graph_nodes.db_labels', labels_error, level=logging.WARNING)
-        return []
-    return labels
+        return labels
+
+    def _run() -> list[str]:
+        result = _rows_per_accessible_graph(engine, _labels_for)
+        if result is None:
+            return _labels_for(engine)
+        per_graph, _degraded = result
+        labels: list[str] = []
+        for _graph_name, graph_labels in per_graph:
+            for label in graph_labels or []:
+                if label not in labels:
+                    labels.append(label)
+        return labels
+
+    return await _invoke_governed_helper(_run, deadline=10.0)
 
 
 # ---------------------------------------------------------------------------
@@ -3593,11 +3615,58 @@ def _graph_union_executor(engine: Any) -> Any:
         graph_name: str, cypher: str, params: dict[str, Any] | None
     ) -> list[dict[str, Any]]:
         session = current_session()
+        exec_cypher, exec_params = cypher, dict(params or {})
+        is_commons = False
+        if session is not None:
+            from agent_utilities.knowledge_graph.core.tenant_sharing import (
+                apply_commons_catalog_restriction,
+                commons_graph_name,
+            )
+
+            is_commons = graph_name == commons_graph_name()
+            if is_commons:
+                # Push the commons READ catalog restriction (2026-08-09 owner
+                # ruling; `COMMONS_SHAREABLE_NODE_TYPES`) INTO the query text so
+                # the engine filters, not this process -- `read_union`/
+                # `filter_commons_catalog` were built for a post-hoc Python
+                # filter, but that pulls every commons row over the wire first.
+                # `apply_commons_catalog_restriction` is the companion primitive
+                # built for exactly this pushdown (its own docstring: "closes
+                # the label/type-index half of the existence-leak... injected
+                # into the query TEXT"). Best-effort: a query shape it can't
+                # inject into (no bound variable, `UnscopableQueryError`, or any
+                # other failure) leaves `exec_cypher` unchanged and is caught
+                # below by the row-level fallback -- this must never fail OPEN.
+                try:
+                    exec_cypher, extra_params = apply_commons_catalog_restriction(
+                        cypher, session.actor, graph_name
+                    )
+                    exec_params.update(extra_params)
+                except Exception as exc:  # noqa: BLE001 — pushdown is best-effort; the row-level fallback below is the safety net
+                    _log_failure(
+                        'graph_union.commons_restriction', exc, level=logging.DEBUG
+                    )
+                    exec_cypher, exec_params = cypher, dict(params or {})
         if session is None or graph_name == session.graph:
-            return list(engine.query_cypher(cypher, params) or [])
-        scoped_engine = engine.for_graph(graph_name)
-        with use_session(session.with_graph(graph_name)):
-            return list(scoped_engine.query_cypher(cypher, params) or [])
+            rows = list(engine.query_cypher(exec_cypher, exec_params) or [])
+        else:
+            scoped_engine = engine.for_graph(graph_name)
+            with use_session(session.with_graph(graph_name)):
+                rows = list(scoped_engine.query_cypher(exec_cypher, exec_params) or [])
+        if is_commons and exec_cypher == cypher:
+            # The pushdown above did not change the query text -- either it
+            # legitimately doesn't apply (privileged actor, no WHERE/RETURN
+            # site) or it failed -- so apply the row-level allowlist as the
+            # fallback. `filter_commons_catalog` itself no-ops for a
+            # privileged actor, so this is a no-op in the common "legitimately
+            # doesn't apply" case and the actual safety net in the "it failed"
+            # case; it never widens access relative to the pushdown succeeding.
+            from agent_utilities.knowledge_graph.core.tenant_sharing import (
+                filter_commons_catalog,
+            )
+
+            rows = filter_commons_catalog(rows, session.actor, graph_name)
+        return rows
 
     return _execute
 
@@ -3638,6 +3707,15 @@ async def _read_union_cypher(
     return await _invoke_governed_helper(_run, deadline=deadline)
 
 
+# Bound on concurrent per-graph fan-out (`_rows_per_accessible_graph` below).
+# `_accessible_graphs` is small today (tenant graph + commons = 2) and stays
+# small (ordered, de-duplicated; ancestors are a short chain in practice) --
+# this cap just keeps a pathological tenancy tree from spawning an unbounded
+# thread pool, matching the "must not degrade linearly if ancestors are
+# added" requirement without over-provisioning for a case that doesn't exist.
+_READ_UNION_MAX_WORKERS = 8
+
+
 def _rows_per_accessible_graph(
     engine: Any,
     engine_call: Any,
@@ -3655,6 +3733,21 @@ def _rows_per_accessible_graph(
     wrong even if forced -- physically partitioned graphs (GOC-61) never
     share a node id, so the correct merge of independent per-graph
     aggregates is for the CALLER to sum/merge them, not de-dup them.
+
+    CONCURRENT, BOUNDED (`_READ_UNION_MAX_WORKERS`): each graph's read is
+    genuinely independent (a separate `for_graph` view + a separately
+    retargeted session), so running them sequentially would make every
+    union-read route's latency scale with the number of accessible graphs
+    for no reason -- exactly the linear-degradation shape this fix is
+    required not to introduce. `contextvars.copy_context()` per submission is
+    load-bearing, not decoration: `current_session`/`use_session` are
+    `ContextVar`-backed, and a bare `ThreadPoolExecutor.submit` would hand
+    the callable a FRESH context with no ambient session at all, silently
+    breaking every graph but the one the caller's own thread happens to
+    still be on. Results are re-sorted back into `_accessible_graphs`'
+    ordering (tenant graph first) after the fan-out completes, regardless of
+    which thread finished first, so downstream "tenant wins on a duplicate
+    id" merges stay correct.
 
     FAIL-SOFT (matches `tenant_sharing.read_union`'s own documented
     contract, `core/tenant_sharing.py:457`: "A per-graph failure is logged
@@ -3677,21 +3770,40 @@ def _rows_per_accessible_graph(
     if session is None:
         return None
     graphs = _accessible_graphs(session.actor)
+
+    def _one(graph_name: str) -> Any:
+        if graph_name == session.graph:
+            return engine_call(engine)
+        scoped_engine = engine.for_graph(graph_name)
+        with use_session(session.with_graph(graph_name)):
+            return engine_call(scoped_engine)
+
     succeeded: list[tuple[str, Any]] = []
     degraded: list[str] = []
-    for graph_name in graphs:
-        try:
-            if graph_name == session.graph:
-                result = engine_call(engine)
-            else:
-                scoped_engine = engine.for_graph(graph_name)
-                with use_session(session.with_graph(graph_name)):
-                    result = engine_call(scoped_engine)
-        except Exception as exc:  # noqa: BLE001 — one graph down ≠ whole read down (mirrors tenant_sharing.read_union's own per-graph guard)
-            _log_failure('read_union.per_graph', exc, level=logging.DEBUG)
-            degraded.append(graph_name)
-            continue
-        succeeded.append((graph_name, result))
+    if len(graphs) <= 1:
+        for graph_name in graphs:
+            try:
+                succeeded.append((graph_name, _one(graph_name)))
+            except Exception as exc:  # noqa: BLE001 — one graph down ≠ whole read down (mirrors tenant_sharing.read_union's own per-graph guard)
+                _log_failure('read_union.per_graph', exc, level=logging.DEBUG)
+                degraded.append(graph_name)
+        return succeeded, degraded
+
+    max_workers = min(len(graphs), _READ_UNION_MAX_WORKERS)
+    with _futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        pending = {
+            pool.submit(contextvars.copy_context().run, _one, graph_name): graph_name
+            for graph_name in graphs
+        }
+        for future in pending:
+            graph_name = pending[future]
+            try:
+                succeeded.append((graph_name, future.result()))
+            except Exception as exc:  # noqa: BLE001 — one graph down ≠ whole read down (mirrors tenant_sharing.read_union's own per-graph guard)
+                _log_failure('read_union.per_graph', exc, level=logging.DEBUG)
+                degraded.append(graph_name)
+    order = {graph_name: idx for idx, graph_name in enumerate(graphs)}
+    succeeded.sort(key=lambda pair: order[pair[0]])
     return succeeded, degraded
 
 
@@ -3800,6 +3912,115 @@ async def _read_union_sql_group_counts(
     return await _invoke_governed_helper(_run, deadline=deadline)
 
 
+def _union_nodes_by_label(
+    engine: Any, label: str, limit: int
+) -> tuple[list[tuple[str, dict[str, Any]]], list[str], list[str]]:
+    """Fan `engine.backend.nodes_by_label(label, limit)` out across every graph
+    this actor may read and merge, de-duped by node id.
+
+    `nodes_by_label` is a native engine call (`GraphComputeEngine
+    .get_nodes_by_label`), not Cypher, so it cannot go through
+    `_read_union_cypher` -- this is exactly the "call the engine once per
+    accessible graph via `_rows_per_accessible_graph` and merge" case the fix
+    lane's own instructions anticipate. Uses `_rows_per_accessible_graph` for
+    the per-graph fan-out (same `engine.for_graph`/`use_session` retargeting
+    contract as every other union helper here), then applies the commons READ
+    catalog restriction (`tenant_sharing.filter_commons_catalog`) to ONLY the
+    commons graph's rows before merging -- `nodes_by_label` has no Cypher form
+    `apply_commons_catalog_restriction` could inject into, so the row-level
+    allowlist function is applied directly here instead (verified: `read_union`
+    itself does not call it, so it is this call site's job).
+
+    Returns `(rows, source_graphs, degraded_graphs)`, the same shape
+    `_read_union_scalar_sum` returns, so callers can accumulate source/degraded
+    sets identically.
+    """
+    from agent_utilities.knowledge_graph.core.session import current_session
+    from agent_utilities.knowledge_graph.core.tenant_sharing import (
+        commons_graph_name,
+        filter_commons_catalog,
+    )
+
+    def _call(scoped_engine: Any) -> list[tuple[str, dict[str, Any]]]:
+        fn = getattr(scoped_engine.backend, 'nodes_by_label', None)
+        if not callable(fn):
+            return []
+        return list(fn(label, limit) or [])
+
+    result = _rows_per_accessible_graph(engine, _call)
+    if result is None:
+        return list(_call(engine)), [], []
+    per_graph, degraded = result
+    session = current_session()
+    actor = session.actor if session is not None else None
+    commons = commons_graph_name()
+    merged: list[tuple[str, dict[str, Any]]] = []
+    seen: set[str] = set()
+    source_graphs: list[str] = []
+    for graph_name, rows in per_graph:
+        source_graphs.append(graph_name)
+        clean_rows = [
+            (row[0], row[1])
+            for row in (rows or [])
+            if isinstance(row, (tuple, list)) and len(row) == 2
+        ]
+        if graph_name == commons and actor is not None:
+            props_only = [p if isinstance(p, dict) else {} for _nid, p in clean_rows]
+            allowed = filter_commons_catalog(props_only, actor, graph_name)
+            allowed_ids = {id(p) for p in allowed}
+            clean_rows = [(nid, p) for nid, p in clean_rows if id(p) in allowed_ids]
+        for nid, props in clean_rows:
+            if isinstance(nid, str):
+                if nid in seen:
+                    continue
+                seen.add(nid)
+            merged.append((nid, props))
+    return merged, source_graphs, degraded
+
+
+def _union_engine_call(
+    engine: Any, actor: Any, call: Any, *, id_key: str = 'id'
+) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+    """Fan a native (non-Cypher) engine READ call `call(scoped_engine)` out
+    across every graph this actor may read, merging row-shaped dict results
+    de-duped by `id_key` (tenant graph wins, matching `read_union`'s own
+    semantic; `_rows_per_accessible_graph` already orders its output tenant-
+    first). The commons READ catalog restriction (`filter_commons_catalog`)
+    is applied to only the commons graph's rows before merging -- same
+    reasoning as `_union_nodes_by_label`, for any native call whose results
+    are already row/dict-shaped (e.g. `search_hybrid`, `query_impact`) rather
+    than the `(id, props)` tuples `nodes_by_label` returns.
+    """
+    from agent_utilities.knowledge_graph.core.tenant_sharing import (
+        commons_graph_name,
+        filter_commons_catalog,
+    )
+
+    result = _rows_per_accessible_graph(engine, call)
+    if result is None:
+        return list(call(engine) or []), [], []
+    per_graph, degraded = result
+    commons = commons_graph_name()
+    merged: list[dict[str, Any]] = []
+    seen: set[Any] = set()
+    source_graphs: list[str] = []
+    for graph_name, rows in per_graph:
+        source_graphs.append(graph_name)
+        rows = [r for r in (rows or []) if isinstance(r, dict)]
+        if graph_name == commons and actor is not None:
+            rows = filter_commons_catalog(rows, actor, graph_name)
+        for row in rows:
+            rid = row.get(id_key)
+            if rid is None:
+                merged.append(row)
+                continue
+            if rid in seen:
+                continue
+            seen.add(rid)
+            merged.append(row)
+    return merged, source_graphs, degraded
+
+
 @router.get('/graph/nodes')
 async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
     """Query Knowledge Graph for nodes of a specific type or all nodes.
@@ -3881,12 +4102,26 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
         budget = _MAX_EXTERNAL_COLLECTION_ITEMS
         # Leave headroom under the serialized ceiling for the JSON envelope.
         budget_bytes = (_MAX_EXTERNAL_RESULT_BYTES * 3) // 4
+        # FIX LANE Priority 1: every `nodes_by_label` call below is fanned out
+        # across `_accessible_graphs` and merged (`_union_nodes_by_label`,
+        # de-duped by node id, tenant wins, commons READ catalog allowlist
+        # applied to commons rows) -- see that helper's docstring for why this
+        # goes through `_rows_per_accessible_graph` rather than
+        # `_read_union_cypher` (no Cypher form for this native call).
+        # `_union_nodes_by_label` itself is a plain sync callable (mirrors
+        # `nodes_by_label`'s own shape), so it goes through
+        # `_invoke_governed_helper` exactly like the un-unioned call it
+        # replaces.
         if node_type:
-            rows = await _invoke_governed_helper(
-                nodes_by_label, node_type, budget, deadline=10.0
+            rows, node_sources, node_degraded = await _invoke_governed_helper(
+                _union_nodes_by_label, engine, node_type, budget, deadline=10.0
             )
+            source_graphs = set(node_sources)
+            degraded_graphs = set(node_degraded)
         else:
             rows = []
+            source_graphs = set()
+            degraded_graphs = set()
             for label in await _distinct_graph_labels(engine):
                 remaining = budget - len(rows)
                 if remaining <= 0:
@@ -3896,8 +4131,12 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                 # answer; failing all of them because one failed is not. The
                 # label is named in the log so the cause stays findable.
                 try:
-                    page = await _invoke_governed_helper(
-                        nodes_by_label, label, remaining, deadline=10.0
+                    page, label_sources, label_degraded = await _invoke_governed_helper(
+                        _union_nodes_by_label,
+                        engine,
+                        label,
+                        remaining,
+                        deadline=10.0,
                     )
                 except Exception as label_error:
                     _log_failure(
@@ -3907,6 +4146,8 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                     )
                     continue
                 rows.extend(page or [])
+                source_graphs.update(label_sources)
+                degraded_graphs.update(label_degraded)
             # The genuinely-unlabeled bucket (`label=''`) is best-effort: the
             # DEPLOYED engine build rejects an empty label argument outright
             # (ValueError), even though `GraphCore::get_nodes_by_label_page`
@@ -3916,13 +4157,32 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
             remaining = budget - len(rows)
             if remaining > 0:
                 try:
-                    page = await _invoke_governed_helper(
-                        nodes_by_label, '', remaining, deadline=10.0
+                    page, empty_sources, empty_degraded = await _invoke_governed_helper(
+                        _union_nodes_by_label,
+                        engine,
+                        '',
+                        remaining,
+                        deadline=10.0,
                     )
                 except Exception:
                     logger.debug('engine rejects empty-label read; skipping unlabeled')
                 else:
                     rows.extend(page or [])
+                    source_graphs.update(empty_sources)
+                    degraded_graphs.update(empty_degraded)
+        # `source_graphs`/`degraded_graphs` are computed above for
+        # observability parity with `get_graph_stats`, but this route's
+        # response is a bare JSON array (`list[dict]`, consumed directly by
+        # GraphView.tsx's node list) -- there is no envelope field to carry
+        # them without breaking that contract. Logged instead so the union's
+        # effect stays visible operationally even though it can't ride the
+        # response body.
+        if degraded_graphs:
+            logger.warning(
+                'get_graph_nodes: degraded graphs %s (source graphs: %s)',
+                sorted(degraded_graphs),
+                sorted(source_graphs),
+            )
         nodes: list[dict[str, Any]] = []
         for row in rows or []:
             if not isinstance(row, (tuple, list)) or len(row) != 2:
@@ -4035,8 +4295,17 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
             'MATCH (a)-[r]->(b) RETURN a.id as source, '
             f'type(r) as type, b.id as target LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
         )
-        result = await _invoke_governed_helper(
-            engine.backend.execute, query, deadline=10.0
+        # FIX LANE Priority 1: unioned across every graph this actor may read
+        # (`_read_union_cypher` -- `tenant_sharing.read_union`, same primitive
+        # `get_graph_stats` already uses), not `engine.backend.execute` alone,
+        # so relationships among commons-graph nodes (e.g. `Tool`-to-`Server`
+        # edges) are visible here too. A relationship row carries no single
+        # `id` column, so `read_union`'s id-dedup is a no-op for every row here
+        # (its own documented behaviour for an unclassifiable id -- "keep,
+        # never drop") -- which is correct: two physically partitioned graphs
+        # (GOC-61) never share an edge, so nothing needs de-duplicating.
+        result, _source_graphs = await _read_union_cypher(
+            engine, query, None, deadline=10.0
         )
         relationships = []
         for row in result:
@@ -4445,8 +4714,26 @@ async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
     try:
         engine = await _get_engine_bounded()
 
-        results = await _invoke_governed_helper(
-            engine.search_hybrid, query, top_k=top_k, deadline=15.0
+        # FIX LANE Priority 1: `search_hybrid` is a native ranked-retrieval
+        # call with no Cypher form (`_read_union_cypher` does not apply), so
+        # this fans it out per accessible graph via `_union_engine_call`
+        # (`_rows_per_accessible_graph` underneath) and merges by node id --
+        # the fleet/tool catalog is otherwise invisible to hybrid search from
+        # a webui session exactly like it was to `/graph/nodes`. `top_k` is
+        # pushed down to EACH per-graph call (not fetched unbounded then
+        # sliced) -- the merge below still trims to the caller's `top_k` after
+        # de-duping, since the union of two `top_k`-bounded shards can exceed
+        # `top_k`.
+        from agent_utilities.knowledge_graph.core.session import current_session
+
+        session = current_session()
+        actor = session.actor if session is not None else None
+
+        def _call(scoped_engine: Any) -> list[dict[str, Any]]:
+            return list(scoped_engine.search_hybrid(query, top_k=top_k) or [])
+
+        results, _source_graphs, _degraded = await _invoke_governed_helper(
+            _union_engine_call, engine, actor, _call, deadline=15.0
         )
         bounded = _public_external_result(list(results or [])[:top_k])
         return bounded if isinstance(bounded, list) else []
@@ -4479,8 +4766,23 @@ async def get_impact(symbol: str) -> list[dict[str, Any]]:
     try:
         engine = await _get_engine_bounded()
 
-        impact_set = await _invoke_governed_helper(
-            engine.query_impact, symbol, deadline=15.0
+        # FIX LANE Priority 1: `query_impact` is a native BFS-traversal call
+        # with no Cypher form, fanned out per accessible graph and merged by
+        # node id (`_union_engine_call`), same reasoning as `hybrid_search`
+        # above. The traversal itself is graph-local (edges never cross a
+        # GOC-61 graph boundary), so `symbol` resolves in at most one
+        # accessible graph -- the other graph(s) cheaply return `[]` via
+        # `query_impact`'s own `has_node` early-return, not an error.
+        from agent_utilities.knowledge_graph.core.session import current_session
+
+        session = current_session()
+        actor = session.actor if session is not None else None
+
+        def _call(scoped_engine: Any) -> list[dict[str, Any]]:
+            return list(scoped_engine.query_impact(symbol) or [])
+
+        impact_set, _source_graphs, _degraded = await _invoke_governed_helper(
+            _union_engine_call, engine, actor, _call, deadline=15.0
         )
         bounded = _public_external_result(
             list(impact_set or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
@@ -4509,11 +4811,16 @@ async def execute_cypher(data: dict[str, Any]) -> list[dict[str, Any]]:
 
         engine = await _get_engine_bounded()
 
-        result = await _invoke_governed_helper(
-            engine.query_cypher,
-            deadline=15.0,
-            query=query,
-            params=params,
+        # FIX LANE Priority 1: unioned across every graph this actor may read
+        # (`_read_union_cypher`). Safe to union unconditionally -- unlike a
+        # general Cypher surface, `_validate_read_only_cypher` above has
+        # ALREADY rejected any mutating clause (CREATE/MERGE/DELETE/SET/
+        # REMOVE/CALL/...); every query reaching this point is a bounded read,
+        # so there is no write-vs-read branch to preserve here (the union
+        # helper itself never touches `session.graph`'s write path either
+        # way).
+        result, _source_graphs = await _read_union_cypher(
+            engine, query, params, deadline=15.0
         )
         if not isinstance(result, list):
             raise ValueError('Graph query returned an invalid result shape')
@@ -10403,6 +10710,29 @@ async def _get_ontology_kg_bounded() -> Any:
     return await _invoke_governed_helper(get_ontology_kg, deadline=10.0)
 
 
+def _ontology_facade_for(engine: Any, scoped_engine: Any) -> tuple[Any, Any] | None:
+    """Resolve the `(kg, ontology)` facade pair for one `_rows_per_accessible_graph`
+    call-site: the tenant-pinned singleton (`get_ontology_kg()`) when
+    `scoped_engine` is the ambient (unscoped) `engine` itself, else a
+    throwaway facade over `scoped_engine.backend` (a graph-scoped view
+    `_rows_per_accessible_graph` already retargeted the ambient session onto
+    -- see `_graph_union_executor`'s docstring for why both moves are
+    required together). Returns `None` when the ontology layer is
+    unavailable for that graph, so callers can degrade a single graph rather
+    than raise.
+    """
+    if scoped_engine is engine:
+        return get_ontology_kg()
+    from agent_utilities.knowledge_graph.facade import KnowledgeGraph
+
+    kg = KnowledgeGraph()
+    kg._store = scoped_engine.backend
+    ontology = kg.ontology
+    if ontology is None:
+        return None
+    return kg, ontology
+
+
 def _actor_id_from_request(request: Request | None) -> str:
     """Return only the server-minted ambient actor, never caller headers/body."""
 
@@ -10553,8 +10883,7 @@ async def list_object_types() -> list[dict[str, Any]]:
     labels present in the store. Each entry carries the interfaces it implements.
     """
     try:
-        kg, ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
+        _kg, ontology = await _get_ontology_kg_bounded()
 
         # Concrete types declared as interface implementers (programmatic targets).
         implementers_by_type: dict[str, list[str]] = {}
@@ -10565,12 +10894,21 @@ async def list_object_types() -> list[dict[str, Any]]:
             except Exception:  # noqa: BLE001
                 continue
 
-        # Live node labels present in the store.
+        # Live node labels present in the store. FIX LANE Priority 1: unioned
+        # across every graph this actor may read (`_read_union_cypher`), not
+        # `backend.execute`/`kg.store` alone -- otherwise the commons-only
+        # catalog types (`Tool`, `Skill`, ...) never appear in the Object
+        # Explorer's type list at all. The commons READ catalog restriction is
+        # pushed into the query text automatically by `_graph_union_executor`
+        # (see its docstring) so a foreign tenant's count here is already
+        # scoped to `COMMONS_SHAREABLE_NODE_TYPES`.
         live_types: dict[str, int] = {}
         try:
-            rows = await _invoke_governed_helper(
-                backend.execute,
+            engine = await _get_engine_bounded()
+            rows, _source_graphs = await _read_union_cypher(
+                engine,
                 'MATCH (n) RETURN labels(n) as labels, count(n) as count',
+                None,
                 deadline=15.0,
             )
             for row in rows or []:
@@ -10728,24 +11066,42 @@ async def ontology_object_set_search(
                     )
                 )
 
-        def execute_search() -> list[dict[str, Any]]:
+        # FIX LANE Priority 1: fanned out across every graph this actor may
+        # read (`_union_engine_call` -- `_rows_per_accessible_graph` under a
+        # per-graph `(kg, ontology)` facade, `_ontology_facade_for`) and
+        # merged by object id -- the ontology layer has no Cypher seam
+        # (`_read_union_cypher` does not apply), so this is the "call the
+        # engine once per accessible graph and merge" case. `limit` is pushed
+        # down to EACH graph's `.search(...)` call (not fetched unbounded then
+        # sliced); the merge is re-trimmed to `limit` below since the union of
+        # two `limit`-bounded per-graph results can exceed it.
+        engine = await _get_engine_bounded()
+
+        def execute_search(scoped_engine: Any) -> list[dict[str, Any]]:
+            facade = _ontology_facade_for(engine, scoped_engine)
+            if facade is None:
+                return []
+            _scoped_kg, scoped_ontology = facade
             remaining_filters = filters
             if kind:
-                base = ontology.object_set_of_type(str(kind))
+                base = scoped_ontology.object_set_of_type(str(kind))
             elif filters:
-                base = ontology.dynamic_object_set(filters=filters)
+                base = scoped_ontology.dynamic_object_set(filters=filters)
                 remaining_filters = []  # already applied to the base set
             else:
                 # Graph-wide: a dynamic set over a permissive predicate.
-                base = ontology.dynamic_object_set(lambda props: True)
+                base = scoped_ontology.dynamic_object_set(lambda props: True)
             result = base.search(
                 query,
                 filters=remaining_filters or None,
                 limit=limit,
             )
-            return _object_set_rows(ontology, result, actor, limit=limit)
+            return _object_set_rows(scoped_ontology, result, actor, limit=limit)
 
-        rows = await _invoke_governed_helper(execute_search, deadline=30.0)
+        rows, _source_graphs, _degraded = await _invoke_governed_helper(
+            _union_engine_call, engine, actor, execute_search, deadline=30.0
+        )
+        rows = rows[:limit]
         return _public_external_result(
             {
                 'ids': [r.get('id') for r in rows],
@@ -10769,7 +11125,6 @@ async def ontology_object_set_search_around(
     Body: ``{ids, link_type, hops, cap, direction}``.
     """
     try:
-        _kg, ontology = await _get_ontology_kg_bounded()
         actor = _actor_context(request)
         ids = _bounded_identifier_list(data.get('ids'), required=True)
         link_type = data.get('link_type')
@@ -10788,17 +11143,32 @@ async def ontology_object_set_search_around(
         ):
             raise HTTPException(status_code=400, detail='Invalid link type')
 
-        def execute_search_around() -> list[dict[str, Any]]:
-            base = ontology.object_set(ids)
+        # FIX LANE Priority 1: fanned out per accessible graph and merged by
+        # object id, same reasoning as `ontology_object_set_search` above. A
+        # seed id only resolves related objects in the ONE graph it (and its
+        # links) physically live in (GOC-61: edges never cross a graph
+        # boundary) -- the other graph(s) cheaply return `[]` for a seed id
+        # they don't hold, not an error.
+        engine = await _get_engine_bounded()
+
+        def execute_search_around(scoped_engine: Any) -> list[dict[str, Any]]:
+            facade = _ontology_facade_for(engine, scoped_engine)
+            if facade is None:
+                return []
+            _scoped_kg, scoped_ontology = facade
+            base = scoped_ontology.object_set(ids)
             related = base.search_around(
                 link_type,
                 hops=hops,
                 direction=direction,
                 cap=cap,
             )
-            return _object_set_rows(ontology, related, actor, limit=cap)
+            return _object_set_rows(scoped_ontology, related, actor, limit=cap)
 
-        rows = await _invoke_governed_helper(execute_search_around, deadline=30.0)
+        rows, _source_graphs, _degraded = await _invoke_governed_helper(
+            _union_engine_call, engine, actor, execute_search_around, deadline=30.0
+        )
+        rows = rows[:cap]
         return _public_external_result(
             {
                 'ids': [r.get('id') for r in rows],
