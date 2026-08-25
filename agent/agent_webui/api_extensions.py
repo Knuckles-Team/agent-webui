@@ -10497,13 +10497,22 @@ def _serialize_property_type(name: str, pt: Any) -> dict[str, Any]:
     }
 
 
-def _node_properties(backend: Any, object_id: str) -> dict[str, Any]:
-    """Read a node's full property map from the live store via Cypher."""
+async def _node_properties(engine: Any, object_id: str) -> dict[str, Any]:
+    """Read a node's full property map through the ``query_cypher`` chokepoint,
+    unioned across every graph this actor may read (GOC-61). Was a direct
+    ``backend.execute()`` call with a silent empty-dict swallow -- the same
+    two-defect shape as BUG-PE-036/026 in ``list_object_types`` (bypasses the
+    union AND hides genuine failures behind an indistinguishable "no data").
+    """
     try:
-        rows = backend.execute(
-            'MATCH (n {id: $id}) RETURN n LIMIT 1', {'id': object_id}
+        rows, _source_graphs = await _read_union_cypher(
+            engine,
+            'MATCH (n {id: $id}) RETURN n LIMIT 1',
+            {'id': object_id},
+            deadline=15.0,
         )
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _log_failure('node_properties', e)
         rows = []
     if not rows:
         return {}
@@ -10511,35 +10520,45 @@ def _node_properties(backend: Any, object_id: str) -> dict[str, Any]:
     return dict(node) if isinstance(node, dict) else {}
 
 
-def _node_links(backend: Any, object_id: str) -> dict[str, list[dict[str, Any]]]:
-    """Read in/out typed links for a node from the live store."""
+async def _node_links(engine: Any, object_id: str) -> dict[str, list[dict[str, Any]]]:
+    """Read in/out typed links for a node through the ``query_cypher``
+    chokepoint, unioned across every graph this actor may read. See
+    ``_node_properties`` for why this changed from a direct ``backend.execute()``
+    call with a silent empty-list swallow.
+    """
     out_links: list[dict[str, Any]] = []
     in_links: list[dict[str, Any]] = []
     try:
-        out_rows = backend.execute(
+        out_rows, _source_graphs = await _read_union_cypher(
+            engine,
             'MATCH (n {id: $id})-[r]->(m) '
             f'RETURN type(r) as type, m.id as target '
             f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
             {'id': object_id},
+            deadline=15.0,
         )
         for row in out_rows or []:
             out_links.append(
                 {'type': row.get('type', ''), 'target': row.get('target', '')}
             )
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _log_failure('node_links.out', e)
         out_links = []
     try:
-        in_rows = backend.execute(
+        in_rows, _source_graphs = await _read_union_cypher(
+            engine,
             'MATCH (m)-[r]->(n {id: $id}) '
             f'RETURN type(r) as type, m.id as source '
             f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
             {'id': object_id},
+            deadline=15.0,
         )
         for row in in_rows or []:
             in_links.append(
                 {'type': row.get('type', ''), 'source': row.get('source', '')}
             )
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _log_failure('node_links.in', e)
         in_links = []
     return {'out': out_links, 'in': in_links}
 
@@ -10553,8 +10572,8 @@ async def list_object_types() -> list[dict[str, Any]]:
     labels present in the store. Each entry carries the interfaces it implements.
     """
     try:
+        engine = await _get_engine_bounded()
         kg, ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
 
         # Concrete types declared as interface implementers (programmatic targets).
         implementers_by_type: dict[str, list[str]] = {}
@@ -10565,24 +10584,54 @@ async def list_object_types() -> list[dict[str, Any]]:
             except Exception:  # noqa: BLE001
                 continue
 
-        # Live node labels present in the store.
+        # Live node labels present in the store, unioned across every graph
+        # this actor may read (GOC-61 commons union) through the
+        # `query_cypher` chokepoint (`_rows_per_accessible_graph`) -- NEVER a
+        # direct `backend.execute()` call, which bypassed that union
+        # entirely (BUG-PE-036).
         live_types: dict[str, int] = {}
-        try:
-            rows = await _invoke_governed_helper(
-                backend.execute,
-                'MATCH (n) RETURN labels(n) as labels, count(n) as count',
-                deadline=15.0,
+        cypher = 'MATCH (n) RETURN labels(n) as labels, count(n) as count'
+
+        def _live_types_run() -> tuple[dict[str, int], list[str]]:
+            result = _rows_per_accessible_graph(
+                engine, lambda scoped: scoped.query_cypher(cypher, None) or []
             )
-            for row in rows or []:
-                labels = row.get('labels') or []
-                if isinstance(labels, str):
-                    labels = [labels]
-                for label in labels:
-                    if label and not str(label).startswith('_'):
-                        live_types[label] = live_types.get(label, 0) + int(
-                            row.get('count', 0) or 0
-                        )
-        except Exception:  # noqa: BLE001
+            if result is None:
+                per_graph: list[tuple[str, Any]] = [
+                    ('', engine.query_cypher(cypher, None) or [])
+                ]
+                degraded: list[str] = []
+            else:
+                per_graph, degraded = result
+            merged: dict[str, int] = {}
+            for _graph_name, rows in per_graph:
+                for row in rows or []:
+                    labels = row.get('labels') or []
+                    if isinstance(labels, str):
+                        labels = [labels]
+                    count = row.get('count', 0) or 0
+                    for label in labels:
+                        if label and not str(label).startswith('_'):
+                            merged[label] = merged.get(label, 0) + int(count)
+            return merged, degraded
+
+        try:
+            live_types, degraded_graphs = await _invoke_governed_helper(
+                _live_types_run, deadline=15.0
+            )
+            if degraded_graphs:
+                # A partial read (some accessible graph failed) must never
+                # look identical to a complete one.
+                _log_failure(
+                    'list_object_types.live_types_degraded',
+                    RuntimeError(f'{len(degraded_graphs)} graph(s) skipped'),
+                    level=logging.WARNING,
+                )
+        except Exception as e:  # noqa: BLE001
+            # BUG-PE-026: this was `except Exception: live_types = {}` with
+            # NO logging -- a transient failure was indistinguishable from a
+            # genuinely empty graph. Log it, distinguishably, now.
+            _log_failure('list_object_types.live_types', e)
             live_types = {}
 
         names = set(implementers_by_type) | set(live_types)
@@ -11111,7 +11160,7 @@ async def ontology_object_set_list(request: Request) -> dict[str, Any]:
 
     try:
         kg, _ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
+        engine = await _get_engine_bounded()
         actor = _actor_context(request)
         actor_id = _durable_actor_reference(actor.actor_id)
         actor_is_admin = bool(
@@ -11123,15 +11172,19 @@ async def ontology_object_set_list(request: Request) -> dict[str, Any]:
             if isinstance(rec, dict) and rec.get('id'):
                 merged[rec['id']] = rec
 
+        # Through the `query_cypher` chokepoint, unioned across every graph
+        # this actor may read -- was a direct `backend.execute()` call with a
+        # silent empty-list swallow (same shape as BUG-PE-036/026).
         try:
-            rows = await _invoke_governed_helper(
-                backend.execute,
+            rows, _source_graphs = await _read_union_cypher(
+                engine,
                 f"MATCH (n {{type: 'object_set'}}) RETURN n "
                 f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
                 {},
                 deadline=15.0,
             )
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            _log_failure('ontology_object_set_list.rows', e)
             rows = []
         for row in rows or []:
             node = row.get('n', {}) if isinstance(row, dict) else {}
@@ -11347,8 +11400,11 @@ async def ontology_object_set_action(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
-def _durable_edit_history(backend: Any, object_id: str) -> list[dict[str, Any]]:
-    """Read an object's durable edit history from the store's ``object_edit`` nodes.
+async def _durable_edit_history(engine: Any, object_id: str) -> list[dict[str, Any]]:
+    """Read an object's durable edit history from the store's ``object_edit`` nodes,
+    through the ``query_cypher`` chokepoint, unioned across every graph this
+    actor may read. See ``_node_properties`` for why this changed from a
+    direct ``backend.execute()`` call with a silent empty-list swallow.
 
     The :class:`EditLedger` persists each edit as an ``object_edit`` node (with
     ``EDITS`` → target edges) but serves :meth:`history` from an in-process
@@ -11359,12 +11415,15 @@ def _durable_edit_history(backend: Any, object_id: str) -> list[dict[str, Any]]:
     import json
 
     try:
-        rows = backend.execute(
+        rows, _source_graphs = await _read_union_cypher(
+            engine,
             f"MATCH (n {{object_id: $id, type: 'object_edit'}}) RETURN n "
             f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
             {'id': object_id},
+            deadline=15.0,
         )
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _log_failure('durable_edit_history', e)
         return []
     edits: list[dict[str, Any]] = []
     for row in rows or []:
@@ -11427,12 +11486,10 @@ async def get_ontology_object(
         )
 
         kg, ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
+        engine = await _get_engine_bounded()
         actor = _actor_context(request)
 
-        props = await _invoke_governed_helper(
-            _node_properties, backend, object_id, deadline=15.0
-        )
+        props = await _node_properties(engine, object_id)
         props.setdefault('id', object_id)
         enforced = enforce([props], actor)
         if not enforced:
@@ -11452,17 +11509,17 @@ async def get_ontology_object(
                 actor_id=actor.actor_id,
                 deadline=30.0,
             )
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            _log_failure('get_ontology_object.derive_all', e)
             derived = {}
         try:
             markings = sorted(markings_for(object_id))
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            _log_failure('get_ontology_object.markings_for', e)
             markings = []
         # Prefer the durable, cross-request audit trail from the store; fall
         # back to the in-process ledger mirror when nothing was persisted.
-        history = await _invoke_governed_helper(
-            _durable_edit_history, backend, object_id, deadline=15.0
-        )
+        history = await _durable_edit_history(engine, object_id)
         if not history:
             try:
                 fallback_history = await _invoke_governed_helper(
@@ -11471,7 +11528,10 @@ async def get_ontology_object(
                     deadline=15.0,
                 )
                 history = [e.model_dump(mode='json') for e in fallback_history]
-            except Exception:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
+                _log_failure(
+                    'get_ontology_object.history_fallback', e, level=logging.DEBUG
+                )
                 history = []
 
         # Resolve the requested layout into a concrete view payload. ``configured``
@@ -11500,9 +11560,7 @@ async def get_ontology_object(
                 'id': object_id,
                 'object_type': object_type,
                 'properties': view_props,
-                'links': await _invoke_governed_helper(
-                    _node_links, backend, object_id, deadline=15.0
-                ),
+                'links': await _node_links(engine, object_id),
                 'derived': derived,
                 'markings': markings[:_MAX_EXTERNAL_COLLECTION_ITEMS],
                 'history': history[:_MAX_EXTERNAL_COLLECTION_ITEMS],
@@ -11529,7 +11587,7 @@ async def edit_ontology_object(
     object_id = _validate_runtime_id(object_id)
     try:
         kg, ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
+        engine = await _get_engine_bounded()
         actor = _actor_id_from_request(request)
         edit_type = str(data.get('edit_type', 'property_set') or 'property_set')
 
@@ -11595,12 +11653,8 @@ async def edit_ontology_object(
                 'edit': edit.model_dump(mode='json'),
                 'object': {
                     'id': object_id,
-                    'properties': await _invoke_governed_helper(
-                        _node_properties, backend, object_id, deadline=15.0
-                    ),
-                    'links': await _invoke_governed_helper(
-                        _node_links, backend, object_id, deadline=15.0
-                    ),
+                    'properties': await _node_properties(engine, object_id),
+                    'links': await _node_links(engine, object_id),
                 },
             }
         )
@@ -11624,7 +11678,7 @@ async def revert_ontology_edit(
         from agent_utilities.knowledge_graph.ontology.edits import Edit, EditType
 
         kg, ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
+        engine = await _get_engine_bounded()
         actor = _actor_id_from_request(request)
         edit_id = data.get('edit_id')
         if not isinstance(edit_id, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(
@@ -11636,9 +11690,7 @@ async def revert_ontology_edit(
         # requests, so rehydrate the original edit from its durable store node
         # and register it on the ledger before reverting.
         if ontology.edits.get(str(edit_id)) is None:
-            durable_history = await _invoke_governed_helper(
-                _durable_edit_history, backend, object_id, deadline=15.0
-            )
+            durable_history = await _durable_edit_history(engine, object_id)
             for hist in durable_history:
                 if hist.get('id') == str(edit_id):
                     rehydrated = Edit(
@@ -11673,12 +11725,8 @@ async def revert_ontology_edit(
                 'edit': compensating.model_dump(mode='json'),
                 'object': {
                     'id': object_id,
-                    'properties': await _invoke_governed_helper(
-                        _node_properties, backend, object_id, deadline=15.0
-                    ),
-                    'links': await _invoke_governed_helper(
-                        _node_links, backend, object_id, deadline=15.0
-                    ),
+                    'properties': await _node_properties(engine, object_id),
+                    'links': await _node_links(engine, object_id),
                 },
             }
         )
@@ -11749,7 +11797,7 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
 
     try:
         kg, _ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
+        engine = await _get_engine_bounded()
         object_id = data.get('object_id')
         derived_name = data.get('derived_name')
         if not isinstance(object_id, str) or not isinstance(derived_name, str):
@@ -11760,9 +11808,7 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
         if not _SAFE_DELEGATION_TOKEN.fullmatch(derived_name):
             raise HTTPException(status_code=400, detail='Invalid derived property')
 
-        props = await _invoke_governed_helper(
-            _node_properties, backend, str(object_id), deadline=15.0
-        )
+        props = await _node_properties(engine, str(object_id))
         props.setdefault('id', str(object_id))
         object_type = (
             data.get('object_type')
