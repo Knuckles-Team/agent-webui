@@ -397,3 +397,28 @@ is what Dependabot flags. Rules:
    Dependabot/security surface.
 4. **Patch CVEs with a version floor at the source, then re-lock.** `uv` resolves one version
    graph-wide, so a lower-bound in the extra that pulls a dependency raises it for the whole lock.
+
+## Provenance citations — `reports/*.md` resolves OUTSIDE this repo
+
+Code and docs here cite planning artifacts as `reports/issue-register.md`,
+`reports/seam-identity-closure.md`, `reports/waveN/ADR-*.md`, and similar.
+**These are workspace-level documents; they are NOT paths in this repository.**
+They resolve under the workspace root:
+
+- `reports/issue-register.md`, `reports/seam-*.md`, `reports/waveN/ADR-*.md`
+  → `plans/_archive/au-eg-program/`
+- GOC-numbered items → `plans/graph-os-completion-program/`
+
+`git log --all -- 'reports/issue-register.md'` in this repo correctly returns
+**zero commits**. That is expected and is *not* evidence the citation is
+fabricated — a per-repo git log cannot see a workspace-level document. That
+exact absence-of-evidence was misread as evidence-of-absence on 2026-08-25,
+and valid provenance was deleted from ~11 sites before it was caught and
+restored.
+
+**Before concluding any citation is fake, resolve the filename against the
+workspace root.** New citations should use the qualified path
+(e.g. `plans/_archive/au-eg-program/issue-register.md`) rather than the bare
+`reports/...` form; existing bare citations are upgraded opportunistically,
+not in a bulk sweep (a mass rewrite risks mis-mapping GOC-numbered items into
+the wrong archive directory).
