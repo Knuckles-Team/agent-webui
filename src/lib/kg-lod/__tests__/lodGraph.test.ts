@@ -9,9 +9,30 @@ function clustersResponse(overrides: Partial<ClustersResponse> = {}): ClustersRe
   return {
     level: 0,
     clusters: [
-      { id: 'c0', label: 'Cluster 0', node_count: 100, edge_count: 180, centroid: { x: 1, y: 2, z: 3 }, top_node_types: ['Skill'] },
-      { id: 'c1', label: 'Cluster 1', node_count: 900, edge_count: 1620, centroid: { x: -4, y: 5, z: -6 }, top_node_types: ['Agent'] },
-      { id: 'c2', label: 'Cluster 2', node_count: 30, edge_count: 54, centroid: { x: 10, y: -2, z: 1 }, top_node_types: [] },
+      {
+        id: 'c0',
+        label: 'Cluster 0',
+        node_count: 100,
+        edge_count: 180,
+        centroid: { x: 1, y: 2, z: 3 },
+        top_node_types: ['Skill'],
+      },
+      {
+        id: 'c1',
+        label: 'Cluster 1',
+        node_count: 900,
+        edge_count: 1620,
+        centroid: { x: -4, y: 5, z: -6 },
+        top_node_types: ['Agent'],
+      },
+      {
+        id: 'c2',
+        label: 'Cluster 2',
+        node_count: 30,
+        edge_count: 54,
+        centroid: { x: 10, y: -2, z: 1 },
+        top_node_types: [],
+      },
     ],
     inter_cluster_edges: [
       { src_idx: 0, dst_idx: 1, weight: 2 },
@@ -161,7 +182,13 @@ describe('mergeScopes', () => {
   it('yields fixedPositions only when BOTH sides have them, else null (documented fallback to local layout)', () => {
     const a = clustersToScope(clustersResponse())
     const bWithCentroids = expandToScope(
-      { nodes: [], edges: [], child_clusters: [{ id: 'z', label: 'z', node_count: 5, edge_count: 5, centroid: { x: 0, y: 0, z: 0 }, top_node_types: [] }] },
+      {
+        nodes: [],
+        edges: [],
+        child_clusters: [
+          { id: 'z', label: 'z', node_count: 5, edge_count: 5, centroid: { x: 0, y: 0, z: 0 }, top_node_types: [] },
+        ],
+      },
       0,
     )
     const bWithoutCentroids = expandToScope(

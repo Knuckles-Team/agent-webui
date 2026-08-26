@@ -214,15 +214,20 @@ export default function Graph3DLodView() {
     (index: number) => {
       const meta = scope.meta[index]
       const node = model.nodes[index]
-      if (!meta || meta.kind !== 'cluster' || !meta.clusterId) {
-        toast.info('Nothing further to expand here', { description: `${node?.name ?? 'This node'} is a real node, not a cluster.` })
+      if (meta.kind !== 'cluster' || !meta.clusterId) {
+        toast.info('Nothing further to expand here', {
+          description: `${node.name} is a real node, not a cluster.`,
+        })
         return
       }
-      explorer.expand(meta.clusterId).then((outcome) => {
-        if (outcome === 'no-children') {
-          toast.info('Nothing inside this cluster', { description: `${node.name} has no members to reveal.` })
-        }
-      }).catch(() => undefined)
+      explorer
+        .expand(meta.clusterId)
+        .then((outcome) => {
+          if (outcome === 'no-children') {
+            toast.info('Nothing inside this cluster', { description: `${node.name} has no members to reveal.` })
+          }
+        })
+        .catch(() => undefined)
     },
     [scope, model, explorer],
   )
@@ -284,8 +289,35 @@ export default function Graph3DLodView() {
         </Card>
       ) : null}
 
+      {/*
+        `h-[70vh]` (a viewport-relative unit, ALWAYS definite, unlike an
+        ancestor-percentage chain) rather than the `min-h-[440px]`-only sizing
+        `Graph3DView.tsx` uses. Found live-browser-screenshotting this view:
+        the app's shared route wrapper (`App.tsx`'s `mx-auto w-full` around
+        every non-chart route) has no height rule at all, so `h-full` on this
+        card's canvas container resolves against an INDEFINITE ancestor and
+        falls back to content-based auto-sizing. `Graph3DCanvas`'s own canvas
+        element is `style.height:100%` too, so under that indefinite chain
+        its LAYOUT size falls back to its `width`/`height` HTML ATTRIBUTES
+        (the WebGL drawing-buffer size `scene.ts`'s `resize()` writes) —
+        which the surrounding ResizeObserver then reads back as a NEW,
+        larger container size and writes an even larger buffer size for,
+        without bound. Confirmed live: canvas height 676px -> 964px ->
+        1324px over three seconds, rendering solid black throughout (nothing
+        in frame, camera framed against whatever size existed at that
+        instant). `Graph3DView.tsx` shares the exact same vulnerable
+        structure and very likely has the identical bug — untested there
+        only because its data flow depends on a live `/api/enhanced/graph/
+        graph3d` fetch this environment has no backend for, so its canvas
+        never actually mounts under either the hostile-render test harness
+        (route-render.hostile.test.tsx, jsdom's ResizeObserver mock is
+        inert) or this manual check. The real fix belongs in the shared
+        wrapper (or scene.ts's resize floor); out of scope to change here
+        without auditing every other route that wrapper serves, so this
+        card breaks the circularity locally instead.
+      */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">
-        <Card className="relative min-h-[440px] overflow-hidden p-0">
+        <Card className="relative h-[70vh] min-h-[440px] overflow-hidden p-0">
           {explorer.rootLoading ? (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 text-sm text-muted-foreground backdrop-blur-sm">
               <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Reading the top level…
@@ -346,7 +378,9 @@ export default function Graph3DLodView() {
                 <button
                   key={choice}
                   type="button"
-                  onClick={() => setHops(choice)}
+                  onClick={() => {
+                    setHops(choice)
+                  }}
                   title="How many hops of context a selection reveals"
                   className={`px-2 py-1 text-[11px] transition-colors ${
                     hops === choice ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
@@ -359,7 +393,13 @@ export default function Graph3DLodView() {
             <Button size="sm" variant="secondary" onClick={showAll} disabled={!revealed && !highlightType}>
               <Eye className="mr-1.5 h-3.5 w-3.5" /> Show all
             </Button>
-            <Button size="sm" variant="secondary" onClick={() => setFrameToken((token) => token + 1)}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setFrameToken((token) => token + 1)
+              }}
+            >
               <Crosshair className="mr-1.5 h-3.5 w-3.5" /> Re-frame
             </Button>
           </div>
@@ -385,7 +425,9 @@ export default function Graph3DLodView() {
                           style={{ background: nodeTypeColor(selectedNode.type, isDark) }}
                         />
                         {selectedNode.type}
-                        {selectedMeta.level != null ? <span className="opacity-60">· level {selectedMeta.level}</span> : null}
+                        {selectedMeta.level != null ? (
+                          <span className="opacity-60">· level {selectedMeta.level}</span>
+                        ) : null}
                       </div>
                       <div className="mt-1 break-all font-mono text-[10px] text-muted-foreground/80">
                         {selectedNode.id}
@@ -424,7 +466,13 @@ export default function Graph3DLodView() {
                       <Badge variant="outline" className="text-[10px]">
                         {selectedNeighbours.length} neighbours in view
                       </Badge>
-                      <Button size="sm" variant="ghost" onClick={() => setSelected(null)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setSelected(null)
+                        }}
+                      >
                         Unpin
                       </Button>
                     </div>
@@ -433,7 +481,9 @@ export default function Graph3DLodView() {
                         <button
                           key={node.id}
                           type="button"
-                          onClick={() => setSelected(index)}
+                          onClick={() => {
+                            setSelected(index)
+                          }}
                           className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
                         >
                           <span
@@ -463,8 +513,8 @@ export default function Graph3DLodView() {
                 <Card className="h-full">
                   <CardHeader className="pb-2">
                     <CardDescription className="text-xs">
-                      The whole graph&apos;s type distribution, from the engine&apos;s own aggregate — for scale,
-                      not what is currently drawn (that is {numberFormat.format(model.nodes.length)} nodes: {clusterCount}{' '}
+                      The whole graph&apos;s type distribution, from the engine&apos;s own aggregate — for scale, not
+                      what is currently drawn (that is {numberFormat.format(model.nodes.length)} nodes: {clusterCount}{' '}
                       clusters and {leafCount} real). Click a type to keep only matching nodes on the canvas.
                     </CardDescription>
                   </CardHeader>
@@ -485,8 +535,8 @@ export default function Graph3DLodView() {
                 <Card className="h-full">
                   <CardHeader className="pb-2">
                     <CardDescription className="text-xs">
-                      {model.relTypes.length} relationship types currently in view (cluster links plus any real
-                      edges inside expanded clusters). Untick one to drop its edges.
+                      {model.relTypes.length} relationship types currently in view (cluster links plus any real edges
+                      inside expanded clusters). Untick one to drop its edges.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="min-h-0 p-0">
@@ -498,7 +548,9 @@ export default function Graph3DLodView() {
                             <button
                               key={type}
                               type="button"
-                              onClick={() => toggleRelType(type)}
+                              onClick={() => {
+                                toggleRelType(type)
+                              }}
                               className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted ${
                                 hidden ? 'opacity-40' : ''
                               }`}

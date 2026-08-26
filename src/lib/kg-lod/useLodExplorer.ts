@@ -96,7 +96,6 @@ export function useLodExplorer({ transport, graph }: UseLodExplorerOptions): Use
   const [lastExpandedId, setLastExpandedId] = useState<string | null>(null)
   const [followIndex, setFollowIndex] = useState<number | null>(null)
 
-  const graphKey = useMemo(() => graph.join(','), [graph])
   const rootAbort = useRef<AbortController | null>(null)
   const expandAbort = useRef<Map<string, AbortController>>(new Map())
 
@@ -129,14 +128,12 @@ export function useLodExplorer({ transport, graph }: UseLodExplorerOptions): Use
         setRootLoading(false)
       }
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `graph` is captured by identity via graphKey below
   }, [transport, graph])
 
   useEffect(() => {
     fetchRoot()
     return () => rootAbort.current?.abort()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch only on a real scope change, not a new array identity
-  }, [graphKey, transport])
+  }, [fetchRoot])
 
   // ── the combined scope: root with every open expansion folded in ───────
   const scope = useMemo(() => {

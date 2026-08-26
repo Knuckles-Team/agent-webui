@@ -594,7 +594,7 @@ export class Graph3DScene {
     if (!model || !this.nodes) return
     for (let i = 0; i < model.nodes.length; i += 1) {
       const tier = this.tier[i]
-      const emphasized = !this.emphasis || this.emphasis[i] !== 0
+      const emphasized = this.emphasis?.[i] !== 0
       const scale = this.baseSizes[i] * TIER_SCALE[tier] * (emphasized ? 1 : EMPHASIS_DIM_SCALE)
       this.matrix.makeScale(scale, scale, scale)
       this.matrix.setPosition(this.positions[i * 3], this.positions[i * 3 + 1], this.positions[i * 3 + 2])

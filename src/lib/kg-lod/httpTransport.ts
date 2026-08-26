@@ -50,7 +50,11 @@ export class HttpLodTransport implements LodTransport {
     yield { data, tileIndex: 0, done: true }
   }
 
-  async *expand(graph: LodGraphScope, clusterId: string, signal?: AbortSignal): AsyncIterable<LodTile<ExpandResponse>> {
+  async *expand(
+    graph: LodGraphScope,
+    clusterId: string,
+    signal?: AbortSignal,
+  ): AsyncIterable<LodTile<ExpandResponse>> {
     const params = new URLSearchParams({ cluster_id: clusterId })
     const qs = graphQuery(graph)
     const path = `${GRAPH3D_EXPAND_PATH}?${params.toString()}${qs ? `&${qs}` : ''}`

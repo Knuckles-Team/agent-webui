@@ -192,9 +192,7 @@ export function expandToScope(resp: ExpandResponse, parentLevel: number): LodSco
   // them was placed. Otherwise the caller force-lays-out the whole scope,
   // which is the documented fallback and cheap at this size either way.
   const allCentroids =
-    resp.nodes.length === 0 &&
-    resp.child_clusters.length > 0 &&
-    resp.child_clusters.every((c) => c.centroid != null)
+    resp.nodes.length === 0 && resp.child_clusters.length > 0 && resp.child_clusters.every((c) => c.centroid != null)
   const fixedPositions = allCentroids ? normalizeCentroids(resp.child_clusters.map((c) => c.centroid!)) : null
 
   return { model, meta, sizeHints, fixedPositions }

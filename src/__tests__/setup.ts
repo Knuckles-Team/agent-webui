@@ -178,13 +178,43 @@ elementProto.hasPointerCapture ??= vi.fn(() => false)
 elementProto.releasePointerCapture ??= vi.fn()
 
 // ---------------------------------------------------------------------------
-// WebGL2 stub for sigma.js (GraphView visualization tab).
+// Worker stub for the 3D knowledge-graph view's layout worker
+// (layout.worker.ts, spawned by Graph3DCanvas.tsx via `new Worker(...)`).
+// jsdom does not implement the Worker API at all, so mounting the canvas
+// throws `ReferenceError: Worker is not defined` without this. A real
+// worker posts back layout snapshots asynchronously; this stub never does
+// -- that is fine for what a route-render smoke test needs (mount without
+// crashing), not for exercising the layout settling, which is what
+// layout.worker.ts's own unit tests do by calling `runLayout` directly,
+// in-process, with no `Worker` involved.
+// ---------------------------------------------------------------------------
+if (typeof (globalThis as { Worker?: unknown }).Worker === 'undefined') {
+  // Same `vi.fn()`-per-instance-member shape as `ResizeObserverMock` above,
+  // rather than empty class method bodies — matches this file's own
+  // convention and sidesteps `no-empty-function` for methods that are
+  // legitimately no-ops (see the file doc above for why).
+  function WorkerMock(this: Record<string, unknown>) {
+    this.onmessage = null
+    this.onerror = null
+    this.postMessage = vi.fn()
+    this.terminate = vi.fn()
+    this.addEventListener = vi.fn()
+    this.removeEventListener = vi.fn()
+    this.dispatchEvent = vi.fn(() => true)
+  }
+  ;(globalThis as { Worker?: unknown }).Worker = WorkerMock as unknown as typeof Worker
+}
+
+// ---------------------------------------------------------------------------
+// WebGL2 stub for sigma.js (GraphView visualization tab) AND three.js
+// (Graph3DView / Graph3DLodView's WebGLRenderer, scene.ts).
 //
-// jsdom does not implement any WebGL rendering context, so sigma throws while
-// constructing its WebGL2 renderer. We provide a minimal WebGL2RenderingContext
-// stand-in plus a HTMLCanvasElement.getContext that returns it for webgl/webgl2
-// requests, so GraphView can mount under jsdom. This does not weaken any
-// assertions — the visualization simply renders against a no-op context.
+// jsdom does not implement any WebGL rendering context, so sigma/three both
+// throw while constructing their renderers. We provide a minimal
+// WebGL2RenderingContext stand-in plus a HTMLCanvasElement.getContext that
+// returns it for webgl/webgl2 requests, so either can mount under jsdom.
+// This does not weaken any assertions — the visualization simply renders
+// against a no-op context.
 // ---------------------------------------------------------------------------
 class WebGL2RenderingContextMock {}
 
@@ -194,7 +224,6 @@ const WEBGL_VALUE_MEMBERS: Record<string, unknown> = {
   drawingBufferWidth: 0,
   drawingBufferHeight: 0,
   getExtension: null,
-  getParameter: 0,
   getShaderPrecisionFormat: () => ({ precision: 1, rangeMin: 1, rangeMax: 1 }),
   // sigma's loadShader / linkProgram guard on these — report success so the
   // renderer initializes instead of throwing "error while compiling the shader".
@@ -204,6 +233,55 @@ const WEBGL_VALUE_MEMBERS: Record<string, unknown> = {
   getProgramInfoLog: () => '',
   getError: () => 0,
 }
+
+// `getParameter` used to be one flat `() => 0` for every pname, which is all
+// sigma's own numeric feature-detection ever needed. three.js's
+// `WebGLRenderer` construction additionally calls
+// `gl.getParameter(gl.VERSION)` and does `glVersion.indexOf('WebGL')` on the
+// result (`three/src/renderers/webgl/WebGLState.js`) -- a NUMBER there
+// throws `TypeError: glVersion.indexOf is not a function` before the scene
+// ever renders a frame. Fixing it means `gl.VERSION` etc. must be
+// individually addressable, not the one shared no-op closure every other
+// unknown property resolves to below -- these sentinels exist ONLY so
+// `getParameter` can tell its pname argument apart from every other
+// property access; they carry no other meaning (real WebGL enum values
+// would work as well, but a plain unique object avoids collisions with the
+// numeric constants a future caller might also read directly).
+const GL_VERSION = { name: 'VERSION' }
+const GL_SHADING_LANGUAGE_VERSION = { name: 'SHADING_LANGUAGE_VERSION' }
+const GL_VENDOR = { name: 'VENDOR' }
+const GL_RENDERER = { name: 'RENDERER' }
+// three.js's WebGLProgram, after linking, reflects the program's uniforms by
+// looping `gl.getActiveUniform(program, i)` for `i` in
+// `[0, gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS))`
+// (`WebGLUniforms`/`onFirstUse` in three's own source) and reading `.name`
+// off each result. This mock's opaque `createProgram()` handle has no real
+// uniforms to reflect, so the honest answer is "zero" -- distinguishing
+// these two pnames (like `getParameter`'s VERSION above) lets the count
+// come back `0` instead of the shared `getProgramParameter` boolean `true`
+// used for link/compile-status queries elsewhere, which a bare truthy value
+// would otherwise coerce to `1` and send the loop into `getActiveUniform`
+// with nothing real to return.
+const GL_ACTIVE_UNIFORMS = { name: 'ACTIVE_UNIFORMS' }
+const GL_ACTIVE_ATTRIBUTES = { name: 'ACTIVE_ATTRIBUTES' }
+const GL_CONSTANT_SENTINELS: Record<string, unknown> = {
+  VERSION: GL_VERSION,
+  SHADING_LANGUAGE_VERSION: GL_SHADING_LANGUAGE_VERSION,
+  VENDOR: GL_VENDOR,
+  RENDERER: GL_RENDERER,
+  ACTIVE_UNIFORMS: GL_ACTIVE_UNIFORMS,
+  ACTIVE_ATTRIBUTES: GL_ACTIVE_ATTRIBUTES,
+}
+const GL_STRING_PARAMS = new Map<unknown, string>([
+  [GL_VERSION, 'WebGL 2.0 (Mock)'],
+  [GL_SHADING_LANGUAGE_VERSION, 'WebGL GLSL ES 3.00 (Mock)'],
+  [GL_VENDOR, 'jsdom-mock'],
+  [GL_RENDERER, 'jsdom-mock'],
+])
+// getProgramParameter pnames that must answer "zero active reflectable
+// things" rather than the generic link/compile-status `true` — see the doc
+// above.
+const GL_ZERO_PROGRAM_PARAMS = new Set<unknown>([GL_ACTIVE_UNIFORMS, GL_ACTIVE_ATTRIBUTES])
 
 function createWebGLContext(canvas: HTMLCanvasElement): RenderingContext {
   // `create*` factories (createFramebuffer/createTexture/createBuffer/...) must
@@ -218,6 +296,25 @@ function createWebGLContext(canvas: HTMLCanvasElement): RenderingContext {
     {
       get(_target, prop) {
         if (prop === 'canvas') return canvas
+        if (typeof prop === 'string' && prop in GL_CONSTANT_SENTINELS) return GL_CONSTANT_SENTINELS[prop]
+        if (prop === 'getParameter') {
+          // A STRING for the handful of pnames three.js's own version check
+          // parses (see the sentinel doc above); the pre-existing `0` for
+          // every other parameter, unchanged from before this string case
+          // existed — sigma's numeric feature-detection still gets exactly
+          // what it always got.
+          return (pname: unknown) => GL_STRING_PARAMS.get(pname) ?? 0
+        }
+        if (prop === 'getProgramParameter') {
+          return (_program: unknown, pname: unknown) => (GL_ZERO_PROGRAM_PARAMS.has(pname) ? 0 : true)
+        }
+        // Nothing to enumerate — `ACTIVE_UNIFORMS`/`ACTIVE_ATTRIBUTES` are
+        // always reported as `0` above, so these are never actually called
+        // for a real index, but a concrete no-op (rather than the shared
+        // `noop` used for other unknown methods) documents that on purpose.
+        if (prop === 'getActiveUniform' || prop === 'getActiveAttrib') {
+          return () => null
+        }
         if (prop in WEBGL_VALUE_MEMBERS) {
           const v = WEBGL_VALUE_MEMBERS[prop as string]
           return typeof v === 'function' ? v : () => v

@@ -25,8 +25,12 @@ describe('useLodExplorer — root loading', () => {
     const { result } = renderHook(() => useLodExplorer({ transport, graph: GRAPH }))
 
     expect(result.current.rootLoading).toBe(true)
-    await waitFor(() => expect(result.current.rootLoading).toBe(false))
-    await waitFor(() => expect(result.current.scope.model.nodes.length).toBe(SMALL_CONFIG.rootClusterCount))
+    await waitFor(() => {
+      expect(result.current.rootLoading).toBe(false)
+    })
+    await waitFor(() => {
+      expect(result.current.scope.model.nodes.length).toBe(SMALL_CONFIG.rootClusterCount)
+    })
     expect(result.current.error).toBeNull()
     // Every rendered node is a root-level cluster before anything is expanded.
     expect(result.current.scope.meta.every((m) => m.kind === 'cluster' && m.level === 0)).toBe(true)
@@ -38,7 +42,9 @@ describe('useLodExplorer — expand', () => {
   it('expands a non-leaf cluster into child clusters, replacing its pseudo-node', async () => {
     const transport = smallTransport()
     const { result } = renderHook(() => useLodExplorer({ transport, graph: GRAPH }))
-    await waitFor(() => expect(result.current.rootLoading).toBe(false))
+    await waitFor(() => {
+      expect(result.current.rootLoading).toBe(false)
+    })
 
     const root = siblingClusters(GRAPH, undefined, SMALL_CONFIG)
     const nonLeaf = root.clusters.find((c) => c.node_count > SMALL_CONFIG.leafThreshold)!
@@ -50,7 +56,9 @@ describe('useLodExplorer — expand', () => {
     })
     expect(outcome).toBe('expanded')
 
-    await waitFor(() => expect(result.current.expandedIds.has(nonLeaf.id)).toBe(true))
+    await waitFor(() => {
+      expect(result.current.expandedIds.has(nonLeaf.id)).toBe(true)
+    })
     // The expanded cluster's own pseudo-node is gone; its children are present instead.
     expect(result.current.scope.model.nodes.some((n) => n.id === nonLeaf.id)).toBe(false)
     expect(result.current.scope.model.nodes.length).toBeGreaterThan(before - 1)
@@ -61,7 +69,9 @@ describe('useLodExplorer — expand', () => {
   it('expands a leaf cluster into real nodes', async () => {
     const transport = smallTransport()
     const { result } = renderHook(() => useLodExplorer({ transport, graph: GRAPH }))
-    await waitFor(() => expect(result.current.rootLoading).toBe(false))
+    await waitFor(() => {
+      expect(result.current.rootLoading).toBe(false)
+    })
 
     const root = siblingClusters(GRAPH, undefined, SMALL_CONFIG)
     const leaf = root.clusters.find((c) => c.node_count <= SMALL_CONFIG.leafThreshold)!
@@ -69,7 +79,9 @@ describe('useLodExplorer — expand', () => {
     await act(async () => {
       await result.current.expand(leaf.id)
     })
-    await waitFor(() => expect(result.current.expandedIds.has(leaf.id)).toBe(true))
+    await waitFor(() => {
+      expect(result.current.expandedIds.has(leaf.id)).toBe(true)
+    })
 
     const leafNodeMetas = result.current.scope.meta.filter((m) => m.kind === 'leaf')
     expect(leafNodeMetas.length).toBe(leaf.node_count)
@@ -78,7 +90,9 @@ describe('useLodExplorer — expand', () => {
   it('emphasizes only the most recently expanded branch', async () => {
     const transport = smallTransport()
     const { result } = renderHook(() => useLodExplorer({ transport, graph: GRAPH }))
-    await waitFor(() => expect(result.current.rootLoading).toBe(false))
+    await waitFor(() => {
+      expect(result.current.rootLoading).toBe(false)
+    })
 
     const root = siblingClusters(GRAPH, undefined, SMALL_CONFIG)
     const leaves = root.clusters.filter((c) => c.node_count <= SMALL_CONFIG.leafThreshold)
@@ -102,7 +116,9 @@ describe('useLodExplorer — expand', () => {
   it('is a no-op (no-children) on an already-expanded cluster', async () => {
     const transport = smallTransport()
     const { result } = renderHook(() => useLodExplorer({ transport, graph: GRAPH }))
-    await waitFor(() => expect(result.current.rootLoading).toBe(false))
+    await waitFor(() => {
+      expect(result.current.rootLoading).toBe(false)
+    })
     const root = siblingClusters(GRAPH, undefined, SMALL_CONFIG)
     const leaf = root.clusters.find((c) => c.node_count <= SMALL_CONFIG.leafThreshold)!
 
@@ -121,7 +137,9 @@ describe('useLodExplorer — collapse / reset', () => {
   it('collapse restores the cluster pseudo-node and drops its children', async () => {
     const transport = smallTransport()
     const { result } = renderHook(() => useLodExplorer({ transport, graph: GRAPH }))
-    await waitFor(() => expect(result.current.rootLoading).toBe(false))
+    await waitFor(() => {
+      expect(result.current.rootLoading).toBe(false)
+    })
     const root = siblingClusters(GRAPH, undefined, SMALL_CONFIG)
     const leaf = root.clusters.find((c) => c.node_count <= SMALL_CONFIG.leafThreshold)!
 
@@ -142,7 +160,9 @@ describe('useLodExplorer — collapse / reset', () => {
   it('collapsing an ancestor also drops a nested expansion inside it', async () => {
     const transport = smallTransport()
     const { result } = renderHook(() => useLodExplorer({ transport, graph: GRAPH }))
-    await waitFor(() => expect(result.current.rootLoading).toBe(false))
+    await waitFor(() => {
+      expect(result.current.rootLoading).toBe(false)
+    })
     const root = siblingClusters(GRAPH, undefined, SMALL_CONFIG)
     const nonLeaf = root.clusters.find((c) => c.node_count > SMALL_CONFIG.leafThreshold)!
 
@@ -171,7 +191,9 @@ describe('useLodExplorer — collapse / reset', () => {
   it('reset folds every expansion back to the root level', async () => {
     const transport = smallTransport()
     const { result } = renderHook(() => useLodExplorer({ transport, graph: GRAPH }))
-    await waitFor(() => expect(result.current.rootLoading).toBe(false))
+    await waitFor(() => {
+      expect(result.current.rootLoading).toBe(false)
+    })
     const root = siblingClusters(GRAPH, undefined, SMALL_CONFIG)
     const leaves = root.clusters.filter((c) => c.node_count <= SMALL_CONFIG.leafThreshold)
 
@@ -197,7 +219,9 @@ describe('useLodExplorer — reload', () => {
   it('re-fetches the root and discards expansions', async () => {
     const transport = smallTransport()
     const { result } = renderHook(() => useLodExplorer({ transport, graph: GRAPH }))
-    await waitFor(() => expect(result.current.rootLoading).toBe(false))
+    await waitFor(() => {
+      expect(result.current.rootLoading).toBe(false)
+    })
     const root = siblingClusters(GRAPH, undefined, SMALL_CONFIG)
     const leaf = root.clusters.find((c) => c.node_count <= SMALL_CONFIG.leafThreshold)!
 
@@ -210,7 +234,11 @@ describe('useLodExplorer — reload', () => {
       result.current.reload()
     })
 
-    await waitFor(() => expect(result.current.expandedIds.size).toBe(0))
-    await waitFor(() => expect(result.current.scope.model.nodes.length).toBe(SMALL_CONFIG.rootClusterCount))
+    await waitFor(() => {
+      expect(result.current.expandedIds.size).toBe(0)
+    })
+    await waitFor(() => {
+      expect(result.current.scope.model.nodes.length).toBe(SMALL_CONFIG.rootClusterCount)
+    })
   })
 })
