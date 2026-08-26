@@ -4584,24 +4584,52 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
 #    The measured live graph (2,617 edges over 25,221 nodes) serializes to a
 #    few hundred KB this way.
 #
-# ★ THE AGGREGATE IN EVERY QUERY BELOW IS LOAD-BEARING, NOT DECORATION.
-#   Measured against the live engine (eg 2.27.0, `platform/graph-os`,
-#   2026-08-25): the deployed Cypher executor returns rows ONLY when the
-#   RETURN clause contains at least one aggregate. The SAME projection with
-#   and without one:
+# ★ THE AGGREGATE IN EVERY QUERY BELOW IS LOAD-BEARING, NOT DECORATION --
+#   BUT NOT FOR THE REASON THIS COMMENT ORIGINALLY GAVE.
+#   Measured 2026-08-25 against the live engine (eg 2.27.0, `platform/
+#   graph-os`) the SAME projection with and without an aggregate:
 #       MATCH (n:Skill) RETURN n.name as name LIMIT 5          -> []      (!)
 #       MATCH (n:Skill) RETURN n.name as name, count(*) as c   -> 308 rows
 #       MATCH (a)-[r]->(b) RETURN a.id as s, b.id as o         -> []      (!)
 #       MATCH (a)-[r]->(b) RETURN a.id as s, b.id as o,
 #                                 count(*) as c                -> 2,617 rows
-#   That defect is why `get_graph_relationships` above (a pure non-aggregate
-#   projection) answers `[]` on a graph that really has 2,617 edges, and why
-#   the existing canvas has never drawn one. This route does not work around
-#   it silently: `count(*) as edge_count` is in the RETURN clause with this
-#   comment attached, so when the engine is fixed the query still means
-#   exactly what it says (group by the projected columns -- for a
-#   (source, type, target) triple that IS the edge set, with parallel edges
-#   folded into a count the client can render as edge weight).
+#   This was originally attributed to "the deployed Cypher executor returns
+#   rows ONLY when the RETURN clause contains an aggregate" -- i.e. a Rust
+#   engine defect. That attribution is WRONG and was disproven: `eg-query`
+#   was reproduced directly at this exact commit, through the identical
+#   `exec_cypher_params_indexed` call the server's `Method::CypherQuery` arm
+#   makes, for both non-aggregate shapes above -- both returned correct,
+#   non-empty rows with exact expected counts (183 pre-existing + 5 new
+#   pinning tests, plus a `collect()` wire-encode round trip). The engine is
+#   NOT the layer that drops these rows.
+#   The real cause was upstream, in `agent-utilities`: a plain non-aggregate
+#   projection like `RETURN n.name AS name` carries no `id` column, and two
+#   independent post-hoc row classifiers
+#   (`knowledge_graph.core.secured_reads.row_node_ids`/`filter_rows` and
+#   `knowledge_graph.ontology.permissioning.restricted_view`) raised
+#   `PermissionError` on ANY row lacking a governed node id -- failing the
+#   WHOLE read, not just that row. `read_union` (`core.tenant_sharing`, the
+#   primitive `_read_union_cypher` below calls) then caught that
+#   `PermissionError` per graph and logged it at `DEBUG`, silently
+#   contributing zero rows for that graph -- which is why the symptom looked
+#   like an empty graph rather than a visible error. Fixed in
+#   `agent-utilities` (branch `fix/empty-projection`): both classifiers now
+#   accept a `trust_pushdown` flag, set when `QueryMixin.query_cypher` /
+#   `KnowledgeGraph.query` have already pushed owner/scope visibility into
+#   the query text for that specific call (`tenant_sharing
+#   .push_down_visibility`, mirroring `filter_commons_catalog`'s existing
+#   `trust_pushdown` escape) -- an identity-less row is then trusted and kept
+#   rather than raised-on-whole-batch or silently dropped. `read_union`'s
+#   per-graph catch also now logs at `WARNING`, not `DEBUG`.
+#   That said, the aggregate in the queries below is STILL correct and
+#   load-bearing on its own separate merits (unrelated to the now-fixed
+#   defect): `get_graph_relationships` above (a pure non-aggregate
+#   projection) is bounded by `_MAX_EXTERNAL_COLLECTION_ITEMS` and returns
+#   raw rows, which is fine for a 256-edge inspector list; THIS route needs a
+#   CLOSED payload for thousands of edges, and `count(*) as edge_count` is
+#   what turns a (source, type, target) triple with parallel edges into one
+#   row per distinct edge, folded into a weight the client can render --
+#   see "WHY THIS ROUTE EXISTS" above. Keep it.
 #
 # Bounds are this route's own, deliberately larger than
 # `_MAX_EXTERNAL_COLLECTION_ITEMS`, and enforced explicitly below rather than
