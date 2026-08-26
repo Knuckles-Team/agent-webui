@@ -4565,6 +4565,311 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
         ) from e
 
 
+# ---------------------------------------------------------------------------
+# 3D knowledge-graph payload (`GET /graph/graph3d`).
+#
+# WHY THIS ROUTE EXISTS AND IS NOT `/graph/nodes` + `/graph/relationships`:
+#
+# 1. Those two routes are each bounded by `_MAX_EXTERNAL_COLLECTION_ITEMS`
+#    (256). 256 arbitrary nodes and 256 arbitrary edges is enough for a small
+#    inspector list; it is NOT a graph -- the 256 edges rarely connect the 256
+#    nodes, so a renderer fed from them draws disconnected dust. A 3D view
+#    needs a CLOSED payload: every edge's two endpoints present, by
+#    construction.
+# 2. `/graph/nodes` returns each node's full (truncated) property bag. At the
+#    node counts a GPU renderer wants (thousands to tens of thousands) that is
+#    megabytes of payload the renderer never draws. This route returns the
+#    THREE fields a 3D scene actually needs -- id, type, display name -- and
+#    references edge endpoints by ARRAY INDEX rather than repeating the ids.
+#    The measured live graph (2,617 edges over 25,221 nodes) serializes to a
+#    few hundred KB this way.
+#
+# ★ THE AGGREGATE IN EVERY QUERY BELOW IS LOAD-BEARING, NOT DECORATION.
+#   Measured against the live engine (eg 2.27.0, `platform/graph-os`,
+#   2026-08-25): the deployed Cypher executor returns rows ONLY when the
+#   RETURN clause contains at least one aggregate. The SAME projection with
+#   and without one:
+#       MATCH (n:Skill) RETURN n.name as name LIMIT 5          -> []      (!)
+#       MATCH (n:Skill) RETURN n.name as name, count(*) as c   -> 308 rows
+#       MATCH (a)-[r]->(b) RETURN a.id as s, b.id as o         -> []      (!)
+#       MATCH (a)-[r]->(b) RETURN a.id as s, b.id as o,
+#                                 count(*) as c                -> 2,617 rows
+#   That defect is why `get_graph_relationships` above (a pure non-aggregate
+#   projection) answers `[]` on a graph that really has 2,617 edges, and why
+#   the existing canvas has never drawn one. This route does not work around
+#   it silently: `count(*) as edge_count` is in the RETURN clause with this
+#   comment attached, so when the engine is fixed the query still means
+#   exactly what it says (group by the projected columns -- for a
+#   (source, type, target) triple that IS the edge set, with parallel edges
+#   folded into a count the client can render as edge weight).
+#
+# Bounds are this route's own, deliberately larger than
+# `_MAX_EXTERNAL_COLLECTION_ITEMS`, and enforced explicitly below rather than
+# through `_public_external_result` (whose 256-item collection ceiling is the
+# very limit this route exists to raise). They are still hard ceilings: the
+# response is truncated, flagged `truncated: true`, and never silently grown.
+# ---------------------------------------------------------------------------
+
+# A GPU point cloud draws 80k nodes in one draw call; the ceiling here is
+# about the JSON payload and the layout worker, not the renderer.
+_GRAPH3D_MAX_NODES = 80_000
+_GRAPH3D_MAX_EDGES = 120_000
+# Well under a browser's comfortable single-response size; ~40x the measured
+# live payload, so the live graph is nowhere near it.
+_GRAPH3D_MAX_RESULT_BYTES = 16 * 1024 * 1024
+# A display label, not a document. Long names are truncated, never dropped.
+_GRAPH3D_MAX_NAME_CHARS = 120
+_GRAPH3D_DEADLINE_SECONDS = 30.0
+
+
+def _graph3d_label(value: Any, fallback: str) -> str:
+    """One node's display name, bounded to a label-sized string."""
+    if not isinstance(value, str) or not value:
+        return fallback
+    if len(value) > _GRAPH3D_MAX_NAME_CHARS:
+        return value[:_GRAPH3D_MAX_NAME_CHARS] + '…'
+    return value
+
+
+# Matches one `epistemic_graph_graph_nodes{graph="..."} 56881` exposition line.
+# Anchored and non-greedy so a malformed body cannot make it match across lines.
+_ENGINE_GRAPH_SIZE_RE = re.compile(
+    r'^epistemic_graph_graph_(nodes|edges)\{graph="([^"]*)"\}\s+([0-9]+)\s*$'
+)
+
+
+async def _engine_graph_sizes() -> dict[str, dict[str, int]]:
+    """Per-graph node/edge counts as the ENGINE itself reports them.
+
+    ★ WHY THIS EXISTS: every query surface in this file counts what a query
+    RETURNS. The engine's own gauges count what its resident topology HOLDS
+    (`crates`-side `set_graph_size(graph, topo.graph.node_count(),
+    topo.graph.edge_count())`, refreshed on every write). Measured against the
+    live pod on 2026-08-26 those two disagree by a lot for the same graph:
+
+        gauge   tenant__homelab____commons__   56,881 nodes   29,992 edges
+        query   the same graph, service principal
+                                                25,221 nodes    2,617 edges
+
+    Two independent query paths (Cypher `MATCH (n) RETURN count(*)` and the
+    SQL `GROUP BY node_type` behind `/graph/node-types`) agree with each other
+    on 25,221, so this is not one broken query -- but it is also not something
+    a visualization may quietly paper over. A view that draws 2,617 edges and
+    captions them "the graph" is wrong by an order of magnitude either way.
+
+    So the payload carries BOTH numbers and the UI states the gap. Resolving
+    WHICH is the true user-visible size (row-level visibility filtering? or a
+    resident topology that counts internal/tombstoned structure a query
+    correctly skips?) is a real open question and is not this route's to
+    decide -- it is this route's job not to hide it.
+
+    Best-effort by construction: any failure returns `{}` and the caller
+    reports the payload's own counts alone, never a fabricated total.
+    """
+    try:
+        from agent_utilities.observability.gateway_metrics import (
+            _fetch_engine_metrics,
+        )
+
+        body, ok = await _fetch_engine_metrics()
+        if not ok:
+            return {}
+        sizes: dict[str, dict[str, int]] = {}
+        for line in body.decode('utf-8', 'replace').splitlines():
+            match = _ENGINE_GRAPH_SIZE_RE.match(line.strip())
+            if not match:
+                continue
+            kind, graph, value = match.groups()
+            sizes.setdefault(graph, {})[kind] = int(value)
+        return sizes
+    except Exception as exc:  # noqa: BLE001 - observability must never fail a read
+        logger.debug('engine graph-size gauges unavailable: %s', type(exc).__name__)
+        return {}
+
+
+@router.get('/graph/graph3d')
+async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
+    """Return a closed node+edge payload sized for a 3D/WebGL renderer.
+
+    Args:
+        include_isolated: Also return nodes that participate in no edge. Off
+            by default: on the live graph that is ~23,000 of ~25,200 nodes
+            (RuntimeSignal/WorkItem/Concept telemetry), which adds payload and
+            layout cost while adding no structure to look at. The count is
+            always reported so the UI can say how many are being left out
+            instead of quietly implying the graph is smaller than it is.
+
+    Returns:
+        ``{nodes: [{id, type, name}], edges: [{s, t, r, w}], total_nodes,
+        total_relationships, engine_total_nodes, engine_total_relationships,
+        connected_nodes, isolated_nodes, truncated, source_graphs,
+        degraded_graphs, available}`` where an edge's ``s``/``t`` are INDICES
+        into ``nodes`` and ``w`` is the parallel-edge multiplicity.
+        ``total_*`` describe THIS payload; ``engine_total_*`` are the engine's
+        own gauges for the same graphs (``None`` when unreadable) so a caller
+        can see how much of the graph it was handed.
+    """
+    try:
+        try:
+            engine = await _get_engine_bounded()
+        except HTTPException as exc:
+            # Same contract as get_graph_nodes/get_graph_relationships above:
+            # "no engine yet" (501) is an honest empty graph, not a failure.
+            if exc.status_code != 501:
+                raise
+            return {
+                'nodes': [],
+                'edges': [],
+                'total_nodes': 0,
+                'total_relationships': 0,
+                'engine_total_nodes': None,
+                'engine_total_relationships': None,
+                'connected_nodes': 0,
+                'isolated_nodes': 0,
+                'truncated': False,
+                'source_graphs': [],
+                'degraded_graphs': [],
+                'available': False,
+            }
+
+        # See the ★ note above for why `count(*)` is in this RETURN clause.
+        edge_rows, edge_sources = await _read_union_cypher(
+            engine,
+            'MATCH (a)-[r]->(b) RETURN a.id as s, a.node_type as st, '
+            'a.name as sn, type(r) as rt, b.id as t, b.node_type as tt, '
+            'b.name as tn, count(*) as edge_count',
+            None,
+            deadline=_GRAPH3D_DEADLINE_SECONDS,
+        )
+
+        index_of: dict[str, int] = {}
+        nodes: list[dict[str, Any]] = []
+        edges: list[dict[str, Any]] = []
+        # The Cypher above is already a GROUP BY on exactly (source, type,
+        # target), so a repeated triple cannot come from the data -- it can
+        # only come from `_read_union_cypher` running the same query once per
+        # accessible graph. Left in, a repeat draws the same line twice at
+        # double additive brightness. Deduped here rather than in the renderer
+        # so the payload itself is what it claims to be.
+        seen_edges: set[tuple[str, str, str]] = set()
+        truncated = False
+
+        def intern(node_id: Any, node_type: Any, name: Any) -> int | None:
+            if not isinstance(node_id, str) or not node_id:
+                return None
+            existing = index_of.get(node_id)
+            if existing is not None:
+                return existing
+            if len(nodes) >= _GRAPH3D_MAX_NODES:
+                return None
+            idx = len(nodes)
+            index_of[node_id] = idx
+            nodes.append(
+                {
+                    'id': node_id,
+                    'type': node_type
+                    if isinstance(node_type, str) and node_type
+                    else 'Unknown',
+                    'name': _graph3d_label(name, node_id),
+                }
+            )
+            return idx
+
+        for row in edge_rows or []:
+            if len(edges) >= _GRAPH3D_MAX_EDGES:
+                truncated = True
+                break
+            source = intern(row.get('s'), row.get('st'), row.get('sn'))
+            target = intern(row.get('t'), row.get('tt'), row.get('tn'))
+            if source is None or target is None:
+                truncated = True
+                continue
+            key = (
+                str(row.get('s')),
+                str(row.get('rt')),
+                str(row.get('t')),
+            )
+            if key in seen_edges:
+                continue
+            seen_edges.add(key)
+            weight = row.get('edge_count')
+            edges.append(
+                {
+                    's': source,
+                    't': target,
+                    'r': row.get('rt') if isinstance(row.get('rt'), str) else '',
+                    'w': weight if isinstance(weight, int) and weight > 0 else 1,
+                }
+            )
+
+        connected_nodes = len(nodes)
+        node_sources = list(edge_sources or [])
+
+        if include_isolated:
+            # Same aggregate-forced shape, for the same reason.
+            all_rows, all_sources = await _read_union_cypher(
+                engine,
+                'MATCH (n) RETURN n.id as id, n.node_type as nt, n.name as nn, '
+                'count(*) as node_count',
+                None,
+                deadline=_GRAPH3D_DEADLINE_SECONDS,
+            )
+            node_sources = sorted(set(node_sources) | set(all_sources or []))
+            for row in all_rows or []:
+                if intern(row.get('id'), row.get('nt'), row.get('nn')) is None:
+                    truncated = True
+
+        # The engine's own view of the same graphs, so the UI can say how much
+        # of the graph it is actually drawing instead of implying it is all of
+        # it. See `_engine_graph_sizes` for the measured discrepancy this
+        # exists to surface.
+        engine_sizes = await _engine_graph_sizes()
+        engine_nodes = 0
+        engine_edges = 0
+        for graph in node_sources:
+            engine_nodes += engine_sizes.get(graph, {}).get('nodes', 0)
+            engine_edges += engine_sizes.get(graph, {}).get('edges', 0)
+
+        payload: dict[str, Any] = {
+            'nodes': nodes,
+            'edges': edges,
+            # Reported from THIS payload, never from a second stats call: the
+            # numbers a caller reads must describe the bytes it was handed.
+            'total_nodes': len(nodes),
+            'total_relationships': len(edges),
+            # `null` when the gauges could not be read -- distinct from 0.
+            'engine_total_nodes': engine_nodes if engine_sizes else None,
+            'engine_total_relationships': engine_edges if engine_sizes else None,
+            'connected_nodes': connected_nodes,
+            'isolated_nodes': max(0, len(nodes) - connected_nodes),
+            'truncated': truncated,
+            'source_graphs': sorted(node_sources),
+            'degraded_graphs': [],
+            'available': True,
+        }
+        encoded = len(
+            json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode(
+                'utf-8'
+            )
+        )
+        if encoded > _GRAPH3D_MAX_RESULT_BYTES:
+            raise HTTPException(
+                status_code=422,
+                detail='Graph payload exceeds the 3D view size bound',
+            )
+        return payload
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Same D-W6-10 contract as the two routes above: a real failure is a
+        # real failure, never an empty graph.
+        _log_failure('get_graph_3d', e)
+        raise HTTPException(
+            status_code=503,
+            detail='Knowledge Graph 3D query failed',
+        ) from e
+
+
 # Bounds the node-type breakdown's `GROUP BY` result. The node-type/label
 # vocabulary is a finite, curated ontology (~46 distinct values live) -- 200
 # is generous headroom over any realistic cardinality while still bounding a

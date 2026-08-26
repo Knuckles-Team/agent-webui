@@ -798,6 +798,155 @@ class TestGraphRelationshipsEndpoint:
             assert data == []
 
 
+class TestGraph3DEndpoint:
+    """`GET /graph/graph3d` -- the closed node+edge payload the 3D view reads."""
+
+    def _rows(self):
+        """Two edges over three nodes, in the route's own projected shape.
+
+        Note `edge_count`: the route's Cypher carries `count(*)` because the
+        DEPLOYED engine returns ZERO rows for a RETURN clause with no
+        aggregate in it (measured 2026-08-25 -- see the route's own comment).
+        A fixture without that column would not exercise the real projection.
+        """
+        return [
+            {
+                's': 'wf:a',
+                'st': 'WorkflowDefinition',
+                'sn': 'workflow a',
+                'rt': 'HAS_STEP',
+                't': 'wf:a:step:0',
+                'tt': 'WorkflowStep',
+                'tn': 'step 0',
+                'edge_count': 1,
+            },
+            {
+                's': 'wf:a:step:0',
+                'st': 'WorkflowStep',
+                'sn': 'step 0',
+                'rt': 'USES_SKILL',
+                't': 'skill:build',
+                'tt': 'Skill',
+                'tn': 'build',
+                'edge_count': 2,
+            },
+        ]
+
+    def test_returns_a_closed_payload_with_index_referenced_edges(
+        self, client, mock_graph_engine
+    ):
+        """Every edge endpoint must be present in `nodes`, by index."""
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.query_cypher.return_value = self._rows()
+
+            response = client.get('/api/enhanced/graph/graph3d')
+            assert response.status_code == 200
+            data = response.json()
+
+            assert data['available'] is True
+            assert data['truncated'] is False
+            ids = [node['id'] for node in data['nodes']]
+            assert set(ids) == {'wf:a', 'wf:a:step:0', 'skill:build'}
+            # The closure property this route exists to guarantee.
+            for edge in data['edges']:
+                assert 0 <= edge['s'] < len(data['nodes'])
+                assert 0 <= edge['t'] < len(data['nodes'])
+            assert {edge['r'] for edge in data['edges']} == {'HAS_STEP', 'USES_SKILL'}
+            # De-duped across the read union. `_read_union_cypher` runs the
+            # same query once per accessible graph, and the test session can
+            # reach more than one, so the SAME mocked row comes back more than
+            # once -- exactly as `test_get_graph_relationships_success`
+            # documents. A renderer must not draw that line twice.
+            assert len(data['edges']) == 2
+            # Parallel-edge multiplicity survives as edge weight.
+            assert sorted(edge['w'] for edge in data['edges']) == [1, 2]
+            assert data['connected_nodes'] == len(data['nodes'])
+            assert data['isolated_nodes'] == 0
+
+    def test_node_type_and_name_come_from_the_projected_columns(
+        self, client, mock_graph_engine
+    ):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.query_cypher.return_value = self._rows()
+            data = client.get('/api/enhanced/graph/graph3d').json()
+            by_id = {node['id']: node for node in data['nodes']}
+            assert by_id['skill:build']['type'] == 'Skill'
+            assert by_id['skill:build']['name'] == 'build'
+
+    def test_a_row_missing_an_endpoint_id_is_dropped_and_flagged(
+        self, client, mock_graph_engine
+    ):
+        """A malformed row must not fabricate a node, and must not be silent."""
+        rows = self._rows()
+        rows.append({**rows[0], 't': None, 'tt': None, 'tn': None})
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.query_cypher.return_value = rows
+            data = client.get('/api/enhanced/graph/graph3d').json()
+            assert data['truncated'] is True
+            assert len(data['nodes']) == 3
+
+    def test_an_oversized_name_is_truncated_not_dropped(
+        self, client, mock_graph_engine
+    ):
+        rows = self._rows()
+        rows[0]['sn'] = 'x' * 5000
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.query_cypher.return_value = rows
+            data = client.get('/api/enhanced/graph/graph3d').json()
+            name = next(n['name'] for n in data['nodes'] if n['id'] == 'wf:a')
+            assert len(name) <= 121
+            assert name.endswith('…')
+
+    def test_engine_totals_are_null_not_zero_when_the_gauges_are_unreadable(
+        self, client, mock_graph_engine
+    ):
+        """A missing engine gauge must never be presented as "0 nodes".
+
+        The engine's own per-graph gauges are what tell the UI how much of the
+        graph it is drawing. If they cannot be read, `null` says so; `0` would
+        render as "the engine reports 0 edges", which is a lie and, worse, one
+        that makes the payload look complete.
+        """
+        with (
+            patch(
+                'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+                return_value=mock_graph_engine,
+            ),
+            patch(
+                'agent_webui.api_extensions._engine_graph_sizes',
+                return_value={},
+            ),
+        ):
+            mock_graph_engine.query_cypher.return_value = self._rows()
+            data = client.get('/api/enhanced/graph/graph3d').json()
+            assert data['engine_total_nodes'] is None
+            assert data['engine_total_relationships'] is None
+
+    def test_no_engine_is_an_honest_empty_graph_not_a_failure(self, client):
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=None,
+        ):
+            response = client.get('/api/enhanced/graph/graph3d')
+            assert response.status_code == 200
+            data = response.json()
+            assert data['available'] is False
+            assert data['nodes'] == []
+            assert data['edges'] == []
+
+
 class TestMemoryCRUDEndpoints:
     """Test memory CRUD endpoints."""
 
