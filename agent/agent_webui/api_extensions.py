@@ -3870,89 +3870,56 @@ async def _read_union_sql_group_counts(
     count_field: str,
     deadline: float,
 ) -> tuple[dict[str, int], list[str], list[str]]:
-    """Run a `GROUP BY` SQL aggregate (`engine.graph_compute.sql_exec`)
-    against every graph this actor may read and merge by SUMMING counts per
-    `key`. The `nodes`/`edges` SQL tables are the SAME RLS-filtered graph
-    snapshot Cypher reads (`fleet_catalog_tables.py`: "only the nodes/edges
-    graph snapshot is RLS-filtered via IsolationLayer::filter_view"), scoped
-    by the SAME ambient session/graph `_read_union_cypher` uses.
+    """Run a `GROUP BY` SQL aggregate against every graph this actor may
+    read and merge by SUMMING counts per `key`. The `nodes`/`edges` SQL
+    tables are the SAME RLS-filtered graph snapshot Cypher reads
+    (`fleet_catalog_tables.py`: "only the nodes/edges graph snapshot is
+    RLS-filtered via IsolationLayer::filter_view"), scoped by the SAME
+    ambient session/graph `_read_union_cypher` uses.
 
     Returns `(merged, source_graphs, degraded_graphs)` -- see
     `_read_union_scalar_sum` for the same `degraded_graphs` contract.
 
-    UNRESOLVED DEFECT (found live in-pod while verifying this fix lane, NOT
-    one of the three defects this lane was scoped to; root cause not fully
-    isolated, and no tracking artifact exists for it anywhere in either repo
-    as of this writing -- filing one is a follow-up action, not something to
-    assert has already happened): `engine.graph_compute.sql_exec` does not
-    appear to honor the per-request/view `graph` target the way
-    `query_cypher` does. Verified live: `engine.for_graph("__commons__")`
-    correctly makes `query_cypher` return DIFFERENT results from the
-    caller's own graph (0 vs 25,117 nodes at time of test), but the
+    BUG-PE-058 (fixed here): this used to call the write-capable
+    `engine.graph_compute.sql_exec` -- documented in `graph_compute.py` as
+    "the write sibling of the read-only `client.query.sql` surface" for
+    DDL/DML -- for what is structurally a read. `sql_exec` has no
+    statement-type guard and skips `secured_reads.visible(filter_rows(...))`,
+    the RLS defense-in-depth layer `QueryMixin.sql()` applies. The statement
+    passed in today is a fixed literal `SELECT ... GROUP BY`, so there was no
+    live injection path, but any call site reaching a write-capable entry
+    point for a read is a standing risk should this helper or a copied call
+    site ever build a statement from anything less than a literal. Fixed by
+    routing through `engine.sql()` / `scoped.sql()` (`QueryMixin.sql`,
+    `orchestration/engine_query.py:433`) instead -- the read-only surface
+    that rejects non-`SELECT`/`WITH`/`EXPLAIN` statements and applies
+    `visible(filter_rows(...))` before returning.
+
+    This also resolves, for THIS call site, the cross-graph routing gap
+    found live in-pod while first verifying this fix lane: `.sql_exec()`
+    reads through `GraphComputeEngine._client` on the (possibly
+    independently-constructed) `graph_compute` view, while `.sql()` reads
+    through `self.backend` -- the SAME per-request pinned view
+    `query_cypher` uses. Verified live: `engine.for_graph("__commons__")`
+    correctly made `query_cypher` return DIFFERENT results from the
+    caller's own graph (0 vs 25,117 nodes at time of test), while the
     identically-scoped `.graph_compute.sql_exec` returned the CALLER'S OWN
-    row counts again under the `__commons__` label (verified with textually
-    distinct SQL to rule out a query-text cache). Practical consequence:
-    until this is root-caused and fixed, this function's cross-graph SUM
-    may over-count identical data once for each accessible graph whose SQL
-    surface aliases to the same underlying rows -- a data-quality gap, not
-    a crash; `total_nodes`/`total_relationships` (the Cypher-based
-    `_read_union_scalar_sum` calls in `get_graph_stats`) are unaffected.
-
-    What was ruled out: the Python-side routing plumbing looks symmetric
-    for both RPCs -- `GraphComputeEngine.for_graph()` rebuilds
-    `_SessionRoutedAsyncClient` with `fixed_graph=target` once, and every
-    namespace (`cypher` and `query` alike, both in `_CLIENT_NAMESPACES`)
-    is re-homed onto that SAME routed client, whose `_send_routed` resolves
-    `target = graph or self._fixed_graph` identically regardless of which
-    namespace/method is calling it (`agent_utilities/knowledge_graph/core/
-    graph_compute.py`, `_SessionRoutedAsyncClient._send_routed`). Nothing
-    Python-side appears to special-case `Sql` vs `Cypher`. That leaves the
-    engine's own wire handler for `Method::Sql` (`eg_query::exec_sql_typed`,
-    not in this repo) as the most likely place the `graph` field is dropped
-    or ignored -- but this was not verified against engine source, so it is
-    a hypothesis, not a confirmed root cause. What would need to happen:
-    reproduce with request/response wire-frame logging on both RPCs to
-    confirm whether the `graph` field reaches the engine identically for
-    `Sql` and `Cypher`, then fix on whichever side (client or engine) is
-    actually dropping it, and open a real tracked defect for it.
-
-    Separately (this is a DISTINCT concern from the routing bug above, not
-    the same issue under another name): this call goes through
-    `GraphComputeEngine.sql_exec`, the write-capable DDL/DML sibling of the
-    read-only, guarded `QueryMixin.sql()` (`agent_utilities/knowledge_graph/
-    orchestration/engine_query.py`). `QueryMixin.sql()` rejects anything
-    but `SELECT`/`WITH`/`EXPLAIN` before it reaches the wire, and applies a
-    `visible(filter_rows(...))` defense-in-depth pass over the returned
-    rows; `sql_exec` has neither -- its own docstring says plainly "the
-    engine, not this client, enforces what statements its user-table
-    surface accepts". The `statement` this function's own caller supplies
-    is a hardcoded `SELECT ... GROUP BY ...` literal (never derived from
-    request input), so there is no live injection path today, and
-    `visible(filter_rows(...))` would not even apply correctly here --
-    `filter_rows` requires a governable node id per row (see its docstring)
-    and these are `GROUP BY` aggregate rows with none, so wiring it in would
-    silently empty every result rather than protect anything. The
-    statement-type guard below (mirroring `QueryMixin.sql()`'s) is added as
-    cheap, correct defense-in-depth against `statement` ever becoming
-    caller-influenced in the future; it is a no-op today. Whether this call
-    path should be routed through a governed read surface instead of the
-    raw `graph_compute` entry point at all is a real open question, not
-    settled by this comment -- flagging it, not resolving it.
+    row counts again under the `__commons__` label (verified with
+    textually distinct SQL to rule out a query-text cache) -- i.e. the
+    `by_type` breakdown and the `total_nodes`/`total_relationships` totals
+    (Cypher, via `_read_union_scalar_sum`) were silently reading through
+    two different-scoped engines. `graph_compute.sql_exec` itself is
+    unmodified (owned by another lane, out of `agent_webui`'s reach) and
+    may still misroute for any OTHER caller that reaches it directly --
+    flagged for that lane, not fixed here.
     """
-    stripped = (statement or '').lstrip()
-    head = stripped[:8].upper()
-    if not (head.startswith('SELECT') or head.startswith('WITH')):
-        raise ValueError(
-            '_read_union_sql_group_counts is read-only: only SELECT/WITH '
-            'statements are allowed.'
-        )
 
     def _run() -> tuple[dict[str, int], list[str], list[str]]:
         result = _rows_per_accessible_graph(
-            engine, lambda scoped: scoped.graph_compute.sql_exec(statement) or []
+            engine, lambda scoped: scoped.sql(statement) or []
         )
         if result is None:
-            per_graph = [('', engine.graph_compute.sql_exec(statement) or [])]
+            per_graph = [('', engine.sql(statement) or [])]
             graphs: list[str] = []
             degraded: list[str] = []
         else:
@@ -4593,9 +4560,9 @@ async def get_graph_stats() -> dict[str, Any]:
             # `labels(n)` is unsupported by this engine -- both verified
             # live. This also can't go through this file's own
             # `/graph/query` route (`_validate_read_only_cypher` rejects
-            # `SELECT` outright); `engine.graph_compute.sql_exec` is called
-            # directly, same as the production precedent in
-            # `fleet_catalog_tables.py`. Scoped by the SAME union as the
+            # `SELECT` outright); `engine.sql()` (`QueryMixin.sql`, the
+            # read-only SQL surface -- BUG-PE-058) is called directly
+            # instead. Scoped by the SAME union as the
             # totals above (`_read_union_sql_group_counts`) so the
             # breakdown sums against the same universe `total_nodes`
             # counts. The column set DIFFERS per graph (verified live:

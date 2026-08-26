@@ -92,6 +92,13 @@ class TestGraphStatsEndpoint:
         accessible graph -- order- and count-independent by construction.
         Each graph reports the SAME per-call values below, so the summed
         totals are an exact multiple of the number of accessible graphs.
+
+        BUG-PE-058: `by_type` is read through `engine.sql()`
+        (`QueryMixin.sql`, the read-only SQL surface) rather than the
+        write-capable `engine.graph_compute.sql_exec` -- `sql` is a
+        class-level `QueryMixin` method, so `MagicMock(spec=
+        IntelligenceGraphEngine)` auto-specs it like `query_cypher`, with
+        no extra manual attachment needed.
         """
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
@@ -107,16 +114,11 @@ class TestGraphStatsEndpoint:
                 return []
 
             mock_graph_engine.query_cypher.side_effect = _query_cypher
-            # `graph_compute` is an instance attribute IntelligenceGraphEngine
-            # sets in `__init__` (not a class-level member), so it is outside
-            # `MagicMock(spec=IntelligenceGraphEngine)`'s auto-speccing and
-            # must be attached explicitly.
-            mock_graph_engine.graph_compute = MagicMock()
             # FIX LANE Priority 2 (Defect 3): the real `nodes` SQL projection
             # has no `type` column at all ("Schema error: No field named
             # type", verified live) -- the node-class discriminator is
             # `node_type` (`models.knowledge_graph.GRAPH_NODE_TYPE_PROPERTY`).
-            mock_graph_engine.graph_compute.sql_exec.return_value = [
+            mock_graph_engine.sql.return_value = [
                 {'node_type': 'Memory', 'n': 50},
                 {'node_type': 'Article', 'n': 30},
             ]
@@ -210,15 +212,9 @@ class TestGraphStatsConcurrency:
             with lock:
                 call_intervals.append((start, time.monotonic()))
 
-        class _GraphCompute:
-            def sql_exec(self, statement: str) -> list[dict[str, Any]]:
-                _record_call()
-                return [{'node_type': 'Memory', 'n': 3}]
-
         class _Engine:
             def __init__(self) -> None:
                 self.backend = object()  # truthy; no attributes read on it
-                self.graph_compute = _GraphCompute()
 
             def for_graph(self, name: str) -> _Engine:
                 assert name == graph_name
@@ -231,6 +227,13 @@ class TestGraphStatsConcurrency:
                 if 'count(n)' in query:
                     return [{'count': 5}]
                 return [{'count': 7}]
+
+            def sql(self, statement: str) -> list[dict[str, Any]]:
+                # BUG-PE-058: `by_type` now calls `engine.sql()`
+                # (`QueryMixin.sql`) instead of `engine.graph_compute
+                # .sql_exec`.
+                _record_call()
+                return [{'node_type': 'Memory', 'n': 3}]
 
         engine = _Engine()
 

@@ -128,7 +128,6 @@ class _PinnedGraphEngine:
         # object-locate helpers (`_node_properties`/`_locate_object_graph`/
         # `_ids_present_in_graph`), same pinning-guard shape as `cypher_data`.
         self._node_data = node_data or {}
-        self.graph_compute = _PinnedGraphCompute(self)
         self.backend = _PinnedGraphBackend(self)
 
     def for_graph(self, graph_name: str) -> _PinnedGraphEngine:
@@ -165,18 +164,15 @@ class _PinnedGraphEngine:
         self._assert_pinned_and_record()
         return self._cypher_data.get(self.graph_name, [])
 
-
-class _PinnedGraphCompute:
-    """``engine.graph_compute.sql_exec`` half of ``_PinnedGraphEngine`` --
-    same pinning guard, separate namespace (mirrors the real
-    ``IntelligenceGraphEngine.graph_compute`` attribute)."""
-
-    def __init__(self, owner: _PinnedGraphEngine) -> None:
-        self._owner = owner
-
-    def sql_exec(self, statement: str) -> list[dict[str, Any]]:
-        self._owner._assert_pinned_and_record()
-        return self._owner._sql_data.get(self._owner.graph_name, [])
+    def sql(self, query: str) -> list[dict[str, Any]]:
+        # BUG-PE-058: the read-only ``QueryMixin.sql(self, query)`` surface
+        # (`engine_query.py:433`), NOT the write-capable `graph_compute
+        # .sql_exec` this call site used to reach. Same pinning guard as
+        # `query_cypher` above -- both are mixed into `IntelligenceGraphEngine`
+        # via `QueryMixin` and route through the same `self.backend`-pinned
+        # view, which is exactly the asymmetry this fix closes.
+        self._assert_pinned_and_record()
+        return self._sql_data.get(self.graph_name, [])
 
 
 class _PinnedGraphBackend:
