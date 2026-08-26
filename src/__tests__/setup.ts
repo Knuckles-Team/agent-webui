@@ -10,6 +10,7 @@ import {
   mockTask,
   mockGraphStats,
   mockGraphNodes,
+  mockGraphNodeTypes,
   mockGraphRelationships,
 } from './fixtures'
 
@@ -63,6 +64,9 @@ function routeFetch(input: RequestInfo | URL): Promise<Response> {
   // Graph (GraphView)
   if (path.startsWith('/api/enhanced/graph/stats')) {
     return Promise.resolve(jsonResponse(mockGraphStats))
+  }
+  if (path.startsWith('/api/enhanced/graph/node-types')) {
+    return Promise.resolve(jsonResponse(mockGraphNodeTypes))
   }
   if (path.startsWith('/api/enhanced/graph/relationships')) {
     return Promise.resolve(jsonResponse(mockGraphRelationships))

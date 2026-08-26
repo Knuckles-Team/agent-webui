@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Network,
   Terminal,
@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { ApiError, fetchValidated, looseArray } from '@/lib/api-validation'
 import { GraphCanvas } from '../knowledge-graph/GraphCanvas'
+import { NodeTypeBreakdown, type NodeTypeBreakdownData } from '../knowledge-graph/NodeTypeBreakdown'
 import { usePageContextPublisher, type PageContextContribution } from '@/lib/page-context'
 
 interface GraphNode {
@@ -39,11 +40,18 @@ interface GraphRelationship {
 interface GraphStats {
   total_nodes: number
   total_relationships: number
-  by_type: Record<string, number>
   // Absent (older backend) is treated as available — only an explicit `false`
   // means the engine reported itself unreachable/uninitialized. Distinct from
   // a genuinely empty graph: see GraphLoadStatus's 'unavailable' kind below.
   available?: boolean
+  // Union-read provenance. The backend has always returned these; this schema
+  // used to strip them, so a read that silently skipped a whole graph rendered
+  // byte-identically to a complete one. Kept and surfaced (see the `partial`
+  // banner in the render) — that is the defect class this program has now hit
+  // four separate times.
+  source_graphs?: string[]
+  degraded_graphs?: string[]
+  partial?: boolean
 }
 
 // D-WUI-6 (hostile-payload update, additive to the pre-existing
@@ -66,13 +74,32 @@ const graphRelationshipSchema: z.ZodType<GraphRelationship> = z.object({
 const graphStatsSchema: z.ZodType<GraphStats> = z.object({
   total_nodes: z.number(),
   total_relationships: z.number(),
-  by_type: z.record(z.string(), z.number()),
   // Not stripped: `available: false` is how the backend distinguishes "the
   // engine is unreachable/uninitialized" from a real, connected, empty graph
   // (both otherwise render as total_nodes: 0). Dropping this field here was
   // the actual bug — the API always returned it honestly, but the schema
-  // discarded it before the component ever saw it.
+  // discarded it before the component ever saw it. `partial`/`degraded_graphs`
+  // were being dropped the same way, for the same reason, with the same
+  // consequence: a degraded read rendered as an authoritative one.
   available: z.boolean().optional(),
+  source_graphs: looseArray(z.string()).optional(),
+  degraded_graphs: looseArray(z.string()).optional(),
+  partial: z.boolean().optional(),
+})
+
+// `/graph/node-types` — the real engine-side `GROUP BY`. Loaded independently
+// of `/graph/stats` because it is 10-80x more expensive (measured 5.5s-22.4s
+// vs ~0.1-1.6s on the same graph); coupling them meant the fast, trustworthy
+// totals waited on the slow aggregate, or the aggregate was cut to fit.
+const nodeTypeBreakdownSchema: z.ZodType<NodeTypeBreakdownData> = z.object({
+  by_type: z.record(z.string(), z.number()),
+  type_count: z.number(),
+  total_typed_nodes: z.number(),
+  truncated: z.boolean(),
+  available: z.boolean(),
+  source_graphs: looseArray(z.string()),
+  degraded_graphs: looseArray(z.string()),
+  partial: z.boolean(),
 })
 
 // GOC-60-W05 (E1b layer 3 / E6): `fetchData` used to `.catch(() => null)` each of the
@@ -123,7 +150,12 @@ function isStatsUnreliable(status: GraphLoadStatus): boolean {
 }
 
 export default function GraphView() {
-  const [stats, setStats] = useState<GraphStats>({ total_nodes: 0, total_relationships: 0, by_type: {} })
+  const [stats, setStats] = useState<GraphStats>({ total_nodes: 0, total_relationships: 0 })
+  const [breakdown, setBreakdown] = useState<NodeTypeBreakdownData | null>(null)
+  const [breakdownLoading, setBreakdownLoading] = useState(true)
+  const [breakdownError, setBreakdownError] = useState<string | null>(null)
+  // `null` = the canvas is showing its unfiltered, budget-capped sample.
+  const [typeFilter, setTypeFilter] = useState<string | null>(null)
   const [nodes, setNodes] = useState<GraphNode[]>([])
   const [relationships, setRelationships] = useState<GraphRelationship[]>([])
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
@@ -173,14 +205,62 @@ export default function GraphView() {
 
   useEffect(() => {
     void fetchData()
+    // Deliberately a SEPARATE request with its own lifecycle: the breakdown is
+    // slow by nature, and nothing else on this page should wait for it.
+    void fetchBreakdown()
   }, [])
+
+  // Re-fetch only the node page when the type filter changes — including
+  // back to "All types", so clearing a filter actually clears the canvas
+  // rather than leaving the last drill-down on screen. The totals and the
+  // distribution describe the whole graph and do not depend on the filter.
+  // `filterMounted` skips the first run, whose fetch `fetchData()` above
+  // already issued.
+  const filterMounted = useRef(false)
+  useEffect(() => {
+    if (!filterMounted.current) {
+      filterMounted.current = true
+      return
+    }
+    void fetchNodes(typeFilter)
+  }, [typeFilter])
+
+  const fetchBreakdown = async () => {
+    setBreakdownLoading(true)
+    setBreakdownError(null)
+    try {
+      setBreakdown(await fetchValidated('/api/enhanced/graph/node-types', nodeTypeBreakdownSchema))
+    } catch (err) {
+      setBreakdown(null)
+      setBreakdownError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBreakdownLoading(false)
+    }
+  }
+
+  const fetchNodes = async (nodeType: string | null) => {
+    const path =
+      nodeType === null
+        ? '/api/enhanced/graph/nodes'
+        : `/api/enhanced/graph/nodes?node_type=${encodeURIComponent(nodeType)}`
+    try {
+      setNodes(await fetchValidated(path, looseArray(graphNodeSchema)))
+    } catch {
+      toast.error(`Could not load ${nodeType ?? 'graph'} nodes.`)
+    }
+  }
 
   const fetchData = async () => {
     setLoading(true)
     try {
       const [statsResult, nodesResult, relsResult] = await Promise.allSettled([
         fetchValidated('/api/enhanced/graph/stats', graphStatsSchema),
-        fetchValidated('/api/enhanced/graph/nodes', looseArray(graphNodeSchema)),
+        fetchValidated(
+          typeFilter === null
+            ? '/api/enhanced/graph/nodes'
+            : `/api/enhanced/graph/nodes?node_type=${encodeURIComponent(typeFilter)}`,
+          looseArray(graphNodeSchema),
+        ),
         fetchValidated('/api/enhanced/graph/relationships', looseArray(graphRelationshipSchema)),
       ])
       const results = [statsResult, nodesResult, relsResult]
@@ -314,11 +394,28 @@ export default function GraphView() {
           <Badge variant="outline" className="h-7 bg-muted/20 border-border/40 text-xs">
             Edges: {isStatsUnreliable(loadStatus) ? '—' : stats.total_relationships}
           </Badge>
+          {/* The backend has always reported when a union read skipped a graph.
+              The zod schema above used to strip `partial`/`degraded_graphs`, so
+              a half-read total rendered as an authoritative one. Surfaced here
+              rather than merely un-stripped: an honest field nobody renders is
+              still a silent degrade. */}
+          {stats.partial === true && (
+            <Badge
+              variant="outline"
+              className="h-7 border-amber-500/40 bg-amber-500/10 text-xs text-amber-500"
+              data-testid="graph-stats-partial"
+              title={`These totals exclude: ${(stats.degraded_graphs ?? []).join(', ')}`}
+            >
+              <AlertTriangle className="mr-1 size-3" />
+              Partial
+            </Badge>
+          )}
           <Button
             variant="outline"
             size="sm"
             onClick={() => {
               void fetchData()
+              void fetchBreakdown()
             }}
             disabled={loading}
           >
@@ -344,9 +441,25 @@ export default function GraphView() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Tab 1: Network Visualization */}
+        {/* Tab 1: Network Visualization.
+
+            Layout change, and the reason for it: on a 25k-node graph the canvas
+            can only ever show a bounded sample, so the sample cannot be the
+            whole view. The real type distribution sits permanently beside it
+            and doubles as the filter — read the shape of the graph, click a
+            type, and the canvas becomes a drill-down into something you chose
+            rather than an arbitrary slice you didn't. */}
         <TabsContent value="visualization" className="flex-1 overflow-hidden mt-4">
-          <Card className="h-full border-border/40 bg-card/60 backdrop-blur-md flex flex-col">
+          <Card className="h-full border-border/40 bg-card/60 backdrop-blur-md flex flex-row">
+            <div className="hidden w-56 shrink-0 border-r border-border/30 md:block">
+              <NodeTypeBreakdown
+                data={breakdown}
+                loading={breakdownLoading}
+                error={breakdownError}
+                selectedType={typeFilter}
+                onSelectType={setTypeFilter}
+              />
+            </div>
             <CardContent className="flex-1 p-0 relative overflow-hidden h-full min-h-[450px]">
               {activeTab === 'visualization' && loadStatus.kind === 'error' && (
                 <div className="flex flex-col items-center justify-center h-full text-center gap-2 p-8">
@@ -365,9 +478,7 @@ export default function GraphView() {
               {activeTab === 'visualization' && loadStatus.kind === 'empty' && (
                 <div className="flex flex-col items-center justify-center h-full text-center gap-2 p-8">
                   <Inbox className="size-10 text-muted-foreground/40" />
-                  <p className="text-sm font-semibold text-muted-foreground">
-                    The knowledge graph has no nodes yet.
-                  </p>
+                  <p className="text-sm font-semibold text-muted-foreground">The knowledge graph has no nodes yet.</p>
                 </div>
               )}
               {activeTab === 'visualization' && loadStatus.kind === 'unavailable' && (
@@ -375,9 +486,8 @@ export default function GraphView() {
                   <Database className="size-10 text-amber-500" />
                   <p className="text-sm font-semibold">The knowledge graph engine is not available right now.</p>
                   <p className="text-xs text-muted-foreground">
-                    The server could not obtain a graph engine handle for this request. This is not
-                    the same as an empty graph — retry shortly, or check the server's graph engine
-                    status if it persists.
+                    The server could not obtain a graph engine handle for this request. This is not the same as an
+                    empty graph — retry shortly, or check the server's graph engine status if it persists.
                   </p>
                 </div>
               )}
@@ -393,6 +503,21 @@ export default function GraphView() {
                         </span>
                       </div>
                     )}
+                    {/* The canvas is a bounded sample and must say so. Before
+                        this, 256 nodes out of 25,121 rendered with nothing to
+                        distinguish them from "the graph" — and unfiltered, they
+                        are not even a random 256: `/graph/nodes` fills its
+                        budget by draining labels in `db.labels()` order, so it
+                        returns the alphabetically-first labels and never
+                        reaches RuntimeSignal/WorkItem/Concept at all. */}
+                    <div
+                      className="absolute top-2 right-2 z-10 rounded-md border border-border/40 bg-card/90 px-2.5 py-1 text-xs text-muted-foreground backdrop-blur-sm"
+                      data-testid="graph-sample-notice"
+                    >
+                      {typeFilter === null
+                        ? `Sample: ${String(nodes.length)} of ${isStatsUnreliable(loadStatus) ? '?' : stats.total_nodes.toLocaleString()} nodes — pick a type to drill down`
+                        : `${typeFilter}: showing ${String(nodes.length)} of ${(breakdown?.by_type[typeFilter] ?? nodes.length).toLocaleString()}`}
+                    </div>
                     <GraphCanvas
                       nodes={nodes}
                       relationships={relationships}

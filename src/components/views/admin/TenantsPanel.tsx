@@ -3,8 +3,13 @@
  * @description Tenants / graphs overview for the Admin console.
  *
  * WIRING (honest):
- *   - Aggregate node/edge counts + counts-by-type for the active graph:
+ *   - Aggregate node/edge counts for the active graph:
  *     `GET /api/enhanced/graph/stats` — REAL.
+ *   - Counts by node type: `GET /api/enhanced/graph/node-types` — REAL, and a
+ *     genuine engine-side `GROUP BY` over every node. It is a SEPARATE request
+ *     because it is 10-80x more expensive than the totals; what this panel used
+ *     to show under "Counts by type" was neither this endpoint nor an
+ *     aggregate.
  *   - Shard placement + default graph name: `GET /api/dashboard/daemon/shards`
  *     (`shard_topology_status()`) — REAL.
  *   - Indexed source tenants (the ingested source_systems): `GET
@@ -19,15 +24,17 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Boxes, Database, GitBranch, Loader2, Network, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Boxes, Database, GitBranch, Loader2, Network, RefreshCw } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 import {
   fetchCodeInstances,
+  fetchGraphNodeTypes,
   fetchGraphStats,
   fetchShardTopology,
+  type GraphNodeTypes,
   type GraphStats,
   type ShardTopology,
 } from '@/lib/admin-api'
@@ -41,6 +48,7 @@ function fmt(n: number | undefined): string {
 
 export default function TenantsPanel() {
   const [stats, setStats] = useState<GraphStats | null>(null)
+  const [nodeTypes, setNodeTypes] = useState<GraphNodeTypes | null>(null)
   const [topology, setTopology] = useState<ShardTopology | null>(null)
   const [sources, setSources] = useState<string[]>([])
   // BUG-008 (dashboard-wide follow-on, GOC-28-W06): a failed `/enhanced/code/
@@ -52,8 +60,14 @@ export default function TenantsPanel() {
 
   const refresh = async () => {
     setLoading(true)
-    const [st, top, src] = await Promise.all([fetchGraphStats(), fetchShardTopology(), fetchCodeInstances()])
+    const [st, top, src, nt] = await Promise.all([
+      fetchGraphStats(),
+      fetchShardTopology(),
+      fetchCodeInstances(),
+      fetchGraphNodeTypes(),
+    ])
     setStats(st.ok ? st.data : null)
+    setNodeTypes(nt.ok ? nt.data : null)
     setTopology(top.ok ? top.data : null)
     setSources(src.ok && src.data ? src.data.source_systems : [])
     setSourcesUnavailable(!src.ok)
@@ -66,7 +80,10 @@ export default function TenantsPanel() {
 
   const defaultGraph = topology?.default_graph ?? '__commons__'
   const placement = topology?.endpoints ?? []
-  const byType = stats?.by_type ?? {}
+  // The real distribution, descending. Previously `stats.by_type`, which the
+  // backend could not actually compute inside its budget — so this section was
+  // either empty or (as rendered elsewhere in the app) a 256-row sample.
+  const byType = Object.entries(nodeTypes?.by_type ?? {}).sort((a, b) => b[1] - a[1])
 
   return (
     <div className="space-y-6" data-testid="admin-tenants-panel">
@@ -119,14 +136,23 @@ export default function TenantsPanel() {
             </div>
           </div>
 
-          {Object.keys(byType).length > 0 && (
+          {byType.length > 0 && (
             <div>
               <p className="text-sm font-medium mb-2 flex items-center gap-1">
                 <Database className="size-3.5" />
                 Counts by type
+                <span className="text-muted-foreground font-normal">
+                  ({fmt(nodeTypes?.type_count)} types, {fmt(nodeTypes?.total_typed_nodes)} nodes)
+                </span>
               </p>
+              {nodeTypes?.partial === true && (
+                <p className="mb-2 flex items-center gap-1.5 text-xs text-amber-500">
+                  <AlertTriangle className="size-3.5 shrink-0" />
+                  Partial — excludes {nodeTypes.degraded_graphs.join(', ')}.
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
-                {Object.entries(byType).map(([type, count]) => (
+                {byType.map(([type, count]) => (
                   <Badge key={type} variant="outline" className="gap-1">
                     {type}
                     <span className="text-muted-foreground">{fmt(count)}</span>
@@ -134,6 +160,12 @@ export default function TenantsPanel() {
                 ))}
               </div>
             </div>
+          )}
+          {stats?.partial === true && (
+            <p className="flex items-center gap-1.5 text-xs text-amber-500">
+              <AlertTriangle className="size-3.5 shrink-0" />
+              These totals are partial — {(stats.degraded_graphs ?? []).join(', ')} could not be read.
+            </p>
           )}
 
           {placement.length > 0 && (

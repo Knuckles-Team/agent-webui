@@ -38,11 +38,26 @@ export function renderWithProviders(ui: ReactElement) {
 export const mockGraphStats = {
   total_nodes: 100,
   total_relationships: 200,
+}
+
+// The per-type breakdown is its own endpoint (`/graph/node-types`) and its own
+// fixture: it is a real engine-side GROUP BY over ALL nodes, not a grouping of
+// whatever node page the canvas happens to hold. Note the counts sum to
+// `mockGraphStats.total_nodes` on purpose — an aggregate that does not is a
+// sample, and telling those apart is the whole point of the split.
+export const mockGraphNodeTypes = {
   by_type: {
     Memory: 50,
     Article: 30,
     Tool: 20,
   },
+  type_count: 3,
+  total_typed_nodes: 100,
+  truncated: false,
+  available: true,
+  source_graphs: ['tenant__test____commons__'],
+  degraded_graphs: [],
+  partial: false,
 }
 
 export const mockGraphNodes = [

@@ -25,7 +25,8 @@
 ## API Endpoint Summary
 
 ### Knowledge Graph APIs
-- `GET /api/enhanced/graph/stats` - Graph statistics
+- `GET /api/enhanced/graph/stats` - Graph totals (node/relationship counts)
+- `GET /api/enhanced/graph/node-types` - Real node-type distribution (engine-side `GROUP BY`; a separate route because it is far more expensive than the totals)
 - `GET /api/enhanced/graph/nodes` - List graph nodes
 - `GET /api/enhanced/graph/relationships` - List relationships
 - `POST /api/enhanced/graph/memory` - Create memory node

@@ -585,16 +585,34 @@ class ApiClient {
   runKBHealthCheck = (id: string) => this.get<unknown>(`/api/enhanced/kb/${id}/health`)
 
   // Graph Methods
+  // Headline totals only. The per-type breakdown is `getGraphNodeTypes()` — a
+  // separate, much slower engine-side aggregate that must not be able to hold
+  // these numbers up (see the route docstrings in api_extensions.py).
   getGraphStats = () =>
     this.get<{
       total_nodes: number
       total_relationships: number
-      by_type: Record<string, number>
       // `false` means the server could not obtain a graph engine handle —
       // distinct from a genuinely empty graph. Absent (older backend) means
       // available.
       available?: boolean
+      // Union-read provenance: which graphs these totals actually cover, and
+      // which accessible ones were skipped. `partial` is true iff some were.
+      source_graphs?: string[]
+      degraded_graphs?: string[]
+      partial?: boolean
     }>('/api/enhanced/graph/stats')
+  getGraphNodeTypes = () =>
+    this.get<{
+      by_type: Record<string, number>
+      type_count: number
+      total_typed_nodes: number
+      truncated: boolean
+      available: boolean
+      source_graphs: string[]
+      degraded_graphs: string[]
+      partial: boolean
+    }>('/api/enhanced/graph/node-types')
   getGraphRelationships = () => this.get<unknown[]>('/api/enhanced/graph/relationships')
 
   // Native visualization (D-VZ-1) — renders a ViewSpec through the eg-viz
