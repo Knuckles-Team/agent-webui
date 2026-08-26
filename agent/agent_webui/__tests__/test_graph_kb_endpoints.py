@@ -57,7 +57,11 @@ def test_list_resources_success(client, mock_graph_engine):
         'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
         return_value=mock_graph_engine,
     ):
-        mock_graph_engine.backend.execute.return_value = [
+        # `list_resources` now reads through `_read_union_cypher`, which
+        # falls back to `engine.query_cypher` (not `engine.backend.execute`)
+        # when there is no ambient `GraphSession` -- the case here, matching
+        # every other union-read endpoint's tests in this file.
+        mock_graph_engine.query_cypher.return_value = [
             {'r': {'id': 'res1', 'name': 'Resource 1'}}
         ]
         response = client.get('/api/enhanced/resources')
