@@ -4358,18 +4358,26 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
         ) from e
 
 
-# Bounds the `by_type` breakdown's `GROUP BY` result (FIX LANE Priority 2).
-# The node-type/label vocabulary is a finite, curated ontology -- 50 is
-# generous headroom over any realistic cardinality while still bounding a
-# pathological/malformed `type` property fan-out.
-_GRAPH_STATS_BY_TYPE_LIMIT = 50
+# Bounds the node-type breakdown's `GROUP BY` result. The node-type/label
+# vocabulary is a finite, curated ontology (~46 distinct values live) -- 200
+# is generous headroom over any realistic cardinality while still bounding a
+# pathological/malformed `node_type` property fan-out. The route reports
+# `truncated` when the result actually reaches this bound, so a clipped tail
+# is never presented as the whole distribution.
+_GRAPH_STATS_BY_TYPE_LIMIT = 200
 
-# Deadline for the OPTIONAL `by_type` breakdown. Named (rather than left as
-# a bare literal) so the value carries its measurement rationale and so the
-# regression tests can drive the real deadline path; the VALUE is unchanged
-# from what this call has always used.
+# Deadline for the node-type breakdown (`/graph/node-types`). Named (rather
+# than left as a bare literal) so the value carries its measurement
+# rationale and so the regression tests can drive the real deadline path.
 #
 # Measured in-pod (graph-os), per single isolated request:
+#   * 25,121-row tenant graph, 2026-08-25, service principal
+#       - `SELECT COUNT(*) FROM nodes` .......................... 0.07s
+#       - `MATCH (a)-[r]->(b) RETURN count(r)` .................. 0.52s
+#       - `SELECT node_type, COUNT(*) ... GROUP BY node_type` ... 5.49s
+#         (the engine itself logged `slow engine call op=query.sql
+#          duration=5.48s (threshold=1.0s); engine likely contended`)
+#   * the SAME aggregate on an earlier run, under load ......... 22.39s
 #   * 25,118-row tenant graph, service principal
 #       - `op=query.cypher_read` (the two REQUIRED total-count aggregates)
 #         ....  1.24s and 1.61s -- comfortably inside their own 10s deadline
@@ -4377,27 +4385,42 @@ _GRAPH_STATS_BY_TYPE_LIMIT = 50
 #   * 1,124-row view (the same route, the owner's browser)
 #       - end-to-end route ....  2.5s .. 12.9s, all 200
 #
-# Two things follow, and they are why this stays at 10.0 rather than moving
-# in EITHER direction:
+# The breakdown is 10-80x more expensive than the totals beside it, and a
+# caller-side timeout does NOT release the `_SYNC_WORK_EXECUTOR` slot -- it
+# stays charged until the underlying call finishes (see
+# `_BoundedSyncWorkExecutor`: "A caller timeout does not release capacity for
+# work that Python cannot cancel"), so shortening the deadline buys caller
+# latency and nothing else. The conclusion drawn from that measurement at the
+# time -- pin the deadline at 10s and let the breakdown degrade -- was the
+# wrong half of the fix. A 22s aggregate
+# behind a 10s deadline degrades EVERY time at production row counts, so
+# `/graph/stats` structurally could not return a real breakdown; what the
+# dashboard actually rendered as "counts by type" came from a different
+# source entirely (`GraphLegend` grouping the 256-node `/graph/nodes` page --
+# see that route). The fix is structural, not numeric:
 #
-# * Do not RAISE it. At production row counts the breakdown is ~10-20x more
-#   expensive than the totals beside it and will not fit any sane
-#   web-request budget; a caller waiting 22s for a secondary breakdown is
-#   not an improvement over degrading at 10s.
-# * Do not LOWER it either -- which is the tempting move, since the route
-#   waits out this whole budget before it can answer. It would buy only
-#   caller latency and would cost real breakdowns: the small-graph case
-#   above genuinely lands anywhere in a 2.5-13s band under engine
-#   contention, so a shorter budget would start degrading responses that
-#   work today. It would NOT relieve engine or pool pressure, because a
-#   caller-side timeout does not release the `_SYNC_WORK_EXECUTOR` slot --
-#   that slot stays charged until the underlying call finishes (see
-#   `_BoundedSyncWorkExecutor`: "A caller timeout does not release capacity
-#   for work that Python cannot cancel").
+# * The breakdown no longer rides `/graph/stats` at all. It has its own route
+#   (`/graph/node-types`), so the headline Nodes/Edges totals (~1.2-1.6s) are
+#   never held behind it and the UI loads the two independently.
+# * That route gets a budget that fits the MEASURED cost (22.4s), not one the
+#   query cannot meet. 45s is ~2x the measurement -- headroom for engine
+#   contention without being unbounded.
+# * Because a caller-side timeout does NOT release the `_SYNC_WORK_EXECUTOR`
+#   slot (see `_BoundedSyncWorkExecutor`), a 45s call could otherwise pin 1 of
+#   only 4 shared slots for 45s per concurrent caller. `_NODE_TYPE_SLOT`
+#   below admits exactly one breakdown at a time so this route can never take
+#   more than one slot, however many browsers ask for it at once.
 #
-# The route's real latency fix is not this number: it is that a blown
-# budget here now DEGRADES (below) instead of failing the whole response.
-_GRAPH_STATS_BY_TYPE_DEADLINE_SECONDS = 10.0
+# Deliberately NOT solved with a cache: a cache would hide the cost rather
+# than budget for it, and would make a stale distribution indistinguishable
+# from a live one -- the same "looks authoritative, isn't" defect class the
+# rest of this route exists to close.
+_GRAPH_STATS_BY_TYPE_DEADLINE_SECONDS = 45.0
+
+# Single-flight admission for the expensive breakdown above. Non-blocking: a
+# second concurrent caller is told so (503) rather than queued behind a 45s
+# call, which is both faster to fail and impossible to mistake for a result.
+_NODE_TYPE_SLOT = threading.BoundedSemaphore(1)
 
 
 def _by_type_degraded_graphs() -> list[str]:
@@ -4431,22 +4454,21 @@ def _by_type_degraded_graphs() -> list[str]:
 async def _by_type_call(
     engine: Any,
 ) -> tuple[dict[str, int], list[str], list[str]]:
-    """Run `get_graph_stats`'s `by_type` aggregate with its own fail-soft
-    degrade, isolated from the two total-count calls it now runs alongside
-    via `asyncio.gather` in `get_graph_stats`.
+    """The REAL node-type distribution: one `GROUP BY node_type` aggregate
+    over every node in every graph this actor may read, with its own
+    fail-soft degrade.
 
-    Kept as a standalone coroutine (rather than inlined) specifically so its
-    `try/except` cannot let a `by_type` failure propagate out of `gather` --
-    `asyncio.gather` (without `return_exceptions=True`) re-raises the FIRST
-    exception any of its awaitables raises, which would otherwise turn a
-    should-degrade `by_type` failure into a full-route 503, same as letting
-    it raise out of a bare `await` would.
+    This is an aggregate, not a page. The distinction is the whole point of
+    this function: the number a person reads as "how much of what is in this
+    graph" must be computed by the engine over ALL rows. The dashboard's
+    previous "counts by type" was `GraphLegend` grouping the 256-row
+    `/graph/nodes` sample, which summed to exactly the sample size (256) and
+    named only the alphabetically-first labels that fitted in it -- an
+    arbitrary slice presented as a distribution.
 
-    Contract: `by_type` failing degrades to `({}, [], <accessible graphs>)`
-    -- an empty breakdown plus the graphs it could not cover, so
-    `get_graph_stats` reports the response as `partial`; the two
-    total-count calls failing still surfaces as a 503 via the caller's own
-    outer `except`.
+    Contract: failing degrades to `({}, [], <accessible graphs>)` -- an empty
+    breakdown plus the graphs it could not cover -- so the route reports the
+    response as `partial` rather than as a genuinely empty distribution.
     """
     try:
         return await _read_union_sql_group_counts(
@@ -4458,41 +4480,43 @@ async def _by_type_call(
             deadline=_GRAPH_STATS_BY_TYPE_DEADLINE_SECONDS,
         )
     except HTTPException as e:
-        # THE degrade that actually matters in production (measured live,
-        # 3/3 deterministic, against the real 25,118-row graph): the one
-        # failure mode this optional aggregate hits is its own bounded
-        # deadline, and `_invoke_governed_helper` reports that as
-        # `HTTPException(503)` -- which the previous bare `raise` here sent
-        # straight out through `asyncio.gather` and the route's outer
-        # handler, turning a should-degrade breakdown into a 503 for the
-        # WHOLE stats response. The two REQUIRED total-count aggregates had
-        # already succeeded in ~1.2-1.6s at that point and were discarded
-        # with it, so the dashboard's headline Nodes/Edges numbers were
-        # unavailable purely because a secondary breakdown was slow.
-        #
         # 503 from this call means exactly "the bounded sync budget said no"
         # (deadline exceeded, or capacity exhausted) -- both are precisely
-        # what this call is allowed to degrade on. Any OTHER status is a
-        # real, differently-shaped failure and still propagates unchanged.
+        # what this call is allowed to degrade on, and both must render as
+        # an explicitly-partial response rather than as an empty
+        # distribution. Any OTHER status is a real, differently-shaped
+        # failure and still propagates unchanged.
         if e.status_code != 503:
             raise
         _log_failure('graph_stats.by_type_degraded', e, level=logging.WARNING)
         return {}, [], _by_type_degraded_graphs()
     except Exception as e:
-        # A `by_type` failure must not take down the whole stats
-        # response -- mirrors the previous per-node-type loop's own
-        # narrower degrade, just for the one aggregate call now doing
-        # that loop's job.
+        # Second-line net for a totally unexpected failure shape. It still
+        # degrades rather than 500s, but it degrades HONESTLY -- reporting
+        # the graphs it failed to cover, so the caller can tell "the
+        # breakdown did not run" from "these graphs hold no typed nodes".
         _log_failure('api_extension', e, level=logging.DEBUG)
         return {}, [], _by_type_degraded_graphs()
 
 
 @router.get('/graph/stats')
 async def get_graph_stats() -> dict[str, Any]:
-    """Get statistics about the Knowledge Graph.
+    """Headline Knowledge-Graph totals: node count and relationship count.
+
+    The per-type breakdown deliberately does NOT live here -- it is
+    `/graph/node-types`, a separate route with its own budget and its own
+    single-flight admission. Measured in-pod, the two totals below cost
+    ~1.2-1.6s while the `GROUP BY` breakdown costs ~22.4s on the same graph;
+    keeping them in one response meant either the totals waited on the
+    breakdown or the breakdown degraded on every request. Splitting them lets
+    the UI render fast, trustworthy totals immediately and load the expensive
+    distribution independently.
 
     Returns:
-        Dictionary with node counts by type and total counts.
+        `total_nodes`, `total_relationships`, `available`, plus the union-read
+        provenance every read on this route carries (`source_graphs`,
+        `degraded_graphs`, `partial`) so a narrowed or partly-failed read can
+        never be rendered as an authoritative one.
     """
     try:
         try:
@@ -4513,14 +4537,12 @@ async def get_graph_stats() -> dict[str, Any]:
             return {
                 'total_nodes': 0,
                 'total_relationships': 0,
-                'by_type': {},
                 'available': False,
             }
         if not engine or not engine.backend:
             return {
                 'total_nodes': 0,
                 'total_relationships': 0,
-                'by_type': {},
                 'available': False,
             }
 
@@ -4587,7 +4609,6 @@ async def get_graph_stats() -> dict[str, Any]:
         (
             (total_nodes, node_source_graphs, node_degraded),
             (total_relationships, rel_source_graphs, rel_degraded),
-            (type_counts, type_source_graphs, type_degraded),
         ) = await asyncio.gather(
             _read_union_scalar_sum(
                 engine,
@@ -4608,60 +4629,12 @@ async def get_graph_stats() -> dict[str, Any]:
                 # which already uses named endpoints and works). Verified
                 # live against the cluster engine: the anonymous form fails
                 # with error_class=PermissionError/failing_layer=
-                # knowledge_graph; the named form returns the correct count
-                # (11,641 edges).
+                # knowledge_graph; the named form returns the correct count.
                 'MATCH (a)-[r]->(b) RETURN count(r) as count',
                 None,
                 field='count',
                 deadline=10.0,
             ),
-            # Get node counts by type. FIX LANE Priority 2: a real
-            # `GROUP BY` aggregate over the `nodes` SQL table -- the
-            # previous version was a hardcoded two-item allowlist
-            # (`['Memory', 'Article']`) that could structurally never
-            # report any other type, and an `if count > 0` that discarded
-            # genuine zeros too.
-            #
-            # FIX (root cause, verified live in-pod): the column is
-            # `node_type`, not `type` -- `SELECT type, ... FROM nodes`
-            # fails outright ("Schema error: No field named type"; the
-            # `nodes` SQL projection has no `type` column at all). The
-            # engine stores a node's class under exactly ONE canonical
-            # property, `models.knowledge_graph.GRAPH_NODE_TYPE_PROPERTY =
-            # "node_type"` ("Registry models... carry the node-class
-            # discriminator as `type` ...however[,] a raw `model_dump()`
-            # can never be handed to a graph write -- it always carries the
-            # retired spelling" -- `RegistryNode.to_graph_properties()` is
-            # the one place that translates `type` -> `node_type` on
-            # write). The wide `nodes` table also carries an UNRELATED
-            # `kind` column -- verified live it holds values like
-            # `engine_latency`/`ingest_task`/`installed-skill-provider`
-            # (RuntimeSignal/WorkItem sub-classification), not the node's
-            # class -- and querying `kind` on `:Tool` data returns nothing
-            # resembling a type breakdown, while `node_type` reproduces the
-            # exact known label set (`RuntimeSignal`, `WorkItem`,
-            # `Concept`, ..., `NativeTool`, `CallableResource`, ...).
-            # `label` silently returns 0 rows instead of erroring, and
-            # `labels(n)` is unsupported by this engine -- both verified
-            # live. This also can't go through this file's own
-            # `/graph/query` route (`_validate_read_only_cypher` rejects
-            # `SELECT` outright); `engine.sql()` (`QueryMixin.sql`, the
-            # read-only SQL surface -- BUG-PE-058) is called directly
-            # instead. Scoped by the SAME union as the
-            # totals above (`_read_union_sql_group_counts`) so the
-            # breakdown sums against the same universe `total_nodes`
-            # counts. The column set DIFFERS per graph (verified live:
-            # `__commons__`'s SQL projection can itself be mid-rebuild) --
-            # `_read_union_sql_group_counts`'s own per-graph fail-soft
-            # handles that; `_by_type_call`'s own `try/except` below is
-            # only a second-line safety net for a totally unexpected
-            # failure, mirroring what used to be this call's own local
-            # `try/except` before the three calls ran concurrently -- a
-            # `by_type` failure must still degrade on its own and must
-            # never take down the whole stats response, so it cannot be
-            # allowed to propagate out of `asyncio.gather` like the two
-            # total-count calls above are allowed to.
-            _by_type_call(engine),
         )
 
         # Observability requirement (FIX LANE Priority 1): which physical
@@ -4670,22 +4643,17 @@ async def get_graph_stats() -> dict[str, Any]:
         # anyone noticing. Non-strict frontend zod schemas (`graphStatsSchema`
         # et al.) tolerate an unrecognized field -- see this lane's report
         # for whether a frontend change is wanted to surface it.
-        source_graphs = sorted(
-            set(node_source_graphs) | set(rel_source_graphs) | set(type_source_graphs)
-        )
+        source_graphs = sorted(set(node_source_graphs) | set(rel_source_graphs))
         # FIX LANE Priority 2 (Defect 2): the sibling half of the fail-soft
         # fix -- every accessible graph that was skipped by ANY of the three
         # union reads above, so a partial response is never indistinguishable
         # from a complete one. Non-empty exactly when this response is a
         # degrade, not a full union.
-        degraded_graphs = sorted(
-            set(node_degraded) | set(rel_degraded) | set(type_degraded)
-        )
+        degraded_graphs = sorted(set(node_degraded) | set(rel_degraded))
 
         return {
             'total_nodes': total_nodes,
             'total_relationships': total_relationships,
-            'by_type': type_counts,
             # Explicit counterpart to the two `available: False` degrade
             # responses above -- the frontend schema now keeps this field
             # (previously stripped by GraphView's zod schema, which made an
@@ -4713,6 +4681,98 @@ async def get_graph_stats() -> dict[str, Any]:
             status_code=503,
             detail='Knowledge Graph stats query failed',
         ) from e
+
+
+@router.get('/graph/node-types')
+async def get_graph_node_types() -> dict[str, Any]:
+    """The Knowledge Graph's REAL node-type distribution.
+
+    Deliberately a separate route from `/graph/stats`, not a field on it.
+    Measured in-pod against the live 25,121-node graph: `COUNT(*)` over
+    `nodes` answers in ~0.07s and the two Cypher totals in ~1.2-1.6s, while
+    the `GROUP BY node_type` aggregate costs 5.5s uncontended and has been
+    measured at 22.4s under engine contention. Sharing one response forced a
+    false choice -- either the headline totals waited on the breakdown, or
+    (as shipped) the breakdown degraded to `{}` on essentially every
+    production request. Two routes, two budgets, two independent frontend
+    loads: totals stay fast and the distribution is allowed to be slow.
+
+    NOT cached, on purpose. A cache would hide the cost rather than budget
+    for it, and would make a stale distribution indistinguishable from a live
+    one -- exactly the "reads authoritative, isn't" failure this route exists
+    to end.
+
+    Admission: `_NODE_TYPE_SLOT` admits one breakdown at a time. A caller
+    timeout does not release a `_SYNC_WORK_EXECUTOR` slot (see
+    `_BoundedSyncWorkExecutor`), so without this a handful of browsers could
+    pin the whole 4-slot shared pool for 45s each. A second concurrent caller
+    gets an immediate, explicit 503 instead of queueing invisibly.
+
+    Returns:
+        `by_type` (node_type -> count, descending), `type_count`,
+        `total_typed_nodes` (the sum, which the caller can compare against
+        `/graph/stats`' `total_nodes` to see the untyped remainder),
+        `truncated` (the result actually hit `_GRAPH_STATS_BY_TYPE_LIMIT`, so
+        a tail was clipped), `available`, and the union-read provenance
+        (`source_graphs`, `degraded_graphs`, `partial`).
+    """
+    if not _NODE_TYPE_SLOT.acquire(blocking=False):
+        raise HTTPException(
+            status_code=503,
+            detail='A node-type breakdown is already running; retry shortly',
+        )
+    try:
+        try:
+            engine = await _get_engine_bounded()
+        except HTTPException as exc:
+            # Same contract as `get_graph_stats`: a 501 ("engine not
+            # initialized") is a knowable state and is reported as one --
+            # `available: False`, never as a genuinely empty distribution.
+            if exc.status_code != 501:
+                raise
+            return _empty_node_type_breakdown()
+        if not engine or not engine.backend:
+            return _empty_node_type_breakdown()
+
+        counts, source_graphs, degraded_graphs = await _by_type_call(engine)
+        ordered = dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+        return {
+            'by_type': ordered,
+            'type_count': len(ordered),
+            'total_typed_nodes': sum(ordered.values()),
+            'truncated': len(ordered) >= _GRAPH_STATS_BY_TYPE_LIMIT,
+            'available': True,
+            'source_graphs': sorted(set(source_graphs)),
+            'degraded_graphs': sorted(set(degraded_graphs)),
+            'partial': bool(degraded_graphs),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('get_graph_node_types', e)
+        raise HTTPException(
+            status_code=503,
+            detail='Knowledge Graph node-type breakdown failed',
+        ) from e
+    finally:
+        _NODE_TYPE_SLOT.release()
+
+
+def _empty_node_type_breakdown() -> dict[str, Any]:
+    """The `available: False` shape -- "we could not ask", never "there is
+    nothing". Kept as one function so both no-engine paths above cannot
+    drift apart.
+    """
+    return {
+        'by_type': {},
+        'type_count': 0,
+        'total_typed_nodes': 0,
+        'truncated': False,
+        'available': False,
+        'source_graphs': [],
+        'degraded_graphs': [],
+        'partial': False,
+    }
 
 
 # ---------------------------------------------------------------------------

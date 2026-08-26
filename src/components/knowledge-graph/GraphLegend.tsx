@@ -58,7 +58,13 @@ export function GraphLegend({ nodes, isDark, maxEntries = 8 }: GraphLegendProps)
       data-testid="graph-legend"
       className="absolute bottom-4 left-4 z-10 max-w-[13rem] rounded-lg border border-border bg-card/90 backdrop-blur-sm p-2.5 text-xs shadow-lg"
     >
-      <p className="mb-1.5 font-semibold text-foreground">Node types</p>
+      {/* "In view", not "Node types". These counts describe the bounded page
+          of nodes the canvas is holding — not the graph. Labelling them as a
+          type breakdown is exactly how a 256-row sample came to be read as the
+          distribution of a 25,121-node graph; the real distribution now has its
+          own panel (`NodeTypeBreakdown`, fed by `/graph/node-types`). */}
+      <p className="mb-1.5 font-semibold text-foreground">In view</p>
+      <p className="mb-1.5 text-[10px] leading-tight text-muted-foreground">Colour key for the nodes on screen</p>
       <ul className="flex flex-col gap-1">
         {entries.map((entry) => (
           <li key={entry.type} className="flex items-center gap-1.5 text-foreground/90">
