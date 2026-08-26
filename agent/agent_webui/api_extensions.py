@@ -4364,6 +4364,69 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
 # pathological/malformed `type` property fan-out.
 _GRAPH_STATS_BY_TYPE_LIMIT = 50
 
+# Deadline for the OPTIONAL `by_type` breakdown. Named (rather than left as
+# a bare literal) so the value carries its measurement rationale and so the
+# regression tests can drive the real deadline path; the VALUE is unchanged
+# from what this call has always used.
+#
+# Measured in-pod (graph-os), per single isolated request:
+#   * 25,118-row tenant graph, service principal
+#       - `op=query.cypher_read` (the two REQUIRED total-count aggregates)
+#         ....  1.24s and 1.61s -- comfortably inside their own 10s deadline
+#       - `op=query.sql` (this `GROUP BY` breakdown) ....  22.39s
+#   * 1,124-row view (the same route, the owner's browser)
+#       - end-to-end route ....  2.5s .. 12.9s, all 200
+#
+# Two things follow, and they are why this stays at 10.0 rather than moving
+# in EITHER direction:
+#
+# * Do not RAISE it. At production row counts the breakdown is ~10-20x more
+#   expensive than the totals beside it and will not fit any sane
+#   web-request budget; a caller waiting 22s for a secondary breakdown is
+#   not an improvement over degrading at 10s.
+# * Do not LOWER it either -- which is the tempting move, since the route
+#   waits out this whole budget before it can answer. It would buy only
+#   caller latency and would cost real breakdowns: the small-graph case
+#   above genuinely lands anywhere in a 2.5-13s band under engine
+#   contention, so a shorter budget would start degrading responses that
+#   work today. It would NOT relieve engine or pool pressure, because a
+#   caller-side timeout does not release the `_SYNC_WORK_EXECUTOR` slot --
+#   that slot stays charged until the underlying call finishes (see
+#   `_BoundedSyncWorkExecutor`: "A caller timeout does not release capacity
+#   for work that Python cannot cancel").
+#
+# The route's real latency fix is not this number: it is that a blown
+# budget here now DEGRADES (below) instead of failing the whole response.
+_GRAPH_STATS_BY_TYPE_DEADLINE_SECONDS = 10.0
+
+
+def _by_type_degraded_graphs() -> list[str]:
+    """Every graph the `by_type` breakdown was SUPPOSED to cover, for a
+    degrade to report as skipped.
+
+    Without this, a degraded breakdown returned `({}, [], [])` -- an empty
+    `by_type` with an EMPTY `degraded_graphs`, which `get_graph_stats`
+    renders as `partial: False`. That made "the breakdown timed out" look
+    byte-identical to "this graph genuinely holds no typed nodes", the exact
+    failure mode the rest of this route was built to make impossible. The
+    breakdown is a union read (`_read_union_sql_group_counts` ->
+    `_rows_per_accessible_graph`), so when it fails as a whole the set it
+    failed to cover is the ambient actor's accessible graphs.
+
+    Best-effort by construction: this runs on an error path, so it must not
+    be able to raise a second, more confusing failure out of the degrade.
+    """
+    from agent_utilities.knowledge_graph.core.session import current_session
+
+    try:
+        session = current_session()
+        if session is None:
+            return []
+        return _accessible_graphs(session.actor)
+    except Exception as exc:  # noqa: BLE001 — a degrade must never itself raise
+        _log_failure('graph_stats.by_type_degraded_graphs', exc, level=logging.DEBUG)
+        return []
+
 
 async def _by_type_call(
     engine: Any,
@@ -4377,8 +4440,11 @@ async def _by_type_call(
     `asyncio.gather` (without `return_exceptions=True`) re-raises the FIRST
     exception any of its awaitables raises, which would otherwise turn a
     should-degrade `by_type` failure into a full-route 503, same as letting
-    it raise out of a bare `await` would. This preserves the exact pre-fix
-    contract: `by_type` failing degrades to `({}, [], [])`; the two
+    it raise out of a bare `await` would.
+
+    Contract: `by_type` failing degrades to `({}, [], <accessible graphs>)`
+    -- an empty breakdown plus the graphs it could not cover, so
+    `get_graph_stats` reports the response as `partial`; the two
     total-count calls failing still surfaces as a 503 via the caller's own
     outer `except`.
     """
@@ -4389,17 +4455,36 @@ async def _by_type_call(
             f'ORDER BY n DESC LIMIT {_GRAPH_STATS_BY_TYPE_LIMIT}',
             key='node_type',
             count_field='n',
-            deadline=10.0,
+            deadline=_GRAPH_STATS_BY_TYPE_DEADLINE_SECONDS,
         )
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        # THE degrade that actually matters in production (measured live,
+        # 3/3 deterministic, against the real 25,118-row graph): the one
+        # failure mode this optional aggregate hits is its own bounded
+        # deadline, and `_invoke_governed_helper` reports that as
+        # `HTTPException(503)` -- which the previous bare `raise` here sent
+        # straight out through `asyncio.gather` and the route's outer
+        # handler, turning a should-degrade breakdown into a 503 for the
+        # WHOLE stats response. The two REQUIRED total-count aggregates had
+        # already succeeded in ~1.2-1.6s at that point and were discarded
+        # with it, so the dashboard's headline Nodes/Edges numbers were
+        # unavailable purely because a secondary breakdown was slow.
+        #
+        # 503 from this call means exactly "the bounded sync budget said no"
+        # (deadline exceeded, or capacity exhausted) -- both are precisely
+        # what this call is allowed to degrade on. Any OTHER status is a
+        # real, differently-shaped failure and still propagates unchanged.
+        if e.status_code != 503:
+            raise
+        _log_failure('graph_stats.by_type_degraded', e, level=logging.WARNING)
+        return {}, [], _by_type_degraded_graphs()
     except Exception as e:
         # A `by_type` failure must not take down the whole stats
         # response -- mirrors the previous per-node-type loop's own
         # narrower degrade, just for the one aggregate call now doing
         # that loop's job.
         _log_failure('api_extension', e, level=logging.DEBUG)
-        return {}, [], []
+        return {}, [], _by_type_degraded_graphs()
 
 
 @router.get('/graph/stats')

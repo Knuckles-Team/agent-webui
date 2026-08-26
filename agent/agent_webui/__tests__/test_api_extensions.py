@@ -3,6 +3,7 @@ from __future__ import annotations
 """Test API endpoints for agent-webui backend."""
 
 import asyncio
+import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -291,6 +292,205 @@ class TestGraphStatsConcurrency:
             for i in range(3)
             for j in range(i + 1, 3)
         ), 'no two of the three aggregate calls overlapped in time'
+
+
+class TestGraphStatsByTypeDegrade:
+    """PERF fix lane 2: the OPTIONAL `by_type` breakdown must never be able
+    to 503 the whole `/graph/stats` response.
+
+    Root cause these tests lock down (measured live in-pod, 3/3
+    deterministic, against the production 25,118-row graph): the `by_type`
+    `GROUP BY` aggregate costs ~12-22s there, blows its own bounded
+    deadline, and `_invoke_governed_helper` reports that as
+    `HTTPException(503)`. `_by_type_call` re-raised every `HTTPException`
+    unconditionally, so the ONE failure mode that actually happens in
+    production defeated the fail-soft its own docstring promises -- and
+    took the two REQUIRED total-count aggregates (which had already
+    succeeded in ~1.2-1.6s) down with it. The dashboard's headline
+    Nodes/Edges numbers were unavailable purely because a secondary
+    breakdown was slow.
+    """
+
+    @staticmethod
+    def _engine(sql_delay: float) -> Any:
+        graph_name = 'tenant__acme____commons__'
+
+        class _GraphCompute:
+            def sql_exec(self, statement: str) -> list[dict[str, Any]]:
+                time.sleep(sql_delay)
+                return [{'node_type': 'Memory', 'n': 3}]
+
+        class _Engine:
+            def __init__(self) -> None:
+                self.backend = object()
+                self.graph_compute = _GraphCompute()
+
+            def for_graph(self, name: str) -> Any:
+                assert name == graph_name
+                return self
+
+            def query_cypher(
+                self, query: str, params: dict[str, Any] | None = None
+            ) -> list[dict[str, Any]]:
+                return [{'count': 5}] if 'count(n)' in query else [{'count': 7}]
+
+        return _Engine(), graph_name
+
+    @staticmethod
+    def _session(graph_name: str) -> Any:
+        from agent_utilities.knowledge_graph.core.session import GraphSession
+        from agent_utilities.security.brain_context import ActorContext
+
+        actor = ActorContext(
+            actor_id='by-type-degrade-actor',
+            tenant_id='acme',
+            roles=('kg:read',),
+            authenticated=True,
+        )
+        return GraphSession(
+            actor=actor,
+            tenant='acme',
+            scopes=frozenset({'kg:read'}),
+            graph=graph_name,
+        )
+
+    def _run(self, engine: Any, graph_name: str) -> dict[str, Any]:
+        from agent_utilities.knowledge_graph.core.session import use_session
+
+        session = self._session(graph_name)
+
+        def _fake_accessible_graphs(actor_arg: Any) -> list[str]:
+            assert actor_arg is not None
+            return [graph_name]
+
+        with (
+            patch.object(api_extensions, '_accessible_graphs', _fake_accessible_graphs),
+            patch(
+                'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+                return_value=engine,
+            ),
+        ):
+
+            async def _go() -> dict[str, Any]:
+                with use_session(session):
+                    return await api_extensions.get_graph_stats()
+
+            return asyncio.run(_go())
+
+    def test_by_type_budget_503_degrades_route_still_returns_totals(self):
+        """THE regression, stated in the exact terms the bug had: the
+        bounded-work budget reports a blown `by_type` deadline (and an
+        exhausted capacity) as `HTTPException(503)`, and that 503 must
+        degrade the breakdown rather than fail the route.
+
+        Pre-fix this test fails with a 503 out of `get_graph_stats` -- the
+        two required total counts, which succeeded, thrown away with it.
+        """
+        engine, graph_name = self._engine(sql_delay=0.0)
+
+        async def _budget_503(*args: Any, **kwargs: Any) -> Any:
+            raise api_extensions.HTTPException(status_code=503)
+
+        with patch.object(api_extensions, '_read_union_sql_group_counts', _budget_503):
+            result = self._run(engine, graph_name)
+
+        # The blocking requirement: the required aggregates are served.
+        assert result['available'] is True
+        assert result['total_nodes'] == 5
+        assert result['total_relationships'] == 7
+
+        # ...and the missing breakdown is reported as MISSING, never as an
+        # empty-but-complete one. `partial` False here would make "the
+        # breakdown timed out" indistinguishable from "this graph holds no
+        # typed nodes" -- the exact honesty failure this route exists to
+        # make impossible.
+        assert result['by_type'] == {}
+        assert result['partial'] is True
+        assert result['degraded_graphs'] == [graph_name]
+
+    def test_by_type_real_deadline_is_wired_and_degrades_end_to_end(self):
+        """The same degrade driven by the REAL deadline machinery rather
+        than a hand-thrown 503: a genuinely slow `sql_exec` against a
+        deliberately tiny `_GRAPH_STATS_BY_TYPE_DEADLINE_SECONDS`.
+
+        This is what proves the new constant is actually the value
+        `_by_type_call` passes to `_invoke_governed_helper` -- a knob that
+        silently was not read would leave the live route on the old 10s
+        budget and this test would hang past its bound and fail.
+        """
+        engine, graph_name = self._engine(sql_delay=1.0)
+
+        started = time.monotonic()
+        with patch.object(api_extensions, '_GRAPH_STATS_BY_TYPE_DEADLINE_SECONDS', 0.2):
+            result = self._run(engine, graph_name)
+        elapsed = time.monotonic() - started
+
+        assert result['total_nodes'] == 5
+        assert result['by_type'] == {}
+        assert result['partial'] is True
+        assert result['degraded_graphs'] == [graph_name]
+        assert elapsed < 0.9, (
+            f'route took {elapsed:.3f}s -- the patched 0.2s by_type deadline '
+            'does not appear to be the one actually used'
+        )
+
+    def test_by_type_non_503_http_error_still_propagates(self):
+        """The degrade is scoped to the bounded budget's own signal (503),
+        not a blanket `except HTTPException`. Any other HTTP status is a
+        differently-shaped failure and must still surface.
+        """
+        engine, graph_name = self._engine(sql_delay=0.0)
+
+        async def _boom(*args: Any, **kwargs: Any) -> Any:
+            raise api_extensions.HTTPException(status_code=501)
+
+        with patch.object(api_extensions, '_read_union_sql_group_counts', _boom):
+            with pytest.raises(api_extensions.HTTPException) as excinfo:
+                self._run(engine, graph_name)
+
+        assert excinfo.value.status_code == 501
+
+    def test_by_type_generic_failure_also_reports_degraded_graphs(self):
+        """`_by_type_call`'s pre-existing catch-all degrade had the same
+        honesty gap as the 503 one: it returned `({}, [], [])`, so an empty
+        `by_type` came back with `partial: False` -- indistinguishable from
+        a graph that genuinely holds no typed nodes. It now names the graphs
+        the breakdown failed to cover, exactly like the budget path.
+
+        Raised from `_read_union_sql_group_counts` itself, deliberately:
+        an exception from `sql_exec` is swallowed EARLIER, by
+        `_rows_per_accessible_graph`'s own per-graph fail-soft, and never
+        reaches this handler at all.
+        """
+        engine, graph_name = self._engine(sql_delay=0.0)
+
+        async def _boom(*args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError('sql surface unavailable')
+
+        with patch.object(api_extensions, '_read_union_sql_group_counts', _boom):
+            result = self._run(engine, graph_name)
+
+        assert result['total_nodes'] == 5
+        assert result['by_type'] == {}
+        assert result['partial'] is True
+        assert result['degraded_graphs'] == [graph_name]
+
+    def test_required_total_count_deadline_still_fails_the_route(self):
+        """The other half of the contract, unchanged: a REQUIRED aggregate
+        failing is a real backend failure and must still be a 503 -- it must
+        never be quietly degraded into a fake `0` the way the `by_type`
+        breakdown legitimately is.
+        """
+        engine, graph_name = self._engine(sql_delay=0.0)
+
+        async def _boom(*args: Any, **kwargs: Any) -> Any:
+            raise api_extensions.HTTPException(status_code=503)
+
+        with patch.object(api_extensions, '_read_union_scalar_sum', _boom):
+            with pytest.raises(api_extensions.HTTPException) as excinfo:
+                self._run(engine, graph_name)
+
+        assert excinfo.value.status_code == 503
 
 
 class TestGraphNodesEndpoint:
