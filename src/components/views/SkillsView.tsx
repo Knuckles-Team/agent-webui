@@ -29,6 +29,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
+import { api } from '@/lib/api'
 import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
 import { SchemaActionForm } from '@/components/capabilities/SchemaActionForm'
 import type { JsonSchema } from '@/lib/capability-forms'
@@ -125,10 +126,13 @@ interface ToolsData {
   mcp_tools: MCPTool[]
   mcp_status: MCPStatus
   builtin_tools: BuiltinTool[]
+  // Includes unclassified skills (`kg_classified: false`) alongside every
+  // other agent skill -- there is no separate fourth bucket. `RunnabilityBadge`
+  // flags an unclassified entry in place; `ClassifySkillControl` lets it be
+  // classified from right there.
   skills: Skill[]
   skill_graphs: SkillGraph[]
   skill_workflows: SkillWorkflow[]
-  skill_unclassified: Skill[]
   skill_classification: SkillClassificationSummary
 }
 
@@ -216,7 +220,6 @@ const toolsDataSchema: z.ZodType<ToolsData> = z.object({
   skills: looseArray(skillSchema),
   skill_graphs: looseArray(skillGraphSchema),
   skill_workflows: looseArray(skillWorkflowSchema),
-  skill_unclassified: looseArray(skillSchema),
   skill_classification: skillClassificationSummarySchema,
 })
 
@@ -254,7 +257,8 @@ function matchesSearch(query: string, name: string, domain?: string, tags?: stri
 }
 
 /** Structural shape shared by everything a cognitive-registry box renders
- * (Skill / SkillGraph / SkillWorkflow / unclassified Skill items). */
+ * (Skill / SkillGraph / SkillWorkflow items, including an unclassified
+ * skill -- it is a Skill, not a separate shape). */
 interface CognitiveItem {
   id: string
   name: string
@@ -270,17 +274,22 @@ interface CognitiveItem {
 
 /** Shows runnability explicitly (GOC-60-W06a): a describe-only
  * `WorkflowDefinition` is visibly distinguished from a runnable
- * `CallableResource(AGENT_SKILL)`, and an item the KG has no record of at
- * all reads as "Unverified in KG" rather than being silently guessed one
- * way or the other. Renders nothing for surfaces with no KG resource-type
- * concept at all (Skill Graphs -- `resource_type` is `undefined`, not
- * `null`, on that shape). */
+ * `CallableResource(AGENT_SKILL)`, and a skill whose `skill_type` the
+ * catalog does not recognize reads as "Unclassified" -- flagged in place
+ * among the other Agent Skills rather than hidden in a separate group or
+ * silently guessed one way or the other. Renders nothing for surfaces with
+ * no resource-type concept at all (Skill Graphs -- `resource_type` is
+ * `undefined`, not `null`, on that shape). */
 function RunnabilityBadge({ item }: { item: CognitiveItem }) {
   if (item.resource_type === undefined) return null
   if (!item.kg_classified) {
     return (
-      <Badge variant="outline" className="text-[8px] font-bold border-amber-500/40 text-amber-400 bg-amber-500/10">
-        Unverified in KG
+      <Badge
+        variant="outline"
+        className="text-[8px] font-bold border-amber-500/40 text-amber-400 bg-amber-500/10 gap-0.5"
+      >
+        <HelpCircle className="size-2.5" />
+        Unclassified
       </Badge>
     )
   }
@@ -307,6 +316,7 @@ function CognitiveBox({
   emptyLabel,
   onToggle,
   renderSecondary,
+  renderClassifyAction,
 }: {
   icon: LucideIcon
   iconClassName: string
@@ -317,6 +327,10 @@ function CognitiveBox({
   emptyLabel: string
   onToggle: (item: CognitiveItem) => void
   renderSecondary: (item: CognitiveItem) => ReactNode
+  /** Optional classify affordance rendered per item -- only the Agent
+   * Skills box passes this; it returns `null` itself for an already-
+   * classified item, so nothing else changes. */
+  renderClassifyAction?: (item: CognitiveItem) => ReactNode
 }) {
   return (
     <div className="space-y-4 border border-border/40 rounded-xl bg-card/40 p-4">
@@ -376,6 +390,7 @@ function CognitiveBox({
                         ))}
                       </div>
                       {renderSecondary(item)}
+                      {renderClassifyAction?.(item)}
                     </div>
                   ))}
                 </div>
@@ -388,6 +403,67 @@ function CognitiveBox({
   )
 }
 
+const CLASSIFY_OPTIONS: { value: 'skill' | 'workflow' | 'graph'; label: string }[] = [
+  { value: 'skill', label: 'Skill' },
+  { value: 'workflow', label: 'Workflow' },
+  { value: 'graph', label: 'Skill Graph' },
+]
+
+/** Classify affordance for one unclassified Agent Skill card. Renders
+ * nothing for an already-classified item -- `SkillsView` passes this to
+ * EVERY item in the Agent Skills box, and it is this component's own job to
+ * be a no-op unless `item.kg_classified === false`. Local `pending` state
+ * only tracks the pending SELECT choice; nothing here ever claims the
+ * classification took effect -- that comes back from the parent's own
+ * refetch after a real, backend-confirmed persist (fail-closed: see
+ * `handleClassifySkill`). A plain native `<select>` rather than the styled
+ * Radix picker -- this compact per-card control needs none of its extra
+ * behavior, and native keeps it trivially accessible/testable. */
+function ClassifySkillControl({
+  item,
+  busy,
+  onClassify,
+}: {
+  item: CognitiveItem
+  busy: boolean
+  onClassify: (item: CognitiveItem, skillType: 'skill' | 'workflow' | 'graph') => void
+}) {
+  const [pending, setPending] = useState<'skill' | 'workflow' | 'graph' | ''>('')
+  if (item.kg_classified !== false) return null
+
+  return (
+    <div className="flex items-center gap-1.5 pt-1 border-t border-border/20 mt-1">
+      <select
+        aria-label={`Classify ${item.name}`}
+        value={pending}
+        disabled={busy}
+        onChange={(e) => {
+          setPending(e.target.value as 'skill' | 'workflow' | 'graph' | '')
+        }}
+        className="h-6 flex-1 min-w-0 rounded border border-border/40 bg-muted/20 text-[10px] px-1.5 text-foreground disabled:opacity-50"
+      >
+        <option value="">Classify as…</option>
+        {CLASSIFY_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-6 px-2 text-[10px]"
+        disabled={busy || !pending}
+        onClick={() => {
+          if (pending) onClassify(item, pending)
+        }}
+      >
+        {busy ? <RefreshCw className="size-3 animate-spin" /> : 'Set'}
+      </Button>
+    </div>
+  )
+}
+
 export default function SkillsView() {
   const [data, setData] = useState<ToolsData>({
     mcp_tools: [],
@@ -396,7 +472,6 @@ export default function SkillsView() {
     skills: [],
     skill_graphs: [],
     skill_workflows: [],
-    skill_unclassified: [],
     skill_classification: {
       source: 'kg_resource_type',
       kg_reachable: true,
@@ -612,10 +687,10 @@ export default function SkillsView() {
   }
 
   const handleToggleCognitive = async (
-    // The backend keys an unclassified item's toggle preference under the
-    // same `skill` namespace it uses while KG-unverified (api_extensions.py
-    // `_get_engine_bounded`/`get_toggle_state` call for the unclassified
-    // branch) -- no separate `skill_unclassified` toggle type exists.
+    // An unclassified item lives in `data.skills` alongside every other
+    // agent skill (no separate bucket), and its toggle preference is keyed
+    // under the same `skill` namespace regardless of `kg_classified`
+    // (api_extensions.py's `get_toggle_state` call is identical either way).
     type: 'skill' | 'skill_graph' | 'skill_workflow',
     id: string,
     currentVal: boolean,
@@ -638,6 +713,37 @@ export default function SkillsView() {
       }
     } catch {
       toast.error('Error saving toggle status')
+    }
+  }
+
+  const [classifyingId, setClassifyingId] = useState<string | null>(null)
+
+  /** Classify an unclassified skill and persist the choice. Fail-closed: a
+   * toast only ever claims success when the backend's own `persisted` field
+   * says so -- never optimistically, and the list is always refetched from
+   * the real backend state afterward rather than patched locally, so the
+   * badge only ever reflects what is actually on record. */
+  const handleClassifySkill = async (item: CognitiveItem, skillType: 'skill' | 'workflow' | 'graph') => {
+    setClassifyingId(item.id)
+    try {
+      const result = await api.classifySkill(item.id, skillType)
+      if (!result.persisted) {
+        toast.error(result.reason ?? `Could not classify '${item.name}'`)
+        return
+      }
+      if (result.persisted_to_source_file) {
+        toast.success(`'${item.name}' classified as ${result.classification} -- written to its SKILL.md.`)
+      } else {
+        toast.success(
+          `'${item.name}' classified as ${result.classification} -- the skills source is read-only here, ` +
+            'so the choice was saved as a durable override that applies on every future sync.',
+        )
+      }
+      void fetchTools()
+    } catch {
+      toast.error(`Error classifying '${item.name}'`)
+    } finally {
+      setClassifyingId(null)
     }
   }
 
@@ -696,14 +802,10 @@ export default function SkillsView() {
   const filteredSkills = data.skills.filter((s) => matchesSearch(searchQuery, s.name, s.domain, s.tags))
   const filteredGraphs = data.skill_graphs.filter((g) => matchesSearch(searchQuery, g.name, g.domain, g.tags))
   const filteredWorkflows = data.skill_workflows.filter((w) => matchesSearch(searchQuery, w.name, w.domain, w.tags))
-  const filteredUnclassified = data.skill_unclassified.filter((s) =>
-    matchesSearch(searchQuery, s.name, s.domain, s.tags),
-  )
 
   const groupedSkills = groupByDomain(filteredSkills)
   const groupedGraphs = groupByDomain(filteredGraphs)
   const groupedWorkflows = groupByDomain(filteredWorkflows)
-  const groupedUnclassified = groupByDomain(filteredUnclassified)
 
   if (sessionExpired) {
     return <SessionExpiredNotice />
@@ -758,11 +860,7 @@ export default function SkillsView() {
                 id: 'cognitive',
                 label: 'Cognitive Skills',
                 icon: Layers,
-                count:
-                  data.skills.length +
-                  data.skill_graphs.length +
-                  data.skill_workflows.length +
-                  data.skill_unclassified.length,
+                count: data.skills.length + data.skill_graphs.length + data.skill_workflows.length,
               },
             ].map((tab) => (
               <button
@@ -1039,20 +1137,21 @@ export default function SkillsView() {
                   </div>
                 )}
 
-                {/* 3. Cognitive Registry - classified by the KG's own resource_type
-                    truth (GOC-60-W06 / E7), organized by domain, 4 boxes:
-                    runnable skills / skill graphs / describe-only workflows /
-                    items the KG has no record of yet. */}
+                {/* 3. Cognitive Registry - classified by the catalog's own skill_type
+                    truth, organized by domain, 3 boxes: agent skills (runnable
+                    + unclassified, flagged in place) / skill graphs /
+                    describe-only workflows. An unclassified skill is still a
+                    skill -- it is NOT a fourth bucket. */}
                 {activeTab === 'cognitive' && (
                   <div className="space-y-4">
                     {!data.skill_classification.kg_reachable && (
                       <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-amber-300">
                         <AlertTriangle className="size-4 shrink-0 mt-0.5" />
                         <div className="text-xs">
-                          <p className="font-bold">Knowledge Graph unreachable</p>
+                          <p className="font-bold">Skill catalog unreachable</p>
                           <p className="text-amber-300/80">
-                            Skill/workflow classification could not be verified against the KG on this request. Every
-                            discovered SKILL.md is listed under &ldquo;Unclassified&rdquo; below rather than guessed
+                            Classification could not be read from the fleet catalog on this request. Every discovered
+                            skill is shown under Agent Skills, flagged &ldquo;Unclassified&rdquo;, rather than guessed
                             from its filesystem path.
                           </p>
                         </div>
@@ -1066,7 +1165,7 @@ export default function SkillsView() {
                       <span className="font-semibold text-emerald-400">
                         {data.skill_classification.runnable_count}
                       </span>{' '}
-                      KG-verified runnable ·{' '}
+                      classified runnable ·{' '}
                       <span className="font-semibold text-sky-400">
                         {data.skill_classification.describe_only_count}
                       </span>{' '}
@@ -1077,12 +1176,12 @@ export default function SkillsView() {
                       unclassified
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                       <CognitiveBox
                         icon={Zap}
                         iconClassName="text-emerald-400"
                         title="Agent Skills"
-                        description="KG-verified runnable CallableResource(AGENT_SKILL)"
+                        description="Runnable CallableResource(AGENT_SKILL) -- unclassified skills flagged, classify them here"
                         groups={groupedSkills}
                         totalCount={filteredSkills.length}
                         emptyLabel="No matching skills found."
@@ -1093,6 +1192,15 @@ export default function SkillsView() {
                           <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">
                             {item.description ?? 'No description available.'}
                           </p>
+                        )}
+                        renderClassifyAction={(item) => (
+                          <ClassifySkillControl
+                            item={item}
+                            busy={classifyingId === item.id}
+                            onClassify={(target, skillType) => {
+                              void handleClassifySkill(target, skillType)
+                            }}
+                          />
                         )}
                       />
 
@@ -1129,24 +1237,6 @@ export default function SkillsView() {
                           <div className="text-[9px] text-muted-foreground font-mono truncate break-all">
                             {item.file_path}
                           </div>
-                        )}
-                      />
-
-                      <CognitiveBox
-                        icon={HelpCircle}
-                        iconClassName="text-amber-400"
-                        title="Unclassified"
-                        description="On disk, but no matching KG node yet"
-                        groups={groupedUnclassified}
-                        totalCount={filteredUnclassified.length}
-                        emptyLabel="Nothing unclassified — every discovered skill has a matching KG node."
-                        onToggle={(item) => {
-                          void handleToggleCognitive('skill', item.id, item.enabled)
-                        }}
-                        renderSecondary={(item) => (
-                          <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">
-                            {item.description ?? 'No description available.'}
-                          </p>
                         )}
                       />
                     </div>

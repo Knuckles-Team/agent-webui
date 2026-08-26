@@ -2443,10 +2443,17 @@ async def list_all_tools() -> dict[str, Any]:
     # from ONE `servers` failure) no longer discards an otherwise-healthy
     # skills read, since `skill_rows` is this kind's OWN result, not a
     # shared all-or-nothing `catalog`.
+    #
+    # An unclassified skill (skill_type outside the recognized set) is still
+    # a skill -- it is NOT a fourth bucket. It lands in `skills` alongside
+    # every other agent skill, distinguished only by `kg_classified: False`
+    # (the UI renders that as an "Unclassified" flag -- see
+    # `RunnabilityBadge` in SkillsView.tsx) so it is discoverable as needing
+    # attention rather than hidden in a separate, easy-to-miss group.
     skills: list[dict[str, Any]] = []
     skill_graphs: list[dict[str, Any]] = []
     skill_workflows: list[dict[str, Any]] = []
-    skill_unclassified: list[dict[str, Any]] = []
+    unclassified_count = 0
     skill_status = {
         'source': 'sql_catalog' if skill_rows is not None else 'unavailable',
         'error': (
@@ -2487,7 +2494,8 @@ async def list_all_tools() -> dict[str, Any]:
             entry['resource_type'] = None
             entry['kg_classified'] = False
             entry['enabled'] = skill_toggles.get(skill_id, True)
-            skill_unclassified.append(entry)
+            skills.append(entry)
+            unclassified_count += 1
 
     result = {
         'mcp_tools': mcp_tools,
@@ -2505,9 +2513,10 @@ async def list_all_tools() -> dict[str, Any]:
         'skill_workflows': sorted(
             skill_workflows, key=lambda x: x.get('name', '').lower()
         ),
-        'skill_unclassified': sorted(
-            skill_unclassified, key=lambda x: x.get('name', '').lower()
-        ),
+        # `skill_unclassified` is deliberately ABSENT from this response: an
+        # unclassified skill is still a skill and is returned inside `skills`
+        # with `kg_classified: False` (see the comment above the loop), not
+        # in a separate fourth bucket the UI had to render as its own group.
         # Defect B fix: skills previously had NO signal of their own for "the
         # skills catalog read failed" other than the deeply-nested
         # `skill_classification.kg_reachable` boolean -- unlike `mcp_tools`,
@@ -2534,9 +2543,9 @@ async def list_all_tools() -> dict[str, Any]:
             'filesystem_skill_md_count': len(skill_rows or []),
             'kg_agent_skill_count': len(skills),
             'kg_workflow_definition_count': len(skill_workflows),
-            'runnable_count': len(skills),
+            'runnable_count': len(skills) - unclassified_count,
             'describe_only_count': len(skill_workflows),
-            'unclassified_count': len(skill_unclassified),
+            'unclassified_count': unclassified_count,
         },
     }
     bounded = _public_external_result(result)
