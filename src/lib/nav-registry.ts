@@ -325,6 +325,17 @@ export const ROUTES: readonly RouteDef[] = [
     element: lazy(() => import('@/components/views/GraphView')),
   },
   {
+    id: 'knowledge.graph-3d',
+    path: '/graph-3d',
+    label: 'Knowledge Graph 3D',
+    section: 'knowledge',
+    blurb: 'Fly through the connected core of the graph in 3D — orbit, focus a node, expand its neighbours.',
+    icon: Boxes,
+    minRole: 'reader',
+    mobile: 'unsupported',
+    element: lazy(() => import('@/components/views/Graph3DView')),
+  },
+  {
     id: 'knowledge.temporal-graph',
     path: '/temporal-graph',
     label: 'Temporal Graph',
