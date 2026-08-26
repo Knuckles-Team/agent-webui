@@ -6369,9 +6369,59 @@ async def magma_retrieve(data: dict[str, Any]) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+def _public_resource_view(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """Project + bound ONE ``CallableResource`` row for the ``/resources`` list.
+
+    Per-row, mirroring ``_public_mcp_tool_entry`` above: a ``CallableResource``
+    node carries a large ``embedding`` vector (its RAG index) plus internal
+    governance fields (``_owner_id``, ``_field_prov``, ``_visibility``, ...)
+    that `OpsPanelView.tsx`'s ``CallableResource`` interface never reads
+    (only ``id``/``name``/``type``/``resource_type``/``description``) and
+    that blow `_bounded_external_value`'s oversized-collection/-string guard
+    on nearly every row. Live root cause of "the Callable Resources tab is
+    always empty": the old code bounded the RAW node (embedding included)
+    through `_public_external_result` for the WHOLE collection at once, so a
+    single row with a >256-element `embedding` list raised
+    `ValueError('Delegated result contains an oversized collection')` and the
+    broad `except Exception` below silently returned `[]` — measured live
+    against the real engine: 58/58 tenant-graph `CallableResource` rows
+    failed to bound, every one of them carrying an `embedding` field.
+    Projecting first (never touching `embedding`) and bounding per row (a row
+    that still can't be bounded is dropped, not fatal to the rest of the
+    page) fixes both the oversized-collection crash and the raw-vector leak
+    to the browser in one move.
+    """
+    entry = {
+        'id': raw.get('id'),
+        'name': raw.get('name'),
+        'type': raw.get('node_type'),
+        'resource_type': raw.get('resource_type'),
+        'description': raw.get('description') or '',
+        'mcp_server': raw.get('mcp_server'),
+        'status': raw.get('status')
+        or ('disabled' if raw.get('disabled') else 'active'),
+    }
+    try:
+        bounded = _public_external_result(entry)
+    except ValueError:
+        return None
+    return bounded if isinstance(bounded, dict) else None
+
+
 @router.get('/resources')
 async def list_resources() -> list[dict[str, Any]]:
     """List all callable resources (MCP tools, A2A agents, skills).
+
+    FIX LANE Priority 1: unioned across every graph this actor may read
+    (`_read_union_cypher`, same primitive `get_graph_stats`/
+    `list_library_tools`'s siblings already use), not `engine.backend.execute`
+    alone — `CallableResource` catalog entries shared via the commons graph
+    (GOC-61) were invisible to a tenant-only read: measured live, 58
+    tenant-graph rows vs 361 across the union (the fleet's actual MCP-server
+    ``:CallableResource`` skills live in ``__commons__``, not any one
+    tenant's shard). See `_public_resource_view` above for the second,
+    independent defect this also fixes (an oversized `embedding` vector
+    crashing the whole response).
 
     Returns:
         List of resource metadata.
@@ -6380,15 +6430,22 @@ async def list_resources() -> list[dict[str, Any]]:
         engine = await _get_engine_bounded()
 
         query = f'MATCH (r:CallableResource) RETURN r LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
-        result = await _invoke_governed_helper(
-            engine.backend.execute, query, deadline=10.0
+        result, _source_graphs = await _read_union_cypher(
+            engine, query, None, deadline=10.0
         )
-        resources = []
+        resources: list[dict[str, Any]] = []
         for row in result:
-            resource_data = row.get('r', {})
-            if isinstance(resource_data, dict):
-                resources.append(resource_data)
-        return _public_external_result(resources)
+            resource_data = row.get('r', {}) if isinstance(row, dict) else None
+            if not isinstance(resource_data, dict):
+                continue
+            view = _public_resource_view(resource_data)
+            if view is not None:
+                resources.append(view)
+        # Re-bound after the union merge: each graph's own read is already
+        # capped at `_MAX_EXTERNAL_COLLECTION_ITEMS`, but a union of more than
+        # one accessible graph can exceed that combined -- truncate here
+        # rather than let a later whole-collection bound reject the page.
+        return resources[:_MAX_EXTERNAL_COLLECTION_ITEMS]
     except HTTPException:
         raise
     except Exception as e:
@@ -6470,11 +6527,20 @@ async def list_library_agents() -> list[dict[str, Any]]:
     every ``CallableResource(resource_type=A2A_AGENT)`` node regardless of
     which pipeline registered it, since the KG — not this endpoint — is the
     one source of truth for what is externally callable.
+
+    FIX LANE Priority 1: unioned across every graph this actor may read
+    (`_read_union_cypher`), not `engine.backend.execute` alone -- same class
+    of gap as `list_resources` above: an org-shared A2A agent or Library
+    entry living in the commons graph (GOC-61) would otherwise be invisible
+    to a tenant-only read. `_library_agent_view` already projects only
+    display fields (no raw `embedding`), so this endpoint does not hit the
+    oversized-collection defect `list_resources` did; only the read scope
+    needed widening.
     """
     try:
         engine = await _get_engine_bounded()
-        rows = await _invoke_governed_helper(
-            engine.backend.execute,
+        rows, _source_graphs = await _read_union_cypher(
+            engine,
             'MATCH (r:CallableResource) WHERE r.resource_type = $a2a '
             'OR (r.resource_type = $skill AND r.provider_ref = $ref) '
             f'RETURN r LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
@@ -6493,7 +6559,7 @@ async def list_library_agents() -> list[dict[str, Any]]:
             and str(row['r'].get('status') or '') != 'ARCHIVED'
         ]
         agents.sort(key=lambda a: str(a.get('name') or '').lower())
-        bounded = _public_external_result(agents)
+        bounded = _public_external_result(agents[:_MAX_EXTERNAL_COLLECTION_ITEMS])
         return bounded if isinstance(bounded, list) else []
     except HTTPException:
         raise

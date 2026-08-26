@@ -50,7 +50,11 @@ def run(coro):
 def test_list_library_agents_returns_local_and_a2a(mock_engine):
     from agent_webui.api_extensions import list_library_agents
 
-    mock_engine.backend.execute.return_value = [
+    # FIX LANE Priority 1: `list_library_agents` now reads through
+    # `_read_union_cypher`, which falls back to `engine.query_cypher` (not
+    # `engine.backend.execute`) when there is no ambient `GraphSession` --
+    # the case for a direct handler call like this one.
+    mock_engine.query_cypher.return_value = [
         {
             'r': {
                 'id': 'resource:skill:demo',
@@ -80,7 +84,7 @@ def test_list_library_agents_returns_local_and_a2a(mock_engine):
 def test_list_library_agents_excludes_archived(mock_engine):
     from agent_webui.api_extensions import list_library_agents
 
-    mock_engine.backend.execute.return_value = [
+    mock_engine.query_cypher.return_value = [
         {
             'r': {
                 'id': 'resource:skill:demo',
@@ -98,7 +102,7 @@ def test_list_library_agents_excludes_archived(mock_engine):
 def test_list_library_agents_degrades_to_empty_on_backend_failure(mock_engine):
     from agent_webui.api_extensions import list_library_agents
 
-    mock_engine.backend.execute.side_effect = Exception('DB down')
+    mock_engine.query_cypher.side_effect = Exception('DB down')
     with _patched_engine(mock_engine):
         assert run(list_library_agents()) == []
 

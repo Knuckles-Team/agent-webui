@@ -1416,20 +1416,87 @@ class TestResourceManagementEndpoints:
     """Test resource management endpoints."""
 
     def test_list_resources_success(self, client, mock_graph_engine):
-        """Test successful resource listing."""
+        """Test successful resource listing.
+
+        FIX LANE Priority 1: `list_resources` now reads through
+        `_read_union_cypher`, which falls back to `engine.query_cypher` (not
+        `engine.backend.execute`) when there is no ambient `GraphSession` --
+        the case in this unmocked-session test client.
+        """
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             return_value=mock_graph_engine,
         ):
             mock_graph_engine.backend = MagicMock()
-            mock_graph_engine.backend.execute.return_value = [
-                {'r': {'id': 'resource1', 'type': 'MCP_TOOL'}}
+            mock_graph_engine.query_cypher.return_value = [
+                {'r': {'id': 'resource1', 'resource_type': 'MCP_TOOL'}}
             ]
 
             response = client.get('/api/enhanced/resources')
             assert response.status_code == 200
             data = response.json()
             assert isinstance(data, list)
+            assert data == [
+                {
+                    'id': 'resource1',
+                    'name': None,
+                    'type': None,
+                    'resource_type': 'MCP_TOOL',
+                    'description': '',
+                    'mcp_server': None,
+                    'status': 'active',
+                }
+            ]
+
+    def test_list_resources_survives_an_oversized_embedding_field(
+        self, client, mock_graph_engine
+    ):
+        """Live root cause of "the Callable Resources tab is always empty":
+        a real ``CallableResource`` node carries an ``embedding`` vector
+        (its RAG index), routinely far longer than
+        `_MAX_EXTERNAL_COLLECTION_ITEMS` (256) elements. The old code bounded
+        the RAW node -- embedding included -- through `_public_external_result`
+        for the WHOLE collection in one call, so `_bounded_external_value`
+        raised ``ValueError('Delegated result contains an oversized
+        collection')`` on the very first such row, the broad ``except
+        Exception`` in `list_resources` swallowed it, and the endpoint
+        returned `[]` even though the row existed and was otherwise
+        well-formed (confirmed live against the real engine: 58/58
+        `CallableResource` rows in the tenant graph carried an `embedding`
+        and every one failed to bound). `_public_resource_view` now projects
+        each row before bounding, so a 1536-element `embedding` no longer
+        reaches `_bounded_external_value` at all and the resource is
+        returned like any other.
+        """
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.backend = MagicMock()
+            mock_graph_engine.query_cypher.return_value = [
+                {
+                    'r': {
+                        'id': 'resource:skill:with-embedding',
+                        'name': 'with-embedding',
+                        'node_type': 'CallableResource',
+                        'resource_type': 'AGENT_SKILL',
+                        'description': 'Has a real embedding vector.',
+                        'mcp_server': 'demo-mcp',
+                        '_owner_id': 'principal-1',
+                        'embedding': [0.1] * 1536,
+                    }
+                }
+            ]
+
+            response = client.get('/api/enhanced/resources')
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 1
+            assert data[0]['id'] == 'resource:skill:with-embedding'
+            # The raw vector and internal governance fields never reach the
+            # browser.
+            assert 'embedding' not in data[0]
+            assert '_owner_id' not in data[0]
 
     def test_spawn_agent_success(self, client, mock_graph_engine, sample_resource_data):
         """Test successful agent spawning."""
