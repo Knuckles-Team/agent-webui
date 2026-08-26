@@ -44,9 +44,37 @@ export const MCP_TOOL_CALL_ROUTE = '/api/enhanced/mcp/tools/call'
 /** Backend route that proxies one MCP `resources/read` for a `ui://` app. */
 export const MCP_APP_RESOURCE_ROUTE = '/api/enhanced/mcp/apps/resource'
 
-/** Backend route that lists one server's governed, policy-filtered tool catalog. */
-export function mcpServerToolsRoute(server: string): string {
-  return `/api/enhanced/mcp/servers/${encodeURIComponent(server)}/tools`
+/** Backend route that lists one server's governed, policy-filtered tool catalog.
+ *
+ * The backend paginates this route (`?offset=&limit=`, alphabetical by tool
+ * name, stable across pages) and answers with an envelope carrying the TRUE
+ * `total`. Omitting the params asks for the first page at the backend's own
+ * default. */
+export function mcpServerToolsRoute(server: string, offset?: number, limit?: number): string {
+  const base = `/api/enhanced/mcp/servers/${encodeURIComponent(server)}/tools`
+  const params = new URLSearchParams()
+  if (typeof offset === 'number') params.set('offset', String(offset))
+  if (typeof limit === 'number') params.set('limit', String(limit))
+  const query = params.toString()
+  return query ? `${base}?${query}` : base
+}
+
+/** Read the `{tools, total, offset, limit, has_more}` page envelope, tolerating a bare array (the pre-pagination shape
+ * this route used to answer with) so a stale/cached backend still renders. */
+function parseToolPayload(payload: unknown): { entries: unknown[]; total: number | null } {
+  if (Array.isArray(payload)) {
+    return { entries: payload, total: payload.length }
+  }
+  if (payload && typeof payload === 'object') {
+    const envelope = payload as Record<string, unknown>
+    if (Array.isArray(envelope.tools)) {
+      return {
+        entries: envelope.tools,
+        total: typeof envelope.total === 'number' ? envelope.total : null,
+      }
+    }
+  }
+  return { entries: [], total: null }
 }
 
 /** Default MCP server name delegated to — graph-os, the KG/fleet gateway. */
@@ -131,11 +159,15 @@ function isValidToolDescriptor(value: unknown): value is McpToolDescriptor {
  */
 export async function fetchMcpServerTools(
   server: string,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; offset?: number; limit?: number } = {},
 ): Promise<McpToolDescriptor[]> {
   let res: Response
   try {
-    res = await fetch(mcpServerToolsRoute(server), {
+    // Ask for this module's whole documented budget in ONE page. Without an
+    // explicit limit the backend answers with its own smaller default, which
+    // would silently narrow MCP Apps discovery to the alphabetically-first
+    // page of a large server's catalog.
+    res = await fetch(mcpServerToolsRoute(server, options.offset, options.limit ?? MAX_CATALOG_TOOLS), {
       method: 'GET',
       credentials: 'same-origin',
       signal: options.signal,
@@ -156,12 +188,13 @@ export async function fetchMcpServerTools(
   } catch (err) {
     throw new McpClientError(`MCP tool catalog response for "${server}" was not JSON`, { cause: err })
   }
-  if (!Array.isArray(payload)) {
-    throw new McpClientError(`MCP tool catalog response for "${server}" was not a list`)
+  const { entries, total } = parseToolPayload(payload)
+  if (total === null && !Array.isArray(payload)) {
+    throw new McpClientError(`MCP tool catalog response for "${server}" was not a tool page`)
   }
   const seen = new Set<string>()
   const validated: McpToolDescriptor[] = []
-  for (const entry of payload) {
+  for (const entry of entries) {
     if (!isValidToolDescriptor(entry)) continue
     if (seen.has(entry.name)) continue
     seen.add(entry.name)

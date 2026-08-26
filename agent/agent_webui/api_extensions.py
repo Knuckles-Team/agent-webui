@@ -1909,6 +1909,7 @@ async def _read_fleet_catalog(
         _KIND_SPECS,
         _MAX_LIMIT,
         CatalogUnavailable,
+        _authorized_count,
         _authorized_page,
         _get_catalog_engine,
         _require_catalog_authority,
@@ -1967,10 +1968,41 @@ async def _read_fleet_catalog(
                 if not page:
                     break
                 rows.extend(page)
-                if (
-                    len(page) < _MAX_LIMIT
-                    or len(rows) >= _MAX_EXTERNAL_COLLECTION_ITEMS
-                ):
+                if len(page) < _MAX_LIMIT:
+                    # Drained: the row count IS the total, for free.
+                    _set_fleet_catalog_total(kind, len(rows))
+                    break
+                if len(rows) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                    # Stopped at the render bound with rows still unread.
+                    # Never leave that silent: ONE pushed-down `COUNT(*)`
+                    # (`_authorized_count`, the same authority/filter
+                    # predicate the page read used) gives the caller the real
+                    # total so it can say "showing 256 of 841" instead of
+                    # presenting a truncated list as the whole catalog. Only
+                    # a kind that actually hit the bound pays for it.
+                    try:
+                        _set_fleet_catalog_total(
+                            kind,
+                            await _invoke_governed_helper(
+                                _authorized_count,
+                                kind,
+                                tenant=tenant,
+                                principal=principal,
+                                grant_digests=grant_digests,
+                                query='',
+                                engine=engine,
+                                deadline=min(
+                                    _FLEET_CATALOG_DEADLINE_SECONDS,
+                                    remaining_total,
+                                ),
+                            ),
+                        )
+                    except Exception as exc:
+                        # The rows are already read and good. A failed COUNT
+                        # must degrade to "total unknown", never discard the
+                        # kind -- that is what the enclosing `except` would
+                        # do if this were allowed to propagate.
+                        _log_failure(f'fleet_catalog_{kind}_total', exc)
                     break
                 after = _row_key(spec, page[-1])
             result[kind] = [
@@ -2041,6 +2073,30 @@ _fleet_catalog_kind_locks_guard = threading.Lock()
 _fleet_catalog_last_synced_seen: str | None = None
 
 
+# Last observed TRUE row count per catalog kind -- the number of rows the SQL
+# table holds, which is NOT `len(rows)` whenever the drain stopped at
+# `_MAX_EXTERNAL_COLLECTION_ITEMS` (live: 841 `skills` rows, 256 rendered).
+# Kept beside the row cache rather than threaded through
+# `_read_fleet_catalog`'s return type, which every caller and its tests
+# already depend on. Written only by `_read_fleet_catalog`; a kind that has
+# never been read has no entry and reports `None` -- "unknown", never a
+# guessed number.
+_fleet_catalog_totals: dict[str, int] = {}
+
+
+def _set_fleet_catalog_total(kind: str, total: Any) -> None:
+    if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+        return
+    with _fleet_catalog_cache_guard:
+        _fleet_catalog_totals[kind] = total
+
+
+def fleet_catalog_total(kind: str) -> int | None:
+    """The TRUE number of rows `kind` holds, or `None` if never read."""
+    with _fleet_catalog_cache_guard:
+        return _fleet_catalog_totals.get(kind)
+
+
 def _fleet_catalog_kind_lock(kind: str) -> asyncio.Lock:
     """Return the single-flight lock for `kind`, creating it on first use."""
     with _fleet_catalog_kind_locks_guard:
@@ -2062,6 +2118,7 @@ def reset_fleet_catalog_cache() -> None:
     global _fleet_catalog_last_synced_seen
     with _fleet_catalog_cache_guard:
         _fleet_catalog_cache.clear()
+        _fleet_catalog_totals.clear()
         _fleet_catalog_last_synced_seen = None
     with _fleet_catalog_kind_locks_guard:
         _fleet_catalog_kind_locks.clear()
@@ -2454,11 +2511,21 @@ async def list_all_tools() -> dict[str, Any]:
     skill_graphs: list[dict[str, Any]] = []
     skill_workflows: list[dict[str, Any]] = []
     unclassified_count = 0
+    # `catalog_total` is the number of rows the `skills` table actually holds
+    # (live: 841), which is NOT `len(skill_rows)` -- the catalog read stops at
+    # `_MAX_EXTERNAL_COLLECTION_ITEMS` (256). Reporting it makes the
+    # truncation visible instead of presenting 256 rows as the whole fleet.
+    # `None` means "not known on this request", never a guessed number.
+    skill_catalog_total = fleet_catalog_total('skills')
     skill_status = {
         'source': 'sql_catalog' if skill_rows is not None else 'unavailable',
         'error': (
             None if skill_rows is not None else 'The skills catalog could not be read.'
         ),
+        'catalog_total': skill_catalog_total,
+        # How many rows this response actually carries, so
+        # `returned < catalog_total` reads as truncation, not as a shrunken fleet.
+        'returned': len(skill_rows or []),
     }
     for row in (skill_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
         skill_id = row.get('id')
@@ -2540,25 +2607,126 @@ async def list_all_tools() -> dict[str, Any]:
             # longer reports skills as unreachable when the `skills` kind
             # itself loaded fine, and vice versa.
             'kg_reachable': skill_rows is not None,
+            # NOTE (honest naming): every count below is derived from the SQL
+            # fleet catalog's own `skill_type` column, NOT from a live KG
+            # lookup -- `classify_skill_type` assigns it at ingest and never
+            # leaves it blank. The `filesystem_*`/`kg_*` names are kept for
+            # wire compatibility with existing consumers; `catalog_total` and
+            # `skill_type_counts` are the accurate, source-named fields.
             'filesystem_skill_md_count': len(skill_rows or []),
             'kg_agent_skill_count': len(skills),
             'kg_workflow_definition_count': len(skill_workflows),
             'runnable_count': len(skills) - unclassified_count,
             'describe_only_count': len(skill_workflows),
             'unclassified_count': unclassified_count,
+            'catalog_total': skill_catalog_total,
+            'skill_type_counts': {
+                'skill': len(skills),
+                'graph': len(skill_graphs),
+                'workflow': len(skill_workflows),
+                'unclassified': unclassified_count,
+            },
         },
     }
     bounded = _public_external_result(result)
     return bounded if isinstance(bounded, dict) else {}
 
 
+# One server's tool inventory is paginated, never truncated. Live root cause
+# of "a server with 1,131 tools shows nothing at all": this route bounded the
+# WHOLE delegated list through `_public_external_result` BEFORE slicing, and
+# `_bounded_external_value` RAISES `ValueError('Delegated result contains an
+# oversized collection')` on any list longer than
+# `_MAX_EXTERNAL_COLLECTION_ITEMS` (256). Measured live against `arr-mcp`
+# (1,131 tools): 503 in 5.8s cold / 0.03s warm, 0 of 1,131 tools reachable --
+# a hard cap, NOT a timeout. Ten of the 66 fleet servers are over 256 tools
+# (ciso-assistant-mcp 1,586, arr-mcp 1,131, atlassian-mcp 1,044, ...), i.e.
+# 6,582 of the fleet's 9,561 tools were unreachable through this route.
+#
+# The page is now sliced from the delegated list FIRST (so only a page ever
+# enters the bounding walk), the caller is told the TRUE `total`, and the
+# ordering is applied to the WHOLE list before slicing so page N+1 continues
+# where page N stopped instead of re-sorting a page in isolation.
+_MCP_TOOL_PAGE_DEFAULT = 100
+# Held below `_MAX_EXTERNAL_COLLECTION_ITEMS` (256) on purpose: a page is
+# bounded per entry and then assembled, so a page can never be the thing that
+# trips the collection bound the way the un-sliced list did.
+_MCP_TOOL_PAGE_MAX = 200
+
+
+def _public_mcp_tool_entry(
+    raw: Any, tool_name: str, *, enabled: bool
+) -> dict[str, Any] | None:
+    """Bound and sanitize ONE tool descriptor, independently of its page.
+
+    Per-entry rather than per-page on purpose: a single pathological
+    `input_schema` (too deep, too many properties, an oversized string) must
+    degrade that one tool, never blank the whole page the way bounding the
+    entire collection at once did. A descriptor that cannot be bounded even
+    without its schema is dropped and counted by the caller.
+    """
+    description = raw.get('description', '') if isinstance(raw, dict) else ''
+    schema = raw.get('input_schema', {}) if isinstance(raw, dict) else {}
+    ui_meta = _public_tool_ui_meta(raw.get('meta')) if isinstance(raw, dict) else None
+    for candidate_schema, schema_omitted in ((schema, False), ({}, True)):
+        entry: dict[str, Any] = {
+            'name': tool_name,
+            'description': description,
+            'input_schema': candidate_schema,
+            'enabled': enabled,
+        }
+        if schema_omitted:
+            # Named, not silent: the tool is still listed and still
+            # toggleable, but a consumer can see its schema was dropped
+            # rather than believing the tool declares no inputs.
+            entry['schema_omitted'] = True
+        if ui_meta is not None:
+            entry['meta'] = ui_meta
+        try:
+            bounded = _public_external_result(entry)
+        except ValueError:
+            continue
+        if isinstance(bounded, dict):
+            return bounded
+    return None
+
+
 @router.get('/mcp/servers/{server_name}/tools')
-async def list_mcp_server_tools(server_name: str) -> list[dict[str, Any]]:
-    """Query tools through a host-injected, governed GraphOS delegation seam."""
+async def list_mcp_server_tools(
+    server_name: str,
+    offset: int = 0,
+    limit: int = _MCP_TOOL_PAGE_DEFAULT,
+) -> dict[str, Any]:
+    """One alphabetical page of a server's tools, with the TRUE total.
+
+    Query tools through a host-injected, governed GraphOS delegation seam.
+
+    Ordering (`LOWER(name), name`) is applied to the WHOLE delegated list
+    before the page is cut, so paging is stable: page 2 continues where page
+    1 stopped rather than sorting a page in isolation.
+
+    Toggle state for the page is read with ONE `_batch_toggle_states` round
+    trip (`WHERE p.id IN $ids`), not one `get_toggle_state` call per tool.
+    The per-tool loop this replaces was a serial, individually 5s-bounded
+    round trip each -- up to 256 of them for a single expand -- and is the
+    same N+1 that was already fixed for `list_all_tools` and simply never
+    applied here.
+
+    Returns an ENVELOPE (was a bare JSON array): `total` is the real number
+    of tools this server serves, so a consumer can render "showing X of N"
+    instead of silently presenting a truncated list as complete.
+    """
 
     engine = await _get_engine_bounded()
     if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
         raise HTTPException(status_code=400, detail='Invalid MCP server name')
+    if offset < 0:
+        raise HTTPException(status_code=400, detail='offset must not be negative')
+    if not 1 <= limit <= _MCP_TOOL_PAGE_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f'limit must be between 1 and {_MCP_TOOL_PAGE_MAX}',
+        )
     delegated_inventory = get_helper('list_mcp_server_tools')
     if delegated_inventory is None:
         raise HTTPException(
@@ -2572,36 +2740,66 @@ async def list_mcp_server_tools(server_name: str) -> list[dict[str, Any]]:
             deadline=15.0,
             server_name=server_name,
         )
-        tools = _public_external_result(tools)
         if not isinstance(tools, list):
             raise ValueError('Governed MCP inventory returned an invalid shape')
 
-        # Map each discovered tool to include its toggled enable status
-        enriched_tools = []
-        for t in tools[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+        # Order the WHOLE list first (stable across pages), THEN cut the page.
+        # Nothing here walks a tool's payload -- only its already-validated
+        # name -- so an oversized fleet list costs a sort, not a bounding
+        # walk over ~1,131 schemas.
+        named: list[tuple[str, str, dict[str, Any]]] = []
+        for t in tools:
             if not isinstance(t, dict):
                 continue
             tool_name = str(t.get('name') or '')
             if not _SAFE_DELEGATION_TOKEN.fullmatch(tool_name):
                 continue
-            tool_enabled = await get_toggle_state(
-                engine, 'mcp_tool', f'{server_name}:{tool_name}'
+            named.append((tool_name.lower(), tool_name, t))
+        named.sort(key=lambda item: (item[0], item[1]))
+        total = len(named)
+        page = named[offset : offset + limit]
+
+        toggle_ids = [f'{server_name}:{tool_name}' for _key, tool_name, _t in page]
+        toggle_states, toggles_ok = await _batch_toggle_states(
+            engine, 'mcp_tool', toggle_ids
+        )
+
+        enriched_tools: list[dict[str, Any]] = []
+        dropped = 0
+        for _key, tool_name, raw in page:
+            entry = _public_mcp_tool_entry(
+                raw,
+                tool_name,
+                enabled=toggle_states.get(f'{server_name}:{tool_name}', True),
             )
-            enriched_entry: dict[str, Any] = {
-                'name': tool_name,
-                'description': t.get('description', ''),
-                'input_schema': t.get('input_schema', {}),
-                'enabled': tool_enabled,
-            }
-            # BUG-071: forward the tool's declared MCP Apps UI binding (if
-            # any) so a WebUI app-launcher can discover which tools are
-            # launchable via `meta.ui.resourceUri` -- omitted when absent so
-            # an ordinary tool's shape is unchanged.
-            ui_meta = _public_tool_ui_meta(t.get('meta'))
-            if ui_meta is not None:
-                enriched_entry['meta'] = ui_meta
-            enriched_tools.append(enriched_entry)
-        return enriched_tools
+            if entry is None:
+                dropped += 1
+                continue
+            enriched_tools.append(entry)
+        return {
+            'server': server_name,
+            'tools': enriched_tools,
+            'total': total,
+            'offset': offset,
+            'limit': limit,
+            'returned': len(enriched_tools),
+            # Never silent: a descriptor this route could not safely bound is
+            # counted here rather than just vanishing from `tools`.
+            'dropped': dropped,
+            'has_more': offset + len(page) < total,
+            'toggle_status': {
+                'source': 'kg_preferences',
+                'error': (
+                    None
+                    if toggles_ok
+                    else (
+                        'The tool toggle-preference read failed; every tool '
+                        'below defaults to "enabled" and may not reflect the '
+                        'real persisted preference.'
+                    )
+                ),
+            },
+        }
 
     except HTTPException:
         raise

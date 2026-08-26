@@ -520,42 +520,254 @@ describe('SkillsView — Manage MCP Tools panel toggles both ways (fix/tools-col
   it('a single server panel survives expand -> collapse -> expand -> collapse', async () => {
     vi.stubGlobal('fetch', routeTwoServerFetch())
     render(<SkillsView />)
-    await waitFor(() => expect(screen.getByText('server-a')).toBeInTheDocument())
+    await waitFor(() => {
+      expect(screen.getByText('server-a')).toBeInTheDocument()
+    })
 
     const buttons = screen.getAllByText('Manage MCP Tools')
     const btn = buttons[0]
 
     fireEvent.click(btn)
-    await waitFor(() => expect(screen.getByText('ta1')).toBeInTheDocument())
+    await waitFor(() => {
+      expect(screen.getByText('ta1')).toBeInTheDocument()
+    })
 
     fireEvent.click(btn)
-    await waitFor(() => expect(screen.queryByText('ta1')).not.toBeInTheDocument())
+    await waitFor(() => {
+      expect(screen.queryByText('ta1')).not.toBeInTheDocument()
+    })
 
     fireEvent.click(btn)
-    await waitFor(() => expect(screen.getByText('ta1')).toBeInTheDocument())
+    await waitFor(() => {
+      expect(screen.getByText('ta1')).toBeInTheDocument()
+    })
 
     fireEvent.click(btn)
-    await waitFor(() => expect(screen.queryByText('ta1')).not.toBeInTheDocument())
+    await waitFor(() => {
+      expect(screen.queryByText('ta1')).not.toBeInTheDocument()
+    })
   })
 
   it('collapsing one server panel does not affect an independently expanded sibling panel', async () => {
     vi.stubGlobal('fetch', routeTwoServerFetch())
     render(<SkillsView />)
-    await waitFor(() => expect(screen.getByText('server-a')).toBeInTheDocument())
+    await waitFor(() => {
+      expect(screen.getByText('server-a')).toBeInTheDocument()
+    })
     expect(screen.getByText('server-b')).toBeInTheDocument()
 
     const [btnA, btnB] = screen.getAllByText('Manage MCP Tools')
 
     fireEvent.click(btnA)
-    await waitFor(() => expect(screen.getByText('ta1')).toBeInTheDocument())
+    await waitFor(() => {
+      expect(screen.getByText('ta1')).toBeInTheDocument()
+    })
     fireEvent.click(btnB)
-    await waitFor(() => expect(screen.getByText('tb1')).toBeInTheDocument())
+    await waitFor(() => {
+      expect(screen.getByText('tb1')).toBeInTheDocument()
+    })
 
     fireEvent.click(btnA)
-    await waitFor(() => expect(screen.queryByText('ta1')).not.toBeInTheDocument())
+    await waitFor(() => {
+      expect(screen.queryByText('ta1')).not.toBeInTheDocument()
+    })
     expect(screen.getByText('tb1')).toBeInTheDocument()
 
     fireEvent.click(btnB)
-    await waitFor(() => expect(screen.queryByText('tb1')).not.toBeInTheDocument())
+    await waitFor(() => {
+      expect(screen.queryByText('tb1')).not.toBeInTheDocument()
+    })
+  })
+})
+
+/**
+ * Defect 1 (a server with 1,131 tools cannot display them) and Defect 2
+ * (skills are not organised by kind, and there is a spurious fourth column).
+ *
+ * Defect 1 measured live: `GET /api/enhanced/mcp/servers/arr-mcp/tools`
+ * answered 503 for every one of `arr-mcp`'s 1,131 tools, because the route
+ * bounded the WHOLE delegated list before slicing and the shared bound
+ * rejects any collection over 256 items. The route now pages; this view must
+ * lazily load ONE page on expand, state the TRUE total, and offer the rest.
+ */
+describe('SkillsView — MCP tool pagination (Defect 1)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const BIG_SERVER_PAYLOAD = {
+    ...GROUPED_PAYLOAD,
+    mcp_tools: [{ name: 'arr-mcp', type: 'mcp', status: 'ok', enabled: true, tool_count: 1131 }],
+  }
+
+  function page(offset: number, size: number, total: number) {
+    return {
+      server: 'arr-mcp',
+      tools: Array.from({ length: size }, (_unused, i) => ({
+        name: `tool_${String(offset + i).padStart(4, '0')}`,
+        description: 'x',
+        input_schema: {},
+        enabled: true,
+      })),
+      total,
+      offset,
+      limit: size,
+      has_more: offset + size < total,
+    }
+  }
+
+  function routeBigServer() {
+    return vi.fn((url: string) => {
+      if (url.includes('/api/enhanced/mcp/servers/arr-mcp/tools')) {
+        const offset = Number(new URL(url, 'http://localhost').searchParams.get('offset') ?? '0')
+        return Promise.resolve(new Response(JSON.stringify(page(offset, 100, 1131)), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify(BIG_SERVER_PAYLOAD), { status: 200 }))
+    })
+  }
+
+  it('fetches nothing for a server until its panel is expanded', async () => {
+    const fetchMock = routeBigServer()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<SkillsView />)
+    await waitFor(() => {
+      expect(screen.getByText('arr-mcp')).toBeInTheDocument()
+    })
+    expect(fetchMock.mock.calls.some((c) => c[0].includes('/arr-mcp/tools'))).toBe(false)
+  })
+
+  it('loads one page on expand and states the true total, not the page length', async () => {
+    vi.stubGlobal('fetch', routeBigServer())
+    render(<SkillsView />)
+    await waitFor(() => {
+      expect(screen.getByText('arr-mcp')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getAllByText('Manage MCP Tools')[0])
+    await waitFor(() => {
+      expect(screen.getByText('tool_0000')).toBeInTheDocument()
+    })
+    // "Showing 100 of 1131 tools" -- never a silently truncated list.
+    expect(screen.getByText(/Showing/).textContent?.replace(/\s+/g, ' ')).toContain('Showing 100 of 1131 tools')
+    expect(screen.getByText(/Load 100 more/)).toBeInTheDocument()
+  })
+
+  it('appends the next page instead of replacing the loaded one', async () => {
+    vi.stubGlobal('fetch', routeBigServer())
+    render(<SkillsView />)
+    await waitFor(() => {
+      expect(screen.getByText('arr-mcp')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getAllByText('Manage MCP Tools')[0])
+    await waitFor(() => {
+      expect(screen.getByText('tool_0000')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText(/Load 100 more/))
+    await waitFor(() => {
+      expect(screen.getByText('tool_0100')).toBeInTheDocument()
+    })
+    // The first page is still there -- "load more", not "replace".
+    expect(screen.getByText('tool_0000')).toBeInTheDocument()
+  })
+
+  it('renders a failed tool read as a stated error, never as a healthy empty server', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.includes('/api/enhanced/mcp/servers/arr-mcp/tools')) {
+          return Promise.resolve(new Response('MCP inventory unavailable', { status: 503 }))
+        }
+        return Promise.resolve(new Response(JSON.stringify(BIG_SERVER_PAYLOAD), { status: 200 }))
+      }),
+    )
+    render(<SkillsView />)
+    await waitFor(() => {
+      expect(screen.getByText('arr-mcp')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getAllByText('Manage MCP Tools')[0])
+    await waitFor(() => {
+      expect(screen.getByText(/could not be read/)).toBeInTheDocument()
+    })
+  })
+})
+
+describe('SkillsView — a catalog error is visible even when servers did list', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('shows mcp_status.error above a non-empty server list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch({
+        ...GROUPED_PAYLOAD,
+        mcp_status: { source: 'sql_catalog', error: 'The MCP fleet catalog could not be read.' },
+        mcp_tools: [{ name: 'arr-mcp', type: 'mcp', status: 'ok', enabled: true, tool_count: 1131 }],
+      }),
+    )
+    render(<SkillsView />)
+    await waitFor(() => {
+      expect(screen.getByText('arr-mcp')).toBeInTheDocument()
+    })
+    // Previously this banner lived only in the `length === 0` branch, so a
+    // degraded read rendered as a healthy fleet.
+    expect(screen.getByText('The MCP fleet catalog could not be read.')).toBeInTheDocument()
+  })
+})
+
+describe('SkillsView — skills grouped by kind, no fourth column (Defect 2)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const UNCLASSIFIED_PAYLOAD = {
+    ...GROUPED_PAYLOAD,
+    skill_unclassified: [
+      {
+        id: 'mystery-skill',
+        name: 'mystery-skill',
+        description: 'Kind could not be determined.',
+        enabled: true,
+        tags: [],
+        domain: 'ops',
+        type: 'Unclassified',
+        runnable: false,
+        resource_type: null,
+        kg_classified: false,
+      },
+    ],
+    skill_classification: { ...GROUPED_PAYLOAD.skill_classification, unclassified_count: 1 },
+  }
+
+  it('renders exactly three kind columns — skill, skill-graph, skill-workflow', async () => {
+    vi.stubGlobal('fetch', mockFetch(UNCLASSIFIED_PAYLOAD))
+    render(<SkillsView />)
+    await waitFor(() => {
+      expect(screen.getByText('Cognitive Skills')).toBeInTheDocument()
+    })
+    screen.getByText('Cognitive Skills').closest('button')?.click()
+
+    await waitFor(() => {
+      expect(screen.getByText('Skills')).toBeInTheDocument()
+    })
+    expect(screen.getByText('Skill Graphs')).toBeInTheDocument()
+    expect(screen.getByText('Skill Workflows')).toBeInTheDocument()
+    // The owner is explicit: there is no separate "unclassified" column.
+    expect(screen.queryByText('Unclassified')).not.toBeInTheDocument()
+  })
+
+  it('lists an unclassified skill among the skills, carrying an "unclassified" badge', async () => {
+    vi.stubGlobal('fetch', mockFetch(UNCLASSIFIED_PAYLOAD))
+    render(<SkillsView />)
+    await waitFor(() => {
+      expect(screen.getByText('Cognitive Skills')).toBeInTheDocument()
+    })
+    screen.getByText('Cognitive Skills').closest('button')?.click()
+
+    await waitFor(() => {
+      expect(screen.getByText('mystery-skill')).toBeInTheDocument()
+    })
+    expect(screen.getByText('unclassified')).toBeInTheDocument()
   })
 })
