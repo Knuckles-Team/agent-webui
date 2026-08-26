@@ -13,9 +13,12 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import McpAppsView from '@/components/views/McpAppsView'
-import { MCP_APP_RESOURCE_ROUTE, mcpServerToolsRoute } from '@/lib/mcp-client'
+import { MAX_CATALOG_TOOLS, MCP_APP_RESOURCE_ROUTE, mcpServerToolsRoute } from '@/lib/mcp-client'
 
-const TOOLS_ROUTE = mcpServerToolsRoute('graph-os')
+// The route is paginated; the client asks for its whole documented budget
+// in one page so MCP Apps discovery is never narrowed to the
+// alphabetically-first slice of a large server's catalog.
+const TOOLS_ROUTE = mcpServerToolsRoute('graph-os', undefined, MAX_CATALOG_TOOLS)
 const APP_URI = 'ui://graph-os/task-progress.html'
 const APP_HTML = '<html><head></head><body><div id="jobId">-</div></body></html>'
 
@@ -67,7 +70,20 @@ function mockFetch() {
     calls.push({ method: init?.method ?? 'GET', url, body })
 
     if (url === TOOLS_ROUTE) {
-      return Promise.resolve(new Response(JSON.stringify(TOOL_INVENTORY), { status: 200 }))
+      // The backend's paginated envelope, with the TRUE total.
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            server: 'graph-os',
+            tools: TOOL_INVENTORY,
+            total: TOOL_INVENTORY.length,
+            offset: 0,
+            limit: MAX_CATALOG_TOOLS,
+            has_more: false,
+          }),
+          { status: 200 },
+        ),
+      )
     }
     if (url === MCP_APP_RESOURCE_ROUTE) {
       return Promise.resolve(

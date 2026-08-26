@@ -15,7 +15,6 @@ import {
   Sliders,
   Layers,
   AlertTriangle,
-  HelpCircle,
   Plus,
   Pencil,
   Trash2,
@@ -29,7 +28,6 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
-import { api } from '@/lib/api'
 import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
 import { SchemaActionForm } from '@/components/capabilities/SchemaActionForm'
 import type { JsonSchema } from '@/lib/capability-forms'
@@ -110,6 +108,11 @@ interface SkillClassificationSummary {
   runnable_count: number
   describe_only_count: number
   unclassified_count: number
+  /** The TRUE number of rows the fleet `skills` table holds. The backend's
+   * catalog read stops at 256, so this is what distinguishes "these are all
+   * the skills" from "these are the first 256 of 841". `null`/absent when
+   * the backend could not determine it -- never a guessed number. */
+  catalog_total?: number | null
 }
 
 /** Why `mcp_tools` looks the way it does -- distinguishes a genuinely empty
@@ -126,13 +129,10 @@ interface ToolsData {
   mcp_tools: MCPTool[]
   mcp_status: MCPStatus
   builtin_tools: BuiltinTool[]
-  // Includes unclassified skills (`kg_classified: false`) alongside every
-  // other agent skill -- there is no separate fourth bucket. `RunnabilityBadge`
-  // flags an unclassified entry in place; `ClassifySkillControl` lets it be
-  // classified from right there.
   skills: Skill[]
   skill_graphs: SkillGraph[]
   skill_workflows: SkillWorkflow[]
+  skill_unclassified: Skill[]
   skill_classification: SkillClassificationSummary
 }
 
@@ -141,7 +141,58 @@ interface LiveMCPTool {
   description: string
   input_schema: Record<string, unknown>
   enabled: boolean
+  /** Set by the backend when a descriptor's `input_schema` could not be
+   * safely bounded -- the tool is still listed and toggleable, but its
+   * schema was dropped rather than silently reported as empty. */
+  schema_omitted?: boolean
 }
+
+/** One lazily-loaded, alphabetically-ordered page of one server's tools.
+ * `total` is the server's REAL tool count (`arr-mcp` serves 1,131), so the
+ * UI can say "showing 100 of 1,131" instead of presenting a page as the
+ * whole catalog. `error` is the stated reason a load failed -- rendered in
+ * place, never swallowed into an empty-looking list. */
+interface McpToolPageState {
+  tools: LiveMCPTool[]
+  total: number
+  error?: string
+  toggleError?: string | null
+}
+
+/** Tools fetched per expand. Deliberately smaller than the backend's own
+ * `_MCP_TOOL_PAGE_MAX` (200) so the first page of a 1,131-tool server paints
+ * quickly; "Load more" walks the rest. */
+const MCP_TOOL_PAGE_SIZE = 100
+
+const liveMcpToolSchema: z.ZodType<LiveMCPTool> = z.object({
+  name: z.string(),
+  description: z.string(),
+  input_schema: z.record(z.string(), z.unknown()),
+  enabled: z.boolean(),
+  schema_omitted: z.boolean().optional(),
+})
+
+/** The paginated envelope `GET /api/enhanced/mcp/servers/{s}/tools` returns.
+ * A bare array (the pre-pagination shape) is still accepted so a rolling
+ * deploy never blanks the panel. */
+const mcpToolPageSchema = z.union([
+  z.object({
+    tools: looseArray(liveMcpToolSchema),
+    total: z.number(),
+    offset: z.number(),
+    limit: z.number(),
+    has_more: z.boolean().optional(),
+    toggle_status: z.object({ source: z.string(), error: z.string().nullable() }).optional(),
+  }),
+  looseArray(liveMcpToolSchema).transform((tools) => ({
+    tools,
+    total: tools.length,
+    offset: 0,
+    limit: tools.length,
+    has_more: false,
+    toggle_status: undefined,
+  })),
+])
 
 const mcpToolSchema: z.ZodType<MCPTool> = z.object({
   name: z.string(),
@@ -208,6 +259,7 @@ const skillClassificationSummarySchema: z.ZodType<SkillClassificationSummary> = 
   runnable_count: z.number(),
   describe_only_count: z.number(),
   unclassified_count: z.number(),
+  catalog_total: z.number().nullable().optional(),
 })
 const mcpStatusSchema: z.ZodType<MCPStatus> = z.object({
   source: z.string(),
@@ -220,6 +272,7 @@ const toolsDataSchema: z.ZodType<ToolsData> = z.object({
   skills: looseArray(skillSchema),
   skill_graphs: looseArray(skillGraphSchema),
   skill_workflows: looseArray(skillWorkflowSchema),
+  skill_unclassified: looseArray(skillSchema),
   skill_classification: skillClassificationSummarySchema,
 })
 
@@ -257,8 +310,7 @@ function matchesSearch(query: string, name: string, domain?: string, tags?: stri
 }
 
 /** Structural shape shared by everything a cognitive-registry box renders
- * (Skill / SkillGraph / SkillWorkflow items, including an unclassified
- * skill -- it is a Skill, not a separate shape). */
+ * (Skill / SkillGraph / SkillWorkflow / unclassified Skill items). */
 interface CognitiveItem {
   id: string
   name: string
@@ -274,22 +326,18 @@ interface CognitiveItem {
 
 /** Shows runnability explicitly (GOC-60-W06a): a describe-only
  * `WorkflowDefinition` is visibly distinguished from a runnable
- * `CallableResource(AGENT_SKILL)`, and a skill whose `skill_type` the
- * catalog does not recognize reads as "Unclassified" -- flagged in place
- * among the other Agent Skills rather than hidden in a separate group or
- * silently guessed one way or the other. Renders nothing for surfaces with
- * no resource-type concept at all (Skill Graphs -- `resource_type` is
- * `undefined`, not `null`, on that shape). */
+ * `CallableResource(AGENT_SKILL)`, and an item whose kind the catalog could
+ * not determine carries an `unclassified` BADGE rather than being moved into
+ * a bucket of its own -- an unclassified skill is still a skill and belongs
+ * in the skills list. Renders nothing for surfaces with no KG resource-type
+ * concept at all (Skill Graphs -- `resource_type` is `undefined`, not
+ * `null`, on that shape). */
 function RunnabilityBadge({ item }: { item: CognitiveItem }) {
   if (item.resource_type === undefined) return null
   if (!item.kg_classified) {
     return (
-      <Badge
-        variant="outline"
-        className="text-[8px] font-bold border-amber-500/40 text-amber-400 bg-amber-500/10 gap-0.5"
-      >
-        <HelpCircle className="size-2.5" />
-        Unclassified
+      <Badge variant="outline" className="text-[8px] font-bold border-amber-500/40 text-amber-400 bg-amber-500/10">
+        unclassified
       </Badge>
     )
   }
@@ -316,7 +364,6 @@ function CognitiveBox({
   emptyLabel,
   onToggle,
   renderSecondary,
-  renderClassifyAction,
 }: {
   icon: LucideIcon
   iconClassName: string
@@ -327,10 +374,6 @@ function CognitiveBox({
   emptyLabel: string
   onToggle: (item: CognitiveItem) => void
   renderSecondary: (item: CognitiveItem) => ReactNode
-  /** Optional classify affordance rendered per item -- only the Agent
-   * Skills box passes this; it returns `null` itself for an already-
-   * classified item, so nothing else changes. */
-  renderClassifyAction?: (item: CognitiveItem) => ReactNode
 }) {
   return (
     <div className="space-y-4 border border-border/40 rounded-xl bg-card/40 p-4">
@@ -390,7 +433,6 @@ function CognitiveBox({
                         ))}
                       </div>
                       {renderSecondary(item)}
-                      {renderClassifyAction?.(item)}
                     </div>
                   ))}
                 </div>
@@ -403,67 +445,6 @@ function CognitiveBox({
   )
 }
 
-const CLASSIFY_OPTIONS: { value: 'skill' | 'workflow' | 'graph'; label: string }[] = [
-  { value: 'skill', label: 'Skill' },
-  { value: 'workflow', label: 'Workflow' },
-  { value: 'graph', label: 'Skill Graph' },
-]
-
-/** Classify affordance for one unclassified Agent Skill card. Renders
- * nothing for an already-classified item -- `SkillsView` passes this to
- * EVERY item in the Agent Skills box, and it is this component's own job to
- * be a no-op unless `item.kg_classified === false`. Local `pending` state
- * only tracks the pending SELECT choice; nothing here ever claims the
- * classification took effect -- that comes back from the parent's own
- * refetch after a real, backend-confirmed persist (fail-closed: see
- * `handleClassifySkill`). A plain native `<select>` rather than the styled
- * Radix picker -- this compact per-card control needs none of its extra
- * behavior, and native keeps it trivially accessible/testable. */
-function ClassifySkillControl({
-  item,
-  busy,
-  onClassify,
-}: {
-  item: CognitiveItem
-  busy: boolean
-  onClassify: (item: CognitiveItem, skillType: 'skill' | 'workflow' | 'graph') => void
-}) {
-  const [pending, setPending] = useState<'skill' | 'workflow' | 'graph' | ''>('')
-  if (item.kg_classified !== false) return null
-
-  return (
-    <div className="flex items-center gap-1.5 pt-1 border-t border-border/20 mt-1">
-      <select
-        aria-label={`Classify ${item.name}`}
-        value={pending}
-        disabled={busy}
-        onChange={(e) => {
-          setPending(e.target.value as 'skill' | 'workflow' | 'graph' | '')
-        }}
-        className="h-6 flex-1 min-w-0 rounded border border-border/40 bg-muted/20 text-[10px] px-1.5 text-foreground disabled:opacity-50"
-      >
-        <option value="">Classify as…</option>
-        {CLASSIFY_OPTIONS.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-6 px-2 text-[10px]"
-        disabled={busy || !pending}
-        onClick={() => {
-          if (pending) onClassify(item, pending)
-        }}
-      >
-        {busy ? <RefreshCw className="size-3 animate-spin" /> : 'Set'}
-      </Button>
-    </div>
-  )
-}
-
 export default function SkillsView() {
   const [data, setData] = useState<ToolsData>({
     mcp_tools: [],
@@ -472,6 +453,7 @@ export default function SkillsView() {
     skills: [],
     skill_graphs: [],
     skill_workflows: [],
+    skill_unclassified: [],
     skill_classification: {
       source: 'kg_resource_type',
       kg_reachable: true,
@@ -490,7 +472,7 @@ export default function SkillsView() {
 
   // Track expanded MCP servers and their loaded tools
   const [expandedMcp, setExpandedMcp] = useState<Record<string, boolean | undefined>>({})
-  const [mcpTools, setMcpTools] = useState<Record<string, LiveMCPTool[] | undefined>>({})
+  const [mcpTools, setMcpTools] = useState<Record<string, McpToolPageState | undefined>>({})
   const [loadingMcpTools, setLoadingMcpTools] = useState<Record<string, boolean | undefined>>({})
 
   // MCP server add/edit -- schema-derived form (BUG-260 pattern: the fields
@@ -687,10 +669,10 @@ export default function SkillsView() {
   }
 
   const handleToggleCognitive = async (
-    // An unclassified item lives in `data.skills` alongside every other
-    // agent skill (no separate bucket), and its toggle preference is keyed
-    // under the same `skill` namespace regardless of `kg_classified`
-    // (api_extensions.py's `get_toggle_state` call is identical either way).
+    // The backend keys an unclassified item's toggle preference under the
+    // same `skill` namespace it uses while KG-unverified (api_extensions.py
+    // `_get_engine_bounded`/`get_toggle_state` call for the unclassified
+    // branch) -- no separate `skill_unclassified` toggle type exists.
     type: 'skill' | 'skill_graph' | 'skill_workflow',
     id: string,
     currentVal: boolean,
@@ -716,37 +698,6 @@ export default function SkillsView() {
     }
   }
 
-  const [classifyingId, setClassifyingId] = useState<string | null>(null)
-
-  /** Classify an unclassified skill and persist the choice. Fail-closed: a
-   * toast only ever claims success when the backend's own `persisted` field
-   * says so -- never optimistically, and the list is always refetched from
-   * the real backend state afterward rather than patched locally, so the
-   * badge only ever reflects what is actually on record. */
-  const handleClassifySkill = async (item: CognitiveItem, skillType: 'skill' | 'workflow' | 'graph') => {
-    setClassifyingId(item.id)
-    try {
-      const result = await api.classifySkill(item.id, skillType)
-      if (!result.persisted) {
-        toast.error(result.reason ?? `Could not classify '${item.name}'`)
-        return
-      }
-      if (result.persisted_to_source_file) {
-        toast.success(`'${item.name}' classified as ${result.classification} -- written to its SKILL.md.`)
-      } else {
-        toast.success(
-          `'${item.name}' classified as ${result.classification} -- the skills source is read-only here, ` +
-            'so the choice was saved as a durable override that applies on every future sync.',
-        )
-      }
-      void fetchTools()
-    } catch {
-      toast.error(`Error classifying '${item.name}'`)
-    } finally {
-      setClassifyingId(null)
-    }
-  }
-
   const handleToggleMcpTool = async (serverName: string, toolName: string, currentVal: boolean) => {
     try {
       const res = await fetch('/api/enhanced/tools/toggle', {
@@ -760,8 +711,20 @@ export default function SkillsView() {
       })
       if (res.ok) {
         toast.success(`Tool '${toolName}' ${!currentVal ? 'enabled' : 'disabled'}`)
-        // Refresh local cache for this server
-        void loadMcpTools(serverName)
+        // Update this tool in place. Re-fetching the server would discard
+        // every page already loaded (up to 1,131 tools) to re-read a value
+        // this request just persisted.
+        setMcpTools((prev) => {
+          const entry = prev[serverName]
+          if (!entry) return prev
+          return {
+            ...prev,
+            [serverName]: {
+              ...entry,
+              tools: entry.tools.map((t) => (t.name === toolName ? { ...t, enabled: !currentVal } : t)),
+            },
+          }
+        })
       } else {
         toast.error('Failed to toggle tool status')
       }
@@ -770,23 +733,46 @@ export default function SkillsView() {
     }
   }
 
-  const loadMcpTools = async (serverName: string) => {
+  /** Fetch ONE page of `serverName`'s tools. `offset === 0` replaces the
+   * panel's contents; a later offset appends, so "Load more" walks a
+   * 1,131-tool server without ever asking for all of it at once. A failure
+   * is stored on the server's own entry and rendered in place -- a backend
+   * outage must not read as a healthy server that serves no tools. */
+  const loadMcpTools = async (serverName: string, offset = 0) => {
     try {
       setLoadingMcpTools((prev) => ({ ...prev, [serverName]: true }))
-      const res = await fetch(`/api/enhanced/mcp/servers/${encodeURIComponent(serverName)}/tools`)
-      if (res.ok) {
-        const toolsList = (await res.json()) as LiveMCPTool[]
-        setMcpTools((prev) => ({ ...prev, [serverName]: toolsList }))
-      } else {
-        toast.error(`Could not load tools for server '${serverName}'`)
-      }
-    } catch {
-      toast.error(`Error loading tools for '${serverName}'`)
+      const page = await fetchValidated(
+        `/api/enhanced/mcp/servers/${encodeURIComponent(serverName)}/tools?offset=${String(offset)}&limit=${String(MCP_TOOL_PAGE_SIZE)}`,
+        mcpToolPageSchema,
+      )
+      setMcpTools((prev) => {
+        const previous = offset > 0 ? (prev[serverName]?.tools ?? []) : []
+        return {
+          ...prev,
+          [serverName]: {
+            tools: [...previous, ...page.tools],
+            total: page.total,
+            toggleError: page.toggle_status?.error ?? null,
+          },
+        }
+      })
+    } catch (err) {
+      const reason =
+        err instanceof ApiError
+          ? `The tool catalog for '${serverName}' could not be read (HTTP ${String(err.status)}).`
+          : `The tool catalog for '${serverName}' could not be read.`
+      setMcpTools((prev) => ({
+        ...prev,
+        [serverName]: { tools: prev[serverName]?.tools ?? [], total: prev[serverName]?.total ?? 0, error: reason },
+      }))
+      toast.error(reason)
     } finally {
       setLoadingMcpTools((prev) => ({ ...prev, [serverName]: false }))
     }
   }
 
+  /** Lazy: nothing is fetched for a server until its panel is opened, so the
+   * fleet list never pays for 9,561 tool descriptors it does not show. */
   const toggleMcpExpansion = (serverName: string) => {
     const isExpanded = !expandedMcp[serverName]
     setExpandedMcp((prev) => ({ ...prev, [serverName]: isExpanded }))
@@ -799,7 +785,13 @@ export default function SkillsView() {
   // search working across the new grouped-by-domain layout).
   const filteredMcp = data.mcp_tools.filter((t) => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
   const filteredBuiltin = data.builtin_tools.filter((t) => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  const filteredSkills = data.skills.filter((s) => matchesSearch(searchQuery, s.name, s.domain, s.tags))
+  // Skills are grouped by KIND -- skill-graph, skill-workflow, and skill
+  // (atomic). There is deliberately NO fourth "unclassified" bucket: a skill
+  // whose kind the catalog could not determine is listed here with the rest
+  // and carries an `unclassified` badge (`RunnabilityBadge`). The backend
+  // still reports `skill_unclassified` separately; it is folded in here.
+  const allSkills = [...data.skills].sort((a, b) => a.name.localeCompare(b.name))
+  const filteredSkills = allSkills.filter((s) => matchesSearch(searchQuery, s.name, s.domain, s.tags))
   const filteredGraphs = data.skill_graphs.filter((g) => matchesSearch(searchQuery, g.name, g.domain, g.tags))
   const filteredWorkflows = data.skill_workflows.filter((w) => matchesSearch(searchQuery, w.name, w.domain, w.tags))
 
@@ -860,7 +852,7 @@ export default function SkillsView() {
                 id: 'cognitive',
                 label: 'Cognitive Skills',
                 icon: Layers,
-                count: data.skills.length + data.skill_graphs.length + data.skill_workflows.length,
+                count: allSkills.length + data.skill_graphs.length + data.skill_workflows.length,
               },
             ].map((tab) => (
               <button
@@ -895,6 +887,18 @@ export default function SkillsView() {
                 {/* 1. MCP Tools */}
                 {activeTab === 'mcp' && (
                   <div className="space-y-4">
+                    {/* A catalog failure is surfaced whether or not the list
+                        came back empty. Previously this banner lived ONLY in
+                        the `filteredMcp.length === 0` branch, so a partial
+                        backend failure -- some servers listed, the read
+                        degraded -- rendered as a healthy fleet and was
+                        reported to us as "some servers show 0 tools". */}
+                    {data.mcp_status.error && (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-amber-300">
+                        <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                        <p className="text-xs">{data.mcp_status.error}</p>
+                      </div>
+                    )}
                     <div className="flex justify-end">
                       <Button
                         size="sm"
@@ -911,12 +915,7 @@ export default function SkillsView() {
                     {filteredMcp.length === 0 ? (
                       <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
                         <span className="text-muted-foreground text-sm">No MCP servers registered.</span>
-                        {data.mcp_status.error ? (
-                          <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-amber-300 max-w-xl text-left">
-                            <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-                            <p className="text-xs">{data.mcp_status.error}</p>
-                          </div>
-                        ) : (
+                        {!data.mcp_status.error && (
                           <span className="text-[10px] text-muted-foreground/70">
                             Checked the MCP fleet catalog — it genuinely has no servers configured.
                           </span>
@@ -926,7 +925,9 @@ export default function SkillsView() {
                       <div className="grid grid-cols-1 gap-4">
                         {filteredMcp.map((server) => {
                           const isExpanded = !!expandedMcp[server.name]
-                          const serverTools = mcpTools[server.name] ?? []
+                          const toolPage = mcpTools[server.name]
+                          const serverTools = toolPage?.tools ?? []
+                          const toolTotal = toolPage?.total ?? 0
                           const isLoadingTools = !!loadingMcpTools[server.name]
 
                           return (
@@ -1021,14 +1022,36 @@ export default function SkillsView() {
 
                                   {isExpanded && (
                                     <div className="mt-3 bg-muted/5 rounded-lg border border-border/20 p-3 space-y-2">
-                                      {isLoadingTools ? (
+                                      {toolPage?.error && (
+                                        <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-amber-300">
+                                          <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                                          <p className="text-xs">{toolPage.error}</p>
+                                        </div>
+                                      )}
+                                      {toolPage?.toggleError && (
+                                        <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-amber-300">
+                                          <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                                          <p className="text-xs">{toolPage.toggleError}</p>
+                                        </div>
+                                      )}
+                                      {serverTools.length > 0 && (
+                                        <div className="text-[10px] text-muted-foreground">
+                                          Showing{' '}
+                                          <span className="font-semibold text-foreground">{serverTools.length}</span>{' '}
+                                          of <span className="font-semibold text-foreground">{toolTotal}</span> tools,
+                                          alphabetically.
+                                        </div>
+                                      )}
+                                      {isLoadingTools && serverTools.length === 0 ? (
                                         <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground font-medium">
                                           <RefreshCw className="size-3.5 animate-spin text-teal-400" />
                                           <span>Discovering tools...</span>
                                         </div>
                                       ) : serverTools.length === 0 ? (
                                         <div className="text-xs text-muted-foreground py-2">
-                                          No tools exposed by this MCP server.
+                                          {toolPage?.error
+                                            ? 'No tools could be read for this MCP server.'
+                                            : 'No tools exposed by this MCP server.'}
                                         </div>
                                       ) : (
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -1064,6 +1087,24 @@ export default function SkillsView() {
                                             </div>
                                           ))}
                                         </div>
+                                      )}
+                                      {serverTools.length < toolTotal && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="w-full gap-1.5 text-xs"
+                                          disabled={isLoadingTools}
+                                          onClick={() => {
+                                            void loadMcpTools(server.name, serverTools.length)
+                                          }}
+                                        >
+                                          {isLoadingTools ? (
+                                            <RefreshCw className="size-3.5 animate-spin" />
+                                          ) : (
+                                            <ChevronDown className="size-3.5" />
+                                          )}
+                                          Load {Math.min(MCP_TOOL_PAGE_SIZE, toolTotal - serverTools.length)} more
+                                        </Button>
                                       )}
                                     </div>
                                   )}
@@ -1137,22 +1178,21 @@ export default function SkillsView() {
                   </div>
                 )}
 
-                {/* 3. Cognitive Registry - classified by the catalog's own skill_type
-                    truth, organized by domain, 3 boxes: agent skills (runnable
-                    + unclassified, flagged in place) / skill graphs /
-                    describe-only workflows. An unclassified skill is still a
-                    skill -- it is NOT a fourth bucket. */}
+                {/* 3. Cognitive Registry - classified by the KG's own resource_type
+                    truth (GOC-60-W06 / E7), organized by domain, 4 boxes:
+                    runnable skills / skill graphs / describe-only workflows /
+                    items the KG has no record of yet. */}
                 {activeTab === 'cognitive' && (
                   <div className="space-y-4">
                     {!data.skill_classification.kg_reachable && (
                       <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-amber-300">
                         <AlertTriangle className="size-4 shrink-0 mt-0.5" />
                         <div className="text-xs">
-                          <p className="font-bold">Skill catalog unreachable</p>
+                          <p className="font-bold">Knowledge Graph unreachable</p>
                           <p className="text-amber-300/80">
-                            Classification could not be read from the fleet catalog on this request. Every discovered
-                            skill is shown under Agent Skills, flagged &ldquo;Unclassified&rdquo;, rather than guessed
-                            from its filesystem path.
+                            Skill/workflow classification could not be verified against the KG on this request. Every
+                            discovered skill is still listed below, each carrying an &ldquo;unclassified&rdquo; badge
+                            rather than having a kind guessed from its filesystem path.
                           </p>
                         </div>
                       </div>
@@ -1160,28 +1200,39 @@ export default function SkillsView() {
                     <div className="text-[10px] text-muted-foreground px-1">
                       <span className="font-semibold text-foreground">
                         {data.skill_classification.filesystem_skill_md_count}
-                      </span>{' '}
-                      discovered on disk ·{' '}
-                      <span className="font-semibold text-emerald-400">
-                        {data.skill_classification.runnable_count}
-                      </span>{' '}
-                      classified runnable ·{' '}
-                      <span className="font-semibold text-sky-400">
-                        {data.skill_classification.describe_only_count}
-                      </span>{' '}
-                      describe-only ·{' '}
-                      <span className="font-semibold text-amber-400">
-                        {data.skill_classification.unclassified_count}
-                      </span>{' '}
-                      unclassified
+                      </span>
+                      {typeof data.skill_classification.catalog_total === 'number' &&
+                        data.skill_classification.catalog_total >
+                          data.skill_classification.filesystem_skill_md_count && (
+                          <>
+                            {' of '}
+                            <span className="font-semibold text-foreground">
+                              {data.skill_classification.catalog_total}
+                            </span>
+                          </>
+                        )}{' '}
+                      in the fleet catalog · <span className="font-semibold text-emerald-400">{allSkills.length}</span>{' '}
+                      skill · <span className="font-semibold text-teal-400">{data.skill_graphs.length}</span>{' '}
+                      skill-graph · <span className="font-semibold text-sky-400">{data.skill_workflows.length}</span>{' '}
+                      skill-workflow
+                      {data.skill_classification.unclassified_count > 0 && (
+                        <>
+                          {' '}
+                          ·{' '}
+                          <span className="font-semibold text-amber-400">
+                            {data.skill_classification.unclassified_count}
+                          </span>{' '}
+                          badged unclassified
+                        </>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                       <CognitiveBox
                         icon={Zap}
                         iconClassName="text-emerald-400"
-                        title="Agent Skills"
-                        description="Runnable CallableResource(AGENT_SKILL) -- unclassified skills flagged, classify them here"
+                        title="Skills"
+                        description="Catalog skill_type: skill / mcp_skill"
                         groups={groupedSkills}
                         totalCount={filteredSkills.length}
                         emptyLabel="No matching skills found."
@@ -1193,22 +1244,13 @@ export default function SkillsView() {
                             {item.description ?? 'No description available.'}
                           </p>
                         )}
-                        renderClassifyAction={(item) => (
-                          <ClassifySkillControl
-                            item={item}
-                            busy={classifyingId === item.id}
-                            onClassify={(target, skillType) => {
-                              void handleClassifySkill(target, skillType)
-                            }}
-                          />
-                        )}
                       />
 
                       <CognitiveBox
                         icon={Network}
                         iconClassName="text-teal-400"
                         title="Skill Graphs"
-                        description="Epistemic connection abstractions"
+                        description="Catalog skill_type: graph"
                         groups={groupedGraphs}
                         totalCount={filteredGraphs.length}
                         emptyLabel="No matching graphs found."
@@ -1226,7 +1268,7 @@ export default function SkillsView() {
                         icon={GitBranch}
                         iconClassName="text-sky-400"
                         title="Skill Workflows"
-                        description="KG-verified describe-only WorkflowDefinition"
+                        description="Catalog skill_type: workflow"
                         groups={groupedWorkflows}
                         totalCount={filteredWorkflows.length}
                         emptyLabel="No matching workflows found."

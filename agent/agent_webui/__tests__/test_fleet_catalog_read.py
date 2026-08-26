@@ -235,3 +235,144 @@ async def test_read_fleet_catalog_returns_the_kind_as_none_on_catalog_unavailabl
         result = await api_extensions._read_fleet_catalog('servers')
 
     assert result == {'servers': None}
+
+
+@pytest.mark.asyncio
+async def test_a_fully_drained_kind_reports_its_row_count_as_the_total():
+    """A kind that drained needs NO extra round trip -- the rows are the total."""
+    from agent_utilities.gateway import registry_api
+
+    api_extensions.reset_fleet_catalog_cache()
+
+    def _no_count(*args, **kwargs):  # pragma: no cover - must never be called
+        raise AssertionError('a fully drained kind must not pay for a COUNT(*)')
+
+    with (
+        patch.object(
+            registry_api,
+            '_require_catalog_authority',
+            return_value=('tenant-1', 'principal-1', ('grant-a',)),
+        ),
+        patch.object(registry_api, '_get_catalog_engine', return_value=object()),
+        patch.object(registry_api, '_authorized_count', side_effect=_no_count),
+        patch.object(
+            registry_api,
+            '_authorized_page',
+            side_effect=_fake_page(
+                {
+                    'servers': [
+                        {
+                            'id': 'srv:x',
+                            'tenant_id': 'tenant-1',
+                            'name': 'x-mcp',
+                            'transport': 'http',
+                            'url': '',
+                            'enabled': True,
+                        }
+                    ]
+                }
+            ),
+        ),
+    ):
+        await api_extensions._read_fleet_catalog('servers')
+
+    assert api_extensions.fleet_catalog_total('servers') == 1
+
+
+@pytest.mark.asyncio
+async def test_a_kind_truncated_at_the_render_bound_reports_the_true_total():
+    """Live root cause of "the skills list silently shows 256 of 841": the
+    drain stops at ``_MAX_EXTERNAL_COLLECTION_ITEMS`` and nothing said so.
+    One pushed-down ``COUNT(*)`` (only for a kind that actually hit the
+    bound) makes the truncation visible."""
+    from agent_utilities.gateway import registry_api
+
+    api_extensions.reset_fleet_catalog_cache()
+    bound = api_extensions._MAX_EXTERNAL_COLLECTION_ITEMS
+    full_page = [
+        {
+            'id': f'skill:{index}',
+            'tenant_id': 'tenant-1',
+            'name': f'skill-{index:04d}',
+            'description': '',
+            'uri': '',
+            'skill_type': 'skill',
+            'classification': 'Atomic Skill',
+            'provider': '',
+            'mcp_server': '',
+            'enabled': True,
+        }
+        for index in range(registry_api._MAX_LIMIT)
+    ]
+    counted: list[str] = []
+
+    def _page(kind, *, tenant, principal, grant_digests, query, after, limit, engine):
+        # Always a FULL page, so the loop only ever stops on the render bound.
+        return [dict(row) for row in full_page]
+
+    def _count(kind, *, tenant, principal, grant_digests, query, engine):
+        counted.append(kind)
+        return 841
+
+    with (
+        patch.object(
+            registry_api,
+            '_require_catalog_authority',
+            return_value=('tenant-1', 'principal-1', ('grant-a',)),
+        ),
+        patch.object(registry_api, '_get_catalog_engine', return_value=object()),
+        patch.object(registry_api, '_authorized_page', side_effect=_page),
+        patch.object(registry_api, '_authorized_count', side_effect=_count),
+    ):
+        result = await api_extensions._read_fleet_catalog('skills')
+
+    rows = result['skills'] if result else None
+    assert rows is not None
+    assert len(rows) >= bound
+    assert counted == ['skills']
+    assert api_extensions.fleet_catalog_total('skills') == 841
+
+
+@pytest.mark.asyncio
+async def test_a_failed_total_never_discards_the_rows_already_read():
+    """A COUNT(*) failure degrades to "total unknown", never to a dead kind."""
+    from agent_utilities.gateway import registry_api
+
+    api_extensions.reset_fleet_catalog_cache()
+    full_page = [
+        {
+            'id': f'skill:{index}',
+            'tenant_id': 'tenant-1',
+            'name': f'skill-{index:04d}',
+            'description': '',
+            'uri': '',
+            'skill_type': 'skill',
+            'classification': 'Atomic Skill',
+            'provider': '',
+            'mcp_server': '',
+            'enabled': True,
+        }
+        for index in range(registry_api._MAX_LIMIT)
+    ]
+
+    def _page(kind, *, tenant, principal, grant_digests, query, after, limit, engine):
+        return [dict(row) for row in full_page]
+
+    def _count(kind, *, tenant, principal, grant_digests, query, engine):
+        raise registry_api.CatalogUnavailable('count failed')
+
+    with (
+        patch.object(
+            registry_api,
+            '_require_catalog_authority',
+            return_value=('tenant-1', 'principal-1', ('grant-a',)),
+        ),
+        patch.object(registry_api, '_get_catalog_engine', return_value=object()),
+        patch.object(registry_api, '_authorized_page', side_effect=_page),
+        patch.object(registry_api, '_authorized_count', side_effect=_count),
+    ):
+        result = await api_extensions._read_fleet_catalog('skills')
+
+    rows = result['skills'] if result else None
+    assert rows is not None and len(rows) > 0
+    assert api_extensions.fleet_catalog_total('skills') is None

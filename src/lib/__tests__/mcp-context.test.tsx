@@ -62,8 +62,11 @@ describe('MCPProvider', () => {
     expect(probe.tools).toEqual(tools)
     expect(probe.isLoadingTools).toBe(false)
     expect(probe.toolsError).toBeNull()
+    // Paginated route: the client asks for its whole documented page budget
+    // (MAX_CATALOG_TOOLS) rather than letting the backend's smaller default
+    // silently narrow the catalog to its alphabetically-first slice.
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/enhanced/mcp/servers/graph-os/tools',
+      '/api/enhanced/mcp/servers/graph-os/tools?limit=200',
       expect.objectContaining({ method: 'GET', credentials: 'same-origin' }),
     )
   })

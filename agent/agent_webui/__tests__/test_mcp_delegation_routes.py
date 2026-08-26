@@ -92,10 +92,20 @@ def mcp_helpers() -> dict[str, Any]:
             tools = await client.list_tools()
         out: list[dict[str, Any]] = []
         for tool in tools:
+            # The installed fastmcp exposes the JSON Schema as `inputSchema`
+            # (the wire name); older builds exposed `input_schema`. Reading
+            # only the snake_case name raised `AttributeError` inside the
+            # delegation on every call, which the route reported as an
+            # indistinguishable 503 -- this stub, not the route, was the
+            # failure. Accept either so the stub keeps mirroring the real
+            # `webui_mcp_delegation._list_mcp_server_tools` shape.
+            schema = getattr(tool, 'inputSchema', None)
+            if schema is None:
+                schema = getattr(tool, 'input_schema', None)
             entry: dict[str, Any] = {
                 'name': tool.name,
                 'description': tool.description or '',
-                'input_schema': tool.input_schema or {},
+                'input_schema': schema or {},
             }
             meta = getattr(tool, 'meta', None)
             if meta:
@@ -307,7 +317,7 @@ class TestServerToolsRoute:
     ):
         response = client.get('/api/enhanced/mcp/servers/graph-os/tools')
         assert response.status_code == 200, response.text
-        tools = {t['name']: t for t in response.json()}
+        tools = {t['name']: t for t in response.json()['tools']}
         assert tools['graph_task_progress_app']['meta'] == {
             'ui': {'resourceUri': APP_URI, 'visibility': ['model']},
         }
@@ -317,8 +327,98 @@ class TestServerToolsRoute:
     ):
         response = client.get('/api/enhanced/mcp/servers/graph-os/tools')
         assert response.status_code == 200, response.text
-        tools = {t['name']: t for t in response.json()}
+        tools = {t['name']: t for t in response.json()['tools']}
         assert 'meta' not in tools['graph_jobs']
+
+    def test_the_page_is_alphabetical_and_reports_the_true_total(
+        self, client, bounded_engine
+    ):
+        response = client.get('/api/enhanced/mcp/servers/graph-os/tools')
+        assert response.status_code == 200, response.text
+        body = response.json()
+        names = [t['name'] for t in body['tools']]
+        assert names == sorted(names, key=str.lower)
+        assert body['total'] == len(names)
+        assert body['offset'] == 0
+        assert body['has_more'] is False
+
+    def test_offset_and_limit_cut_a_stable_page_of_the_same_ordering(
+        self, client, bounded_engine
+    ):
+        whole = client.get('/api/enhanced/mcp/servers/graph-os/tools').json()
+        assert whole['total'] >= 2, whole
+        first = client.get(
+            '/api/enhanced/mcp/servers/graph-os/tools?offset=0&limit=1'
+        ).json()
+        second = client.get(
+            '/api/enhanced/mcp/servers/graph-os/tools?offset=1&limit=1'
+        ).json()
+        # Page 2 continues where page 1 stopped -- the ordering is applied to
+        # the WHOLE list before the cut, not per page.
+        assert [t['name'] for t in first['tools']] == [whole['tools'][0]['name']]
+        assert [t['name'] for t in second['tools']] == [whole['tools'][1]['name']]
+        # The total is the SERVER's real tool count, never the page length --
+        # this is what lets a caller render "showing 1 of N" rather than
+        # silently presenting a page as the whole catalog.
+        assert first['total'] == whole['total']
+        assert first['has_more'] is True
+
+    def test_a_server_with_more_tools_than_the_collection_bound_still_lists(
+        self, client, bounded_engine, monkeypatch
+    ):
+        """Live root cause of "arr-mcp (1,131 tools) shows nothing": the
+        route bounded the WHOLE delegated list through
+        ``_public_external_result`` before slicing, and
+        ``_bounded_external_value`` RAISES on any list longer than
+        ``_MAX_EXTERNAL_COLLECTION_ITEMS`` (256) -- a hard cap reported as a
+        503, not a timeout. Measured live: 503 in 5.8s cold / 0.03s warm,
+        0 of 1,131 tools reachable."""
+        from agent_webui import api_extensions
+
+        oversized = [
+            {
+                'name': f'tool_{index:05d}',
+                'description': 'x',
+                'input_schema': {'type': 'object'},
+            }
+            for index in range(1131)
+        ]
+
+        async def _oversized(*, server_name: str) -> list[dict[str, Any]]:
+            return oversized
+
+        monkeypatch.setitem(
+            api_extensions.workspace_helpers,
+            'list_mcp_server_tools',
+            _oversized,
+        )
+        body = client.get(
+            '/api/enhanced/mcp/servers/graph-os/tools?offset=0&limit=200'
+        ).json()
+        assert body['total'] == 1131
+        assert len(body['tools']) == 200
+        assert body['has_more'] is True
+        tail = client.get(
+            '/api/enhanced/mcp/servers/graph-os/tools?offset=1100&limit=200'
+        ).json()
+        assert len(tail['tools']) == 31
+        assert tail['has_more'] is False
+
+    def test_an_out_of_bounds_page_request_is_rejected(self, client, bounded_engine):
+        assert (
+            client.get('/api/enhanced/mcp/servers/graph-os/tools?limit=0').status_code
+            == 400
+        )
+        assert (
+            client.get(
+                '/api/enhanced/mcp/servers/graph-os/tools?limit=100000'
+            ).status_code
+            == 400
+        )
+        assert (
+            client.get('/api/enhanced/mcp/servers/graph-os/tools?offset=-1').status_code
+            == 400
+        )
 
     def test_without_host_injection_the_route_refuses(
         self, unwired_client, bounded_engine
