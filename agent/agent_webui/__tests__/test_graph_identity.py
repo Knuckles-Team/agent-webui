@@ -438,10 +438,31 @@ def test_mint_logs_the_resolved_scope_for_observability(
     """A session confined to one physical shard must never look, from the
     logs, identical to one that can see everything — the observability
     requirement this fix must satisfy in every case. Assert the mint emits a
-    record naming the resolved graph and whether it is the shared commons."""
+    record naming the resolved graph and whether it is the shared commons.
 
-    with caplog.at_level(logging.INFO, logger='agent_webui.graph_identity'):
-        session = mint_frontend_graph_session(_actor('kg:read', tenant='homelab'))
+    BUG-PE-061: ``caplog``'s own handler is attached to the ROOT logger, but
+    ``observability.configure_structured_logging`` sets ``propagate =
+    False`` on the ``agent_webui`` package logger once the app has been
+    constructed (``agent_webui.observability``, ``package_logger.propagate =
+    False``) -- so any test that builds the app first (order-dependent)
+    stops this module's records from ever reaching root, and
+    ``caplog.records`` sees nothing. ``caplog.at_level(..., logger=...)``
+    only adjusts levels, it does not attach the handler to a non-root
+    logger. Attach ``caplog.handler`` directly to this module's own logger
+    for the scope of the call instead -- records are then captured exactly
+    where they are emitted, before any ancestor's ``propagate = False``
+    would stop them, independent of whatever the app-construction test
+    order happens to be. Added/removed within this test only; no shared
+    fixture state is mutated.
+    """
+
+    target_logger = logging.getLogger('agent_webui.graph_identity')
+    target_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.INFO, logger='agent_webui.graph_identity'):
+            session = mint_frontend_graph_session(_actor('kg:read', tenant='homelab'))
+    finally:
+        target_logger.removeHandler(caplog.handler)
 
     records = [
         r for r in caplog.records if 'frontend graph session minted' in r.message

@@ -93,7 +93,8 @@ def mock_graph_engine(monkeypatch):
     # don't care about per-graph distinction, so `for_graph` is a passthrough
     # returning THIS SAME mock (identity, mirroring the real class's own
     # `for_graph(same_graph_name) -> self` no-op) -- every `query_cypher`/
-    # `graph_compute.sql_exec` stub a test sets up keeps applying regardless
+    # `sql` (BUG-PE-058: `QueryMixin.sql`, not `graph_compute.sql_exec`)
+    # stub a test sets up keeps applying regardless
     # of which graph a union read targets. `test_union_read.py` exercises the
     # REAL per-graph-pinning behavior with its own dedicated test double
     # (`_PinnedGraphEngine`) rather than this shared fixture.
