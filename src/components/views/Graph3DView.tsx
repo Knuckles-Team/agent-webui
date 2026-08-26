@@ -376,6 +376,15 @@ export default function Graph3DView() {
                   type: {highlightType}
                 </Badge>
               ) : null}
+              {payload.engine_total_relationships != null &&
+              payload.engine_total_relationships > model.edges.length ? (
+                <Badge variant="destructive" className="text-[10px]">
+                  <AlertTriangle className="mr-1 h-3 w-3" /> the engine reports{' '}
+                  {numberFormat.format(payload.engine_total_nodes ?? 0)} nodes /{' '}
+                  {numberFormat.format(payload.engine_total_relationships)} edges in these graphs — the read surface
+                  returned {((100 * model.edges.length) / payload.engine_total_relationships).toFixed(1)}% of the edges
+                </Badge>
+              ) : null}
               {payload.truncated ? (
                 <Badge variant="destructive" className="text-[10px]">
                   truncated at the payload bound

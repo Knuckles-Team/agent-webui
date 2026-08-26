@@ -12,6 +12,8 @@ function payload(
     edges: edges.map(([s, t, r]) => ({ s, t, r, w: 1 })),
     total_nodes: nodes.length,
     total_relationships: edges.length,
+    engine_total_nodes: nodes.length,
+    engine_total_relationships: edges.length,
     connected_nodes: nodes.length,
     isolated_nodes: 0,
     truncated: false,

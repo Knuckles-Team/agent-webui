@@ -38,6 +38,15 @@ export interface Graph3DPayload {
   edges: Graph3DEdge[]
   total_nodes: number
   total_relationships: number
+  /**
+   * The ENGINE's own gauges for the same graphs, or `null` when they could not
+   * be read. `total_*` above describe this payload; these describe the graph
+   * the payload was drawn from, and on the live system the two disagree by a
+   * lot -- see the route's `_engine_graph_sizes` docstring. The UI states the
+   * gap rather than picking one number and calling it "the graph".
+   */
+  engine_total_nodes: number | null
+  engine_total_relationships: number | null
   connected_nodes: number
   isolated_nodes: number
   truncated: boolean
@@ -64,6 +73,8 @@ export const graph3dPayloadSchema: z.ZodType<Graph3DPayload> = z.object({
   edges: z.array(graph3dEdgeSchema),
   total_nodes: z.number(),
   total_relationships: z.number(),
+  engine_total_nodes: z.number().nullable(),
+  engine_total_relationships: z.number().nullable(),
   connected_nodes: z.number(),
   isolated_nodes: z.number(),
   truncated: z.boolean(),

@@ -909,6 +909,31 @@ class TestGraph3DEndpoint:
             assert len(name) <= 121
             assert name.endswith('…')
 
+    def test_engine_totals_are_null_not_zero_when_the_gauges_are_unreadable(
+        self, client, mock_graph_engine
+    ):
+        """A missing engine gauge must never be presented as "0 nodes".
+
+        The engine's own per-graph gauges are what tell the UI how much of the
+        graph it is drawing. If they cannot be read, `null` says so; `0` would
+        render as "the engine reports 0 edges", which is a lie and, worse, one
+        that makes the payload look complete.
+        """
+        with (
+            patch(
+                'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+                return_value=mock_graph_engine,
+            ),
+            patch(
+                'agent_webui.api_extensions._engine_graph_sizes',
+                return_value={},
+            ),
+        ):
+            mock_graph_engine.query_cypher.return_value = self._rows()
+            data = client.get('/api/enhanced/graph/graph3d').json()
+            assert data['engine_total_nodes'] is None
+            assert data['engine_total_relationships'] is None
+
     def test_no_engine_is_an_honest_empty_graph_not_a_failure(self, client):
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',

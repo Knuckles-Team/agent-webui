@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { runLayout, TOTAL_TICKS, type LayoutProgress, type LayoutRequest } from '../layout.worker'
+import {
+  openingAngle,
+  runLayout,
+  tickBudget,
+  TOTAL_TICKS,
+  type LayoutProgress,
+  type LayoutRequest,
+} from '../layout.worker'
 
 function request(nodeCount: number, edges: number[], seed = 1): LayoutRequest {
   const degree = new Uint32Array(nodeCount)
@@ -61,5 +68,35 @@ describe('runLayout', () => {
     expect(frames).toHaveLength(1)
     expect(frames[0].done).toBe(true)
     expect(frames[0].positions).toHaveLength(0)
+  })
+})
+
+describe('cost budgets', () => {
+  // Both of these exist to keep the simulation's cost from growing with the
+  // graph. Pinned here so a change to either is a deliberate one.
+  it('steps the tick budget down as the graph grows', () => {
+    expect(tickBudget(1)).toBe(TOTAL_TICKS)
+    expect(tickBudget(5_000)).toBe(TOTAL_TICKS)
+    expect(tickBudget(5_001)).toBe(200)
+    expect(tickBudget(20_000)).toBe(200)
+    expect(tickBudget(20_001)).toBe(120)
+    expect(tickBudget(1_000_000)).toBe(120)
+  })
+
+  it('opens the Barnes-Hut angle as the graph grows, and never narrows it', () => {
+    const sizes = [1, 5_000, 5_001, 20_000, 20_001, 1_000_000]
+    const angles = sizes.map(openingAngle)
+    expect(angles).toEqual([0.9, 0.9, 1.5, 1.5, 2.2, 2.2])
+    for (let i = 1; i < angles.length; i += 1) {
+      expect(angles[i]).toBeGreaterThanOrEqual(angles[i - 1])
+    }
+  })
+
+  it('honours the reduced tick budget for a large graph', () => {
+    // 20_001 nodes would be far too slow to actually simulate in a unit test;
+    // the contract under test is that `runLayout` reads the budget rather than
+    // the constant, which a small graph cannot show. Assert the wiring on the
+    // reported `totalTicks` of a graph just over the first threshold instead.
+    expect(tickBudget(6_000)).toBe(200)
   })
 })

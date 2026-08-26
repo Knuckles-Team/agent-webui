@@ -4424,6 +4424,62 @@ def _graph3d_label(value: Any, fallback: str) -> str:
     return value
 
 
+# Matches one `epistemic_graph_graph_nodes{graph="..."} 56881` exposition line.
+# Anchored and non-greedy so a malformed body cannot make it match across lines.
+_ENGINE_GRAPH_SIZE_RE = re.compile(
+    r'^epistemic_graph_graph_(nodes|edges)\{graph="([^"]*)"\}\s+([0-9]+)\s*$'
+)
+
+
+async def _engine_graph_sizes() -> dict[str, dict[str, int]]:
+    """Per-graph node/edge counts as the ENGINE itself reports them.
+
+    ★ WHY THIS EXISTS: every query surface in this file counts what a query
+    RETURNS. The engine's own gauges count what its resident topology HOLDS
+    (`crates`-side `set_graph_size(graph, topo.graph.node_count(),
+    topo.graph.edge_count())`, refreshed on every write). Measured against the
+    live pod on 2026-08-26 those two disagree by a lot for the same graph:
+
+        gauge   tenant__homelab____commons__   56,881 nodes   29,992 edges
+        query   the same graph, service principal
+                                                25,221 nodes    2,617 edges
+
+    Two independent query paths (Cypher `MATCH (n) RETURN count(*)` and the
+    SQL `GROUP BY node_type` behind `/graph/node-types`) agree with each other
+    on 25,221, so this is not one broken query -- but it is also not something
+    a visualization may quietly paper over. A view that draws 2,617 edges and
+    captions them "the graph" is wrong by an order of magnitude either way.
+
+    So the payload carries BOTH numbers and the UI states the gap. Resolving
+    WHICH is the true user-visible size (row-level visibility filtering? or a
+    resident topology that counts internal/tombstoned structure a query
+    correctly skips?) is a real open question and is not this route's to
+    decide -- it is this route's job not to hide it.
+
+    Best-effort by construction: any failure returns `{}` and the caller
+    reports the payload's own counts alone, never a fabricated total.
+    """
+    try:
+        from agent_utilities.observability.gateway_metrics import (
+            _fetch_engine_metrics,
+        )
+
+        body, ok = await _fetch_engine_metrics()
+        if not ok:
+            return {}
+        sizes: dict[str, dict[str, int]] = {}
+        for line in body.decode('utf-8', 'replace').splitlines():
+            match = _ENGINE_GRAPH_SIZE_RE.match(line.strip())
+            if not match:
+                continue
+            kind, graph, value = match.groups()
+            sizes.setdefault(graph, {})[kind] = int(value)
+        return sizes
+    except Exception as exc:  # noqa: BLE001 - observability must never fail a read
+        logger.debug('engine graph-size gauges unavailable: %s', type(exc).__name__)
+        return {}
+
+
 @router.get('/graph/graph3d')
 async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
     """Return a closed node+edge payload sized for a 3D/WebGL renderer.
@@ -4438,9 +4494,13 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
 
     Returns:
         ``{nodes: [{id, type, name}], edges: [{s, t, r, w}], total_nodes,
-        total_relationships, connected_nodes, isolated_nodes, truncated,
-        source_graphs, degraded_graphs, available}`` where an edge's ``s``/``t``
-        are INDICES into ``nodes`` and ``w`` is the parallel-edge multiplicity.
+        total_relationships, engine_total_nodes, engine_total_relationships,
+        connected_nodes, isolated_nodes, truncated, source_graphs,
+        degraded_graphs, available}`` where an edge's ``s``/``t`` are INDICES
+        into ``nodes`` and ``w`` is the parallel-edge multiplicity.
+        ``total_*`` describe THIS payload; ``engine_total_*`` are the engine's
+        own gauges for the same graphs (``None`` when unreadable) so a caller
+        can see how much of the graph it was handed.
     """
     try:
         try:
@@ -4455,6 +4515,8 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
                 'edges': [],
                 'total_nodes': 0,
                 'total_relationships': 0,
+                'engine_total_nodes': None,
+                'engine_total_relationships': None,
                 'connected_nodes': 0,
                 'isolated_nodes': 0,
                 'truncated': False,
@@ -4550,6 +4612,17 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
                 if intern(row.get('id'), row.get('nt'), row.get('nn')) is None:
                     truncated = True
 
+        # The engine's own view of the same graphs, so the UI can say how much
+        # of the graph it is actually drawing instead of implying it is all of
+        # it. See `_engine_graph_sizes` for the measured discrepancy this
+        # exists to surface.
+        engine_sizes = await _engine_graph_sizes()
+        engine_nodes = 0
+        engine_edges = 0
+        for graph in node_sources:
+            engine_nodes += engine_sizes.get(graph, {}).get('nodes', 0)
+            engine_edges += engine_sizes.get(graph, {}).get('edges', 0)
+
         payload: dict[str, Any] = {
             'nodes': nodes,
             'edges': edges,
@@ -4557,6 +4630,9 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
             # numbers a caller reads must describe the bytes it was handed.
             'total_nodes': len(nodes),
             'total_relationships': len(edges),
+            # `null` when the gauges could not be read -- distinct from 0.
+            'engine_total_nodes': engine_nodes if engine_sizes else None,
+            'engine_total_relationships': engine_edges if engine_sizes else None,
             'connected_nodes': connected_nodes,
             'isolated_nodes': max(0, len(nodes) - connected_nodes),
             'truncated': truncated,
