@@ -307,3 +307,92 @@ describe('SkillsView — Add MCP Server (schema-derived form)', () => {
     })
   })
 })
+
+/**
+ * Regression coverage for the "Manage MCP Tools" expand/collapse control
+ * (the tools view's own box/panel toggle, `expandedMcp` in SkillsView).
+ * Guards against the exact bug shape reported against this page -- an
+ * expand handler that only ever sets state to `true`, or a stale/unkeyed
+ * read that makes a second click a no-op -- by asserting a full
+ * expand -> collapse -> expand -> collapse round trip, and that two
+ * independent server panels don't share state. Also verified against a
+ * real Chromium render (Playwright, StrictMode) during investigation; both
+ * confirm the toggle is already symmetric on this code path.
+ */
+describe('SkillsView — Manage MCP Tools panel toggles both ways (fix/tools-collapse)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const TWO_SERVER_PAYLOAD = {
+    ...GROUPED_PAYLOAD,
+    skills: [],
+    skill_workflows: [],
+    mcp_tools: [
+      { name: 'server-a', type: 'mcp', status: 'ok', enabled: true, tool_count: 1 },
+      { name: 'server-b', type: 'mcp', status: 'ok', enabled: true, tool_count: 1 },
+    ],
+  }
+
+  function routeTwoServerFetch() {
+    return vi.fn((url: string) => {
+      if (url.includes('/api/enhanced/mcp/servers/server-a/tools')) {
+        return Promise.resolve(
+          new Response(JSON.stringify([{ name: 'ta1', description: 'x', input_schema: {}, enabled: true }]), {
+            status: 200,
+          }),
+        )
+      }
+      if (url.includes('/api/enhanced/mcp/servers/server-b/tools')) {
+        return Promise.resolve(
+          new Response(JSON.stringify([{ name: 'tb1', description: 'x', input_schema: {}, enabled: true }]), {
+            status: 200,
+          }),
+        )
+      }
+      return Promise.resolve(new Response(JSON.stringify(TWO_SERVER_PAYLOAD), { status: 200 }))
+    })
+  }
+
+  it('a single server panel survives expand -> collapse -> expand -> collapse', async () => {
+    vi.stubGlobal('fetch', routeTwoServerFetch())
+    render(<SkillsView />)
+    await waitFor(() => expect(screen.getByText('server-a')).toBeInTheDocument())
+
+    const buttons = screen.getAllByText('Manage MCP Tools')
+    const btn = buttons[0]
+
+    fireEvent.click(btn)
+    await waitFor(() => expect(screen.getByText('ta1')).toBeInTheDocument())
+
+    fireEvent.click(btn)
+    await waitFor(() => expect(screen.queryByText('ta1')).not.toBeInTheDocument())
+
+    fireEvent.click(btn)
+    await waitFor(() => expect(screen.getByText('ta1')).toBeInTheDocument())
+
+    fireEvent.click(btn)
+    await waitFor(() => expect(screen.queryByText('ta1')).not.toBeInTheDocument())
+  })
+
+  it('collapsing one server panel does not affect an independently expanded sibling panel', async () => {
+    vi.stubGlobal('fetch', routeTwoServerFetch())
+    render(<SkillsView />)
+    await waitFor(() => expect(screen.getByText('server-a')).toBeInTheDocument())
+    expect(screen.getByText('server-b')).toBeInTheDocument()
+
+    const [btnA, btnB] = screen.getAllByText('Manage MCP Tools')
+
+    fireEvent.click(btnA)
+    await waitFor(() => expect(screen.getByText('ta1')).toBeInTheDocument())
+    fireEvent.click(btnB)
+    await waitFor(() => expect(screen.getByText('tb1')).toBeInTheDocument())
+
+    fireEvent.click(btnA)
+    await waitFor(() => expect(screen.queryByText('ta1')).not.toBeInTheDocument())
+    expect(screen.getByText('tb1')).toBeInTheDocument()
+
+    fireEvent.click(btnB)
+    await waitFor(() => expect(screen.queryByText('tb1')).not.toBeInTheDocument())
+  })
+})
