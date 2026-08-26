@@ -1841,14 +1841,33 @@ def create_agent_web_app(
     # `/api/enhanced/chats*`, just remounted; no shim, no alias.
     app.include_router(chats_router, prefix='/api')
 
-    # Mount the service dashboard API if available (optional dependency)
+    # Mount the service dashboard API if available (optional dependency).
+    #
+    # This block is DELIBERATELY independent of the canonical KG REST
+    # surface registered below. They used to share a single outer
+    # `try/except ImportError` that wrapped both this optional dashboard
+    # import *and* the mandatory `register_graph_routes(...)` call ~130
+    # lines further down: any ImportError raised anywhere in that combined
+    # block -- including one confined entirely to this dashboard-only
+    # import -- fell through to one `except ImportError` that logged a
+    # single misleading INFO line ("agent-utilities gateway not available")
+    # and silently skipped registering `/api/graph/*`, `/api/registry/*`,
+    # `/api/ontology/*`, `/api/research/*`, and `/api/dashboard/*` with no
+    # error anywhere. A broken *optional* dashboard dependency and the
+    # *mandatory* canonical API surface must not share a failure domain.
     try:
         from agent_utilities.gateway.api import (
             dashboard_router,
             fetch_dashboard_subset,
             get_full_dashboard,
         )
-
+    except ImportError:
+        logger.info(
+            'agent-utilities dashboard API not available — /api/dashboard '
+            'and /ws/dashboard are disabled (the canonical KG REST surface '
+            'is registered separately below and is unaffected)'
+        )
+    else:
         app.include_router(dashboard_router, prefix='/api/dashboard')
         logger.info('Service Dashboard API mounted at /api/dashboard')
 
@@ -1970,57 +1989,77 @@ def create_agent_web_app(
                     type(exc).__name__,
                 )
 
-        # Canonical Knowledge Graph REST surface (CONCEPT:AU-ECO.messaging.native-backend-abstraction): mount the
-        # SAME route table the API gateway serves — /api/graph/*, /api/ontology/*,
-        # /api/object/*, /api/sessions, /api/goals, /api/tools, plus the fleet
-        # supervisory plane (CONCEPT:AU-OS.safety.ontological-guardrail) and the /cypher fast path — via
-        # the single canonical registrar. WebUI clients and gateway clients are
-        # served by one route implementation, so the two surfaces cannot drift.
-        try:
-            from agent_utilities.gateway.graph_api import register_graph_routes
+    # Canonical Knowledge Graph REST surface (CONCEPT:AU-ECO.messaging.native-backend-abstraction): mount the
+    # SAME route table the API gateway serves — /api/graph/*, /api/ontology/*,
+    # /api/object/*, /api/sessions, /api/goals, /api/tools, plus the fleet
+    # supervisory plane (CONCEPT:AU-OS.safety.ontological-guardrail) and the /cypher fast path — via
+    # the single canonical registrar. WebUI clients and gateway clients are
+    # served by one route implementation, so the two surfaces cannot drift.
+    #
+    # NOT optional and NOT allowed to fail soft: this is the entire
+    # canonical KG REST surface (`/api/graph/*`, `/api/registry/*`,
+    # `/api/ontology/*`, `/api/research/*`, `/api/dashboard/*`'s
+    # route-table twin, plus the fleet supervisory plane). A gateway that
+    # cannot register this surface is not a degraded gateway, it is a
+    # headless one -- refuse to build the app instead of quietly serving
+    # one. `generate_openapi.py` also enforces a minimum mounted-path floor
+    # (see its `--write` sanity check) so a partial spec can never be
+    # committed as documentation, but the first and loudest guard belongs
+    # here, at the source.
+    try:
+        from agent_utilities.gateway.graph_api import register_graph_routes
+    except ImportError as exc:
+        raise RuntimeError(
+            'Canonical KG REST surface unavailable: could not import '
+            'agent_utilities.gateway.graph_api.register_graph_routes. '
+            'Refusing to serve a headless webui gateway missing '
+            '/api/graph, /api/registry, /api/ontology, and /api/research.'
+        ) from exc
 
-            register_graph_routes(app, prefix='/api')
+    try:
+        register_graph_routes(app, prefix='/api')
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            'Canonical KG REST surface failed to register '
+            f'({type(exc).__name__}: {exc}). Refusing to serve a headless '
+            'webui gateway missing /api/graph, /api/registry, '
+            '/api/ontology, and /api/research.'
+        ) from exc
+
+    logger.info(
+        'Canonical KG REST surface + fleet supervisory plane mounted under /api'
+    )
+
+    # This process is the KG daemon HOST by default: it runs the single
+    # consolidated background daemon (queue drain + graph writer + task
+    # workers + maintenance scheduler + file-watch) that all
+    # KG_DAEMON_ROLE=client processes (MCP server / CLI / scripts) rely on.
+    # (CONCEPT:EG-KG.storage.nonblocking-checkpoint / OS-5.9)
+    #
+    # Thin, horizontally-scalable instances opt out with KG_DAEMON_ROLE=client:
+    # they reach a SHARED KG host over the engine socket instead of each
+    # forcing itself to be the host, so many webui API instances can run
+    # behind a load balancer against one backend (the agent-terminal-ui
+    # scale-many-instances pattern; see the agent-utilities "Scalable
+    # Frontends" guide).
+    @app.on_event('startup')
+    async def _start_kg_host_daemon() -> None:
+        if (os.environ.get('KG_DAEMON_ROLE') or '').strip().lower() == 'client':
             logger.info(
-                'Canonical KG REST surface + fleet supervisory plane mounted under /api'
+                'KG_DAEMON_ROLE=client — thin instance; skipping in-process '
+                'KG host daemon (using the shared backend over the engine socket)'
             )
+            return
+        try:
+            from agent_utilities.gateway.daemon import start_host_daemon
+
+            start_host_daemon()
+            logger.info('KG host daemon started (KG_DAEMON_ROLE=host)')
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                'Failed to mount canonical KG REST surface: error_type=%s',
+                'Failed to start KG host daemon: error_type=%s',
                 type(exc).__name__,
             )
-
-        # This process is the KG daemon HOST by default: it runs the single
-        # consolidated background daemon (queue drain + graph writer + task
-        # workers + maintenance scheduler + file-watch) that all
-        # KG_DAEMON_ROLE=client processes (MCP server / CLI / scripts) rely on.
-        # (CONCEPT:EG-KG.storage.nonblocking-checkpoint / OS-5.9)
-        #
-        # Thin, horizontally-scalable instances opt out with KG_DAEMON_ROLE=client:
-        # they reach a SHARED KG host over the engine socket instead of each
-        # forcing itself to be the host, so many webui API instances can run
-        # behind a load balancer against one backend (the agent-terminal-ui
-        # scale-many-instances pattern; see the agent-utilities "Scalable
-        # Frontends" guide).
-        @app.on_event('startup')
-        async def _start_kg_host_daemon() -> None:
-            if (os.environ.get('KG_DAEMON_ROLE') or '').strip().lower() == 'client':
-                logger.info(
-                    'KG_DAEMON_ROLE=client — thin instance; skipping in-process '
-                    'KG host daemon (using the shared backend over the engine socket)'
-                )
-                return
-            try:
-                from agent_utilities.gateway.daemon import start_host_daemon
-
-                start_host_daemon()
-                logger.info('KG host daemon started (KG_DAEMON_ROLE=host)')
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    'Failed to start KG host daemon: error_type=%s',
-                    type(exc).__name__,
-                )
-    except ImportError:
-        logger.info('agent-utilities gateway not available — dashboard API unavailable')
 
     # Current Pydantic AI has no ``builtin_tools`` web-adapter argument.
     # Native tools now belong to the Agent capability contract and are discovered
