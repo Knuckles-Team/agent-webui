@@ -4006,7 +4006,7 @@ def _rows_per_accessible_graph(
             try:
                 succeeded.append((graph_name, _one(graph_name)))
             except Exception as exc:  # noqa: BLE001 — one graph down ≠ whole read down (mirrors tenant_sharing.read_union's own per-graph guard)
-                _log_failure('read_union.per_graph', exc, level=logging.DEBUG)
+                _log_failure('read_union.per_graph', exc, level=logging.WARNING)
                 degraded.append(graph_name)
         return succeeded, degraded
 
@@ -4021,7 +4021,7 @@ def _rows_per_accessible_graph(
             try:
                 succeeded.append((graph_name, future.result()))
             except Exception as exc:  # noqa: BLE001 — one graph down ≠ whole read down (mirrors tenant_sharing.read_union's own per-graph guard)
-                _log_failure('read_union.per_graph', exc, level=logging.DEBUG)
+                _log_failure('read_union.per_graph', exc, level=logging.WARNING)
                 degraded.append(graph_name)
     order = {graph_name: idx for idx, graph_name in enumerate(graphs)}
     succeeded.sort(key=lambda pair: order[pair[0]])

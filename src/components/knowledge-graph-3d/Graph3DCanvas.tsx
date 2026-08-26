@@ -37,6 +37,26 @@ export interface Graph3DCanvasProps {
   contextHops: number
   /** `null` renders every relationship type; otherwise only these. */
   relationshipFilter: Set<string> | null
+  /**
+   * One radius per node, replacing the default degree-derived size —
+   * the LOD view's cluster pseudo-nodes are sized by member count instead.
+   * Omitted (the default, non-LOD path): unchanged degree-based sizing.
+   */
+  sizeOverride?: Float32Array
+  /**
+   * `null`/omitted disables emphasis (default, unchanged rendering). A
+   * per-node 0/1 mask dims (not hides) the `0` entries — the LOD view's way
+   * of receding a cluster's siblings once it has been expanded in place.
+   */
+  emphasisMask?: Uint8Array | null
+  /**
+   * Flat `[x0,y0,z0, ...]` server-provided positions, already in canonical
+   * world units. When given, the force-directed layout worker is skipped
+   * entirely and these positions are used as-is — the LOD view's "positioned
+   * by centroid" path. Omitted (the default, non-LOD path): unchanged
+   * worker-driven force layout.
+   */
+  fixedPositions?: Float32Array | null
 }
 
 interface HoverState {
@@ -68,6 +88,9 @@ export function Graph3DCanvas({
   effects,
   contextHops,
   relationshipFilter,
+  sizeOverride,
+  emphasisMask,
+  fixedPositions,
 }: Graph3DCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const sceneRef = useRef<Graph3DScene | null>(null)
@@ -132,10 +155,24 @@ export function Graph3DCanvas({
   useEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
-    scene.setModel(model, typeColors)
+    scene.setModel(model, typeColors, sizeOverride)
     setProgress(0)
 
     workerRef.current?.terminate()
+    workerRef.current = null
+
+    if (fixedPositions) {
+      // Server-placed positions (the LOD view's cluster centroids): there is
+      // nothing to settle, so skip the force-directed worker entirely.
+      // `setTargetPositions` already special-cases a first snapshot to be
+      // adopted outright rather than lerped from the origin (see its own
+      // doc), so this is one synchronous jump straight to the final layout.
+      scene.setTargetPositions(fixedPositions)
+      setProgress(1)
+      scene.frameVisibleIfIdle()
+      return
+    }
+
     const worker = new Worker(new URL('./layout.worker.ts', import.meta.url), { type: 'module' })
     workerRef.current = worker
     worker.onmessage = (event: MessageEvent<unknown>) => {
@@ -168,7 +205,7 @@ export function Graph3DCanvas({
       worker.terminate()
       workerRef.current = null
     }
-  }, [model, typeColors])
+  }, [model, typeColors, sizeOverride, fixedPositions])
 
   useEffect(() => {
     sceneRef.current?.setBackground(background)
@@ -182,6 +219,10 @@ export function Graph3DCanvas({
   useEffect(() => {
     sceneRef.current?.setVisibility(visibleMask)
   }, [visibleMask])
+
+  useEffect(() => {
+    sceneRef.current?.setEmphasis(emphasisMask ?? null)
+  }, [emphasisMask])
 
   useEffect(() => {
     sceneRef.current?.setAutoRotate(autoRotate)

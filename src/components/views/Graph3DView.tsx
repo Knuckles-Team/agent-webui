@@ -344,7 +344,7 @@ export default function Graph3DView() {
 
       {state.kind === 'ready' && model && payload ? (
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">
-          <Card className="relative min-h-[440px] overflow-hidden p-0">
+          <Card className="relative h-[70vh] min-h-[440px] overflow-hidden p-0">
             <Graph3DCanvas
               model={model}
               isDark={isDark}
