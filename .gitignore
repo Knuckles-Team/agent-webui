@@ -10,6 +10,11 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# BUG-PE-062: `vite build` now stages into `dist.tmp` and the atomic
+# publish step (`scripts/publish-dist.mjs`) swaps it into `dist`, briefly
+# via `dist.prev` -- both are build scratch, never a committed artifact.
+dist.tmp
+dist.prev
 *.local
 
 # Test artifacts

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 from typing import Any
 
 import pytest
@@ -42,8 +43,62 @@ class _FakeSession:
     def __post_init__(self) -> None:
         """No-op: nothing to revalidate on a test double."""
 
-    def ensure_authority_current(self) -> None:
-        """No-op: this fake's authority never expires."""
+    def ensure_authority_current(self, *, minimum_ttl_seconds: int = 0) -> None:
+        """No-op: this fake's authority never expires.
+
+        Accepts ``minimum_ttl_seconds`` (unused) to match the real
+        `GraphSession.ensure_authority_current` signature, since
+        `_service_authority`'s proactive renewal check calls it that way.
+        """
+
+
+class _FakeExpiringActor(_FakeActor):
+    """A `_FakeActor` that also carries a controllable bounded expiry, the
+    way a real service-authority actor does."""
+
+    def __init__(
+        self,
+        actor_id: str,
+        *,
+        authenticated: bool = True,
+        credential_expires_at: float | None = None,
+    ) -> None:
+        super().__init__(actor_id, authenticated=authenticated)
+        self.credential_expires_at = credential_expires_at
+
+
+class _FakeExpiringSession(_FakeSession):
+    """A session whose `ensure_authority_current` actually enforces an
+    expiry against a caller-controlled clock, the way the real
+    `GraphSession` enforces it against `actor.credential_expires_at` --
+    unlike `_FakeSession`, which never expires. Used by the
+    `_service_authority` renewal tests below; ``now`` is an injected clock
+    reading rather than the real one, so these tests need no real sleeping.
+    """
+
+    def __init__(self, tenant: str, *, actor: _FakeExpiringActor, now: float) -> None:
+        super().__init__(tenant, actor=actor)
+        # `_FakeSession.actor` is typed `_FakeActor | None`; keep a narrowly
+        # typed reference to the actual `_FakeExpiringActor` here so
+        # `credential_expires_at` type-checks without a cast/getattr.
+        self._expiring_actor = actor
+        self._now = now
+
+    def ensure_authority_current(self, *, minimum_ttl_seconds: int = 0) -> None:
+        from agent_utilities.knowledge_graph.core.session import (
+            SessionExpiredError,
+        )
+
+        expiry = self._expiring_actor.credential_expires_at
+        if expiry is not None and self._now + minimum_ttl_seconds >= expiry:
+            raise SessionExpiredError('expired')
+
+
+def _expiring_session(
+    *, now: float, expires_at: float | None, tenant: str = 'homelab'
+) -> _FakeExpiringSession:
+    actor = _FakeExpiringActor('service-authority', credential_expires_at=expires_at)
+    return _FakeExpiringSession(tenant, actor=actor, now=now)
 
 
 @pytest.fixture(autouse=True)
@@ -184,6 +239,135 @@ async def test_engine_unreachable_at_role_check_is_a_distinct_error(
         await ensure_tenant_admission(_FakeActor('user-1'), _FakeSession('homelab'))
 
     assert admit_calls == []
+
+
+@pytest.mark.asyncio
+async def test_probe_denied_for_insufficient_privilege_falls_through_to_admit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The live-diagnosed shape: the probe (``rbac.list()``) is gated on
+    ``security:admin``, which this deployment's principal does not hold, even
+    though it CAN perform the admission itself. 'I can't look' must not be
+    treated as 'I can't admit' — admission is attempted anyway and succeeds."""
+
+    def _denied(_tenant_slug: str) -> bool:
+        # Reproduces the exact wrapped shape `_tenant_role_exists` produces:
+        # an `EngineAdmissionUnavailableError` whose `__cause__` chain (not
+        # its own top-level message) carries the engine's admin-capability
+        # denial text.
+        cause = RuntimeError(
+            'ACCESS_DENIED: verified principal lacks admin capability '
+            "required for 'security:admin'"
+        )
+        wrapped = EngineAdmissionUnavailableError(
+            "could not verify engine RBAC role 'tenant:homelab': "
+            'engine rbac.list() failed'
+        )
+        wrapped.__cause__ = cause
+        raise wrapped
+
+    monkeypatch.setattr(graph_admission, '_tenant_role_exists', _denied)
+    admit_calls = _stub_admit(monkeypatch)
+
+    await ensure_tenant_admission(_FakeActor('user-1'), _FakeSession('homelab'))
+
+    assert admit_calls == [('homelab', 'user-1')]
+    assert ('homelab', 'user-1') in graph_admission._ADMITTED
+
+
+def test_admin_capability_denied_matches_only_the_specific_denial() -> None:
+    """Never matches a network error, an unrelated ACCESS_DENIED (a scope
+    failure is a DIFFERENT message from a DIFFERENT check), or a bare
+    message with no chain — only the engine's specific admin-capability
+    text, anywhere in the `__cause__` chain."""
+
+    admin_denied = RuntimeError(
+        'ACCESS_DENIED: verified principal lacks admin capability required '
+        "for 'security:admin'"
+    )
+    wrapped = EngineAdmissionUnavailableError('could not verify engine RBAC role')
+    wrapped.__cause__ = admin_denied
+    assert graph_admission._admin_capability_denied(wrapped) is True
+
+    unreachable = EngineAdmissionUnavailableError('engine unreachable')
+    unreachable.__cause__ = ConnectionError('connection refused')
+    assert graph_admission._admin_capability_denied(unreachable) is False
+
+    scope_denied = EngineAdmissionUnavailableError('denied')
+    scope_denied.__cause__ = RuntimeError('lacks required scope')
+    assert graph_admission._admin_capability_denied(scope_denied) is False
+
+    assert graph_admission._admin_capability_denied(None) is False
+
+
+@pytest.mark.asyncio
+async def test_probe_denied_for_privilege_then_admit_fails_is_still_actionable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the probe cannot run and the fallback admission itself fails
+    (standing in for a genuinely unprovisioned tenant, or any other admit
+    failure), the error must stay specific — naming the tenant and agent —
+    never collapse into an unhelpful generic failure."""
+
+    def _denied(_tenant_slug: str) -> bool:
+        cause = RuntimeError(
+            'ACCESS_DENIED: verified principal lacks admin capability '
+            "required for 'security:admin'"
+        )
+        wrapped = EngineAdmissionUnavailableError('could not verify engine RBAC role')
+        wrapped.__cause__ = cause
+        raise wrapped
+
+    monkeypatch.setattr(graph_admission, '_tenant_role_exists', _denied)
+    _stub_admit(
+        monkeypatch,
+        error=EngineAdmissionUnavailableError(
+            "engine admission failed for 'user-1' in tenant 'homelab': "
+            'ACCESS_DENIED: unknown tenant'
+        ),
+    )
+
+    with pytest.raises(EngineAdmissionUnavailableError, match='user-1') as excinfo:
+        await ensure_tenant_admission(_FakeActor('user-1'), _FakeSession('homelab'))
+
+    assert 'homelab' in str(excinfo.value)
+    assert ('homelab', 'user-1') not in graph_admission._ADMITTED
+    # And the failure is cached/backed off exactly like any other failure.
+    key = ('homelab', 'user-1')
+    assert key in graph_admission._FAILURES
+
+
+@pytest.mark.asyncio
+async def test_probe_denied_for_privilege_respects_cache_and_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The privilege-denial fallback must not bypass the existing cache/
+    backoff contract: a successful admission is still cached forever, and a
+    failed one still backs off rather than re-probing every request."""
+
+    probe_calls: list[str] = []
+
+    def _denied(tenant_slug: str) -> bool:
+        probe_calls.append(tenant_slug)
+        cause = RuntimeError(
+            'ACCESS_DENIED: verified principal lacks admin capability '
+            "required for 'security:admin'"
+        )
+        wrapped = EngineAdmissionUnavailableError('could not verify engine RBAC role')
+        wrapped.__cause__ = cause
+        raise wrapped
+
+    monkeypatch.setattr(graph_admission, '_tenant_role_exists', _denied)
+    admit_calls = _stub_admit(monkeypatch)
+
+    actor = _FakeActor('user-1')
+    session = _FakeSession('homelab')
+    await ensure_tenant_admission(actor, session)
+    await ensure_tenant_admission(actor, session)
+    await ensure_tenant_admission(actor, session)
+
+    assert probe_calls == ['homelab'], 'a cached success must never re-probe'
+    assert admit_calls == [('homelab', 'user-1')]
 
 
 @pytest.mark.asyncio
@@ -412,3 +596,417 @@ def test_admit_delegates_to_run_tenant_admission_with_apply_true(
             'apply': True,
         }
     ]
+
+
+# ---------------------------------------------------------------------------
+# AUTHZ LANE B: engine-side admission is intentionally UNCHANGED by admin
+# status — see graph_admission.py's own docstring, "Why 'admin' is NOT a
+# distinct engine grant this module ever produces". `kg:admin` is a
+# WebUI-local concept (`graph_identity.py`); the engine's `tenant:<slug>`
+# role already grants Read+Write uniformly and this module has no authority
+# to mint a finer grant without widening toward Tier-2/System, which it
+# deliberately refuses to do. These tests pin that non-widening as a
+# regression contract, and prove durability the way this module's own
+# vocabulary states it: identical, ordinary admission on every call —
+# nothing here is "wiped" by a later re-registration because nothing here
+# was ever differentiated by admin status to begin with.
+# ---------------------------------------------------------------------------
+
+
+def test_admit_never_grants_a_distinct_role_for_the_admin_allowlisted_principal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The admin principal (per `graph_identity.py`'s `KG_ADMIN_PRINCIPAL_IDS`
+    allowlist) is admitted through the IDENTICAL ordinary-tenant-role path as
+    any other principal — `_admit` has no notion of "this one is admin" at
+    all, and must never grow one that widens toward System/Tier-2."""
+
+    calls: list[dict[str, Any]] = []
+
+    class _Result:
+        all_admitted = True
+
+    def _fake_run_tenant_admission(
+        tenant_slug: str, principals: list[Any], *, apply: bool = False
+    ) -> Any:
+        calls.append(
+            {
+                'agent_ids': [p.agent_id for p in principals],
+                'roles': [p.role for p in principals],
+                'existing_roles': [p.existing_roles for p in principals],
+            }
+        )
+        return _Result()
+
+    monkeypatch.setattr(
+        'agent_utilities.security.tenant_admission_cli.run_tenant_admission',
+        _fake_run_tenant_admission,
+    )
+
+    # The exact id AUTHZ LANE B names as the one principal that must be
+    # admin — admitted here with no special handling whatsoever.
+    graph_admission._admit('homelab', '9343d67e-369b-4e09-bf9d-50bb80565fe4')
+
+    assert calls == [
+        {
+            'agent_ids': ['9343d67e-369b-4e09-bf9d-50bb80565fe4'],
+            'roles': ['Agent'],  # never "System", never a distinct admin role
+            'existing_roles': [()],
+        }
+    ]
+
+
+def test_admit_is_identical_across_a_simulated_re_registration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Simulate `RegisterIdentity` being called twice for the same principal
+    (a cache-clear/restart forcing `_admit` to run again). Because `_admit`
+    never differentiates on admin status, the two calls are byte-for-byte
+    identical — there is nothing an out-of-band grant could add here for a
+    later re-registration to wipe, which is exactly why this module's own
+    docstring says any such distinction must live in `graph_identity.py`
+    instead (re-derived every mint, never stored)."""
+
+    calls: list[dict[str, Any]] = []
+
+    class _Result:
+        all_admitted = True
+
+    def _fake_run_tenant_admission(
+        tenant_slug: str, principals: list[Any], *, apply: bool = False
+    ) -> Any:
+        calls.append(
+            {
+                'agent_ids': [p.agent_id for p in principals],
+                'roles': [p.role for p in principals],
+            }
+        )
+        return _Result()
+
+    monkeypatch.setattr(
+        'agent_utilities.security.tenant_admission_cli.run_tenant_admission',
+        _fake_run_tenant_admission,
+    )
+
+    admin_id = '9343d67e-369b-4e09-bf9d-50bb80565fe4'
+    graph_admission._admit('homelab', admin_id)
+    graph_admission._admit('homelab', admin_id)
+
+    assert calls[0] == calls[1]
+    assert calls[0] == {'agent_ids': [admin_id], 'roles': ['Agent']}
+
+
+def test_admit_never_registers_system_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression pin for the refusal `graph_admission.py`'s docstring
+    states explicitly: this module never grants `System`/admin authority to
+    an ordinary principal. `TenantPrincipal` itself refuses `role="System"`
+    (`tenant_rbac_admission.py`), so this proves `_admit` never even
+    attempts it — for the ordinary principal AND the admin-allowlisted one."""
+
+    from agent_utilities.security.tenant_rbac_admission import TenantPrincipal
+
+    with pytest.raises(ValueError, match='System'):
+        TenantPrincipal(agent_id='whoever', role='System')
+
+    calls: list[str] = []
+
+    class _Result:
+        all_admitted = True
+
+    def _fake_run_tenant_admission(
+        tenant_slug: str, principals: list[Any], *, apply: bool = False
+    ) -> Any:
+        calls.extend(p.role for p in principals)
+        return _Result()
+
+    monkeypatch.setattr(
+        'agent_utilities.security.tenant_admission_cli.run_tenant_admission',
+        _fake_run_tenant_admission,
+    )
+
+    graph_admission._admit('homelab', '9343d67e-369b-4e09-bf9d-50bb80565fe4')
+    graph_admission._admit('homelab', 'ordinary-user')
+
+    assert calls == ['Agent', 'Agent']
+    assert 'System' not in calls
+
+
+# ---------------------------------------------------------------------------
+# LANE 8: `_service_authority` proactive/reactive renewal + concurrency.
+#
+# `_reset_module_state` already binds a fake ambient session for every test
+# above, which is why those tests never touch `_service_authority`'s renewal
+# path at all (the ambient branch of `_mint_service_authority` short-circuits
+# before any credential/expiry logic runs). The tests below drive
+# `_service_authority`/`ensure_tenant_admission` directly against a
+# controllable, expiring session so the renewal behavior itself is covered
+# independent of which branch of `_mint_service_authority` produced it.
+# ---------------------------------------------------------------------------
+
+
+def test_service_authority_remints_a_session_past_its_expiry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cached session whose bounded credential has already run out (or is
+    within the renewal margin) is replaced, not reused."""
+
+    stale = _expiring_session(now=1_000_000, expires_at=1_000_000 - 1)
+    fresh = _expiring_session(now=1_000_000, expires_at=1_000_000 + 3_600)
+    graph_admission._SERVICE_SESSION = stale
+
+    mint_calls: list[None] = []
+
+    def _fake_mint() -> Any:
+        mint_calls.append(None)
+        return fresh
+
+    monkeypatch.setattr(graph_admission, '_mint_service_authority', _fake_mint)
+
+    result = graph_admission._service_authority()
+
+    assert result is fresh
+    assert len(mint_calls) == 1
+
+
+def test_service_authority_remints_when_within_the_renewal_margin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Proactive renewal fires BEFORE the hard expiry, once fewer than
+    `_SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS` remain -- not only after the
+    credential has actually expired."""
+
+    margin = graph_admission._SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS
+    about_to_expire = _expiring_session(
+        now=1_000_000, expires_at=1_000_000 + (margin - 1)
+    )
+    fresh = _expiring_session(now=1_000_000, expires_at=1_000_000 + 3_600)
+    graph_admission._SERVICE_SESSION = about_to_expire
+
+    mint_calls: list[None] = []
+
+    def _fake_mint() -> Any:
+        mint_calls.append(None)
+        return fresh
+
+    monkeypatch.setattr(graph_admission, '_mint_service_authority', _fake_mint)
+
+    assert graph_admission._service_authority() is fresh
+    assert len(mint_calls) == 1
+
+
+def test_service_authority_reuses_a_session_comfortably_within_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A session with plenty of TTL left is reused as-is -- proving the fix
+    does not replace the old always-cache bug with a mint-storm on every
+    call."""
+
+    current = _expiring_session(now=1_000_000, expires_at=1_000_000 + 3_600)
+    graph_admission._SERVICE_SESSION = current
+
+    def _must_not_mint() -> Any:
+        raise AssertionError(
+            'must not mint while the cached session is still comfortably current'
+        )
+
+    monkeypatch.setattr(graph_admission, '_mint_service_authority', _must_not_mint)
+
+    for _ in range(5):
+        assert graph_admission._service_authority() is current
+
+
+def test_service_authority_concurrent_expired_callers_mint_exactly_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """N callers racing an expired cached session must produce exactly one
+    mint, with every caller ending up on the SAME fresh session -- not one
+    mint per racing thread.
+
+    Real `threading.Thread`s (not asyncio tasks) so the module's actual
+    `threading.Lock` is what is under test, not cooperative scheduling.
+    """
+
+    stale = _expiring_session(now=1_000_000, expires_at=1_000_000 - 1)
+    fresh = _expiring_session(now=1_000_000, expires_at=1_000_000 + 3_600)
+    graph_admission._SERVICE_SESSION = stale
+
+    mint_calls: list[None] = []
+    mint_calls_lock = threading.Lock()
+
+    def _slow_mint() -> Any:
+        # A real network mint is slow; sleeping here (releasing the GIL)
+        # gives every other blocked thread a chance to queue up on
+        # `_SERVICE_SESSION_LOCK` while this one is "in flight" -- if the
+        # lock did not serialize them, more than one would reach here.
+        time.sleep(0.02)
+        with mint_calls_lock:
+            mint_calls.append(None)
+        return fresh
+
+    monkeypatch.setattr(graph_admission, '_mint_service_authority', _slow_mint)
+
+    results: list[Any] = []
+    results_lock = threading.Lock()
+
+    def _call() -> None:
+        session = graph_admission._service_authority()
+        with results_lock:
+            results.append(session)
+
+    threads = [threading.Thread(target=_call) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert len(mint_calls) == 1, 'concurrent expired callers must mint exactly once'
+    assert len(results) == 8
+    assert all(result is fresh for result in results)
+
+
+def test_session_expired_cause_matches_only_session_expiry() -> None:
+    """Mirrors `test_admin_capability_denied_matches_only_the_specific_denial`
+    for the reactive-retry gate: only a `SessionExpiredError` anywhere in the
+    chain counts, never a network error or a genuine authorization denial."""
+
+    from agent_utilities.knowledge_graph.core.session import SessionExpiredError
+
+    expired = EngineAdmissionUnavailableError('engine admission failed')
+    expired.__cause__ = SessionExpiredError('expired')
+    assert graph_admission._session_expired_cause(expired) is True
+
+    denied = EngineAdmissionUnavailableError('engine admission failed')
+    denied.__cause__ = RuntimeError(
+        'ACCESS_DENIED: verified principal lacks Write access to graph '
+        "'tenant__homelab____commons__'"
+    )
+    assert graph_admission._session_expired_cause(denied) is False
+
+    unreachable = EngineAdmissionUnavailableError('engine unreachable')
+    unreachable.__cause__ = ConnectionError('connection refused')
+    assert graph_admission._session_expired_cause(unreachable) is False
+
+    assert graph_admission._session_expired_cause(None) is False
+
+
+@pytest.mark.asyncio
+async def test_genuine_denial_is_not_retried_into_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real ACCESS_DENIED from the engine (never a `SessionExpiredError`)
+    must propagate as a failure -- it must never be mistaken for a
+    stale-session race and silently retried into a false success."""
+
+    _stub_role_exists(monkeypatch, exists=True)
+
+    denial = EngineAdmissionUnavailableError("engine admission failed for 'user-1'")
+    denial.__cause__ = RuntimeError(
+        'ACCESS_DENIED: verified principal lacks Write access to graph '
+        "'tenant__homelab____commons__'"
+    )
+    admit_calls = _stub_admit(monkeypatch, error=denial)
+
+    with pytest.raises(EngineAdmissionUnavailableError):
+        await ensure_tenant_admission(_FakeActor('user-1'), _FakeSession('homelab'))
+
+    assert admit_calls == [('homelab', 'user-1')], (
+        'a genuine denial must be attempted exactly once, never retried'
+    )
+    assert ('homelab', 'user-1') not in graph_admission._ADMITTED
+
+
+@pytest.mark.asyncio
+async def test_session_expired_failure_is_retried_once_and_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reactive fallback: a `SessionExpiredError`-caused failure re-mints
+    the service authority and retries the SAME admission attempt once,
+    bypassing the negative-outcome backoff cache for that one retry -- the
+    failure reflects OUR stale credential, not the tenant's or engine's
+    state, so it must not be treated like a genuine provisioning/infra
+    failure (which would otherwise make the retry immediately re-raise the
+    very exception it exists to recover from)."""
+
+    from agent_utilities.knowledge_graph.core.session import SessionExpiredError
+
+    _stub_role_exists(monkeypatch, exists=True)
+
+    attempts: list[None] = []
+
+    def _flaky_admit(tenant_slug: str, agent_id: str) -> None:
+        attempts.append(None)
+        if len(attempts) == 1:
+            wrapped = EngineAdmissionUnavailableError('engine admission failed')
+            wrapped.__cause__ = SessionExpiredError('expired mid-call')
+            raise wrapped
+        # Second attempt (after the re-mint below) succeeds.
+
+    monkeypatch.setattr(graph_admission, '_admit', _flaky_admit)
+
+    sessions = [
+        _FakeSession(
+            'homelab', actor=_FakeActor('graph-os:process', authenticated=True)
+        ),
+        _FakeSession(
+            'homelab', actor=_FakeActor('graph-os:process', authenticated=True)
+        ),
+    ]
+    mint_calls: list[None] = []
+
+    def _fake_mint() -> Any:
+        mint_calls.append(None)
+        return sessions[len(mint_calls) - 1]
+
+    monkeypatch.setattr(graph_admission, '_mint_service_authority', _fake_mint)
+
+    await ensure_tenant_admission(_FakeActor('user-1'), _FakeSession('homelab'))
+
+    assert len(attempts) == 2, 'must retry exactly once after a session-expiry failure'
+    assert len(mint_calls) == 2, 'must re-mint before the retry'
+    assert ('homelab', 'user-1') in graph_admission._ADMITTED
+
+
+@pytest.mark.asyncio
+async def test_session_expired_retry_happens_at_most_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A retry that ALSO fails on session expiry must propagate rather than
+    loop -- proves this is a single bounded retry, not a retry-until-success
+    loop that could hide a persistently broken renewal path."""
+
+    from agent_utilities.knowledge_graph.core.session import SessionExpiredError
+
+    _stub_role_exists(monkeypatch, exists=True)
+
+    attempts: list[None] = []
+
+    def _always_expired(tenant_slug: str, agent_id: str) -> None:
+        attempts.append(None)
+        wrapped = EngineAdmissionUnavailableError('engine admission failed')
+        wrapped.__cause__ = SessionExpiredError('expired mid-call')
+        raise wrapped
+
+    monkeypatch.setattr(graph_admission, '_admit', _always_expired)
+
+    # One mint feeds the FIRST `ensure_tenant_admission` attempt (module cache
+    # starts empty per-test); the reactive fallback then mints exactly once
+    # more for its single retry. If the retry itself looped, this would be
+    # called a third time.
+    mint_calls: list[None] = []
+
+    def _fake_mint() -> Any:
+        mint_calls.append(None)
+        return _FakeSession(
+            'homelab', actor=_FakeActor('graph-os:process', authenticated=True)
+        )
+
+    monkeypatch.setattr(graph_admission, '_mint_service_authority', _fake_mint)
+
+    with pytest.raises(EngineAdmissionUnavailableError):
+        await ensure_tenant_admission(_FakeActor('user-1'), _FakeSession('homelab'))
+
+    assert len(attempts) == 2, 'the initial attempt plus exactly one retry, never more'
+    assert len(mint_calls) == 2, (
+        'the initial mint plus exactly one re-mint for the retry, never a loop'
+    )
+    assert ('homelab', 'user-1') not in graph_admission._ADMITTED

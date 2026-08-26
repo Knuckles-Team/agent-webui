@@ -85,6 +85,20 @@ def mock_graph_engine(monkeypatch):
     engine.retrieve_orthogonal_context.return_value = []
     engine.list_callable_resources.return_value = []
     engine.spawn_specialized_agent.return_value = MagicMock()
+    # FIX LANE (union-read-backend-view): production `for_graph(graph_name)`
+    # returns a NEW graph-scoped view engine (`IntelligenceGraphEngine
+    # .for_graph`, `knowledge_graph/core/engine.py`) -- the api_extensions.py
+    # union-read helpers call it to obtain a backend actually bound to each
+    # accessible graph. This generic fixture is used by many tests that
+    # don't care about per-graph distinction, so `for_graph` is a passthrough
+    # returning THIS SAME mock (identity, mirroring the real class's own
+    # `for_graph(same_graph_name) -> self` no-op) -- every `query_cypher`/
+    # `sql` (BUG-PE-058: `QueryMixin.sql`, not `graph_compute.sql_exec`)
+    # stub a test sets up keeps applying regardless
+    # of which graph a union read targets. `test_union_read.py` exercises the
+    # REAL per-graph-pinning behavior with its own dedicated test double
+    # (`_PinnedGraphEngine`) rather than this shared fixture.
+    engine.for_graph.return_value = engine
     from agent_utilities.knowledge_graph.backends.base import GraphBackend
 
     engine.backend = MagicMock(spec=GraphBackend)

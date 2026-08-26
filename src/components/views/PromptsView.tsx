@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { z } from 'zod'
-import { FileText, Search, Save, RefreshCw, Code, X, Wrench, Sparkles, Settings } from 'lucide-react'
+import { FileText, Search, Save, RefreshCw, Code, X, Wrench, Sparkles, Settings, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -27,9 +27,10 @@ interface PromptDetail {
   identity?: { role?: string; goal?: string }
   goal?: string
   core_directive?: string
-  instructions?: { core_directive?: string }
+  instructions?: { core_directive?: string; [k: string]: unknown }
   tools?: string[]
   metadata?: { topic?: string; tone?: string; style?: string; [k: string]: unknown }
+  rules?: { [k: string]: unknown }
   [key: string]: unknown
 }
 
@@ -40,6 +41,31 @@ const promptSummarySchema: z.ZodType<PromptSummary> = z.object({
   core_directive: z.string(),
   file_path: z.string(),
 })
+
+// Matches the backend's own name validation (`resolve_prompt_file`,
+// api_extensions.py:1139) so an invalid name is rejected client-side before
+// a request is ever issued.
+const PROMPT_NAME_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
+
+// A minimal but complete instance of the prompt shape the PUT handler
+// expects (agent_utilities/prompts/*.json + api_extensions.py:7164-7222's
+// flat<->nested sync) so a brand-new prompt starts from a fully-formed,
+// editable document rather than requiring a prior GET.
+const DEFAULT_PROMPT_DETAIL: PromptDetail = {
+  task: '',
+  type: 'prompt',
+  title: '',
+  goal: '',
+  core_directive: '',
+  version: '1.0.0',
+  schema_version: '1.0',
+  source: 'agent-utilities:base',
+  metadata: { description: '', topic: '', tone: '', style: '' },
+  identity: { role: '', goal: '' },
+  instructions: { core_directive: '', responsibilities: [], quality_checklist: [] },
+  tools: [],
+  rules: { quality_gates: [], responsibilities: [] },
+}
 
 export default function PromptsView() {
   const [prompts, setPrompts] = useState<PromptSummary[]>([])
@@ -52,6 +78,9 @@ export default function PromptsView() {
   const [rawJsonText, setRawJsonText] = useState('')
   const [newTool, setNewTool] = useState('')
   const [sessionExpired, setSessionExpired] = useState(false)
+  const [isNew, setIsNew] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [nameError, setNameError] = useState<string | null>(null)
 
   useEffect(() => {
     void loadPrompts()
@@ -79,6 +108,8 @@ export default function PromptsView() {
 
   const loadPromptDetail = async (name: string) => {
     try {
+      setIsNew(false)
+      setNameError(null)
       setSelectedName(name)
       const data = (await fetchValidated(`/api/enhanced/prompts/${name}`, looseObject())) as PromptDetail
       setPromptDetail(data)
@@ -90,6 +121,18 @@ export default function PromptsView() {
         toast.error('Error fetching prompt content')
       }
     }
+  }
+
+  /** Enter a blank, editable "create" state without requiring a prior GET —
+   * the sidebar has no affordance to reach this today (Lane 4). */
+  const startNewPrompt = () => {
+    setIsNew(true)
+    setNameError(null)
+    setSelectedName(null)
+    setNewName('')
+    setPromptDetail(DEFAULT_PROMPT_DETAIL)
+    setRawJsonText(JSON.stringify(DEFAULT_PROMPT_DETAIL, null, 4))
+    setEditMode('form')
   }
 
   const handleFieldChange = (key: string, val: string) => {
@@ -140,7 +183,30 @@ export default function PromptsView() {
   }
 
   const handleSave = async () => {
-    if (!selectedName) return
+    const targetName = isNew ? newName.trim() : selectedName
+
+    if (isNew) {
+      if (!targetName) {
+        setNameError('Enter a name for the new prompt')
+        return
+      }
+      if (!PROMPT_NAME_PATTERN.test(targetName)) {
+        setNameError('Name may only contain letters, numbers, "-", and "_" (max 128 characters)')
+        return
+      }
+      // PUT is a genuine upsert with no existence check server-side, so a
+      // "create" that reuses an existing name would SILENTLY overwrite it —
+      // require explicit confirmation first.
+      if (prompts.some((p) => p.name === targetName)) {
+        const confirmed = window.confirm(
+          `A prompt named "${targetName}" already exists. Saving will overwrite it. Continue?`,
+        )
+        if (!confirmed) return
+      }
+    }
+
+    if (!targetName) return
+    setNameError(null)
     setSaving(true)
     try {
       let payload = promptDetail
@@ -153,17 +219,20 @@ export default function PromptsView() {
           return
         }
       }
-      const res = await fetch(`/api/enhanced/prompts/${selectedName}`, {
+      const res = await fetch(`/api/enhanced/prompts/${targetName}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
       if (!res.ok) {
-        toast.error('Failed to save prompt config')
+        toast.error(isNew ? 'Failed to create prompt' : 'Failed to save prompt config')
         return
       }
-      toast.success('Prompt configuration saved successfully')
-      void loadPrompts()
+      toast.success(isNew ? `Prompt "${targetName}" created successfully` : 'Prompt configuration saved successfully')
+      setIsNew(false)
+      setNewName('')
+      await loadPrompts()
+      void loadPromptDetail(targetName)
     } catch {
       toast.error('Error sending save request')
     } finally {
@@ -190,16 +259,28 @@ export default function PromptsView() {
             <CardTitle className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-teal-400">
               Prompt Profiles
             </CardTitle>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => {
-                void loadPrompts()
-              }}
-            >
-              <RefreshCw className="size-3.5" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={startNewPrompt}
+                title="New prompt"
+              >
+                <Plus className="size-3.5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => {
+                  void loadPrompts()
+                }}
+                title="Refresh"
+              >
+                <RefreshCw className="size-3.5" />
+              </Button>
+            </div>
           </div>
           <CardDescription>System prompts stored in agent-utilities prompts package.</CardDescription>
           <div className="relative mt-2">
@@ -253,7 +334,7 @@ export default function PromptsView() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-lg font-bold text-foreground">
-                {promptDetail?.title ?? selectedName ?? 'Prompt Editor'}
+                {isNew ? 'New Prompt' : (promptDetail?.title || selectedName || 'Prompt Editor')}
               </CardTitle>
               <CardDescription>Customize behavior directives, goals, and role specifications.</CardDescription>
             </div>
@@ -289,7 +370,7 @@ export default function PromptsView() {
                 className="bg-emerald-600 hover:bg-emerald-700"
               >
                 <Save className="size-4 mr-1.5" />
-                {saving ? 'Saving…' : 'Save Config'}
+                {saving ? 'Saving…' : isNew ? 'Create Prompt' : 'Save Config'}
               </Button>
             </div>
           </div>
@@ -297,6 +378,31 @@ export default function PromptsView() {
         <CardContent className="flex-1 overflow-hidden p-4">
           {promptDetail ? (
             <ScrollArea className="h-full pr-2">
+              {isNew && (
+                <div className="mb-4 border border-emerald-500/20 rounded-xl p-4 bg-emerald-500/5 backdrop-blur-sm">
+                  <label
+                    htmlFor="new-prompt-name"
+                    className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
+                  >
+                    Prompt Name (id) *
+                  </label>
+                  <Input
+                    id="new-prompt-name"
+                    value={newName}
+                    onChange={(e) => {
+                      setNewName(e.target.value)
+                      setNameError(null)
+                    }}
+                    placeholder="e.g. release-notes-writer"
+                    className="mt-1 h-8 bg-muted/20 text-xs font-mono"
+                  />
+                  {nameError && (
+                    <p role="alert" className="mt-1.5 text-xs text-red-400 font-medium">
+                      {nameError}
+                    </p>
+                  )}
+                </div>
+              )}
               {editMode === 'form' ? (
                 <div className="space-y-6 pb-8">
                   {/* General Profile Parameters */}

@@ -32,7 +32,7 @@ import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
 import { api } from '@/lib/api'
 import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
 import { SchemaActionForm } from '@/components/capabilities/SchemaActionForm'
-import type { JsonSchema } from '@/lib/capabilities-api'
+import type { JsonSchema } from '@/lib/capability-forms'
 import type { PageContextEnvelope } from '@/lib/page-context'
 
 interface MCPTool {

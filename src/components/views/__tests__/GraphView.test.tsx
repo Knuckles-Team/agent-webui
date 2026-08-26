@@ -124,6 +124,89 @@ describe('GraphView Component', () => {
     })
   })
 
+  // Defect A: a failed stats fetch must never render as "0" — that's
+  // indistinguishable from a genuinely empty (but connected) graph. These
+  // cover the three failure kinds `fetchData` can classify (`degraded`,
+  // `error`, `unavailable`) plus the precise case where stats itself
+  // succeeded despite another route failing.
+  function mockGraphRoute(handlers: {
+    stats?: { ok?: boolean; status?: number; body?: unknown }
+    nodes?: { ok?: boolean; status?: number; body?: unknown }
+    relationships?: { ok?: boolean; status?: number; body?: unknown }
+  }) {
+    const respond = (h?: { ok?: boolean; status?: number; body?: unknown }, fallbackBody: unknown = []) => {
+      const status = h?.status ?? 200
+      const ok = h?.ok ?? (status >= 200 && status < 300)
+      const body = h?.body ?? fallbackBody
+      return Promise.resolve({
+        ok,
+        status,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(typeof body === 'string' ? body : JSON.stringify(body)),
+      } as unknown as Response)
+    }
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/graph/stats')) return respond(handlers.stats, mockGraphStats)
+      if (url.includes('/graph/relationships')) return respond(handlers.relationships, mockGraphRelationships)
+      if (url.includes('/graph/nodes')) return respond(handlers.nodes, mockGraphNodes)
+      return respond(undefined, [])
+    }) as unknown as typeof fetch
+  }
+
+  it('shows "—" (not 0) for both badges when the stats fetch fails but nodes/relationships succeed (degraded)', async () => {
+    mockGraphRoute({ stats: { ok: false, status: 503, body: 'Service Unavailable' } })
+
+    renderGraphView()
+
+    await waitFor(() => {
+      expect(screen.getByText(/^Nodes:\s*—$/)).toBeInTheDocument()
+      expect(screen.getByText(/^Edges:\s*—$/)).toBeInTheDocument()
+    })
+    // Never renders the stale/initial 0 in place of the dash.
+    expect(screen.queryByText(/^Nodes:\s*0$/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Edges:\s*0$/)).not.toBeInTheDocument()
+  })
+
+  it('shows "—" for both badges when every graph request fails (error)', async () => {
+    mockGraphRoute({
+      stats: { ok: false, status: 503, body: 'Service Unavailable' },
+      nodes: { ok: false, status: 503, body: 'Service Unavailable' },
+      relationships: { ok: false, status: 503, body: 'Service Unavailable' },
+    })
+
+    renderGraphView()
+
+    await waitFor(() => {
+      expect(screen.getByText(/^Nodes:\s*—$/)).toBeInTheDocument()
+      expect(screen.getByText(/^Edges:\s*—$/)).toBeInTheDocument()
+    })
+  })
+
+  it('shows "—" for both badges when the backend honestly reports available: false (unavailable)', async () => {
+    mockGraphRoute({
+      stats: { body: { total_nodes: 0, total_relationships: 0, by_type: {}, available: false } },
+    })
+
+    renderGraphView()
+
+    await waitFor(() => {
+      expect(screen.getByText(/^Nodes:\s*—$/)).toBeInTheDocument()
+      expect(screen.getByText(/^Edges:\s*—$/)).toBeInTheDocument()
+    })
+  })
+
+  it('still shows the real stats numbers when stats succeeds even though another request fails (degraded)', async () => {
+    mockGraphRoute({ nodes: { ok: false, status: 503, body: 'Service Unavailable' } })
+
+    renderGraphView()
+
+    await waitFor(() => {
+      expect(screen.getByText(new RegExp(`^Nodes:\\s*${mockGraphStats.total_nodes}$`))).toBeInTheDocument()
+      expect(screen.getByText(new RegExp(`^Edges:\\s*${mockGraphStats.total_relationships}$`))).toBeInTheDocument()
+    })
+  })
+
   it('renders empty graph data gracefully', async () => {
     // Drive the real data path: an empty backend yields zeroed summary badges.
     vi.mocked(api).getGraphStats.mockResolvedValueOnce({

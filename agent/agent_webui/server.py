@@ -34,11 +34,12 @@ from starlette.routing import Mount
 from starlette.routing import Route as StarletteRoute
 
 from .api_extensions import (
-    router as enhanced_router,
-)
-from .api_extensions import (
+    chats_router,
     set_workspace_helpers,
     sync_work_status,
+)
+from .api_extensions import (
+    router as enhanced_router,
 )
 from .observability import (
     CORRELATION_RESPONSE_HEADER,
@@ -115,7 +116,12 @@ _ADMIN_ROUTE_PREFIXES = (
     '/api/fleet',
     '/api/enhanced/agents',
     '/api/enhanced/backend',
-    '/api/enhanced/chats',
+    # PHASE B/C unify-chat-resource: was `/api/enhanced/chats`, moved to the
+    # canonical `/api/chats` resource. `_is_admin_route` below carves the
+    # pydantic-ai message-transport sub-route (`/api/chats/messages`) back
+    # OUT of this prefix -- sending a chat message is an ordinary `kg:write`
+    # action, not chat-history administration.
+    '/api/chats',
     '/api/enhanced/commands',
     '/api/enhanced/code',
     '/api/enhanced/config',
@@ -187,9 +193,29 @@ _ADMIN_MUTATION_ROUTE_PREFIXES = (
 # default; add a path here only when the same receive-only property is verified true
 # of the socket, not merely assumed.
 _WEBSOCKET_READ_ONLY_PATHS = frozenset({'/ws/dashboard'})
+# BUG-PE-004: this MUST stay a superset-or-equal match of the shared
+# ``ActorIdentityMiddleware``'s own unauthenticated-path set
+# (``agent_utilities.security.request_identity.UNAUTHENTICATED_PATHS`` ==
+# ``{'/health', '/health/ready', '/healthz', '/api/health',
+# '/api/healthz'}``). That middleware runs OUTSIDE this one
+# (``WebUIAuthorizationMiddleware``) in the stack, so any path it already
+# treats as unauthenticated reaches this layer regardless of what this set
+# says -- if this set omits one (as it omitted ``/health/ready`` until this
+# fix), `_identity_enforced()` still gates it here inconsistently with the
+# outer layer, and with identity unenforced it falls through routing
+# unauthenticated with no exempt SPA route to answer it, landing on
+# ``SPAStaticFiles``'s 404-to-``index.html`` fallback like ``/health``
+# itself did.
 _PUBLIC_LIVENESS_PATHS = frozenset(
-    {'/health', '/healthz', '/api/health', '/api/healthz'}
+    {'/health', '/health/ready', '/healthz', '/api/health', '/api/healthz'}
 )
+# PHASE B/C unify-chat-resource: the pydantic-ai chat-message transport,
+# remounted from `/api/chat` to `/api/chats/messages` so it sits under the
+# same `/api/chats` resource as the chat-history CRUD. It is a sibling
+# capability, not chat-history administration -- exempt it from the
+# `/api/chats` entry in `_ADMIN_ROUTE_PREFIXES` so sending a message still
+# only requires `kg:write`, exactly as `/api/chat` did before the move.
+_CHAT_MESSAGES_PATH = '/api/chats/messages'
 _SECURITY_RESPONSE_HEADERS = (
     (b'referrer-policy', b'no-referrer'),
     (b'x-content-type-options', b'nosniff'),
@@ -757,6 +783,8 @@ class WebUIAuthorizationMiddleware:
 
     @staticmethod
     def _is_admin_route(path: str) -> bool:
+        if path == _CHAT_MESSAGES_PATH:
+            return False
         return any(
             path == prefix or path.startswith(f'{prefix}/')
             for prefix in _ADMIN_ROUTE_PREFIXES
@@ -1699,8 +1727,32 @@ def create_agent_web_app(
 
     @app.exception_handler(_errors.HTTPException)
     async def _privacy_safe_http_error(_request, exc: _errors.HTTPException):
-        """Prevent upstream exception detail from being reflected to clients."""
+        """Prevent upstream exception detail from being reflected to clients.
 
+        Masking the CLIENT-facing detail is a deliberate privacy control and
+        stays. Discarding it entirely was not: the owner's post-sign-in
+        ``{"detail": "Request failed"}`` was a plain 404 "Not Found" from the
+        SPA mount, and because this handler logged nothing, that one-line
+        diagnosis cost a multi-hour investigation (the third time in this
+        program a swallowed cause has done so). Log the REAL status and detail
+        server-side first, against the ambient correlation id that already
+        appears in this request's access-log line (and in the
+        ``x-correlation-id`` response header the browser received), so the
+        masked response the user reports is one ``kubectl logs`` away from its
+        real cause.
+        """
+
+        logger.warning(
+            'Request failed; client detail masked '
+            '(correlation_id=%s, status=%s, detail=%s)',
+            current_correlation_id() or '-',
+            exc.status_code,
+            exc.detail,
+            extra={
+                'event': 'masked_http_error',
+                'status_code': exc.status_code,
+            },
+        )
         detail = (
             'Request failed' if exc.status_code < 500 else 'Internal request failed'
         )
@@ -1711,9 +1763,24 @@ def create_agent_web_app(
         )
 
     @app.exception_handler(RequestValidationError)
-    async def _privacy_safe_validation_error(_request, _exc: RequestValidationError):
-        """Do not reflect submitted values or schema internals in validation errors."""
+    async def _privacy_safe_validation_error(_request, exc: RequestValidationError):
+        """Do not reflect submitted values or schema internals in validation errors.
 
+        Same hole as ``_privacy_safe_http_error`` above: the masked 422 told
+        nobody WHICH field failed. Log the validator's own error list (field
+        location + error type, never the submitted value) server-side.
+        """
+
+        logger.warning(
+            'Request validation failed; client detail masked '
+            '(correlation_id=%s, errors=%s)',
+            current_correlation_id() or '-',
+            [
+                {'loc': error.get('loc'), 'type': error.get('type')}
+                for error in exc.errors()
+            ],
+            extra={'event': 'masked_validation_error'},
+        )
         return JSONResponse(
             status_code=422,
             content={'detail': 'Request could not be processed'},
@@ -1766,6 +1833,13 @@ def create_agent_web_app(
 
     # Mount the enhanced API extensions (ACP/A2A/Management)
     app.include_router(enhanced_router, prefix='/api/enhanced')
+
+    # Mount chat-session history CRUD at the canonical `/api/chats` resource
+    # (PHASE B/C unify-chat-resource). `chats_router`'s own route paths
+    # already spell `/chats...`, so the prefix here is `/api`, not
+    # `/api/enhanced` -- this is the SAME handler code that used to live at
+    # `/api/enhanced/chats*`, just remounted; no shim, no alias.
+    app.include_router(chats_router, prefix='/api')
 
     # Mount the service dashboard API if available (optional dependency)
     try:
@@ -1967,6 +2041,23 @@ def create_agent_web_app(
     def add_pydantic_routes(routes, prefix=''):
         """Recursively discover and mount Pydantic-AI internal routes.
 
+        PHASE B/C unify-chat-resource: pydantic-ai's `to_web()` always
+        serves its chat-message transport at `POST /api/chat` (plus its
+        `OPTIONS /api/chat` CORS preflight sibling) -- that path is remapped
+        below to `/api/chats/messages` so the transport lives under the
+        same `/api/chats` resource as the chat-history CRUD, instead of a
+        confusingly-near-identical sibling path. `/api/configure`,
+        `/api/health`, `/`, and `/{id}` are untouched.
+
+        The remap is a pure path substitution, not a wrapper: pydantic-ai's
+        `post_chat`/`options_chat` closures take only `request: Request` and
+        never read `request.path_params`, so there is nothing for a
+        `{id}` path segment to bind to -- mounting at `.../{id}/messages`
+        would add a path parameter the handler silently ignores. The
+        Vercel AI SDK transport already puts the conversation id in the
+        JSON body (`Chat.tsx`'s `prepareSendMessagesRequest` sends `id`
+        alongside `messages`), so `/api/chats/messages` loses nothing.
+
         Args:
             routes: List of routes to process.
             prefix: URL prefix for the current route layer.
@@ -1977,6 +2068,8 @@ def create_agent_web_app(
             elif isinstance(route, StarletteRoute):
                 full_path = prefix + route.path
                 full_path = '/' + full_path.strip('/')
+                if full_path == '/api/chat':
+                    full_path = _CHAT_MESSAGES_PATH
 
                 # Only bridge routes that match the dashboard's functional scope
                 if (
@@ -1988,6 +2081,37 @@ def create_agent_web_app(
                     app.add_route(full_path, route.endpoint, methods=route.methods)
 
     add_pydantic_routes(pydantic_app.routes)
+
+    async def _webui_liveness(request: Any) -> JSONResponse:
+        """Real liveness payload for this listener's bare `/health*` paths.
+
+        BUG-PE-004: every path in ``_PUBLIC_LIVENESS_PATHS`` is treated as an
+        unauthenticated liveness check by ``ActorIdentityMiddleware`` -- but
+        before this route existed, only ``/api/health`` (mounted above by
+        ``add_pydantic_routes``) had a real handler. ``/health`` and
+        ``/healthz`` have no ``.`` and match none of ``SPAStaticFiles``'s
+        exempt prefixes (``api``/``chat``/``configure``/``mcp``/``a2a``/
+        ``ag-ui``), so they fell through its 404-to-``index.html`` fallback:
+        a probe pointed at bare ``/health`` got a 200 with the dashboard's
+        HTML shell and could never observe a failure. Registering explicit
+        routes here -- before the catch-all SPA ``Mount('/', ...)`` below --
+        gives them the same real payload as ``/api/health`` instead.
+
+        This is the SPA/dashboard listener's OWN liveness (port
+        ``GRAPH_OS_WEBUI_PORT``, default 8080 -- see
+        ``agent_utilities.server.webui_co_service``). It is a different
+        listener from the graph-os gateway's `/health`/`/health/ready` on
+        port 8000 (`agent_utilities/server/routers/core.py`), which k8s's
+        liveness/readiness/startup probes target and which this route does
+        not touch.
+        """
+        return JSONResponse({'ok': True})
+
+    # `/api/health` is excluded: pydantic-ai's own handler (mounted above by
+    # `add_pydantic_routes`) already serves it and starts with the SPA's
+    # exempt `api` prefix, so it was never swallowed.
+    for _liveness_path in ('/health', '/health/ready', '/healthz', '/api/healthz'):
+        app.add_route(_liveness_path, _webui_liveness, methods=['GET'])
 
     dist_path = Path(__file__).parent / 'dist'
 
@@ -2015,16 +2139,37 @@ def create_agent_web_app(
 
     # Fallback to serving the built React dashboard if no custom source provided
     if not html_source:
-        if dist_path.exists():
+        if not dist_path.is_dir():
+            logger.warning(
+                'Static assets were not found at the configured location. '
+                'Dashboard UI will not be served.'
+            )
+        else:
+            # A directory check alone is NOT enough. `index.html` is the LAST
+            # file the frontend build writes, so an interrupted or partial
+            # build leaves a dist directory full of hashed assets with no
+            # entrypoint. That state used to mount silently: assets and
+            # favicons served 200, while `/` and every client-side route fell
+            # through SPAStaticFiles' index.html fallback to a bare 404 that
+            # `_privacy_safe_http_error` then masked as
+            # `{"detail": "Request failed"}` -- exactly what a signed-in user
+            # saw on the production deployment (which live-mounts this
+            # directory rather than using the packaged wheel, so a broken
+            # build on the mount source breaks the dashboard immediately).
+            # Serving the assets is still better than serving nothing, but the
+            # missing entrypoint must be reported loudly rather than inferred
+            # from a masked 404.
+            if not (dist_path / 'index.html').is_file():
+                logger.error(
+                    'The built dashboard entrypoint index.html is missing from '
+                    'the static asset directory. Asset requests will still be '
+                    'served, but "/" and every client-side route will return '
+                    '404. Re-run the frontend build to regenerate it.'
+                )
             app.mount(
                 '/',
                 SPAStaticFiles(directory=str(dist_path), html=True),
                 name='dashboard',
-            )
-        else:
-            logger.warning(
-                'Static assets were not found at the configured location. '
-                'Dashboard UI will not be served.'
             )
 
     if _LOGFIRE_ENABLED:

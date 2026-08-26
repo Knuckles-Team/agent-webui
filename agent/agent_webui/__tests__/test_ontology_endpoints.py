@@ -31,12 +31,32 @@ def client():
 
 @pytest.fixture
 def real_engine():
-    """A real IntelligenceGraphEngine over an in-memory backend."""
+    """A real IntelligenceGraphEngine over an in-memory backend.
+
+    BUG-PE-020: ``create_backend`` routes through
+    ``shard_topology.resolve_routing_graph``, which reads
+    ``current_actor().tenant_id`` whenever no explicit graph name is given
+    (the tenant-default-graph case -- see that function's own docstring).
+    Outside of a request, there is no ambient actor to read, so this fixture
+    must mint one itself (the same pattern ``test_union_read.py``/
+    ``test_graph_identity.py`` use for their own ambient-context setup)
+    before constructing the backend, or every test built on this fixture
+    fails at setup with ``IdentityRequiredError`` before a single request is
+    made.
+    """
     from agent_utilities.knowledge_graph.backends import create_backend
     from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
+    from agent_utilities.security.brain_context import ActorContext, use_actor
 
-    backend = create_backend(backend_type='memory')
-    engine = IntelligenceGraphEngine(graph=nx.MultiDiGraph(), backend=backend)
+    fixture_actor = ActorContext(
+        actor_id='test-fixture',
+        tenant_id='',
+        roles=('kg:read', 'kg:write', 'kg:admin'),
+        authenticated=True,
+    )
+    with use_actor(fixture_actor):
+        backend = create_backend(backend_type='memory')
+        engine = IntelligenceGraphEngine(graph=nx.MultiDiGraph(), backend=backend)
     return engine
 
 

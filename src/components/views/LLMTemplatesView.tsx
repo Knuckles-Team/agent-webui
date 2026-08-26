@@ -21,7 +21,7 @@
  *
  * Before this fix the sidebar listed prompt documents from
  * `/api/enhanced/prompts` — i.e. system prompts — which is what the
- * "LLM Templates" section is NOT supposed to show (that already has its own
+ * "Models" section is NOT supposed to show (that already has its own
  * dedicated home: `control-plane.prompts` / `PromptsView.tsx`, the Prompts
  * Registry). Templates (a prompt document with `model` + `parameters`
  * fields attached) are still composed and saved through the EXISTING prompt
@@ -458,7 +458,7 @@ export default function LLMTemplatesView() {
         // render an unreachable backend identically to a genuine empty
         // registry (the honest-state requirement this view was flagged for).
         setLoadError('Could not reach the LLM model registry.')
-        toast.error('Error connecting to the LLM template composer')
+        toast.error('Error connecting to the LLM model registry')
       }
     } finally {
       setLoading(false)
@@ -708,7 +708,7 @@ export default function LLMTemplatesView() {
           <div className="flex items-center justify-between">
             <CardTitle className="text-xl font-bold flex items-center gap-2">
               <Cpu className="size-5 text-emerald-400" />
-              LLM Templates
+              Models
             </CardTitle>
             <div className="flex items-center gap-1">
               <Button

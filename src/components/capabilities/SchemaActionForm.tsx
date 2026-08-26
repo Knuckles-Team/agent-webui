@@ -10,10 +10,10 @@ import {
   materializeSchemaInputs,
   resolveJsonSchema,
   schemaType,
+  type JsonSchema,
   type SchemaFormState,
   type SchemaFormValue,
 } from '../../lib/capability-forms'
-import type { JsonSchema } from '../../lib/capabilities-api'
 import type { PageContextEnvelope } from '../../lib/page-context'
 
 interface SchemaActionFormProps {

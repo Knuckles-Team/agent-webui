@@ -1,4 +1,6 @@
+import asyncio
 import base64
+import contextlib
 import contextvars
 import hashlib
 import inspect
@@ -10,6 +12,7 @@ import re
 import secrets
 import stat
 import threading
+import time
 from concurrent import futures as _futures
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -46,6 +49,13 @@ from fastapi.responses import Response
 # Global constant for agent directory
 
 router = APIRouter()
+# Chat-session history CRUD, mounted separately at the top-level `/api/chats`
+# resource (prefix='/api', paths below already spell `/chats...`) rather than
+# under `/api/enhanced` -- see PHASE B/C unify-chat-resource. Kept as its own
+# `APIRouter` (not folded into `router`) so the mount prefix in `server.py`
+# can differ from the rest of the webui-only `/api/enhanced/*` surface
+# without special-casing individual routes at inclusion time.
+chats_router = APIRouter()
 logger = logging.getLogger(__name__)
 _REFERENCE_KEY = secrets.token_bytes(32)
 _MAX_CONTAINER_RECORDS = 256
@@ -1634,6 +1644,16 @@ async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
     it -- not a partial degrade, a hard 500 the frontend renders as an empty
     view + a toast, for any caller who is not a cluster admin. A single
     toggle-preference lookup failing must not take down the whole list.
+
+    FIX LANE Priority 4 (BUG: a written-disabled preference read back as
+    "enabled", proven end to end): this query used to ``RETURN p.value as
+    value`` with NO id projection at all. Row-governance
+    (``secured_reads.row_node_ids()``) REQUIRES every row to carry an
+    ``id``/``node_id``/``n.id``/``_id`` column or it raises ``PermissionError:
+    Graph result contains a row without a governed node id`` -- which the
+    broad ``except Exception`` below silently swallowed into this function's
+    OWN fail-open ``return True``, indistinguishable from "no preference
+    set". ``p.id AS id`` is added to the RETURN so every row is governable.
     """
     if not engine:
         return True
@@ -1641,7 +1661,8 @@ async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
     try:
         res = await _invoke_governed_helper(
             engine.query_cypher,
-            'MATCH (p:Preference) WHERE p.id = $pref_id RETURN p.value as value',
+            'MATCH (p:Preference) WHERE p.id = $pref_id '
+            'RETURN p.id AS id, p.value AS value',
             {'pref_id': pref_id},
             deadline=5.0,
         )
@@ -1654,6 +1675,142 @@ async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
     except Exception as e:
         _log_failure('query_toggle_state', e)
     return True  # Enabled by default: preference absent, or unreadable.
+
+
+def _log_toggle_batch_failure(item_type: str, error: BaseException) -> None:
+    """Log a toggle-batch scan failure, including the TRUE underlying cause
+    when it is safely available, without violating ``_log_failure``'s
+    established privacy contract (query text/params are never logged).
+
+    Live pod observation: every ``_batch_toggle_states`` sub-call (5/5, every
+    request) raised ``CypherEngineError`` -- a deliberately opaque wrapper
+    (``epistemic_graph_backend.CypherEngineError``) that hides query text and
+    parameters but DOES carry a non-sensitive ``error_type`` attribute (the
+    underlying native-engine exception's class name, e.g. ``KeyError`` /
+    ``PlacementAuthorityError``). ``_log_failure`` alone only ever logs
+    ``CypherEngineError`` itself (the wrapper type), which was not enough to
+    tell an operator anything about the real failure. Logging that inner
+    ``error_type`` too -- still no query text, no params, no stack trace --
+    is the same redaction discipline, more diagnostic.
+    """
+    inner_type = getattr(error, 'error_type', None)
+    if isinstance(inner_type, str) and inner_type:
+        safe_item_type = re.sub(r'[^a-z0-9_.-]+', '_', item_type.lower())[:64]
+        logger.error(
+            'toggle_batch_%s failed: error_type=%s inner_error_type=%s',
+            safe_item_type or 'item',
+            type(error).__name__,
+            inner_type,
+        )
+    else:
+        _log_failure(f'toggle_batch_{item_type}', error)
+
+
+async def _batch_toggle_states(
+    engine: Any, item_type: str, item_ids: list[str]
+) -> tuple[dict[str, bool], bool]:
+    """Bulk-read the toggle preference of every one of ``item_ids`` (all of
+    ``item_type``) in ONE round trip.
+
+    Root cause of the ``/api/enhanced/tools`` hang that never returned
+    (measured live: >120s, timed out): ``list_all_tools`` called
+    ``get_toggle_state`` once PER ROW -- up to ~256 MCP servers, ~256
+    built-in tools, and ~256 skill-catalog rows, each a SEPARATE, serially
+    ``await``-ed ``engine.query_cypher`` round trip through
+    ``_invoke_governed_helper``'s bounded synchronous executor (a shared,
+    process-wide, fixed 4-worker/8-pending-slot budget --
+    ``_SYNC_WORK_EXECUTOR`` -- so this was never just slow for this one
+    request; a large enough listing could starve every other concurrent
+    request's synchronous KG work too). Up to ~768 sequential round trips,
+    each individually bounded but never batched or parallelized, is what
+    made the response practically never return.
+
+    FIX LANE Priority 4: a single ``WHERE p.id IN $ids`` scan, built from the
+    EXACT ids the caller is about to render, replaces both the old N
+    sequential round trips AND an intermediate ``STARTS WITH $prefix`` scan
+    that does not parse on the deployed engine at all (``STARTS WITH`` with
+    a bound-parameter operand fails 5/5, live) -- every toggle read appeared
+    to work while being non-functional fleet-wide. ``IN $ids`` is also
+    index-servable and O(items rendered) rather than O(every preference in
+    the graph), same fail-open semantics as ``get_toggle_state``: a query
+    failure degrades every item of this ``item_type`` to "enabled by
+    default" (the caller's ``.get(id, True)`` lookup) rather than raising --
+    a toggle-preference outage must never take the whole listing down, same
+    reasoning ``get_toggle_state`` already documents for the single-item
+    case.
+
+    Returns ``(states, ok)``. ``ok`` is ``False`` when the underlying scan
+    failed -- ``states`` is still the (fail-open, all-``True``-by-default)
+    mapping callers can safely use, but ``ok=False`` lets the caller surface
+    that the toggle read itself is broken rather than silently reporting
+    "everything enabled" as if it were a real, verified answer. A previous
+    version re-raised a 503 ``_invoke_governed_helper`` timeout/capacity
+    ``HTTPException`` here, which took the ENTIRE ``/api/enhanced/tools``
+    response down over a toggle-preference outage alone; that is now
+    degraded the same as any other failure.
+    """
+    if not engine or not item_ids:
+        return {}, True
+    prefix = f'preference:toggle:{item_type}:'
+    pref_to_item = {f'{prefix}{item_id}': item_id for item_id in item_ids}
+    try:
+        res = await _invoke_governed_helper(
+            engine.query_cypher,
+            'MATCH (p:Preference) WHERE p.id IN $ids '
+            'RETURN p.id AS id, p.value AS value',
+            {'ids': list(pref_to_item.keys())},
+            deadline=10.0,
+        )
+    except HTTPException as e:
+        _log_toggle_batch_failure(item_type, e)
+        return {}, False
+    except Exception as e:
+        _log_toggle_batch_failure(item_type, e)
+        return {}, False
+    states: dict[str, bool] = {}
+    for row in res or []:
+        if not isinstance(row, dict):
+            continue
+        row_id = row.get('id')
+        if not isinstance(row_id, str):
+            continue
+        item_id = pref_to_item.get(row_id)
+        if item_id is None:
+            continue
+        states[item_id] = row.get('value') == 'enabled'
+    return states, True
+
+
+async def _batch_toggle_states_many(
+    engine: Any, item_types_and_ids: dict[str, list[str]]
+) -> dict[str, tuple[dict[str, bool], bool]]:
+    """Run one ``_batch_toggle_states`` scan per ``item_type`` CONCURRENTLY.
+
+    ``list_all_tools`` previously issued up to 5 of these scans -- one per
+    item_type (``mcp_server``, ``builtin_tool``, ``skill``,
+    ``skill_workflow``, ``skill_graph``) -- SEQUENTIALLY, each individually
+    deadline-bound but never run in parallel: measured live, this was the
+    critical-path long pole (``/api/enhanced/tools`` at 11-17s, later 503 at
+    35-41s) for data the dashboard tile never even reads (it only sums array
+    lengths). ``asyncio.gather`` cuts that to the slowest single scan instead
+    of the sum of all of them -- an immediate ~5x reduction on this path with
+    no change to what any consumer that DOES read ``enabled`` sees.
+
+    Args:
+        item_types_and_ids: ``{item_type: [exact ids about to be rendered]}``
+            (FIX LANE Priority 4) -- each scan is now ``WHERE p.id IN $ids``
+            against exactly this list, not a graph-wide prefix scan.
+    """
+    if not item_types_and_ids:
+        return {}
+    item_types = list(item_types_and_ids.keys())
+    results = await asyncio.gather(
+        *(
+            _batch_toggle_states(engine, item_type, item_types_and_ids[item_type])
+            for item_type in item_types
+        )
+    )
+    return dict(zip(item_types, results, strict=True))
 
 
 async def set_toggle_state(
@@ -1687,8 +1844,33 @@ async def set_toggle_state(
 
 _FLEET_CATALOG_DEADLINE_SECONDS = 10.0
 
+# Overall wall-clock budget across the WHOLE multi-kind walk performed by
+# `_read_fleet_catalog`, on top of (never instead of) each individual page's
+# own `_FLEET_CATALOG_DEADLINE_SECONDS` bound. `skills` alone can need ~9
+# paginated round trips to drain (841 rows at `_MAX_LIMIT`=100), each
+# independently deadline-bound at up to 10s -- with no total cap, a caller
+# asking for all four kinds could in the worst case wait minutes before ever
+# seeing a response, which is what actually produced the observed 35-41s
+# 503s. Once this budget is exhausted, any kind not yet FULLY read (including
+# one that has drained some pages but not finished) is reported as failed
+# (`None`) rather than raising -- kinds already finished keep their real
+# data (see the per-kind independence contract below).
+_FLEET_CATALOG_TOTAL_DEADLINE_SECONDS = 30.0
 
-async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | None:
+
+# `_authorized_page` clamps every request to `_MAX_LIMIT` (100) internally
+# (`fetch = min(min(limit, _MAX_LIMIT) + 1, ...)`), so asking for more per page
+# does NOT get more -- it just makes `len(page) < requested` true on the first
+# page and silently truncates the read. Page at exactly the cap and stop on the
+# CALLER's ceiling instead: every consumer of this read renders through
+# `_public_external_result`, which caps at `_MAX_EXTERNAL_COLLECTION_ITEMS`, so
+# draining all ~2500 rows only to discard all but 256 was ~26 sequential engine
+# round trips for nothing (measured: 21s for /api/enhanced/tools).
+
+
+async def _read_fleet_catalog(
+    *kinds: str,
+) -> dict[str, list[dict[str, Any]] | None] | None:
     """Read one or more fleet-catalog collections through the SAME
     tenant/principal-scoped, fail-closed authority and shape-validation path
     ``agent_utilities.gateway.registry_api`` uses for its own
@@ -1705,18 +1887,32 @@ async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | 
     ``list_all_tools`` awaited the shared multiplexer with NO deadline,
     hanging 45s before an infra timeout returned a 503).
 
-    Returns ``None`` when the catalog cannot be read at all (denied
-    authority, or the engine's SQL surface is unavailable/erroring) so
-    callers can render an explicit degraded state instead of a silent empty
-    result -- a degraded read must never look like "genuinely empty"
-    (fail-closed).
+    Each requested ``kind`` degrades INDEPENDENTLY (the root-cause fix for
+    the observed live pattern where a ``servers`` hiccup discarded an
+    otherwise-healthy ``skills`` catalog before it was even attempted --
+    ``skills`` was read third of four, so any earlier failure meant it was
+    never reached at all). A kind that fails is reported as ``None`` in the
+    returned mapping; a kind that succeeds -- including with zero rows -- is
+    a real (possibly empty) ``list``. Callers must check each kind's value
+    individually rather than assuming "some data" means "all requested kinds
+    loaded".
+
+    Returns ``None`` (the WHOLE mapping, not a per-kind value) only when the
+    catalog cannot be reached AT ALL -- authority denied or the catalog
+    engine itself is unavailable, before any kind-specific read is even
+    attempted. This preserves the original fail-closed contract for that
+    total-failure case (every existing caller's "no catalog at all" handling
+    is unchanged); the new per-kind ``None`` granularity is additive, for
+    the partial-failure case that previously discarded healthy kinds.
     """
     from agent_utilities.gateway.registry_api import (
         _KIND_SPECS,
+        _MAX_LIMIT,
         CatalogUnavailable,
-        _authorized_rows,
+        _authorized_page,
         _get_catalog_engine,
         _require_catalog_authority,
+        _row_key,
         _validate_item,
     )
 
@@ -1732,30 +1928,231 @@ async def _read_fleet_catalog(*kinds: str) -> dict[str, list[dict[str, Any]]] | 
         _log_failure('fleet_catalog_authority', exc)
         return None
 
-    result: dict[str, list[dict[str, Any]]] = {}
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    result: dict[str, list[dict[str, Any]] | None] = dict.fromkeys(kinds)
     for kind in kinds:
+        remaining_total = _FLEET_CATALOG_TOTAL_DEADLINE_SECONDS - (
+            loop.time() - started
+        )
+        if remaining_total <= 0:
+            _log_failure(f'fleet_catalog_{kind}_total_budget', TimeoutError(kind))
+            continue  # Leaves result[kind] at its `None` default.
         spec = _KIND_SPECS[kind]
         try:
-            rows = await _invoke_governed_helper(
-                _authorized_rows,
-                kind,
-                tenant=tenant,
-                principal=principal,
-                grant_digests=grant_digests,
-                engine=engine,
-                deadline=_FLEET_CATALOG_DEADLINE_SECONDS,
-            )
+            # registry_api pushes LIMIT/keyset/filter/authz into SQL, so a
+            # page transfers only its own rows. Walk the keyset until the
+            # catalog is exhausted rather than asking for the whole table.
+            rows: list[dict[str, Any]] = []
+            after: tuple[str, str] | None = None
+            while True:
+                remaining_total = _FLEET_CATALOG_TOTAL_DEADLINE_SECONDS - (
+                    loop.time() - started
+                )
+                if remaining_total <= 0:
+                    raise TimeoutError('overall fleet catalog deadline exceeded')
+                page = await _invoke_governed_helper(
+                    _authorized_page,
+                    kind,
+                    tenant=tenant,
+                    principal=principal,
+                    grant_digests=grant_digests,
+                    query='',
+                    after=after,
+                    limit=_MAX_LIMIT,
+                    engine=engine,
+                    deadline=min(_FLEET_CATALOG_DEADLINE_SECONDS, remaining_total),
+                )
+                if not page:
+                    break
+                rows.extend(page)
+                if (
+                    len(page) < _MAX_LIMIT
+                    or len(rows) >= _MAX_EXTERNAL_COLLECTION_ITEMS
+                ):
+                    break
+                after = _row_key(spec, page[-1])
             result[kind] = [
                 _validate_item(kind, spec.model, row).model_dump() for row in rows
             ]
         except CatalogUnavailable as exc:
             _log_failure(f'fleet_catalog_{kind}', exc)
-            return None
-        except HTTPException:
-            raise
+            # Independent degradation: this kind failed, but earlier/later
+            # kinds must not be discarded because of it (result[kind] stays
+            # `None`, the rest of the loop continues).
+        except HTTPException as exc:
+            _log_failure(f'fleet_catalog_{kind}', exc)
+            # A per-call 503 (capacity exhausted / deadline exceeded from
+            # `_invoke_governed_helper`) used to propagate and kill the
+            # WHOLE multi-kind read. Degrade just this one kind instead.
         except Exception as exc:
             _log_failure(f'fleet_catalog_{kind}', exc)
-            return None
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Fleet-catalog TTL + single-flight cache (FIX LANE Priority 3)
+#
+# Measured: `/api/enhanced/tools` (73 KiB) at 20.89s; `/api/registry/skills
+# ?limit=1` (1,234 bytes) at 9.84s; 5 identical back-to-back calls at
+# 9.51/10.45/3.36/11.67/2.96s -- no warm-up, no caching, cost fixed PER CALL
+# rather than proportional to row volume. A realistic dashboard burst
+# (concurrency 4) timed out past 60s and `/api/enhanced/skills`, `/graph/
+# nodes`, `/graph/stats` all returned 503 under it. `_read_fleet_catalog` is
+# populated by the HOURLY `fleet-tool-schema-sync` job (see its own
+# docstring), so a read that is up to `_FLEET_CATALOG_CACHE_TTL_SECONDS`
+# stale is indistinguishable from a live one to any real caller.
+#
+# Cached PER KIND (not the whole multi-kind response), so one kind's hit
+# stands alone while another is mid-refresh. Single-flight per kind
+# (`asyncio.Lock`) is mandatory, not an optimization: without it a cache-
+# expiry moment under a multi-panel dashboard burst still stampedes the
+# bounded sync-work pool into the same 503s caching was meant to fix.
+#
+# Staleness disclosure (documented, deliberate trade-off -- see this lane's
+# report): a cache HIT's `mcp_status`/`skill_status`/`toggle_status` error
+# fields reflect the moment the cache was FILLED, not the request moment. A
+# real outage that recovers mid-TTL can still render as a stale error for up
+# to the TTL. Chosen because the underlying data is itself only hourly-fresh
+# -- "fast" strictly dominates "always-current" here.
+_FLEET_CATALOG_CACHE_TTL_SECONDS = 60.0
+
+
+class _FleetCatalogCacheEntry:
+    __slots__ = ('rows', 'fetched_at')
+
+    def __init__(self, rows: list[dict[str, Any]], fetched_at: float) -> None:
+        self.rows = rows
+        self.fetched_at = fetched_at
+
+
+_fleet_catalog_cache: dict[str, _FleetCatalogCacheEntry] = {}
+_fleet_catalog_cache_guard = threading.Lock()
+_fleet_catalog_kind_locks: dict[str, asyncio.Lock] = {}
+_fleet_catalog_kind_locks_guard = threading.Lock()
+# The last `mcp_status.last_synced_at` ANY request has observed (computed by
+# `list_all_tools` from the `discoveries` kind's own rows -- a signal this
+# cache gets for free, never an extra engine call). The hourly sync job
+# advancing this timestamp means fresher data landed than what is cached;
+# `note_fleet_catalog_sync_time` uses it to expire the cache EARLY instead of
+# making the next request wait out the rest of the TTL for data the sync job
+# has already superseded.
+_fleet_catalog_last_synced_seen: str | None = None
+
+
+def _fleet_catalog_kind_lock(kind: str) -> asyncio.Lock:
+    """Return the single-flight lock for `kind`, creating it on first use."""
+    with _fleet_catalog_kind_locks_guard:
+        lock = _fleet_catalog_kind_locks.get(kind)
+        if lock is None:
+            lock = asyncio.Lock()
+            _fleet_catalog_kind_locks[kind] = lock
+        return lock
+
+
+def reset_fleet_catalog_cache() -> None:
+    """Clear every cached kind and the single-flight lock table.
+
+    Test-only reset hook (also useful for an operator forcing an immediate
+    resync) -- production code never needs to call this; the TTL and the
+    `note_fleet_catalog_sync_time` early-expiry path are the only intended
+    invalidation.
+    """
+    global _fleet_catalog_last_synced_seen
+    with _fleet_catalog_cache_guard:
+        _fleet_catalog_cache.clear()
+        _fleet_catalog_last_synced_seen = None
+    with _fleet_catalog_kind_locks_guard:
+        _fleet_catalog_kind_locks.clear()
+
+
+def note_fleet_catalog_sync_time(last_synced_at: str | None) -> None:
+    """Record an observed `mcp_status.last_synced_at` and expire the cache
+    early if it advanced past what the cache was last filled with.
+
+    Called by `list_all_tools` with the value it already computes from
+    `discoveries` rows -- no additional engine round trip. A no-op the first
+    time (nothing to compare against yet) or when the value is unknown/
+    unchanged.
+    """
+    global _fleet_catalog_last_synced_seen
+    if not last_synced_at:
+        return
+    with _fleet_catalog_cache_guard:
+        if (
+            _fleet_catalog_last_synced_seen is not None
+            and last_synced_at > _fleet_catalog_last_synced_seen
+        ):
+            # The sync job landed a newer catalog than what is cached --
+            # drop every cached kind so the NEXT request refetches instead of
+            # serving a now-superseded snapshot for the rest of the TTL.
+            _fleet_catalog_cache.clear()
+        _fleet_catalog_last_synced_seen = last_synced_at
+
+
+def _fleet_catalog_cache_hit(kind: str) -> tuple[bool, list[dict[str, Any]] | None]:
+    with _fleet_catalog_cache_guard:
+        entry = _fleet_catalog_cache.get(kind)
+        if entry is None:
+            return False, None
+        if time.monotonic() - entry.fetched_at >= _FLEET_CATALOG_CACHE_TTL_SECONDS:
+            return False, None
+        return True, entry.rows
+
+
+def _fleet_catalog_cache_store(kind: str, rows: list[dict[str, Any]]) -> None:
+    with _fleet_catalog_cache_guard:
+        _fleet_catalog_cache[kind] = _FleetCatalogCacheEntry(rows, time.monotonic())
+
+
+async def _refresh_fleet_catalog_kind(kind: str) -> list[dict[str, Any]] | None:
+    """Single-flight refresh of one kind: at most one concurrent engine read
+    per kind, regardless of how many requests arrive while it is in flight.
+    """
+    lock = _fleet_catalog_kind_lock(kind)
+    async with lock:
+        # Re-check inside the lock: a request that waited for it may find
+        # another caller already refreshed this kind while it waited --
+        # collapsing N concurrent misses into ONE fetch, not N.
+        hit, cached_rows = _fleet_catalog_cache_hit(kind)
+        if hit:
+            return cached_rows
+        result = await _read_fleet_catalog(kind)
+        rows = (result or {}).get(kind)
+        if rows is not None:
+            _fleet_catalog_cache_store(kind, rows)
+        return rows
+
+
+async def _read_fleet_catalog_cached(
+    *kinds: str,
+) -> dict[str, list[dict[str, Any]] | None]:
+    """TTL + single-flight cached counterpart of `_read_fleet_catalog`.
+
+    Every kind independently: a cache hit costs ZERO engine calls; a miss (or
+    an expired kind) refreshes under that kind's own `asyncio.Lock`
+    (`_refresh_fleet_catalog_kind`). Unlike `_read_fleet_catalog`, this never
+    returns `None` for the whole mapping -- a total-authority-denial failure
+    (the one case `_read_fleet_catalog` reports that way) surfaces here as
+    every requested kind independently resolving to `None`, which is the
+    SAME per-kind shape every partial failure already uses, so callers
+    (`list_all_tools`) do not need a separate "whole thing failed" branch.
+    """
+    result: dict[str, list[dict[str, Any]] | None] = {}
+    to_refresh: list[str] = []
+    for kind in kinds:
+        hit, rows = _fleet_catalog_cache_hit(kind)
+        if hit:
+            result[kind] = rows
+        else:
+            to_refresh.append(kind)
+    if to_refresh:
+        refreshed = await asyncio.gather(
+            *(_refresh_fleet_catalog_kind(kind) for kind in to_refresh)
+        )
+        for kind, rows in zip(to_refresh, refreshed, strict=True):
+            result[kind] = rows
     return result
 
 
@@ -1772,6 +2169,16 @@ async def list_all_tools() -> dict[str, Any]:
     the hourly ``fleet-tool-schema-sync`` job, so "not yet synced" is a real,
     expected state and is reported explicitly via ``mcp_status`` -- never
     silently indistinguishable from "genuinely empty".
+
+    ``servers``, ``discoveries``, ``skills``, and ``prompts`` degrade
+    INDEPENDENTLY (``_read_fleet_catalog``'s per-kind contract): a failure
+    reading one never discards an already-healthy read of another. This
+    route ALWAYS returns 200 -- never a hard failure for one degraded
+    section -- but every section's failure is reported explicitly and
+    UNAMBIGUOUSLY: ``mcp_status.error`` for MCP servers (unchanged) and the
+    new ``skill_status.error`` for skills, both at the SAME top level and
+    the SAME shape, rather than skills' only signal being the
+    three-levels-deep ``skill_classification.kg_reachable`` boolean.
     """
     try:
         engine = await _get_engine_bounded()
@@ -1782,7 +2189,117 @@ async def list_all_tools() -> dict[str, Any]:
     except Exception:
         engine = None
 
-    catalog = await _read_fleet_catalog('servers', 'discoveries', 'skills', 'prompts')
+    # FIX LANE Priority 3: TTL + single-flight cached, not a fresh engine
+    # read on every call -- see `_read_fleet_catalog_cached`'s docstring.
+    # Unlike `_read_fleet_catalog`, this never returns `None` for the whole
+    # mapping (a total-authority-denial failure already surfaces as every
+    # requested kind independently `None`), so the per-kind logic below is
+    # the ONLY code path with no separate whole-catalog branch to keep in
+    # sync.
+    catalog = await _read_fleet_catalog_cached(
+        'servers', 'discoveries', 'skills', 'prompts'
+    )
+
+    server_rows = catalog.get('servers')
+    discovery_rows = catalog.get('discoveries')
+    skill_rows = catalog.get('skills')
+    prompt_rows = catalog.get('prompts')
+
+    # 0. Toggle-preference reads (mcp_server/builtin_tool/skill/
+    # skill_workflow/skill_graph) are independent of each other and of the
+    # catalog read above -- gather whichever ones this request actually
+    # needs CONCURRENTLY (`asyncio.gather` via `_batch_toggle_states_many`)
+    # instead of the previous up-to-5 SEQUENTIAL round trips, which measured
+    # live as the critical-path long pole for data the dashboard tile never
+    # even reads.
+    #
+    # FIX LANE Priority 4: `_batch_toggle_states` now takes the EXACT item
+    # ids being rendered (`WHERE p.id IN $ids`, not a `STARTS WITH $prefix`
+    # scan -- the deployed engine does not parse `STARTS WITH` with a
+    # bound-parameter operand at all, failing 5/5). That means the id lists
+    # below must be computed BEFORE the toggle batch runs, from the same
+    # catalog rows the entry-building loops further down classify again --
+    # a small, deliberate duplication of the classification logic (skill
+    # `skill_type` bucketing, server-name validation) rather than a larger
+    # restructuring that would move toggle reads after entry-building.
+    tools_dir = get_agent_utilities_dir() / 'tools'
+    builtin_dir_present = tools_dir.exists() and tools_dir.is_dir()
+
+    mcp_server_ids = [
+        name
+        for row in (server_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        if isinstance(name := row.get('name'), str)
+        and name
+        and _SAFE_DELEGATION_TOKEN.fullmatch(name)
+    ]
+    builtin_tool_ids = (
+        [f.stem for f in tools_dir.glob('*.py') if not f.name.startswith('_')][
+            :_MAX_EXTERNAL_COLLECTION_ITEMS
+        ]
+        if builtin_dir_present
+        else []
+    )
+    # Same three-way `skill_type` bucketing the entry-building loop (below)
+    # uses -- an unclassified row (the `else` branch there) still reads the
+    # `skill` toggle namespace, so its id belongs in `skill_ids` too.
+    skill_ids: list[str] = []
+    skill_workflow_ids: list[str] = []
+    skill_graph_ids: list[str] = []
+    for row in (skill_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+        skill_id = row.get('id')
+        if not isinstance(skill_id, str) or not skill_id:
+            continue
+        skill_type = str(row.get('skill_type') or '').strip().lower()
+        if skill_type == 'workflow':
+            skill_workflow_ids.append(skill_id)
+        elif skill_type == 'graph':
+            skill_graph_ids.append(skill_id)
+        else:
+            skill_ids.append(skill_id)
+
+    item_types_and_ids: dict[str, list[str]] = {}
+    if server_rows is not None:
+        item_types_and_ids['mcp_server'] = mcp_server_ids
+    if builtin_dir_present:
+        item_types_and_ids['builtin_tool'] = builtin_tool_ids
+    if skill_rows:
+        item_types_and_ids['skill'] = skill_ids
+        item_types_and_ids['skill_workflow'] = skill_workflow_ids
+        item_types_and_ids['skill_graph'] = skill_graph_ids
+    toggle_states = await _batch_toggle_states_many(engine, item_types_and_ids)
+    mcp_server_toggles, _mcp_server_toggles_ok = toggle_states.get(
+        'mcp_server', ({}, True)
+    )
+    builtin_toggles, _builtin_toggles_ok = toggle_states.get('builtin_tool', ({}, True))
+    skill_toggles, _skill_toggles_ok = toggle_states.get('skill', ({}, True))
+    skill_workflow_toggles, _ = toggle_states.get('skill_workflow', ({}, True))
+    skill_graph_toggles, _ = toggle_states.get('skill_graph', ({}, True))
+    toggles_ok = all(ok for _states, ok in toggle_states.values())
+    # FIX LANE Priority 4 (item 3): `ok` is already threaded per item_type,
+    # but every per-ITEM fallback in the entry-building loops below is a
+    # bare `.get(id, True)` -- during a real toggle-read outage that still
+    # renders every item "enabled", indistinguishable from a genuine
+    # preference. `degraded_item_types` is additive (never removes/retypes
+    # a field) and names exactly which item_type(s)' enabled/disabled state
+    # below is not to be trusted, so a caller can render a degraded state
+    # per item instead of a silently-wrong "enabled". Frontend rendering of
+    # this is out of scope for this file -- see this lane's report.
+    degraded_item_types = sorted(
+        item_type for item_type, (_states, ok) in toggle_states.items() if not ok
+    )
+    toggle_status = {
+        'source': 'sql_catalog',
+        'error': (
+            None
+            if toggles_ok
+            else (
+                'One or more toggle-preference reads failed; enable/disable '
+                'state below defaults to "enabled" and may not reflect the '
+                'real persisted preference.'
+            )
+        ),
+        'degraded_item_types': degraded_item_types,
+    }
 
     # 1. MCP servers -- desired registration (`servers`) joined with the most
     # recent observed probe (`discoveries`, append-only: keep the row with the
@@ -1791,19 +2308,15 @@ async def list_all_tools() -> dict[str, Any]:
     # indistinguishable empty list (fail-closed).
     mcp_tools: list[dict[str, Any]] = []
     last_synced_at: str | None = None
-    if catalog is None:
+    if server_rows is None:
         mcp_status = {
             'source': 'unavailable',
-            'error': 'The MCP fleet catalog could not be read.',
+            'error': 'The MCP server catalog could not be read.',
             'last_synced_at': None,
         }
-        mcp_prompts: list[dict[str, Any]] = []
-        skill_rows: list[dict[str, Any]] = []
     else:
-        server_rows = catalog['servers']
-        discovery_rows = catalog['discoveries']
         latest_discovery: dict[str, dict[str, Any]] = {}
-        for row in discovery_rows:
+        for row in discovery_rows or []:
             server_id = str(row.get('server_id') or '')
             observed_at = str(row.get('observed_at') or '')
             if last_synced_at is None or observed_at > last_synced_at:
@@ -1821,7 +2334,7 @@ async def list_all_tools() -> dict[str, Any]:
             ):
                 continue
             server_id = str(row.get('id') or '')
-            enabled = await get_toggle_state(engine, 'mcp_server', name)
+            enabled = mcp_server_toggles.get(name, True)
             discovery = latest_discovery.get(server_id)
             reachable = discovery.get('reachable') if discovery else None
             tool_count = int(discovery.get('tool_count') or 0) if discovery else 0
@@ -1844,11 +2357,6 @@ async def list_all_tools() -> dict[str, Any]:
                 }
             )
 
-        # MCP prompts -- the fleet catalog's own `mcp_prompts` table, never
-        # surfaced anywhere in this app before; already tenant-scoped and
-        # redacted by `_read_fleet_catalog` (registry_api's `_validate_item`).
-        mcp_prompts = list(catalog['prompts'])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-
         if server_rows:
             mcp_error = None
         elif last_synced_at:
@@ -1861,24 +2369,60 @@ async def list_all_tools() -> dict[str, Any]:
                 'The MCP fleet catalog has no servers and no recorded sync -- '
                 'the hourly fleet-tool-schema-sync job may not have run yet.'
             )
+        if discovery_rows is None and mcp_error is None:
+            # Servers loaded fine, but the discovery/health probe kind
+            # independently failed -- servers are listed (best-effort) but
+            # their `available`/`tool_count`/`error` fields are unknown
+            # rather than falsely healthy. Report it rather than staying
+            # silent about the degraded (not missing) health data.
+            mcp_error = (
+                'MCP server discovery/health data could not be read; server '
+                'status below reflects registration only, not live '
+                'reachability.'
+            )
         mcp_status = {
             'source': 'sql_catalog',
             'error': mcp_error,
             'last_synced_at': last_synced_at,
         }
-        skill_rows = catalog['skills']
+
+    # Free early-invalidation signal for the fleet-catalog cache (FIX LANE
+    # Priority 3): `last_synced_at` is already computed above from
+    # `discoveries` rows -- no extra engine call. A no-op when `None`/
+    # unchanged; when the hourly sync job has advanced it, the cache is
+    # cleared so the NEXT request refetches instead of serving a
+    # now-superseded snapshot for the rest of the TTL.
+    note_fleet_catalog_sync_time(last_synced_at)
+
+    # MCP prompts -- the fleet catalog's own `mcp_prompts` table, never
+    # surfaced anywhere in this app before; already tenant-scoped and
+    # redacted by `_read_fleet_catalog` (registry_api's `_validate_item`).
+    # Degrades independently of every other kind: a `prompts` failure never
+    # discards `servers`/`discoveries`/`skills`, and vice versa.
+    mcp_prompts: list[dict[str, Any]] = (
+        []
+        if prompt_rows is None
+        else list(prompt_rows)[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+    )
+    mcp_prompts_status = {
+        'source': 'sql_catalog' if prompt_rows is not None else 'unavailable',
+        'error': (
+            None
+            if prompt_rows is not None
+            else 'The MCP prompts catalog could not be read.'
+        ),
+    }
 
     # 2. Built-in Agent Tools -- bundled Python tool modules shipped with this
     # app; unrelated to the MCP fleet catalog.
     builtin_tools = []
-    tools_dir = get_agent_utilities_dir() / 'tools'
-    if tools_dir.exists() and tools_dir.is_dir():
+    if builtin_dir_present:
         for index, f in enumerate(tools_dir.glob('*.py')):
             if index >= _MAX_EXTERNAL_COLLECTION_ITEMS:
                 break
             if f.name.startswith('_'):
                 continue
-            builtin_enabled = await get_toggle_state(engine, 'builtin_tool', f.stem)
+            builtin_enabled = builtin_toggles.get(f.stem, True)
             builtin_tools.append(
                 {
                     'name': f.stem,
@@ -1892,7 +2436,13 @@ async def list_all_tools() -> dict[str, Any]:
     # 3. Skills / Skill Graphs / Skill Workflows -- classified directly by the
     # SQL catalog's own `skill_type` column (assigned by the sync job's
     # `classify_skill_type`, which never leaves it blank), never by
-    # filesystem path or a separate KG cross-reference query.
+    # filesystem path or a separate KG cross-reference query. Degrades
+    # independently of `servers`/`discoveries`/`prompts` -- a servers hiccup
+    # (the live-observed root cause of "No MCP servers registered" AND "The
+    # MCP fleet catalog could not be read" AND an empty skills list, all
+    # from ONE `servers` failure) no longer discards an otherwise-healthy
+    # skills read, since `skill_rows` is this kind's OWN result, not a
+    # shared all-or-nothing `catalog`.
     #
     # An unclassified skill (skill_type outside the recognized set) is still
     # a skill -- it is NOT a fourth bucket. It lands in `skills` alongside
@@ -1904,7 +2454,13 @@ async def list_all_tools() -> dict[str, Any]:
     skill_graphs: list[dict[str, Any]] = []
     skill_workflows: list[dict[str, Any]] = []
     unclassified_count = 0
-    for row in skill_rows[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+    skill_status = {
+        'source': 'sql_catalog' if skill_rows is not None else 'unavailable',
+        'error': (
+            None if skill_rows is not None else 'The skills catalog could not be read.'
+        ),
+    }
+    for row in (skill_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
         skill_id = row.get('id')
         if not isinstance(skill_id, str) or not skill_id:
             continue
@@ -1920,26 +2476,24 @@ async def list_all_tools() -> dict[str, Any]:
             entry['runnable'] = True
             entry['resource_type'] = 'AGENT_SKILL'
             entry['kg_classified'] = True
-            entry['enabled'] = await get_toggle_state(engine, 'skill', skill_id)
+            entry['enabled'] = skill_toggles.get(skill_id, True)
             skills.append(entry)
         elif skill_type == 'workflow':
             entry['file_path'] = row.get('uri') or ''
             entry['runnable'] = False
             entry['resource_type'] = 'WORKFLOW_DEFINITION'
             entry['kg_classified'] = True
-            entry['enabled'] = await get_toggle_state(
-                engine, 'skill_workflow', skill_id
-            )
+            entry['enabled'] = skill_workflow_toggles.get(skill_id, True)
             skill_workflows.append(entry)
         elif skill_type == 'graph':
             entry['file_path'] = row.get('uri') or ''
-            entry['enabled'] = await get_toggle_state(engine, 'skill_graph', skill_id)
+            entry['enabled'] = skill_graph_toggles.get(skill_id, True)
             skill_graphs.append(entry)
         else:
             entry['runnable'] = False
             entry['resource_type'] = None
             entry['kg_classified'] = False
-            entry['enabled'] = await get_toggle_state(engine, 'skill', skill_id)
+            entry['enabled'] = skill_toggles.get(skill_id, True)
             skills.append(entry)
             unclassified_count += 1
 
@@ -1947,17 +2501,46 @@ async def list_all_tools() -> dict[str, Any]:
         'mcp_tools': mcp_tools,
         'mcp_status': mcp_status,
         'mcp_prompts': mcp_prompts,
+        # Additive (not in the frontend's `toolsDataSchema` yet -- zod
+        # ignores unrecognized keys by default, so this is safe to ship
+        # ahead of a frontend change): the `mcp_prompts` analogue of
+        # `mcp_status`, since `prompts` is now an independently-degradable
+        # kind with no other visible failure signal.
+        'mcp_prompts_status': mcp_prompts_status,
         'builtin_tools': builtin_tools,
         'skills': sorted(skills, key=lambda x: x.get('name', '').lower()),
         'skill_graphs': sorted(skill_graphs, key=lambda x: x.get('name', '').lower()),
         'skill_workflows': sorted(
             skill_workflows, key=lambda x: x.get('name', '').lower()
         ),
+        # `skill_unclassified` is deliberately ABSENT from this response: an
+        # unclassified skill is still a skill and is returned inside `skills`
+        # with `kg_classified: False` (see the comment above the loop), not
+        # in a separate fourth bucket the UI had to render as its own group.
+        # Defect B fix: skills previously had NO signal of their own for "the
+        # skills catalog read failed" other than the deeply-nested
+        # `skill_classification.kg_reachable` boolean -- unlike `mcp_tools`,
+        # which has always had `mcp_status.error` at the top level. This is
+        # the SAME shape as `mcp_status`, at the SAME top level, so a caller
+        # can check `data.skill_status.error` exactly like
+        # `data.mcp_status.error` without reading anything nested.
+        'skill_status': skill_status,
+        # Same signal, additive, for the batched toggle-preference reads
+        # (Defect C): `CypherEngineError` on 100% of observed live calls
+        # made every enable/disable toggle look like it worked while being
+        # non-functional fleet-wide, with no visible indication anywhere in
+        # the response. `toggle_status.error` is non-null whenever ANY of
+        # this request's toggle-preference batches failed.
+        'toggle_status': toggle_status,
         # Live catalog classification summary, computed fresh on every call.
         'skill_classification': {
             'source': 'sql_catalog',
-            'kg_reachable': catalog is not None,
-            'filesystem_skill_md_count': len(skill_rows),
+            # Per-kind now (was `catalog is not None`, the whole 4-kind
+            # catalog): a `servers`/`discoveries`/`prompts` failure no
+            # longer reports skills as unreachable when the `skills` kind
+            # itself loaded fine, and vice versa.
+            'kg_reachable': skill_rows is not None,
+            'filesystem_skill_md_count': len(skill_rows or []),
             'kg_agent_skill_count': len(skills),
             'kg_workflow_definition_count': len(skill_workflows),
             'runnable_count': len(skills) - unclassified_count,
@@ -2381,7 +2964,14 @@ async def list_skills() -> list[dict[str, Any]]:
         A list of skill definitions sorted alphabetically.
     """
     catalog = await _read_fleet_catalog('skills')
-    if catalog is None:
+    # `catalog is None` is total failure (denied authority / catalog engine
+    # unavailable); `catalog['skills'] is None` is this specific kind
+    # failing while `_read_fleet_catalog` still returned a mapping (the new
+    # per-kind-degradable contract -- here only one kind was ever
+    # requested, so a kind-level failure is equivalent to a whole-catalog
+    # failure for this endpoint, and still fails closed).
+    skill_rows = None if catalog is None else catalog.get('skills')
+    if skill_rows is None:
         raise HTTPException(
             status_code=503, detail='MCP/skill fleet catalog is unavailable'
         )
@@ -2392,7 +2982,7 @@ async def list_skills() -> list[dict[str, Any]]:
             'description': row.get('description', ''),
             'enabled': bool(row.get('enabled')),
         }
-        for row in catalog['skills'][:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        for row in skill_rows[:_MAX_EXTERNAL_COLLECTION_ITEMS]
         if isinstance(row.get('id'), str) and row.get('id')
     ]
     bounded = _public_external_result(
@@ -2734,7 +3324,7 @@ async def download_file(filename: str) -> Response:
     )
 
 
-@router.get('/chats')
+@chats_router.get('/chats')
 async def list_chats() -> list[dict[str, Any]]:
     """List historical chat sessions stored on the server.
 
@@ -2751,7 +3341,7 @@ async def list_chats() -> list[dict[str, Any]]:
     return bounded if isinstance(bounded, list) else []
 
 
-@router.get('/chats/{chat_id}')
+@chats_router.get('/chats/{chat_id}')
 async def get_chat(chat_id: str) -> dict[str, Any]:
     """Retrieve a specific chat session's message history.
 
@@ -2772,7 +3362,7 @@ async def get_chat(chat_id: str) -> dict[str, Any]:
     return bounded
 
 
-@router.post('/chats')
+@chats_router.post('/chats')
 async def save_chat(data: dict[str, Any]) -> dict[str, Any]:
     """Persist a new or updated chat session.
 
@@ -2795,9 +3385,18 @@ async def save_chat(data: dict[str, Any]) -> dict[str, Any]:
     return bounded_result if isinstance(bounded_result, dict) else {'status': 'error'}
 
 
-@router.put('/chats/{chat_id}/title')
-async def update_chat_title(chat_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    """Update the display title of a specific chat session.
+@chats_router.put('/chats/{chat_id}')
+async def update_chat(chat_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Update a chat session record -- today, its display title.
+
+    Folded from the old, separate ``PUT /chats/{chat_id}/title`` path: this
+    IS the general chat-record update route, not a title-only alias. It
+    currently only accepts a ``title`` field because that is the only field
+    the ``update_chat_title`` workspace helper's contract accepts; a
+    ``data`` payload without a valid ``title`` is rejected rather than
+    silently accepted as a no-op, so this stays a real update endpoint
+    (not a disguised rename-only one) the moment the helper grows more
+    fields.
 
     Args:
         chat_id: The identifier of the chat session.
@@ -2814,14 +3413,14 @@ async def update_chat_title(chat_id: str, data: dict[str, Any]) -> dict[str, Any
     return h(chat_id, {'title': title}) if h else {'status': 'error'}
 
 
-@router.delete('/chats/{chat_id}')
+@chats_router.delete('/chats/{chat_id}')
 async def delete_chat(chat_id: str) -> dict[str, Any]:
     """Permanently delete a chat session record.
 
     Uses the canonical REST verb DELETE against ``/chats/{chat_id}``. The
     old ``GET /chats/{chat_id}/title`` alias was non-idiomatic (GET is
     expected to be safe/idempotent-read) and collided conceptually with
-    the sibling ``PUT /chats/{chat_id}/title`` rename endpoint.
+    the sibling ``PUT /chats/{chat_id}`` update endpoint.
 
     Args:
         chat_id: The identifier of the chat to remove.
@@ -2832,6 +3431,633 @@ async def delete_chat(chat_id: str) -> dict[str, Any]:
     chat_id = _validate_runtime_id(chat_id)
     h = get_helper('delete_chat')
     return h(chat_id) if h else {'status': 'error'}
+
+
+_MAX_CANVAS_PROPERTY_CHARS = 512
+_MAX_CANVAS_NODE_BYTES = 4096
+
+
+def _canvas_property(value: Any) -> Any:
+    """Shrink one node property to something a graph canvas can render.
+
+    The canvas shows `properties.name` and lets an operator edit fields; it
+    never needs a whole document body. Truncating long strings covers the
+    common case; `_canvas_node` enforces the actual byte bound, because a
+    property can also be a deeply nested list/dict this never sees inside.
+    """
+    if isinstance(value, str) and len(value) > _MAX_CANVAS_PROPERTY_CHARS:
+        return value[:_MAX_CANVAS_PROPERTY_CHARS] + '…'
+    return value
+
+
+def _node_bytes(node: dict[str, Any]) -> int:
+    return len(
+        json.dumps(node, separators=(',', ':'), ensure_ascii=False, default=str).encode(
+            'utf-8'
+        )
+    )
+
+
+def _canvas_node(node: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Bound ONE node by serialized size, returning it with its byte cost.
+
+    Per-property truncation is not sufficient on its own: a property value can
+    be a nested list or dict whose leaves `_canvas_property` never inspects, so
+    a node can still serialize to hundreds of kilobytes. Measuring the real
+    encoded node is the only bound that holds regardless of shape. A node over
+    the cap keeps its identity, its labels and its display name -- everything
+    the canvas actually draws -- and drops the rest rather than being omitted.
+    """
+    size = _node_bytes(node)
+    if size <= _MAX_CANVAS_NODE_BYTES:
+        return node, size
+    name = node['properties'].get('name')
+    trimmed = {
+        'id': node['id'],
+        'labels': node['labels'],
+        'properties': {'name': name} if isinstance(name, str) else {},
+    }
+    return trimmed, _node_bytes(trimmed)
+
+
+async def _distinct_graph_labels(engine: Any) -> list[str]:
+    """Every label known across every graph this actor may read, via each
+    graph's own `db.labels()`.
+
+    `db.labels()` is a real Cypher procedure in the engine
+    (`DbLabels` in `crates/eg-query/src/cypher/proc.rs`, backed by
+    `distinct_labels`), so this is one bounded round trip per graph and not a
+    scan this process performs. A build without the procedure yields no labels
+    rather than failing the whole request -- the caller still returns the
+    unlabeled bucket, which is strictly better than a 503.
+
+    FIX LANE Priority 1: fanned out across `_accessible_graphs` (via
+    `_rows_per_accessible_graph`) rather than `engine.backend`-only --
+    otherwise a label that exists ONLY in commons (e.g. `Tool`, which the
+    caller's own tenant graph carries none of) would never even be
+    enumerated, so `get_graph_nodes`' per-label fan-out below would never be
+    asked for it regardless of how well THAT part unions. A plain label name
+    is not sensitive (it is schema, not row data), so no commons-catalog
+    filtering applies here -- the row-level restriction happens once, per
+    node, in `_union_nodes_by_label`.
+    """
+
+    def _labels_for(scoped_engine: Any) -> list[str]:
+        labels: list[str] = []
+        try:
+            result = scoped_engine.backend.execute(
+                'CALL db.labels() YIELD label RETURN label'
+            )
+        except Exception as labels_error:  # noqa: BLE001 — per-graph fail-soft
+            _log_failure(
+                'get_graph_nodes.db_labels', labels_error, level=logging.WARNING
+            )
+            return []
+        for row in result or []:
+            label = row.get('label') if isinstance(row, dict) else None
+            if isinstance(label, str) and label and label not in labels:
+                labels.append(label)
+        return labels
+
+    def _run() -> list[str]:
+        result = _rows_per_accessible_graph(engine, _labels_for)
+        if result is None:
+            return _labels_for(engine)
+        per_graph, _degraded = result
+        labels: list[str] = []
+        for _graph_name, graph_labels in per_graph:
+            for label in graph_labels or []:
+                if label not in labels:
+                    labels.append(label)
+        return labels
+
+    return await _invoke_governed_helper(_run, deadline=10.0)
+
+
+# ---------------------------------------------------------------------------
+# Commons/tenant union read (FIX LANE Priority 1)
+#
+# Measured, same pod, same moment: a webui session sees a strict SUBSET of
+# the knowledge graph an MCP caller sees (25,116 vs 56,853 total nodes; 0 vs
+# 2,941 `:Tool`; 58 vs 361 `:CallableResource`). This is BY DESIGN --
+# `agent_utilities.knowledge_graph.core.tenant_sharing`'s module docstring:
+# "the default graph is the COMMONS. It is readable across orgs" -- and the
+# fleet/tool catalog is exactly `tenant_sharing.COMMONS_SHAREABLE_NODE_TYPES`.
+# The bug is that `tenant_sharing.accessible_graphs()`/`read_union()` -- the
+# union-read primitive built for exactly this -- had ZERO callers anywhere
+# in the codebase. This section wires it into this file's Cypher/SQL graph
+# reads, in place of a bare `session.graph`-only read.
+#
+# `agent_webui.graph_identity.frontend_accessible_graphs(actor)` is the
+# sanctioned seam for this (branch `fix/tenant-graph-scoping`, commit
+# `77458f9`) -- it re-exports `tenant_sharing.accessible_graphs()` verbatim.
+# That branch is not yet merged into this lane's base as of this change, so
+# `_accessible_graphs()` below imports the underlying `tenant_sharing`
+# primitive directly and falls back to `.graph_identity`'s seam once it
+# exists (import success is checked at call time, not cached, so merging
+# that branch later needs no further change here). NOTE FOR THE MERGE OWNER:
+# once `fix/tenant-graph-scoping` lands on this lane's base, the `except
+# ImportError` branch below becomes dead and may be deleted.
+#
+# READS ONLY. `session.graph` (the tenant shard) remains the sole write
+# target everywhere in this file -- nothing here is reachable from a write
+# path. Widening a write target to the union would be a tenant data leak;
+# the parallel `graph_identity` lane explicitly rejected that and pinned an
+# equivalence test for it (`test_graph_identity.py`).
+def _accessible_graphs(actor: Any) -> list[str]:
+    """Ordered, de-duplicated graphs `actor` may READ (tenant shard first,
+    ancestors, commons last) -- see the module-level note above for why this
+    resolves the seam dynamically (`getattr`, not a static `from .graph_identity
+    import frontend_accessible_graphs`) so this file type-checks cleanly both
+    before AND after `fix/tenant-graph-scoping` merges that name in -- a static
+    import of a not-yet-existing name would need a `# type: ignore` this repo's
+    own rules forbid.
+    """
+    from . import graph_identity
+
+    resolve = getattr(graph_identity, 'frontend_accessible_graphs', None)
+    if resolve is not None:
+        return resolve(actor)
+    from agent_utilities.knowledge_graph.core.tenant_sharing import (
+        accessible_graphs,
+    )
+
+    return accessible_graphs(actor)
+
+
+def _graph_union_executor(engine: Any) -> Any:
+    """`tenant_sharing.read_union` executor: run `cypher` against ONE named
+    graph by (a) obtaining a backend/view actually BOUND to that graph and
+    (b) retargeting the ambient `GraphSession` to match it.
+
+    FIX (root cause, verified live in-pod): `engine`/`engine.backend` here is
+    itself already a graph-scoped view pinned to the CALLER's original graph
+    (`EpistemicGraphBackend.graph_name` / `_SessionRoutedAsyncClient
+    ._fixed_graph`, `graph_compute.py::_send_routed`). Retargeting only the
+    *session* via `with_graph()`+`use_session()` while continuing to call
+    methods on that SAME pinned `engine` reproduces exactly the masked
+    failure this lane was asked to fix: `PermissionError: "A graph-scoped
+    view cannot retarget the verified GraphSession"` (session.graph no
+    longer equals the view's fixed graph). The sanctioned production seam
+    for a *different* graph is `IntelligenceGraphEngine.for_graph(graph_name)`
+    (`knowledge_graph/core/engine.py`) -- "a graph-scoped facade over the one
+    process client... safe for unified read fan-out", the exact "control
+    authority already bound to its own graph" shape used by
+    `core/schedule_engine.py::_control_backend`/`_control_session_scope` and
+    `knowledge_graph/pipeline/__init__.py`'s `RegistryPipeline`. Both moves
+    -- a NEW view bound to `graph_name`, AND the session retargeted onto that
+    same `graph_name` -- must happen together; retargeting either one alone
+    reproduces the mismatch guard (from the opposite side).
+
+    `GraphSession.with_graph()` + the session module's own `use_session()`
+    context manager is the documented, audited way to scope one block of
+    work to a specific verified session (`session.py::use_session`
+    docstring). This never fabricates authority -- it is the SAME actor's
+    session, just pointed at another graph that actor's own
+    `accessible_graphs()` already says it may read.
+    """
+    from agent_utilities.knowledge_graph.core.session import (
+        current_session,
+        use_session,
+    )
+
+    def _execute(
+        graph_name: str, cypher: str, params: dict[str, Any] | None
+    ) -> list[dict[str, Any]]:
+        session = current_session()
+        exec_cypher, exec_params = cypher, dict(params or {})
+        is_commons = False
+        if session is not None:
+            from agent_utilities.knowledge_graph.core.tenant_sharing import (
+                apply_commons_catalog_restriction,
+                commons_graph_name,
+            )
+
+            is_commons = graph_name == commons_graph_name()
+            if is_commons:
+                # Push the commons READ catalog restriction (2026-08-09 owner
+                # ruling; `COMMONS_SHAREABLE_NODE_TYPES`) INTO the query text so
+                # the engine filters, not this process -- `read_union`/
+                # `filter_commons_catalog` were built for a post-hoc Python
+                # filter, but that pulls every commons row over the wire first.
+                # `apply_commons_catalog_restriction` is the companion primitive
+                # built for exactly this pushdown (its own docstring: "closes
+                # the label/type-index half of the existence-leak... injected
+                # into the query TEXT"). Best-effort: a query shape it can't
+                # inject into (no bound variable, `UnscopableQueryError`, or any
+                # other failure) leaves `exec_cypher` unchanged and is caught
+                # below by the row-level fallback -- this must never fail OPEN.
+                try:
+                    exec_cypher, extra_params = apply_commons_catalog_restriction(
+                        cypher, session.actor, graph_name
+                    )
+                    exec_params.update(extra_params)
+                except Exception as exc:  # noqa: BLE001 — pushdown is best-effort; the row-level fallback below is the safety net
+                    _log_failure(
+                        'graph_union.commons_restriction', exc, level=logging.DEBUG
+                    )
+                    exec_cypher, exec_params = cypher, dict(params or {})
+        # `query=`/`params=` are passed as KEYWORDS, not positionally: the
+        # real `QueryMixin.query_cypher(self, query, params=None, ...)`
+        # signature (`engine_query.py:137`) binds either way, but this route
+        # is pinned to the `query` keyword specifically (see
+        # `test_execute_cypher_forwards_the_query_text_under_the_query_keyword`)
+        # to distinguish it from the MCP tool surface's `cypher`-named field
+        # -- a future accidental rename to `cypher=` must fail loudly here,
+        # which a positional call would silently paper over.
+        if session is None or graph_name == session.graph:
+            rows = list(
+                engine.query_cypher(query=exec_cypher, params=exec_params) or []
+            )
+        else:
+            scoped_engine = engine.for_graph(graph_name)
+            with use_session(session.with_graph(graph_name)):
+                rows = list(
+                    scoped_engine.query_cypher(query=exec_cypher, params=exec_params)
+                    or []
+                )
+        if is_commons and exec_cypher == cypher:
+            # The pushdown above did not change the query text -- either it
+            # legitimately doesn't apply (privileged actor, no WHERE/RETURN
+            # site) or it failed -- so apply the row-level allowlist as the
+            # fallback. `filter_commons_catalog` itself no-ops for a
+            # privileged actor, so this is a no-op in the common "legitimately
+            # doesn't apply" case and the actual safety net in the "it failed"
+            # case; it never widens access relative to the pushdown succeeding.
+            from agent_utilities.knowledge_graph.core.tenant_sharing import (
+                filter_commons_catalog,
+            )
+
+            rows = filter_commons_catalog(rows, session.actor, graph_name)
+        return rows
+
+    return _execute
+
+
+async def _read_union_cypher(
+    engine: Any,
+    cypher: str,
+    params: dict[str, Any] | None,
+    *,
+    deadline: float,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Run a row-shaped Cypher read across every graph this actor may read,
+    de-duplicated by node id (`tenant_sharing.read_union` -- the actor's own
+    tenant graph wins on a duplicate id; commons rows fill in the rest).
+
+    Falls back to exactly today's single-graph (`session.graph`-only) read
+    when there is no verified ambient `GraphSession` -- this NEVER widens
+    authority beyond what the SAME caller could already reach; it degrades
+    to "as narrow as before" rather than raising or fabricating a union.
+
+    Returns `(rows, source_graphs)` -- `source_graphs` is the observability
+    half of this fix (see the module note above): which physical graph(s) a
+    response actually drew from, so a narrowed view can never again look
+    identical to a complete one.
+    """
+    from agent_utilities.knowledge_graph.core.session import current_session
+    from agent_utilities.knowledge_graph.core.tenant_sharing import read_union
+
+    def _run() -> tuple[list[dict[str, Any]], list[str]]:
+        session = current_session()
+        if session is None:
+            return list(engine.query_cypher(cypher, params) or []), []
+        actor = session.actor
+        graphs = _accessible_graphs(actor)
+        rows = read_union(cypher, params, _graph_union_executor(engine), actor)
+        return rows, graphs
+
+    return await _invoke_governed_helper(_run, deadline=deadline)
+
+
+# Bound on concurrent per-graph fan-out (`_rows_per_accessible_graph` below).
+# `_accessible_graphs` is small today (tenant graph + commons = 2) and stays
+# small (ordered, de-duplicated; ancestors are a short chain in practice) --
+# this cap just keeps a pathological tenancy tree from spawning an unbounded
+# thread pool, matching the "must not degrade linearly if ancestors are
+# added" requirement without over-provisioning for a case that doesn't exist.
+_READ_UNION_MAX_WORKERS = 8
+
+
+def _rows_per_accessible_graph(
+    engine: Any,
+    engine_call: Any,
+) -> tuple[list[tuple[str, Any]], list[str]] | None:
+    """Invoke `engine_call(scoped_engine)` once per graph the ambient actor
+    may read, each against a backend/view actually BOUND to that graph
+    (`engine.for_graph(graph_name)` -- see `_graph_union_executor`'s
+    docstring for why retargeting the session alone is not enough) under
+    that graph's own scoped `GraphSession`. Returns `None` when there is no
+    ambient verified session -- callers fall back to a single unscoped call.
+
+    Unlike `_read_union_cypher`, this does not de-duplicate by row id: it is
+    for AGGREGATE reads (counts, `GROUP BY`), where a merged-by-id union is
+    meaningless (an aggregate row carries no per-row node id) and would be
+    wrong even if forced -- physically partitioned graphs (GOC-61) never
+    share a node id, so the correct merge of independent per-graph
+    aggregates is for the CALLER to sum/merge them, not de-dup them.
+
+    CONCURRENT, BOUNDED (`_READ_UNION_MAX_WORKERS`): each graph's read is
+    genuinely independent (a separate `for_graph` view + a separately
+    retargeted session), so running them sequentially would make every
+    union-read route's latency scale with the number of accessible graphs
+    for no reason -- exactly the linear-degradation shape this fix is
+    required not to introduce. `contextvars.copy_context()` per submission is
+    load-bearing, not decoration: `current_session`/`use_session` are
+    `ContextVar`-backed, and a bare `ThreadPoolExecutor.submit` would hand
+    the callable a FRESH context with no ambient session at all, silently
+    breaking every graph but the one the caller's own thread happens to
+    still be on. Results are re-sorted back into `_accessible_graphs`'
+    ordering (tenant graph first) after the fan-out completes, regardless of
+    which thread finished first, so downstream "tenant wins on a duplicate
+    id" merges stay correct.
+
+    FAIL-SOFT (matches `tenant_sharing.read_union`'s own documented
+    contract, `core/tenant_sharing.py:457`: "A per-graph failure is logged
+    and skipped -- a missing commons graph degrades to org-only, never an
+    error"). A single graph's read failing (offline shard, mid-rebuild
+    `PARTIAL_MATERIALIZATION`, a column this graph's projection doesn't
+    carry, ...) must never 503 the whole caller -- it previously did,
+    because this loop had no per-graph exception boundary at all. Returns
+    `(succeeded, degraded)`: `succeeded` is `(graph_name, result)` for every
+    graph that answered; `degraded` is the `graph_name`s that were skipped,
+    so a caller can report a partial read as partial (never silently as
+    complete -- the sibling half of this same fix).
+    """
+    from agent_utilities.knowledge_graph.core.session import (
+        current_session,
+        use_session,
+    )
+
+    session = current_session()
+    if session is None:
+        return None
+    graphs = _accessible_graphs(session.actor)
+
+    def _one(graph_name: str) -> Any:
+        if graph_name == session.graph:
+            return engine_call(engine)
+        scoped_engine = engine.for_graph(graph_name)
+        with use_session(session.with_graph(graph_name)):
+            return engine_call(scoped_engine)
+
+    succeeded: list[tuple[str, Any]] = []
+    degraded: list[str] = []
+    if len(graphs) <= 1:
+        for graph_name in graphs:
+            try:
+                succeeded.append((graph_name, _one(graph_name)))
+            except Exception as exc:  # noqa: BLE001 — one graph down ≠ whole read down (mirrors tenant_sharing.read_union's own per-graph guard)
+                _log_failure('read_union.per_graph', exc, level=logging.DEBUG)
+                degraded.append(graph_name)
+        return succeeded, degraded
+
+    max_workers = min(len(graphs), _READ_UNION_MAX_WORKERS)
+    with _futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        pending = {
+            pool.submit(contextvars.copy_context().run, _one, graph_name): graph_name
+            for graph_name in graphs
+        }
+        for future in pending:
+            graph_name = pending[future]
+            try:
+                succeeded.append((graph_name, future.result()))
+            except Exception as exc:  # noqa: BLE001 — one graph down ≠ whole read down (mirrors tenant_sharing.read_union's own per-graph guard)
+                _log_failure('read_union.per_graph', exc, level=logging.DEBUG)
+                degraded.append(graph_name)
+    order = {graph_name: idx for idx, graph_name in enumerate(graphs)}
+    succeeded.sort(key=lambda pair: order[pair[0]])
+    return succeeded, degraded
+
+
+async def _read_union_scalar_sum(
+    engine: Any,
+    cypher: str,
+    params: dict[str, Any] | None,
+    *,
+    field: str,
+    deadline: float,
+) -> tuple[int, list[str], list[str]]:
+    """Sum a scalar Cypher aggregate (e.g. `count(n)`) across every graph
+    this actor may read. See `_rows_per_accessible_graph` for why a sum,
+    not `read_union`'s dedup, is the correct merge here.
+
+    Returns `(total, source_graphs, degraded_graphs)` -- `source_graphs` is
+    only the graphs that actually contributed to `total`; `degraded_graphs`
+    is any accessible graph whose read failed and was skipped
+    (`_rows_per_accessible_graph`'s fail-soft contract), so a partial sum is
+    never reported identically to a complete one.
+    """
+
+    def _run() -> tuple[int, list[str], list[str]]:
+        result = _rows_per_accessible_graph(
+            engine, lambda scoped: scoped.query_cypher(cypher, params) or []
+        )
+        if result is None:
+            rows = engine.query_cypher(cypher, params) or []
+            total = int(rows[0].get(field, 0)) if rows else 0
+            return total, [], []
+        per_graph, degraded = result
+        total = 0
+        graphs: list[str] = []
+        for graph_name, rows in per_graph:
+            graphs.append(graph_name)
+            if rows:
+                value = rows[0].get(field, 0)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    total += value
+        return total, graphs, degraded
+
+    return await _invoke_governed_helper(_run, deadline=deadline)
+
+
+async def _read_union_sql_group_counts(
+    engine: Any,
+    statement: str,
+    *,
+    key: str,
+    count_field: str,
+    deadline: float,
+) -> tuple[dict[str, int], list[str], list[str]]:
+    """Run a `GROUP BY` SQL aggregate against every graph this actor may
+    read and merge by SUMMING counts per `key`. The `nodes`/`edges` SQL
+    tables are the SAME RLS-filtered graph snapshot Cypher reads
+    (`fleet_catalog_tables.py`: "only the nodes/edges graph snapshot is
+    RLS-filtered via IsolationLayer::filter_view"), scoped by the SAME
+    ambient session/graph `_read_union_cypher` uses.
+
+    Returns `(merged, source_graphs, degraded_graphs)` -- see
+    `_read_union_scalar_sum` for the same `degraded_graphs` contract.
+
+    BUG-PE-058 (fixed here): this used to call the write-capable
+    `engine.graph_compute.sql_exec` -- documented in `graph_compute.py` as
+    "the write sibling of the read-only `client.query.sql` surface" for
+    DDL/DML -- for what is structurally a read. `sql_exec` has no
+    statement-type guard and skips `secured_reads.visible(filter_rows(...))`,
+    the RLS defense-in-depth layer `QueryMixin.sql()` applies. The statement
+    passed in today is a fixed literal `SELECT ... GROUP BY`, so there was no
+    live injection path, but any call site reaching a write-capable entry
+    point for a read is a standing risk should this helper or a copied call
+    site ever build a statement from anything less than a literal. Fixed by
+    routing through `engine.sql()` / `scoped.sql()` (`QueryMixin.sql`,
+    `orchestration/engine_query.py:433`) instead -- the read-only surface
+    that rejects non-`SELECT`/`WITH`/`EXPLAIN` statements and applies
+    `visible(filter_rows(...))` before returning.
+
+    This also resolves, for THIS call site, the cross-graph routing gap
+    found live in-pod while first verifying this fix lane: `.sql_exec()`
+    reads through `GraphComputeEngine._client` on the (possibly
+    independently-constructed) `graph_compute` view, while `.sql()` reads
+    through `self.backend` -- the SAME per-request pinned view
+    `query_cypher` uses. Verified live: `engine.for_graph("__commons__")`
+    correctly made `query_cypher` return DIFFERENT results from the
+    caller's own graph (0 vs 25,117 nodes at time of test), while the
+    identically-scoped `.graph_compute.sql_exec` returned the CALLER'S OWN
+    row counts again under the `__commons__` label (verified with
+    textually distinct SQL to rule out a query-text cache) -- i.e. the
+    `by_type` breakdown and the `total_nodes`/`total_relationships` totals
+    (Cypher, via `_read_union_scalar_sum`) were silently reading through
+    two different-scoped engines. `graph_compute.sql_exec` itself is
+    unmodified (owned by another lane, out of `agent_webui`'s reach) and
+    may still misroute for any OTHER caller that reaches it directly --
+    flagged for that lane, not fixed here.
+    """
+
+    def _run() -> tuple[dict[str, int], list[str], list[str]]:
+        result = _rows_per_accessible_graph(
+            engine, lambda scoped: scoped.sql(statement) or []
+        )
+        if result is None:
+            per_graph = [('', engine.sql(statement) or [])]
+            graphs: list[str] = []
+            degraded: list[str] = []
+        else:
+            per_graph, degraded = result
+            graphs = [graph_name for graph_name, _rows in per_graph]
+        merged: dict[str, int] = {}
+        for _graph_name, rows in per_graph:
+            for row in rows or []:
+                if not isinstance(row, dict):
+                    continue
+                k = row.get(key)
+                n = row.get(count_field)
+                if not isinstance(k, str) or not k:
+                    continue
+                if not isinstance(n, int) or isinstance(n, bool):
+                    continue
+                merged[k] = merged.get(k, 0) + n
+        return merged, graphs, degraded
+
+    return await _invoke_governed_helper(_run, deadline=deadline)
+
+
+def _union_nodes_by_label(
+    engine: Any, label: str, limit: int
+) -> tuple[list[tuple[str, dict[str, Any]]], list[str], list[str]]:
+    """Fan `engine.backend.nodes_by_label(label, limit)` out across every graph
+    this actor may read and merge, de-duped by node id.
+
+    `nodes_by_label` is a native engine call (`GraphComputeEngine
+    .get_nodes_by_label`), not Cypher, so it cannot go through
+    `_read_union_cypher` -- this is exactly the "call the engine once per
+    accessible graph via `_rows_per_accessible_graph` and merge" case the fix
+    lane's own instructions anticipate. Uses `_rows_per_accessible_graph` for
+    the per-graph fan-out (same `engine.for_graph`/`use_session` retargeting
+    contract as every other union helper here), then applies the commons READ
+    catalog restriction (`tenant_sharing.filter_commons_catalog`) to ONLY the
+    commons graph's rows before merging -- `nodes_by_label` has no Cypher form
+    `apply_commons_catalog_restriction` could inject into, so the row-level
+    allowlist function is applied directly here instead (verified: `read_union`
+    itself does not call it, so it is this call site's job).
+
+    Returns `(rows, source_graphs, degraded_graphs)`, the same shape
+    `_read_union_scalar_sum` returns, so callers can accumulate source/degraded
+    sets identically.
+    """
+    from agent_utilities.knowledge_graph.core.session import current_session
+    from agent_utilities.knowledge_graph.core.tenant_sharing import (
+        commons_graph_name,
+        filter_commons_catalog,
+    )
+
+    def _call(scoped_engine: Any) -> list[tuple[str, dict[str, Any]]]:
+        fn = getattr(scoped_engine.backend, 'nodes_by_label', None)
+        if not callable(fn):
+            return []
+        return list(fn(label, limit) or [])
+
+    result = _rows_per_accessible_graph(engine, _call)
+    if result is None:
+        return list(_call(engine)), [], []
+    per_graph, degraded = result
+    session = current_session()
+    actor = session.actor if session is not None else None
+    commons = commons_graph_name()
+    merged: list[tuple[str, dict[str, Any]]] = []
+    seen: set[str] = set()
+    source_graphs: list[str] = []
+    for graph_name, rows in per_graph:
+        source_graphs.append(graph_name)
+        clean_rows = [
+            (row[0], row[1])
+            for row in (rows or [])
+            if isinstance(row, (tuple, list)) and len(row) == 2
+        ]
+        if graph_name == commons and actor is not None:
+            props_only = [p if isinstance(p, dict) else {} for _nid, p in clean_rows]
+            allowed = filter_commons_catalog(props_only, actor, graph_name)
+            allowed_ids = {id(p) for p in allowed}
+            clean_rows = [(nid, p) for nid, p in clean_rows if id(p) in allowed_ids]
+        for nid, props in clean_rows:
+            if isinstance(nid, str):
+                if nid in seen:
+                    continue
+                seen.add(nid)
+            merged.append((nid, props))
+    return merged, source_graphs, degraded
+
+
+def _union_engine_call(
+    engine: Any, actor: Any, call: Any, *, id_key: str = 'id'
+) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+    """Fan a native (non-Cypher) engine READ call `call(scoped_engine)` out
+    across every graph this actor may read, merging row-shaped dict results
+    de-duped by `id_key` (tenant graph wins, matching `read_union`'s own
+    semantic; `_rows_per_accessible_graph` already orders its output tenant-
+    first). The commons READ catalog restriction (`filter_commons_catalog`)
+    is applied to only the commons graph's rows before merging -- same
+    reasoning as `_union_nodes_by_label`, for any native call whose results
+    are already row/dict-shaped (e.g. `search_hybrid`, `query_impact`) rather
+    than the `(id, props)` tuples `nodes_by_label` returns.
+    """
+    from agent_utilities.knowledge_graph.core.tenant_sharing import (
+        commons_graph_name,
+        filter_commons_catalog,
+    )
+
+    result = _rows_per_accessible_graph(engine, call)
+    if result is None:
+        return list(call(engine) or []), [], []
+    per_graph, degraded = result
+    commons = commons_graph_name()
+    merged: list[dict[str, Any]] = []
+    seen: set[Any] = set()
+    source_graphs: list[str] = []
+    for graph_name, rows in per_graph:
+        source_graphs.append(graph_name)
+        rows = [r for r in (rows or []) if isinstance(r, dict)]
+        if graph_name == commons and actor is not None:
+            rows = filter_commons_catalog(rows, actor, graph_name)
+        for row in rows:
+            rid = row.get(id_key)
+            if rid is None:
+                merged.append(row)
+                continue
+            if rid in seen:
+                continue
+            seen.add(rid)
+            merged.append(row)
+    return merged, source_graphs, degraded
 
 
 @router.get('/graph/nodes')
@@ -2862,55 +4088,159 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                 raise
             return []
 
-        # BUG (this fix): `RETURN n` asks the engine to serialize the whole
-        # internal node object, the same anonymous/whole-object pattern
-        # `get_graph_stats` already documents (below) as rejected by the
-        # engine's Cypher parser -- it raised `ValueError`, caught by the
-        # blanket handler below, and always 503'd (live log:
-        # "get_graph_nodes failed: error_type=ValueError"). Mirror
-        # `get_graph_relationships`' fix: project explicit scalar/function
-        # columns off the named node instead -- `n.id` (a property access,
-        # like `a.id`/`b.id` below) and `properties(n)` (a function call
-        # returning a plain value, not the raw node object; already used
-        # this way in `tenant_sharing.promote_to_commons`).
+        # BUG (this fix): `properties(n)` asked the engine's Cypher RETURN
+        # clause to call a function it does not implement. `eg-query`'s
+        # `parse_proj_expr` (crates/eg-query/src/cypher/parser.rs) only
+        # recognizes a fixed aggregate set (count/collect/sum/avg/min/max)
+        # and the special-cased `type(r)` -- there is no general function-
+        # call grammar at all, so `properties(n)` fell through to being
+        # parsed as a bare `properties` variable followed by a stray `(`,
+        # a parse failure the native authority raises back as
+        # `CypherEngineError` (live log: "get_graph_nodes failed:
+        # error_type=CypherEngineError"). `RETURN n` is not the fix either
+        # (api_extensions.py's own history above: that whole-object
+        # projection is the ORIGINAL, still-broken bug -- parser-fragile,
+        # documented at `get_graph_stats`).
+        #
+        # There is no scalar-column way to ask Cypher for "all of a node's
+        # properties" (the grammar has no wildcard/`RETURN n.*`), so this
+        # does not go through Cypher at all: `nodes_by_label` is the
+        # engine's OWN purpose-built native replacement for exactly this
+        # `MATCH (n[:Label]) ... LIMIT k` shape -- ONE bounded round trip
+        # returning `(id, properties)` per node, already decoded
+        # (`GraphComputeEngine.get_nodes_by_label`'s docstring: "bounding
+        # the wire payload so a MATCH (n:Label) … LIMIT k never
+        # materializes the whole graph").
+        #
+        # BUG (this fix): the previous revision passed `node_type or ''`,
+        # believing an empty label meant "no filter" engine-side. It does
+        # not. `GraphCore::get_nodes_by_label_page`
+        # (`crates/eg-core/src/graph.rs`) opens with
+        # `if label.is_empty() { return self.collect_unlabeled(after, limit) }`
+        # -- an empty label selects ONLY nodes carrying no label at all,
+        # which is the opposite of "everything". So the unfiltered canvas
+        # (the default, `node_type=None`) asked for the one bucket the KG
+        # has almost nothing in, and the deployed engine build rejected the
+        # empty argument outright (live log: "get_graph_nodes failed:
+        # error_type=ValueError") -- a 503 on the graph canvas.
+        #
+        # There is no single "all nodes with properties" engine call, so the
+        # unfiltered case enumerates the labels via the engine's own
+        # `db.labels()` procedure (`crates/eg-query/src/cypher/proc.rs`) and
+        # fans out `nodes_by_label` per label under ONE shared item budget,
+        # stopping as soon as the budget is full. The empty-label bucket is
+        # queried last, on purpose and for what it actually means: the
+        # genuinely unlabeled nodes. A `node_type`-filtered request stays
+        # exactly what it was -- a single round trip.
+        nodes_by_label = getattr(engine.backend, 'nodes_by_label', None)
+        if not callable(nodes_by_label):
+            raise HTTPException(
+                status_code=503,
+                detail='Knowledge Graph node query failed',
+            )
+        budget = _MAX_EXTERNAL_COLLECTION_ITEMS
+        # Leave headroom under the serialized ceiling for the JSON envelope.
+        budget_bytes = (_MAX_EXTERNAL_RESULT_BYTES * 3) // 4
+        # FIX LANE Priority 1: every `nodes_by_label` call below is fanned out
+        # across `_accessible_graphs` and merged (`_union_nodes_by_label`,
+        # de-duped by node id, tenant wins, commons READ catalog allowlist
+        # applied to commons rows) -- see that helper's docstring for why this
+        # goes through `_rows_per_accessible_graph` rather than
+        # `_read_union_cypher` (no Cypher form for this native call).
+        # `_union_nodes_by_label` itself is a plain sync callable (mirrors
+        # `nodes_by_label`'s own shape), so it goes through
+        # `_invoke_governed_helper` exactly like the un-unioned call it
+        # replaces.
         if node_type:
-            # Identifier is validated against schema or trusted source before use
-            query = (
-                f'MATCH (n:{node_type}) RETURN n.id AS id, properties(n) AS props '
-                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+            rows, node_sources, node_degraded = await _invoke_governed_helper(
+                _union_nodes_by_label, engine, node_type, budget, deadline=10.0
             )
+            source_graphs = set(node_sources)
+            degraded_graphs = set(node_degraded)
         else:
-            query = (
-                'MATCH (n) RETURN n.id AS id, properties(n) AS props '
-                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+            rows = []
+            source_graphs = set()
+            degraded_graphs = set()
+            for label in await _distinct_graph_labels(engine):
+                remaining = budget - len(rows)
+                if remaining <= 0:
+                    break
+                # One label must not be able to blank the whole canvas.
+                # Degrading to "every label that COULD be read" is the honest
+                # answer; failing all of them because one failed is not. The
+                # label is named in the log so the cause stays findable.
+                try:
+                    page, label_sources, label_degraded = await _invoke_governed_helper(
+                        _union_nodes_by_label,
+                        engine,
+                        label,
+                        remaining,
+                        deadline=10.0,
+                    )
+                except Exception as label_error:
+                    _log_failure(
+                        f'get_graph_nodes.label.{label}',
+                        label_error,
+                        level=logging.WARNING,
+                    )
+                    continue
+                rows.extend(page or [])
+                source_graphs.update(label_sources)
+                degraded_graphs.update(label_degraded)
+            # The genuinely-unlabeled bucket (`label=''`) is best-effort: the
+            # DEPLOYED engine build rejects an empty label argument outright
+            # (ValueError), even though `GraphCore::get_nodes_by_label_page`
+            # in source handles it via `collect_unlabeled`. Nodes with no
+            # label at all are a rounding error next to the labeled graph, so
+            # a build that refuses the query must not fail the whole canvas.
+            remaining = budget - len(rows)
+            if remaining > 0:
+                try:
+                    page, empty_sources, empty_degraded = await _invoke_governed_helper(
+                        _union_nodes_by_label,
+                        engine,
+                        '',
+                        remaining,
+                        deadline=10.0,
+                    )
+                except Exception:
+                    logger.debug('engine rejects empty-label read; skipping unlabeled')
+                else:
+                    rows.extend(page or [])
+                    source_graphs.update(empty_sources)
+                    degraded_graphs.update(empty_degraded)
+        # `source_graphs`/`degraded_graphs` are computed above for
+        # observability parity with `get_graph_stats`, but this route's
+        # response is a bare JSON array (`list[dict]`, consumed directly by
+        # GraphView.tsx's node list) -- there is no envelope field to carry
+        # them without breaking that contract. Logged instead so the union's
+        # effect stays visible operationally even though it can't ride the
+        # response body.
+        if degraded_graphs:
+            logger.warning(
+                'get_graph_nodes: degraded graphs %s (source graphs: %s)',
+                sorted(degraded_graphs),
+                sorted(source_graphs),
             )
-
-        result = await _invoke_governed_helper(
-            engine.backend.execute, query, deadline=10.0
-        )
-        nodes = []
-        for row in result:
-            if not isinstance(row, dict):
+        nodes: list[dict[str, Any]] = []
+        for row in rows or []:
+            if not isinstance(row, (tuple, list)) or len(row) != 2:
                 continue
-            node_id = row.get('id')
-            props = row.get('props')
+            node_id, props = row
             if not isinstance(props, dict):
                 props = {}
-            # The engine's Cypher `labels(n)` function is not implemented
-            # (always evaluates to null -- see `knowledge_graph/core/
-            # nl_query.py`'s `build_schema_context` docstring), so a node's
-            # cypher labels live in properties instead. Derive them from
-            # EXACTLY the two fields the engine's own matcher reads --
-            # `node_type` plus the explicit multi-label `labels` array (eg
-            # `crates/eg-query/src/cypher/exec.rs` `node_has_label`, and
-            # `build_cypher_label_index`, whose comment notes this set is
-            # "deliberately narrower than `GraphCore.label_index`'s
-            # `type`/`node_type`/`label`, which also serves the write path's
-            # broader contract"). Reading `type`/`label` here would report a
-            # label that `MATCH (n:<that>)` does NOT match, so filtering by
-            # node_type would disagree with the list it was filtered from.
-            # Both source keys are excluded from `properties` below so a
-            # label is never duplicated as an ordinary property.
+            # `nodes_by_label` indexes the BROADER `GraphCore.label_index`
+            # contract (a node's `type`/`node_type`/`label` scalar fields
+            # plus the multi-valued `labels` array -- `labels_of` in
+            # `crates/eg-core/src/graph.rs`). Cypher's own `(n:Label)`
+            # predicate is deliberately narrower -- EXACTLY `node_type` plus
+            # the explicit `labels` array (`node_has_label`/
+            # `build_cypher_label_index` in `crates/eg-query/src/cypher/
+            # exec.rs`, whose comment says this set is "deliberately
+            # narrower than `GraphCore.label_index`'s `type`/`node_type`/
+            # `label`"). Derive `labels` from EXACTLY those two narrower
+            # fields, same as before; both are excluded from `properties`
+            # below so a label is never duplicated as an ordinary property.
             labels: list[str] = []
             node_type_prop = props.get('node_type')
             if isinstance(node_type_prop, str) and node_type_prop:
@@ -2922,18 +4252,41 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
                     for item in extra_labels
                     if isinstance(item, str) and item and item not in labels
                 )
-            nodes.append(
-                {
-                    'id': node_id if isinstance(node_id, str) else '',
-                    'labels': labels,
-                    'properties': {
-                        k: v
-                        for k, v in props.items()
-                        if k not in ('id', 'node_type', 'labels')
-                        and not str(k).startswith('_')
-                    },
-                }
-            )
+            if node_type and node_type not in labels:
+                # A broader-index-only match (e.g. a legacy node carrying a
+                # bare `type` property but no `node_type`/`labels`; writing
+                # `type` is retired going forward -- see
+                # `retired_node_type_property_error`). `MATCH (n:<node_type>)`
+                # would not have matched it, so a node_type-filtered result
+                # must not include it either (kept consistent with the
+                # unfiltered list this is filtered from).
+                continue
+            node = {
+                'id': node_id if isinstance(node_id, str) else '',
+                'labels': labels,
+                'properties': {
+                    k: _canvas_property(v)
+                    for k, v in props.items()
+                    if k not in ('id', 'node_type', 'labels')
+                    and not str(k).startswith('_')
+                },
+            }
+            # `_public_external_result` enforces a hard serialized-size bound
+            # and raises ValueError past it. That bound is what actually broke
+            # this endpoint: a `Skill` node carries its whole SKILL.md body, so
+            # 256 of them blow the 2 MiB ceiling and the canvas 503'd -- the
+            # failure looked like an engine error but was entirely ours. Keep a
+            # running estimate and stop at the budget so the canvas renders
+            # what fits instead of nothing at all.
+            node, node_size = _canvas_node(node)
+            budget_bytes -= node_size
+            if budget_bytes <= 0:
+                logger.warning(
+                    'graph canvas truncated at %d nodes by the result size bound',
+                    len(nodes),
+                )
+                break
+            nodes.append(node)
         return _public_external_result(nodes)
     except HTTPException:
         raise
@@ -2981,8 +4334,17 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
             'MATCH (a)-[r]->(b) RETURN a.id as source, '
             f'type(r) as type, b.id as target LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
         )
-        result = await _invoke_governed_helper(
-            engine.backend.execute, query, deadline=10.0
+        # FIX LANE Priority 1: unioned across every graph this actor may read
+        # (`_read_union_cypher` -- `tenant_sharing.read_union`, same primitive
+        # `get_graph_stats` already uses), not `engine.backend.execute` alone,
+        # so relationships among commons-graph nodes (e.g. `Tool`-to-`Server`
+        # edges) are visible here too. A relationship row carries no single
+        # `id` column, so `read_union`'s id-dedup is a no-op for every row here
+        # (its own documented behaviour for an unclassifiable id -- "keep,
+        # never drop") -- which is correct: two physically partitioned graphs
+        # (GOC-61) never share an edge, so nothing needs de-duplicating.
+        result, _source_graphs = await _read_union_cypher(
+            engine, query, None, deadline=10.0
         )
         relationships = []
         for row in result:
@@ -3003,6 +4365,135 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
             status_code=503,
             detail='Knowledge Graph relationship query failed',
         ) from e
+
+
+# Bounds the `by_type` breakdown's `GROUP BY` result (FIX LANE Priority 2).
+# The node-type/label vocabulary is a finite, curated ontology -- 50 is
+# generous headroom over any realistic cardinality while still bounding a
+# pathological/malformed `type` property fan-out.
+_GRAPH_STATS_BY_TYPE_LIMIT = 50
+
+# Deadline for the OPTIONAL `by_type` breakdown. Named (rather than left as
+# a bare literal) so the value carries its measurement rationale and so the
+# regression tests can drive the real deadline path; the VALUE is unchanged
+# from what this call has always used.
+#
+# Measured in-pod (graph-os), per single isolated request:
+#   * 25,118-row tenant graph, service principal
+#       - `op=query.cypher_read` (the two REQUIRED total-count aggregates)
+#         ....  1.24s and 1.61s -- comfortably inside their own 10s deadline
+#       - `op=query.sql` (this `GROUP BY` breakdown) ....  22.39s
+#   * 1,124-row view (the same route, the owner's browser)
+#       - end-to-end route ....  2.5s .. 12.9s, all 200
+#
+# Two things follow, and they are why this stays at 10.0 rather than moving
+# in EITHER direction:
+#
+# * Do not RAISE it. At production row counts the breakdown is ~10-20x more
+#   expensive than the totals beside it and will not fit any sane
+#   web-request budget; a caller waiting 22s for a secondary breakdown is
+#   not an improvement over degrading at 10s.
+# * Do not LOWER it either -- which is the tempting move, since the route
+#   waits out this whole budget before it can answer. It would buy only
+#   caller latency and would cost real breakdowns: the small-graph case
+#   above genuinely lands anywhere in a 2.5-13s band under engine
+#   contention, so a shorter budget would start degrading responses that
+#   work today. It would NOT relieve engine or pool pressure, because a
+#   caller-side timeout does not release the `_SYNC_WORK_EXECUTOR` slot --
+#   that slot stays charged until the underlying call finishes (see
+#   `_BoundedSyncWorkExecutor`: "A caller timeout does not release capacity
+#   for work that Python cannot cancel").
+#
+# The route's real latency fix is not this number: it is that a blown
+# budget here now DEGRADES (below) instead of failing the whole response.
+_GRAPH_STATS_BY_TYPE_DEADLINE_SECONDS = 10.0
+
+
+def _by_type_degraded_graphs() -> list[str]:
+    """Every graph the `by_type` breakdown was SUPPOSED to cover, for a
+    degrade to report as skipped.
+
+    Without this, a degraded breakdown returned `({}, [], [])` -- an empty
+    `by_type` with an EMPTY `degraded_graphs`, which `get_graph_stats`
+    renders as `partial: False`. That made "the breakdown timed out" look
+    byte-identical to "this graph genuinely holds no typed nodes", the exact
+    failure mode the rest of this route was built to make impossible. The
+    breakdown is a union read (`_read_union_sql_group_counts` ->
+    `_rows_per_accessible_graph`), so when it fails as a whole the set it
+    failed to cover is the ambient actor's accessible graphs.
+
+    Best-effort by construction: this runs on an error path, so it must not
+    be able to raise a second, more confusing failure out of the degrade.
+    """
+    from agent_utilities.knowledge_graph.core.session import current_session
+
+    try:
+        session = current_session()
+        if session is None:
+            return []
+        return _accessible_graphs(session.actor)
+    except Exception as exc:  # noqa: BLE001 — a degrade must never itself raise
+        _log_failure('graph_stats.by_type_degraded_graphs', exc, level=logging.DEBUG)
+        return []
+
+
+async def _by_type_call(
+    engine: Any,
+) -> tuple[dict[str, int], list[str], list[str]]:
+    """Run `get_graph_stats`'s `by_type` aggregate with its own fail-soft
+    degrade, isolated from the two total-count calls it now runs alongside
+    via `asyncio.gather` in `get_graph_stats`.
+
+    Kept as a standalone coroutine (rather than inlined) specifically so its
+    `try/except` cannot let a `by_type` failure propagate out of `gather` --
+    `asyncio.gather` (without `return_exceptions=True`) re-raises the FIRST
+    exception any of its awaitables raises, which would otherwise turn a
+    should-degrade `by_type` failure into a full-route 503, same as letting
+    it raise out of a bare `await` would.
+
+    Contract: `by_type` failing degrades to `({}, [], <accessible graphs>)`
+    -- an empty breakdown plus the graphs it could not cover, so
+    `get_graph_stats` reports the response as `partial`; the two
+    total-count calls failing still surfaces as a 503 via the caller's own
+    outer `except`.
+    """
+    try:
+        return await _read_union_sql_group_counts(
+            engine,
+            f'SELECT node_type, COUNT(*) AS n FROM nodes GROUP BY node_type '
+            f'ORDER BY n DESC LIMIT {_GRAPH_STATS_BY_TYPE_LIMIT}',
+            key='node_type',
+            count_field='n',
+            deadline=_GRAPH_STATS_BY_TYPE_DEADLINE_SECONDS,
+        )
+    except HTTPException as e:
+        # THE degrade that actually matters in production (measured live,
+        # 3/3 deterministic, against the real 25,118-row graph): the one
+        # failure mode this optional aggregate hits is its own bounded
+        # deadline, and `_invoke_governed_helper` reports that as
+        # `HTTPException(503)` -- which the previous bare `raise` here sent
+        # straight out through `asyncio.gather` and the route's outer
+        # handler, turning a should-degrade breakdown into a 503 for the
+        # WHOLE stats response. The two REQUIRED total-count aggregates had
+        # already succeeded in ~1.2-1.6s at that point and were discarded
+        # with it, so the dashboard's headline Nodes/Edges numbers were
+        # unavailable purely because a secondary breakdown was slow.
+        #
+        # 503 from this call means exactly "the bounded sync budget said no"
+        # (deadline exceeded, or capacity exhausted) -- both are precisely
+        # what this call is allowed to degrade on. Any OTHER status is a
+        # real, differently-shaped failure and still propagates unchanged.
+        if e.status_code != 503:
+            raise
+        _log_failure('graph_stats.by_type_degraded', e, level=logging.WARNING)
+        return {}, [], _by_type_degraded_graphs()
+    except Exception as e:
+        # A `by_type` failure must not take down the whole stats
+        # response -- mirrors the previous per-node-type loop's own
+        # narrower degrade, just for the one aggregate call now doing
+        # that loop's job.
+        _log_failure('api_extension', e, level=logging.DEBUG)
+        return {}, [], _by_type_degraded_graphs()
 
 
 @router.get('/graph/stats')
@@ -3042,49 +4533,164 @@ async def get_graph_stats() -> dict[str, Any]:
                 'available': False,
             }
 
-        # Get total counts (Test expects these first)
-        total_nodes_result = await _invoke_governed_helper(
-            engine.backend.execute,
-            'MATCH (n) RETURN count(n) as count',
-            deadline=10.0,
+        # Get total counts (Test expects these first). FIX LANE Priority 1:
+        # summed across every graph this actor may read (tenant shard +
+        # commons/ancestors -- `_read_union_scalar_sum`), not `session.graph`
+        # alone, so the fleet/tool catalog (written to commons by design,
+        # `tenant_sharing.COMMONS_SHAREABLE_NODE_TYPES`) is actually counted
+        # instead of silently invisible to this endpoint. `_degraded` is
+        # this call's OWN accessible-but-unreadable graphs (e.g. a shard
+        # mid-`PARTIAL_MATERIALIZATION` rebuild) -- merged into the response
+        # below alongside the other two calls' degraded sets so a partial
+        # total is never reported identically to a complete one.
+        #
+        # PERF (this fix lane): the three aggregate calls below are each
+        # independently expensive engine-side (measured 8-12s total for a
+        # ~25k-node tenant, serialized) and share no state, so they now run
+        # CONCURRENTLY via `asyncio.gather` instead of being awaited one
+        # after another -- roughly a 3x wall-clock reduction with no change
+        # to per-call engine cost. This is safe for ambient-session
+        # propagation without any extra plumbing here: each coroutine
+        # `asyncio.gather` schedules becomes its own `asyncio.Task`, and
+        # asyncio's own `Task` creation already snapshots the CURRENT
+        # `contextvars.Context` at creation time (stdlib behaviour, not
+        # something this call site has to arrange) -- so all three tasks
+        # see the SAME `current_session()` this request already has bound,
+        # exactly as the sequential `await` chain did. Underneath, each of
+        # the three still goes through `_invoke_governed_helper` ->
+        # `_SYNC_WORK_EXECUTOR.submit()`, which ALSO does its own
+        # `contextvars.copy_context()` per submission (see that class'
+        # `submit()` above) before crossing into a worker thread -- the
+        # same load-bearing pattern `_rows_per_accessible_graph` uses for
+        # its inner per-graph fan-out. Verified directly (not just by
+        # reading the stdlib docs) in
+        # `__tests__/test_api_extensions.py::test_get_graph_stats_concurrent_calls_preserve_session`,
+        # which asserts the actor bound to the ambient session is visible
+        # inside all three concurrently-running calls.
+        #
+        # ENGINE-BREAKER / CAPACITY: this does multiply the worst-case
+        # in-flight fan-out for ONE request (3 outer calls x up to
+        # `_READ_UNION_MAX_WORKERS`=8 inner per-graph threads = up to 24
+        # transient threads, vs 8 today) -- but it does not bypass the
+        # existing admission control. All three outer calls still go
+        # through the SAME shared, bounded `_SYNC_WORK_EXECUTOR`
+        # (`_MAX_SYNC_WORKERS`=4, `_MAX_SYNC_PENDING`=8): once that budget
+        # is exhausted, `.submit()` raises `SyncWorkCapacityError`, which
+        # `_invoke_governed_helper` already converts into a clean 503
+        # ("Synchronous backend capacity is exhausted") rather than
+        # unbounded engine fan-out. The engine's own circuit breaker
+        # (`agent_utilities...core.engine_breaker.CircuitBreaker`) only
+        # trips on transport-level failures (`OSError`/`EOFError` -- a dead
+        # or unreachable socket), never on call volume alone, so 3x'ing
+        # this one route's demand on an already-bounded pool does not by
+        # itself risk tripping it. The one real cost: while a
+        # `get_graph_stats` request is in flight, it now holds up to 3 of
+        # the 4 global `_SYNC_WORK_EXECUTOR` slots at once (vs 1 before),
+        # so a second concurrent caller of THIS route (or of any other sync
+        # route sharing that pool) has less headroom and is more likely to
+        # see that capacity 503 under concurrent load on this one endpoint.
+        # Kept deliberately simple: no new semaphore/bound was added here,
+        # because the existing shared executor is already the intended
+        # single choke point for this class of resource, and it already
+        # fails honestly (503) rather than silently overloading anything.
+        (
+            (total_nodes, node_source_graphs, node_degraded),
+            (total_relationships, rel_source_graphs, rel_degraded),
+            (type_counts, type_source_graphs, type_degraded),
+        ) = await asyncio.gather(
+            _read_union_scalar_sum(
+                engine,
+                'MATCH (n) RETURN count(n) as count',
+                None,
+                field='count',
+                deadline=10.0,
+            ),
+            _read_union_scalar_sum(
+                engine,
+                # BUG-262: the engine's native Cypher parser rejects a
+                # relationship pattern with BOTH endpoints anonymous
+                # (`()-[r]->()`) -- it raised a masked PermissionError that
+                # this function's outer `except` turned into a 503 for the
+                # WHOLE stats response, so GraphView's "Nodes"/"Edges"
+                # summary badges stayed at their `0` default even when the
+                # graph held data (matches `/graph/relationships` below,
+                # which already uses named endpoints and works). Verified
+                # live against the cluster engine: the anonymous form fails
+                # with error_class=PermissionError/failing_layer=
+                # knowledge_graph; the named form returns the correct count
+                # (11,641 edges).
+                'MATCH (a)-[r]->(b) RETURN count(r) as count',
+                None,
+                field='count',
+                deadline=10.0,
+            ),
+            # Get node counts by type. FIX LANE Priority 2: a real
+            # `GROUP BY` aggregate over the `nodes` SQL table -- the
+            # previous version was a hardcoded two-item allowlist
+            # (`['Memory', 'Article']`) that could structurally never
+            # report any other type, and an `if count > 0` that discarded
+            # genuine zeros too.
+            #
+            # FIX (root cause, verified live in-pod): the column is
+            # `node_type`, not `type` -- `SELECT type, ... FROM nodes`
+            # fails outright ("Schema error: No field named type"; the
+            # `nodes` SQL projection has no `type` column at all). The
+            # engine stores a node's class under exactly ONE canonical
+            # property, `models.knowledge_graph.GRAPH_NODE_TYPE_PROPERTY =
+            # "node_type"` ("Registry models... carry the node-class
+            # discriminator as `type` ...however[,] a raw `model_dump()`
+            # can never be handed to a graph write -- it always carries the
+            # retired spelling" -- `RegistryNode.to_graph_properties()` is
+            # the one place that translates `type` -> `node_type` on
+            # write). The wide `nodes` table also carries an UNRELATED
+            # `kind` column -- verified live it holds values like
+            # `engine_latency`/`ingest_task`/`installed-skill-provider`
+            # (RuntimeSignal/WorkItem sub-classification), not the node's
+            # class -- and querying `kind` on `:Tool` data returns nothing
+            # resembling a type breakdown, while `node_type` reproduces the
+            # exact known label set (`RuntimeSignal`, `WorkItem`,
+            # `Concept`, ..., `NativeTool`, `CallableResource`, ...).
+            # `label` silently returns 0 rows instead of erroring, and
+            # `labels(n)` is unsupported by this engine -- both verified
+            # live. This also can't go through this file's own
+            # `/graph/query` route (`_validate_read_only_cypher` rejects
+            # `SELECT` outright); `engine.sql()` (`QueryMixin.sql`, the
+            # read-only SQL surface -- BUG-PE-058) is called directly
+            # instead. Scoped by the SAME union as the
+            # totals above (`_read_union_sql_group_counts`) so the
+            # breakdown sums against the same universe `total_nodes`
+            # counts. The column set DIFFERS per graph (verified live:
+            # `__commons__`'s SQL projection can itself be mid-rebuild) --
+            # `_read_union_sql_group_counts`'s own per-graph fail-soft
+            # handles that; `_by_type_call`'s own `try/except` below is
+            # only a second-line safety net for a totally unexpected
+            # failure, mirroring what used to be this call's own local
+            # `try/except` before the three calls ran concurrently -- a
+            # `by_type` failure must still degrade on its own and must
+            # never take down the whole stats response, so it cannot be
+            # allowed to propagate out of `asyncio.gather` like the two
+            # total-count calls above are allowed to.
+            _by_type_call(engine),
         )
-        total_nodes = total_nodes_result[0].get('count', 0) if total_nodes_result else 0
 
-        total_rels_result = await _invoke_governed_helper(
-            engine.backend.execute,
-            # BUG-262: the engine's native Cypher parser rejects a relationship
-            # pattern with BOTH endpoints anonymous (`()-[r]->()`) -- it raised
-            # a masked PermissionError that this function's outer `except`
-            # turned into a 503 for the WHOLE stats response, so GraphView's
-            # "Nodes"/"Edges" summary badges stayed at their `0` default even
-            # when the graph held data (matches `/graph/relationships` below,
-            # which already uses named endpoints and works). Verified live
-            # against the cluster engine: the anonymous form fails with
-            # error_class=PermissionError/failing_layer=knowledge_graph; the
-            # named form returns the correct count (11,641 edges).
-            'MATCH (a)-[r]->(b) RETURN count(r) as count',
-            deadline=10.0,
+        # Observability requirement (FIX LANE Priority 1): which physical
+        # graph(s) this response actually drew from, additive so a narrowed
+        # view can never again look identical to a complete one without
+        # anyone noticing. Non-strict frontend zod schemas (`graphStatsSchema`
+        # et al.) tolerate an unrecognized field -- see this lane's report
+        # for whether a frontend change is wanted to surface it.
+        source_graphs = sorted(
+            set(node_source_graphs) | set(rel_source_graphs) | set(type_source_graphs)
         )
-        total_relationships = (
-            total_rels_result[0].get('count', 0) if total_rels_result else 0
+        # FIX LANE Priority 2 (Defect 2): the sibling half of the fail-soft
+        # fix -- every accessible graph that was skipped by ANY of the three
+        # union reads above, so a partial response is never indistinguishable
+        # from a complete one. Non-empty exactly when this response is a
+        # degrade, not a full union.
+        degraded_graphs = sorted(
+            set(node_degraded) | set(rel_degraded) | set(type_degraded)
         )
 
-        # Get node counts by type (Test expects Memory then Article)
-        type_counts = {}
-        for node_type in ['Memory', 'Article']:
-            try:
-                result = await _invoke_governed_helper(
-                    engine.backend.execute,
-                    f'MATCH (n:{node_type}) RETURN count(n) as count',
-                    deadline=10.0,
-                )
-                count = result[0].get('count', 0) if result else 0
-                if count > 0:
-                    type_counts[node_type] = count
-            except HTTPException:
-                raise
-            except Exception as e:
-                _log_failure('api_extension', e, level=logging.DEBUG)
         return {
             'total_nodes': total_nodes,
             'total_relationships': total_relationships,
@@ -3095,6 +4701,9 @@ async def get_graph_stats() -> dict[str, Any]:
             # unavailable engine render identically to a genuinely empty
             # graph) rather than inferring "available" from its absence.
             'available': True,
+            'source_graphs': source_graphs,
+            'degraded_graphs': degraded_graphs,
+            'partial': bool(degraded_graphs),
         }
     except HTTPException:
         raise
@@ -3307,23 +4916,71 @@ async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
     try:
         engine = await _get_engine_bounded()
 
-        results = await _invoke_governed_helper(
-            engine.search_hybrid, query, top_k=top_k, deadline=15.0
+        # FIX LANE Priority 1: `search_hybrid` is a native ranked-retrieval
+        # call with no Cypher form (`_read_union_cypher` does not apply), so
+        # this fans it out per accessible graph via `_union_engine_call`
+        # (`_rows_per_accessible_graph` underneath) and merges by node id --
+        # the fleet/tool catalog is otherwise invisible to hybrid search from
+        # a webui session exactly like it was to `/graph/nodes`. `top_k` is
+        # pushed down to EACH per-graph call (not fetched unbounded then
+        # sliced) -- the merge below still trims to the caller's `top_k` after
+        # de-duping, since the union of two `top_k`-bounded shards can exceed
+        # `top_k`.
+        from agent_utilities.knowledge_graph.core.session import current_session
+
+        session = current_session()
+        actor = session.actor if session is not None else None
+
+        def _call(scoped_engine: Any) -> list[dict[str, Any]]:
+            return list(scoped_engine.search_hybrid(query, top_k=top_k) or [])
+
+        results, _source_graphs, degraded = await _invoke_governed_helper(
+            _union_engine_call, engine, actor, _call, deadline=15.0
         )
+        if not results and degraded:
+            # ROOT CAUSE of the observed live non-determinism (item C/F:
+            # identical successive `/graph/search` calls returning 5 results,
+            # then 0): `_union_engine_call` -> `_rows_per_accessible_graph`
+            # fan-out is fail-SOFT per graph by design (a per-graph exception
+            # is logged and the graph is added to `degraded`, never raised --
+            # see that function's own docstring). This route used to discard
+            # `degraded` entirely (`_degraded`), so when EVERY accessible
+            # graph's `search_hybrid` call happened to fail on a given
+            # request (contention/timeout), the union quietly degraded to a
+            # legitimate-looking `results=[]` -- a 200 indistinguishable from
+            # "reachable, genuinely zero matches". The very next identical
+            # request, with no failure this time, returned the real hits.
+            # Distinguish the two: zero results with at least one graph that
+            # could not even be read is a failure (503, same D-W6-10 class as
+            # get_graph_nodes/get_graph_relationships/list_workflows), not an
+            # honest empty answer. Zero results with `degraded` empty (every
+            # accessible graph was actually read) stays a genuine 200 [].
+            _log_failure('search_graph', RuntimeError(f'degraded graphs: {degraded}'))
+            raise HTTPException(
+                status_code=503,
+                detail='Knowledge Graph search failed',
+            )
         bounded = _public_external_result(list(results or [])[:top_k])
         return bounded if isinstance(bounded, list) else []
     except HTTPException as exc:
-        # Unlike get_graph_nodes/relationships, this route has no D-W6-10
-        # hardening -- every other failure mode already degrades to []
-        # below. Treating "no engine" (501) the same way is consistent
-        # with that, not a new fabrication risk; a genuine 503 (bounded
-        # deadline/capacity) still hard-fails.
+        # "No engine" (501) degrades to an honest empty list -- same as
+        # get_graph_nodes/relationships/workflows treat it (D-W6-10); a
+        # genuine 503 (bounded deadline/capacity, or the all-graphs-degraded
+        # case just above) still hard-fails below.
         if exc.status_code == 501:
             return []
         raise
     except Exception as e:
+        # D-W6-10 (same class of fix as get_graph_nodes/get_graph_relationships/
+        # list_workflows): a failure raised OUTSIDE the fail-soft per-graph
+        # fan-out above (e.g. `_invoke_governed_helper`'s own deadline/capacity
+        # handling, or an error before/after the union call) must also surface
+        # as a distinguishable failure, not a fabricated `200 []`.
         _log_failure('search_graph', e)
-        return []
+        raise HTTPException(
+            status_code=503,
+            detail='Knowledge Graph search failed',
+        ) from e
 
 
 @router.get('/graph/impact/{symbol}')
@@ -3341,8 +4998,23 @@ async def get_impact(symbol: str) -> list[dict[str, Any]]:
     try:
         engine = await _get_engine_bounded()
 
-        impact_set = await _invoke_governed_helper(
-            engine.query_impact, symbol, deadline=15.0
+        # FIX LANE Priority 1: `query_impact` is a native BFS-traversal call
+        # with no Cypher form, fanned out per accessible graph and merged by
+        # node id (`_union_engine_call`), same reasoning as `hybrid_search`
+        # above. The traversal itself is graph-local (edges never cross a
+        # GOC-61 graph boundary), so `symbol` resolves in at most one
+        # accessible graph -- the other graph(s) cheaply return `[]` via
+        # `query_impact`'s own `has_node` early-return, not an error.
+        from agent_utilities.knowledge_graph.core.session import current_session
+
+        session = current_session()
+        actor = session.actor if session is not None else None
+
+        def _call(scoped_engine: Any) -> list[dict[str, Any]]:
+            return list(scoped_engine.query_impact(symbol) or [])
+
+        impact_set, _source_graphs, _degraded = await _invoke_governed_helper(
+            _union_engine_call, engine, actor, _call, deadline=15.0
         )
         bounded = _public_external_result(
             list(impact_set or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
@@ -3371,11 +5043,16 @@ async def execute_cypher(data: dict[str, Any]) -> list[dict[str, Any]]:
 
         engine = await _get_engine_bounded()
 
-        result = await _invoke_governed_helper(
-            engine.query_cypher,
-            deadline=15.0,
-            query=query,
-            params=params,
+        # FIX LANE Priority 1: unioned across every graph this actor may read
+        # (`_read_union_cypher`). Safe to union unconditionally -- unlike a
+        # general Cypher surface, `_validate_read_only_cypher` above has
+        # ALREADY rejected any mutating clause (CREATE/MERGE/DELETE/SET/
+        # REMOVE/CALL/...); every query reaching this point is a bounded read,
+        # so there is no write-vs-read branch to preserve here (the union
+        # helper itself never touches `session.graph`'s write path either
+        # way).
+        result, _source_graphs = await _read_union_cypher(
+            engine, query, params, deadline=15.0
         )
         if not isinstance(result, list):
             raise ValueError('Graph query returned an invalid result shape')
@@ -5447,9 +7124,7 @@ async def toggle_graph_tool(tool_id: str, request: Request) -> dict[str, Any]:
 #  Sessions & Autonomous Goals Parity (TUI-20, ORCH-5.0)
 # ─────────────────────────────────────────────────────────────────────────
 
-import asyncio
 import sqlite3
-import time
 import uuid
 
 from agent_utilities.models.goal import GoalIteration, GoalSpec, GoalStatus
@@ -9267,6 +10942,29 @@ async def _get_ontology_kg_bounded() -> Any:
     return await _invoke_governed_helper(get_ontology_kg, deadline=10.0)
 
 
+def _ontology_facade_for(engine: Any, scoped_engine: Any) -> tuple[Any, Any] | None:
+    """Resolve the `(kg, ontology)` facade pair for one `_rows_per_accessible_graph`
+    call-site: the tenant-pinned singleton (`get_ontology_kg()`) when
+    `scoped_engine` is the ambient (unscoped) `engine` itself, else a
+    throwaway facade over `scoped_engine.backend` (a graph-scoped view
+    `_rows_per_accessible_graph` already retargeted the ambient session onto
+    -- see `_graph_union_executor`'s docstring for why both moves are
+    required together). Returns `None` when the ontology layer is
+    unavailable for that graph, so callers can degrade a single graph rather
+    than raise.
+    """
+    if scoped_engine is engine:
+        return get_ontology_kg()
+    from agent_utilities.knowledge_graph.facade import KnowledgeGraph
+
+    kg = KnowledgeGraph()
+    kg._store = scoped_engine.backend
+    ontology = kg.ontology
+    if ontology is None:
+        return None
+    return kg, ontology
+
+
 def _actor_id_from_request(request: Request | None) -> str:
     """Return only the server-minted ambient actor, never caller headers/body."""
 
@@ -9408,6 +11106,66 @@ def _node_links(backend: Any, object_id: str) -> dict[str, list[dict[str, Any]]]
     return {'out': out_links, 'in': in_links}
 
 
+def _session_scoped_to(session: Any, graph_name: str | None) -> Any:
+    """Context manager retargeting the ambient session onto ``graph_name``.
+
+    A no-op (`contextlib.nullcontext`) when there is no ambient session or
+    ``graph_name`` already matches it -- otherwise `use_session` +
+    `session.with_graph` (the same dual-retarget `_rows_per_accessible_graph`
+    /`_graph_union_executor` already use). Needed by `get_ontology_object`/
+    `derive_ontology_property`, which locate an object's home graph ONCE
+    (`_locate_object_graph`) and then must run every remaining store/ontology
+    read in that same scope -- see `_graph_union_executor`'s docstring for why
+    a scoped backend view and a retargeted session are required TOGETHER.
+    """
+    if session is None or graph_name is None or graph_name == session.graph:
+        return contextlib.nullcontext()
+    from agent_utilities.knowledge_graph.core.session import use_session
+
+    return use_session(session.with_graph(graph_name))
+
+
+def _locate_object_graph(
+    engine: Any, object_id: str
+) -> tuple[str | None, Any, dict[str, Any]] | None:
+    """Resolve which accessible graph holds ``object_id``.
+
+    An object's edges never cross a GOC-61 graph boundary, so at most one
+    accessible graph legitimately holds a given id. Fans `_node_properties`
+    out across every graph this actor may read via
+    `_rows_per_accessible_graph` and returns the first non-empty match in
+    `_accessible_graphs` order (tenant graph first) -- on the impossible case
+    of more than one graph matching, tenant wins, the same semantic
+    `read_union`'s own de-dup already applies on a duplicate id. Returns
+    ``(graph_name, scoped_engine, props)``, or ``None`` when no accessible
+    graph holds the object. Falls back to the plain `session.graph`-only
+    lookup when there is no verified ambient session, matching every other
+    union helper in this file.
+    """
+    from agent_utilities.knowledge_graph.core.session import current_session
+
+    def _call(scoped_engine: Any) -> dict[str, Any]:
+        return _node_properties(scoped_engine.backend, object_id)
+
+    session = current_session()
+    result = _rows_per_accessible_graph(engine, _call)
+    if result is None:
+        props = _call(engine)
+        if not props:
+            return None
+        return (session.graph if session is not None else None), engine, props
+    per_graph, _degraded = result
+    for graph_name, props in per_graph:
+        if props:
+            scoped_engine = (
+                engine
+                if session is not None and graph_name == session.graph
+                else engine.for_graph(graph_name)
+            )
+            return graph_name, scoped_engine, props
+    return None
+
+
 @router.get('/ontology/object-types')
 async def list_object_types() -> list[dict[str, Any]]:
     """List ontology object/node types (registry types + interface implementers).
@@ -9417,8 +11175,7 @@ async def list_object_types() -> list[dict[str, Any]]:
     labels present in the store. Each entry carries the interfaces it implements.
     """
     try:
-        kg, ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
+        _kg, ontology = await _get_ontology_kg_bounded()
 
         # Concrete types declared as interface implementers (programmatic targets).
         implementers_by_type: dict[str, list[str]] = {}
@@ -9429,12 +11186,21 @@ async def list_object_types() -> list[dict[str, Any]]:
             except Exception:  # noqa: BLE001
                 continue
 
-        # Live node labels present in the store.
+        # Live node labels present in the store. FIX LANE Priority 1: unioned
+        # across every graph this actor may read (`_read_union_cypher`), not
+        # `backend.execute`/`kg.store` alone -- otherwise the commons-only
+        # catalog types (`Tool`, `Skill`, ...) never appear in the Object
+        # Explorer's type list at all. The commons READ catalog restriction is
+        # pushed into the query text automatically by `_graph_union_executor`
+        # (see its docstring) so a foreign tenant's count here is already
+        # scoped to `COMMONS_SHAREABLE_NODE_TYPES`.
         live_types: dict[str, int] = {}
         try:
-            rows = await _invoke_governed_helper(
-                backend.execute,
+            engine = await _get_engine_bounded()
+            rows, _source_graphs = await _read_union_cypher(
+                engine,
                 'MATCH (n) RETURN labels(n) as labels, count(n) as count',
+                None,
                 deadline=15.0,
             )
             for row in rows or []:
@@ -9592,24 +11358,42 @@ async def ontology_object_set_search(
                     )
                 )
 
-        def execute_search() -> list[dict[str, Any]]:
+        # FIX LANE Priority 1: fanned out across every graph this actor may
+        # read (`_union_engine_call` -- `_rows_per_accessible_graph` under a
+        # per-graph `(kg, ontology)` facade, `_ontology_facade_for`) and
+        # merged by object id -- the ontology layer has no Cypher seam
+        # (`_read_union_cypher` does not apply), so this is the "call the
+        # engine once per accessible graph and merge" case. `limit` is pushed
+        # down to EACH graph's `.search(...)` call (not fetched unbounded then
+        # sliced); the merge is re-trimmed to `limit` below since the union of
+        # two `limit`-bounded per-graph results can exceed it.
+        engine = await _get_engine_bounded()
+
+        def execute_search(scoped_engine: Any) -> list[dict[str, Any]]:
+            facade = _ontology_facade_for(engine, scoped_engine)
+            if facade is None:
+                return []
+            _scoped_kg, scoped_ontology = facade
             remaining_filters = filters
             if kind:
-                base = ontology.object_set_of_type(str(kind))
+                base = scoped_ontology.object_set_of_type(str(kind))
             elif filters:
-                base = ontology.dynamic_object_set(filters=filters)
+                base = scoped_ontology.dynamic_object_set(filters=filters)
                 remaining_filters = []  # already applied to the base set
             else:
                 # Graph-wide: a dynamic set over a permissive predicate.
-                base = ontology.dynamic_object_set(lambda props: True)
+                base = scoped_ontology.dynamic_object_set(lambda props: True)
             result = base.search(
                 query,
                 filters=remaining_filters or None,
                 limit=limit,
             )
-            return _object_set_rows(ontology, result, actor, limit=limit)
+            return _object_set_rows(scoped_ontology, result, actor, limit=limit)
 
-        rows = await _invoke_governed_helper(execute_search, deadline=30.0)
+        rows, _source_graphs, _degraded = await _invoke_governed_helper(
+            _union_engine_call, engine, actor, execute_search, deadline=30.0
+        )
+        rows = rows[:limit]
         return _public_external_result(
             {
                 'ids': [r.get('id') for r in rows],
@@ -9633,7 +11417,6 @@ async def ontology_object_set_search_around(
     Body: ``{ids, link_type, hops, cap, direction}``.
     """
     try:
-        _kg, ontology = await _get_ontology_kg_bounded()
         actor = _actor_context(request)
         ids = _bounded_identifier_list(data.get('ids'), required=True)
         link_type = data.get('link_type')
@@ -9652,17 +11435,32 @@ async def ontology_object_set_search_around(
         ):
             raise HTTPException(status_code=400, detail='Invalid link type')
 
-        def execute_search_around() -> list[dict[str, Any]]:
-            base = ontology.object_set(ids)
+        # FIX LANE Priority 1: fanned out per accessible graph and merged by
+        # object id, same reasoning as `ontology_object_set_search` above. A
+        # seed id only resolves related objects in the ONE graph it (and its
+        # links) physically live in (GOC-61: edges never cross a graph
+        # boundary) -- the other graph(s) cheaply return `[]` for a seed id
+        # they don't hold, not an error.
+        engine = await _get_engine_bounded()
+
+        def execute_search_around(scoped_engine: Any) -> list[dict[str, Any]]:
+            facade = _ontology_facade_for(engine, scoped_engine)
+            if facade is None:
+                return []
+            _scoped_kg, scoped_ontology = facade
+            base = scoped_ontology.object_set(ids)
             related = base.search_around(
                 link_type,
                 hops=hops,
                 direction=direction,
                 cap=cap,
             )
-            return _object_set_rows(ontology, related, actor, limit=cap)
+            return _object_set_rows(scoped_ontology, related, actor, limit=cap)
 
-        rows = await _invoke_governed_helper(execute_search_around, deadline=30.0)
+        rows, _source_graphs, _degraded = await _invoke_governed_helper(
+            _union_engine_call, engine, actor, execute_search_around, deadline=30.0
+        )
+        rows = rows[:cap]
         return _public_external_result(
             {
                 'ids': [r.get('id') for r in rows],
@@ -9677,14 +11475,50 @@ async def ontology_object_set_search_around(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _ids_present_in_graph(backend: Any, ids: list[str]) -> set[str]:
+    """Return the subset of ``ids`` that exist as nodes in ``backend``'s graph.
+
+    A single batched existence check. A STATIC :class:`ObjectSet`'s
+    ``ids()``/``objects()`` returns every id verbatim regardless of
+    existence -- a nonexistent id still yields a ``{"id": nid}`` stub -- so
+    fanning `/ontology/object-set/aggregate` out per accessible graph with
+    the SAME full ``ids`` list unfiltered would double/triple-count any id
+    that only lives in ONE of those graphs (each graph's run would count
+    every id, present or not). Narrowing to the ids each graph actually
+    holds first avoids that.
+    """
+    if not ids:
+        return set()
+    try:
+        rows = backend.execute(
+            'MATCH (n) WHERE n.id IN $ids RETURN n.id AS id', {'ids': ids}
+        )
+    except Exception:  # noqa: BLE001
+        return set()
+    present: set[str] = set()
+    for row in rows or []:
+        node_id = row.get('id') if isinstance(row, dict) else None
+        if isinstance(node_id, str):
+            present.add(node_id)
+    return present
+
+
 @router.post('/ontology/object-set/pivot')
 async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
     """Pivot an object set across a link type, grouping the linked set.
 
     Body: ``{ids, link_type, group_by, direction}``.
+
+    FIX LANE Priority 1: fanned out per accessible graph (same seed-id
+    reasoning as `/ontology/object-set/search-around` -- a seed id only
+    resolves linked objects in the ONE graph it and its links physically
+    live in, GOC-61, so a graph that doesn't hold a given seed id cheaply
+    contributes an empty pivot rather than an error) and the group buckets
+    merged by group value, deduped by linked-object id (tenant wins on a
+    duplicate id, matching every other union merge in this file).
     """
     try:
-        _kg, ontology = await _get_ontology_kg_bounded()
+        _kg, _ontology = await _get_ontology_kg_bounded()
         ids = _bounded_identifier_list(data.get('ids'))
         link_type = data.get('link_type')
         group_by = str(data.get('group_by', '') or '')
@@ -9698,19 +11532,48 @@ async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
         ):
             raise HTTPException(status_code=400, detail='Invalid link type')
 
-        pivot = await _invoke_governed_helper(
-            lambda: ontology.object_set(ids).pivot(
+        engine = await _get_engine_bounded()
+
+        def execute_pivot(scoped_engine: Any) -> Any:
+            facade = _ontology_facade_for(engine, scoped_engine)
+            if facade is None:
+                return None
+            _scoped_kg, scoped_ontology = facade
+            return scoped_ontology.object_set(ids).pivot(
                 link_type,
                 group_by,
                 direction=direction,
-            ),
-            deadline=30.0,
-        )
+            )
+
+        def _run() -> list[tuple[str | None, Any]]:
+            result = _rows_per_accessible_graph(engine, execute_pivot)
+            if result is None:
+                return [(None, execute_pivot(engine))]
+            per_graph, _degraded = result
+            return [(graph_name, value) for graph_name, value in per_graph]
+
+        per_graph = await _invoke_governed_helper(_run, deadline=30.0)
+
+        resolved_link_type = link_type or '*'
+        merged_groups: dict[Any, list[str]] = {}
+        seen: set[str] = set()
+        for _graph_name, pivot in per_graph:
+            if pivot is None:
+                continue
+            resolved_link_type = pivot.link_type
+            for key, member_ids in pivot.groups.items():
+                bucket = merged_groups.setdefault(key, [])
+                for member_id in member_ids:
+                    if member_id in seen:
+                        continue
+                    seen.add(member_id)
+                    bucket.append(member_id)
+
         return _public_external_result(
             {
-                'link_type': pivot.link_type,
-                'group_by': pivot.group_by,
-                'groups': {str(k): v for k, v in pivot.groups.items()},
+                'link_type': resolved_link_type,
+                'group_by': group_by,
+                'groups': {str(k): v for k, v in merged_groups.items()},
             }
         )
     except HTTPException:
@@ -9725,30 +11588,113 @@ async def ontology_object_set_aggregate(data: dict[str, Any]) -> dict[str, Any]:
     """Aggregate an object set (count/sum/avg/min/max), optionally grouped.
 
     Body: ``{ids, group_by, metric, field}``.
+
+    FIX LANE Priority 1: an id in ``ids`` lives in at most one accessible
+    graph (GOC-61 -- edges never cross a graph boundary), so this fans the
+    aggregate out per accessible graph (`_rows_per_accessible_graph`, via a
+    per-graph ``(kg, ontology)`` facade, `_ontology_facade_for`) over ONLY
+    the ids that graph actually holds (`_ids_present_in_graph` -- a STATIC
+    ObjectSet's ``.aggregate()`` counts every id verbatim whether it exists
+    in that graph or not, so an unfiltered full-``ids`` fan-out would
+    double-count), then merges the per-graph ``AggregationResult``s:
+
+    * ``count``/``sum`` -- SUM the per-graph group values; independent
+      partitions of the same set sum correctly by definition.
+    * ``min``/``max`` -- merge directly (min-of-mins / max-of-maxes); these
+      ARE reconstructable from independent partitions, unlike avg, so
+      scoping them to only the tenant graph (as a prior pass here did)
+      was over-cautious.
+    * ``avg`` -- requested as its ``sum``+``count`` components per graph and
+      divided AFTER merging, because ``AggregationResult`` exposes only the
+      final per-group value, not the underlying sum/count a correct avg
+      merge needs (a plain average-of-averages would be wrong whenever the
+      per-graph group sizes differ).
     """
     try:
-        _kg, ontology = await _get_ontology_kg_bounded()
+        _kg, _ontology = await _get_ontology_kg_bounded()
         ids = _bounded_identifier_list(data.get('ids'))
         metric = str(data.get('metric', 'count') or 'count')
         group_by = data.get('group_by')
         field = data.get('field')
+        if metric not in {'count', 'sum', 'avg', 'min', 'max'}:
+            raise HTTPException(
+                status_code=422, detail=f'unsupported metric {metric!r}'
+            )
+        if metric != 'count' and not field:
+            raise HTTPException(
+                status_code=422, detail=f'metric {metric!r} requires a numeric field'
+            )
 
-        agg = await _invoke_governed_helper(
-            lambda: ontology.object_set(ids).aggregate(
-                metric,
-                field=field,
-                group_by=group_by,
-            ),
-            deadline=30.0,
-        )
+        engine = await _get_engine_bounded()
+        # avg needs its components (sum + count), not the final per-group
+        # average, to merge correctly across graphs.
+        component_metrics = ('sum', 'count') if metric == 'avg' else (metric,)
+
+        def execute_aggregate(scoped_engine: Any) -> Any:
+            facade = _ontology_facade_for(engine, scoped_engine)
+            if facade is None:
+                return None
+            _scoped_kg, scoped_ontology = facade
+            present = _ids_present_in_graph(scoped_engine.backend, ids)
+            if not present:
+                return None
+            scoped_ids = [i for i in ids if i in present]
+            object_set = scoped_ontology.object_set(scoped_ids)
+            return {
+                m: object_set.aggregate(m, field=field, group_by=group_by)
+                for m in component_metrics
+            }
+
+        def _run() -> list[tuple[str | None, Any]]:
+            result = _rows_per_accessible_graph(engine, execute_aggregate)
+            if result is None:
+                return [(None, execute_aggregate(engine))]
+            per_graph, _degraded = result
+            return [(graph_name, value) for graph_name, value in per_graph]
+
+        per_graph = await _invoke_governed_helper(_run, deadline=30.0)
+
+        total_objects = 0
+        groups: dict[Any, float] = {}
+        sums: dict[Any, float] = {}
+        counts: dict[Any, float] = {}
+        for _graph_name, agg_map in per_graph:
+            if not agg_map:
+                continue
+            if metric == 'avg':
+                sum_res = agg_map['sum']
+                count_res = agg_map['count']
+                total_objects += sum_res.total_objects
+                for k, v in sum_res.groups.items():
+                    sums[k] = sums.get(k, 0.0) + v
+                for k, v in count_res.groups.items():
+                    counts[k] = counts.get(k, 0.0) + v
+            else:
+                agg = agg_map[metric]
+                total_objects += agg.total_objects
+                for k, v in agg.groups.items():
+                    if metric in ('count', 'sum'):
+                        groups[k] = groups.get(k, 0.0) + v
+                    elif metric == 'min':
+                        groups[k] = v if k not in groups else min(groups[k], v)
+                    elif metric == 'max':
+                        groups[k] = v if k not in groups else max(groups[k], v)
+
+        if metric == 'avg':
+            for k, s in sums.items():
+                c = counts.get(k, 0.0)
+                if c:
+                    groups[k] = s / c
+
+        value = None if group_by is not None else groups.get(None)
         return _public_external_result(
             {
-                'metric': agg.metric,
-                'field': agg.field,
-                'group_by': agg.group_by,
-                'groups': {str(k): v for k, v in agg.groups.items()},
-                'value': agg.value,
-                'total_objects': agg.total_objects,
+                'metric': metric,
+                'field': field,
+                'group_by': group_by,
+                'groups': {str(k): v for k, v in groups.items()},
+                'value': value,
+                'total_objects': total_objects,
             }
         )
     except HTTPException:
@@ -10280,93 +12226,117 @@ async def get_ontology_object(
     composition for that type when one has been saved (falling back to standard
     when none exists). The selection is a real change in the returned payload —
     the same affordance the Explorer's layout toggle reaches.
+
+    FIX LANE Priority 1: locates which accessible graph holds the object
+    (`_locate_object_graph`) ONCE, then re-scopes every remaining read
+    (links, derived properties, edit history) to that SAME graph
+    (`_ontology_facade_for` + `_session_scoped_to`) -- otherwise a
+    commons-resident object would come back with right properties but
+    wrong-graph (empty) links/derived/history, worse than the tenant-only
+    status quo.
     """
     object_id = _validate_runtime_id(object_id)
     if layout not in {'standard', 'configured'}:
         raise HTTPException(status_code=400, detail='Invalid object layout')
     try:
+        from agent_utilities.knowledge_graph.core.session import current_session
         from agent_utilities.knowledge_graph.ontology.permissioning import (
             enforce,
             markings_for,
         )
 
-        kg, ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
-        actor = _actor_context(request)
-
-        props = await _invoke_governed_helper(
-            _node_properties, backend, object_id, deadline=15.0
+        engine = await _get_engine_bounded()
+        located = await _invoke_governed_helper(
+            _locate_object_graph, engine, object_id, deadline=15.0
         )
-        props.setdefault('id', object_id)
-        enforced = enforce([props], actor)
-        if not enforced:
+        if located is None:
             raise HTTPException(status_code=404, detail='Object not found or denied')
-        view_props = enforced[0]
+        graph_name, scoped_engine, props = located
+        facade = _ontology_facade_for(engine, scoped_engine)
+        if facade is None:
+            raise HTTPException(status_code=501, detail='Ontology layer unavailable')
+        _scoped_kg, ontology = facade
+        backend = scoped_engine.backend
+        actor = _actor_context(request)
+        session = current_session()
 
-        object_type = (
-            view_props.get('type')
-            or view_props.get('_type')
-            or view_props.get('object_type')
-        )
-        try:
-            derived = await _invoke_governed_helper(
-                ontology.derive_all,
-                view_props,
-                object_type=object_type,
-                actor_id=actor.actor_id,
-                deadline=30.0,
-            )
-        except Exception:  # noqa: BLE001
-            derived = {}
-        try:
-            markings = sorted(markings_for(object_id))
-        except Exception:  # noqa: BLE001
-            markings = []
-        # Prefer the durable, cross-request audit trail from the store; fall
-        # back to the in-process ledger mirror when nothing was persisted.
-        history = await _invoke_governed_helper(
-            _durable_edit_history, backend, object_id, deadline=15.0
-        )
-        if not history:
-            try:
-                fallback_history = await _invoke_governed_helper(
-                    ontology.history,
-                    object_id,
-                    deadline=15.0,
+        with _session_scoped_to(session, graph_name):
+            props.setdefault('id', object_id)
+            enforced = enforce([props], actor)
+            if not enforced:
+                raise HTTPException(
+                    status_code=404, detail='Object not found or denied'
                 )
-                history = [e.model_dump(mode='json') for e in fallback_history]
-            except Exception:  # noqa: BLE001
-                history = []
+            view_props = enforced[0]
 
-        # Resolve the requested layout into a concrete view payload. ``configured``
-        # serves the stored ObjectView widget composition for this type (when one
-        # exists); ``standard`` derives the layout from the type's interface
-        # schema. The selection genuinely changes the returned ``view``.
-        layout_choice = (layout or 'standard').strip().lower()
-        view: dict[str, Any] = {}
-        if object_type:
-            configured = (
-                _load_object_views().get(str(object_type))
-                if layout_choice == 'configured'
-                else None
+            object_type = (
+                view_props.get('type')
+                or view_props.get('_type')
+                or view_props.get('object_type')
             )
-            if configured is not None:
-                view = {
-                    'object_type': object_type,
-                    'view_type': 'configured',
-                    **configured,
-                }
-            else:
-                view = _standard_object_view(ontology, str(object_type))
+            try:
+                derived = await _invoke_governed_helper(
+                    ontology.derive_all,
+                    view_props,
+                    object_type=object_type,
+                    actor_id=actor.actor_id,
+                    deadline=30.0,
+                )
+            except Exception:  # noqa: BLE001
+                derived = {}
+            try:
+                markings = sorted(markings_for(object_id))
+            except Exception:  # noqa: BLE001
+                markings = []
+            # Prefer the durable, cross-request audit trail from the store;
+            # fall back to the in-process ledger mirror when nothing was
+            # persisted.
+            history = await _invoke_governed_helper(
+                _durable_edit_history, backend, object_id, deadline=15.0
+            )
+            if not history:
+                try:
+                    fallback_history = await _invoke_governed_helper(
+                        ontology.history,
+                        object_id,
+                        deadline=15.0,
+                    )
+                    history = [e.model_dump(mode='json') for e in fallback_history]
+                except Exception:  # noqa: BLE001
+                    history = []
+
+            # Resolve the requested layout into a concrete view payload.
+            # ``configured`` serves the stored ObjectView widget composition
+            # for this type (when one exists); ``standard`` derives the
+            # layout from the type's interface schema. The selection
+            # genuinely changes the returned ``view``.
+            layout_choice = (layout or 'standard').strip().lower()
+            view: dict[str, Any] = {}
+            if object_type:
+                configured = (
+                    _load_object_views().get(str(object_type))
+                    if layout_choice == 'configured'
+                    else None
+                )
+                if configured is not None:
+                    view = {
+                        'object_type': object_type,
+                        'view_type': 'configured',
+                        **configured,
+                    }
+                else:
+                    view = _standard_object_view(ontology, str(object_type))
+
+            links = await _invoke_governed_helper(
+                _node_links, backend, object_id, deadline=15.0
+            )
 
         return _public_external_result(
             {
                 'id': object_id,
                 'object_type': object_type,
                 'properties': view_props,
-                'links': await _invoke_governed_helper(
-                    _node_links, backend, object_id, deadline=15.0
-                ),
+                'links': links,
                 'derived': derived,
                 'markings': markings[:_MAX_EXTERNAL_COLLECTION_ITEMS],
                 'history': history[:_MAX_EXTERNAL_COLLECTION_ITEMS],
@@ -10605,15 +12575,28 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
 
     Body: ``{object_id, derived_name, object_type}``. Resolves the object's
     live property map from the store (a UI convenience — the canonical tool
-    takes the object dict), then dispatches through the canonical
-    ``ontology_derive`` tool — the same implementation behind the gateway's
-    ``POST /ontology/derive`` — so derive semantics cannot drift.
+    takes the object dict).
+
+    FIX LANE Priority 1: locates which accessible graph holds the object
+    (`_locate_object_graph`) and computes the derived property against a
+    facade bound to THAT graph (`_ontology_facade_for`). This bypasses the
+    canonical ``ontology_derive`` tool dispatch this route previously used --
+    that tool always resolves its OWN unscoped, tenant-fixed
+    ``kg_server._ontology_system()``, so a CYPHER-backed derived property
+    (``derived_properties.py``: evaluated through the facade's "tenant-
+    scoped" ``KnowledgeGraph.query`` read path) can never be re-scoped to a
+    commons-resident object through it -- retargeting only the ambient
+    session while the tool keeps calling its own pinned engine reproduces
+    the exact masked failure `_graph_union_executor` documents
+    (``PermissionError: "A graph-scoped view cannot retarget the verified
+    GraphSession"``), or worse, silently computes against the wrong graph.
+    ``ontology.derive()`` is the SAME primitive the tool itself calls
+    (``ont.derive(obj, name, object_type=otype)``), just bound to the
+    correct graph.
     """
     import json
 
     try:
-        kg, _ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
         object_id = data.get('object_id')
         derived_name = data.get('derived_name')
         if not isinstance(object_id, str) or not isinstance(derived_name, str):
@@ -10624,9 +12607,20 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
         if not _SAFE_DELEGATION_TOKEN.fullmatch(derived_name):
             raise HTTPException(status_code=400, detail='Invalid derived property')
 
-        props = await _invoke_governed_helper(
-            _node_properties, backend, str(object_id), deadline=15.0
+        from agent_utilities.knowledge_graph.core.session import current_session
+
+        engine = await _get_engine_bounded()
+        located = await _invoke_governed_helper(
+            _locate_object_graph, engine, str(object_id), deadline=15.0
         )
+        if located is None:
+            raise HTTPException(status_code=404, detail='Object not found')
+        graph_name, scoped_engine, props = located
+        facade = _ontology_facade_for(engine, scoped_engine)
+        if facade is None:
+            raise HTTPException(status_code=501, detail='Ontology layer unavailable')
+        _scoped_kg, ontology = facade
+
         props.setdefault('id', str(object_id))
         object_type = (
             data.get('object_type')
@@ -10635,21 +12629,18 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
             or props.get('object_type')
         )
         bounded_props = _bounded_query_params(props)
-        result = await _invoke_governed_helper(
-            _canonical_kg_tool,
-            deadline=30.0,
-            tool_name='ontology_derive',
-            action='compute',
-            object_json=json.dumps(
+        session = current_session()
+        with _session_scoped_to(session, graph_name):
+            result = await _invoke_governed_helper(
+                ontology.derive,
                 bounded_props,
-                separators=(',', ':'),
-                allow_nan=False,
-            ),
-            name=derived_name,
-            object_type=str(object_type or ''),
+                derived_name,
+                object_type=str(object_type or '') or None,
+                deadline=30.0,
+            )
+        bounded = _public_external_result(
+            json.loads(json.dumps(result.model_dump(), default=str))
         )
-        _raise_canonical_error(result)
-        bounded = _public_external_result(result)
         if not isinstance(bounded, dict):
             raise HTTPException(status_code=422, detail='Invalid derived result')
         return bounded

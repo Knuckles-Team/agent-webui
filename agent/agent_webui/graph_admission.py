@@ -74,6 +74,13 @@ cache-after** design:
   (``asyncio.to_thread``): the underlying engine client is a synchronous
   facade, and this is the one path that may need a real network round trip.
 
+This "forever" cache is the ``(tenant, agent_id)`` **admission outcome** —
+whether a principal is enrolled — which genuinely does not expire. It is a
+separate concern from :func:`_service_authority`'s cache, which holds the
+*credential this module authenticates admission calls with* and, unlike the
+admission outcome, has a bounded lifetime and must be renewed — see that
+function's docstring.
+
 Known limitation (inherited from ``provision_tenant_access`` itself, not
 introduced here): the engine exposes no "read one identity back" RPC, so a
 re-admission (e.g. after a WebUI restart clears this process's in-memory
@@ -82,6 +89,95 @@ not preserve some other role/team the identity may have gained through a
 completely separate admission path in the meantime. Acceptable for this
 WebUI's single-tenant deployment shape; see that module's own docstring for
 the full reasoning.
+
+The pre-flight role-existence probe is not the authorization boundary
+--------------------------------------------------------------------
+:func:`_tenant_role_exists` (below) reads the engine's RBAC policy via
+``RbacAdmin{op:"List"}`` (``rbac.list()``), which the engine gates on the
+``security:admin`` capability — a Tier-2 admin read. :func:`_admit`'s
+``RegisterIdentity`` RPC is authorized completely differently: the engine's
+own ``verify_register_identity_signature`` (``epistemic-graph``'s
+``src/server/auth.rs``) checks only that the signer equals the calling
+principal and that the signer's ``allowed_roles`` pattern covers the
+requested role (``registry.authorize_grant``) — it never consults, and is
+never gated by, ``security:admin``. So a deployment's service principal can
+legitimately hold enough authority to admit a tenant (``allowed_roles:
+["tenant:*"]``) while lacking the unrelated, more-privileged authority to
+*list* the RBAC policy — this is exactly the shape the live 503 outage had.
+
+Consequently, :func:`_sync_ensure` treats the probe's failure modes
+differently:
+
+* **The engine/RPC itself is unreachable or erroring** (anything other than
+  the admin-capability denial specifically) — fails closed exactly as
+  before: :class:`EngineAdmissionUnavailableError`, :func:`_admit` is never
+  attempted.
+* **The probe is denied for insufficient privilege** (the engine's
+  ``"...lacks admin capability..."`` denial, matched against the exception
+  chain by :func:`_admin_capability_denied`) — this means "I can't look",
+  not "I can't admit". :func:`_sync_ensure` proceeds straight to
+  :func:`_admit` and lets the engine's own, independent
+  ``verify_register_identity_signature``/``authorize_grant`` check be the
+  authority on whether the grant is allowed. This removes a redundant,
+  over-privileged pre-flight; it does not weaken authorization; because that
+  pre-flight's boolean result was never itself part of the engine's grant
+  decision.
+
+  One consequence worth naming: ``RegisterIdentity`` performs **no**
+  role-existence validation of its own (confirmed by reading
+  ``crates/eg-core/src/isolation.rs::try_register_agent_from_request`` — it
+  is a bare upsert into the identity map, and ``provision_tenant_access``'s
+  own docstring already documents this as a "legitimate no-op ordering" for
+  a tenant with no graph yet). So when the probe cannot run, admitting a
+  principal into a *genuinely* unprovisioned tenant is no longer detected at
+  admission time the way it is when the probe succeeds and finds the role
+  missing (:class:`TenantNotProvisionedError`) — it will instead surface
+  later, from the engine itself, the first time that principal actually
+  reads or writes a graph. This is not a new gap this change introduces:
+  it is the same gap :class:`TenantNotProvisionedError` already existed to
+  paper over when the probe *can* run; when it cannot, there is no
+  privileged-enough read left in this deployment to detect it earlier.
+
+Why "admin" is NOT a distinct engine grant this module ever produces
+----------------------------------------------------------------------
+AUTHZ LANE B (default ``kg:read``, durable admin elevation for one
+configured principal) is implemented entirely in ``graph_identity.py``'s
+:func:`~agent_webui.graph_identity.mint_frontend_graph_session`, not here —
+on purpose, and the reasoning is worth recording so a future change does not
+try to "complete" the feature by widening this module instead:
+
+* The ``tenant:<slug>`` role this module enrolls every ordinary principal
+  into already grants **Read AND Write**, uniformly, on every graph that
+  tenant owns (``IsolationLayer::provision_tenant_graph_access``,
+  ``crates/eg-core/src/isolation.rs``). The engine's own ``check_access``
+  for a non-``System`` identity evaluates only ``Read``/``Write`` against
+  that role — there is no finer "read-only" vs "admin" tier reachable
+  through tenant-role membership at all. So there is no engine RBAC lever
+  this module could pull to make one tenant member "more admin" than
+  another via the SAME ``tenant:<slug>`` role it already grants everyone.
+* A genuinely distinct, narrower engine grant (e.g. an ``Admin``
+  ``RbacAction`` scoped to this tenant's own graphs) would require creating
+  a NEW role/grant via ``RbacAdmin.AddGrant`` — an action gated behind the
+  engine's ``security:admin`` Tier-2 capability, per this module's own
+  docstring above ("The pre-flight role-existence probe is not the
+  authorization boundary"). This module's admin-authority credential does
+  **not** hold that capability (that is precisely why its own read-only
+  probe, ``_tenant_role_exists``, so often gets denied for insufficient
+  privilege) — so this module has no authority to grant one even if it
+  tried, short of widening its own credential toward Tier-2/``System``,
+  which is exactly the boundary this module's docstring already refuses to
+  cross ("never grants ``System``/admin authority to an ordinary
+  principal").
+* Consequently, ``_admit`` sends the **identical** ``TenantPrincipal``
+  shape — ``role="Agent"``, the ordinary tenant role only — for every
+  principal it admits, admin-allowlisted or not; there is nothing for
+  ``_admit`` to differentiate. ``kg:admin`` in this deployment is
+  therefore a WebUI-local authorization concept only (which WebUI pages/
+  routes a browser session may reach — see ``rbac.py``/
+  ``WebUIAuthorizationMiddleware`` in ``server.py``), never an
+  engine-granted data-access tier. This is reported here, not silently
+  assumed, per this repository's "report entanglement rather than widen
+  the boundary" rule.
 """
 
 from __future__ import annotations
@@ -132,6 +228,14 @@ class TenantNotProvisionedError(RuntimeError):
     ACCESS_DENIED — exactly the silent-failure shape this module exists to
     avoid. Raised instead, naming what is missing, so the fix is "an
     operator provisions the tenant" and never "this module invents a role".
+
+    Only ever raised from a probe that actually ran and returned ``False`` —
+    see the module docstring's "The pre-flight role-existence probe is not
+    the authorization boundary" section for what happens when the probe
+    itself cannot run (denied for insufficient privilege rather than found
+    the role missing): admission is attempted anyway and the engine becomes
+    the authority, so this error is not raised on that path even for a
+    genuinely unprovisioned tenant.
     """
 
 
@@ -150,6 +254,77 @@ def _lock_for(key: tuple[str, str]) -> threading.Lock:
             lock = threading.Lock()
             _KEY_LOCKS[key] = lock
         return lock
+
+
+#: Substring of the engine's admin-capability denial
+#: (``epistemic-graph``'s ``src/server/access.rs::
+#: require_admin_capability_with_policy``: ``"ACCESS_DENIED: verified
+#: principal lacks admin capability required for '{action}'"`` — the same
+#: text a live pod reproduced for this exact probe: ``rbac.list() ->
+#: RuntimeError: ACCESS_DENIED: verified principal lacks admin capability
+#: required for 'security:admin'``). Matched literally against the raised
+#: exception chain, never guessed at, so the privilege-denial fallback below
+#: fires ONLY for this specific denial — a network failure, an unreachable
+#: engine, or any other ``EngineAdmissionUnavailableError`` must still fail
+#: closed. Mirrors ``knowledge_graph.core.placement_catalog``'s
+#: ``_ADMIN_CAPABILITY_DENIAL``/``_admin_capability_denied`` (same substring,
+#: same reasoning, same chain-walk shape) rather than importing that
+#: module-private helper across an unrelated subsystem.
+_ADMIN_CAPABILITY_DENIAL = 'lacks admin capability'
+
+
+def _admin_capability_denied(exc: BaseException | None) -> bool:
+    """True when ``exc`` (or a chained cause) is the engine's admin-capability
+    denial specifically — never a network error, an unrelated ACCESS_DENIED
+    (e.g. a scope failure, a different message entirely), or any other
+    reason the probe could not run. The denial is wrapped twice before it
+    reaches :func:`_tenant_role_exists`'s caller (``LiveRbacAdminClient.
+    existing_roles`` -> ``GrantApplicationError``, then this module's own
+    :class:`EngineAdmissionUnavailableError`), so the check walks the full
+    ``__cause__`` chain rather than the outermost message alone.
+    """
+
+    seen: set[int] = set()
+    current = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if _ADMIN_CAPABILITY_DENIAL in str(current):
+            return True
+        current = current.__cause__
+    return False
+
+
+def _session_expired_cause(exc: BaseException | None) -> bool:
+    """True when ``exc`` (or a chained cause) is a `SessionExpiredError` --
+    this deployment's OWN service credential ran out mid-call, not a genuine
+    authorization denial from the engine.
+
+    Distinguishes the two exactly the way :func:`_admin_capability_denied`
+    distinguishes "can't look" from "can't admit": it walks the full
+    ``__cause__`` chain, because `SessionExpiredError` is wrapped at least
+    once before it reaches :func:`ensure_tenant_admission` -- both
+    :func:`_tenant_role_exists` and :func:`_admit` convert every exception
+    they see, including this one, into :class:`EngineAdmissionUnavailableError`.
+
+    Matched by *type*, not by message substring (unlike
+    ``_ADMIN_CAPABILITY_DENIAL``): this module raises `SessionExpiredError`
+    itself and controls its exact type, so there is no opaque cross-process
+    string to match against. A genuine 401/403 denial from the engine is a
+    completely different exception (an ``ACCESS_DENIED``-shaped error, never
+    `SessionExpiredError`), so it never matches here and this retry path can
+    never turn a real authorization failure into a false success.
+    """
+
+    from agent_utilities.knowledge_graph.core.session import SessionExpiredError
+
+    seen: set[int] = set()
+    current = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, SessionExpiredError):
+            return True
+        current = current.__cause__
+    return False
 
 
 def _tenant_role_exists(tenant_slug: str) -> bool:
@@ -217,7 +392,21 @@ def _admit(tenant_slug: str, agent_id: str) -> None:
     from agent_utilities.security.tenant_admission_cli import run_tenant_admission
     from agent_utilities.security.tenant_rbac_admission import TenantPrincipal
 
-    principal = TenantPrincipal(agent_id=agent_id)
+    # `existing_roles=()` is an affirmative statement, not a default: a WebUI
+    # principal is a signed-in human whose authorization comes from their OIDC
+    # claims (kg:read / kg:write / kg:admin, normalized by
+    # `agent_utilities.security.request_identity`), NOT from the engine's own
+    # RBAC identity store. The only engine-side role such a principal ever
+    # holds is its tenant membership, which is exactly what this call grants.
+    # So there is no prior engine role set for `RegisterIdentity` to drop.
+    #
+    # This is deliberately NOT the same claim as "this principal is new". The
+    # one principal that DOES carry other engine roles is graph-os's own
+    # service identity (it holds `control:system`), and admitting that one is
+    # short-circuited in `provision_tenant_access` before this value is read
+    # -- see `tenant_rbac_admission`'s self-admission skip. Passing `()` here
+    # is therefore safe for every principal that actually reaches this line.
+    principal = TenantPrincipal(agent_id=agent_id, existing_roles=())
     try:
         result = run_tenant_admission(tenant_slug, [principal], apply=True)
     except Exception as exc:  # noqa: BLE001 - converted to our own error type
@@ -245,8 +434,22 @@ def _admit(tenant_slug: str, agent_id: str) -> None:
     )
 
 
-def _sync_ensure(tenant_slug: str, agent_id: str) -> None:
-    """The blocking check-and-admit critical section. Runs off the event loop."""
+def _sync_ensure(
+    tenant_slug: str, agent_id: str, *, bypass_cached_failure: bool = False
+) -> None:
+    """The blocking check-and-admit critical section. Runs off the event loop.
+
+    ``bypass_cached_failure`` skips the negative-outcome cache for this one
+    call only. Used exactly once, by :func:`ensure_tenant_admission`'s
+    reactive retry after a :class:`SessionExpiredError`-caused failure: that
+    failure reflects THIS module's own now-replaced service credential, not
+    the tenant's or engine's actual state, so it must not count against
+    ``_FAILURE_BACKOFF_SECONDS`` the way a genuine infra/provisioning failure
+    does — without this, the retry would immediately re-raise the very
+    exception it exists to recover from, since the first attempt already
+    wrote it into ``_FAILURES`` before the retry runs. The retry still
+    records its own fresh success/failure into the cache normally.
+    """
 
     key = (tenant_slug, agent_id)
     with _STATE_LOCK:
@@ -258,14 +461,36 @@ def _sync_ensure(tenant_slug: str, agent_id: str) -> None:
         with _STATE_LOCK:
             if key in _ADMITTED:
                 return
-            failure = _FAILURES.get(key)
+            failure = None if bypass_cached_failure else _FAILURES.get(key)
         if failure is not None:
             attempted_at, cached_exc = failure
             if time.monotonic() - attempted_at < _FAILURE_BACKOFF_SECONDS:
                 raise cached_exc
 
         try:
-            if not _tenant_role_exists(tenant_slug):
+            try:
+                role_missing = not _tenant_role_exists(tenant_slug)
+            except EngineAdmissionUnavailableError as probe_exc:
+                if not _admin_capability_denied(probe_exc):
+                    # Engine unreachable / RPC erroring — an infrastructure
+                    # problem, not a privilege problem. Fail closed exactly
+                    # as before; never attempt admission on unverified
+                    # engine health.
+                    raise
+                # "I can't look" is not "I can't admit" — proceed and let the
+                # engine's own, independently-authorized RegisterIdentity
+                # decide (see the module docstring). Do NOT synthesize a
+                # role_missing verdict from an unanswered question.
+                logger.warning(
+                    'tenant role probe for %r denied for insufficient '
+                    'privilege (agent_id=%s); proceeding directly to '
+                    'admission and letting the engine authorize it: %s',
+                    tenant_slug,
+                    agent_id,
+                    probe_exc,
+                )
+                role_missing = False
+            if role_missing:
                 raise TenantNotProvisionedError(
                     f'tenant role for {tenant_slug!r} does not exist yet — an '
                     'operator must provision this tenant (create its first '
@@ -287,92 +512,182 @@ def _sync_ensure(tenant_slug: str, agent_id: str) -> None:
 _SERVICE_SESSION: Any = None
 _SERVICE_SESSION_LOCK = threading.Lock()
 
+#: Renew this deployment's own service authority once its bounded credential
+#: has this many seconds or fewer left, rather than waiting for it to expire
+#: outright. **The measured Keycloak access-token TTL in this deployment is
+#: 300 seconds.** 60s (a fifth of that TTL) leaves headroom for the gap
+#: between this function's proactive check and the actual admission RPC --
+#: and for a request already in flight -- to complete under the credential it
+#: started with, rather than the two straddling the expiry instant. This
+#: margin cannot close that race entirely (an RPC slower than the margin
+#: itself can still straddle it); :func:`ensure_tenant_admission`'s reactive
+#: fallback covers the residual case.
+_SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS = 60
 
-def _service_authority() -> Any:
-    """This deployment's own verified graph authority, minted once per process.
 
-    Mirrors `kg_server._mint_process_session`: the identity provider issues a
+def _mint_service_authority() -> Any:
+    """Mint this deployment's own verified graph authority (never cached here).
+
+    Called only from :func:`_service_authority`, while holding
+    ``_SERVICE_SESSION_LOCK`` — either for the very first mint, or to replace
+    a cached session whose bounded credential has run out (or is within
+    :data:`_SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS` of doing so). Mirrors
+    `kg_server._mint_process_session`: the identity provider issues a
     bounded-expiry process token, which becomes the actor and session that
-    control-plane work runs under. Cached because minting it is a network round
-    trip and admission is on the connection path.
+    control-plane work runs under.
+    """
+
+    # In-process under graph-os, the ambient authority IS the right one and
+    # minting a second would be actively wrong.
+    #
+    # This dashboard runs as a graph-os co-service, on a thread that carries
+    # graph-os's verified actor and GraphSession for its whole lifetime. That
+    # principal is the one the engine's signer registry trusts, and the engine
+    # requires an admission's signer to BE the calling principal
+    # (`verify_register_identity_signature`, else SIGNER_TRUST_DENIED). So
+    # replacing it with a separately-minted broker identity would swap the one
+    # credential that can sign admission for one that cannot.
+    #
+    # The broker path below remains for a standalone deployment, where there is
+    # no ambient process authority to inherit. Re-deriving `current_session()`
+    # on every mint (rather than assuming it never changes once seen) means a
+    # renewal after the ambient authority itself rotates picks up graph-os's
+    # own fresh context instead of re-checking a stale snapshot of it.
+    from agent_utilities.knowledge_graph.core.session import current_session
+
+    ambient = current_session()
+    if ambient is not None and getattr(
+        getattr(ambient, 'actor', None), 'authenticated', False
+    ):
+        logger.debug(
+            'tenant admission will use the ambient process authority '
+            '(actor=%s); no separate broker identity is minted',
+            getattr(ambient.actor, 'actor_id', None),
+        )
+        return ambient
+
+    from agent_utilities.core.config import config
+    from agent_utilities.security.request_identity import (
+        acquire_process_identity_token,
+        mint_actor_from_token_sync,
+        mint_graph_session,
+    )
+
+    # The ADMIN BROKER credential, not a second process identity.
+    #
+    # `KG_ADMIN_BROKER_OAUTH2` is already provisioned for this deployment and
+    # exists precisely to let a frontend perform admin-capability work under
+    # its own principal instead of the caller's
+    # (CONCEPT:AU-OS.identity.idp-role-to-engine-capability-bridge). Using it
+    # here grants nothing new -- the alternative, `KG_AUTH_TOKEN_REF`/
+    # `KG_IDENTITY_OAUTH2`, is not configured for this pod at all, so a
+    # generic process identity would just fail differently.
+    #
+    # `_BrokerConfigView` mirrors `placement_catalog._broker_authority`: the
+    # broker's OAuth2 block rides the SAME `acquire_process_identity_token`
+    # resolver every other external process identity uses, so this is not a
+    # parallel trust mechanism.
+    oauth2 = getattr(config, 'kg_admin_broker_oauth2', None)
+    if not oauth2:
+        raise EngineAdmissionUnavailableError(
+            'no admin broker identity is configured for this deployment '
+            '(KG_ADMIN_BROKER_OAUTH2); tenant admission cannot be verified '
+            'without one'
+        )
+
+    class _BrokerConfigView:
+        kg_auth_token_ref = None
+        kg_identity_oauth2 = oauth2
+
+    token = acquire_process_identity_token(_BrokerConfigView())
+    actor = mint_actor_from_token_sync(token)
+    del token
+    session = mint_graph_session(actor)
+    session.engine_verified_context()
+    return session
+
+
+def _service_authority(*, refresh_after: Any = None) -> Any:
+    """This deployment's own verified graph authority, renewed before its
+    bounded credential expires rather than cached forever.
+
+    **Real behavior, replacing an earlier version of this docstring that
+    claimed "never expires on success":** this deployment's own service
+    credential (the broker OAuth2 token, or an inherited ambient process
+    authority carrying its own bounded expiry) has a finite lifetime — the
+    measured Keycloak access-token TTL in this deployment is 300 seconds — so
+    caching it indefinitely guaranteed eventual failure with no way to
+    recover short of a process restart. Renewal is two-layered:
+
+    * **Proactive** — every call checks the cached session's remaining TTL
+      (via ``ensure_authority_current(minimum_ttl_seconds=...)``) against
+      :data:`_SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS` before reusing it,
+      and mints a replacement once fewer than that many seconds remain,
+      rather than waiting for an actual expired-credential failure.
+    * **Reactive** (see :func:`ensure_tenant_admission`) — the proactive
+      check can still race a slow admission RPC, so a caller that gets a
+      `SessionExpiredError`-caused failure back anyway re-mints once, passing
+      the session that just failed as ``refresh_after``, and retries. This is
+      NOT the authorization boundary: a genuine ACCESS_DENIED from the engine
+      is never a `SessionExpiredError` and is therefore never matched or
+      retried into a false success — see :func:`_session_expired_cause`.
+
+    ``refresh_after`` lets a caller that already refreshed past the specific
+    session that failed for it reuse that fresher session instead of minting
+    a second time for the same underlying failure (see the concurrency note
+    below) — pass the exact session object that raised, never a session
+    identity/tenant pair, since only object identity distinguishes "still the
+    one that failed" from "already replaced by someone else".
+
+    Concurrency: the whole check-or-mint decision runs under
+    ``_SERVICE_SESSION_LOCK``, a plain, non-reentrant ``threading.Lock`` —
+    this file already uses the same shape for ``_STATE_LOCK``/``_KEY_LOCKS``,
+    and nothing here needs re-entrant or async-aware semantics: the lock is
+    only ever taken for this short, synchronous check-then-maybe-mint
+    section, never held across the `asyncio.to_thread`-dispatched admission
+    RPC itself (see :func:`ensure_tenant_admission`). Holding it across the
+    (rare, slow) mint — rather than releasing it before minting — is exactly
+    what collapses concurrent expiries onto exactly one mint: every other
+    caller blocks on the lock, and by the time each acquires it,
+    ``_SERVICE_SESSION`` is already the freshly minted one, is not identical
+    to that caller's ``refresh_after`` (or is comfortably within its TTL for
+    the proactive path), so it is reused without a second mint.
+
+    Unlike `kg_server._refresh_process_authority` /
+    `daemon.refresh_process_identity`, this function does not need a mutable
+    `CredentialLease` to renew a session in place: nothing in this module
+    keeps a long-lived raw reference to ``_SERVICE_SESSION.actor`` outside of
+    calls to this function itself (every caller re-fetches through this
+    accessor), so simply swapping the module global under the lock is
+    sufficient and simpler here — an in-flight caller that already fetched a
+    session before a swap keeps using that same, still-valid object; it is
+    never mutated out from under it.
 
     A failure here is an admission failure, not a silent downgrade to the
-    caller's identity -- falling back to the user's session is precisely the bug
-    this replaced, and it fails closed for every user rather than visibly for the
-    operator.
+    caller's identity -- falling back to the user's session is precisely the
+    bug this replaced, and it fails closed for every user rather than
+    visibly for the operator.
     """
 
     global _SERVICE_SESSION
+    from agent_utilities.knowledge_graph.core.session import SessionExpiredError
+
     with _SERVICE_SESSION_LOCK:
-        if _SERVICE_SESSION is not None:
-            return _SERVICE_SESSION
-
-        # In-process under graph-os, the ambient authority IS the right one and
-        # minting a second would be actively wrong.
-        #
-        # This dashboard runs as a graph-os co-service, on a thread that carries
-        # graph-os's verified actor and GraphSession for its whole lifetime. That
-        # principal is the one the engine's signer registry trusts, and the engine
-        # requires an admission's signer to BE the calling principal
-        # (`verify_register_identity_signature`, else SIGNER_TRUST_DENIED). So
-        # replacing it with a separately-minted broker identity would swap the one
-        # credential that can sign admission for one that cannot.
-        #
-        # The broker path below remains for a standalone deployment, where there is
-        # no ambient process authority to inherit.
-        from agent_utilities.knowledge_graph.core.session import current_session
-
-        ambient = current_session()
-        if ambient is not None and getattr(
-            getattr(ambient, 'actor', None), 'authenticated', False
-        ):
-            logger.debug(
-                'tenant admission will use the ambient process authority '
-                '(actor=%s); no separate broker identity is minted',
-                getattr(ambient.actor, 'actor_id', None),
-            )
-            _SERVICE_SESSION = ambient
-            return _SERVICE_SESSION
-
-        from agent_utilities.core.config import config
-        from agent_utilities.security.request_identity import (
-            acquire_process_identity_token,
-            mint_actor_from_token_sync,
-            mint_graph_session,
-        )
-
-        # The ADMIN BROKER credential, not a second process identity.
-        #
-        # `KG_ADMIN_BROKER_OAUTH2` is already provisioned for this deployment and
-        # exists precisely to let a frontend perform admin-capability work under
-        # its own principal instead of the caller's
-        # (CONCEPT:AU-OS.identity.idp-role-to-engine-capability-bridge). Using it
-        # here grants nothing new -- the alternative, `KG_AUTH_TOKEN_REF`/
-        # `KG_IDENTITY_OAUTH2`, is not configured for this pod at all, so a
-        # generic process identity would just fail differently.
-        #
-        # `_BrokerConfigView` mirrors `placement_catalog._broker_authority`: the
-        # broker's OAuth2 block rides the SAME `acquire_process_identity_token`
-        # resolver every other external process identity uses, so this is not a
-        # parallel trust mechanism.
-        oauth2 = getattr(config, 'kg_admin_broker_oauth2', None)
-        if not oauth2:
-            raise EngineAdmissionUnavailableError(
-                'no admin broker identity is configured for this deployment '
-                '(KG_ADMIN_BROKER_OAUTH2); tenant admission cannot be verified '
-                'without one'
-            )
-
-        class _BrokerConfigView:
-            kg_auth_token_ref = None
-            kg_identity_oauth2 = oauth2
-
-        token = acquire_process_identity_token(_BrokerConfigView())
-        actor = mint_actor_from_token_sync(token)
-        session = mint_graph_session(actor)
-        session.engine_verified_context()
-        _SERVICE_SESSION = session
-        return session
+        if _SERVICE_SESSION is not None and _SERVICE_SESSION is not refresh_after:
+            try:
+                _SERVICE_SESSION.ensure_authority_current(
+                    minimum_ttl_seconds=_SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS
+                )
+                return _SERVICE_SESSION
+            except SessionExpiredError:
+                logger.info(
+                    'cached tenant-admission service authority is within %ss '
+                    'of expiry (or already expired); minting a replacement '
+                    'before reuse',
+                    _SERVICE_AUTHORITY_RENEWAL_MARGIN_SECONDS,
+                )
+        _SERVICE_SESSION = _mint_service_authority()
+        return _SERVICE_SESSION
 
 
 async def ensure_tenant_admission(actor: Any, session: Any) -> None:
@@ -429,5 +744,36 @@ async def ensure_tenant_admission(actor: Any, session: Any) -> None:
     from agent_utilities.knowledge_graph.core.session import use_session
     from agent_utilities.security.brain_context import use_actor
 
-    with use_actor(service_session.actor), use_session(service_session):
-        await asyncio.to_thread(_sync_ensure, tenant_slug, agent_id)
+    try:
+        with use_actor(service_session.actor), use_session(service_session):
+            await asyncio.to_thread(_sync_ensure, tenant_slug, agent_id)
+    except EngineAdmissionUnavailableError as exc:
+        if not _session_expired_cause(exc):
+            # A real infra failure or a genuine engine denial -- never a
+            # stale-credential race. Propagate exactly as before; retrying
+            # this would risk turning a real authorization failure into a
+            # false success, which is worse than the bug this module fixes.
+            raise
+        # Reactive fallback: `_service_authority`'s proactive check said this
+        # session had comfortable TTL left, but it expired before (or during)
+        # this RPC anyway -- e.g. a slow admission round trip straddling the
+        # renewal margin, or a burst of concurrent requests all reading the
+        # same about-to-expire session before any of them noticed it was
+        # stale. Re-mint once, bypass the negative-outcome cache the failed
+        # attempt above just wrote (it reflects OUR now-replaced credential,
+        # not the tenant's or the engine's actual state -- see
+        # `_sync_ensure`'s `bypass_cached_failure`), and retry exactly once:
+        # a second failure here propagates for real rather than looping.
+        logger.warning(
+            'tenant admission RPC failed on an expired service session '
+            '(agent_id=%s tenant=%s); re-minting service authority and '
+            'retrying once: %s',
+            agent_id,
+            tenant_slug,
+            exc,
+        )
+        service_session = _service_authority(refresh_after=service_session)
+        with use_actor(service_session.actor), use_session(service_session):
+            await asyncio.to_thread(
+                _sync_ensure, tenant_slug, agent_id, bypass_cached_failure=True
+            )

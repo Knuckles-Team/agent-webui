@@ -3,6 +3,8 @@ from __future__ import annotations
 """Test API endpoints for agent-webui backend."""
 
 import asyncio
+import time
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import agent_webui.api_extensions as api_extensions
@@ -78,25 +80,62 @@ class TestGraphStatsEndpoint:
     """Test graph statistics endpoint."""
 
     def test_get_graph_stats_success(self, client, mock_graph_engine):
-        """Test successful graph stats retrieval."""
+        """Test successful graph stats retrieval.
+
+        FIX LANE Priority 1/2: `get_graph_stats` now unions the read across
+        every graph the real, middleware-minted test session may access
+        (tenant shard + commons -- `_accessible_graphs`, unmocked here so
+        this exercises the real resolution) rather than reading
+        `engine.backend.execute` once. `engine.query_cypher` (totals) and
+        `engine.graph_compute.sql_exec` (`by_type`) are mocked with a
+        `side_effect` keyed on the query TEXT / statement rather than a
+        fixed call-order sequence, since the union issues one call per
+        accessible graph -- order- and count-independent by construction.
+        Each graph reports the SAME per-call values below, so the summed
+        totals are an exact multiple of the number of accessible graphs.
+
+        BUG-PE-058: `by_type` is read through `engine.sql()`
+        (`QueryMixin.sql`, the read-only SQL surface) rather than the
+        write-capable `engine.graph_compute.sql_exec` -- `sql` is a
+        class-level `QueryMixin` method, so `MagicMock(spec=
+        IntelligenceGraphEngine)` auto-specs it like `query_cypher`, with
+        no extra manual attachment needed.
+        """
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             return_value=mock_graph_engine,
         ):
             mock_graph_engine.backend = MagicMock()
-            mock_graph_engine.backend.execute.side_effect = [
-                [{'count': 100}],  # total nodes
-                [{'count': 200}],  # total relationships
-                [{'count': 50}],  # Memory type
-                [{'count': 30}],  # Article type
+
+            def _query_cypher(cypher, params=None):
+                if 'count(n)' in cypher:
+                    return [{'count': 100}]
+                if 'count(r)' in cypher:
+                    return [{'count': 200}]
+                return []
+
+            mock_graph_engine.query_cypher.side_effect = _query_cypher
+            # FIX LANE Priority 2 (Defect 3): the real `nodes` SQL projection
+            # has no `type` column at all ("Schema error: No field named
+            # type", verified live) -- the node-class discriminator is
+            # `node_type` (`models.knowledge_graph.GRAPH_NODE_TYPE_PROPERTY`).
+            mock_graph_engine.sql.return_value = [
+                {'node_type': 'Memory', 'n': 50},
+                {'node_type': 'Article', 'n': 30},
             ]
 
             response = client.get('/api/enhanced/graph/stats')
             assert response.status_code == 200
             data = response.json()
-            assert data['total_nodes'] == 100
-            assert data['total_relationships'] == 200
+            graph_count = max(len(data.get('source_graphs') or []), 1)
+            assert data['total_nodes'] == 100 * graph_count
+            assert data['total_relationships'] == 200 * graph_count
             assert 'by_type' in data
+            assert data['by_type'] == {
+                'Memory': 50 * graph_count,
+                'Article': 30 * graph_count,
+            }
+            assert 'source_graphs' in data
 
     def test_get_graph_stats_no_engine(self, client):
         """Test graph stats when engine not initialized."""
@@ -111,41 +150,384 @@ class TestGraphStatsEndpoint:
             assert data['total_relationships'] == 0
 
 
+class TestGraphStatsConcurrency:
+    """PERF fix lane: `get_graph_stats`'s three aggregate calls (node count,
+    relationship count, `by_type` GROUP BY) now run CONCURRENTLY via
+    `asyncio.gather` instead of one after another. This proves the two
+    things a regression here could silently break:
+
+    1. Wall-clock now tracks the SLOWEST of the three calls, not their SUM
+       -- the entire justification for the change.
+    2. The ambient `GraphSession`/actor this request was verified under is
+       still visible inside all three calls despite them now running as
+       separate `asyncio.gather` tasks / `_SYNC_WORK_EXECUTOR` threads --
+       getting this wrong would be a silent authorization bug (the wrong,
+       or no, principal), which the fix lane's own instructions call out as
+       far worse than the latency being fixed. Each fake call below reads
+       `current_session()` from INSIDE the worker thread it actually runs
+       on (not the test's own thread) and records the actor id it sees --
+       exactly the failure mode a bare `ThreadPoolExecutor.submit()`
+       (dropping the ambient `contextvars.Context`) would produce.
+    """
+
+    def test_three_aggregate_calls_run_concurrently_with_session_intact(
+        self,
+    ):
+        import threading
+        import time
+
+        from agent_utilities.knowledge_graph.core.session import (
+            GraphSession,
+            current_session,
+            use_session,
+        )
+        from agent_utilities.security.brain_context import ActorContext
+
+        actor = ActorContext(
+            actor_id='concurrency-test-actor',
+            tenant_id='acme',
+            roles=('kg:read',),
+            authenticated=True,
+        )
+        graph_name = 'tenant__acme____commons__'
+        session = GraphSession(
+            actor=actor,
+            tenant='acme',
+            scopes=frozenset({'kg:read'}),
+            graph=graph_name,
+        )
+
+        call_delay = 0.2
+        lock = threading.Lock()
+        observed_actor_ids: list[str | None] = []
+        call_intervals: list[tuple[float, float]] = []
+
+        def _record_call() -> None:
+            start = time.monotonic()
+            sess = current_session()
+            with lock:
+                observed_actor_ids.append(
+                    sess.actor.actor_id if sess is not None else None
+                )
+            time.sleep(call_delay)
+            with lock:
+                call_intervals.append((start, time.monotonic()))
+
+        class _Engine:
+            def __init__(self) -> None:
+                self.backend = object()  # truthy; no attributes read on it
+
+            def for_graph(self, name: str) -> _Engine:
+                assert name == graph_name
+                return self
+
+            def query_cypher(
+                self, query: str, params: dict[str, Any] | None = None
+            ) -> list[dict[str, Any]]:
+                _record_call()
+                if 'count(n)' in query:
+                    return [{'count': 5}]
+                return [{'count': 7}]
+
+            def sql(self, statement: str) -> list[dict[str, Any]]:
+                # BUG-PE-058: `by_type` now calls `engine.sql()`
+                # (`QueryMixin.sql`) instead of `engine.graph_compute
+                # .sql_exec`.
+                _record_call()
+                return [{'node_type': 'Memory', 'n': 3}]
+
+        engine = _Engine()
+
+        def _fake_accessible_graphs(actor_arg: Any) -> list[str]:
+            assert actor_arg is not None
+            return [graph_name]
+
+        with (
+            patch.object(api_extensions, '_accessible_graphs', _fake_accessible_graphs),
+            patch(
+                'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+                return_value=engine,
+            ),
+        ):
+
+            async def _run() -> dict[str, Any]:
+                with use_session(session):
+                    return await api_extensions.get_graph_stats()
+
+            wall_start = time.monotonic()
+            result = asyncio.run(_run())
+            wall_elapsed = time.monotonic() - wall_start
+
+        assert result['available'] is True
+        assert result['total_nodes'] == 5
+        assert result['total_relationships'] == 7
+        assert result['by_type'] == {'Memory': 3}
+
+        # Context propagation: all three calls ran under the SAME actor
+        # this request was verified under -- never None, never a stray
+        # default/no-session identity.
+        assert observed_actor_ids == ['concurrency-test-actor'] * 3
+
+        # Concurrency, wall-clock proof: three genuinely serialized 0.2s
+        # calls take >= 0.6s; run concurrently, wall time tracks the
+        # SLOWEST single call. A 0.5s bound is well under the serialized
+        # floor and well above a single call, so this can only pass if the
+        # three calls actually overlapped.
+        assert wall_elapsed < 0.5, (
+            f'expected concurrent execution (~{call_delay}s), measured '
+            f'{wall_elapsed:.3f}s -- the three aggregate calls appear to '
+            'be serialized again'
+        )
+
+        # Concurrency, direct overlap proof (stronger than the wall-clock
+        # bound alone): at least two of the three recorded (start, end)
+        # intervals overlap in time.
+        assert len(call_intervals) == 3
+
+        def _overlaps(a: tuple[float, float], b: tuple[float, float]) -> bool:
+            return a[0] < b[1] and b[0] < a[1]
+
+        assert any(
+            _overlaps(call_intervals[i], call_intervals[j])
+            for i in range(3)
+            for j in range(i + 1, 3)
+        ), 'no two of the three aggregate calls overlapped in time'
+
+
+class TestGraphStatsByTypeDegrade:
+    """PERF fix lane 2: the OPTIONAL `by_type` breakdown must never be able
+    to 503 the whole `/graph/stats` response.
+
+    Root cause these tests lock down (measured live in-pod, 3/3
+    deterministic, against the production 25,118-row graph): the `by_type`
+    `GROUP BY` aggregate costs ~12-22s there, blows its own bounded
+    deadline, and `_invoke_governed_helper` reports that as
+    `HTTPException(503)`. `_by_type_call` re-raised every `HTTPException`
+    unconditionally, so the ONE failure mode that actually happens in
+    production defeated the fail-soft its own docstring promises -- and
+    took the two REQUIRED total-count aggregates (which had already
+    succeeded in ~1.2-1.6s) down with it. The dashboard's headline
+    Nodes/Edges numbers were unavailable purely because a secondary
+    breakdown was slow.
+    """
+
+    @staticmethod
+    def _engine(sql_delay: float) -> Any:
+        graph_name = 'tenant__acme____commons__'
+
+        class _GraphCompute:
+            def sql_exec(self, statement: str) -> list[dict[str, Any]]:
+                time.sleep(sql_delay)
+                return [{'node_type': 'Memory', 'n': 3}]
+
+        class _Engine:
+            def __init__(self) -> None:
+                self.backend = object()
+                self.graph_compute = _GraphCompute()
+
+            def for_graph(self, name: str) -> Any:
+                assert name == graph_name
+                return self
+
+            def query_cypher(
+                self, query: str, params: dict[str, Any] | None = None
+            ) -> list[dict[str, Any]]:
+                return [{'count': 5}] if 'count(n)' in query else [{'count': 7}]
+
+        return _Engine(), graph_name
+
+    @staticmethod
+    def _session(graph_name: str) -> Any:
+        from agent_utilities.knowledge_graph.core.session import GraphSession
+        from agent_utilities.security.brain_context import ActorContext
+
+        actor = ActorContext(
+            actor_id='by-type-degrade-actor',
+            tenant_id='acme',
+            roles=('kg:read',),
+            authenticated=True,
+        )
+        return GraphSession(
+            actor=actor,
+            tenant='acme',
+            scopes=frozenset({'kg:read'}),
+            graph=graph_name,
+        )
+
+    def _run(self, engine: Any, graph_name: str) -> dict[str, Any]:
+        from agent_utilities.knowledge_graph.core.session import use_session
+
+        session = self._session(graph_name)
+
+        def _fake_accessible_graphs(actor_arg: Any) -> list[str]:
+            assert actor_arg is not None
+            return [graph_name]
+
+        with (
+            patch.object(api_extensions, '_accessible_graphs', _fake_accessible_graphs),
+            patch(
+                'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+                return_value=engine,
+            ),
+        ):
+
+            async def _go() -> dict[str, Any]:
+                with use_session(session):
+                    return await api_extensions.get_graph_stats()
+
+            return asyncio.run(_go())
+
+    def test_by_type_budget_503_degrades_route_still_returns_totals(self):
+        """THE regression, stated in the exact terms the bug had: the
+        bounded-work budget reports a blown `by_type` deadline (and an
+        exhausted capacity) as `HTTPException(503)`, and that 503 must
+        degrade the breakdown rather than fail the route.
+
+        Pre-fix this test fails with a 503 out of `get_graph_stats` -- the
+        two required total counts, which succeeded, thrown away with it.
+        """
+        engine, graph_name = self._engine(sql_delay=0.0)
+
+        async def _budget_503(*args: Any, **kwargs: Any) -> Any:
+            raise api_extensions.HTTPException(status_code=503)
+
+        with patch.object(api_extensions, '_read_union_sql_group_counts', _budget_503):
+            result = self._run(engine, graph_name)
+
+        # The blocking requirement: the required aggregates are served.
+        assert result['available'] is True
+        assert result['total_nodes'] == 5
+        assert result['total_relationships'] == 7
+
+        # ...and the missing breakdown is reported as MISSING, never as an
+        # empty-but-complete one. `partial` False here would make "the
+        # breakdown timed out" indistinguishable from "this graph holds no
+        # typed nodes" -- the exact honesty failure this route exists to
+        # make impossible.
+        assert result['by_type'] == {}
+        assert result['partial'] is True
+        assert result['degraded_graphs'] == [graph_name]
+
+    def test_by_type_real_deadline_is_wired_and_degrades_end_to_end(self):
+        """The same degrade driven by the REAL deadline machinery rather
+        than a hand-thrown 503: a genuinely slow `sql_exec` against a
+        deliberately tiny `_GRAPH_STATS_BY_TYPE_DEADLINE_SECONDS`.
+
+        This is what proves the new constant is actually the value
+        `_by_type_call` passes to `_invoke_governed_helper` -- a knob that
+        silently was not read would leave the live route on the old 10s
+        budget and this test would hang past its bound and fail.
+        """
+        engine, graph_name = self._engine(sql_delay=1.0)
+
+        started = time.monotonic()
+        with patch.object(api_extensions, '_GRAPH_STATS_BY_TYPE_DEADLINE_SECONDS', 0.2):
+            result = self._run(engine, graph_name)
+        elapsed = time.monotonic() - started
+
+        assert result['total_nodes'] == 5
+        assert result['by_type'] == {}
+        assert result['partial'] is True
+        assert result['degraded_graphs'] == [graph_name]
+        assert elapsed < 0.9, (
+            f'route took {elapsed:.3f}s -- the patched 0.2s by_type deadline '
+            'does not appear to be the one actually used'
+        )
+
+    def test_by_type_non_503_http_error_still_propagates(self):
+        """The degrade is scoped to the bounded budget's own signal (503),
+        not a blanket `except HTTPException`. Any other HTTP status is a
+        differently-shaped failure and must still surface.
+        """
+        engine, graph_name = self._engine(sql_delay=0.0)
+
+        async def _boom(*args: Any, **kwargs: Any) -> Any:
+            raise api_extensions.HTTPException(status_code=501)
+
+        with patch.object(api_extensions, '_read_union_sql_group_counts', _boom):
+            with pytest.raises(api_extensions.HTTPException) as excinfo:
+                self._run(engine, graph_name)
+
+        assert excinfo.value.status_code == 501
+
+    def test_by_type_generic_failure_also_reports_degraded_graphs(self):
+        """`_by_type_call`'s pre-existing catch-all degrade had the same
+        honesty gap as the 503 one: it returned `({}, [], [])`, so an empty
+        `by_type` came back with `partial: False` -- indistinguishable from
+        a graph that genuinely holds no typed nodes. It now names the graphs
+        the breakdown failed to cover, exactly like the budget path.
+
+        Raised from `_read_union_sql_group_counts` itself, deliberately:
+        an exception from `sql_exec` is swallowed EARLIER, by
+        `_rows_per_accessible_graph`'s own per-graph fail-soft, and never
+        reaches this handler at all.
+        """
+        engine, graph_name = self._engine(sql_delay=0.0)
+
+        async def _boom(*args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError('sql surface unavailable')
+
+        with patch.object(api_extensions, '_read_union_sql_group_counts', _boom):
+            result = self._run(engine, graph_name)
+
+        assert result['total_nodes'] == 5
+        assert result['by_type'] == {}
+        assert result['partial'] is True
+        assert result['degraded_graphs'] == [graph_name]
+
+    def test_required_total_count_deadline_still_fails_the_route(self):
+        """The other half of the contract, unchanged: a REQUIRED aggregate
+        failing is a real backend failure and must still be a 503 -- it must
+        never be quietly degraded into a fake `0` the way the `by_type`
+        breakdown legitimately is.
+        """
+        engine, graph_name = self._engine(sql_delay=0.0)
+
+        async def _boom(*args: Any, **kwargs: Any) -> Any:
+            raise api_extensions.HTTPException(status_code=503)
+
+        with patch.object(api_extensions, '_read_union_scalar_sum', _boom):
+            with pytest.raises(api_extensions.HTTPException) as excinfo:
+                self._run(engine, graph_name)
+
+        assert excinfo.value.status_code == 503
+
+
 class TestGraphNodesEndpoint:
     """Test graph nodes endpoint."""
 
     def test_get_graph_nodes_success(self, client, mock_graph_engine):
-        """Nodes are projected as explicit scalar/function columns (`n.id`,
-        `properties(n)`) -- never the whole node object (`RETURN n`), which
-        the engine's Cypher parser rejects with `ValueError` for the same
-        anonymous/whole-object reason `get_graph_stats` already documents.
+        """Nodes come from `nodes_by_label` -- the engine's native, non-Cypher
+        id+properties fetch -- never `properties(n)` (the engine's Cypher
+        grammar has no function-call syntax beyond a fixed aggregate set plus
+        `type(r)`; `properties(n)` fails to parse and raises
+        `CypherEngineError`) and never the whole node object (`RETURN n`,
+        rejected for the same anonymous/whole-object reason `get_graph_stats`
+        already documents).
         """
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             return_value=mock_graph_engine,
         ):
             mock_graph_engine.backend = MagicMock()
-            mock_graph_engine.backend.execute.return_value = [
-                {
-                    'id': 'node1',
-                    'props': {
+            mock_graph_engine.backend.nodes_by_label.return_value = [
+                (
+                    'node1',
+                    {
                         'node_type': 'Memory',
                         'content': 'Test memory',
                         'importance': 0.8,
                     },
-                },
-                {
-                    'id': 'node2',
-                    'props': {
+                ),
+                (
+                    'node2',
+                    {
                         'node_type': 'Person',
                         'labels': ['Admin', 'Person'],
                         'title': 'Test Article',
                     },
-                },
-                {
-                    'id': 'node3',
-                    'props': {'type': 'Article', 'title': 'Not a cypher label'},
-                },
+                ),
+                ('node3', {'type': 'Article', 'title': 'Not a cypher label'}),
             ]
 
             response = client.get('/api/enhanced/graph/nodes')
@@ -169,27 +551,29 @@ class TestGraphNodesEndpoint:
             # `type`/`node_type`/`label`". Reporting it would claim a label that
             # `MATCH (n:Article)` does not match, so filtering by node_type would
             # disagree with the unfiltered list. It stays an ordinary property.
+            # `nodes_by_label` itself matches the BROADER index, but this is
+            # the UNFILTERED call (no `node_type` param), so nothing is
+            # excluded -- node3 stays in the list with `type` as an ordinary
+            # property, not a label.
             assert by_id['node3']['labels'] == []
             assert by_id['node3']['properties'] == {
                 'type': 'Article',
                 'title': 'Not a cypher label',
             }
 
-            query = mock_graph_engine.backend.execute.call_args[0][0]
-            assert 'RETURN n LIMIT' not in query
-            assert 'properties(n)' in query
-            assert 'n.id AS id' in query
+            args = mock_graph_engine.backend.nodes_by_label.call_args[0]
+            assert args == ('', 256)
 
     def test_get_graph_nodes_with_filter(self, client, mock_graph_engine):
-        """Test graph nodes with type filter -- the label filter still uses
-        `MATCH (n:Memory)`, but the RETURN clause is scalar/function-only."""
+        """Test graph nodes with type filter -- `nodes_by_label` is called
+        with the requested label, bounded by the same collection cap."""
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             return_value=mock_graph_engine,
         ):
             mock_graph_engine.backend = MagicMock()
-            mock_graph_engine.backend.execute.return_value = [
-                {'id': 'node1', 'props': {'node_type': 'Memory'}}
+            mock_graph_engine.backend.nodes_by_label.return_value = [
+                ('node1', {'node_type': 'Memory'})
             ]
 
             response = client.get('/api/enhanced/graph/nodes?node_type=Memory')
@@ -197,10 +581,49 @@ class TestGraphNodesEndpoint:
             data = response.json()
             assert len(data) == 1
 
-            query = mock_graph_engine.backend.execute.call_args[0][0]
-            assert 'MATCH (n:Memory)' in query
-            assert 'RETURN n LIMIT' not in query
-            assert 'properties(n)' in query
+            args = mock_graph_engine.backend.nodes_by_label.call_args[0]
+            assert args == ('Memory', 256)
+
+    def test_get_graph_nodes_excludes_broader_index_only_matches(
+        self, client, mock_graph_engine
+    ):
+        """`nodes_by_label` indexes the BROADER `type`/`node_type`/`label`/
+        `labels` write-path contract; Cypher's own `(n:Label)` predicate is
+        deliberately narrower (`node_type` + `labels[]` only). A node
+        matched only via a bare `type` property must not appear in a
+        node_type-filtered result -- `MATCH (n:Article)` would not have
+        matched it either."""
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.backend = MagicMock()
+            mock_graph_engine.backend.nodes_by_label.return_value = [
+                ('node1', {'node_type': 'Article'}),
+                ('node2', {'type': 'Article', 'title': 'broader-index-only match'}),
+            ]
+
+            response = client.get('/api/enhanced/graph/nodes?node_type=Article')
+            assert response.status_code == 200
+            data = response.json()
+            assert [n['id'] for n in data] == ['node1']
+
+    def test_get_graph_nodes_no_native_helper_fails_closed(
+        self, client, mock_graph_engine
+    ):
+        """A backend without the native `nodes_by_label` seam (e.g. a
+        GraphBackend implementation that doesn't provide it) degrades to an
+        explicit 503, never a silent/empty success."""
+        from agent_utilities.knowledge_graph.backends.base import GraphBackend
+
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.backend = MagicMock(spec=GraphBackend)
+
+            response = client.get('/api/enhanced/graph/nodes')
+            assert response.status_code == 503
 
     def test_get_graph_nodes_no_engine(self, client):
         """Test graph nodes when engine not initialized."""
@@ -220,13 +643,26 @@ class TestGraphRelationshipsEndpoint:
     def test_get_graph_relationships_success(
         self, client, mock_graph_engine, sample_graph_data
     ):
-        """Test successful graph relationships retrieval."""
+        """Test successful graph relationships retrieval.
+
+        FIX LANE Priority 1: the route now unions the read across every
+        accessible graph via `_read_union_cypher`, which calls
+        `engine.query_cypher` (`_graph_union_executor`) -- never
+        `engine.backend.execute` -- same primitive `get_graph_stats` already
+        exercises (`TestGraphStatsEndpoint.test_get_graph_stats_success`).
+        The real, middleware-minted test session may access more than one
+        graph (tenant shard + commons, unmocked here so this exercises the
+        real `_accessible_graphs` resolution) and a relationship row carries
+        no `id` column, so `read_union`'s id-dedup is a documented no-op for
+        every row here -- the SAME mocked row can legitimately come back
+        once per accessible graph. This asserts on content/shape, not a
+        graph-count-dependent row total.
+        """
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             return_value=mock_graph_engine,
         ):
-            mock_graph_engine.backend = MagicMock()
-            mock_graph_engine.backend.execute.return_value = [
+            mock_graph_engine.query_cypher.return_value = [
                 sample_graph_data['relationships'][0]
             ]
 
@@ -234,8 +670,11 @@ class TestGraphRelationshipsEndpoint:
             assert response.status_code == 200
             data = response.json()
             assert isinstance(data, list)
-            assert len(data) == 1
-            assert data[0]['type'] == 'REFERENCES'
+            assert len(data) >= 1
+            assert all(
+                row == {'source': 'node1', 'type': 'REFERENCES', 'target': 'node2'}
+                for row in data
+            )
 
     def test_get_graph_relationships_no_engine(self, client):
         """Test graph relationships when engine not initialized."""
@@ -433,6 +872,65 @@ class TestGraphQueryEndpoint:
         for query_data in dangerous_queries:
             response = client.post('/api/enhanced/graph/query', json=query_data)
             assert response.status_code == 400
+
+    def test_execute_cypher_forwards_the_query_text_under_the_query_keyword(
+        self, client, mock_graph_engine
+    ):
+        """Defect D investigation (FIX LANE 2): a live pod observation
+        reported ``/api/graph/query`` and ``/api/enhanced/graph/query`` both
+        500ing with ``UnsupportedToolFieldError: Tool 'graph_query' does not
+        accept field(s): query`` and attributed both to ``execute_cypher``
+        here.
+
+        That does NOT reproduce on this route.
+        ``/api/enhanced/graph/query`` (this app's own ``execute_cypher``,
+        mounted by ``server.py`` at ``app.include_router(enhanced_router,
+        prefix='/api/enhanced')``) calls ``engine.query_cypher`` -- the
+        native ``IntelligenceGraphEngine``/``QueryMixin`` method, whose
+        first parameter is literally named ``query`` (see
+        ``agent_utilities/knowledge_graph/orchestration/engine_query.py``)
+        -- DIRECTLY, never through the MCP ``graph_query`` TOOL's
+        ``_execute_tool``/field-validation dispatch that raises
+        ``UnsupportedToolFieldError`` (that dispatch, and its `cypher`-named
+        parameter, lives entirely in ``agent_utilities/mcp/kg_server.py``).
+        The frontend's three callers of this route
+        (``CypherReplView.tsx``, ``TemporalGraphView.tsx``,
+        ``GraphView.tsx``) all POST ``{"query": ...}`` -- exactly matching
+        what this route reads and forwards.
+
+        The plain (non-``/enhanced``) ``/api/graph/query`` route is NOT
+        served by this file at all -- it is mounted by
+        ``agent_utilities.gateway.graph_api.register_graph_routes`` ->
+        ``kg_server._mount_rest_routes`` -> ``graph_query_endpoint``, which
+        DOES forward the raw request body as ``**kwargs`` into
+        ``_execute_tool("graph_query", **body)`` and IS where a `query`
+        vs `cypher` field mismatch would actually raise
+        ``UnsupportedToolFieldError``. That file lives in
+        ``agent-utilities`` and is out of scope for this lane (owns only
+        ``agent_webui/api_extensions.py``); if the live defect is real it
+        needs a fix there, not here. This test is a regression guard so a
+        future "fix" does not rename this route's forwarded field to
+        ``cypher`` and break its actually-correct, frontend-verified
+        contract with the real ``QueryMixin.query_cypher(self, query, ...)``
+        signature.
+        """
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            with patch.object(
+                mock_graph_engine, 'query_cypher', return_value=[]
+            ) as mock_query_cypher:
+                response = client.post(
+                    '/api/enhanced/graph/query',
+                    json={'query': 'MATCH (n) RETURN n LIMIT 1', 'params': {}},
+                )
+
+        assert response.status_code == 200
+        assert mock_query_cypher.call_args.kwargs['query'] == (
+            'MATCH (n) RETURN n LIMIT 1'
+        )
+        assert 'cypher' not in mock_query_cypher.call_args.kwargs
 
 
 class TestKnowledgeBaseEndpoints:
@@ -928,11 +1426,37 @@ class TestCoverageExpansion:
             assert response.status_code == 500
 
     def test_hybrid_search_error(self, client, mock_graph_engine):
+        """A REAL backend failure must raise 503, not a fabricated `200 []`.
+
+        D-W6-10 (same class of fix as get_graph_nodes/get_graph_relationships/
+        list_workflows -- see `TestWorkflowsEndpointFailsHonestly`): this
+        route used to swallow ANY `search_hybrid` exception into a bare
+        `[]`, indistinguishable from a search that genuinely matched
+        nothing -- root cause of the observed live non-determinism (item C/F:
+        identical successive `/graph/search` calls returning 5 results then
+        0, because a transient per-call failure silently became a fake empty
+        result instead of a distinguishable error). This expectation was
+        stale (previously asserted 200 + []); see api_extensions.hybrid_search
+        for the fix.
+        """
         with patch(
             'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
             return_value=mock_graph_engine,
         ):
             mock_graph_engine.search_hybrid.side_effect = Exception('Search failed')
+            response = client.get('/api/enhanced/graph/search?query=test')
+            assert response.status_code == 503
+            assert response.json() != []
+
+    def test_hybrid_search_genuinely_empty_is_200(self, client, mock_graph_engine):
+        """A real search with zero matches still returns `200 []` -- the
+        D-W6-10 fix above must not turn a genuinely empty result set into a
+        false failure."""
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.search_hybrid.return_value = []
             response = client.get('/api/enhanced/graph/search?query=test')
             assert response.status_code == 200
             assert response.json() == []
@@ -1015,6 +1539,23 @@ class TestCoverageExpansion:
         with patch(
             'agent_webui.api_extensions._read_fleet_catalog',
             AsyncMock(return_value=None),
+        ):
+            response = client.get('/api/enhanced/skills')
+            assert response.status_code == 503
+
+    def test_list_skills_this_kind_unavailable_within_a_mapping_also_fails_closed(
+        self, client
+    ):
+        """Per-kind degradation (FIX LANE 2, Defect A): `_read_fleet_catalog`
+        now returns a MAPPING (never a bare `None`) once authority is
+        granted, with a per-kind `None` for a kind whose own read failed.
+        `list_skills` only ever requests the `skills` kind, so THAT kind
+        failing is equivalent to the old whole-catalog failure and must
+        still raise 503, not render `catalog['skills']` as if it were an
+        honest empty list."""
+        with patch(
+            'agent_webui.api_extensions._read_fleet_catalog',
+            AsyncMock(return_value={'skills': None}),
         ):
             response = client.get('/api/enhanced/skills')
             assert response.status_code == 503
