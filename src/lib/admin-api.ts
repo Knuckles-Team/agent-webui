@@ -75,11 +75,35 @@ export function fetchDaemonStatus(): Promise<GatewayResult<DaemonStatus>> {
 // per-tenant catalog is UDS-only), so the tenant list is derived from the
 // default graph + indexed sources rather than a fabricated multi-tenant table.
 
-/** Aggregate Knowledge-Graph statistics for a tenant/graph. */
+/** Headline Knowledge-Graph totals for a tenant/graph.
+ *
+ * `by_type` is deliberately NOT here. The per-type breakdown is a separate,
+ * far more expensive aggregate (measured 5.5-22.4s vs ~0.1-1.6s for these
+ * totals on the same 25k-node graph) and now has its own endpoint,
+ * `/enhanced/graph/node-types`, so a slow breakdown can never hold up or
+ * degrade the fast totals. */
 export interface GraphStats {
   total_nodes: number
   total_relationships: number
+  available?: boolean
+  /** Graphs that actually contributed to these totals. */
+  source_graphs?: string[]
+  /** Accessible graphs whose read failed and was skipped. */
+  degraded_graphs?: string[]
+  /** True when `degraded_graphs` is non-empty — these totals are incomplete. */
+  partial?: boolean
+}
+
+/** The real node-type distribution: one engine-side `GROUP BY node_type`. */
+export interface GraphNodeTypes {
   by_type: Record<string, number>
+  type_count: number
+  total_typed_nodes: number
+  truncated: boolean
+  available: boolean
+  source_graphs: string[]
+  degraded_graphs: string[]
+  partial: boolean
 }
 
 /** Indexed code source-systems (the ingested GitLab-style tenants). */
@@ -90,7 +114,24 @@ export interface CodeInstances {
 const graphStatsSchema: z.ZodType<GraphStats> = z.object({
   total_nodes: z.number(),
   total_relationships: z.number(),
+  // Kept, not stripped: the backend reports honestly when a union read skipped
+  // an accessible graph, and this schema used to discard that before any panel
+  // could render it — so a partial read looked authoritative.
+  available: z.boolean().optional(),
+  source_graphs: looseArray(z.string()).optional(),
+  degraded_graphs: looseArray(z.string()).optional(),
+  partial: z.boolean().optional(),
+})
+
+const graphNodeTypesSchema: z.ZodType<GraphNodeTypes> = z.object({
   by_type: z.record(z.string(), z.number()),
+  type_count: z.number(),
+  total_typed_nodes: z.number(),
+  truncated: z.boolean(),
+  available: z.boolean(),
+  source_graphs: looseArray(z.string()),
+  degraded_graphs: looseArray(z.string()),
+  partial: z.boolean(),
 })
 // D-WUI-23 — TenantsPanel: `sources.length` crashed because `fetchCodeInstances()`'s
 // caller only guarded `ok && data` (both true for a truthy-but-wrong-shaped `[]`/`{}`
@@ -103,6 +144,10 @@ const codeInstancesSchema: z.ZodType<CodeInstances> = z.object({
 
 export function fetchGraphStats(): Promise<GatewayResult<GraphStats>> {
   return apiGet<GraphStats>('/enhanced/graph/stats', graphStatsSchema)
+}
+
+export function fetchGraphNodeTypes(): Promise<GatewayResult<GraphNodeTypes>> {
+  return apiGet<GraphNodeTypes>('/enhanced/graph/node-types', graphNodeTypesSchema)
 }
 
 export function fetchCodeInstances(): Promise<GatewayResult<CodeInstances>> {

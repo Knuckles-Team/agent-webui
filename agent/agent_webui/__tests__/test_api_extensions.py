@@ -130,12 +130,85 @@ class TestGraphStatsEndpoint:
             graph_count = max(len(data.get('source_graphs') or []), 1)
             assert data['total_nodes'] == 100 * graph_count
             assert data['total_relationships'] == 200 * graph_count
-            assert 'by_type' in data
+            assert 'source_graphs' in data
+            # The breakdown is NOT part of this response any more, and the
+            # totals route must not even touch the (10-80x more expensive)
+            # SQL surface -- that decoupling is the fix, not a side effect.
+            assert 'by_type' not in data
+            mock_graph_engine.sql.assert_not_called()
+
+    def test_get_graph_node_types_is_a_real_aggregate(self, client, mock_graph_engine):
+        """The breakdown's own route: an engine-side `GROUP BY node_type`
+        over ALL nodes, summed across every graph the actor may read.
+
+        What this replaces was not an aggregate at all -- the dashboard's
+        "counts by type" was `GraphLegend` grouping the bounded 256-row
+        `/graph/nodes` page. Live, that summed to exactly 256 on a
+        25,121-node graph and named only the alphabetically-first labels
+        that fitted in the budget.
+        """
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.backend = MagicMock()
+            mock_graph_engine.sql.return_value = [
+                {'node_type': 'Memory', 'n': 50},
+                {'node_type': 'Article', 'n': 30},
+            ]
+
+            response = client.get('/api/enhanced/graph/node-types')
+            assert response.status_code == 200
+            data = response.json()
+            graph_count = max(len(data.get('source_graphs') or []), 1)
             assert data['by_type'] == {
                 'Memory': 50 * graph_count,
                 'Article': 30 * graph_count,
             }
-            assert 'source_graphs' in data
+            # Descending, so the shape of the distribution reads off the top.
+            assert list(data['by_type']) == ['Memory', 'Article']
+            assert data['type_count'] == 2
+            assert data['total_typed_nodes'] == 80 * graph_count
+            assert data['truncated'] is False
+            assert data['available'] is True
+            assert data['partial'] is False
+            # It really is a GROUP BY, not a page that got grouped.
+            statement = mock_graph_engine.sql.call_args[0][0]
+            assert 'GROUP BY node_type' in statement
+            assert 'COUNT(*)' in statement
+
+    def test_node_types_second_concurrent_caller_is_refused_not_queued(self):
+        """Single-flight admission. The aggregate holds one of only four
+        shared `_SYNC_WORK_EXECUTOR` slots for up to its 45s deadline, and a
+        caller-side timeout does not release that slot -- so a handful of
+        browsers could otherwise starve every other synchronous route. The
+        second caller is told so immediately rather than queued invisibly.
+        """
+        assert api_extensions._NODE_TYPE_SLOT.acquire(blocking=False) is True
+        try:
+
+            async def _go() -> Any:
+                return await api_extensions.get_graph_node_types()
+
+            with (
+                patch(
+                    'agent_webui.api_extensions.IntelligenceGraphEngine.get_active'
+                ) as get_active,
+                pytest.raises(api_extensions.HTTPException) as excinfo,
+            ):
+                asyncio.run(_go())
+        finally:
+            api_extensions._NODE_TYPE_SLOT.release()
+
+        assert excinfo.value.status_code == 503
+        # Refused BEFORE any engine work -- the point of admitting one at a
+        # time is that the second caller never charges an executor slot.
+        # (The detail string is deliberately opaque: `HTTPException` above
+        # replaces every message with a fixed public one.)
+        get_active.assert_not_called()
+        # And the slot is handed back, so the refusal is not self-perpetuating.
+        assert api_extensions._NODE_TYPE_SLOT.acquire(blocking=False) is True
+        api_extensions._NODE_TYPE_SLOT.release()
 
     def test_get_graph_stats_no_engine(self, client):
         """Test graph stats when engine not initialized."""
@@ -151,15 +224,15 @@ class TestGraphStatsEndpoint:
 
 
 class TestGraphStatsConcurrency:
-    """PERF fix lane: `get_graph_stats`'s three aggregate calls (node count,
-    relationship count, `by_type` GROUP BY) now run CONCURRENTLY via
-    `asyncio.gather` instead of one after another. This proves the two
-    things a regression here could silently break:
+    """PERF fix lane: `get_graph_stats`'s aggregate calls (node count,
+    relationship count) run CONCURRENTLY via `asyncio.gather` instead of one
+    after another. This proves the two things a regression here could
+    silently break:
 
-    1. Wall-clock now tracks the SLOWEST of the three calls, not their SUM
+    1. Wall-clock now tracks the SLOWEST of the calls, not their SUM
        -- the entire justification for the change.
     2. The ambient `GraphSession`/actor this request was verified under is
-       still visible inside all three calls despite them now running as
+       still visible inside both calls despite them now running as
        separate `asyncio.gather` tasks / `_SYNC_WORK_EXECUTOR` threads --
        getting this wrong would be a silent authorization bug (the wrong,
        or no, principal), which the fix lane's own instructions call out as
@@ -168,9 +241,13 @@ class TestGraphStatsConcurrency:
        on (not the test's own thread) and records the actor id it sees --
        exactly the failure mode a bare `ThreadPoolExecutor.submit()`
        (dropping the ambient `contextvars.Context`) would produce.
+
+    The `by_type` GROUP BY is no longer one of them: it moved to its own
+    route (`/graph/node-types`) precisely because it is 10-80x more
+    expensive, and `sql()` below asserts the totals route never calls it.
     """
 
-    def test_three_aggregate_calls_run_concurrently_with_session_intact(
+    def test_total_count_calls_run_concurrently_with_session_intact(
         self,
     ):
         import threading
@@ -230,11 +307,9 @@ class TestGraphStatsConcurrency:
                 return [{'count': 7}]
 
             def sql(self, statement: str) -> list[dict[str, Any]]:
-                # BUG-PE-058: `by_type` now calls `engine.sql()`
-                # (`QueryMixin.sql`) instead of `engine.graph_compute
-                # .sql_exec`.
-                _record_call()
-                return [{'node_type': 'Memory', 'n': 3}]
+                raise AssertionError(
+                    'the totals route must not run the expensive GROUP BY'
+                )
 
         engine = _Engine()
 
@@ -261,54 +336,52 @@ class TestGraphStatsConcurrency:
         assert result['available'] is True
         assert result['total_nodes'] == 5
         assert result['total_relationships'] == 7
-        assert result['by_type'] == {'Memory': 3}
+        assert 'by_type' not in result
 
-        # Context propagation: all three calls ran under the SAME actor
+        # Context propagation: both calls ran under the SAME actor
         # this request was verified under -- never None, never a stray
         # default/no-session identity.
-        assert observed_actor_ids == ['concurrency-test-actor'] * 3
+        assert observed_actor_ids == ['concurrency-test-actor'] * 2
 
-        # Concurrency, wall-clock proof: three genuinely serialized 0.2s
-        # calls take >= 0.6s; run concurrently, wall time tracks the
-        # SLOWEST single call. A 0.5s bound is well under the serialized
+        # Concurrency, wall-clock proof: two genuinely serialized 0.2s
+        # calls take >= 0.4s; run concurrently, wall time tracks the
+        # SLOWEST single call. A 0.35s bound is under the serialized
         # floor and well above a single call, so this can only pass if the
-        # three calls actually overlapped.
-        assert wall_elapsed < 0.5, (
+        # calls actually overlapped.
+        assert wall_elapsed < 0.35, (
             f'expected concurrent execution (~{call_delay}s), measured '
-            f'{wall_elapsed:.3f}s -- the three aggregate calls appear to '
+            f'{wall_elapsed:.3f}s -- the aggregate calls appear to '
             'be serialized again'
         )
 
         # Concurrency, direct overlap proof (stronger than the wall-clock
-        # bound alone): at least two of the three recorded (start, end)
-        # intervals overlap in time.
-        assert len(call_intervals) == 3
+        # bound alone): the two recorded (start, end) intervals overlap.
+        assert len(call_intervals) == 2
 
         def _overlaps(a: tuple[float, float], b: tuple[float, float]) -> bool:
             return a[0] < b[1] and b[0] < a[1]
 
-        assert any(
-            _overlaps(call_intervals[i], call_intervals[j])
-            for i in range(3)
-            for j in range(i + 1, 3)
-        ), 'no two of the three aggregate calls overlapped in time'
+        assert _overlaps(call_intervals[0], call_intervals[1]), (
+            'the two aggregate calls did not overlap in time'
+        )
 
 
 class TestGraphStatsByTypeDegrade:
-    """PERF fix lane 2: the OPTIONAL `by_type` breakdown must never be able
-    to 503 the whole `/graph/stats` response.
+    """A `by_type` breakdown that cannot be computed must SAY so.
 
-    Root cause these tests lock down (measured live in-pod, 3/3
-    deterministic, against the production 25,118-row graph): the `by_type`
-    `GROUP BY` aggregate costs ~12-22s there, blows its own bounded
-    deadline, and `_invoke_governed_helper` reports that as
-    `HTTPException(503)`. `_by_type_call` re-raised every `HTTPException`
-    unconditionally, so the ONE failure mode that actually happens in
-    production defeated the fail-soft its own docstring promises -- and
-    took the two REQUIRED total-count aggregates (which had already
-    succeeded in ~1.2-1.6s) down with it. The dashboard's headline
-    Nodes/Edges numbers were unavailable purely because a secondary
-    breakdown was slow.
+    Two separate things had to be true, and only one of them was. The
+    breakdown must not take the headline totals down with it -- now
+    structurally guaranteed, because they are different routes. And when it
+    does fail, the response must be distinguishable from a graph that
+    genuinely holds no typed nodes; an empty `by_type` with an empty
+    `degraded_graphs` is exactly the silently-degraded output this program
+    has now been bitten by four times.
+
+    Root cause context (measured live in-pod against the production graph):
+    the `GROUP BY` aggregate costs 5.5s uncontended and up to 22.4s under
+    load, so behind the old 10s deadline on `/graph/stats` it degraded on
+    essentially every production request -- which is why the dashboard's
+    visible "counts by type" came from somewhere else entirely.
     """
 
     @staticmethod
@@ -373,18 +446,42 @@ class TestGraphStatsByTypeDegrade:
 
             async def _go() -> dict[str, Any]:
                 with use_session(session):
+                    return await api_extensions.get_graph_node_types()
+
+            return asyncio.run(_go())
+
+    def _run_stats(self, engine: Any, graph_name: str) -> dict[str, Any]:
+        """Same harness, pointed at the TOTALS route -- the two are separate
+        endpoints now, and several of these tests exist to prove exactly that.
+        """
+        from agent_utilities.knowledge_graph.core.session import use_session
+
+        session = self._session(graph_name)
+
+        def _fake_accessible_graphs(actor_arg: Any) -> list[str]:
+            assert actor_arg is not None
+            return [graph_name]
+
+        with (
+            patch.object(api_extensions, '_accessible_graphs', _fake_accessible_graphs),
+            patch(
+                'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+                return_value=engine,
+            ),
+        ):
+
+            async def _go() -> dict[str, Any]:
+                with use_session(session):
                     return await api_extensions.get_graph_stats()
 
             return asyncio.run(_go())
 
-    def test_by_type_budget_503_degrades_route_still_returns_totals(self):
-        """THE regression, stated in the exact terms the bug had: the
-        bounded-work budget reports a blown `by_type` deadline (and an
-        exhausted capacity) as `HTTPException(503)`, and that 503 must
-        degrade the breakdown rather than fail the route.
-
-        Pre-fix this test fails with a 503 out of `get_graph_stats` -- the
-        two required total counts, which succeeded, thrown away with it.
+    def test_by_type_budget_503_degrades_and_says_so(self):
+        """THE regression: the bounded-work budget reports a blown deadline
+        (and an exhausted capacity) as `HTTPException(503)`, and that 503
+        must degrade the breakdown HONESTLY -- naming the graphs it failed
+        to cover -- rather than returning an empty distribution that reads
+        as complete.
         """
         engine, graph_name = self._engine(sql_delay=0.0)
 
@@ -394,19 +491,34 @@ class TestGraphStatsByTypeDegrade:
         with patch.object(api_extensions, '_read_union_sql_group_counts', _budget_503):
             result = self._run(engine, graph_name)
 
-        # The blocking requirement: the required aggregates are served.
-        assert result['available'] is True
-        assert result['total_nodes'] == 5
-        assert result['total_relationships'] == 7
-
-        # ...and the missing breakdown is reported as MISSING, never as an
+        # The missing breakdown is reported as MISSING, never as an
         # empty-but-complete one. `partial` False here would make "the
         # breakdown timed out" indistinguishable from "this graph holds no
         # typed nodes" -- the exact honesty failure this route exists to
         # make impossible.
+        assert result['available'] is True
         assert result['by_type'] == {}
         assert result['partial'] is True
         assert result['degraded_graphs'] == [graph_name]
+
+    def test_totals_route_is_unaffected_by_a_broken_breakdown(self):
+        """The structural half of the fix: `/graph/stats` cannot be harmed
+        by the breakdown at all any more, because it no longer computes it.
+        Pre-split, this same failure returned a 503 for the whole stats
+        response and discarded two total counts that had already succeeded.
+        """
+        engine, graph_name = self._engine(sql_delay=0.0)
+
+        async def _boom(*args: Any, **kwargs: Any) -> Any:
+            raise api_extensions.HTTPException(status_code=503)
+
+        with patch.object(api_extensions, '_read_union_sql_group_counts', _boom):
+            result = self._run_stats(engine, graph_name)
+
+        assert result['available'] is True
+        assert result['total_nodes'] == 5
+        assert result['total_relationships'] == 7
+        assert result['partial'] is False
 
     def test_by_type_real_deadline_is_wired_and_degrades_end_to_end(self):
         """The same degrade driven by the REAL deadline machinery rather
@@ -425,7 +537,6 @@ class TestGraphStatsByTypeDegrade:
             result = self._run(engine, graph_name)
         elapsed = time.monotonic() - started
 
-        assert result['total_nodes'] == 5
         assert result['by_type'] == {}
         assert result['partial'] is True
         assert result['degraded_graphs'] == [graph_name]
@@ -470,7 +581,6 @@ class TestGraphStatsByTypeDegrade:
         with patch.object(api_extensions, '_read_union_sql_group_counts', _boom):
             result = self._run(engine, graph_name)
 
-        assert result['total_nodes'] == 5
         assert result['by_type'] == {}
         assert result['partial'] is True
         assert result['degraded_graphs'] == [graph_name]
@@ -488,7 +598,7 @@ class TestGraphStatsByTypeDegrade:
 
         with patch.object(api_extensions, '_read_union_scalar_sum', _boom):
             with pytest.raises(api_extensions.HTTPException) as excinfo:
-                self._run(engine, graph_name)
+                self._run_stats(engine, graph_name)
 
         assert excinfo.value.status_code == 503
 
