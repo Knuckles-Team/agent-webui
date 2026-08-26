@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { buildModel, neighbourhood, neighbours, type Graph3DPayload } from '../model'
+import { sphereDetail } from '../scene'
 
 function payload(
   nodes: { id: string; type: string; name: string }[],
@@ -103,5 +104,19 @@ describe('neighbours', () => {
     const model = buildModel(parallel)
     expect(model.degree[0]).toBe(2)
     expect(neighbours(model, 0)).toEqual([1])
+  })
+})
+
+describe('sphereDetail', () => {
+  it('drops tessellation as the node count grows, and never below detail 0', () => {
+    // The renderer's one cost that scales with N. Detail 2 is 320 triangles
+    // per node, 1 is 80, 0 is 20 -- so these thresholds are what keeps the
+    // whole-graph triangle budget bounded instead of linear in node count.
+    expect(sphereDetail(0)).toBe(2)
+    expect(sphereDetail(800)).toBe(2)
+    expect(sphereDetail(801)).toBe(1)
+    expect(sphereDetail(20_000)).toBe(1)
+    expect(sphereDetail(20_001)).toBe(0)
+    expect(sphereDetail(5_000_000)).toBe(0)
   })
 })

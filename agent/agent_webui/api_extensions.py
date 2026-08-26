@@ -4476,6 +4476,13 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
         index_of: dict[str, int] = {}
         nodes: list[dict[str, Any]] = []
         edges: list[dict[str, Any]] = []
+        # The Cypher above is already a GROUP BY on exactly (source, type,
+        # target), so a repeated triple cannot come from the data -- it can
+        # only come from `_read_union_cypher` running the same query once per
+        # accessible graph. Left in, a repeat draws the same line twice at
+        # double additive brightness. Deduped here rather than in the renderer
+        # so the payload itself is what it claims to be.
+        seen_edges: set[tuple[str, str, str]] = set()
         truncated = False
 
         def intern(node_id: Any, node_type: Any, name: Any) -> int | None:
@@ -4508,6 +4515,14 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
             if source is None or target is None:
                 truncated = True
                 continue
+            key = (
+                str(row.get('s')),
+                str(row.get('rt')),
+                str(row.get('t')),
+            )
+            if key in seen_edges:
+                continue
+            seen_edges.add(key)
             weight = row.get('edge_count')
             edges.append(
                 {

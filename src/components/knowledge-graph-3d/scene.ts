@@ -4,50 +4,77 @@
  * fetching -- a plain class that owns a canvas, so it can be reasoned about
  * (and torn down) independently of the component that mounts it.
  *
- * ## Why points and line segments, not meshes
+ * ## Two draw calls for the whole graph
  *
- * The obvious way to draw a 3D graph is a sphere per node and a cylinder per
- * edge. That is also the way that stops being smooth at a few thousand nodes:
- * one `Object3D` per node means one draw call per node, plus a per-frame
- * matrix update and a scene-graph traversal for each. This scene instead
- * draws the ENTIRE graph in three draw calls, forever, regardless of node
- * count:
+ * The obvious way to draw a 3D graph is one `Mesh` per node and one per edge.
+ * That is also the way that stops being smooth at a few thousand nodes: a draw
+ * call, a matrix update and a scene-graph traversal each, every frame. This
+ * scene draws the entire graph in TWO:
  *
- *   1. `LineSegments` -- every edge, additively blended so dense regions glow.
- *   2. `Points` (halo pass) -- an oversized, soft, additive sprite per node.
- *   3. `Points` (core pass) -- the crisp node body, sharing pass 2's geometry.
+ *   1. `InstancedMesh` -- every node, one lit sphere instance each, with a
+ *      per-instance matrix (position + size) and a per-instance colour.
+ *   2. `LineSegments` -- every edge, additively blended so dense regions glow.
  *
- * Colour, size, and interaction STATE are per-vertex attributes, so
- * highlighting a neighbourhood or hiding two thirds of the graph is a buffer
- * write, not a scene rebuild. That is what makes selection feel instant.
+ * Interaction state -- hover, selection, the second-degree context ring, the
+ * relationship-type filter, the isolate mask -- is expressed by rewriting
+ * those per-instance matrices and colours, never by adding or removing
+ * objects. That is what makes selection feel instant.
+ *
+ * Sphere tessellation is chosen from the node count ([`sphereDetail`]): the
+ * per-instance triangle budget is the one cost that does scale with N, so a
+ * 25k-node graph gets a coarser sphere than a 2k-node one and the total stays
+ * bounded. At the sizes a node is actually drawn, the difference is invisible.
+ *
+ * ## Depth, and why it is fog + bloom rather than only lights
+ *
+ * A force-directed graph in 3D reads as flat unless something tells the eye
+ * which nodes are near. Three things do that here, in increasing cost:
+ * exponential fog (free, and the strongest single cue), lit spheres with a
+ * camera-follow key light (one draw call), and an `UnrealBloomPass` so bright
+ * nodes bleed light the way a real point source does. Depth of field
+ * (`BokehPass`) is available but OFF by default -- it is the one effect here
+ * that renders an extra depth pass per frame, and it makes a graph you are
+ * meant to read blurrier, not clearer, unless you are already focused on one
+ * node.
  *
  * ## Why picking is done in screen space, not with `Raycaster`
  *
- * `Raycaster` against `Points` needs a world-space `threshold`, which under a
- * perspective camera means the pick radius is generous when you are close and
- * useless when you are far. Projecting the visible nodes to NDC and taking the
- * nearest within a PIXEL radius is both cheaper (one pass of ~10 flops per
- * node, only on pointer move) and behaves the same at every zoom level. At the
+ * `Raycaster` against an `InstancedMesh` tests every instance's geometry.
+ * Projecting node CENTRES to NDC and taking the nearest within a PIXEL radius
+ * is far cheaper (~10 flops per node, only on pointer move) and behaves the
+ * same at every zoom level, where a world-space ray threshold does not. At the
  * live graph's ~2.2k connected nodes this costs microseconds; the linear scan
- * is the honest limit of this approach and is why the module doc for
- * `PICK_LINEAR_SCAN_LIMIT` says what it says.
+ * is the honest limit of this approach and is why the doc for
+ * [`PICK_LINEAR_SCAN_LIMIT`] says what it says.
  */
 
 import {
   AdditiveBlending,
+  AmbientLight,
   BufferAttribute,
   BufferGeometry,
   Color,
+  DirectionalLight,
+  DynamicDrawUsage,
+  FogExp2,
+  HemisphereLight,
+  IcosahedronGeometry,
+  InstancedMesh,
   LineBasicMaterial,
   LineSegments,
+  Matrix4,
+  MeshLambertMaterial,
   PerspectiveCamera,
-  Points,
   Scene,
-  ShaderMaterial,
   Vector3,
   WebGLRenderer,
 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js'
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 
 import type { Graph3DModel } from './model'
 
@@ -70,75 +97,55 @@ const PICK_RADIUS_PX = 14
  */
 const FOCUS_MIN_EXTENT = 42
 
-/** Per-node interaction state, encoded into the `aState` vertex attribute. */
-const STATE_NORMAL = 0
-const STATE_DIMMED = 1
-const STATE_NEIGHBOUR = 2
-const STATE_SELECTED = 3
-const STATE_HIDDEN = 4
+/**
+ * Interaction tier of one node, in increasing prominence.
+ *
+ * `NORMAL` is what every node is when nothing is focused -- distinct from
+ * `NEIGHBOUR`, which is a node's tier only BECAUSE something else is focused.
+ * Collapsing the two (the first version of this file did) made the resting
+ * graph render at highlight brightness and highlight size: every node bloomed,
+ * and the edges disappeared underneath them.
+ */
+const TIER_HIDDEN = 0
+const TIER_DIMMED = 1
+const TIER_CONTEXT = 2
+const TIER_NORMAL = 3
+const TIER_NEIGHBOUR = 4
+const TIER_SELECTED = 5
 
-const NODE_VERTEX_SHADER = /* glsl */ `
-  attribute vec3 aColor;
-  attribute float aSize;
-  attribute float aState;
-  uniform float uPixelRatio;
-  uniform float uSizeScale;
-  uniform float uViewportScale;
-  uniform float uMaxSize;
-  varying vec3 vColor;
-  varying float vAlpha;
+/** Instance scale multiplier per tier. */
+const TIER_SCALE = [0, 0.7, 0.8, 1.0, 1.2, 1.5]
+/**
+ * Colour multiplier per tier. The bloom threshold sits just under 1.0, so only
+ * the two focus tiers cross it -- "highlighted" and "glowing" are one signal.
+ */
+const TIER_GAIN = [0, 0.26, 0.55, 0.95, 1.45, 2.1]
 
-  void main() {
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    gl_Position = projectionMatrix * mvPosition;
-
-    float boost = 1.0;
-    float alpha = 1.0;
-    if (aState == ${STATE_DIMMED}.0)      { boost = 0.72; alpha = 0.16; }
-    else if (aState == ${STATE_NEIGHBOUR}.0) { boost = 1.35; alpha = 1.0; }
-    else if (aState == ${STATE_SELECTED}.0)  { boost = 2.05; alpha = 1.0; }
-    else if (aState == ${STATE_HIDDEN}.0)    { boost = 0.0;  alpha = 0.0; }
-
-    // Perspective size attenuation: nodes get smaller with distance the way
-    // geometry does, so the point cloud reads as a solid object rather than
-    // as flat confetti pinned to the screen.
-    // Perspective-correct: a node keeps a fixed size in WORLD units, so the
-    // point cloud reads as a solid object rather than as flat confetti pinned
-    // to the screen. uViewportScale is height / (2 * tan(fov/2)), recomputed
-    // on resize -- the standard projection of a world radius to pixels.
-    // Clamped: without a ceiling, flying the camera up to a hub turns its
-    // sprite into a screen-filling blur (and, on a software rasterizer, a
-    // fill-rate cliff). The clamp is what keeps a close-up readable.
-    float size = aSize * boost * uSizeScale * (uViewportScale / max(1.0, -mvPosition.z));
-    gl_PointSize = min(size, uMaxSize) * uPixelRatio;
-    vColor = aColor;
-    vAlpha = alpha;
-  }
-`
-
-const NODE_FRAGMENT_SHADER = /* glsl */ `
-  uniform float uCoreBias;
-  varying vec3 vColor;
-  varying float vAlpha;
-
-  void main() {
-    if (vAlpha <= 0.001) discard;
-    float d = length(gl_PointCoord - vec2(0.5));
-    if (d > 0.5) discard;
-    // Soft body with a brighter centre. uCoreBias picks which of the two
-    // passes this is: a wide, faint halo, or the crisp core on top of it.
-    float body = smoothstep(0.5, uCoreBias, d);
-    float core = pow(body, 2.2);
-    vec3 rgb = mix(vColor, vColor + vec3(0.55), core * 0.7);
-    gl_FragColor = vec4(rgb, body * vAlpha);
-  }
-`
+/**
+ * Sphere tessellation by node count. Icosahedron detail 2 is 320 triangles,
+ * detail 1 is 80, detail 0 is 20, so this keeps the whole graph inside a
+ * bounded triangle budget instead of letting it grow with N. The thresholds
+ * are set against how large a node is actually DRAWN: at the handful of
+ * pixels a node occupies in a whole-graph view, detail 1 is already
+ * indistinguishable from detail 2, and detail 2 is only worth its four-fold
+ * cost on a small graph you are looking at up close.
+ */
+export function sphereDetail(nodeCount: number): number {
+  if (nodeCount <= 800) return 2
+  if (nodeCount <= 20_000) return 1
+  return 0
+}
 
 export interface SceneCallbacks {
   onHover: (index: number | null, clientX: number, clientY: number) => void
   onSelect: (index: number | null) => void
   onExpand: (index: number) => void
   onStats: (fps: number, drawCalls: number) => void
+}
+
+export interface EffectSettings {
+  bloom: boolean
+  depthOfField: boolean
 }
 
 interface Tween {
@@ -160,41 +167,59 @@ export class Graph3DScene {
   private readonly container: HTMLElement
   private readonly callbacks: SceneCallbacks
 
-  private nodeGeometry = new BufferGeometry()
+  private composer: EffectComposer | null = null
+  private bloomPass: UnrealBloomPass | null = null
+  private bokehPass: BokehPass | null = null
+  private effects: EffectSettings = { bloom: true, depthOfField: false }
+
+  private nodeGeometry: IcosahedronGeometry | null = null
+  private readonly nodeMaterial: MeshLambertMaterial
+  private nodes: InstancedMesh | null = null
   private edgeGeometry = new BufferGeometry()
-  private halo: Points | null = null
-  private core: Points | null = null
   private lines: LineSegments | null = null
-  private readonly haloMaterial: ShaderMaterial
-  private readonly coreMaterial: ShaderMaterial
   private readonly edgeMaterial: LineBasicMaterial
+  private readonly keyLight: DirectionalLight
 
   private model: Graph3DModel | null = null
   private positions = new Float32Array(0)
   private targetPositions = new Float32Array(0)
   private baseColors = new Float32Array(0)
-  private state = new Float32Array(0)
+  private baseSizes = new Float32Array(0)
+  private tier = new Uint8Array(0)
   private visible: Uint8Array | null = null
+  /** `null` renders every relationship type. */
+  private relFilter: Set<string> | null = null
   private selected: number | null = null
   private hovered: number | null = null
+  private contextHops = 2
 
+  private readonly matrix = new Matrix4()
+  private readonly scratchColor = new Color()
   private tween: Tween | null = null
   private raf = 0
   private disposed = false
   private lastPointer: { x: number; y: number } | null = null
   private pointerDirty = false
   private downAt: { x: number; y: number; t: number } | null = null
-  private userEngaged = false
   private frames = 0
   private fpsSince = 0
   private settling = false
+  private userEngaged = false
 
   constructor(container: HTMLElement, callbacks: SceneCallbacks) {
     this.container = container
     this.callbacks = callbacks
 
-    this.renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    this.renderer = new WebGLRenderer({
+      antialias: true,
+      alpha: false,
+      powerPreference: 'high-performance',
+    })
+    // Capped at 1.5, not 2: this scene is fill-bound (two full-screen-ish
+    // passes of alpha-blended geometry plus, with bloom, five more), and on a
+    // HiDPI display a device ratio of 2 doubles every one of them for a
+    // difference nobody can see on a sphere a few pixels across.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
     this.renderer.setSize(container.clientWidth || 1, container.clientHeight || 1, false)
     const canvas = this.renderer.domElement
     canvas.style.width = '100%'
@@ -219,48 +244,49 @@ export class Graph3DScene {
     this.controls.minDistance = 8
     this.controls.maxDistance = 8_000
 
-    const uniforms = () => ({
-      uPixelRatio: { value: this.renderer.getPixelRatio() },
-      uSizeScale: { value: 1 },
-      uCoreBias: { value: 0.2 },
-      uViewportScale: { value: 800 },
-      uMaxSize: { value: 26 },
-    })
-    this.haloMaterial = new ShaderMaterial({
-      uniforms: {
-        ...uniforms(),
-        uSizeScale: { value: 2.0 },
-        uCoreBias: { value: 0.5 },
-        uMaxSize: { value: 54 },
-      },
-      vertexShader: NODE_VERTEX_SHADER,
-      fragmentShader: NODE_FRAGMENT_SHADER,
-      transparent: true,
-      depthWrite: false,
-      blending: AdditiveBlending,
-    })
-    this.coreMaterial = new ShaderMaterial({
-      uniforms: uniforms(),
-      vertexShader: NODE_VERTEX_SHADER,
-      fragmentShader: NODE_FRAGMENT_SHADER,
-      transparent: true,
-      depthWrite: false,
+    // Soft, low-contrast lighting: a graph is read by colour and position, so
+    // the shading is there to give the spheres volume, never to create dark
+    // sides that hide a node's category colour. The key light is parented to
+    // the camera so it always lights what you are looking at.
+    this.scene.add(new AmbientLight(0xffffff, 1.15))
+    this.scene.add(new HemisphereLight(0xa8c8ff, 0x20242e, 1.0))
+    this.keyLight = new DirectionalLight(0xffffff, 1.5)
+    this.keyLight.position.set(0.4, 0.8, 1)
+    this.camera.add(this.keyLight)
+    this.scene.add(this.camera)
+
+    // Lambert, not Standard. A node here is a matte, uniformly coloured
+    // sphere a few pixels across: physically-based shading buys a specular
+    // response nobody can see at that size and costs a full PBR fragment
+    // program per pixel. Measured on this environment's software rasterizer,
+    // the same scene went from 2 fps (Standard) to a multiple of that
+    // (Lambert) with no visible difference -- and the same fragment cost is
+    // what an integrated GPU pays too.
+    this.nodeMaterial = new MeshLambertMaterial({
+      // Instance colours multiply this, and the tier gain pushes selected /
+      // neighbour nodes above 1.0 -- which is exactly what the bloom pass
+      // thresholds on, so "highlighted" and "glowing" are the same signal.
+      color: 0xffffff,
+      toneMapped: false,
+      fog: true,
     })
     this.edgeMaterial = new LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: 1.0,
+      opacity: 1,
       depthWrite: false,
       blending: AdditiveBlending,
+      toneMapped: false,
+      fog: true,
     })
 
-    this.updateViewportScale()
     canvas.addEventListener('pointermove', this.onPointerMove)
     canvas.addEventListener('pointerdown', this.onPointerDown)
-    canvas.addEventListener('wheel', this.onWheel, { passive: true })
     canvas.addEventListener('pointerup', this.onPointerUp)
     canvas.addEventListener('pointerleave', this.onPointerLeave)
+    canvas.addEventListener('wheel', this.onWheel, { passive: true })
     canvas.addEventListener('dblclick', this.onDoubleClick)
+    this.buildComposer()
     this.loop(0)
   }
 
@@ -270,29 +296,97 @@ export class Graph3DScene {
     return w / h
   }
 
+  /**
+   * (Re)build the post-processing chain for the current effect settings.
+   *
+   * Rebuilt rather than toggled because `BokehPass` allocates its own depth
+   * render target; keeping a disabled one alive costs that memory for nothing.
+   * With every effect off there is no composer at all and the scene renders
+   * straight to the canvas -- one fewer full-screen blit.
+   */
+  private buildComposer(): void {
+    this.composer?.dispose()
+    this.composer = null
+    this.bloomPass = null
+    this.bokehPass = null
+    if (!this.effects.bloom && !this.effects.depthOfField) return
+
+    const w = this.container.clientWidth || 1
+    const h = this.container.clientHeight || 1
+    const composer = new EffectComposer(this.renderer)
+    composer.setPixelRatio(this.renderer.getPixelRatio())
+    composer.setSize(w, h)
+    composer.addPass(new RenderPass(this.scene, this.camera))
+    if (this.effects.bloom) {
+      // strength / radius / threshold. The threshold sits just under 1.0 so
+      // ONLY tier-boosted (selected, neighbour) nodes and the additive edge
+      // pile-up in dense regions bloom -- an unselected graph stays crisp.
+      // Half resolution: bloom IS a blur, so running its five downsample /
+      // upsample passes at half size is visually indistinguishable and a
+      // quarter of the fill cost -- the single change that decides whether
+      // this effect is affordable on an integrated GPU.
+      this.bloomPass = new UnrealBloomPass(
+        { x: w / 2, y: h / 2 } as unknown as ConstructorParameters<typeof UnrealBloomPass>[0],
+        0.62,
+        0.75,
+        0.92,
+      )
+      composer.addPass(this.bloomPass)
+    }
+    if (this.effects.depthOfField) {
+      this.bokehPass = new BokehPass(this.scene, this.camera, {
+        focus: 400,
+        aperture: 0.00035,
+        maxblur: 0.006,
+      })
+      composer.addPass(this.bokehPass)
+    }
+    composer.addPass(new OutputPass())
+    this.composer = composer
+  }
+
+  setEffects(effects: EffectSettings): void {
+    if (effects.bloom === this.effects.bloom && effects.depthOfField === this.effects.depthOfField) {
+      return
+    }
+    this.effects = { ...effects }
+    this.buildComposer()
+  }
+
   resize(): void {
     const w = this.container.clientWidth || 1
     const h = this.container.clientHeight || 1
     this.renderer.setSize(w, h, false)
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
-    this.updateViewportScale()
-  }
-
-  /** height / (2 tan(fov/2)) -- world units to pixels at unit depth. */
-  private updateViewportScale(): void {
-    const h = this.container.clientHeight || 1
-    const scale = h / (2 * Math.tan((this.camera.fov * Math.PI) / 360))
-    this.haloMaterial.uniforms.uViewportScale.value = scale
-    this.coreMaterial.uniforms.uViewportScale.value = scale
+    this.composer?.setSize(w, h)
+    this.bloomPass?.setSize(w / 2, h / 2)
   }
 
   setBackground(cssColor: string): void {
-    this.scene.background = new Color(cssColor)
+    const color = new Color(cssColor)
+    this.scene.background = color
+    // Exponential fog in the SAME colour as the background: distant nodes fade
+    // into the page rather than into a visible haze. The density is tuned
+    // against `layout.worker.ts`'s canonical world radius (300), so it means
+    // the same thing for every graph regardless of node count.
+    this.scene.fog = new FogExp2(color.getHex(), 0.00085)
   }
 
   setAutoRotate(on: boolean): void {
     this.controls.autoRotate = on
+  }
+
+  /** How many hops of context the selection reveals (the spec's 1-2 default). */
+  setContextHops(hops: number): void {
+    this.contextHops = Math.max(1, Math.min(3, hops))
+    this.applyState()
+  }
+
+  /** `null` renders every relationship type. */
+  setRelationshipFilter(types: Set<string> | null): void {
+    this.relFilter = types
+    this.applyState()
   }
 
   /**
@@ -307,52 +401,52 @@ export class Graph3DScene {
     this.positions = new Float32Array(n * 3)
     this.targetPositions = new Float32Array(n * 3)
     this.baseColors = new Float32Array(n * 3)
-    this.state = new Float32Array(n)
-    const sizes = new Float32Array(n)
+    this.baseSizes = new Float32Array(n)
+    this.tier = new Uint8Array(n)
 
-    const scratch = new Color()
     for (let i = 0; i < n; i += 1) {
-      scratch.set(typeColors[model.typeIndex[i]] ?? '#8899aa')
-      this.baseColors[i * 3] = scratch.r
-      this.baseColors[i * 3 + 1] = scratch.g
-      this.baseColors[i * 3 + 2] = scratch.b
+      this.scratchColor.set(typeColors[model.typeIndex[i]] ?? '#8899aa')
+      this.baseColors[i * 3] = this.scratchColor.r
+      this.baseColors[i * 3 + 1] = this.scratchColor.g
+      this.baseColors[i * 3 + 2] = this.scratchColor.b
       // sqrt(degree): a 200-edge hub reads as clearly bigger than a leaf
-      // without becoming a planet that hides everything behind it.
-      sizes[i] = 5.0 + 2.6 * Math.sqrt(model.degree[i] ?? 0)
+      // without becoming a planet that hides everything behind it. In the
+      // canonical world units the layout normalizes to (radius 300).
+      this.baseSizes[i] = 2.0 + 1.25 * Math.sqrt(model.degree[i] ?? 0)
     }
 
-    this.nodeGeometry.dispose()
-    this.nodeGeometry = new BufferGeometry()
-    this.nodeGeometry.setAttribute('position', new BufferAttribute(this.positions, 3))
-    this.nodeGeometry.setAttribute('aColor', new BufferAttribute(this.baseColors, 3))
-    this.nodeGeometry.setAttribute('aSize', new BufferAttribute(sizes, 1))
-    this.nodeGeometry.setAttribute('aState', new BufferAttribute(this.state, 1))
+    if (this.nodes) {
+      this.scene.remove(this.nodes)
+      this.nodes.dispose()
+    }
+    this.nodeGeometry?.dispose()
+    this.nodeGeometry = new IcosahedronGeometry(1, sphereDetail(n))
+    this.nodes = new InstancedMesh(this.nodeGeometry, this.nodeMaterial, Math.max(n, 1))
+    this.nodes.instanceMatrix.setUsage(DynamicDrawUsage)
+    this.nodes.count = n
+    // The bounding sphere is recomputed constantly while the layout settles,
+    // and a stale one culls the whole graph away mid-animation.
+    this.nodes.frustumCulled = false
+    for (let i = 0; i < n; i += 1) {
+      this.scratchColor.setRGB(this.baseColors[i * 3], this.baseColors[i * 3 + 1], this.baseColors[i * 3 + 2])
+      this.nodes.setColorAt(i, this.scratchColor)
+    }
+    this.scene.add(this.nodes)
 
     this.edgeGeometry.dispose()
     this.edgeGeometry = new BufferGeometry()
     this.edgeGeometry.setAttribute('position', new BufferAttribute(new Float32Array(model.edges.length * 6), 3))
     this.edgeGeometry.setAttribute('color', new BufferAttribute(new Float32Array(model.edges.length * 6), 3))
-
-    if (this.halo) this.scene.remove(this.halo)
-    if (this.core) this.scene.remove(this.core)
     if (this.lines) this.scene.remove(this.lines)
     this.lines = new LineSegments(this.edgeGeometry, this.edgeMaterial)
-    this.halo = new Points(this.nodeGeometry, this.haloMaterial)
-    this.core = new Points(this.nodeGeometry, this.coreMaterial)
-    // Draw order: edges under the halo under the core. `frustumCulled` off
-    // because the bounding sphere is recomputed constantly while the layout
-    // settles and a stale one culls the whole graph away mid-animation.
-    for (const object of [this.lines, this.halo, this.core]) {
-      object.frustumCulled = false
-      this.scene.add(object)
-    }
-    this.lines.renderOrder = 0
-    this.halo.renderOrder = 1
-    this.core.renderOrder = 2
+    this.lines.frustumCulled = false
+    this.lines.renderOrder = -1
+    this.scene.add(this.lines)
 
     this.selected = null
     this.hovered = null
     this.visible = null
+    this.userEngaged = false
     this.applyState()
   }
 
@@ -369,6 +463,7 @@ export class Graph3DScene {
     // origin, which looks like a glitch rather than an animation.
     if (this.positions.every((v) => v === 0)) {
       this.positions.set(next)
+      this.writeInstances()
       this.frameVisible()
     }
   }
@@ -391,41 +486,78 @@ export class Graph3DScene {
     this.applyState()
   }
 
-  /** Recompute every per-node/per-edge state attribute in one pass. */
+  /**
+   * Recompute every node's tier and push the whole graph's instance matrices,
+   * instance colours and edge buffers.
+   *
+   * Focus-plus-context: the focused node is `TIER_SELECTED`, its immediate
+   * neighbours `TIER_NEIGHBOUR`, and -- when `contextHops >= 2` -- their
+   * neighbours in turn are `TIER_CONTEXT`, a deliberately lighter, smaller
+   * ring that says "there is more this way" without competing with the
+   * first-degree answer. Everything else drops to `TIER_DIMMED`.
+   */
   private applyState(): void {
     const model = this.model
-    if (!model) return
+    if (!model || !this.nodes) return
     const n = model.nodes.length
     const focus = this.selected ?? this.hovered
-    const neighbourMask = new Uint8Array(focus == null ? 0 : n)
-    if (focus != null) {
-      for (let k = model.adjOffset[focus]; k < model.adjOffset[focus + 1]; k += 1) {
-        neighbourMask[model.adjTarget[k]] = 1
+
+    if (focus == null) {
+      this.tier.fill(TIER_NORMAL)
+    } else {
+      this.tier.fill(TIER_DIMMED)
+      // BFS to `contextHops`, keeping the hop number as the tier.
+      this.tier[focus] = TIER_SELECTED
+      let frontier = [focus]
+      for (let hop = 1; hop <= this.contextHops && frontier.length > 0; hop += 1) {
+        const next: number[] = []
+        const tierForHop = hop === 1 ? TIER_NEIGHBOUR : TIER_CONTEXT
+        for (const node of frontier) {
+          for (let k = model.adjOffset[node]; k < model.adjOffset[node + 1]; k += 1) {
+            const nb = model.adjTarget[k]
+            if (this.relFilter && !this.relFilter.has(model.edges[model.adjEdge[k]].r)) continue
+            if (this.tier[nb] !== TIER_DIMMED) continue
+            this.tier[nb] = tierForHop
+            next.push(nb)
+          }
+        }
+        frontier = next
       }
+    }
+    if (this.visible) {
+      for (let i = 0; i < n; i += 1) if (this.visible[i] === 0) this.tier[i] = TIER_HIDDEN
     }
 
-    for (let i = 0; i < n; i += 1) {
-      if (this.visible?.[i] === 0) {
-        this.state[i] = STATE_HIDDEN
-      } else if (focus == null) {
-        this.state[i] = STATE_NORMAL
-      } else if (i === focus) {
-        this.state[i] = STATE_SELECTED
-      } else if (neighbourMask[i] === 1) {
-        this.state[i] = STATE_NEIGHBOUR
-      } else {
-        this.state[i] = STATE_DIMMED
-      }
-    }
-    this.nodeGeometry.getAttribute('aState').needsUpdate = true
+    this.writeInstances()
     this.writeEdges()
   }
 
+  /** Push per-instance matrices and colours. One linear pass, no allocation. */
+  private writeInstances(): void {
+    const model = this.model
+    if (!model || !this.nodes) return
+    for (let i = 0; i < model.nodes.length; i += 1) {
+      const tier = this.tier[i]
+      const scale = this.baseSizes[i] * TIER_SCALE[tier]
+      this.matrix.makeScale(scale, scale, scale)
+      this.matrix.setPosition(this.positions[i * 3], this.positions[i * 3 + 1], this.positions[i * 3 + 2])
+      this.nodes.setMatrixAt(i, this.matrix)
+      const gain = TIER_GAIN[tier]
+      this.scratchColor.setRGB(
+        this.baseColors[i * 3] * gain,
+        this.baseColors[i * 3 + 1] * gain,
+        this.baseColors[i * 3 + 2] * gain,
+      )
+      this.nodes.setColorAt(i, this.scratchColor)
+    }
+    this.nodes.instanceMatrix.needsUpdate = true
+    if (this.nodes.instanceColor) this.nodes.instanceColor.needsUpdate = true
+  }
+
   /**
-   * Rebuild the edge position + colour buffers. Called on every state change
-   * and on every settled frame; it is one linear pass over the edge list with
-   * no allocation, which is why it can afford to run per-frame while the
-   * layout is still moving.
+   * Rebuild the edge position + colour buffers. One linear pass over the edge
+   * list with no allocation, which is why it can afford to run per-frame while
+   * the layout is still moving.
    */
   private writeEdges(): void {
     const model = this.model
@@ -437,7 +569,8 @@ export class Graph3DScene {
     const focus = this.selected ?? this.hovered
 
     for (let e = 0; e < model.edges.length; e += 1) {
-      const { s, t } = model.edges[e]
+      const edge = model.edges[e]
+      const { s, t } = edge
       const o = e * 6
       posArray[o] = this.positions[s * 3]
       posArray[o + 1] = this.positions[s * 3 + 1]
@@ -446,16 +579,26 @@ export class Graph3DScene {
       posArray[o + 4] = this.positions[t * 3 + 1]
       posArray[o + 5] = this.positions[t * 3 + 2]
 
-      const hidden = this.visible != null && (this.visible[s] === 0 || this.visible[t] === 0)
-      const incident = focus != null && (s === focus || t === focus)
+      let gain: number
+      if (
+        this.tier[s] === TIER_HIDDEN ||
+        this.tier[t] === TIER_HIDDEN ||
+        (this.relFilter && !this.relFilter.has(edge.r))
+      ) {
+        gain = 0
+      } else if (focus == null) {
+        gain = 1.15
+      } else if (s === focus || t === focus) {
+        gain = 2.0
+      } else if (this.tier[s] >= TIER_CONTEXT && this.tier[t] >= TIER_CONTEXT) {
+        // The context ring's own edges: present, clearly secondary.
+        gain = 0.3
+      } else {
+        gain = 0.05
+      }
+
       // An edge takes its colour from its endpoints, so a relationship reads
       // as a gradient between the two types it connects.
-      let gain = 1.05
-      if (hidden) gain = 0
-      else if (focus == null) gain = 1.05
-      else if (incident) gain = 1.7
-      else gain = 0.09
-
       for (let end = 0; end < 2; end += 1) {
         const node = end === 0 ? s : t
         colArray[o + end * 3] = this.baseColors[node * 3] * gain
@@ -484,7 +627,7 @@ export class Graph3DScene {
     this.frameVisible()
   }
 
-  /** Frame the visible nodes: fit the bounding sphere, then glide to it. */
+  /** Frame the visible nodes: fit them, then glide there. */
   frameVisible(): void {
     const model = this.model
     if (!model || model.nodes.length === 0) return
@@ -547,7 +690,7 @@ export class Graph3DScene {
     const direction = new Vector3().subVectors(this.camera.position, this.controls.target).normalize()
     if (direction.lengthSq() < 1e-6) direction.set(0.35, 0.25, 1).normalize()
     const radius = Math.max(extent, FOCUS_MIN_EXTENT)
-    const distance = (radius * 1.7) / Math.tan((this.camera.fov * Math.PI) / 360)
+    const distance = (radius * 2.1) / Math.tan((this.camera.fov * Math.PI) / 360)
     this.flyTo(target.clone().addScaledVector(direction, distance), target, 750)
   }
 
@@ -594,8 +737,7 @@ export class Graph3DScene {
     // point is the single most annoying thing a 3D graph can do.
     const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y)
     if (moved > 4 || performance.now() - down.t > 700) return
-    const hit = this.pick(event.clientX, event.clientY)
-    this.callbacks.onSelect(hit)
+    this.callbacks.onSelect(this.pick(event.clientX, event.clientY))
   }
 
   private onDoubleClick = (event: MouseEvent): void => {
@@ -617,15 +759,13 @@ export class Graph3DScene {
     let best: number | null = null
     let bestScore = PICK_RADIUS_PX * PICK_RADIUS_PX
     for (let i = 0; i < model.nodes.length; i += 1) {
-      if (this.visible?.[i] === 0) continue
+      if (this.tier[i] === TIER_HIDDEN) continue
       v.set(this.positions[i * 3], this.positions[i * 3 + 1], this.positions[i * 3 + 2])
       v.project(this.camera)
       if (v.z < -1 || v.z > 1) continue
       const sx = (v.x * 0.5 + 0.5) * rect.width
       const sy = (-v.y * 0.5 + 0.5) * rect.height
       const d2 = (sx - px) * (sx - px) + (sy - py) * (sy - py)
-      // Ties go to the node nearer the camera, so a hub in front is not
-      // stolen by a leaf behind it.
       if (d2 < bestScore) {
         bestScore = d2
         best = i
@@ -658,7 +798,7 @@ export class Graph3DScene {
         this.positions[i] += delta * 0.14
         moved += Math.abs(delta)
       }
-      this.nodeGeometry.getAttribute('position').needsUpdate = true
+      this.writeInstances()
       this.writeEdges()
       if (moved < this.positions.length * 0.01) this.settling = false
     }
@@ -673,7 +813,20 @@ export class Graph3DScene {
     }
 
     this.controls.update()
-    this.renderer.render(this.scene, this.camera)
+    // Count draw calls for the WHOLE frame, post-processing included. Three's
+    // default per-render reset would otherwise report only the composer's
+    // last pass (1), which reads as "the graph costs one draw call" -- true
+    // of the graph, false of the frame.
+    this.renderer.info.autoReset = false
+    this.renderer.info.reset()
+    if (this.bokehPass) {
+      // Focus on whatever the camera is orbiting, so depth of field always
+      // agrees with what the viewer has centred rather than a fixed plane.
+      const uniforms = this.bokehPass.materialBokeh.uniforms
+      uniforms.focus.value = this.camera.position.distanceTo(this.controls.target)
+    }
+    if (this.composer) this.composer.render()
+    else this.renderer.render(this.scene, this.camera)
 
     this.frames += 1
     if (now - this.fpsSince >= 500) {
@@ -690,15 +843,16 @@ export class Graph3DScene {
     const canvas = this.renderer.domElement
     canvas.removeEventListener('pointermove', this.onPointerMove)
     canvas.removeEventListener('pointerdown', this.onPointerDown)
-    canvas.removeEventListener('wheel', this.onWheel)
     canvas.removeEventListener('pointerup', this.onPointerUp)
     canvas.removeEventListener('pointerleave', this.onPointerLeave)
+    canvas.removeEventListener('wheel', this.onWheel)
     canvas.removeEventListener('dblclick', this.onDoubleClick)
     this.controls.dispose()
-    this.nodeGeometry.dispose()
+    this.composer?.dispose()
+    this.nodes?.dispose()
+    this.nodeGeometry?.dispose()
+    this.nodeMaterial.dispose()
     this.edgeGeometry.dispose()
-    this.haloMaterial.dispose()
-    this.coreMaterial.dispose()
     this.edgeMaterial.dispose()
     this.renderer.dispose()
     canvas.remove()

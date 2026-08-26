@@ -16,7 +16,7 @@ import { Boxes } from 'lucide-react'
 
 import { nodeTypeColor } from '../knowledge-graph/theme-colors'
 import type { Graph3DModel } from './model'
-import { Graph3DScene } from './scene'
+import { Graph3DScene, type EffectSettings } from './scene'
 import type { LayoutProgress, LayoutRequest } from './layout.worker'
 
 export interface Graph3DCanvasProps {
@@ -31,6 +31,12 @@ export interface Graph3DCanvasProps {
   autoRotate: boolean
   /** Increment to re-frame the camera on the currently visible nodes. */
   frameToken: number
+  /** Post-processing: bloom on by default, depth of field off by default. */
+  effects: EffectSettings
+  /** How many hops of focus-plus-context the selection reveals (1-3). */
+  contextHops: number
+  /** `null` renders every relationship type; otherwise only these. */
+  relationshipFilter: Set<string> | null
 }
 
 interface HoverState {
@@ -59,6 +65,9 @@ export function Graph3DCanvas({
   visibleMask,
   autoRotate,
   frameToken,
+  effects,
+  contextHops,
+  relationshipFilter,
 }: Graph3DCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const sceneRef = useRef<Graph3DScene | null>(null)
@@ -177,6 +186,18 @@ export function Graph3DCanvas({
   useEffect(() => {
     sceneRef.current?.setAutoRotate(autoRotate)
   }, [autoRotate])
+
+  useEffect(() => {
+    sceneRef.current?.setEffects(effects)
+  }, [effects])
+
+  useEffect(() => {
+    sceneRef.current?.setContextHops(contextHops)
+  }, [contextHops])
+
+  useEffect(() => {
+    sceneRef.current?.setRelationshipFilter(relationshipFilter)
+  }, [relationshipFilter])
 
   useEffect(() => {
     if (frameToken > 0) sceneRef.current?.frameVisible()
