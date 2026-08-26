@@ -122,6 +122,17 @@ const TIER_SCALE = [0, 0.7, 0.8, 1.0, 1.2, 1.5]
 const TIER_GAIN = [0, 0.26, 0.55, 0.95, 1.45, 2.1]
 
 /**
+ * Colour + scale multiplier applied to a node when `emphasis` is set and the
+ * node is NOT in the emphasized set — e.g. a cluster's siblings once it has
+ * been expanded in place. Deliberately lighter than `TIER_DIMMED`'s 0.26: a
+ * collapsed sibling should still read as "part of the graph, just not what
+ * you are looking at", not vanish into the fog the way an unrelated node
+ * during focus-plus-context does.
+ */
+const EMPHASIS_DIM_GAIN = 0.45
+const EMPHASIS_DIM_SCALE = 0.82
+
+/**
  * Sphere tessellation by node count. Icosahedron detail 2 is 320 triangles,
  * detail 1 is 80, detail 0 is 20, so this keeps the whole graph inside a
  * bounded triangle budget instead of letting it grow with N. The thresholds
@@ -134,6 +145,20 @@ export function sphereDetail(nodeCount: number): number {
   if (nodeCount <= 800) return 2
   if (nodeCount <= 20_000) return 1
   return 0
+}
+
+/**
+ * The default per-node radius, in the canonical world units the layout
+ * normalizes to: sqrt(degree), so a 200-edge hub reads as clearly bigger
+ * than a leaf without becoming a planet that hides everything behind it.
+ * Exported so `lodGraph.ts` can size a scope's LEAF nodes (real graph nodes
+ * inside an expanded cluster) identically to the plain, non-LOD view —
+ * `setModel`'s `sizeOverride` replaces this for every node in a scope, so
+ * matching it exactly for the leaf entries is what keeps "the same product,
+ * zoomed" true at the node level, not just the cluster level.
+ */
+export function defaultNodeSize(degree: number): number {
+  return 2.0 + 1.25 * Math.sqrt(degree)
 }
 
 export interface SceneCallbacks {
@@ -187,6 +212,15 @@ export class Graph3DScene {
   private baseSizes = new Float32Array(0)
   private tier = new Uint8Array(0)
   private visible: Uint8Array | null = null
+  /**
+   * `null` disables emphasis (default: every node renders at its normal
+   * tier gain, unchanged from before this field existed). Non-null: `1`
+   * renders at normal gain, `0` is scaled by `EMPHASIS_DIM_GAIN` — used by
+   * the LOD view to recede a collapsed cluster's siblings when one cluster
+   * expands in place, without hiding them (`setVisibility` still does
+   * that). Orthogonal to `tier`: both apply, emphasis multiplies on top.
+   */
+  private emphasis: Uint8Array | null = null
   /** `null` renders every relationship type. */
   private relFilter: Set<string> | null = null
   private selected: number | null = null
@@ -393,8 +427,16 @@ export class Graph3DScene {
    * Install a graph. `typeColors` is one `#rrggbb` per entry of
    * `model.types`, resolved by the caller from the app's theme so this file
    * never owns a palette of its own.
+   *
+   * `sizeOverride`, when given, replaces the default degree-derived radius
+   * for EVERY node (one entry per `model.nodes`, same world units the
+   * default formula produces). The LOD view uses this to size a cluster
+   * pseudo-node by its `node_count` instead of its (structural,
+   * inter-cluster) degree, which would otherwise make a thousand-node
+   * cluster with two inter-cluster edges look like a leaf. Omitted, this is
+   * pixel-for-pixel the original degree-based sizing.
    */
-  setModel(model: Graph3DModel, typeColors: string[]): void {
+  setModel(model: Graph3DModel, typeColors: string[], sizeOverride?: Float32Array): void {
     this.model = model
     const n = model.nodes.length
 
@@ -403,6 +445,7 @@ export class Graph3DScene {
     this.baseColors = new Float32Array(n * 3)
     this.baseSizes = new Float32Array(n)
     this.tier = new Uint8Array(n)
+    this.emphasis = null
 
     for (let i = 0; i < n; i += 1) {
       this.scratchColor.set(typeColors[model.typeIndex[i]] ?? '#8899aa')
@@ -412,7 +455,7 @@ export class Graph3DScene {
       // sqrt(degree): a 200-edge hub reads as clearly bigger than a leaf
       // without becoming a planet that hides everything behind it. In the
       // canonical world units the layout normalizes to (radius 300).
-      this.baseSizes[i] = 2.0 + 1.25 * Math.sqrt(model.degree[i] ?? 0)
+      this.baseSizes[i] = sizeOverride ? (sizeOverride[i] ?? 2.0) : defaultNodeSize(model.degree[i] ?? 0)
     }
 
     if (this.nodes) {
@@ -472,6 +515,19 @@ export class Graph3DScene {
   setVisibility(mask: Uint8Array | null): void {
     this.visible = mask
     this.applyState()
+  }
+
+  /**
+   * `null` disables emphasis (every node at normal gain — unchanged
+   * default). Otherwise a per-node 0/1 mask: `0` entries render dimmed and
+   * slightly smaller (see `EMPHASIS_DIM_GAIN`/`_SCALE`) without being
+   * hidden. Used by the LOD view so a cluster's siblings visibly recede,
+   * rather than vanish, while it is expanded.
+   */
+  setEmphasis(mask: Uint8Array | null): void {
+    this.emphasis = mask
+    this.writeInstances()
+    this.writeEdges()
   }
 
   setSelection(index: number | null): void {
@@ -538,11 +594,12 @@ export class Graph3DScene {
     if (!model || !this.nodes) return
     for (let i = 0; i < model.nodes.length; i += 1) {
       const tier = this.tier[i]
-      const scale = this.baseSizes[i] * TIER_SCALE[tier]
+      const emphasized = !this.emphasis || this.emphasis[i] !== 0
+      const scale = this.baseSizes[i] * TIER_SCALE[tier] * (emphasized ? 1 : EMPHASIS_DIM_SCALE)
       this.matrix.makeScale(scale, scale, scale)
       this.matrix.setPosition(this.positions[i * 3], this.positions[i * 3 + 1], this.positions[i * 3 + 2])
       this.nodes.setMatrixAt(i, this.matrix)
-      const gain = TIER_GAIN[tier]
+      const gain = TIER_GAIN[tier] * (emphasized ? 1 : EMPHASIS_DIM_GAIN)
       this.scratchColor.setRGB(
         this.baseColors[i * 3] * gain,
         this.baseColors[i * 3 + 1] * gain,
@@ -595,6 +652,10 @@ export class Graph3DScene {
         gain = 0.3
       } else {
         gain = 0.05
+      }
+
+      if (this.emphasis && (this.emphasis[s] === 0 || this.emphasis[t] === 0)) {
+        gain *= EMPHASIS_DIM_GAIN
       }
 
       // An edge takes its colour from its endpoints, so a relationship reads

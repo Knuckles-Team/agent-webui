@@ -1,0 +1,529 @@
+/**
+ * @file Graph3DLodView.tsx
+ * @description The level-of-detail 3D knowledge-graph view: the SAME
+ * renderer `Graph3DView.tsx` uses (`Graph3DCanvas` → `Graph3DScene`, two
+ * draw calls, instanced meshes, bloom, DOF, focus-plus-context, hover,
+ * click-to-pin, relationship filter — all unmodified), but fed by
+ * `useLodExplorer` instead of one `GET /api/enhanced/graph/graph3d` fetch.
+ *
+ * ## Why a separate view rather than a mode toggle on `Graph3DView`
+ *
+ * `Graph3DView` answers "show me the connected core" with one fetch and one
+ * `Graph3DModel`. This view answers a different question — "show me the
+ * TOP of a graph too large to fetch at all, and let me drill in" — with a
+ * server-paced, progressively-tiled, expandable HIERARCHY. The two data
+ * flows are different enough (see `useLodExplorer.ts`'s file doc) that
+ * folding them into one component's state machine would obscure both. What
+ * they share — the canvas, the interaction feel, the effect toggles — is
+ * shared by construction: both hand `Graph3DCanvas` a `Graph3DModel` built
+ * by `buildModel`, so a cluster pseudo-node gets hover/click/focus-plus-
+ * context/bloom for free, with zero cluster-aware code in `scene.ts` beyond
+ * the two small additive hooks (`sizeOverride`, `setEmphasis`) documented in
+ * `lodGraph.ts`'s file doc.
+ *
+ * ## What "the same product, zoomed" means here
+ *
+ * A cluster pseudo-node is just a `Graph3DNode` with a bigger radius
+ * (`node_count`-derived, not degree-derived — `lodGraph.ts`). Hovering,
+ * clicking, isolating, filtering by relationship type, all work on it
+ * exactly as they would on a real node, because the renderer cannot tell
+ * the difference. The one LOD-specific interaction is expand-on-demand:
+ * double-click (or the side panel's "Expand" button) fetches a cluster's
+ * children and folds them into the SAME rendered scene in place of its
+ * pseudo-node (`useLodExplorer.expand`), the camera glides to the new
+ * region (`followIndex` → `selected`, which the existing `focusNode` effect
+ * already flies to), and the region's former siblings recede — dimmed, not
+ * hidden — via `emphasisMask`.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Boxes, Crosshair, Eye, Filter, Layers, Orbit, RefreshCw, ScanSearch, Sparkles, Undo2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { z } from 'zod'
+
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { fetchValidated, looseArray } from '@/lib/api-validation'
+import { Graph3DCanvas } from '@/components/knowledge-graph-3d/Graph3DCanvas'
+import { neighbourhood, neighbours } from '@/components/knowledge-graph-3d/model'
+import type { EffectSettings } from '@/components/knowledge-graph-3d/scene'
+import { NodeTypeBreakdown, type NodeTypeBreakdownData } from '@/components/knowledge-graph/NodeTypeBreakdown'
+import { cssColorToHex, nodeTypeColor, useIsDarkMode } from '@/components/knowledge-graph/theme-colors'
+import { MockLodTransport } from '@/lib/kg-lod/mockTransport'
+import { useLodExplorer } from '@/lib/kg-lod/useLodExplorer'
+
+/**
+ * The transport swap point. `MockLodTransport` (`mockTransport.ts`) is what
+ * lets this view run today, ahead of VIZ-1/VIZ-2 landing — see that file's
+ * doc. Once the real routes exist and have been confirmed against this
+ * lane's `contract.ts`, replace this with `new HttpLodTransport()`
+ * (`httpTransport.ts`); nothing else in this file, `useLodExplorer.ts`, or
+ * `lodGraph.ts` needs to change.
+ */
+const LOD_TRANSPORT = new MockLodTransport()
+
+/** Every graph the engine knows, same convention `graph3d` uses for its own `source_graphs`. */
+const LOD_GRAPH_SCOPE: string[] = []
+
+const HOP_CHOICES = [1, 2, 3] as const
+const DEFAULT_HOPS = 2
+
+const nodeTypeBreakdownSchema: z.ZodType<NodeTypeBreakdownData> = z.object({
+  by_type: z.record(z.string(), z.number()),
+  type_count: z.number(),
+  total_typed_nodes: z.number(),
+  truncated: z.boolean(),
+  available: z.boolean(),
+  source_graphs: looseArray(z.string()),
+  degraded_graphs: looseArray(z.string()),
+  partial: z.boolean(),
+})
+
+const numberFormat = new Intl.NumberFormat()
+
+function backgroundHex(isDark: boolean): string {
+  if (typeof window === 'undefined') return isDark ? '#0a0d14' : '#f6f7fb'
+  const token = window.getComputedStyle(document.documentElement).getPropertyValue('--background')
+  return cssColorToHex(token, isDark ? '#0a0d14' : '#f6f7fb')
+}
+
+export default function Graph3DLodView() {
+  const isDark = useIsDarkMode()
+  const explorer = useLodExplorer({ transport: LOD_TRANSPORT, graph: LOD_GRAPH_SCOPE })
+  const { scope } = explorer
+  const model = scope.model
+
+  const [breakdown, setBreakdown] = useState<NodeTypeBreakdownData | null>(null)
+  const [breakdownLoading, setBreakdownLoading] = useState(true)
+  const [breakdownError, setBreakdownError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<number | null>(null)
+  const [revealed, setRevealed] = useState<Set<number> | null>(null)
+  const [hops, setHops] = useState<(typeof HOP_CHOICES)[number]>(DEFAULT_HOPS)
+  const [autoRotate, setAutoRotate] = useState(true)
+  const [bloom, setBloom] = useState(true)
+  const [depthOfField, setDepthOfField] = useState(false)
+  const [hiddenRelTypes, setHiddenRelTypes] = useState<Set<string>>(() => new Set())
+  const [highlightType, setHighlightType] = useState<string | null>(null)
+  const [frameToken, setFrameToken] = useState(0)
+  const [background, setBackground] = useState(() => backgroundHex(isDark))
+
+  useEffect(() => {
+    setBackground(backgroundHex(isDark))
+  }, [isDark])
+
+  // A tile landing, an expand, or a collapse all reshape `model` (new node
+  // indices throughout — `buildModel` is rebuilt from scratch every time,
+  // see `lodGraph.ts`), so any index-keyed local selection state from the
+  // PREVIOUS shape is meaningless against the new one.
+  useEffect(() => {
+    setSelected(null)
+    setRevealed(null)
+  }, [model])
+
+  // The camera follows the newest expansion: `followIndex` is an index into
+  // the JUST-UPDATED `scope`, and selecting it reuses the canvas's existing
+  // `focusNode` effect (see `Graph3DCanvas`'s `selected` effect) rather than
+  // this view inventing a second camera-move path.
+  useEffect(() => {
+    if (explorer.followIndex != null) setSelected(explorer.followIndex)
+  }, [explorer.followIndex])
+
+  useEffect(() => {
+    let cancelled = false
+    setBreakdownLoading(true)
+    fetchValidated('/api/enhanced/graph/node-types', nodeTypeBreakdownSchema)
+      .then((data) => {
+        if (cancelled) return
+        setBreakdown(data)
+        setBreakdownError(null)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setBreakdown(null)
+        setBreakdownError(error instanceof Error ? error.message : String(error))
+      })
+      .finally(() => {
+        if (!cancelled) setBreakdownLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const effects: EffectSettings = useMemo(() => ({ bloom, depthOfField }), [bloom, depthOfField])
+
+  const relationshipFilter = useMemo(() => {
+    if (hiddenRelTypes.size === 0) return null
+    return new Set(model.relTypes.filter((type) => !hiddenRelTypes.has(type)))
+  }, [model, hiddenRelTypes])
+
+  const visibleMask = useMemo(() => {
+    if (!revealed && !highlightType) return null
+    const mask = new Uint8Array(model.nodes.length)
+    if (revealed) {
+      for (const index of revealed) mask[index] = 1
+    } else {
+      mask.fill(1)
+    }
+    if (highlightType) {
+      for (let i = 0; i < mask.length; i += 1) {
+        if (model.nodes[i].type !== highlightType) mask[i] = 0
+      }
+    }
+    return mask
+  }, [model, revealed, highlightType])
+
+  const isolate = useCallback(() => {
+    if (selected == null) return
+    const mask = neighbourhood(model, selected, hops)
+    const next = new Set<number>()
+    for (let i = 0; i < mask.length; i += 1) if (mask[i] === 1) next.add(i)
+    setRevealed(next)
+    setFrameToken((token) => token + 1)
+  }, [model, selected, hops])
+
+  const showAll = useCallback(() => {
+    setRevealed(null)
+    setHighlightType(null)
+    setFrameToken((token) => token + 1)
+  }, [])
+
+  const toggleRelType = useCallback((type: string) => {
+    setHiddenRelTypes((current) => {
+      const next = new Set(current)
+      if (next.has(type)) next.delete(type)
+      else next.add(type)
+      return next
+    })
+  }, [])
+
+  const selectedNode = selected != null ? model.nodes[selected] : null
+  const selectedMeta = selected != null ? scope.meta[selected] : null
+  const selectedNeighbours = useMemo(() => {
+    if (selected == null) return []
+    return neighbours(model, selected)
+      .map((index) => ({ index, node: model.nodes[index], degree: model.degree[index] }))
+      .sort((a, b) => b.degree - a.degree)
+  }, [model, selected])
+
+  const onExpandDoubleClick = useCallback(
+    (index: number) => {
+      const meta = scope.meta[index]
+      const node = model.nodes[index]
+      if (!meta || meta.kind !== 'cluster' || !meta.clusterId) {
+        toast.info('Nothing further to expand here', { description: `${node?.name ?? 'This node'} is a real node, not a cluster.` })
+        return
+      }
+      explorer.expand(meta.clusterId).then((outcome) => {
+        if (outcome === 'no-children') {
+          toast.info('Nothing inside this cluster', { description: `${node.name} has no members to reveal.` })
+        }
+      }).catch(() => undefined)
+    },
+    [scope, model, explorer],
+  )
+
+  const expandSelected = useCallback(() => {
+    if (!selectedMeta?.clusterId) return
+    explorer.expand(selectedMeta.clusterId).catch(() => undefined)
+  }, [selectedMeta, explorer])
+
+  const collapseSelected = useCallback(() => {
+    if (!selectedMeta?.clusterId) return
+    explorer.collapse(selectedMeta.clusterId)
+  }, [selectedMeta, explorer])
+
+  const clusterCount = scope.meta.filter((m) => m.kind === 'cluster').length
+  const leafCount = scope.meta.filter((m) => m.kind === 'leaf').length
+
+  return (
+    <div className="flex h-full flex-col gap-4 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold">
+            <Layers className="h-6 w-6" /> Knowledge Graph 3D — LOD
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            The graph at scale: clusters at the top, sized by member count. Double-click a cluster (or hover it and
+            press Expand) to drill in — its children fold into view, the camera follows, and the rest of the graph
+            recedes without disappearing.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Switch checked={autoRotate} onCheckedChange={setAutoRotate} aria-label="Auto-rotate" />
+            <Orbit className="h-3.5 w-3.5" /> Drift
+          </label>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Switch checked={bloom} onCheckedChange={setBloom} aria-label="Bloom" />
+            <Sparkles className="h-3.5 w-3.5" /> Bloom
+          </label>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Switch checked={depthOfField} onCheckedChange={setDepthOfField} aria-label="Depth of field" />
+            Depth of field
+          </label>
+          <Button variant="outline" size="sm" onClick={explorer.reload}>
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Reload
+          </Button>
+          <Button variant="outline" size="sm" onClick={explorer.reset} disabled={explorer.expandedIds.size === 0}>
+            <Undo2 className="mr-1.5 h-3.5 w-3.5" /> Collapse all
+          </Button>
+        </div>
+      </div>
+
+      {explorer.error ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Could not load</CardTitle>
+            <CardDescription>{explorer.error}</CardDescription>
+          </CardHeader>
+        </Card>
+      ) : null}
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">
+        <Card className="relative min-h-[440px] overflow-hidden p-0">
+          {explorer.rootLoading ? (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 text-sm text-muted-foreground backdrop-blur-sm">
+              <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Reading the top level…
+            </div>
+          ) : null}
+          <Graph3DCanvas
+            model={model}
+            isDark={isDark}
+            background={background}
+            selected={selected}
+            onSelect={setSelected}
+            onExpand={onExpandDoubleClick}
+            visibleMask={visibleMask}
+            autoRotate={autoRotate}
+            frameToken={frameToken}
+            effects={effects}
+            contextHops={hops}
+            relationshipFilter={relationshipFilter}
+            sizeOverride={scope.sizeHints}
+            emphasisMask={explorer.emphasisMask}
+            fixedPositions={scope.fixedPositions}
+          />
+          <div className="absolute left-3 top-3 flex flex-wrap items-center gap-1.5">
+            <Badge variant="secondary" className="font-mono text-[10px]">
+              {numberFormat.format(clusterCount)} clusters
+            </Badge>
+            {leafCount > 0 ? (
+              <Badge variant="secondary" className="font-mono text-[10px]">
+                {numberFormat.format(leafCount)} real nodes
+              </Badge>
+            ) : null}
+            <Badge variant="secondary" className="font-mono text-[10px]">
+              {numberFormat.format(model.edges.length)} edges in view
+            </Badge>
+            {explorer.expandedIds.size > 0 ? (
+              <Badge variant="outline" className="text-[10px]">
+                {explorer.expandedIds.size} cluster{explorer.expandedIds.size === 1 ? '' : 's'} expanded
+              </Badge>
+            ) : null}
+            {explorer.pending.size > 0 ? (
+              <Badge variant="outline" className="text-[10px]">
+                <RefreshCw className="mr-1 h-3 w-3 animate-spin" /> loading {explorer.pending.size}
+              </Badge>
+            ) : null}
+          </div>
+          <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={isolate}
+              disabled={selected == null}
+              title="Show only this node's neighbourhood"
+            >
+              <ScanSearch className="mr-1.5 h-3.5 w-3.5" /> Isolate
+            </Button>
+            <div className="flex overflow-hidden rounded-md border bg-background/80 backdrop-blur">
+              {HOP_CHOICES.map((choice) => (
+                <button
+                  key={choice}
+                  type="button"
+                  onClick={() => setHops(choice)}
+                  title="How many hops of context a selection reveals"
+                  className={`px-2 py-1 text-[11px] transition-colors ${
+                    hops === choice ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+                  }`}
+                >
+                  {choice} hop{choice > 1 ? 's' : ''}
+                </button>
+              ))}
+            </div>
+            <Button size="sm" variant="secondary" onClick={showAll} disabled={!revealed && !highlightType}>
+              <Eye className="mr-1.5 h-3.5 w-3.5" /> Show all
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setFrameToken((token) => token + 1)}>
+              <Crosshair className="mr-1.5 h-3.5 w-3.5" /> Re-frame
+            </Button>
+          </div>
+        </Card>
+
+        <div className="flex min-h-0 flex-col gap-4">
+          {selectedNode && selected != null && selectedMeta ? (
+            <Card className="min-h-0 flex-1">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  {selectedMeta.kind === 'cluster' ? <Boxes className="h-4 w-4" /> : <Layers className="h-4 w-4" />}
+                  {selectedMeta.kind === 'cluster' ? 'Cluster' : 'Node'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="min-h-0 p-0">
+                <ScrollArea className="h-[300px] px-4 pb-4">
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-sm font-medium leading-tight">{selectedNode.name}</div>
+                      <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span
+                          className="inline-block h-2 w-2 rounded-full"
+                          style={{ background: nodeTypeColor(selectedNode.type, isDark) }}
+                        />
+                        {selectedNode.type}
+                        {selectedMeta.level != null ? <span className="opacity-60">· level {selectedMeta.level}</span> : null}
+                      </div>
+                      <div className="mt-1 break-all font-mono text-[10px] text-muted-foreground/80">
+                        {selectedNode.id}
+                      </div>
+                    </div>
+
+                    {selectedMeta.kind === 'cluster' ? (
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <Badge variant="outline" className="text-[10px]">
+                            {numberFormat.format(selectedMeta.nodeCount ?? 0)} members
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px]">
+                            ~{numberFormat.format(selectedMeta.edgeCount ?? 0)} internal edges
+                          </Badge>
+                        </div>
+                        {explorer.expandedIds.has(selectedMeta.clusterId ?? '') ? (
+                          <Button size="sm" variant="outline" onClick={collapseSelected}>
+                            <Undo2 className="mr-1.5 h-3.5 w-3.5" /> Collapse
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={expandSelected}
+                            disabled={explorer.pending.has(selectedMeta.clusterId ?? '')}
+                          >
+                            <Boxes className="mr-1.5 h-3.5 w-3.5" />
+                            {explorer.pending.has(selectedMeta.clusterId ?? '') ? 'Expanding…' : 'Expand'}
+                          </Button>
+                        )}
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className="text-[10px]">
+                        {selectedNeighbours.length} neighbours in view
+                      </Badge>
+                      <Button size="sm" variant="ghost" onClick={() => setSelected(null)}>
+                        Unpin
+                      </Button>
+                    </div>
+                    <div className="space-y-1">
+                      {selectedNeighbours.map(({ index, node, degree }) => (
+                        <button
+                          key={node.id}
+                          type="button"
+                          onClick={() => setSelected(index)}
+                          className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
+                        >
+                          <span
+                            className="inline-block h-2 w-2 shrink-0 rounded-full"
+                            style={{ background: nodeTypeColor(node.type, isDark) }}
+                          />
+                          <span className="min-w-0 flex-1 truncate">{node.name}</span>
+                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{degree}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          ) : (
+            <Tabs defaultValue="types" className="flex min-h-0 flex-1 flex-col">
+              <TabsList className="w-full">
+                <TabsTrigger value="types" className="flex-1 text-xs">
+                  Node types
+                </TabsTrigger>
+                <TabsTrigger value="rels" className="flex-1 text-xs">
+                  <Filter className="mr-1 h-3 w-3" /> Relationships
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="types" className="min-h-0 flex-1">
+                <Card className="h-full">
+                  <CardHeader className="pb-2">
+                    <CardDescription className="text-xs">
+                      The whole graph&apos;s type distribution, from the engine&apos;s own aggregate — for scale,
+                      not what is currently drawn (that is {numberFormat.format(model.nodes.length)} nodes: {clusterCount}{' '}
+                      clusters and {leafCount} real). Click a type to keep only matching nodes on the canvas.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="min-h-0 p-0">
+                    <ScrollArea className="h-[300px] px-4 pb-4">
+                      <NodeTypeBreakdown
+                        data={breakdown}
+                        loading={breakdownLoading}
+                        error={breakdownError}
+                        selectedType={highlightType}
+                        onSelectType={setHighlightType}
+                      />
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              <TabsContent value="rels" className="min-h-0 flex-1">
+                <Card className="h-full">
+                  <CardHeader className="pb-2">
+                    <CardDescription className="text-xs">
+                      {model.relTypes.length} relationship types currently in view (cluster links plus any real
+                      edges inside expanded clusters). Untick one to drop its edges.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="min-h-0 p-0">
+                    <ScrollArea className="h-[290px] px-4 pb-4">
+                      <div className="space-y-0.5">
+                        {model.relTypes.map((type, index) => {
+                          const hidden = hiddenRelTypes.has(type)
+                          return (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => toggleRelType(type)}
+                              className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted ${
+                                hidden ? 'opacity-40' : ''
+                              }`}
+                            >
+                              <span
+                                className={`inline-block h-2 w-2 shrink-0 rounded-sm border ${
+                                  hidden ? 'border-muted-foreground' : 'border-primary bg-primary'
+                                }`}
+                              />
+                              <span className="min-w-0 flex-1 truncate font-mono">{type}</span>
+                              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                                {numberFormat.format(model.relTypeCount[index])}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
