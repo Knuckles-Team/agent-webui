@@ -241,112 +241,132 @@ def _log_failure(
     )
 
 
-def _atomic_private_write(target: Path, payload: bytes) -> None:
-    """Atomically write through a pinned directory without following links."""
+def _dir_fd_capable() -> bool:
+    """True when this platform offers openat-style directory descriptors."""
 
-    dir_fd_capable = all(
+    return all(
         function in os.supports_dir_fd for function in (os.open, os.stat, os.unlink)
     )
-    if not dir_fd_capable:
-        # Native Windows lacks openat-style directory descriptors. Preserve an
-        # atomic, no-follow final-component boundary with the platform APIs.
-        if target.is_symlink() or target.parent.is_symlink():
-            raise OSError('Refusing symbolic-link write target')
-        temp_path = target.parent / f'.{target.name}.{secrets.token_hex(8)}.tmp'
-        write_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        if hasattr(os, 'O_NOFOLLOW'):
-            write_flags |= os.O_NOFOLLOW
-        fd = -1
-        try:
-            fd = os.open(temp_path, write_flags, 0o600)
-            remaining = memoryview(payload)
-            while remaining:
-                written = os.write(fd, remaining)
-                if written <= 0:
-                    raise OSError('Unable to complete private write')
-                remaining = remaining[written:]
-            os.fsync(fd)
-            os.close(fd)
-            fd = -1
-            if target.is_symlink() or target.parent.is_symlink():
-                raise OSError('Write target changed during persistence')
-            os.replace(temp_path, target)
-            try:
-                os.chmod(target, 0o600)
-            except OSError:
-                pass
-            return
-        finally:
-            if fd >= 0:
-                os.close(fd)
-            temp_path.unlink(missing_ok=True)
 
-    parent_flags = os.O_RDONLY
-    if hasattr(os, 'O_DIRECTORY'):
-        parent_flags |= os.O_DIRECTORY
-    if hasattr(os, 'O_NOFOLLOW'):
-        parent_flags |= os.O_NOFOLLOW
-    parent_fd = os.open(target.parent, parent_flags)
-    parent_stat = os.fstat(parent_fd)
-    if not stat.S_ISDIR(parent_stat.st_mode):
-        os.close(parent_fd)
-        raise OSError('Write parent is not a directory')
 
-    temp_name = f'.{target.name}.{secrets.token_hex(8)}.tmp'
-    write_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, 'O_NOFOLLOW'):
-        write_flags |= os.O_NOFOLLOW
+def _optional_open_flags(base: int, *names: str) -> int:
+    """`base` OR-ed with whichever of `names` this platform's `os` defines."""
+
+    flags = base
+    for name in names:
+        if hasattr(os, name):
+            flags |= getattr(os, name)
+    return flags
+
+
+def _write_all(fd: int, payload: bytes) -> None:
+    """Write every byte of `payload` to `fd`, refusing a short/stalled write."""
+
+    remaining = memoryview(payload)
+    while remaining:
+        written = os.write(fd, remaining)
+        if written <= 0:
+            raise OSError('Unable to complete private write')
+        remaining = remaining[written:]
+
+
+def _atomic_private_write_pathwise(target: Path, payload: bytes) -> None:
+    """Path-API fallback for platforms without directory descriptors.
+
+    Native Windows lacks openat-style directory descriptors. Preserve an
+    atomic, no-follow final-component boundary with the platform APIs.
+    """
+
+    if target.is_symlink() or target.parent.is_symlink():
+        raise OSError('Refusing symbolic-link write target')
+    temp_path = target.parent / f'.{target.name}.{secrets.token_hex(8)}.tmp'
+    write_flags = _optional_open_flags(
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL, 'O_NOFOLLOW'
+    )
     fd = -1
     try:
-        try:
-            destination_stat = os.stat(
-                target.name,
-                dir_fd=parent_fd,
-                follow_symlinks=False,
-            )
-        except FileNotFoundError:
-            destination_stat = None
-        if destination_stat is not None and not stat.S_ISREG(destination_stat.st_mode):
-            raise OSError('Refusing non-regular write target')
+        fd = os.open(temp_path, write_flags, 0o600)
+        _write_all(fd, payload)
+        os.fsync(fd)
+        os.close(fd)
+        fd = -1
+        if target.is_symlink() or target.parent.is_symlink():
+            raise OSError('Write target changed during persistence')
+        os.replace(temp_path, target)
+        with contextlib.suppress(OSError):
+            os.chmod(target, 0o600)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        temp_path.unlink(missing_ok=True)
 
+
+def _open_pinned_write_parent(target: Path) -> int:
+    """Open `target`'s parent as a no-follow directory descriptor."""
+
+    parent_flags = _optional_open_flags(os.O_RDONLY, 'O_DIRECTORY', 'O_NOFOLLOW')
+    parent_fd = os.open(target.parent, parent_flags)
+    if not stat.S_ISDIR(os.fstat(parent_fd).st_mode):
+        os.close(parent_fd)
+        raise OSError('Write parent is not a directory')
+    return parent_fd
+
+
+def _refuse_non_regular_target(parent_fd: int, name: str) -> None:
+    """Reject a pre-existing `name` that is not a regular file."""
+
+    try:
+        destination_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(destination_stat.st_mode):
+        raise OSError('Refusing non-regular write target')
+
+
+def _atomic_private_write_at(parent_fd: int, name: str, payload: bytes) -> None:
+    """Write `payload` to `name` atomically, relative to a pinned parent fd."""
+
+    temp_name = f'.{name}.{secrets.token_hex(8)}.tmp'
+    write_flags = _optional_open_flags(
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL, 'O_NOFOLLOW'
+    )
+    fd = -1
+    try:
+        _refuse_non_regular_target(parent_fd, name)
         fd = os.open(temp_name, write_flags, 0o600, dir_fd=parent_fd)
-        remaining = memoryview(payload)
-        while remaining:
-            written = os.write(fd, remaining)
-            if written <= 0:
-                raise OSError('Unable to complete private write')
-            remaining = remaining[written:]
+        _write_all(fd, payload)
         os.fsync(fd)
         os.close(fd)
         fd = -1
         os.replace(
             temp_name,
-            target.name,
+            name,
             src_dir_fd=parent_fd,
             dst_dir_fd=parent_fd,
         )
-        try:
-            os.chmod(
-                target.name,
-                0o600,
-                dir_fd=parent_fd,
-                follow_symlinks=False,
-            )
-        except (NotImplementedError, OSError, ValueError):
-            # The temporary file was already created private. Some mounted or
-            # non-POSIX filesystems do not implement descriptor-relative chmod.
-            pass
-        try:
+        # The temporary file was already created private. Some mounted or
+        # non-POSIX filesystems do not implement descriptor-relative chmod.
+        with contextlib.suppress(NotImplementedError, OSError, ValueError):
+            os.chmod(name, 0o600, dir_fd=parent_fd, follow_symlinks=False)
+        with contextlib.suppress(OSError):
             os.fsync(parent_fd)
-        except OSError:
-            pass
     finally:
         if fd >= 0:
             os.close(fd)
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(temp_name, dir_fd=parent_fd)
-        except OSError:
-            pass
+
+
+def _atomic_private_write(target: Path, payload: bytes) -> None:
+    """Atomically write through a pinned directory without following links."""
+
+    if not _dir_fd_capable():
+        _atomic_private_write_pathwise(target, payload)
+        return
+    parent_fd = _open_pinned_write_parent(target)
+    try:
+        _atomic_private_write_at(parent_fd, target.name, payload)
+    finally:
         os.close(parent_fd)
 
 
@@ -505,6 +525,80 @@ def _redact_inline_secrets(value: Any, key: str = '') -> Any:
     return value
 
 
+def _bounded_external_scalar(value: Any, **_context: Any) -> Any:
+    """None/bool/int carry no shape to bound; they pass through unchanged."""
+
+    return value
+
+
+def _bounded_external_float(value: float, **_context: Any) -> float:
+    if not math.isfinite(value):
+        raise ValueError('Delegated result contains a non-finite number')
+    return value
+
+
+def _bounded_external_str(value: str, **_context: Any) -> str:
+    if len(value.encode('utf-8')) > _MAX_EXTERNAL_STRING_BYTES:
+        raise ValueError('Delegated result contains an oversized string')
+    return value
+
+
+def _bounded_external_mapping(
+    value: dict[Any, Any],
+    *,
+    depth: int,
+    budget: list[int],
+    truncate_lists: bool,
+) -> dict[str, Any]:
+    if len(value) > _MAX_EXTERNAL_COLLECTION_ITEMS:
+        raise ValueError('Delegated result contains an oversized mapping')
+    clean: dict[str, Any] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or len(key.encode('utf-8')) > 128:
+            raise ValueError('Delegated result contains an invalid mapping key')
+        clean[key] = _bounded_external_value(
+            item,
+            depth=depth + 1,
+            budget=budget,
+            truncate_lists=truncate_lists,
+        )
+    return clean
+
+
+def _bounded_external_sequence(
+    value: Any,
+    *,
+    depth: int,
+    budget: list[int],
+    truncate_lists: bool,
+) -> list[Any]:
+    items = list(value)
+    if len(items) > _MAX_EXTERNAL_COLLECTION_ITEMS:
+        if not truncate_lists:
+            raise ValueError('Delegated result contains an oversized collection')
+        items = items[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+    return [
+        _bounded_external_value(
+            item, depth=depth + 1, budget=budget, truncate_lists=truncate_lists
+        )
+        for item in items
+    ]
+
+
+# Ordered type dispatch for `_bounded_external_value`. `bool` precedes `int`
+# only for readability (both pass straight through), and `float`/`str` are
+# disjoint from both, so the order encodes no hidden precedence beyond
+# "containers last".
+_BOUNDED_EXTERNAL_HANDLERS: tuple[tuple[Any, Any], ...] = (
+    (bool, _bounded_external_scalar),
+    (int, _bounded_external_scalar),
+    (float, _bounded_external_float),
+    (str, _bounded_external_str),
+    (dict, _bounded_external_mapping),
+    ((list, tuple, set, frozenset), _bounded_external_sequence),
+)
+
+
 def _bounded_external_value(
     value: Any,
     *,
@@ -538,43 +632,16 @@ def _bounded_external_value(
     if budget[0] > _MAX_EXTERNAL_NODES or depth > _MAX_EXTERNAL_DEPTH:
         raise ValueError('Delegated result exceeds its structural safety bound')
 
-    if value is None or isinstance(value, (bool, int)):
+    if value is None:
         return value
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError('Delegated result contains a non-finite number')
-        return value
-    if isinstance(value, str):
-        encoded = value.encode('utf-8')
-        if len(encoded) > _MAX_EXTERNAL_STRING_BYTES:
-            raise ValueError('Delegated result contains an oversized string')
-        return value
-    if isinstance(value, dict):
-        if len(value) > _MAX_EXTERNAL_COLLECTION_ITEMS:
-            raise ValueError('Delegated result contains an oversized mapping')
-        clean: dict[str, Any] = {}
-        for key, item in value.items():
-            if not isinstance(key, str) or len(key.encode('utf-8')) > 128:
-                raise ValueError('Delegated result contains an invalid mapping key')
-            clean[key] = _bounded_external_value(
-                item,
-                depth=depth + 1,
+    for types, handler in _BOUNDED_EXTERNAL_HANDLERS:
+        if isinstance(value, types):
+            return handler(
+                value,
+                depth=depth,
                 budget=budget,
                 truncate_lists=truncate_lists,
             )
-        return clean
-    if isinstance(value, (list, tuple, set, frozenset)):
-        items = list(value)
-        if len(items) > _MAX_EXTERNAL_COLLECTION_ITEMS:
-            if not truncate_lists:
-                raise ValueError('Delegated result contains an oversized collection')
-            items = items[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        return [
-            _bounded_external_value(
-                item, depth=depth + 1, budget=budget, truncate_lists=truncate_lists
-            )
-            for item in items
-        ]
     raise ValueError('Delegated result contains an unsupported value')
 
 
@@ -606,6 +673,57 @@ _MCP_UI_CSP_DOMAIN_FIELDS = (
 _MCP_UI_PERMISSION_FIELDS = ('camera', 'microphone', 'geolocation', 'clipboardWrite')
 
 
+def _ui_meta_visibility(ui: dict[str, Any]) -> Any:
+    visibility = ui.get('visibility')
+    if not isinstance(visibility, list):
+        return None
+    return [v for v in visibility if v in ('app', 'model')] or None
+
+
+def _ui_meta_csp(ui: dict[str, Any]) -> Any:
+    csp = ui.get('csp')
+    if not isinstance(csp, dict):
+        return None
+    return {
+        field: [domain for domain in csp[field] if isinstance(domain, str)]
+        for field in _MCP_UI_CSP_DOMAIN_FIELDS
+        if isinstance(csp.get(field), list)
+    } or None
+
+
+def _ui_meta_permissions(ui: dict[str, Any]) -> Any:
+    permissions = ui.get('permissions')
+    if not isinstance(permissions, dict):
+        return None
+    return {
+        field: {}
+        for field in _MCP_UI_PERMISSION_FIELDS
+        if isinstance(permissions.get(field), dict)
+    } or None
+
+
+def _ui_meta_domain(ui: dict[str, Any]) -> Any:
+    domain = ui.get('domain')
+    return domain if isinstance(domain, str) and domain else None
+
+
+def _ui_meta_prefers_border(ui: dict[str, Any]) -> Any:
+    prefers_border = ui.get('prefersBorder')
+    return prefers_border if isinstance(prefers_border, bool) else None
+
+
+# Dispatch table for the OPTIONAL half of `McpUiMeta`. Each extractor returns
+# the validated value for its field or `None` for "the server did not declare
+# a usable one", so only the known fields can ever reach the API response.
+_MCP_UI_OPTIONAL_FIELDS: tuple[tuple[str, Callable[[dict[str, Any]], Any]], ...] = (
+    ('visibility', _ui_meta_visibility),
+    ('csp', _ui_meta_csp),
+    ('permissions', _ui_meta_permissions),
+    ('domain', _ui_meta_domain),
+    ('prefersBorder', _ui_meta_prefers_border),
+)
+
+
 def _public_tool_ui_meta(meta: Any) -> dict[str, Any] | None:
     """Shape-validate one tool's declared MCP Apps UI binding (``meta['ui']``).
 
@@ -624,8 +742,9 @@ def _public_tool_ui_meta(meta: Any) -> dict[str, Any] | None:
     Everything else here is untrusted server metadata (the docstrings in
     ``mcp-apps/policy.ts`` and ``McpAppFrame.tsx`` already treat it that way
     on the client): only the known ``McpUiMeta`` fields are passed through,
-    each individually type-checked, so a malformed or hostile ``meta['ui']``
-    cannot smuggle arbitrary extra keys into the API response.
+    each individually type-checked by its ``_MCP_UI_OPTIONAL_FIELDS``
+    extractor, so a malformed or hostile ``meta['ui']`` cannot smuggle
+    arbitrary extra keys into the API response.
     """
     if not isinstance(meta, dict):
         return None
@@ -637,41 +756,10 @@ def _public_tool_ui_meta(meta: Any) -> dict[str, Any] | None:
         return None
 
     result: dict[str, Any] = {'resourceUri': resource_uri}
-
-    visibility = ui.get('visibility')
-    if isinstance(visibility, list):
-        allowed_visibility = [v for v in visibility if v in ('app', 'model')]
-        if allowed_visibility:
-            result['visibility'] = allowed_visibility
-
-    csp = ui.get('csp')
-    if isinstance(csp, dict):
-        clean_csp = {
-            field: [domain for domain in csp[field] if isinstance(domain, str)]
-            for field in _MCP_UI_CSP_DOMAIN_FIELDS
-            if isinstance(csp.get(field), list)
-        }
-        if clean_csp:
-            result['csp'] = clean_csp
-
-    permissions = ui.get('permissions')
-    if isinstance(permissions, dict):
-        clean_permissions: dict[str, dict[str, str]] = {
-            field: {}
-            for field in _MCP_UI_PERMISSION_FIELDS
-            if isinstance(permissions.get(field), dict)
-        }
-        if clean_permissions:
-            result['permissions'] = clean_permissions
-
-    domain = ui.get('domain')
-    if isinstance(domain, str) and domain:
-        result['domain'] = domain
-
-    prefers_border = ui.get('prefersBorder')
-    if isinstance(prefers_border, bool):
-        result['prefersBorder'] = prefers_border
-
+    for field_name, extract in _MCP_UI_OPTIONAL_FIELDS:
+        field_value = extract(ui)
+        if field_value is not None:
+            result[field_name] = field_value
     return {'ui': result}
 
 
