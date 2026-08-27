@@ -445,11 +445,12 @@ docker/deploy.sh
 ```
 
 Builds the image via an auto-detected backend: a reachable `docker` daemon (a
-dev host's own local daemon, or the `r820` context as a documented fallback)
-if one exists, otherwise the shared `buildkitd` Deployment running inside the
-k8s cluster (spread across `r510`/`r710` -- see `services/buildkit-service/`
-for the full design; `r820`'s own docker daemon was stopped in the
-2026-07-11 Swarm->RKE2 cutover and cannot safely be started back up there).
+dev host's own local daemon, or the cluster **manager node**'s context as a
+documented fallback) if one exists, otherwise the shared `buildkitd`
+Deployment running inside the k8s cluster (spread across the **worker
+nodes** -- see `services/buildkit-service/` for the full design; the manager
+node's own docker daemon was stopped in the 2026-07-11 Swarm->RKE2 cutover
+and cannot safely be started back up there).
 `docker/build_and_push.sh` prints which backend it picked and why before
 building anything; force one with `--backend docker|buildkit` or
 `BUILD_BACKEND=docker|buildkit` if auto-detection picks the wrong one. Either

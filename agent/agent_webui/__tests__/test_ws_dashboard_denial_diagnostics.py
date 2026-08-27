@@ -97,7 +97,7 @@ def _oidc_settings() -> OIDCSettings:
         client_id='agent-webui',
         client_secret=PLACEHOLDER_CLIENT_CREDENTIAL,
         issuer='https://idp.example.test/realms/test',
-        redirect_uri='https://au.arpa/auth/callback',
+        redirect_uri='https://au.example/auth/callback',
         scope='openid profile email',
         session_key=Fernet.generate_key().decode('ascii'),
     )
@@ -163,7 +163,7 @@ def _configured(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
     monkeypatch.setattr(config, 'kg_policy_version', '1', raising=False)
-    monkeypatch.setattr(config, 'allowed_origins', 'https://au.arpa', raising=False)
+    monkeypatch.setattr(config, 'allowed_origins', 'https://au.example', raising=False)
 
 
 def _fake_actor(monkeypatch: pytest.MonkeyPatch, *, roles: frozenset[str]) -> None:
@@ -211,8 +211,8 @@ def test_full_chain_admits_a_valid_kg_admin_browser_websocket_session(
     scope = _ws_scope(
         headers=[
             (b'cookie', cookie),
-            (b'origin', b'https://au.arpa'),
-            (b'host', b'au.arpa'),
+            (b'origin', b'https://au.example'),
+            (b'host', b'au.example'),
         ]
     )
     send = _Recorder()
@@ -245,7 +245,9 @@ def test_full_chain_denies_and_logs_no_credential_resolved_without_a_cookie(
 
     # No `cookie` header at all -- OIDCBrowserSessionMiddleware forwards the
     # scope unmodified, so ActorIdentityMiddleware sees no bearer credential.
-    scope = _ws_scope(headers=[(b'origin', b'https://au.arpa'), (b'host', b'au.arpa')])
+    scope = _ws_scope(
+        headers=[(b'origin', b'https://au.example'), (b'host', b'au.example')]
+    )
     send = _Recorder()
 
     with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
@@ -293,7 +295,9 @@ def test_authorization_denies_and_logs_scope_missing_for_a_resolved_session(
         raise AssertionError('a scope-less session must never reach /ws/dashboard')
 
     middleware = WebUIAuthorizationMiddleware(inner_never_called)
-    scope = _ws_scope(headers=[(b'origin', b'https://au.arpa'), (b'host', b'au.arpa')])
+    scope = _ws_scope(
+        headers=[(b'origin', b'https://au.example'), (b'host', b'au.example')]
+    )
     send = _Recorder()
 
     with caplog.at_level(logging.WARNING, logger=LOGGER_NAME), use_session(session):
@@ -322,7 +326,7 @@ def test_authorization_denies_and_logs_origin_rejected(
     scope = _ws_scope(
         headers=[
             (b'origin', b'https://evil.example'),
-            (b'host', b'au.arpa'),
+            (b'host', b'au.example'),
         ]
     )
     send = _Recorder()
@@ -385,7 +389,7 @@ def test_authorization_denies_and_logs_webui_role_insufficient(
     middleware = WebUIAuthorizationMiddleware(inner_never_called)
     scope = _ws_scope(
         path='/api/fleet',
-        headers=[(b'origin', b'https://au.arpa'), (b'host', b'au.arpa')],
+        headers=[(b'origin', b'https://au.example'), (b'host', b'au.example')],
     )
     send = _Recorder()
 

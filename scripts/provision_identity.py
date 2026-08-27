@@ -44,7 +44,7 @@ credential anywhere:
 ``kubernetes``
     Ensures the ``agent-webui-oidc`` ExternalSecret and patches the Deployment
     to consume it, mounting the homelab CA bundle so JWKS discovery over
-    ``https://keycloak.arpa`` validates.  Uses ``kubectl patch`` throughout;
+    ``https://keycloak.example`` validates.  Uses ``kubectl patch`` throughout;
     it never applies a committed manifest over live state.
 
 Usage::
@@ -87,12 +87,12 @@ from typing import Any
 
 # ---------------------------------------------------------------- deployment facts
 
-KEYCLOAK_URL = os.environ.get('KEYCLOAK_URL', 'https://keycloak.arpa').rstrip('/')
+KEYCLOAK_URL = os.environ.get('KEYCLOAK_URL', 'https://keycloak.example').rstrip('/')
 REALM = os.environ.get('KEYCLOAK_REALM', 'homelab')
 ADMIN_REALM = os.environ.get('KEYCLOAK_ADMIN_REALM', 'master')
 ADMIN_USER = os.environ.get('KEYCLOAK_ADMIN_USER', 'admin')
 
-WEBUI_ORIGIN = os.environ.get('WEBUI_ORIGIN', 'http://au.arpa').rstrip('/')
+WEBUI_ORIGIN = os.environ.get('WEBUI_ORIGIN', 'http://au.example').rstrip('/')
 BROWSER_CLIENT = 'agent-webui'
 SERVICE_CLIENT = 'agent-webui-svc'
 USER_GROUP = 'agent-webui-users'
@@ -144,7 +144,9 @@ CA_BUNDLE_FILE = f'{CA_BUNDLE_MOUNT}/ca-bundle.pem'
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OPENBAO_ENV = Path(
-    os.environ.get('OPENBAO_ENV_FILE', '/home/apps/workspace/services/openbao/.env')
+    os.environ.get(
+        'OPENBAO_ENV_FILE', str(REPO_ROOT.parent.parent / 'services' / 'openbao' / '.env')
+    )
 )
 
 # Keycloak serves a private-CA certificate that this admin client may not have

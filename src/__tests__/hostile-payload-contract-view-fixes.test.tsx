@@ -30,7 +30,7 @@ import { stubFetch, expectSurvives, HOSTILE_FIXTURES } from './hostile-payload-c
  *   construction — this is exactly the jsdom scenario the register item
  *   flagged as indistinguishable from a real "hidden tab" race.
  *
- * Confirmed live against au.arpa (real browser, real backend, real auth
+ * Confirmed live against au.example (real browser, real backend, real auth
  * session — see D-WUI-29/plans/au-eg-program/audits/audit-sl5-ui-validation
  * 2026-08-06 w2-e2e-testuser section) before this fix: all three routes
  * (control-plane.scheduler, knowledge.base, knowledge.extraction) tripped

@@ -32,11 +32,12 @@
 #      backend outright -- probed once, fails loudly if unavailable, never
 #      silently falls through to the other.
 #   2. auto (default): probe docker first (local default daemon, then the
-#      DOCKER_CONTEXT fallback, default 'r820') -- a directly reachable daemon
-#      is simpler and faster when one genuinely exists. If docker is
-#      unreachable on both, probe the shared cluster-native buildkitd
-#      Deployment (services/buildkit-service/, spread across r510+r710 --
-#      see that manifest's header for why r820/gb10/rw710 are excluded).
+#      DOCKER_CONTEXT fallback, default the cluster manager node) -- a
+#      directly reachable daemon is simpler and faster when one genuinely
+#      exists. If docker is unreachable on both, probe the shared
+#      cluster-native buildkitd Deployment (services/buildkit-service/,
+#      spread across a subset of worker nodes -- see that manifest's header
+#      for why the manager and GPU/edge nodes are excluded).
 #   3. If NEITHER is reachable, fail with both specific reasons -- never guess,
 #      never silently build somewhere unexpected.
 # Whichever backend is chosen (forced or auto-detected) is printed to stderr

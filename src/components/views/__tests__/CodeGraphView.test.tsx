@@ -9,7 +9,7 @@ function mockFetch(navResults: Record<string, unknown>[]) {
   global.fetch = vi.fn((input: RequestInfo | URL) => {
     const url = String(input)
     const body = url.includes('/code/instances')
-      ? { source_systems: ['gitlab:gitlab.arpa'] }
+      ? { source_systems: ['gitlab:gitlab.example'] }
       : { action: 'find_definition', results: navResults, count: navResults.length }
     return Promise.resolve({
       ok: true,
@@ -38,14 +38,14 @@ describe('CodeGraphView Component', () => {
   it('loads the configured source systems into the selector', async () => {
     renderWithProviders(<CodeGraphView />)
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: 'gitlab:gitlab.arpa' })).toBeInTheDocument()
+      expect(screen.getByRole('option', { name: 'gitlab:gitlab.example' })).toBeInTheDocument()
     })
   })
 
   it('runs an action and renders resolved symbol rows', async () => {
     mockFetch([
       {
-        id: 'gitlab:gitlab.arpa:35:symbol:abc',
+        id: 'gitlab:gitlab.example:35:symbol:abc',
         name: 'NewAnalyzer',
         file_path: 'analyzer.go',
         line: 12,
