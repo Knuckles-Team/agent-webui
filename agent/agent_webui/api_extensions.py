@@ -10433,6 +10433,104 @@ async def get_atlassian_kanban(jql: str = 'ORDER BY updated DESC'):
     return bounded if isinstance(bounded, dict) else {'status': 'error'}
 
 
+def _github_repo_slug(repo: str | None) -> str | None:
+    """The validated ``owner/name`` target repo, or ``None`` when unusable."""
+    target_repo = repo or os.getenv('GITHUB_REPO')
+    if not target_repo or not re.fullmatch(
+        r'[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}', target_repo
+    ):
+        return None
+    return target_repo
+
+
+def _github_needs_repo_response() -> dict[str, Any]:
+    """The honest "tell me which repo" answer; a PR list is per-repository."""
+    return {
+        'status': 'needs_input',
+        'source': 'live',
+        'detail': (
+            "Specify a target repository as 'owner/name' "
+            '(query param ?repo=owner/name) to list its pull requests.'
+        ),
+        'prs': [],
+        'workflows': [],
+    }
+
+
+def _mcp_payload_data(resp: Any) -> Any:
+    """Unwrap an MCP response's ``data`` envelope, if it has one."""
+    if isinstance(resp, dict):
+        return resp.get('data', resp)
+    return resp
+
+
+def _github_pr_record(p: dict[str, Any]) -> dict[str, Any]:
+    """One GitHub pull request in the shape EcosystemView.tsx consumes.
+
+    BUG-012: GitHub never returns a per-check-run summary on the pulls/list
+    payload itself (that requires a separate `/commits/{sha}/check-runs` call
+    this endpoint does not make), so there is no `checks` field here -- the
+    frontend must not render one either. `web_url` mirrors the field GitLab's
+    MR mapping already returns. NOTE: `_public_external_result` runs this
+    whole dict through `sanitize_for_persistence`, whose `_LOCATION_FIELDS`
+    blanket-redacts ANY field named `web_url` (this one included) to
+    `"[REDACTED_LOCATION]"` regardless of content -- resolving that for a
+    genuinely public source link is `GOC-27-W06` (security-review) scope;
+    `EcosystemView.tsx`'s `isRenderableUrl` guard is today's WebUI-side
+    mitigation so this never renders as a broken `<a href>`.
+    """
+    return {
+        'id': p.get('number'),
+        'title': p.get('title'),
+        'author': (p.get('user') or {}).get('login'),
+        'branch': (p.get('head') or {}).get('ref'),
+        'status': p.get('state') or 'open',
+        'web_url': p.get('html_url'),
+    }
+
+
+def _github_workflow_record(r: dict[str, Any]) -> dict[str, Any]:
+    """One Actions run.
+
+    BUG-012: the real GitHub Actions run object carries `run_number` (the
+    per-repository sequential run count the UI has always rendered as
+    `Run #{run_number}`); this mapping used to drop it on the floor, so the
+    field the frontend declared and rendered never had a source --
+    `wf.run_number` always rendered blank.
+    """
+    return {
+        'id': r.get('id'),
+        'run_number': r.get('run_number'),
+        'name': r.get('name'),
+        'status': r.get('status'),
+        'conclusion': r.get('conclusion'),
+    }
+
+
+async def _github_workflow_runs(owner: str, name: str) -> list[dict[str, Any]]:
+    """Latest Actions runs for a repo. PRs already succeeded by the time this
+    is called, so a runs failure must not blank the response."""
+    try:
+        run_resp = await _call_mcp_tool(
+            'github-mcp',
+            'github_actions',
+            {
+                'action': 'list_runs',
+                'params_json': json.dumps({'owner': owner, 'repo': name}),
+            },
+        )
+        runs_data = _mcp_payload_data(run_resp)
+        if isinstance(runs_data, dict):
+            runs_data = runs_data.get('workflow_runs', [])
+    except Exception:  # noqa: BLE001
+        return []
+    return [
+        _github_workflow_record(r)
+        for r in (runs_data[:100] if isinstance(runs_data, list) else [])
+        if isinstance(r, dict)
+    ]
+
+
 @router.get('/ecosystem/github/prs')
 async def get_github_prs(repo: str | None = None):
     """Retrieve open PRs and recent Actions runs via the ``github-mcp`` server.
@@ -10443,27 +10541,20 @@ async def get_github_prs(repo: str | None = None):
     against the GitHub API with the token configured on that MCP server.
     Surfaces an honest error if the server or GitHub is unreachable.
     """
-    import json as _json
-
-    target_repo = repo or os.getenv('GITHUB_REPO')
-    if not target_repo or not re.fullmatch(
-        r'[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}', target_repo
-    ):
-        return {
-            'status': 'needs_input',
-            'source': 'live',
-            'detail': (
-                "Specify a target repository as 'owner/name' "
-                '(query param ?repo=owner/name) to list its pull requests.'
-            ),
-            'prs': [],
-            'workflows': [],
-        }
+    target_repo = _github_repo_slug(repo)
+    if target_repo is None:
+        return _github_needs_repo_response()
     owner, _, name = target_repo.partition('/')
-    params = _json.dumps({'owner': owner, 'repo': name, 'state': 'open'})
     try:
         pr_resp = await _call_mcp_tool(
-            'github-mcp', 'github_pulls', {'action': 'list', 'params_json': params}
+            'github-mcp',
+            'github_pulls',
+            {
+                'action': 'list',
+                'params_json': json.dumps(
+                    {'owner': owner, 'repo': name, 'state': 'open'}
+                ),
+            },
         )
     except Exception as e:  # noqa: BLE001
         return _service_error(e, prs=[], workflows=[])
@@ -10471,77 +10562,78 @@ async def get_github_prs(repo: str | None = None):
         return _service_error(
             RuntimeError(pr_resp.get('error') or pr_resp), prs=[], workflows=[]
         )
-    prs_raw = pr_resp.get('data', pr_resp) if isinstance(pr_resp, dict) else pr_resp
+    prs_raw = _mcp_payload_data(pr_resp)
     prs = [
-        {
-            'id': p.get('number'),
-            'title': p.get('title'),
-            'author': (p.get('user') or {}).get('login'),
-            'branch': (p.get('head') or {}).get('ref'),
-            'status': p.get('state') or 'open',
-            # BUG-012: GitHub never returns a per-check-run summary on the
-            # pulls/list payload itself (that requires a separate
-            # `/commits/{sha}/check-runs` call this endpoint does not make),
-            # so there is no `checks` field here -- the frontend must not
-            # render one either. `web_url` mirrors the field GitLab's MR
-            # mapping already returns. NOTE: `_public_external_result` below
-            # runs this whole dict through `sanitize_for_persistence`, whose
-            # `_LOCATION_FIELDS` blanket-redacts ANY field named `web_url`
-            # (this one included) to `"[REDACTED_LOCATION]"` regardless of
-            # content -- resolving that for a genuinely public source link
-            # is `GOC-27-W06` (security-review) scope; `EcosystemView.tsx`'s
-            # `isRenderableUrl` guard is today's WebUI-side mitigation so
-            # this never renders as a broken `<a href>`.
-            'web_url': p.get('html_url'),
-        }
+        _github_pr_record(p)
         for p in (prs_raw[:100] if isinstance(prs_raw, list) else [])
         if isinstance(p, dict)
     ]
-    workflows: list[dict[str, Any]] = []
-    try:
-        run_resp = await _call_mcp_tool(
-            'github-mcp',
-            'github_actions',
-            {
-                'action': 'list_runs',
-                'params_json': _json.dumps({'owner': owner, 'repo': name}),
-            },
-        )
-        runs_data = (
-            run_resp.get('data', run_resp) if isinstance(run_resp, dict) else run_resp
-        )
-        if isinstance(runs_data, dict):
-            runs_data = runs_data.get('workflow_runs', [])
-        workflows = [
-            {
-                'id': r.get('id'),
-                # BUG-012: the real GitHub Actions run object carries
-                # `run_number` (the per-repository sequential run count the
-                # UI has always rendered as `Run #{run_number}`); this
-                # mapping used to drop it on the floor, so the field the
-                # frontend declared and rendered never had a source --
-                # `wf.run_number` always rendered blank.
-                'run_number': r.get('run_number'),
-                'name': r.get('name'),
-                'status': r.get('status'),
-                'conclusion': r.get('conclusion'),
-            }
-            for r in (runs_data[:100] if isinstance(runs_data, list) else [])
-            if isinstance(r, dict)
-        ]
-    except Exception:  # noqa: BLE001
-        # PRs already succeeded; a runs failure should not blank the response.
-        workflows = []
     bounded = _public_external_result(
         {
             'status': 'success',
             'source': 'live',
             'repo': target_repo,
             'prs': prs,
-            'workflows': workflows,
+            'workflows': await _github_workflow_runs(owner, name),
         }
     )
     return bounded if isinstance(bounded, dict) else {'status': 'error'}
+
+
+def _gitlab_mr_record(m: dict[str, Any]) -> dict[str, Any]:
+    """One GitLab merge request in the shape EcosystemView.tsx consumes."""
+    return {
+        'id': m.get('iid'),
+        'project_id': m.get('project_id'),
+        'title': m.get('title'),
+        'author': (m.get('author') or {}).get('username'),
+        'target_branch': m.get('target_branch'),
+        'status': m.get('state'),
+        'web_url': m.get('web_url'),
+    }
+
+
+def _gitlab_pipeline_project_ids(mrs: list[dict[str, Any]]) -> list[Any]:
+    """The distinct, well-formed project ids to pull a pipeline for."""
+    project_ids: list[Any] = []
+    seen: set[Any] = set()
+    for m in mrs:
+        pid = m.get('project_id')
+        if pid is None or pid in seen:
+            continue
+        if not str(pid).isdigit() or len(str(pid)) > 20:
+            continue
+        if len(seen) >= _MAX_DELEGATION_FANOUT:
+            break
+        seen.add(pid)
+        project_ids.append(pid)
+    return project_ids
+
+
+async def _gitlab_project_pipelines(pid: Any) -> list[dict[str, Any]]:
+    """The latest pipelines for one project; a failed lookup yields []."""
+    try:
+        pipe_resp = await _call_mcp_tool(
+            'gitlab-mcp',
+            'api_request',
+            {
+                'method': 'GET',
+                'endpoint': f'/projects/{pid}/pipelines?per_page=5',
+            },
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    pipe_rows = _mcp_payload_data(pipe_resp)
+    return [
+        {
+            'id': p.get('id'),
+            'project_id': pid,
+            'ref': p.get('ref'),
+            'status': p.get('status'),
+        }
+        for p in (pipe_rows[:5] if isinstance(pipe_rows, list) else [])
+        if isinstance(p, dict)
+    ]
 
 
 @router.get('/ecosystem/gitlab/mrs')
@@ -10553,12 +10645,6 @@ async def get_gitlab_mrs():
     instance, plus the latest pipeline per affected project. Surfaces an honest
     error if the server or GitLab is unreachable.
     """
-
-    def _unwrap(resp: Any) -> Any:
-        if isinstance(resp, dict):
-            return resp.get('data', resp)
-        return resp
-
     try:
         mr_resp = await _call_mcp_tool(
             'gitlab-mcp',
@@ -10570,55 +10656,16 @@ async def get_gitlab_mrs():
         )
     except Exception as e:  # noqa: BLE001
         return _service_error(e, mrs=[], pipelines=[])
-    mrs_raw = _unwrap(mr_resp)
+    mrs_raw = _mcp_payload_data(mr_resp)
     mrs = [
-        {
-            'id': m.get('iid'),
-            'project_id': m.get('project_id'),
-            'title': m.get('title'),
-            'author': (m.get('author') or {}).get('username'),
-            'target_branch': m.get('target_branch'),
-            'status': m.get('state'),
-            'web_url': m.get('web_url'),
-        }
+        _gitlab_mr_record(m)
         for m in (mrs_raw[:30] if isinstance(mrs_raw, list) else [])
         if isinstance(m, dict)
     ]
     # Pull the latest pipeline for each distinct project referenced by an MR.
     pipelines: list[dict[str, Any]] = []
-    seen_projects: set[Any] = set()
-    for m in mrs:
-        pid = m.get('project_id')
-        if pid is None or pid in seen_projects:
-            continue
-        if not str(pid).isdigit() or len(str(pid)) > 20:
-            continue
-        if len(seen_projects) >= _MAX_DELEGATION_FANOUT:
-            break
-        seen_projects.add(pid)
-        try:
-            pipe_resp = await _call_mcp_tool(
-                'gitlab-mcp',
-                'api_request',
-                {
-                    'method': 'GET',
-                    'endpoint': f'/projects/{pid}/pipelines?per_page=5',
-                },
-            )
-        except Exception:  # noqa: BLE001
-            continue
-        pipe_rows = _unwrap(pipe_resp)
-        for p in pipe_rows[:5] if isinstance(pipe_rows, list) else []:
-            if not isinstance(p, dict):
-                continue
-            pipelines.append(
-                {
-                    'id': p.get('id'),
-                    'project_id': pid,
-                    'ref': p.get('ref'),
-                    'status': p.get('status'),
-                }
-            )
+    for pid in _gitlab_pipeline_project_ids(mrs):
+        pipelines.extend(await _gitlab_project_pipelines(pid))
     bounded = _public_external_result(
         {
             'status': 'success',
@@ -14064,6 +14111,62 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _document_source(data: dict[str, Any]) -> tuple[Any, Any]:
+    """Validate ``{text, path}`` into the pair the ingestion call needs."""
+    text = data.get('text')
+    path = data.get('path')
+    if not text and not path:
+        raise HTTPException(status_code=422, detail='text or path is required')
+    if text is not None and (
+        not isinstance(text, str)
+        or len(text.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES
+    ):
+        raise HTTPException(status_code=400, detail='Document text exceeds its limit')
+    if path is not None:
+        path = _workspace_ingestion_source(path)
+    return text, path
+
+
+def _document_chunking(data: dict[str, Any]) -> tuple[int, int]:
+    """Validate ``{chunk_size, overlap}`` into a bounded chunking plan."""
+    chunk_size = int(data.get('chunk_size', 800) or 800)
+    overlap = int(data.get('overlap', 120) or 120)
+    if not 64 <= chunk_size <= 16_384 or not 0 <= overlap < chunk_size:
+        raise HTTPException(status_code=400, detail='Invalid document chunking bounds')
+    return chunk_size, overlap
+
+
+def _document_metadata_kwargs(data: dict[str, Any]) -> dict[str, Any]:
+    """The bounded, string-only document metadata to pass through."""
+    kwargs: dict[str, Any] = {}
+    for key in ('title', 'doc_type', 'source', 'document_id'):
+        value = data.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str) or len(value.encode('utf-8')) > 2048:
+            raise HTTPException(status_code=400, detail='Invalid document metadata')
+        kwargs[key] = value
+    if data.get('metadata') is not None:
+        kwargs['metadata'] = _bounded_query_params(data['metadata'])
+    return kwargs
+
+
+def _document_ingest_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Bound and shape the ingestion result into the response body."""
+    chunks = list(result.get('chunk_nodes', []) or [])
+    edges = list(result.get('edges', []) or [])
+    if (
+        len(chunks) > _MAX_EXTERNAL_COLLECTION_ITEMS
+        or len(edges) > _MAX_EXTERNAL_COLLECTION_ITEMS
+    ):
+        raise HTTPException(status_code=422, detail='Document result exceeds its limit')
+    return {
+        'document': result.get('document_node'),
+        'chunks': chunks,
+        'edges': edges,
+    }
+
+
 @router.post('/ontology/document/process')
 async def process_ontology_document(data: dict[str, Any]) -> dict[str, Any]:
     """Process a document into Document + Chunk objects (KG-2.48).
@@ -14072,65 +14175,21 @@ async def process_ontology_document(data: dict[str, Any]) -> dict[str, Any]:
     """
     try:
         kg, ontology = await _get_ontology_kg_bounded()
-        text = data.get('text')
-        path = data.get('path')
-        if not text and not path:
-            raise HTTPException(status_code=422, detail='text or path is required')
-        if text is not None:
-            if (
-                not isinstance(text, str)
-                or len(text.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES
-            ):
-                raise HTTPException(
-                    status_code=400, detail='Document text exceeds its limit'
-                )
-        if path is not None:
-            path = _workspace_ingestion_source(path)
-
-        chunk_size = int(data.get('chunk_size', 800) or 800)
-        overlap = int(data.get('overlap', 120) or 120)
-        if not 64 <= chunk_size <= 16_384 or not 0 <= overlap < chunk_size:
-            raise HTTPException(
-                status_code=400, detail='Invalid document chunking bounds'
-            )
-        kwargs: dict[str, Any] = {}
-        for key in ('title', 'doc_type', 'source', 'document_id'):
-            if data.get(key) is not None:
-                value = data[key]
-                if not isinstance(value, str) or len(value.encode('utf-8')) > 2048:
-                    raise HTTPException(
-                        status_code=400, detail='Invalid document metadata'
-                    )
-                kwargs[key] = value
-        if data.get('metadata') is not None:
-            kwargs['metadata'] = _bounded_query_params(data['metadata'])
+        text, path = _document_source(data)
+        chunk_size, overlap = _document_chunking(data)
+        kwargs = _document_metadata_kwargs(data)
         if text and path:
             kwargs.setdefault('text', text)
 
-        document = path if path else text
         result = await _invoke_governed_helper(
             ontology.process_document,
             deadline=30.0,
-            document=document,
+            document=path if path else text,
             chunk_size=chunk_size,
             overlap=overlap,
             **kwargs,
         )
-        chunks = list(result.get('chunk_nodes', []) or [])
-        edges = list(result.get('edges', []) or [])
-        if (
-            len(chunks) > _MAX_EXTERNAL_COLLECTION_ITEMS
-            or len(edges) > _MAX_EXTERNAL_COLLECTION_ITEMS
-        ):
-            raise HTTPException(
-                status_code=422, detail='Document result exceeds its limit'
-            )
-        response = {
-            'document': result.get('document_node'),
-            'chunks': chunks,
-            'edges': edges,
-        }
-        return _public_external_result(response)
+        return _public_external_result(_document_ingest_result(result))
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
