@@ -1,0 +1,69 @@
+# Repository-root directory-justification manifest, read by
+# scripts/check_root_hygiene.py.
+#
+# This is NOT a ratchet. A ratchet (a "baseline" a gate compares against
+# instead of an absolute standard) hides existing findings from view and only
+# ever grows by a gate silently re-recording whatever is currently true. This
+# file does the opposite on both counts:
+#   * it hides no finding -- every tracked root entry not listed here is a
+#     gate FAILURE, not a suppressed one;
+#   * it grows only by a deliberate human (or human-reviewed) edit that adds
+#     a one-line reason, never by a tool re-writing it to match the tree;
+#   * a listed entry that stops being tracked is ALSO a gate failure (see
+#     check_root_hygiene.py's stale-entry check) -- so unlike a baseline, this
+#     file cannot rot into fiction by silently outliving what it describes.
+#
+# Every tracked root directory, and every tracked non-dot root file, must have
+# a line here. Conventional, self-describing dot-FILES (.gitignore,
+# .pre-commit-config.yaml, ...) are instead enumerated in
+# scripts/check_root_hygiene.py's ALLOWED_DOTFILES -- see that module's
+# docstring for why the split. Ported from the agent-utilities original of
+# this gate per CX-HYG-01.
+
+[dirs]
+agent = "the agent_webui Python backend package: FastAPI + pydantic-ai orchestrator, RBAC/OIDC session handling, observability, api_extensions -- plus its own README, icon, and mcp_config.json"
+docker = "Dockerfile plus build_and_push.sh / deploy.sh for the webui image"
+docs = "mkdocs documentation source (architecture, concepts, capability coverage)"
+e2e = "Playwright end-to-end specs (auth, graph-view, knowledge-base-view, memory-view, routes-smoke, sdd-view)"
+public = "static assets Vite serves as-is (favicons, apple-touch-icon)"
+scripts = "gate scripts (check_*.py) and release tooling invoked by pre-commit/CI"
+specs = "lightweight per-feature spec markdown (delete-past-chats, update-color-scheme, update-tools-dropdown) -- distinct from the spec-kit-generated specs under .specify/specs/"
+src = "the React/TypeScript frontend: App/Chat/Part components, assets, component tree, and its own __tests__"
+tests = "the Python backend test suite: characterization tests plus dashboard/health/graph-endpoint tests"
+".github" = "GitHub Actions workflow definitions"
+".security" = "adversarial security-gate scripts (authenticated_negative.py, repository_fuzz.py) and security-contract.json read by the security CI gate"
+".specify" = "spec-kit state for SDD-governed feature work: memory/reports/specs"
+# LAYOUT DEBT, reported by CX-HYG-01, NOT fixed by this lane (moving the file
+# is outside this lane's ownership -- see the CX-HYG-01 lane report). This is
+# a directory named `agent-webui` tracked INSIDE the agent-webui repo itself,
+# containing exactly one file: agent-webui/docs/concept_reservations.yaml.
+# That file almost certainly belongs at docs/concept_reservations.yaml
+# (the real docs/ directory two lines up already exists). Declared here,
+# honestly, so the gate stays green without hiding the debt: removing this
+# line the moment the file is moved is how the manifest's own staleness
+# check confirms the move actually happened.
+"agent-webui" = "LAYOUT DEBT: a self-nested directory holding one misplaced file (agent-webui/docs/concept_reservations.yaml) that belongs at docs/concept_reservations.yaml; not moved by CX-HYG-01 (outside its ownership), reported for follow-up"
+
+[files]
+"AGENTS.md" = "agent-facing repo guide"
+"CHANGELOG.md" = "release changelog, updated by the bump2version release flow"
+"CLAUDE.md" = "Claude Code project instructions"
+"LICENSE" = "license text"
+"README.md" = "project readme"
+"commitlint.config.js" = "commitlint rules enforcing Conventional Commits, run by the commit-msg hook"
+"components.json" = "shadcn/ui component generator config"
+"cspell.json" = "cspell spellcheck dictionary/config"
+"eslint.config.ts" = "ESLint flat config for the TS/React frontend"
+"index.html" = "Vite SPA entry HTML"
+"mkdocs.yml" = "mkdocs site config"
+"opencode.json" = "opencode tool config"
+"package.json" = "npm/pnpm package manifest and scripts"
+"playwright.config.ts" = "Playwright e2e runner config"
+"pnpm-lock.yaml" = "pnpm lockfile"
+"pyproject.toml" = "Python backend (agent/ package) build plus tool config"
+"pytest.ini" = "pytest configuration for the agent/ backend suite"
+"requirements.txt" = "pinned runtime deps for non-uv installs"
+"tsconfig.json" = "TypeScript project config"
+"uv.lock" = "uv lockfile for the Python backend"
+"vite.config.ts" = "Vite bundler config"
+"vitest.config.ts" = "Vitest unit-test runner config"
