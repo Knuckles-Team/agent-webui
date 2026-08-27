@@ -508,8 +508,27 @@ def _bounded_external_value(
     *,
     depth: int = 0,
     budget: list[int] | None = None,
+    truncate_lists: bool = False,
 ) -> Any:
-    """Copy an untrusted delegated result under deterministic shape limits."""
+    """Copy an untrusted delegated result under deterministic shape limits.
+
+    ``truncate_lists`` (default ``False``, preserving the original strict
+    contract every existing caller depends on): when a caller cannot slice
+    or paginate a delegated result BEFORE it reaches this function -- e.g.
+    the shared, arbitrary-shape delegation seams `_call_mcp_tool` and
+    `_proxy_to_gateway`, which hand back whatever JSON shape the remote
+    tool/gateway returns, unknown to this function -- an oversized LIST is
+    kept (its first `_MAX_EXTERNAL_COLLECTION_ITEMS` elements) instead of
+    raising. This is deliberately narrower than "never raise": an oversized
+    MAPPING still raises (a dict with >256 top-level keys is far more likely
+    to be a malformed/hostile shape than a legitimate large field list), and
+    every existing caller that validates CALLER-submitted input (delegation
+    arguments, gateway request bodies, chat/query params) keeps the default
+    strict raise -- rejecting oversized input loudly is correct there; it is
+    only a legitimate, large, un-presliceable UPSTREAM result that should
+    degrade to "the first 256 items" rather than to an indistinguishable
+    empty/error response.
+    """
 
     if budget is None:
         budget = [0]
@@ -539,22 +558,31 @@ def _bounded_external_value(
                 item,
                 depth=depth + 1,
                 budget=budget,
+                truncate_lists=truncate_lists,
             )
         return clean
     if isinstance(value, (list, tuple, set, frozenset)):
-        if len(value) > _MAX_EXTERNAL_COLLECTION_ITEMS:
-            raise ValueError('Delegated result contains an oversized collection')
+        items = list(value)
+        if len(items) > _MAX_EXTERNAL_COLLECTION_ITEMS:
+            if not truncate_lists:
+                raise ValueError('Delegated result contains an oversized collection')
+            items = items[:_MAX_EXTERNAL_COLLECTION_ITEMS]
         return [
-            _bounded_external_value(item, depth=depth + 1, budget=budget)
-            for item in value
+            _bounded_external_value(
+                item, depth=depth + 1, budget=budget, truncate_lists=truncate_lists
+            )
+            for item in items
         ]
     raise ValueError('Delegated result contains an unsupported value')
 
 
-def _public_external_result(value: Any) -> Any:
-    """Bound and privacy-sanitize data returned by an external delegation."""
+def _public_external_result(value: Any, *, truncate_lists: bool = False) -> Any:
+    """Bound and privacy-sanitize data returned by an external delegation.
 
-    bounded = _bounded_external_value(value)
+    See `_bounded_external_value`'s docstring for `truncate_lists`.
+    """
+
+    bounded = _bounded_external_value(value, truncate_lists=truncate_lists)
     clean, _privacy_report = sanitize_for_persistence(bounded)
     encoded = json.dumps(
         clean,
@@ -3554,7 +3582,30 @@ async def get_chat(chat_id: str) -> dict[str, Any]:
     result = h(chat_id) if h else None
     if not result:
         return {'id': chat_id, 'title': 'Chat', 'messages': []}
-    bounded = _public_external_result(result)
+    if not isinstance(result, dict):
+        raise HTTPException(status_code=422, detail='Invalid chat record')
+    # Same defect family as the MCP-tools/skills/CallableResource bugs: a
+    # long-running conversation's `messages` list is passed through
+    # unsliced, and `_bounded_external_value` RAISES on any list over
+    # `_MAX_EXTERNAL_COLLECTION_ITEMS` (256) -- unlike those three, nothing
+    # here caught it, so a >256-message chat 500'd with no way to ever open
+    # it again. Keep the most RECENT messages (a transcript is read
+    # tail-first) and report the true total so truncation is visible
+    # instead of the conversation silently losing its tail, or its head.
+    messages = result.get('messages')
+    result = dict(result)
+    if isinstance(messages, list) and len(messages) > _MAX_EXTERNAL_COLLECTION_ITEMS:
+        result['messages'] = messages[-_MAX_EXTERNAL_COLLECTION_ITEMS:]
+        result['message_total'] = len(messages)
+        result['messages_truncated'] = True
+    try:
+        bounded = _public_external_result(result)
+    except ValueError as exc:
+        # A field other than `messages` (e.g. an oversized attachment) still
+        # trips the bound -- fail loud and legible rather than an unhandled
+        # 500 with no detail.
+        _log_failure('get_chat_bound', exc)
+        raise HTTPException(status_code=422, detail='Invalid chat record') from exc
     if not isinstance(bounded, dict):
         raise HTTPException(status_code=422, detail='Invalid chat record')
     return bounded
@@ -4553,7 +4604,17 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
                     'target': row.get('target', ''),
                 }
             )
-        return _public_external_result(relationships)
+        # Re-bound after the union merge (same fix `list_resources` already
+        # applies): the Cypher `LIMIT` above caps each GRAPH's own read at
+        # `_MAX_EXTERNAL_COLLECTION_ITEMS`, but `_read_union_cypher` can read
+        # more than one accessible graph (tenant + `__commons__`), and their
+        # combined row count can exceed that cap even though neither graph's
+        # own read did. Without this, `_public_external_result` raised
+        # `ValueError('...oversized collection')` on the merged list and the
+        # broad `except` below turned a real, over-cap result into a loud
+        # 503 -- never silently `[]`, but still indistinguishable from a
+        # genuine backend failure for a tenant with a busy commons graph.
+        return _public_external_result(relationships[:_MAX_EXTERNAL_COLLECTION_ITEMS])
     except HTTPException:
         raise
     except Exception as e:
@@ -6271,9 +6332,24 @@ async def get_tasks(plan_id: str | None = None) -> list[Any] | dict[str, Any]:
             tasks = await _invoke_governed_helper(
                 manager.get_tasks, plan_id, deadline=10.0
             )
+            raw_tasks = tasks.model_dump() if hasattr(tasks, 'model_dump') else tasks
         else:
             tasks = await _invoke_governed_helper(manager.get_all_tasks, deadline=10.0)
-        raw_tasks = tasks.model_dump() if hasattr(tasks, 'model_dump') else tasks
+            # A DIFFERENT instance of the same silent-empty failure family,
+            # found auditing this bug: `get_all_tasks()` returns `list[Tasks]`
+            # -- a bare LIST of pydantic models, which has no `.model_dump()`
+            # of its own (only each ELEMENT does; a bare `list` fails the
+            # `hasattr(tasks, 'model_dump')` check below, which only ever
+            # applied to the `plan_id` branch's single `Tasks | None`). The
+            # raw list of pydantic objects always reached
+            # `_public_external_result` unconverted, which cannot serialize a
+            # pydantic instance (`ValueError('...unsupported value')`) --
+            # caught by the broad `except` below and reported as `{}`,
+            # indistinguishable from "no tasks in any feature", for ANY
+            # non-empty result -- not just an oversized one.
+            raw_tasks = [
+                t.model_dump() if hasattr(t, 'model_dump') else t for t in (tasks or [])
+            ][:_MAX_EXTERNAL_COLLECTION_ITEMS]
         if isinstance(raw_tasks, dict) and isinstance(raw_tasks.get('tasks'), list):
             raw_tasks = {
                 **raw_tasks,
@@ -7843,7 +7919,17 @@ async def _proxy_to_gateway(method: str, path: str, json_data: Any = None) -> An
                 body.extend(chunk)
                 if len(body) > _MAX_EXTERNAL_RESULT_BYTES:
                     raise ValueError('Gateway response exceeds its safety bound')
-    return _public_external_result(json.loads(body))
+    # Same shared-seam defect as `_call_mcp_tool` above: this proxies to the
+    # loopback epistemic gateway for both single-record reads (a session, a
+    # goal) and un-presliceable LIST reads (`GET /sessions`, `GET /goals`,
+    # `GET /goals/{id}/iterations`) whose caller-side `except Exception`
+    # (e.g. `get_all_sessions`/`list_goals`) falls back to a SEPARATE,
+    # usually smaller local store on any failure -- so a gateway list over
+    # `_MAX_EXTERNAL_COLLECTION_ITEMS` used to raise here and silently
+    # surface as "the local/degraded session list" instead of the real,
+    # large gateway result. `truncate_lists=True` keeps the first 256
+    # elements of an oversized list instead of discarding the whole read.
+    return _public_external_result(json.loads(body), truncate_lists=True)
 
 
 def _get_db_path() -> Path:
@@ -9351,13 +9437,23 @@ async def get_tunnel_hosts() -> dict[str, Any]:
             delegated_inventory,
             deadline=10.0,
         )
+        # Slice to the render cap BEFORE bounding, not after: the same
+        # defect as the MCP-tools/skills/CallableResource bug family --
+        # bounding the WHOLE raw inventory first raised
+        # ValueError('...oversized collection') for any host list/mapping
+        # over 256 entries, caught by the broad `except` below and
+        # surfaced as a 502 indistinguishable from the adapter being down.
+        if isinstance(raw_hosts, dict):
+            raw_hosts = dict(list(raw_hosts.items())[:_MAX_EXTERNAL_COLLECTION_ITEMS])
+        elif isinstance(raw_hosts, list):
+            raw_hosts = raw_hosts[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        else:
+            raise ValueError('Governed tunnel inventory returned an invalid shape')
         raw_hosts = _public_external_result(raw_hosts)
         if isinstance(raw_hosts, dict):
-            inventory = list(raw_hosts.items())[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+            inventory = list(raw_hosts.items())
         elif isinstance(raw_hosts, list):
-            inventory = list(enumerate(raw_hosts, start=1))[
-                :_MAX_EXTERNAL_COLLECTION_ITEMS
-            ]
+            inventory = list(enumerate(raw_hosts, start=1))
         else:
             raise ValueError('Governed tunnel inventory returned an invalid shape')
 
@@ -9535,13 +9631,19 @@ async def list_docker_containers() -> list[dict[str, Any]]:
             deadline=10.0,
             include_stopped=True,
         )
-        raw_containers = _public_external_result(raw_containers)
         if not isinstance(raw_containers, list):
             raise ValueError('Governed container inventory returned an invalid shape')
+        # Slice to the render cap BEFORE bounding, not after -- same defect
+        # as the MCP-tools/skills/CallableResource bug family: bounding the
+        # WHOLE `include_stopped=True` inventory first raised
+        # ValueError('...oversized collection') for any host over 256
+        # containers, caught by the broad `except` below and surfaced as a
+        # 503 indistinguishable from the adapter being down.
+        raw_containers = _public_external_result(
+            raw_containers[:_MAX_CONTAINER_RECORDS]
+        )
         results = []
-        for index, container in enumerate(
-            raw_containers[:_MAX_CONTAINER_RECORDS], start=1
-        ):
+        for index, container in enumerate(raw_containers, start=1):
             if not isinstance(container, dict):
                 continue
             identity = str(
@@ -9865,7 +9967,20 @@ async def _call_mcp_tool(
         arguments=bounded_arguments,
         timeout=bounded_timeout,
     )
-    return _public_external_result(result)
+    # Systemic instance of the MCP-tools/skills/CallableResource bug family,
+    # one level removed: EVERY `/ecosystem/*` route (Jira, GitHub, GitLab,
+    # SearXNG, Home Assistant, Nextcloud, ...) funnels its raw tool result
+    # through this ONE shared helper, then slices/projects it AFTER this
+    # call returns (e.g. `issues[:100]`). Bounding the raw, un-presliceable
+    # upstream payload here with the strict (raising) default meant any tool
+    # response over `_MAX_EXTERNAL_COLLECTION_ITEMS` (256) items anywhere in
+    # its shape raised before the caller ever got to slice it, and every
+    # caller's `except Exception` turned that into an honest-looking
+    # `_service_error` -- indistinguishable from the remote service actually
+    # being down. `truncate_lists=True` keeps the first 256 elements of an
+    # oversized list instead, so a caller's own downstream slice still runs
+    # against a real (if truncated-at-a-second-cap) list.
+    return _public_external_result(result, truncate_lists=True)
 
 
 @router.get('/ecosystem/atlassian/kanban')

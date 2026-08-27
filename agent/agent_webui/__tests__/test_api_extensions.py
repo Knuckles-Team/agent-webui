@@ -786,6 +786,35 @@ class TestGraphRelationshipsEndpoint:
                 for row in data
             )
 
+    def test_get_graph_relationships_survives_more_than_256_merged_rows(
+        self, client, mock_graph_engine
+    ):
+        """A union merge (tenant graph + `__commons__`) can combine more rows
+        than any single graph's own `LIMIT 256` produced, even though
+        neither graph's own read exceeded it. Before the re-bound fix, the
+        merged list went straight into `_public_external_result`, which
+        raises `ValueError('Delegated result contains an oversized
+        collection')` on any list over `_MAX_EXTERNAL_COLLECTION_ITEMS`
+        (256); the broad `except Exception` turned that into a loud (but
+        still wrong) 503 -- indistinguishable from a real backend failure.
+        `get_graph_relationships` now re-slices to the cap after the union
+        merge, exactly like `list_resources` already does.
+        """
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            mock_graph_engine.query_cypher.return_value = [
+                {'source': f'n{i}', 'type': 'REFERENCES', 'target': f'n{i + 1}'}
+                for i in range(300)
+            ]
+
+            response = client.get('/api/enhanced/graph/relationships')
+            assert response.status_code == 200
+            data = response.json()
+            assert isinstance(data, list)
+            assert len(data) == 256
+
     def test_get_graph_relationships_no_engine(self, client):
         """Test graph relationships when engine not initialized."""
         with patch(

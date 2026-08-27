@@ -202,7 +202,16 @@ def mock_sdd_manager():
     manager.create_spec.return_value = MagicMock(id='spec1')
     manager.list_plans.return_value = []
     manager.get_tasks.return_value = MagicMock(tasks=[])
-    manager.get_all_tasks.return_value = MagicMock(tasks=[])
+    # `get_all_tasks()`'s REAL contract is `list[Tasks]` -- a bare list of
+    # pydantic models, not a single object with its own `.model_dump()`
+    # (only `get_tasks()`, above, returns a single `Tasks | None`). This
+    # used to be mocked as `MagicMock(tasks=[])`, which auto-satisfies
+    # `hasattr(..., 'model_dump')` and never exercised the real shape --
+    # masking a bug where the API route's raw `list[Tasks]` reached
+    # `_public_external_result` unconverted and raised on any non-empty
+    # result (see agent-webui's `test_bound_sweep_regressions.py`
+    # ::TestGetAllTasksHandlesTheListOfPydanticModelsShape).
+    manager.get_all_tasks.return_value = []
     manager.sync_to_memory.return_value = None
 
     return manager
