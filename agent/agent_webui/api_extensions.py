@@ -16,7 +16,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable
 from concurrent import futures as _futures
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from ipaddress import ip_address
 from pathlib import Path
@@ -2022,6 +2022,147 @@ _FLEET_CATALOG_TOTAL_DEADLINE_SECONDS = 30.0
 # round trips for nothing (measured: 21s for /api/enhanced/tools).
 
 
+@dataclass(frozen=True)
+class _FleetCatalogRead:
+    """Authority + timing context shared by every kind of ONE catalog read."""
+
+    tenant: Any
+    principal: Any
+    grant_digests: Any
+    engine: Any
+    loop: Any
+    started: float
+
+    def remaining(self) -> float:
+        """Seconds left in the whole multi-kind budget."""
+        return _FLEET_CATALOG_TOTAL_DEADLINE_SECONDS - (self.loop.time() - self.started)
+
+    def call_kwargs(self, remaining_total: float) -> dict[str, Any]:
+        """The authority/deadline kwargs every registry_api read call takes."""
+        return {
+            'tenant': self.tenant,
+            'principal': self.principal,
+            'grant_digests': self.grant_digests,
+            'query': '',
+            'engine': self.engine,
+            'deadline': min(_FLEET_CATALOG_DEADLINE_SECONDS, remaining_total),
+        }
+
+
+async def _fleet_catalog_authority() -> _FleetCatalogRead | None:
+    """Resolve the catalog authority + engine, or ``None`` if unreachable."""
+    from agent_utilities.gateway.registry_api import (
+        _get_catalog_engine,
+        _require_catalog_authority,
+    )
+
+    try:
+        tenant, principal, grant_digests = _require_catalog_authority(
+            require_discovery_binding=True
+        )
+        engine = _get_catalog_engine()
+    except Exception as exc:
+        _log_failure('fleet_catalog_authority', exc)
+        return None
+    loop = asyncio.get_running_loop()
+    return _FleetCatalogRead(
+        tenant=tenant,
+        principal=principal,
+        grant_digests=grant_digests,
+        engine=engine,
+        loop=loop,
+        started=loop.time(),
+    )
+
+
+async def _fleet_catalog_record_total(
+    ctx: _FleetCatalogRead, kind: str, remaining_total: float
+) -> None:
+    """Record the real row total for a kind that stopped at the render bound.
+
+    ONE pushed-down ``COUNT(*)`` (`_authorized_count`, the same
+    authority/filter predicate the page read used) gives the caller the real
+    total so it can say "showing 256 of 841" instead of presenting a truncated
+    list as the whole catalog. The rows are already read and good, so a failed
+    COUNT must degrade to "total unknown", never discard the kind -- which is
+    what the caller's `except` would do if this were allowed to propagate.
+    """
+    from agent_utilities.gateway.registry_api import _authorized_count
+
+    try:
+        _set_fleet_catalog_total(
+            kind,
+            await _invoke_governed_helper(
+                _authorized_count, kind, **ctx.call_kwargs(remaining_total)
+            ),
+        )
+    except Exception as exc:
+        _log_failure(f'fleet_catalog_{kind}_total', exc)
+
+
+async def _fleet_catalog_rows(
+    ctx: _FleetCatalogRead, kind: str, spec: Any
+) -> list[dict[str, Any]]:
+    """Walk one kind's keyset pages until drained, bounded, or out of budget.
+
+    registry_api pushes LIMIT/keyset/filter/authz into SQL, so a page
+    transfers only its own rows. Walk the keyset until the catalog is
+    exhausted rather than asking for the whole table.
+    """
+    from agent_utilities.gateway.registry_api import (
+        _MAX_LIMIT,
+        _authorized_page,
+        _row_key,
+    )
+
+    rows: list[dict[str, Any]] = []
+    after: tuple[str, str] | None = None
+    while True:
+        remaining_total = ctx.remaining()
+        if remaining_total <= 0:
+            raise TimeoutError('overall fleet catalog deadline exceeded')
+        page = await _invoke_governed_helper(
+            _authorized_page,
+            kind,
+            after=after,
+            limit=_MAX_LIMIT,
+            **ctx.call_kwargs(remaining_total),
+        )
+        if not page:
+            break
+        rows.extend(page)
+        if len(page) < _MAX_LIMIT:
+            # Drained: the row count IS the total, for free.
+            _set_fleet_catalog_total(kind, len(rows))
+            break
+        if len(rows) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            # Stopped at the render bound with rows still unread. Never leave
+            # that silent; only a kind that actually hit the bound pays for it.
+            await _fleet_catalog_record_total(ctx, kind, remaining_total)
+            break
+        after = _row_key(spec, page[-1])
+    return rows
+
+
+async def _fleet_catalog_kind(
+    ctx: _FleetCatalogRead, kind: str
+) -> list[dict[str, Any]] | None:
+    """Read ONE kind. Independent degradation: this kind failing must not
+    discard earlier/later kinds, so any failure returns ``None`` rather than
+    propagating -- including a per-call 503 (capacity exhausted / deadline
+    exceeded from `_invoke_governed_helper`), which used to kill the WHOLE
+    multi-kind read."""
+    from agent_utilities.gateway.registry_api import _KIND_SPECS, _validate_item
+
+    spec = _KIND_SPECS[kind]
+    try:
+        rows = await _fleet_catalog_rows(ctx, kind, spec)
+        return [_validate_item(kind, spec.model, row).model_dump() for row in rows]
+    except Exception as exc:
+        _log_failure(f'fleet_catalog_{kind}', exc)
+        return None
+
+
 async def _read_fleet_catalog(
     *kinds: str,
 ) -> dict[str, list[dict[str, Any]] | None] | None:
@@ -2059,121 +2200,15 @@ async def _read_fleet_catalog(
     is unchanged); the new per-kind ``None`` granularity is additive, for
     the partial-failure case that previously discarded healthy kinds.
     """
-    from agent_utilities.gateway.registry_api import (
-        _KIND_SPECS,
-        _MAX_LIMIT,
-        CatalogUnavailable,
-        _authorized_count,
-        _authorized_page,
-        _get_catalog_engine,
-        _require_catalog_authority,
-        _row_key,
-        _validate_item,
-    )
-
-    try:
-        tenant, principal, grant_digests = _require_catalog_authority(
-            require_discovery_binding=True
-        )
-        engine = _get_catalog_engine()
-    except PermissionError as exc:
-        _log_failure('fleet_catalog_authority', exc)
+    ctx = await _fleet_catalog_authority()
+    if ctx is None:
         return None
-    except Exception as exc:
-        _log_failure('fleet_catalog_authority', exc)
-        return None
-
-    loop = asyncio.get_running_loop()
-    started = loop.time()
-
     result: dict[str, list[dict[str, Any]] | None] = dict.fromkeys(kinds)
     for kind in kinds:
-        remaining_total = _FLEET_CATALOG_TOTAL_DEADLINE_SECONDS - (
-            loop.time() - started
-        )
-        if remaining_total <= 0:
+        if ctx.remaining() <= 0:
             _log_failure(f'fleet_catalog_{kind}_total_budget', TimeoutError(kind))
             continue  # Leaves result[kind] at its `None` default.
-        spec = _KIND_SPECS[kind]
-        try:
-            # registry_api pushes LIMIT/keyset/filter/authz into SQL, so a
-            # page transfers only its own rows. Walk the keyset until the
-            # catalog is exhausted rather than asking for the whole table.
-            rows: list[dict[str, Any]] = []
-            after: tuple[str, str] | None = None
-            while True:
-                remaining_total = _FLEET_CATALOG_TOTAL_DEADLINE_SECONDS - (
-                    loop.time() - started
-                )
-                if remaining_total <= 0:
-                    raise TimeoutError('overall fleet catalog deadline exceeded')
-                page = await _invoke_governed_helper(
-                    _authorized_page,
-                    kind,
-                    tenant=tenant,
-                    principal=principal,
-                    grant_digests=grant_digests,
-                    query='',
-                    after=after,
-                    limit=_MAX_LIMIT,
-                    engine=engine,
-                    deadline=min(_FLEET_CATALOG_DEADLINE_SECONDS, remaining_total),
-                )
-                if not page:
-                    break
-                rows.extend(page)
-                if len(page) < _MAX_LIMIT:
-                    # Drained: the row count IS the total, for free.
-                    _set_fleet_catalog_total(kind, len(rows))
-                    break
-                if len(rows) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                    # Stopped at the render bound with rows still unread.
-                    # Never leave that silent: ONE pushed-down `COUNT(*)`
-                    # (`_authorized_count`, the same authority/filter
-                    # predicate the page read used) gives the caller the real
-                    # total so it can say "showing 256 of 841" instead of
-                    # presenting a truncated list as the whole catalog. Only
-                    # a kind that actually hit the bound pays for it.
-                    try:
-                        _set_fleet_catalog_total(
-                            kind,
-                            await _invoke_governed_helper(
-                                _authorized_count,
-                                kind,
-                                tenant=tenant,
-                                principal=principal,
-                                grant_digests=grant_digests,
-                                query='',
-                                engine=engine,
-                                deadline=min(
-                                    _FLEET_CATALOG_DEADLINE_SECONDS,
-                                    remaining_total,
-                                ),
-                            ),
-                        )
-                    except Exception as exc:
-                        # The rows are already read and good. A failed COUNT
-                        # must degrade to "total unknown", never discard the
-                        # kind -- that is what the enclosing `except` would
-                        # do if this were allowed to propagate.
-                        _log_failure(f'fleet_catalog_{kind}_total', exc)
-                    break
-                after = _row_key(spec, page[-1])
-            result[kind] = [
-                _validate_item(kind, spec.model, row).model_dump() for row in rows
-            ]
-        except CatalogUnavailable as exc:
-            _log_failure(f'fleet_catalog_{kind}', exc)
-            # Independent degradation: this kind failed, but earlier/later
-            # kinds must not be discarded because of it (result[kind] stays
-            # `None`, the rest of the loop continues).
-        except HTTPException as exc:
-            _log_failure(f'fleet_catalog_{kind}', exc)
-            # A per-call 503 (capacity exhausted / deadline exceeded from
-            # `_invoke_governed_helper`) used to propagate and kill the
-            # WHOLE multi-kind read. Degrade just this one kind instead.
-        except Exception as exc:
-            _log_failure(f'fleet_catalog_{kind}', exc)
+        result[kind] = await _fleet_catalog_kind(ctx, kind)
     return result
 
 
@@ -10769,6 +10804,78 @@ async def get_homeassistant_devices():
     return {'status': 'success', 'source': 'live', 'devices': devices}
 
 
+def _unwrap_mcp_collection(raw: Any, key: str) -> list[Any]:
+    """Unwrap a `{key: [...]}`-or-bare-list MCP result to a list."""
+    value = raw.get(key, raw) if isinstance(raw, dict) else raw
+    return value if isinstance(value, list) else []
+
+
+def _nextcloud_calendar_name(cal: Any) -> str | None:
+    """A calendar's usable, bounded display name, or ``None`` to skip it."""
+    if not isinstance(cal, dict):
+        return None
+    name = cal.get('name') or cal.get('id') or cal.get('display_name')
+    if not isinstance(name, str) or not name.strip():
+        return None
+    if len(name.encode('utf-8')) > 512:
+        return None
+    return name
+
+
+async def _nextcloud_calendar_events(cal_name: str) -> list[Any]:
+    """List one calendar's events. A single calendar failing must not
+    fabricate or drop the rest, so a failed call degrades to []."""
+    try:
+        raw = await _call_mcp_tool(
+            'nextcloud-mcp',
+            'nextcloud_calendar',
+            {
+                'action': 'list_calendar_events',
+                'params_json': json.dumps({'calendar_name': cal_name}),
+            },
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    return _unwrap_mcp_collection(raw, 'events')
+
+
+def _nextcloud_event_record(ev: dict[str, Any], cal_name: str) -> dict[str, Any]:
+    """One Nextcloud event in the shape the calendar view consumes."""
+    return {
+        'id': ev.get('uid') or ev.get('id'),
+        'calendar': cal_name,
+        'title': ev.get('summary') or ev.get('title'),
+        'start': ev.get('start') or ev.get('dtstart'),
+        'end': ev.get('end') or ev.get('dtend'),
+    }
+
+
+def _append_nextcloud_events(
+    events: list[dict[str, Any]], raw_events: list[Any], cal_name: str
+) -> None:
+    """Append one calendar's events until the shared item bound is reached."""
+    for ev in raw_events:
+        if len(events) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            return
+        if isinstance(ev, dict):
+            events.append(_nextcloud_event_record(ev, cal_name))
+
+
+async def _collect_nextcloud_events(calendars: list[Any]) -> list[dict[str, Any]]:
+    """Enumerate every named calendar's events under one shared item bound."""
+    events: list[dict[str, Any]] = []
+    for cal in calendars:
+        if len(events) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            break
+        cal_name = _nextcloud_calendar_name(cal)
+        if cal_name is None:
+            continue
+        _append_nextcloud_events(
+            events, await _nextcloud_calendar_events(cal_name), cal_name
+        )
+    return events
+
+
 @router.get('/ecosystem/nextcloud/events')
 async def get_nextcloud_events():
     """Retrieve real Nextcloud calendars and their events via ``nextcloud-mcp``.
@@ -10778,61 +10885,14 @@ async def get_nextcloud_events():
     ``list_calendar_events``. Surfaces an honest error if the server or
     Nextcloud is unreachable.
     """
-    import json as _json
-
     try:
         cals_raw = await _call_mcp_tool(
             'nextcloud-mcp', 'nextcloud_calendar', {'action': 'list_calendars'}
         )
     except Exception as e:  # noqa: BLE001
         return _service_error(e, calendars=[], events=[])
-    calendars = (
-        cals_raw.get('calendars', cals_raw) if isinstance(cals_raw, dict) else cals_raw
-    )
-    calendars = (
-        calendars[:_MAX_DELEGATION_FANOUT] if isinstance(calendars, list) else []
-    )
-
-    events: list[dict[str, Any]] = []
-    for cal in calendars:
-        if len(events) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-            break
-        if not isinstance(cal, dict):
-            continue
-        cal_name = cal.get('name') or cal.get('id') or cal.get('display_name')
-        if (
-            not isinstance(cal_name, str)
-            or not cal_name.strip()
-            or len(cal_name.encode('utf-8')) > 512
-        ):
-            continue
-        try:
-            evs_raw = await _call_mcp_tool(
-                'nextcloud-mcp',
-                'nextcloud_calendar',
-                {
-                    'action': 'list_calendar_events',
-                    'params_json': _json.dumps({'calendar_name': cal_name}),
-                },
-            )
-        except Exception:  # noqa: BLE001
-            # A single calendar failing must not fabricate or drop the rest.
-            continue
-        evs = evs_raw.get('events', evs_raw) if isinstance(evs_raw, dict) else evs_raw
-        for ev in evs if isinstance(evs, list) else []:
-            if len(events) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                break
-            if not isinstance(ev, dict):
-                continue
-            events.append(
-                {
-                    'id': ev.get('uid') or ev.get('id'),
-                    'calendar': cal_name,
-                    'title': ev.get('summary') or ev.get('title'),
-                    'start': ev.get('start') or ev.get('dtstart'),
-                    'end': ev.get('end') or ev.get('dtend'),
-                }
-            )
+    calendars = _unwrap_mcp_collection(cals_raw, 'calendars')[:_MAX_DELEGATION_FANOUT]
+    events = await _collect_nextcloud_events(calendars)
     bounded = _public_external_result(
         {
             'status': 'success',
@@ -11581,6 +11641,84 @@ def _canvas_node_id(name: str) -> str:
     return f'workflowcanvas:{slug}'
 
 
+def _workflow_steps(steps_raw: Any) -> list[Any]:
+    """A workflow's steps, whether stored as a CSV string or a list."""
+    if isinstance(steps_raw, str):
+        return [s for s in steps_raw.split(',') if s]
+    return list(steps_raw or [])
+
+
+async def _workflow_orchestrates(engine: Any, workflow_id: str) -> list[str]:
+    """Resolve a workflow's ORCHESTRATES targets; a lookup failure yields []."""
+    try:
+        erows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
+            'WHERE w.id = $workflow_id RETURN t '
+            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
+            {'workflow_id': workflow_id},
+            deadline=15.0,
+        )
+    except HTTPException:
+        raise
+    except Exception as edge_err:  # noqa: BLE001
+        _log_failure('resolve_workflow_orchestration', edge_err, level=logging.DEBUG)
+        return []
+    orchestrates: list[str] = []
+    for er in erows:
+        target = er.get('t', {})
+        if isinstance(target, dict) and target.get('id'):
+            orchestrates.append(target['id'])
+    return orchestrates
+
+
+def _decode_workflow_canvas(crows: Any) -> Any:
+    """Decode a `:WorkflowCanvas` sidecar row's bounded canvas JSON."""
+    if not crows:
+        return None
+    cdata = crows[0].get('c', {})
+    raw = cdata.get('canvas') if isinstance(cdata, dict) else None
+    if not raw or not isinstance(raw, str):
+        return None
+    if len(raw.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES:
+        return None
+    return _bounded_external_value(json.loads(raw))
+
+
+async def _workflow_canvas(engine: Any, workflow_id: str) -> Any:
+    """Load the persisted canvas sidecar if present, else ``None``."""
+    try:
+        crows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (c:WorkflowCanvas) '
+            'WHERE c.workflow_id = $workflow_id RETURN c LIMIT 1',
+            {'workflow_id': workflow_id},
+            deadline=15.0,
+        )
+    except HTTPException:
+        raise
+    except Exception as canvas_err:  # noqa: BLE001
+        _log_failure('load_workflow_canvas', canvas_err, level=logging.DEBUG)
+        return None
+    return _decode_workflow_canvas(crows)
+
+
+async def _workflow_record(
+    engine: Any, wdata: dict[str, Any]
+) -> dict[str, Any] | None:
+    """One `:Workflow` node as an API record, or ``None`` if its id is oversized."""
+    workflow_id = str(wdata.get('id') or f'workflow:{wdata.get("name", "")}')
+    if len(workflow_id.encode('utf-8')) > _MAX_WORKFLOW_ID_BYTES:
+        return None
+    return {
+        'id': workflow_id,
+        'name': wdata.get('name', ''),
+        'steps': _workflow_steps(wdata.get('steps', '')),
+        'orchestrates': await _workflow_orchestrates(engine, workflow_id),
+        'canvas': await _workflow_canvas(engine, workflow_id),
+    }
+
+
 @router.get('/workflows')
 async def list_workflows() -> list[dict[str, Any]]:
     """List saved workflows from the Knowledge Graph.
@@ -11591,8 +11729,6 @@ async def list_workflows() -> list[dict[str, Any]]:
     A genuinely empty graph returns ``[]``; a backend failure (D-W5WR-4)
     raises ``HTTPException(503)`` instead of masquerading as ``[]``.
     """
-    import json
-
     try:
         engine = await _get_engine_bounded()
         rows = await _invoke_governed_helper(
@@ -11605,68 +11741,9 @@ async def list_workflows() -> list[dict[str, Any]]:
             wdata = row.get('w', {})
             if not isinstance(wdata, dict):
                 continue
-            wid = str(wdata.get('id') or f'workflow:{wdata.get("name", "")}')
-            if len(wid.encode('utf-8')) > _MAX_WORKFLOW_ID_BYTES:
-                continue
-            name = wdata.get('name', '')
-            steps_raw = wdata.get('steps', '')
-            steps = (
-                [s for s in steps_raw.split(',') if s]
-                if isinstance(steps_raw, str)
-                else list(steps_raw or [])
-            )
-            # Resolve orchestrates via ORCHESTRATES edges.
-            orchestrates: list[str] = []
-            try:
-                erows = await _invoke_governed_helper(
-                    engine.backend.execute,
-                    'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
-                    'WHERE w.id = $workflow_id RETURN t '
-                    f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
-                    {'workflow_id': wid},
-                    deadline=15.0,
-                )
-                for er in erows:
-                    target = er.get('t', {})
-                    if isinstance(target, dict) and target.get('id'):
-                        orchestrates.append(target['id'])
-            except HTTPException:
-                raise
-            except Exception as edge_err:  # noqa: BLE001
-                _log_failure(
-                    'resolve_workflow_orchestration', edge_err, level=logging.DEBUG
-                )
-
-            # Load persisted canvas sidecar if present.
-            canvas: Any = None
-            try:
-                crows = await _invoke_governed_helper(
-                    engine.backend.execute,
-                    'MATCH (c:WorkflowCanvas) '
-                    'WHERE c.workflow_id = $workflow_id RETURN c LIMIT 1',
-                    {'workflow_id': wid},
-                    deadline=15.0,
-                )
-                if crows:
-                    cdata = crows[0].get('c', {})
-                    raw = cdata.get('canvas') if isinstance(cdata, dict) else None
-                    if raw and isinstance(raw, str):
-                        if len(raw.encode('utf-8')) <= _MAX_EXTERNAL_RESULT_BYTES:
-                            canvas = _bounded_external_value(json.loads(raw))
-            except HTTPException:
-                raise
-            except Exception as canvas_err:  # noqa: BLE001
-                _log_failure('load_workflow_canvas', canvas_err, level=logging.DEBUG)
-
-            workflows.append(
-                {
-                    'id': wid,
-                    'name': name,
-                    'steps': steps,
-                    'orchestrates': orchestrates,
-                    'canvas': canvas,
-                }
-            )
+            record = await _workflow_record(engine, wdata)
+            if record is not None:
+                workflows.append(record)
         return workflows
     except HTTPException:
         raise
@@ -12734,6 +12811,127 @@ async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+@dataclass(frozen=True)
+class _AggregateSpec:
+    """One validated ``/object-set/aggregate`` request."""
+
+    ids: list[str]
+    metric: str
+    field: Any
+    group_by: Any
+
+    @property
+    def component_metrics(self) -> tuple[str, ...]:
+        """avg needs its components (sum + count), not the final per-group
+        average, to merge correctly across graphs."""
+        return ('sum', 'count') if self.metric == 'avg' else (self.metric,)
+
+
+def _aggregate_spec(data: dict[str, Any]) -> _AggregateSpec:
+    """Validate ``{ids, group_by, metric, field}`` into an `_AggregateSpec`."""
+    metric = str(data.get('metric', 'count') or 'count')
+    if metric not in {'count', 'sum', 'avg', 'min', 'max'}:
+        raise HTTPException(status_code=422, detail=f'unsupported metric {metric!r}')
+    field = data.get('field')
+    if metric != 'count' and not field:
+        raise HTTPException(
+            status_code=422, detail=f'metric {metric!r} requires a numeric field'
+        )
+    return _AggregateSpec(
+        ids=_bounded_identifier_list(data.get('ids')),
+        metric=metric,
+        field=field,
+        group_by=data.get('group_by'),
+    )
+
+
+def _scoped_aggregate(
+    engine: Any, spec: _AggregateSpec, scoped_engine: Any
+) -> dict[str, Any] | None:
+    """Aggregate ONE graph's share of `spec.ids`, or ``None`` if it holds none.
+
+    A STATIC ObjectSet's ``.aggregate()`` counts every id verbatim whether it
+    exists in that graph or not, so the ids are narrowed to the ones this
+    graph actually holds (`_ids_present_in_graph`) before aggregating -- an
+    unfiltered full-``ids`` fan-out would double-count.
+    """
+    facade = _ontology_facade_for(engine, scoped_engine)
+    if facade is None:
+        return None
+    _scoped_kg, scoped_ontology = facade
+    present = _ids_present_in_graph(scoped_engine.backend, spec.ids)
+    if not present:
+        return None
+    object_set = scoped_ontology.object_set([i for i in spec.ids if i in present])
+    return {
+        m: object_set.aggregate(m, field=spec.field, group_by=spec.group_by)
+        for m in spec.component_metrics
+    }
+
+
+# How a metric's per-group values from independent graph partitions combine.
+# count/sum add (independent partitions of the same set sum by definition);
+# min/max merge directly (min-of-mins / max-of-maxes) -- these ARE
+# reconstructable from independent partitions, unlike avg, so scoping them to
+# only the tenant graph (as a prior pass here did) was over-cautious. avg is
+# absent on purpose: it is merged from its sum/count components instead.
+_AGGREGATE_GROUP_MERGE: dict[str, Any] = {
+    'count': lambda existing, value: existing + value,
+    'sum': lambda existing, value: existing + value,
+    'min': min,
+    'max': max,
+}
+
+
+def _merge_simple_metric(
+    groups: dict[Any, float], agg: Any, metric: str
+) -> None:
+    """Fold one graph's `AggregationResult` groups into `groups`."""
+    combine = _AGGREGATE_GROUP_MERGE[metric]
+    for key, value in agg.groups.items():
+        groups[key] = value if key not in groups else combine(groups[key], value)
+
+
+def _accumulate_group_totals(target: dict[Any, float], source: Any) -> None:
+    """Sum a per-graph group mapping into a running total mapping."""
+    for key, value in source.items():
+        target[key] = target.get(key, 0.0) + value
+
+
+def _merge_aggregate_results(
+    per_graph: list[tuple[str | None, Any]], metric: str
+) -> tuple[dict[Any, float], int]:
+    """Merge per-graph `AggregationResult`s into ``(groups, total_objects)``.
+
+    ``avg`` is requested as its ``sum``+``count`` components per graph and
+    divided AFTER merging, because ``AggregationResult`` exposes only the
+    final per-group value, not the underlying sum/count a correct avg merge
+    needs (a plain average-of-averages would be wrong whenever the per-graph
+    group sizes differ).
+    """
+    groups: dict[Any, float] = {}
+    sums: dict[Any, float] = {}
+    counts: dict[Any, float] = {}
+    total_objects = 0
+    for _graph_name, agg_map in per_graph:
+        if not agg_map:
+            continue
+        if metric == 'avg':
+            total_objects += agg_map['sum'].total_objects
+            _accumulate_group_totals(sums, agg_map['sum'].groups)
+            _accumulate_group_totals(counts, agg_map['count'].groups)
+        else:
+            total_objects += agg_map[metric].total_objects
+            _merge_simple_metric(groups, agg_map[metric], metric)
+    if metric == 'avg':
+        groups = {
+            key: total / counts[key]
+            for key, total in sums.items()
+            if counts.get(key)
+        }
+    return groups, total_objects
+
+
 @router.post('/ontology/object-set/aggregate')
 async def ontology_object_set_aggregate(data: dict[str, Any]) -> dict[str, Any]:
     """Aggregate an object set (count/sum/avg/min/max), optionally grouped.
@@ -12744,107 +12942,34 @@ async def ontology_object_set_aggregate(data: dict[str, Any]) -> dict[str, Any]:
     graph (GOC-61 -- edges never cross a graph boundary), so this fans the
     aggregate out per accessible graph (`_rows_per_accessible_graph`, via a
     per-graph ``(kg, ontology)`` facade, `_ontology_facade_for`) over ONLY
-    the ids that graph actually holds (`_ids_present_in_graph` -- a STATIC
-    ObjectSet's ``.aggregate()`` counts every id verbatim whether it exists
-    in that graph or not, so an unfiltered full-``ids`` fan-out would
-    double-count), then merges the per-graph ``AggregationResult``s:
-
-    * ``count``/``sum`` -- SUM the per-graph group values; independent
-      partitions of the same set sum correctly by definition.
-    * ``min``/``max`` -- merge directly (min-of-mins / max-of-maxes); these
-      ARE reconstructable from independent partitions, unlike avg, so
-      scoping them to only the tenant graph (as a prior pass here did)
-      was over-cautious.
-    * ``avg`` -- requested as its ``sum``+``count`` components per graph and
-      divided AFTER merging, because ``AggregationResult`` exposes only the
-      final per-group value, not the underlying sum/count a correct avg
-      merge needs (a plain average-of-averages would be wrong whenever the
-      per-graph group sizes differ).
+    the ids that graph actually holds (`_scoped_aggregate`), then merges the
+    per-graph ``AggregationResult``s (`_merge_aggregate_results`).
     """
     try:
         _kg, _ontology = await _get_ontology_kg_bounded()
-        ids = _bounded_identifier_list(data.get('ids'))
-        metric = str(data.get('metric', 'count') or 'count')
-        group_by = data.get('group_by')
-        field = data.get('field')
-        if metric not in {'count', 'sum', 'avg', 'min', 'max'}:
-            raise HTTPException(
-                status_code=422, detail=f'unsupported metric {metric!r}'
-            )
-        if metric != 'count' and not field:
-            raise HTTPException(
-                status_code=422, detail=f'metric {metric!r} requires a numeric field'
-            )
-
+        spec = _aggregate_spec(data)
         engine = await _get_engine_bounded()
-        # avg needs its components (sum + count), not the final per-group
-        # average, to merge correctly across graphs.
-        component_metrics = ('sum', 'count') if metric == 'avg' else (metric,)
 
         def execute_aggregate(scoped_engine: Any) -> Any:
-            facade = _ontology_facade_for(engine, scoped_engine)
-            if facade is None:
-                return None
-            _scoped_kg, scoped_ontology = facade
-            present = _ids_present_in_graph(scoped_engine.backend, ids)
-            if not present:
-                return None
-            scoped_ids = [i for i in ids if i in present]
-            object_set = scoped_ontology.object_set(scoped_ids)
-            return {
-                m: object_set.aggregate(m, field=field, group_by=group_by)
-                for m in component_metrics
-            }
+            return _scoped_aggregate(engine, spec, scoped_engine)
 
         def _run() -> list[tuple[str | None, Any]]:
             result = _rows_per_accessible_graph(engine, execute_aggregate)
             if result is None:
                 return [(None, execute_aggregate(engine))]
             per_graph, _degraded = result
-            return [(graph_name, value) for graph_name, value in per_graph]
+            return list(per_graph)
 
-        per_graph = await _invoke_governed_helper(_run, deadline=30.0)
-
-        total_objects = 0
-        groups: dict[Any, float] = {}
-        sums: dict[Any, float] = {}
-        counts: dict[Any, float] = {}
-        for _graph_name, agg_map in per_graph:
-            if not agg_map:
-                continue
-            if metric == 'avg':
-                sum_res = agg_map['sum']
-                count_res = agg_map['count']
-                total_objects += sum_res.total_objects
-                for k, v in sum_res.groups.items():
-                    sums[k] = sums.get(k, 0.0) + v
-                for k, v in count_res.groups.items():
-                    counts[k] = counts.get(k, 0.0) + v
-            else:
-                agg = agg_map[metric]
-                total_objects += agg.total_objects
-                for k, v in agg.groups.items():
-                    if metric in ('count', 'sum'):
-                        groups[k] = groups.get(k, 0.0) + v
-                    elif metric == 'min':
-                        groups[k] = v if k not in groups else min(groups[k], v)
-                    elif metric == 'max':
-                        groups[k] = v if k not in groups else max(groups[k], v)
-
-        if metric == 'avg':
-            for k, s in sums.items():
-                c = counts.get(k, 0.0)
-                if c:
-                    groups[k] = s / c
-
-        value = None if group_by is not None else groups.get(None)
+        groups, total_objects = _merge_aggregate_results(
+            await _invoke_governed_helper(_run, deadline=30.0), spec.metric
+        )
         return _public_external_result(
             {
-                'metric': metric,
-                'field': field,
-                'group_by': group_by,
+                'metric': spec.metric,
+                'field': spec.field,
+                'group_by': spec.group_by,
                 'groups': {str(k): v for k, v in groups.items()},
-                'value': value,
+                'value': None if spec.group_by is not None else groups.get(None),
                 'total_objects': total_objects,
             }
         )
@@ -13183,6 +13308,124 @@ async def ontology_actions(object_type: str | None = None) -> list[dict[str, Any
         return []
 
 
+@dataclass(frozen=True)
+class _BulkActionPlan:
+    """Everything one bulk-action run needs, resolved once before the loop."""
+
+    executor: Any
+    action_name: str
+    actor: Any
+    params: dict[str, Any]
+    id_param: str
+    decision_provider: Any
+
+
+def _bulk_action_decision_provider(approve: Any, actor: Any, actor_id: str) -> Any:
+    """Wire an explicit operator approval as the HITL gate's decision provider.
+
+    A mutating bulk action is a HIGH-risk verb that the HITL escalation gate
+    (CONCEPT:AU-OS.observability.empty-derive-from-effect) pauses for human
+    approval -- without a decision it auto-denies, never silently writes. When
+    the caller supplies an explicit ``approve`` payload (the operator pressing
+    'approve' in the bulk-action dialog), this returns a provider so the
+    writeback proceeds under a recorded, role-checked approval; otherwise it
+    returns ``None`` and the gate's own default applies.
+    """
+    if not approve:
+        return None
+    if not isinstance(approve, dict):
+        raise HTTPException(status_code=400, detail='Invalid approval payload')
+    if not set(actor.roles).intersection({'admin', 'kg:admin'}):
+        raise HTTPException(status_code=403, detail='Admin approval required')
+    reason = approve.get('reason') or 'bulk action approved by operator'
+    if not isinstance(reason, str) or len(reason.encode('utf-8')) > 2048:
+        raise HTTPException(status_code=400, detail='Invalid approval reason')
+    reason, _privacy_report = sanitize_for_persistence(reason)
+
+    def decision_provider(_request: Any) -> dict[str, Any]:
+        return {
+            'approved': True,
+            'approver': actor_id,
+            'approver_role': 'admin',
+            'reason': reason,
+        }
+
+    return decision_provider
+
+
+def _bulk_action_id_param(action_def: Any, params: dict[str, Any]) -> str:
+    """The action parameter each target id binds to, or '' if there is none.
+
+    The per-target object id must reach the action's templated side-effects
+    (e.g. ``target: "$concept_id"``). Resolved ONCE so each iteration can bind
+    the loop's target id to it when the caller did not pin it explicitly.
+    """
+    if action_def is None:
+        return ''
+    for parameter in action_def.parameters:
+        if (
+            parameter.required
+            and parameter.name.endswith('_id')
+            and parameter.name not in params
+        ):
+            return parameter.name
+    # Only a declared ``target_id`` param may receive the fallback --
+    # validate_params rejects unknown keys.
+    declared = {parameter.name for parameter in action_def.parameters}
+    if 'target_id' in declared and 'target_id' not in params:
+        return 'target_id'
+    return ''
+
+
+def _bulk_action_record(invocation: Any, target_id: str) -> dict[str, Any]:
+    """One target's per-object result row."""
+    edit_ids = list(getattr(invocation, 'edit_ids', []) or [])
+    return {
+        'id': target_id,
+        'status': str(invocation.status),
+        'edit_ids': edit_ids[:_MAX_EXTERNAL_COLLECTION_ITEMS],
+    }
+
+
+async def _apply_bulk_action(
+    plan: _BulkActionPlan, ids: list[str]
+) -> dict[str, Any]:
+    """Run the planned action over every target through the governed executor."""
+    from agent_utilities.knowledge_graph.actions import ActionStatus
+
+    results: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    applied = 0
+    for target_id in ids:
+        # Bind the loop's target id under the action's declared ``*_id``
+        # parameter so single-target $-templates resolve per object.
+        call_params = dict(plan.params)
+        if plan.id_param:
+            call_params[plan.id_param] = target_id
+        inv = await _invoke_governed_helper(
+            plan.executor.execute,
+            plan.action_name,
+            plan.actor,
+            call_params,
+            target_id=target_id,
+            decision_provider=plan.decision_provider,
+            deadline=120.0,
+        )
+        results.append(_bulk_action_record(inv, target_id))
+        if inv.status == ActionStatus.SUCCESS:
+            applied += 1
+        elif inv.status in (ActionStatus.ERROR, ActionStatus.DENIED):
+            errors.append(
+                {
+                    'id': target_id,
+                    'status': str(inv.status),
+                    'error': getattr(inv, 'error', '')
+                    or getattr(inv, 'result_summary', ''),
+                }
+            )
+    return {'applied': applied, 'results': results, 'errors': errors}
+
+
 @router.post('/ontology/object-set/action')
 async def ontology_object_set_action(
     data: dict[str, Any], request: Request
@@ -13201,7 +13444,6 @@ async def ontology_object_set_action(
         from agent_utilities.knowledge_graph.actions import (
             DEFAULT_REGISTRY,
             ActionExecutor,
-            ActionStatus,
         )
 
         _kg, ontology = await _get_ontology_kg_bounded()
@@ -13215,92 +13457,20 @@ async def ontology_object_set_action(
         actor_id = _durable_actor_reference(ambient_actor.actor_id)
         actor = replace(ambient_actor, actor_id=actor_id)
 
-        # Bind the executor's ledger to the SAME live-store ledger the object
-        # view reads, so bulk writeback edits are durable and surface in history.
-        executor = ActionExecutor(DEFAULT_REGISTRY, ledger=ontology.edits)
-
-        # A mutating bulk action is a HIGH-risk verb that the HITL escalation
-        # gate (CONCEPT:AU-OS.observability.empty-derive-from-effect) pauses for human approval — without a decision
-        # it auto-denies, never silently writes. When the caller supplies an
-        # explicit ``approve`` payload (the operator pressing 'approve' in the
-        # bulk-action dialog), wire it as the gate's decision_provider so the
-        # writeback proceeds under a recorded, role-checked approval.
-        approve = data.get('approve')
-        decision_provider = None
-        if approve:
-            if not isinstance(approve, dict):
-                raise HTTPException(status_code=400, detail='Invalid approval payload')
-            if not set(actor.roles).intersection({'admin', 'kg:admin'}):
-                raise HTTPException(status_code=403, detail='Admin approval required')
-            approver = actor_id
-            approver_role = 'admin'
-            reason = (approve.get('reason')) or 'bulk action approved by operator'
-            if not isinstance(reason, str) or len(reason.encode('utf-8')) > 2048:
-                raise HTTPException(status_code=400, detail='Invalid approval reason')
-            reason, _privacy_report = sanitize_for_persistence(reason)
-
-            def decision_provider(_request: Any) -> dict[str, Any]:
-                return {
-                    'approved': True,
-                    'approver': approver,
-                    'approver_role': approver_role,
-                    'reason': reason,
-                }
-
-        # The per-target object id must reach the action's templated side-effects
-        # (e.g. ``target: "$concept_id"``). Resolve the action's required ``*_id``
-        # parameter once so each iteration binds the loop's target id to it when
-        # the caller did not pin it explicitly.
-        action_def = DEFAULT_REGISTRY.get(action_name)
-        id_param = ''
-        if action_def is not None:
-            declared = {p.name for p in action_def.parameters}
-            for p in action_def.parameters:
-                if p.required and p.name.endswith('_id') and p.name not in params:
-                    id_param = p.name
-                    break
-            # Only a declared ``target_id`` param may receive the fallback —
-            # validate_params rejects unknown keys.
-            if not id_param and 'target_id' in declared and 'target_id' not in params:
-                id_param = 'target_id'
-
-        results: list[dict[str, Any]] = []
-        errors: list[dict[str, Any]] = []
-        applied = 0
-        for target_id in ids:
-            # Bind the loop's target id under the action's declared ``*_id``
-            # parameter so single-target $-templates resolve per object.
-            call_params = dict(params)
-            if id_param:
-                call_params[id_param] = target_id
-            inv = await _invoke_governed_helper(
-                executor.execute,
-                action_name,
-                actor,
-                call_params,
-                target_id=target_id,
-                decision_provider=decision_provider,
-                deadline=120.0,
-            )
-            status = str(inv.status)
-            edit_ids = list(getattr(inv, 'edit_ids', []) or [])
-            edit_ids = edit_ids[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-            results.append({'id': target_id, 'status': status, 'edit_ids': edit_ids})
-            if inv.status == ActionStatus.SUCCESS:
-                applied += 1
-            elif inv.status in (ActionStatus.ERROR, ActionStatus.DENIED):
-                errors.append(
-                    {
-                        'id': target_id,
-                        'status': status,
-                        'error': getattr(inv, 'error', '')
-                        or getattr(inv, 'result_summary', ''),
-                    }
-                )
-
-        return _public_external_result(
-            {'applied': applied, 'results': results, 'errors': errors}
+        plan = _BulkActionPlan(
+            # Bind the executor's ledger to the SAME live-store ledger the
+            # object view reads, so bulk writeback edits are durable and
+            # surface in history.
+            executor=ActionExecutor(DEFAULT_REGISTRY, ledger=ontology.edits),
+            action_name=action_name,
+            actor=actor,
+            params=params,
+            id_param=_bulk_action_id_param(DEFAULT_REGISTRY.get(action_name), params),
+            decision_provider=_bulk_action_decision_provider(
+                data.get('approve'), actor, actor_id
+            ),
         )
+        return _public_external_result(await _apply_bulk_action(plan, ids))
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
