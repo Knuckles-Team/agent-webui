@@ -976,6 +976,220 @@ const Chat = ({ pageContext }: ChatProps) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index))
   }
 
+  /** Body of the `/help` slash command. */
+  const slashHelp = (): string => `### 💻 Agent WebUI Slash Commands
+
+Available commands:
+- **\`/help\`**: Show this help summary.
+- **\`/clear\`** or **\`/reset\`**: Wipe all messages in this conversation.
+- **\`/new [model]\`**: Archive the current conversation and start a new one. Optionally specify a model ID (e.g. \`/new\`, \`/new gpt-4o\`).
+- **\`/tools\`**: List all tools configured for the current agent/model.
+- **\`/model [model_id]\`**: View active model or switch to a new model (e.g. \`/model\`, \`/model gemini-2.5-pro\`).
+- **\`/mode [ask|plan|code]\`**: View or change the agent interaction mode (e.g. \`/mode\`, \`/mode code\`).
+- **\`/system\`**: Retrieve the active agent's system prompt.
+- **\`/prompt [name]\`**: View or list system prompt profiles (e.g. \`/prompt\`, \`/prompt mobile_programmer\`).
+- **\`/skills\`**: List loaded custom skills centrally.
+- **\`/graph stats|nodes|search|impact\`**: Access knowledge graph and run blast radius / impact analysis.
+- **\`/kb list|search|ingest\`**: Manage and query connected knowledge bases.
+- **\`/sdd specs|constitution|sync\`**: Manage spec-driven development rules and sync workspace.
+- **\`/cron calendar|logs\`**: View scheduled background tasks and logs.
+- **\`/resources list|spawn\`**: List and spawn subagents and tasks.`
+
+  /** Body of the `/clear` and `/reset` slash commands. Handles its own message replacement. */
+  const slashClear = (): void => {
+    setMessages([])
+    if (conversationId && conversationId !== '/') {
+      removeConversationMessages(userKey, conversationId)
+    }
+    setInput('')
+  }
+
+  /** Body of the `/new` slash command. Handles its own message replacement. */
+  const slashNew = (arg: string): void => {
+    const newConversationId = `/${nanoid()}`
+    let modelMsg = ''
+    if (arg) {
+      const list = modelRegistry?.models ?? configQuery.data?.models ?? []
+      const matched = list.find(
+        (m) => m.id.toLowerCase().includes(arg.toLowerCase()) || m.name.toLowerCase().includes(arg.toLowerCase()),
+      )
+      if (matched) {
+        setModel(matched.id)
+        modelMsg = ` with model **${matched.name}** (\`${matched.id}\`)`
+      } else {
+        modelMsg = ` (model \`${arg}\` not found, keeping active model)`
+      }
+    }
+
+    saveConversationEntry(userKey, newConversationId, arg ? `New chat (${arg})` : 'New Chat')
+    setConversationId(newConversationId)
+
+    const welcomeMsg: UIMessage = {
+      id: nanoid(),
+      role: 'assistant',
+      parts: [{ type: 'text', text: `🔄 Started a fresh conversation${modelMsg}. How can I assist you today?` }],
+    }
+    setMessages([welcomeMsg])
+    setInput('')
+  }
+
+  /** Body of the `/tools` slash command. */
+  const slashTools = (): string => {
+    const toolList = availableTools.map((t) => `- **${t.name}** (\`${t.id}\`)`).join('\n')
+    return `### 🛠️ Available Tools for \`${model}\`\n\n${toolList || 'No tools configured.'}`
+  }
+
+  /** Body of the `/model` slash command with no argument: reports the active model. */
+  const slashModelStatus = (): string => {
+    const currentModelName = modelRegistry?.models.find((m) => m.id === model)?.name ?? model
+    const modelsList =
+      (modelRegistry?.models ?? configQuery.data?.models ?? []).map((m) => `- \`${m.id}\` (${m.name})`).join('\n') ||
+      ''
+    return `**Active Model:** \`${currentModelName}\` (\`${model}\`)\n\n**Available Models:**\n${modelsList}`
+  }
+
+  /** Body of the `/model <arg>` slash command: switches the active model. */
+  const slashModelSwitch = (arg: string): string => {
+    const list = modelRegistry?.models ?? configQuery.data?.models ?? []
+    const matched = list.find(
+      (m) => m.id.toLowerCase().includes(arg.toLowerCase()) || m.name.toLowerCase().includes(arg.toLowerCase()),
+    )
+    if (matched) {
+      setModel(matched.id)
+      return `🔄 Active model switched to **${matched.name}** (\`${matched.id}\`).`
+    }
+    return (
+      `❌ Model \`${arg}\` not found. Available models:\n` + list.map((m) => `- \`${m.id}\` (${m.name})`).join('\n')
+    )
+  }
+
+  /** Body of the `/model` slash command. */
+  const slashModel = (arg: string): string => (arg ? slashModelSwitch(arg) : slashModelStatus())
+
+  /** Body of the `/mode` slash command. */
+  const slashMode = (arg: string): string => {
+    if (!arg) {
+      return `Active agent interaction mode: **${mode}** (options: \`ask\`, \`plan\`, \`code\`).`
+    }
+    const normalized = arg.toLowerCase()
+    if (normalized === 'ask' || normalized === 'plan' || normalized === 'code') {
+      setMode(normalized)
+      return `🔄 Interaction mode switched to **${normalized}**.`
+    }
+    return `❌ Invalid mode \`${arg}\`. Valid options are: \`ask\`, \`plan\`, \`code\`.`
+  }
+
+  /** Body of the `/system` slash command. */
+  const slashSystem = async (): Promise<string> => {
+    try {
+      const res = await fetch('/api/enhanced/system')
+      if (res.ok) {
+        const data = (await res.json()) as { system_prompt?: string }
+        return `### 🤖 Active Agent System Prompt\n\n\`\`\`markdown\n${
+          data.system_prompt ?? 'No system prompt found.'
+        }\n\`\`\``
+      }
+      return `❌ Failed to fetch active system prompt from agent server.`
+    } catch (e) {
+      return `❌ Error retrieving system prompt: ${e instanceof Error ? e.message : String(e)}`
+    }
+  }
+
+  /** Body of the `/prompt` slash command with no argument: lists prompt profiles. */
+  const slashPromptList = async (): Promise<string> => {
+    try {
+      const res = await fetch('/api/enhanced/prompts')
+      if (res.ok) {
+        const list = (await res.json()) as { name: string; title: string }[]
+        const items = list.map((p) => `- \`${p.name}\`: **${p.title}**`).join('\n')
+        return `### 📝 Registered Prompt Profiles\n\n${
+          items || 'No prompt profiles found.'
+        }\n\n*Use \`/prompt [name]\` to view a specific profile.*`
+      }
+      return `❌ Failed to load prompts list.`
+    } catch (e) {
+      return `❌ Error loading prompts: ${e instanceof Error ? e.message : String(e)}`
+    }
+  }
+
+  /** Body of the `/prompt <arg>` slash command: fetches one prompt profile. */
+  const slashPromptShow = async (arg: string): Promise<string> => {
+    try {
+      const res = await fetch(`/api/enhanced/prompts/${arg}`)
+      if (res.ok) {
+        const data = (await res.json()) as { title?: string; goal?: string; core_directive?: string }
+        return (
+          `### 📝 Prompt Profile: **${data.title ?? arg}** (\`${arg}.json\`)\n\n` +
+          `**Goal:** ${data.goal ?? 'No goal specified.'}\n\n` +
+          `#### Core Directive:\n\`\`\`markdown\n${data.core_directive ?? 'No directive.'}\n\`\`\``
+        )
+      }
+      return `❌ Prompt profile \`${arg}\` not found.`
+    } catch (e) {
+      return `❌ Error loading prompt: ${e instanceof Error ? e.message : String(e)}`
+    }
+  }
+
+  /** Body of the `/prompt` slash command. */
+  const slashPrompt = (arg: string): Promise<string> => (arg ? slashPromptShow(arg) : slashPromptList())
+
+  /** Applies one client action returned by the gateway's slash-command executor. */
+  const applySlashClientAction = (act: { action?: string; value?: string }): void => {
+    if (act.action === 'clear_chat') {
+      setMessages([])
+      if (conversationId && conversationId !== '/') {
+        window.localStorage.removeItem(conversationId)
+      }
+      setInput('')
+    } else if (act.action === 'set_model' && act.value) {
+      setModel(act.value)
+    }
+  }
+
+  /** Body of the default (server-executed) slash command branch. */
+  const slashExecuteOnGateway = async (command: string, trimmed: string): Promise<string> => {
+    try {
+      const res = await fetch('/api/enhanced/commands/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: trimmed }),
+      })
+      if (!res.ok) {
+        return `❌ Failed to execute slash command \`${command}\` on the gateway server.`
+      }
+      const data = (await res.json()) as {
+        response_markdown?: string
+        client_actions?: { action?: string; value?: string }[]
+      }
+      for (const act of data.client_actions ?? []) {
+        applySlashClientAction(act)
+      }
+      return data.response_markdown ?? ''
+    } catch (e) {
+      return `❌ Error executing slash command: ${e instanceof Error ? e.message : String(e)}`
+    }
+  }
+
+  /** Dispatches a parsed slash command to its handler. */
+  const dispatchSlashCommand = async (command: string, arg: string, trimmed: string): Promise<string> => {
+    switch (command) {
+      case '/help':
+        return slashHelp()
+      case '/tools':
+        return slashTools()
+      case '/model':
+        return slashModel(arg)
+      case '/mode':
+        return slashMode(arg)
+      case '/system':
+        return await slashSystem()
+      case '/prompt':
+        return await slashPrompt(arg)
+      default:
+        return await slashExecuteOnGateway(command, trimmed)
+    }
+  }
+
   /**
    * Processes a client-side slash command and appends the result to the chat.
    */
@@ -994,198 +1208,16 @@ const Chat = ({ pageContext }: ChatProps) => {
       parts: [{ type: 'text', text: trimmed }],
     }
 
-    let assistantReply = ''
-
-    switch (command) {
-      case '/help':
-        assistantReply = `### 💻 Agent WebUI Slash Commands
-
-Available commands:
-- **\`/help\`**: Show this help summary.
-- **\`/clear\`** or **\`/reset\`**: Wipe all messages in this conversation.
-- **\`/new [model]\`**: Archive the current conversation and start a new one. Optionally specify a model ID (e.g. \`/new\`, \`/new gpt-4o\`).
-- **\`/tools\`**: List all tools configured for the current agent/model.
-- **\`/model [model_id]\`**: View active model or switch to a new model (e.g. \`/model\`, \`/model gemini-2.5-pro\`).
-- **\`/mode [ask|plan|code]\`**: View or change the agent interaction mode (e.g. \`/mode\`, \`/mode code\`).
-- **\`/system\`**: Retrieve the active agent's system prompt.
-- **\`/prompt [name]\`**: View or list system prompt profiles (e.g. \`/prompt\`, \`/prompt mobile_programmer\`).
-- **\`/skills\`**: List loaded custom skills centrally.
-- **\`/graph stats|nodes|search|impact\`**: Access knowledge graph and run blast radius / impact analysis.
-- **\`/kb list|search|ingest\`**: Manage and query connected knowledge bases.
-- **\`/sdd specs|constitution|sync\`**: Manage spec-driven development rules and sync workspace.
-- **\`/cron calendar|logs\`**: View scheduled background tasks and logs.
-- **\`/resources list|spawn\`**: List and spawn subagents and tasks.`
-        break
-
-      case '/clear':
-      case '/reset':
-        setMessages([])
-        if (conversationId && conversationId !== '/') {
-          removeConversationMessages(userKey, conversationId)
-        }
-        setInput('')
-        return true
-
-      case '/new': {
-        const newConversationId = `/${nanoid()}`
-        let modelMsg = ''
-        if (arg) {
-          const list = modelRegistry?.models ?? configQuery.data?.models ?? []
-          const matched = list.find(
-            (m) => m.id.toLowerCase().includes(arg.toLowerCase()) || m.name.toLowerCase().includes(arg.toLowerCase()),
-          )
-          if (matched) {
-            setModel(matched.id)
-            modelMsg = ` with model **${matched.name}** (\`${matched.id}\`)`
-          } else {
-            modelMsg = ` (model \`${arg}\` not found, keeping active model)`
-          }
-        }
-
-        saveConversationEntry(userKey, newConversationId, arg ? `New chat (${arg})` : 'New Chat')
-        setConversationId(newConversationId)
-
-        const welcomeMsg: UIMessage = {
-          id: nanoid(),
-          role: 'assistant',
-          parts: [{ type: 'text', text: `🔄 Started a fresh conversation${modelMsg}. How can I assist you today?` }],
-        }
-        setMessages([welcomeMsg])
-        setInput('')
-        return true
-      }
-
-      case '/tools': {
-        const toolList = availableTools.map((t) => `- **${t.name}** (\`${t.id}\`)`).join('\n')
-        assistantReply = `### 🛠️ Available Tools for \`${model}\`\n\n${toolList || 'No tools configured.'}`
-        break
-      }
-
-      case '/model':
-        if (!arg) {
-          const currentModelName = modelRegistry?.models.find((m) => m.id === model)?.name ?? model
-          const modelsList =
-            (modelRegistry?.models ?? configQuery.data?.models ?? [])
-              .map((m) => `- \`${m.id}\` (${m.name})`)
-              .join('\n') || ''
-          assistantReply = `**Active Model:** \`${currentModelName}\` (\`${model}\`)\n\n**Available Models:**\n${modelsList}`
-        } else {
-          const list = modelRegistry?.models ?? configQuery.data?.models ?? []
-          const matched = list.find(
-            (m) => m.id.toLowerCase().includes(arg.toLowerCase()) || m.name.toLowerCase().includes(arg.toLowerCase()),
-          )
-          if (matched) {
-            setModel(matched.id)
-            assistantReply = `🔄 Active model switched to **${matched.name}** (\`${matched.id}\`).`
-          } else {
-            assistantReply =
-              `❌ Model \`${arg}\` not found. Available models:\n` +
-              list.map((m) => `- \`${m.id}\` (${m.name})`).join('\n')
-          }
-        }
-        break
-
-      case '/mode':
-        if (!arg) {
-          assistantReply = `Active agent interaction mode: **${mode}** (options: \`ask\`, \`plan\`, \`code\`).`
-        } else {
-          const normalized = arg.toLowerCase()
-          if (normalized === 'ask' || normalized === 'plan' || normalized === 'code') {
-            setMode(normalized)
-            assistantReply = `🔄 Interaction mode switched to **${normalized}**.`
-          } else {
-            assistantReply = `❌ Invalid mode \`${arg}\`. Valid options are: \`ask\`, \`plan\`, \`code\`.`
-          }
-        }
-        break
-
-      case '/system':
-        try {
-          const res = await fetch('/api/enhanced/system')
-          if (res.ok) {
-            const data = (await res.json()) as { system_prompt?: string }
-            assistantReply = `### 🤖 Active Agent System Prompt\n\n\`\`\`markdown\n${
-              data.system_prompt ?? 'No system prompt found.'
-            }\n\`\`\``
-          } else {
-            assistantReply = `❌ Failed to fetch active system prompt from agent server.`
-          }
-        } catch (e) {
-          assistantReply = `❌ Error retrieving system prompt: ${e instanceof Error ? e.message : String(e)}`
-        }
-        break
-
-      case '/prompt':
-        if (!arg) {
-          try {
-            const res = await fetch('/api/enhanced/prompts')
-            if (res.ok) {
-              const list = (await res.json()) as { name: string; title: string }[]
-              const items = list.map((p) => `- \`${p.name}\`: **${p.title}**`).join('\n')
-              assistantReply = `### 📝 Registered Prompt Profiles\n\n${
-                items || 'No prompt profiles found.'
-              }\n\n*Use \`/prompt [name]\` to view a specific profile.*`
-            } else {
-              assistantReply = `❌ Failed to load prompts list.`
-            }
-          } catch (e) {
-            assistantReply = `❌ Error loading prompts: ${e instanceof Error ? e.message : String(e)}`
-          }
-        } else {
-          try {
-            const res = await fetch(`/api/enhanced/prompts/${arg}`)
-            if (res.ok) {
-              const data = (await res.json()) as { title?: string; goal?: string; core_directive?: string }
-              assistantReply =
-                `### 📝 Prompt Profile: **${data.title ?? arg}** (\`${arg}.json\`)\n\n` +
-                `**Goal:** ${data.goal ?? 'No goal specified.'}\n\n` +
-                `#### Core Directive:\n\`\`\`markdown\n${data.core_directive ?? 'No directive.'}\n\`\`\``
-            } else {
-              assistantReply = `❌ Prompt profile \`${arg}\` not found.`
-            }
-          } catch (e) {
-            assistantReply = `❌ Error loading prompt: ${e instanceof Error ? e.message : String(e)}`
-          }
-        }
-        break
-
-      default: {
-        try {
-          const res = await fetch('/api/enhanced/commands/execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ command: trimmed }),
-          })
-          if (res.ok) {
-            const data = (await res.json()) as {
-              response_markdown?: string
-              client_actions?: { action?: string; value?: string }[]
-            }
-            assistantReply = data.response_markdown ?? ''
-
-            // Handle client actions if returned
-            if (data.client_actions) {
-              for (const act of data.client_actions) {
-                if (act.action === 'clear_chat') {
-                  setMessages([])
-                  if (conversationId && conversationId !== '/') {
-                    window.localStorage.removeItem(conversationId)
-                  }
-                  setInput('')
-                } else if (act.action === 'set_model' && act.value) {
-                  setModel(act.value)
-                }
-              }
-            }
-          } else {
-            assistantReply = `❌ Failed to execute slash command \`${command}\` on the gateway server.`
-          }
-        } catch (e) {
-          assistantReply = `❌ Error executing slash command: ${e instanceof Error ? e.message : String(e)}`
-        }
-        break
-      }
+    if (command === '/clear' || command === '/reset') {
+      slashClear()
+      return true
     }
+    if (command === '/new') {
+      slashNew(arg)
+      return true
+    }
+
+    const assistantReply = await dispatchSlashCommand(command, arg, trimmed)
 
     const replyMsg: UIMessage = {
       id: nanoid(),

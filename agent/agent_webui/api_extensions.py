@@ -4,6 +4,7 @@ import contextlib
 import contextvars
 import hashlib
 import inspect
+import itertools
 import json
 import logging
 import math
@@ -1239,124 +1240,192 @@ def _confine_stored_workspace_path(value: Any) -> Path:
     return resolve_workspace_file(relative.as_posix())
 
 
-@router.get('/files')
-async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
-    """List workspace files with metadata recursively for all repositories loaded in agent-utilities.
+_LIST_FILES_ALLOWED_SUFFIXES = (
+    '.md',
+    '.json',
+    '.py',
+    '.ts',
+    '.tsx',
+    '.js',
+    '.jsx',
+    '.html',
+    '.css',
+    '.yml',
+    '.yaml',
+    '.toml',
+    '.sh',
+    '.txt',
+    '.cfg',
+    '.ini',
+    '.env',
+    '.lock',
+)
+_LIST_FILES_EXCLUDED_DIRS = (
+    '.git',
+    'node_modules',
+    '.venv',
+    'venv',
+    '__pycache__',
+    'dist',
+    'build',
+    '.specify',
+)
 
-    Excludes .git, node_modules, .venv, venv, and other build/binary directories.
+
+def _list_files_via_detailed_helper(
+    detailed_helper: Any, limit: int
+) -> list[dict[str, Any]]:
+    """Branch 1 of ``list_files``: use a registered detailed-listing helper
+    verbatim, stripping private location keys and shortening an absolute
+    ``name`` to its basename.
     """
-    import itertools
-    import os
+    safe_records = []
+    for record in itertools.islice(detailed_helper() or (), limit):
+        if not isinstance(record, dict):
+            continue
+        safe_record = {
+            key: value
+            for key, value in record.items()
+            if key not in {'absolute_path', 'local_path', 'workspace_path'}
+        }
+        name = safe_record.get('name')
+        if isinstance(name, str) and Path(name).is_absolute():
+            safe_record['name'] = Path(name).name
+        safe_records.append(safe_record)
+    return safe_records
 
-    limit = max(1, min(limit, _MAX_LIST_FILES))
 
-    # 1. Check if a detailed listing helper is registered
-    detailed_helper = get_helper('list_workspace_files_detailed')
-    if detailed_helper:
-        safe_records = []
-        for record in itertools.islice(detailed_helper() or (), limit):
-            if not isinstance(record, dict):
-                continue
-            safe_record = {
-                key: value
-                for key, value in record.items()
-                if key not in {'absolute_path', 'local_path', 'workspace_path'}
-            }
-            name = safe_record.get('name')
-            if isinstance(name, str) and Path(name).is_absolute():
-                safe_record['name'] = Path(name).name
-            safe_records.append(safe_record)
-        return safe_records
+def _list_files_dir_entry(dir_path: Path, base_path: Path) -> dict[str, Any] | None:
+    try:
+        st = dir_path.stat()
+    except Exception:
+        return None
+    return {
+        'name': str(dir_path.relative_to(base_path)),
+        'size': 0,
+        'modified_iso': datetime.fromtimestamp(
+            st.st_mtime, tz=timezone.utc
+        ).isoformat(),
+        'is_dir': True,
+    }
 
-    results: list[dict[str, Any]] = []
-    allowed_suffixes = (
-        '.md',
-        '.json',
-        '.py',
-        '.ts',
-        '.tsx',
-        '.js',
-        '.jsx',
-        '.html',
-        '.css',
-        '.yml',
-        '.yaml',
-        '.toml',
-        '.sh',
-        '.txt',
-        '.cfg',
-        '.ini',
-        '.env',
-        '.lock',
-    )
-    excluded_dirs = (
-        '.git',
-        'node_modules',
-        '.venv',
-        'venv',
-        '__pycache__',
-        'dist',
-        'build',
-        '.specify',
-    )
 
-    # 2. Check if get_workspace_path helper is registered (typically in tests or active agent sessions)
-    get_path_helper = get_helper('get_workspace_path')
-    if get_path_helper:
-        try:
-            base_path = Path(get_path_helper(''))
-            if base_path.exists() and base_path.is_dir():
-                for root, dirs, files in os.walk(base_path):
-                    # Prune excluded directories in-place
-                    dirs[:] = [d for d in dirs if d not in excluded_dirs]
+def _list_files_file_entry(
+    file_path: Path, base_path: Path, allowed_suffixes: tuple[str, ...]
+) -> dict[str, Any] | None:
+    if file_path.suffix.lower() not in allowed_suffixes:
+        return None
+    try:
+        st = file_path.stat()
+    except Exception:
+        return None
+    return {
+        'name': str(file_path.relative_to(base_path)),
+        'size': st.st_size,
+        'modified_iso': datetime.fromtimestamp(
+            st.st_mtime, tz=timezone.utc
+        ).isoformat(),
+        'is_dir': False,
+    }
 
-                    # Add directories
-                    for d in dirs:
-                        if len(results) >= limit:
-                            break
-                        dir_path = Path(root) / d
-                        try:
-                            st = dir_path.stat()
-                            results.append(
-                                {
-                                    'name': str(dir_path.relative_to(base_path)),
-                                    'size': 0,
-                                    'modified_iso': datetime.fromtimestamp(
-                                        st.st_mtime, tz=timezone.utc
-                                    ).isoformat(),
-                                    'is_dir': True,
-                                }
-                            )
-                        except Exception:
-                            continue
 
-                    # Add files
-                    for file in files:
-                        if len(results) >= limit:
-                            break
-                        path = Path(root) / file
-                        if path.suffix.lower() in allowed_suffixes:
-                            try:
-                                st = path.stat()
-                                results.append(
-                                    {
-                                        'name': str(path.relative_to(base_path)),
-                                        'size': st.st_size,
-                                        'modified_iso': datetime.fromtimestamp(
-                                            st.st_mtime, tz=timezone.utc
-                                        ).isoformat(),
-                                        'is_dir': False,
-                                    }
-                                )
-                            except Exception:
-                                continue
-                    if len(results) >= limit:
-                        break
-                return results
-        except Exception as e:
-            _log_failure('scan_workspace_files', e)
+def _list_files_add_dir_entries(
+    root: str,
+    dirs: list[str],
+    base_path: Path,
+    results: list[dict[str, Any]],
+    limit: int,
+) -> bool:
+    """Append an entry for each of ``dirs`` (under ``root``) into ``results``.
+    Returns True once ``limit`` is reached (caller should stop the walk).
+    """
+    for d in dirs:
+        if len(results) >= limit:
+            return True
+        entry = _list_files_dir_entry(Path(root) / d, base_path)
+        if entry is not None:
+            results.append(entry)
+    return False
 
-    # 3. Main path: Scan loaded workspace repositories from config
+
+def _list_files_add_file_entries(
+    root: str,
+    files: list[str],
+    base_path: Path,
+    allowed_suffixes: tuple[str, ...],
+    results: list[dict[str, Any]],
+    limit: int,
+) -> bool:
+    """Append an entry for each of ``files`` (under ``root``) into ``results``.
+    Returns True once ``limit`` is reached (caller should stop the walk).
+    """
+    for file in files:
+        if len(results) >= limit:
+            return True
+        entry = _list_files_file_entry(Path(root) / file, base_path, allowed_suffixes)
+        if entry is not None:
+            results.append(entry)
+    return False
+
+
+def _list_files_scan_tree(
+    root_path: Path,
+    base_path: Path,
+    results: list[dict[str, Any]],
+    limit: int,
+    allowed_suffixes: tuple[str, ...],
+    excluded_dirs: tuple[str, ...],
+) -> None:
+    """Walk ``root_path``, appending dir/file entries (named relative to
+    ``base_path``) into ``results`` in place until ``limit`` is reached.
+    """
+    for root, dirs, files in os.walk(root_path):
+        dirs[:] = [d for d in dirs if d not in excluded_dirs]
+
+        if _list_files_add_dir_entries(root, dirs, base_path, results, limit):
+            return
+        if _list_files_add_file_entries(
+            root, files, base_path, allowed_suffixes, results, limit
+        ):
+            return
+        if len(results) >= limit:
+            return
+
+
+def _list_files_via_registered_workspace_path(
+    get_path_helper: Any,
+    results: list[dict[str, Any]],
+    limit: int,
+    allowed_suffixes: tuple[str, ...],
+    excluded_dirs: tuple[str, ...],
+) -> bool:
+    """Branch 2 of ``list_files``: scan the registered ``get_workspace_path``
+    helper's target, if it exists and is a directory. Returns True when this
+    branch handled the request (``list_files`` should return ``results``
+    immediately), False to fall through to branch 3.
+    """
+    try:
+        base_path = Path(get_path_helper(''))
+        if base_path.exists() and base_path.is_dir():
+            _list_files_scan_tree(
+                base_path, base_path, results, limit, allowed_suffixes, excluded_dirs
+            )
+            return True
+        return False
+    except Exception as e:
+        _log_failure('scan_workspace_files', e)
+        return False
+
+
+def _list_files_scan_configured_repositories(
+    results: list[dict[str, Any]],
+    limit: int,
+    allowed_suffixes: tuple[str, ...],
+    excluded_dirs: tuple[str, ...],
+) -> None:
+    """Branch 3 of ``list_files``: scan every repository loaded from the
+    workspace config, appending into ``results`` in place.
+    """
     try:
         from agent_utilities.core.workspace_config import (
             _extract_repositories,
@@ -1364,111 +1433,79 @@ async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
         )
 
         data = load_workspace_yml()
-        if data:
-            base_path = Path(data.get('path') or get_workspace_dir())
-            repos = _extract_repositories(data, base_path)
-            for repo_path, _ in repos:
-                if len(results) >= limit:
-                    break
-                if repo_path.exists() and repo_path.is_dir():
-                    for root, dirs, files in os.walk(repo_path):
-                        dirs[:] = [d for d in dirs if d not in excluded_dirs]
-
-                        # Add directories
-                        # Be forgiving for tests that mock the registry
-                        # but real runs should have valid types:
-                        for d in dirs:
-                            if len(results) >= limit:
-                                break
-                            dir_path = Path(root) / d
-                            try:
-                                st = dir_path.stat()
-                                results.append(
-                                    {
-                                        'name': str(dir_path.relative_to(base_path)),
-                                        'size': 0,
-                                        'modified_iso': datetime.fromtimestamp(
-                                            st.st_mtime, tz=timezone.utc
-                                        ).isoformat(),
-                                        'is_dir': True,
-                                    }
-                                )
-                            except Exception:
-                                continue
-
-                        # Add files
-                        for file in files:
-                            if len(results) >= limit:
-                                break
-                            path = Path(root) / file
-                            if path.suffix.lower() in allowed_suffixes:
-                                try:
-                                    st = path.stat()
-                                    results.append(
-                                        {
-                                            'name': str(path.relative_to(base_path)),
-                                            'size': st.st_size,
-                                            'modified_iso': datetime.fromtimestamp(
-                                                st.st_mtime, tz=timezone.utc
-                                            ).isoformat(),
-                                            'is_dir': False,
-                                        }
-                                    )
-                                except Exception:
-                                    continue
-                        if len(results) >= limit:
-                            break
+        if not data:
+            return
+        base_path = Path(data.get('path') or get_workspace_dir())
+        repos = _extract_repositories(data, base_path)
+        for repo_path, _ in repos:
+            if len(results) >= limit:
+                break
+            if repo_path.exists() and repo_path.is_dir():
+                _list_files_scan_tree(
+                    repo_path,
+                    base_path,
+                    results,
+                    limit,
+                    allowed_suffixes,
+                    excluded_dirs,
+                )
     except Exception as e:
         _log_failure('api_extension', e)
+
+
+def _list_files_scan_fallback_workspace(
+    results: list[dict[str, Any]],
+    limit: int,
+    allowed_suffixes: tuple[str, ...],
+    excluded_dirs: tuple[str, ...],
+) -> None:
+    """Branch 4 of ``list_files``: fall back to scanning the resolved
+    workspace directory when nothing else produced results.
+    """
+    base = get_workspace_dir()
+    try:
+        _list_files_scan_tree(
+            base, base, results, limit, allowed_suffixes, excluded_dirs
+        )
+    except Exception as e:
+        _log_failure('api_extension', e)
+
+
+@router.get('/files')
+async def list_files(limit: int = 1000) -> list[dict[str, Any]]:
+    """List workspace files with metadata recursively for all repositories loaded in agent-utilities.
+
+    Excludes .git, node_modules, .venv, venv, and other build/binary directories.
+    """
+    limit = max(1, min(limit, _MAX_LIST_FILES))
+
+    # 1. Check if a detailed listing helper is registered
+    detailed_helper = get_helper('list_workspace_files_detailed')
+    if detailed_helper:
+        return _list_files_via_detailed_helper(detailed_helper, limit)
+
+    results: list[dict[str, Any]] = []
+    allowed_suffixes = _LIST_FILES_ALLOWED_SUFFIXES
+    excluded_dirs = _LIST_FILES_EXCLUDED_DIRS
+
+    # 2. Check if get_workspace_path helper is registered (typically in tests or active agent sessions)
+    get_path_helper = get_helper('get_workspace_path')
+    if get_path_helper and _list_files_via_registered_workspace_path(
+        get_path_helper, results, limit, allowed_suffixes, excluded_dirs
+    ):
+        return results
+
+    # 3. Main path: Scan loaded workspace repositories from config
+    _list_files_scan_configured_repositories(
+        results, limit, allowed_suffixes, excluded_dirs
+    )
+
     # 4. Fallback scan if no files found
     if not results:
-        base = get_workspace_dir()
-        try:
-            for root, dirs, files in os.walk(base):
-                dirs[:] = [d for d in dirs if d not in excluded_dirs]
+        _list_files_scan_fallback_workspace(
+            results, limit, allowed_suffixes, excluded_dirs
+        )
 
-                for d in dirs:
-                    if len(results) >= limit:
-                        break
-                    dir_path = Path(root) / d
-                    try:
-                        st = dir_path.stat()
-                        results.append(
-                            {
-                                'name': str(dir_path.relative_to(base)),
-                                'size': 0,
-                                'modified_iso': datetime.fromtimestamp(
-                                    st.st_mtime, tz=timezone.utc
-                                ).isoformat(),
-                                'is_dir': True,
-                            }
-                        )
-                    except Exception:
-                        continue
-
-                for file in files:
-                    if len(results) >= limit:
-                        break
-                    path = Path(root) / file
-                    if path.suffix.lower() in allowed_suffixes:
-                        try:
-                            st = path.stat()
-                            results.append(
-                                {
-                                    'name': str(path.relative_to(base)),
-                                    'size': st.st_size,
-                                    'modified_iso': datetime.fromtimestamp(
-                                        st.st_mtime, tz=timezone.utc
-                                    ).isoformat(),
-                                    'is_dir': False,
-                                }
-                            )
-                        except Exception:
-                            continue
-                if len(results) >= limit:
-                    break
-        except Exception as e:
-            _log_failure('api_extension', e)
     return results
 
 
