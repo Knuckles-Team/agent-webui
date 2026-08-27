@@ -205,7 +205,7 @@ def _is_secure(scope: Any) -> bool:
     ``Secure`` cookies are silently dropped by browsers on plain HTTP, so the
     flag is set from the observed scheme (including the ingress' forwarded
     scheme) rather than hardcoded.  See the module's deployment notes: the
-    homelab ingress currently serves ``http://au.arpa``.
+    homelab ingress currently serves ``http://au.example``.
     """
 
     if str(scope.get('scheme') or '').lower() in {'https', 'wss'}:
@@ -220,7 +220,7 @@ def _request_scheme_redirect_uri(configured_redirect_uri: str, scope: Any) -> st
     """``configured_redirect_uri`` with its scheme swapped to match `scope`.
 
     D-WUI-31: ``WEBUI_OIDC_REDIRECT_URI`` is one fixed scheme (currently
-    ``http://au.arpa/auth/callback``). The ingress now also serves TLS
+    ``http://au.example/auth/callback``). The ingress now also serves TLS
     (D-WA-5), and a caller starting the login flow over https sets the
     pre-login flow cookie ``Secure`` — correctly, per ``_is_secure`` — but
     was then bounced to the *statically configured* http callback, so the

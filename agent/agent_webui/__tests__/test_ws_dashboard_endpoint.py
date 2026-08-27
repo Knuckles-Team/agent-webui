@@ -98,7 +98,7 @@ def _configure_jwt_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
     monkeypatch.setattr(config, 'kg_policy_version', '1', raising=False)
-    monkeypatch.setattr(config, 'allowed_origins', 'https://au.arpa', raising=False)
+    monkeypatch.setattr(config, 'allowed_origins', 'https://au.example', raising=False)
 
 
 def test_ws_dashboard_route_is_registered() -> None:
@@ -413,7 +413,7 @@ def test_full_app_admits_a_valid_kg_admin_bearer_session(
             '/ws/dashboard',
             headers={
                 'Authorization': 'Bearer placeholder-users-own-credential',
-                'Origin': 'https://au.arpa',
+                'Origin': 'https://au.example',
                 'Host': 'testserver',
             },
         ) as ws:
@@ -456,7 +456,7 @@ def test_full_app_admits_a_scopeless_bearer_session_via_the_default_read_floor(
             '/ws/dashboard',
             headers={
                 'Authorization': 'Bearer placeholder-users-own-credential',
-                'Origin': 'https://au.arpa',
+                'Origin': 'https://au.example',
                 'Host': 'testserver',
             },
         ) as ws:

@@ -98,7 +98,7 @@ describe('nav-registry: ROUTES', () => {
     expect(stale, `KNOWN_NON_ROUTE_COMPONENTS names file(s) that no longer exist: ${stale.join(', ')}`).toEqual([])
   })
 
-  // The operator's own finding: au.arpa landed on an "agent-OS Dashboard" that had
+  // The operator's own finding: au.example landed on an "agent-OS Dashboard" that had
   // no left-nav entry, so it was unreachable once you clicked anywhere else — a page
   // can be perfectly wired into ROUTES (proven above) and STILL be an orphan if it
   // isn't reachable from the one navigation surface (`app-sidebar.tsx`, driven by

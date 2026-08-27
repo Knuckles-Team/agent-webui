@@ -2,7 +2,7 @@
  * @file hostile-fixtures.ts
  * @description The hostile payload matrix for the per-route render harness (D-WUI-2).
  *
- * `au.arpa/graph` and siblings fail with "Something went wrong / e.filter is
+ * `au.example/graph` and siblings fail with "Something went wrong / e.filter is
  * not a function" — a component assumes the API returned an ARRAY when it
  * actually returned an object, `null`, or an error body. A render test with
  * well-formed mocks passes and catches nothing. Each fixture below replaces

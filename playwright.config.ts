@@ -9,7 +9,7 @@ import { defineConfig, devices } from '@playwright/test'
 /**
  * `PLAYWRIGHT_BASE_URL` switches the whole suite from "build and drive a
  * local `pnpm run dev` server" (the default, unchanged) to "drive an
- * already-running deployment" (e.g. `https://au.arpa` from a real-browser
+ * already-running deployment" (e.g. `https://au.example` from a real-browser
  * validation host) — no separate, uncommitted config file needed for that;
  * one config, one standard mechanism, as Playwright intends.
  */

@@ -11,7 +11,7 @@ import { test as setup, expect } from '@playwright/test'
  * with a non-interactive test credential, exactly the way a human signs in.
  *
  * Background (register item D-WUI-29): the first live run of this suite
- * against `au.arpa` produced 68 failures across every route at both desktop
+ * against `au.example` produced 68 failures across every route at both desktop
  * and mobile viewports, and 100% of them were the Keycloak login page — the
  * suite had no auth setup at all, so every navigation redirected to
  * Keycloak and every assertion failed against a login form instead of the

@@ -46,7 +46,7 @@
 #   DEPLOYMENT          k8s Deployment name (default: agent-webui)
 #   CANONICAL_CHECKOUT  path to the agent-webui checkout that is NFS-exported to
 #                        the live pod at /webui-src (default:
-#                        /home/apps/workspace/agent-packages/agent-webui --
+#                        ${WORKSPACE_ROOT}/agent-packages/agent-webui --
 #                        the canonical checkout path this manifest's NFS export
 #                        is hardcoded to; see inventory/k8s-migration/cutover/
 #                        apptier/agent-webui.yaml). This is deliberately NOT
@@ -54,14 +54,18 @@
 #                        worktree checkout is not what's NFS-exported.
 #   ROLLOUT_TIMEOUT      seconds to wait for the rollout (default: 300; must
 #                        exceed minReadySeconds, see below)
+#   INGRESS_HOST         hostname the post-deploy /health sanity check curls
+#                        (default: webui.example -- set this to the real
+#                        ingress host for your deployment)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NAMESPACE="${NAMESPACE:-apps}"
 DEPLOYMENT="${DEPLOYMENT:-agent-webui}"
 IMAGE="${IMAGE:-knucklessg1/agent-webui}"
-CANONICAL_CHECKOUT="${CANONICAL_CHECKOUT:-/home/apps/workspace/agent-packages/agent-webui}"
+CANONICAL_CHECKOUT="${CANONICAL_CHECKOUT:-${WORKSPACE_ROOT:-.}/agent-packages/agent-webui}"
 ROLLOUT_TIMEOUT="${ROLLOUT_TIMEOUT:-300}"
+INGRESS_HOST="${INGRESS_HOST:-webui.example}"
 
 MODE=full
 while [ $# -gt 0 ]; do
@@ -226,10 +230,10 @@ fi
 log "OK: live pod confirmed serving sha=${BUILD_SHA}."
 
 # Light HTTP sanity check too (/health is exempt from the auth gate).
-if curl -fsS -m 10 -o /dev/null -w '%{http_code}' http://au.arpa/health 2>/dev/null | grep -q '^200$'; then
-  log "OK: http://au.arpa/health -> 200."
+if curl -fsS -m 10 -o /dev/null -w '%{http_code}' "http://${INGRESS_HOST}/health" 2>/dev/null | grep -q '^200$'; then
+  log "OK: http://${INGRESS_HOST}/health -> 200."
 else
-  log "WARNING: http://au.arpa/health did not return 200 -- check DNS/ingress" \
+  log "WARNING: http://${INGRESS_HOST}/health did not return 200 -- check DNS/ingress" \
       "reachability from this host; the kubectl-exec check above is the" \
       "authoritative signal, this is best-effort."
 fi

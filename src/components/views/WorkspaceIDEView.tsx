@@ -3,7 +3,8 @@
  * @description Embeds the openvscode-server workbench (the `code-server`
  * deployment) inside the Workspace section, per R4 in
  * `plans/au-eg-program/PROGRAM.md` ("embed, do not fork"). This replaces
- * `code.arpa` as the operator-facing entry point for the IDE.
+ * the standalone code-server origin (`VITE_IDE_ORIGIN`) as the
+ * operator-facing entry point for the IDE.
  *
  * Two things make this more than "an iframe someone bolted on":
  *  - **Shared theme.** The workbench ships the "Agent WebUI Dark" color theme
@@ -26,11 +27,11 @@ import { api, type EditorContext } from '@/lib/api'
 import { usePageContextPublisher, type PageContextContribution } from '@/lib/page-context'
 
 // The existing openvscode-server deployment (`services/code-server`,
-// `code.arpa`) -- mounted on the same NFS workspace volume this app's own
-// Workspace Files view reads from. `?folder=` opens it directly instead of
-// making the operator navigate there by hand.
-const IDE_ORIGIN = 'http://code.arpa'
-const IDE_URL = `${IDE_ORIGIN}/?folder=/home/workspace`
+// configured via `VITE_IDE_ORIGIN`) -- mounted on the same NFS workspace
+// volume this app's own Workspace Files view reads from. `?folder=` opens
+// it directly instead of making the operator navigate there by hand.
+const IDE_ORIGIN = import.meta.env.VITE_IDE_ORIGIN ?? 'http://code.example'
+const IDE_URL = `${IDE_ORIGIN}/?folder=/home/app`
 
 const EDITOR_CONTEXT_POLL_MS = 2000
 
