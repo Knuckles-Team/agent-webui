@@ -8725,19 +8725,9 @@ async def cancel_session_run(session_id: str) -> dict[str, Any]:
     return {'status': 'success', 'cancelled': cancelled}
 
 
-async def run_goal_loop(
-    session_id: str,
-    goal_id: str,
-    objective: str,
-    validation_action: str,
-    max_iterations: int,
-    constraints: list[str],
-):
-    """Background asyncio worker loop implementing Concept ORCH-5.0."""
-    db_path = _get_db_path()
-    start_time = time.time()
-
-    active_goals[goal_id] = {
+def _initial_goal_state(goal_id: str, session_id: str) -> dict[str, Any]:
+    """The in-memory record a running goal publishes progress through."""
+    return {
         'goal_id': goal_id,
         'session_id': session_id,
         'status': GoalStatus.RUNNING,
@@ -8749,116 +8739,155 @@ async def run_goal_loop(
         'error': '',
     }
 
-    iterations_run = 0
-    success = False
 
+def _write_goal_session_status(db_path: Any, session_id: str, status: str) -> None:
+    """Best-effort session-status write; a failed write must not stop the loop."""
     try:
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE sessions SET status = 'running', updated_at = ? WHERE id = ?",
-            (time.time(), session_id),
+            'UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?',
+            (status, time.time(), session_id),
         )
         conn.commit()
         conn.close()
     except Exception as e:
         _log_failure('api_extension', e)
+
+
+def _run_goal_validation(
+    validation_action: str, iterations_run: int
+) -> tuple[bool, str]:
+    """Evaluate one iteration's validation predicate.
+
+    Validation actions are bounded filesystem predicates. Arbitrary shell
+    commands are intentionally unsupported at this API trust boundary.
+    """
+    if validation_action == 'none':
+        return iterations_run >= 3, ''
+    cmd_success = False
+    try:
+        workspace = DEFAULT_AGENT_DIR.resolve()
+        if validation_action == 'workspace-present':
+            cmd_success = workspace.is_dir()
+        elif validation_action == 'repository-present':
+            cmd_success = workspace.is_dir() and (workspace / '.git').exists()
+    except Exception as e:
+        return False, f'Validation failed: {type(e).__name__}'
+    return cmd_success, (
+        'Validation action passed.'
+        if cmd_success
+        else 'Validation action did not pass.'
+    )
+
+
+def _build_goal_iteration(validation_action: str, iterations_run: int) -> GoalIteration:
+    """Run one bounded goal step and record it as a `GoalIteration`."""
+    iter_start = time.time()
+    action_desc = f'Executing bounded goal step {iterations_run}.'
+    if validation_action != 'none':
+        action_desc += ' Applying the configured validation action.'
+    tool_calls_count = 2 if validation_action != 'none' else 1
+    cmd_success, validation_output = _run_goal_validation(
+        validation_action, iterations_run
+    )
+    return GoalIteration(
+        iteration=iterations_run,
+        action=action_desc,
+        result=f'Iteration step complete. Command success: {cmd_success}',
+        validation_output=validation_output,
+        is_complete=cmd_success,
+        duration_ms=int((time.time() - iter_start) * 1000),
+        tool_calls=tool_calls_count,
+        timestamp=time.time(),
+    )
+
+
+def _goal_iteration_markdown(iteration: GoalIteration) -> str:
+    """The assistant turn body one iteration writes into the console."""
+    content_md = (
+        f'### Iteration {iteration.iteration}\n'
+        f'**Action:** {iteration.action}\n'
+        f'**Result:** {iteration.result}\n'
+    )
+    if iteration.validation_output:
+        content_md += (
+            f'\n**Validation Output:**\n```\n{iteration.validation_output}\n```'
+        )
+    return content_md
+
+
+def _record_goal_iteration(
+    db_path: Any, session_id: str, iteration: GoalIteration
+) -> None:
+    """Synchronize an iteration back to SQLite so the console shows progress."""
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        cursor.execute('SELECT turn_count FROM sessions WHERE id = ?', (session_id,))
+        tc_row = cursor.fetchone()
+        turn_num = tc_row[0] if tc_row else 0
+        cursor.execute(
+            'INSERT INTO turns (id, session_id, turn_number, role, content, created_at, status, usage_json, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (
+                str(uuid.uuid4()),
+                session_id,
+                turn_num + 1,
+                'assistant',
+                _goal_iteration_markdown(iteration),
+                time.time(),
+                'completed',
+                '{}',
+                iteration.duration_ms,
+            ),
+        )
+        preview = (
+            f'Iteration {iteration.iteration} complete. '
+            f'Success: {iteration.is_complete}'
+        )
+        cursor.execute(
+            'UPDATE sessions SET turn_count = turn_count + 1, last_response_preview = ?, updated_at = ? WHERE id = ?',
+            (preview, time.time(), session_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        _log_failure('api_extension', e)
+
+
+def _absorb_goal_iteration(goal_id: str, iteration: GoalIteration) -> None:
+    """Fold one iteration's totals into the goal's published progress record."""
+    state = active_goals[goal_id]
+    state['iterations'].append(iteration)
+    state['total_iterations'] = iteration.iteration
+    state['total_duration_ms'] += iteration.duration_ms
+    state['total_tool_calls'] += iteration.tool_calls
+
+
+async def run_goal_loop(
+    session_id: str,
+    goal_id: str,
+    objective: str,
+    validation_action: str,
+    max_iterations: int,
+    constraints: list[str],
+):
+    """Background asyncio worker loop implementing Concept ORCH-5.0."""
+    db_path = _get_db_path()
+    active_goals[goal_id] = _initial_goal_state(goal_id, session_id)
+
+    iterations_run = 0
+    success = False
+
+    _write_goal_session_status(db_path, session_id, 'running')
     while iterations_run < max_iterations and not success:
         iterations_run += 1
-        iter_start = time.time()
-
-        # Step action description
-        action_desc = f'Executing bounded goal step {iterations_run}.'
-        if validation_action != 'none':
-            action_desc += ' Applying the configured validation action.'
-
-        tool_calls_count = 2 if validation_action != 'none' else 1
-
-        # Validation actions are bounded filesystem predicates. Arbitrary shell
-        # commands are intentionally unsupported at this API trust boundary.
-        validation_output = ''
-        cmd_success = False
-        if validation_action != 'none':
-            try:
-                workspace = DEFAULT_AGENT_DIR.resolve()
-                if validation_action == 'workspace-present':
-                    cmd_success = workspace.is_dir()
-                elif validation_action == 'repository-present':
-                    cmd_success = workspace.is_dir() and (workspace / '.git').exists()
-                validation_output = (
-                    'Validation action passed.'
-                    if cmd_success
-                    else 'Validation action did not pass.'
-                )
-            except Exception as e:
-                validation_output = f'Validation failed: {type(e).__name__}'
-        else:
-            if iterations_run >= 3:
-                cmd_success = True
-
-        iter_duration = int((time.time() - iter_start) * 1000)
-
-        # Build iteration step record
-        iteration = GoalIteration(
-            iteration=iterations_run,
-            action=action_desc,
-            result=f'Iteration step complete. Command success: {cmd_success}',
-            validation_output=validation_output,
-            is_complete=cmd_success,
-            duration_ms=iter_duration,
-            tool_calls=tool_calls_count,
-            timestamp=time.time(),
-        )
-
-        active_goals[goal_id]['iterations'].append(iteration)
-        active_goals[goal_id]['total_iterations'] = iterations_run
-        active_goals[goal_id]['total_duration_ms'] += iter_duration
-        active_goals[goal_id]['total_tool_calls'] += tool_calls_count
-
-        # Synchronize back to SQLite turns to show dynamic console progress
-        try:
-            conn = sqlite3.connect(str(db_path))
-            cursor = conn.cursor()
-
-            cursor.execute(
-                'SELECT turn_count FROM sessions WHERE id = ?', (session_id,)
-            )
-            tc_row = cursor.fetchone()
-            turn_num = tc_row[0] if tc_row else 0
-
-            turn_id = str(uuid.uuid4())
-            content_md = f'### Iteration {iterations_run}\n**Action:** {iteration.action}\n**Result:** {iteration.result}\n'
-            if validation_output:
-                content_md += f'\n**Validation Output:**\n```\n{validation_output}\n```'
-
-            cursor.execute(
-                'INSERT INTO turns (id, session_id, turn_number, role, content, created_at, status, usage_json, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (
-                    turn_id,
-                    session_id,
-                    turn_num + 1,
-                    'assistant',
-                    content_md,
-                    time.time(),
-                    'completed',
-                    '{}',
-                    iter_duration,
-                ),
-            )
-
-            preview = f'Iteration {iterations_run} complete. Success: {cmd_success}'
-            cursor.execute(
-                'UPDATE sessions SET turn_count = turn_count + 1, last_response_preview = ?, updated_at = ? WHERE id = ?',
-                (preview, time.time(), session_id),
-            )
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            _log_failure('api_extension', e)
-        if cmd_success:
+        iteration = _build_goal_iteration(validation_action, iterations_run)
+        _absorb_goal_iteration(goal_id, iteration)
+        _record_goal_iteration(db_path, session_id, iteration)
+        if iteration.is_complete:
             success = True
             break
-
         await asyncio.sleep(2)
 
     final_status = GoalStatus.COMPLETED if success else GoalStatus.FAILED
@@ -8866,18 +8895,7 @@ async def run_goal_loop(
     active_goals[goal_id]['summary'] = (
         f'Goal finished with status: {final_status.value}. Iterations run: {iterations_run}.'
     )
-
-    try:
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-        cursor.execute(
-            'UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?',
-            (final_status.value, time.time(), session_id),
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        _log_failure('api_extension', e)
+    _write_goal_session_status(db_path, session_id, final_status.value)
 
 
 @router.post('/goals')
@@ -11664,12 +11682,17 @@ async def _workflow_orchestrates(engine: Any, workflow_id: str) -> list[str]:
     except Exception as edge_err:  # noqa: BLE001
         _log_failure('resolve_workflow_orchestration', edge_err, level=logging.DEBUG)
         return []
-    orchestrates: list[str] = []
+    return _orchestrated_target_ids(erows)
+
+
+def _orchestrated_target_ids(erows: Any) -> list[str]:
+    """The ids of the nodes a workflow ORCHESTRATES, skipping malformed rows."""
+    targets: list[str] = []
     for er in erows:
         target = er.get('t', {})
         if isinstance(target, dict) and target.get('id'):
-            orchestrates.append(target['id'])
-    return orchestrates
+            targets.append(target['id'])
+    return targets
 
 
 def _decode_workflow_canvas(crows: Any) -> Any:
@@ -11826,6 +11849,134 @@ async def workflow_capabilities() -> dict[str, list[dict[str, Any]]]:
     return {'agents': agents, 'tools': tools, 'skills': skills}
 
 
+@dataclass(frozen=True)
+class _WorkflowSaveRequest:
+    """A validated ``POST /workflows`` body."""
+
+    name: str
+    steps: list[Any]
+    orchestrates: list[Any]
+    canvas: Any
+    canvas_payload: str | None
+
+
+def _bounded_workflow_tokens(items: Any, max_bytes: int) -> bool:
+    """True when `items` is a bounded list of bounded UTF-8 strings."""
+    return (
+        isinstance(items, list)
+        and len(items) <= _MAX_EXTERNAL_COLLECTION_ITEMS
+        and all(
+            isinstance(item, str) and len(item.encode('utf-8')) <= max_bytes
+            for item in items
+        )
+    )
+
+
+def _validated_workflow_name(body: dict[str, Any]) -> str:
+    name = body.get('name') or 'Untitled Workflow'
+    if (
+        not isinstance(name, str)
+        or not name.strip()
+        or len(name.encode('utf-8')) > 512
+    ):
+        raise HTTPException(status_code=400, detail='Invalid workflow name')
+    return name
+
+
+def _workflow_canvas_from_body(body: dict[str, Any]) -> Any:
+    """The editor canvas, assembled from loose `nodes`/`edges` when needed."""
+    canvas = body.get('canvas')
+    if canvas is None and ('nodes' in body or 'edges' in body):
+        return {
+            'nodes': body.get('nodes', []),
+            'edges': body.get('edges', []),
+            'layout': body.get('layout'),
+        }
+    return canvas
+
+
+def _encoded_workflow_canvas(canvas: Any) -> tuple[Any, str | None]:
+    """Bound and serialize the canvas, or ``(None, None)`` when absent."""
+    if canvas is None:
+        return None, None
+    try:
+        bounded = _bounded_external_value(canvas)
+        payload = json.dumps(
+            bounded,
+            separators=(',', ':'),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail='Invalid workflow canvas') from exc
+    if len(payload.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES:
+        raise HTTPException(status_code=400, detail='Workflow canvas is too large')
+    return bounded, payload
+
+
+def _workflow_save_request(body: Any) -> _WorkflowSaveRequest:
+    """Validate a ``POST /workflows`` body into a `_WorkflowSaveRequest`."""
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail='Workflow body must be an object')
+    steps = body.get('steps') or []
+    orchestrates = body.get('orchestrates') or []
+    name = _validated_workflow_name(body)
+    if not _bounded_workflow_tokens(steps, 2048) or not _bounded_workflow_tokens(
+        orchestrates, _MAX_WORKFLOW_ID_BYTES
+    ):
+        raise HTTPException(status_code=400, detail='Invalid workflow steps')
+    canvas, canvas_payload = _encoded_workflow_canvas(
+        _workflow_canvas_from_body(body)
+    )
+    return _WorkflowSaveRequest(
+        name=name,
+        steps=steps,
+        orchestrates=orchestrates,
+        canvas=canvas,
+        canvas_payload=canvas_payload,
+    )
+
+
+async def _persist_workflow_spec(engine: Any, spec: Any, workflow_to_batch: Any) -> None:
+    """Build the canonical batch, then persist via the engine's node/edge API
+    (the engine exposes add_node/link_nodes rather than a raw write_batch)."""
+
+    def persist_workflow() -> None:
+        batch = workflow_to_batch(spec)
+        for node in batch.nodes:
+            engine.add_node(node.id, node.type, dict(node.props or {}))
+        for edge in batch.edges:
+            engine.link_nodes(edge.source, edge.target, edge.rel_type)
+
+    await _invoke_governed_helper(persist_workflow, deadline=30.0)
+
+
+async def _persist_workflow_canvas(
+    engine: Any, spec: Any, name: str, canvas_payload: str | None
+) -> None:
+    """Persist the canvas sidecar so the editor restores exactly on reload.
+
+    Non-fatal: the spec is saved even if the canvas sidecar fails.
+    """
+    try:
+        await _invoke_governed_helper(
+            engine.add_node,
+            _canvas_node_id(spec.id),
+            'WorkflowCanvas',
+            {
+                'workflow_id': spec.id,
+                'name': name,
+                'canvas': canvas_payload,
+                'updated_at': datetime.now(timezone.utc).isoformat(),
+            },
+            deadline=15.0,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        _log_failure('api_extension', e, level=logging.WARNING)
+
+
 @router.post('/workflows')
 async def save_workflow(request: Request) -> dict[str, Any]:
     """Persist a workflow as a canonical ``WorkflowSpec`` + canvas sidecar.
@@ -11836,54 +11987,7 @@ async def save_workflow(request: Request) -> dict[str, Any]:
     on a sibling ``:WorkflowCanvas`` node keyed by the workflow id so the
     canvas round-trips exactly. Returns ``{id, saved}``.
     """
-    import json
-
-    body = await request.json()
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail='Workflow body must be an object')
-    name = body.get('name') or 'Untitled Workflow'
-    steps = body.get('steps') or []
-    orchestrates = body.get('orchestrates') or []
-    canvas = body.get('canvas')
-    if canvas is None and ('nodes' in body or 'edges' in body):
-        canvas = {
-            'nodes': body.get('nodes', []),
-            'edges': body.get('edges', []),
-            'layout': body.get('layout'),
-        }
-    if not isinstance(name, str) or not name.strip() or len(name.encode('utf-8')) > 512:
-        raise HTTPException(status_code=400, detail='Invalid workflow name')
-    if (
-        not isinstance(steps, list)
-        or not isinstance(orchestrates, list)
-        or len(steps) > _MAX_EXTERNAL_COLLECTION_ITEMS
-        or len(orchestrates) > _MAX_EXTERNAL_COLLECTION_ITEMS
-        or not all(
-            isinstance(item, str) and len(item.encode('utf-8')) <= 2048
-            for item in steps
-        )
-        or not all(
-            isinstance(item, str)
-            and len(item.encode('utf-8')) <= _MAX_WORKFLOW_ID_BYTES
-            for item in orchestrates
-        )
-    ):
-        raise HTTPException(status_code=400, detail='Invalid workflow steps')
-    if canvas is not None:
-        try:
-            canvas = _bounded_external_value(canvas)
-            canvas_payload = json.dumps(
-                canvas,
-                separators=(',', ':'),
-                ensure_ascii=False,
-                allow_nan=False,
-            )
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(
-                status_code=400, detail='Invalid workflow canvas'
-            ) from exc
-        if len(canvas_payload.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES:
-            raise HTTPException(status_code=400, detail='Workflow canvas is too large')
+    saved = _workflow_save_request(await request.json())
 
     try:
         from agent_utilities.knowledge_graph.enrichment.orchestration import (
@@ -11897,21 +12001,13 @@ async def save_workflow(request: Request) -> dict[str, Any]:
             detail=f'Workflow orchestration unavailable: {type(e).__name__}',
         ) from e
 
-    spec = WorkflowSpec(name=name, steps=steps, orchestrates=orchestrates)
+    spec = WorkflowSpec(
+        name=saved.name, steps=saved.steps, orchestrates=saved.orchestrates
+    )
 
     try:
         engine = await _get_engine_bounded()
-
-        # Build the canonical batch, then persist via the engine's node/edge API
-        # (the engine exposes add_node/link_nodes rather than a raw write_batch).
-        def persist_workflow() -> None:
-            batch = workflow_to_batch(spec)
-            for node in batch.nodes:
-                engine.add_node(node.id, node.type, dict(node.props or {}))
-            for edge in batch.edges:
-                engine.link_nodes(edge.source, edge.target, edge.rel_type)
-
-        await _invoke_governed_helper(persist_workflow, deadline=30.0)
+        await _persist_workflow_spec(engine, spec, workflow_to_batch)
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
@@ -11920,28 +12016,71 @@ async def save_workflow(request: Request) -> dict[str, Any]:
             status_code=500, detail=f'Failed to persist workflow: {type(e).__name__}'
         ) from e
 
-    # Persist the canvas sidecar so the editor restores exactly on reload.
-    if canvas is not None:
-        try:
-            canvas_id = _canvas_node_id(spec.id)
-            await _invoke_governed_helper(
-                engine.add_node,
-                canvas_id,
-                'WorkflowCanvas',
-                {
-                    'workflow_id': spec.id,
-                    'name': name,
-                    'canvas': canvas_payload,
-                    'updated_at': datetime.now(timezone.utc).isoformat(),
-                },
-                deadline=15.0,
-            )
-        except HTTPException:
-            raise
-        except Exception as e:  # noqa: BLE001
-            # Non-fatal: the spec is saved even if the canvas sidecar fails.
-            _log_failure('api_extension', e, level=logging.WARNING)
+    if saved.canvas is not None:
+        await _persist_workflow_canvas(engine, spec, saved.name, saved.canvas_payload)
     return {'id': spec.id, 'saved': True}
+
+
+def _workflow_name_and_steps(rows: Any, wid: str) -> tuple[str, list[Any]]:
+    """A `:Workflow` row's name and steps, defaulting to the id and []."""
+    if not rows:
+        return wid, []
+    wdata = rows[0].get('w', {})
+    if not isinstance(wdata, dict):
+        return wid, []
+    return wdata.get('name', wid), _workflow_steps(wdata.get('steps', ''))
+
+
+async def _resolve_workflow_record(wid: str) -> tuple[str, list[Any], list[str]]:
+    """Resolve a saved workflow's ``(name, steps, orchestrates)`` from the KG.
+
+    Best-effort: a lookup failure leaves the caller to fall back to whatever
+    the request body supplied.
+    """
+    name = wid
+    steps: list[Any] = []
+    orchestrates: list[str] = []
+    try:
+        engine = await _get_engine_bounded()
+        rows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (w:Workflow) WHERE w.id = $workflow_id RETURN w LIMIT 1',
+            {'workflow_id': wid},
+            deadline=15.0,
+        )
+        name, steps = _workflow_name_and_steps(rows, wid)
+        erows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
+            'WHERE w.id = $workflow_id RETURN t '
+            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
+            {'workflow_id': wid},
+            deadline=15.0,
+        )
+        orchestrates = _orchestrated_target_ids(erows)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        _log_failure('api_extension', e, level=logging.WARNING)
+    return name, steps, orchestrates
+
+
+def _require_workflow_identifier(wid: str) -> None:
+    """Reject an empty, NUL-bearing or oversized workflow identifier."""
+    if not wid or '\x00' in wid or len(wid.encode('utf-8')) > _MAX_WORKFLOW_ID_BYTES:
+        raise HTTPException(status_code=400, detail='Invalid workflow identifier')
+
+
+def _workflow_run_response(run_id: str, result: Any) -> dict[str, Any]:
+    """Shape a dispatch result into the run response body."""
+    if isinstance(result, dict):
+        return {
+            'run_id': run_id,
+            'status': result.get('status', 'completed'),
+            'result': result,
+            'summary': result.get('summary'),
+        }
+    return {'run_id': run_id, 'status': 'completed', 'result': result}
 
 
 @router.post('/workflows/{wid:path}/run')
@@ -11953,50 +12092,11 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
     Wraps failures so an error returns ``{status: "error", error}`` instead of
     a 500. Returns ``{run_id, status, result/summary}``.
     """
-    import uuid
-
-    if not wid or '\x00' in wid or len(wid.encode('utf-8')) > _MAX_WORKFLOW_ID_BYTES:
-        raise HTTPException(status_code=400, detail='Invalid workflow identifier')
+    _require_workflow_identifier(wid)
     run_id = uuid.uuid4().hex[:12]
 
     # Resolve the spec — prefer the live KG record, fall back to request body.
-    name = wid
-    steps: list[str] = []
-    orchestrates: list[str] = []
-    try:
-        engine = await _get_engine_bounded()
-        rows = await _invoke_governed_helper(
-            engine.backend.execute,
-            'MATCH (w:Workflow) WHERE w.id = $workflow_id RETURN w LIMIT 1',
-            {'workflow_id': wid},
-            deadline=15.0,
-        )
-        if rows:
-            wdata = rows[0].get('w', {})
-            if isinstance(wdata, dict):
-                name = wdata.get('name', wid)
-                steps_raw = wdata.get('steps', '')
-                steps = (
-                    [s for s in steps_raw.split(',') if s]
-                    if isinstance(steps_raw, str)
-                    else list(steps_raw or [])
-                )
-        erows = await _invoke_governed_helper(
-            engine.backend.execute,
-            'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
-            'WHERE w.id = $workflow_id RETURN t '
-            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
-            {'workflow_id': wid},
-            deadline=15.0,
-        )
-        for er in erows:
-            target = er.get('t', {})
-            if isinstance(target, dict) and target.get('id'):
-                orchestrates.append(target['id'])
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        _log_failure('api_extension', e, level=logging.WARNING)
+    name, steps, orchestrates = await _resolve_workflow_record(wid)
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
@@ -12033,15 +12133,7 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
             mode='workflow',
             deadline=120.0,
         )
-        if isinstance(result, dict):
-            status = result.get('status', 'completed')
-            return {
-                'run_id': run_id,
-                'status': status,
-                'result': result,
-                'summary': result.get('summary'),
-            }
-        return {'run_id': run_id, 'status': 'completed', 'result': result}
+        return _workflow_run_response(run_id, result)
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
