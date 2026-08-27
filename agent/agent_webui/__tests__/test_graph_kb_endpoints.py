@@ -134,18 +134,27 @@ def test_kb_health_check_error(client, mock_graph_engine):
 
 
 def test_get_tasks_success(client):
+    """`SDDManager.get_all_tasks()` returns `list[Tasks]` -- a bare Python
+    list of pydantic models, not a single object with its own
+    `.model_dump()`. A prior version of this mock (a single `MagicMock`
+    standing in for the whole return value) didn't reflect that real
+    contract and masked a bug where the raw list of pydantic objects
+    reached `_public_external_result` unconverted and raised on any
+    non-empty result (see `test_bound_sweep_regressions.py`
+    ::TestGetAllTasksHandlesTheListOfPydanticModelsShape for the full
+    regression coverage); this mock now matches the real shape."""
     from agent_utilities.sdd import SDDManager
 
     mock_manager = MagicMock(spec=SDDManager)
-    mock_tasks = MagicMock()
-    mock_tasks.model_dump.return_value = {'tasks': []}
-    mock_manager.get_all_tasks.return_value = mock_tasks
+    mock_task_group = MagicMock()
+    mock_task_group.model_dump.return_value = {'feature_id': 'f1', 'tasks': []}
+    mock_manager.get_all_tasks.return_value = [mock_task_group]
 
     with patch('agent_webui.api_extensions.SDDManager', return_value=mock_manager):
         response = client.get('/api/enhanced/sdd/tasks')
         assert response.status_code == 200
         data = response.json()
-        assert 'tasks' in data
+        assert data == [{'feature_id': 'f1', 'tasks': []}]
 
 
 def test_get_tasks_with_plan_id(client):
