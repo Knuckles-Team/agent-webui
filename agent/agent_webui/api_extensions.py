@@ -4409,6 +4409,75 @@ async def _read_union_sql_group_counts(
     return await _invoke_governed_helper(_run, deadline=deadline)
 
 
+def _node_label_rows(
+    scoped_engine: Any, label: str, limit: int
+) -> list[tuple[str, dict[str, Any]]]:
+    """One graph's `nodes_by_label` page, or [] when the backend lacks it."""
+    fn = getattr(scoped_engine.backend, 'nodes_by_label', None)
+    if not callable(fn):
+        return []
+    return list(fn(label, limit) or [])
+
+
+def _clean_node_label_rows(rows: Any) -> list[tuple[str, dict[str, Any]]]:
+    """Keep only well-formed `(id, properties)` pairs."""
+    return [
+        (row[0], row[1])
+        for row in (rows or [])
+        if isinstance(row, (tuple, list)) and len(row) == 2
+    ]
+
+
+def _restrict_commons_node_rows(
+    clean_rows: list[tuple[str, dict[str, Any]]], actor: Any, graph_name: str
+) -> list[tuple[str, dict[str, Any]]]:
+    """Apply the commons READ catalog allowlist to one graph's node rows.
+
+    `nodes_by_label` has no Cypher form `apply_commons_catalog_restriction`
+    could inject into, so the row-level allowlist function is applied directly
+    here instead (verified: `read_union` itself does not call it, so it is
+    this call site's job).
+    """
+    from agent_utilities.knowledge_graph.core.tenant_sharing import (
+        filter_commons_catalog,
+    )
+
+    props_only = [p if isinstance(p, dict) else {} for _nid, p in clean_rows]
+    allowed = filter_commons_catalog(props_only, actor, graph_name)
+    allowed_ids = {id(p) for p in allowed}
+    return [(nid, p) for nid, p in clean_rows if id(p) in allowed_ids]
+
+
+def _append_unseen_node_rows(
+    merged: list[tuple[str, dict[str, Any]]],
+    seen: set[str],
+    clean_rows: list[tuple[str, dict[str, Any]]],
+) -> None:
+    """Append rows whose string node id has not been merged yet."""
+    for nid, props in clean_rows:
+        if isinstance(nid, str):
+            if nid in seen:
+                continue
+            seen.add(nid)
+        merged.append((nid, props))
+
+
+def _merge_node_label_rows(
+    per_graph: Any, actor: Any, commons: str
+) -> tuple[list[tuple[str, dict[str, Any]]], list[str]]:
+    """Merge per-graph `nodes_by_label` pages, de-duped by node id."""
+    merged: list[tuple[str, dict[str, Any]]] = []
+    seen: set[str] = set()
+    source_graphs: list[str] = []
+    for graph_name, rows in per_graph:
+        source_graphs.append(graph_name)
+        clean_rows = _clean_node_label_rows(rows)
+        if graph_name == commons and actor is not None:
+            clean_rows = _restrict_commons_node_rows(clean_rows, actor, graph_name)
+        _append_unseen_node_rows(merged, seen, clean_rows)
+    return merged, source_graphs
+
+
 def _union_nodes_by_label(
     engine: Any, label: str, limit: int
 ) -> tuple[list[tuple[str, dict[str, Any]]], list[str], list[str]]:
@@ -4422,11 +4491,8 @@ def _union_nodes_by_label(
     lane's own instructions anticipate. Uses `_rows_per_accessible_graph` for
     the per-graph fan-out (same `engine.for_graph`/`use_session` retargeting
     contract as every other union helper here), then applies the commons READ
-    catalog restriction (`tenant_sharing.filter_commons_catalog`) to ONLY the
-    commons graph's rows before merging -- `nodes_by_label` has no Cypher form
-    `apply_commons_catalog_restriction` could inject into, so the row-level
-    allowlist function is applied directly here instead (verified: `read_union`
-    itself does not call it, so it is this call site's job).
+    catalog restriction to ONLY the commons graph's rows before merging (see
+    `_restrict_commons_node_rows`).
 
     Returns `(rows, source_graphs, degraded_graphs)`, the same shape
     `_read_union_scalar_sum` returns, so callers can accumulate source/degraded
@@ -4435,14 +4501,10 @@ def _union_nodes_by_label(
     from agent_utilities.knowledge_graph.core.session import current_session
     from agent_utilities.knowledge_graph.core.tenant_sharing import (
         commons_graph_name,
-        filter_commons_catalog,
     )
 
     def _call(scoped_engine: Any) -> list[tuple[str, dict[str, Any]]]:
-        fn = getattr(scoped_engine.backend, 'nodes_by_label', None)
-        if not callable(fn):
-            return []
-        return list(fn(label, limit) or [])
+        return _node_label_rows(scoped_engine, label, limit)
 
     result = _rows_per_accessible_graph(engine, _call)
     if result is None:
@@ -4450,29 +4512,48 @@ def _union_nodes_by_label(
     per_graph, degraded = result
     session = current_session()
     actor = session.actor if session is not None else None
-    commons = commons_graph_name()
-    merged: list[tuple[str, dict[str, Any]]] = []
-    seen: set[str] = set()
+    merged, source_graphs = _merge_node_label_rows(
+        per_graph, actor, commons_graph_name()
+    )
+    return merged, source_graphs, degraded
+
+
+def _append_unseen_dict_rows(
+    merged: list[dict[str, Any]],
+    seen: set[Any],
+    rows: list[dict[str, Any]],
+    id_key: str,
+) -> None:
+    """Append rows whose `id_key` has not been merged yet (id-less rows pass)."""
+    for row in rows:
+        rid = row.get(id_key)
+        if rid is None:
+            merged.append(row)
+            continue
+        if rid in seen:
+            continue
+        seen.add(rid)
+        merged.append(row)
+
+
+def _merge_union_dict_rows(
+    per_graph: Any, actor: Any, commons: str, id_key: str
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Merge per-graph dict rows, de-duped by `id_key` (tenant graph wins)."""
+    from agent_utilities.knowledge_graph.core.tenant_sharing import (
+        filter_commons_catalog,
+    )
+
+    merged: list[dict[str, Any]] = []
+    seen: set[Any] = set()
     source_graphs: list[str] = []
     for graph_name, rows in per_graph:
         source_graphs.append(graph_name)
-        clean_rows = [
-            (row[0], row[1])
-            for row in (rows or [])
-            if isinstance(row, (tuple, list)) and len(row) == 2
-        ]
+        clean = [r for r in (rows or []) if isinstance(r, dict)]
         if graph_name == commons and actor is not None:
-            props_only = [p if isinstance(p, dict) else {} for _nid, p in clean_rows]
-            allowed = filter_commons_catalog(props_only, actor, graph_name)
-            allowed_ids = {id(p) for p in allowed}
-            clean_rows = [(nid, p) for nid, p in clean_rows if id(p) in allowed_ids]
-        for nid, props in clean_rows:
-            if isinstance(nid, str):
-                if nid in seen:
-                    continue
-                seen.add(nid)
-            merged.append((nid, props))
-    return merged, source_graphs, degraded
+            clean = filter_commons_catalog(clean, actor, graph_name)
+        _append_unseen_dict_rows(merged, seen, clean, id_key)
+    return merged, source_graphs
 
 
 def _union_engine_call(
@@ -4490,32 +4571,209 @@ def _union_engine_call(
     """
     from agent_utilities.knowledge_graph.core.tenant_sharing import (
         commons_graph_name,
-        filter_commons_catalog,
     )
 
     result = _rows_per_accessible_graph(engine, call)
     if result is None:
         return list(call(engine) or []), [], []
     per_graph, degraded = result
-    commons = commons_graph_name()
-    merged: list[dict[str, Any]] = []
-    seen: set[Any] = set()
-    source_graphs: list[str] = []
-    for graph_name, rows in per_graph:
-        source_graphs.append(graph_name)
-        rows = [r for r in (rows or []) if isinstance(r, dict)]
-        if graph_name == commons and actor is not None:
-            rows = filter_commons_catalog(rows, actor, graph_name)
-        for row in rows:
-            rid = row.get(id_key)
-            if rid is None:
-                merged.append(row)
-                continue
-            if rid in seen:
-                continue
-            seen.add(rid)
-            merged.append(row)
+    merged, source_graphs = _merge_union_dict_rows(
+        per_graph, actor, commons_graph_name(), id_key
+    )
     return merged, source_graphs, degraded
+
+
+async def _graph_read_engine() -> Any | None:
+    """Acquire the read engine for a graph view route.
+
+    CONCEPT:AU-ECO.ui.engine-fallback-reachable -- "no engine" (501) is a
+    distinct condition from a query failing AFTER an engine was acquired (the
+    D-W6-10 hardening in each caller, which stays a hard 503 and is NOT
+    touched by this). Only a genuine 503 (bounded deadline/capacity)
+    re-raises; a still-absent engine returns ``None`` so the caller can
+    degrade to an honest empty view -- the graph simply has nothing to show
+    yet, not a backend malfunction.
+    """
+    try:
+        return await _get_engine_bounded()
+    except HTTPException as exc:
+        if exc.status_code != 501:
+            raise
+        return None
+
+
+async def _union_label_page(
+    engine: Any, label: str, remaining: int
+) -> tuple[list[Any], set[str], set[str]]:
+    """One bounded, union-scoped ``nodes_by_label`` page for ``label``.
+
+    `_union_nodes_by_label` is a plain sync callable (mirroring
+    `nodes_by_label`'s own shape), so it goes through
+    `_invoke_governed_helper` exactly like the un-unioned call it replaces.
+    """
+    page, sources, degraded = await _invoke_governed_helper(
+        _union_nodes_by_label, engine, label, remaining, deadline=10.0
+    )
+    return list(page or []), set(sources), set(degraded)
+
+
+async def _collect_labeled_node_rows(
+    engine: Any, budget: int
+) -> tuple[list[Any], set[str], set[str]]:
+    """Fan `nodes_by_label` over every label under ONE shared item budget."""
+    rows: list[Any] = []
+    source_graphs: set[str] = set()
+    degraded_graphs: set[str] = set()
+    for label in await _distinct_graph_labels(engine):
+        remaining = budget - len(rows)
+        if remaining <= 0:
+            break
+        # One label must not be able to blank the whole canvas. Degrading to
+        # "every label that COULD be read" is the honest answer; failing all
+        # of them because one failed is not. The label is named in the log so
+        # the cause stays findable.
+        try:
+            page, sources, degraded = await _union_label_page(
+                engine, label, remaining
+            )
+        except Exception as label_error:
+            _log_failure(
+                f'get_graph_nodes.label.{label}',
+                label_error,
+                level=logging.WARNING,
+            )
+            continue
+        rows.extend(page)
+        source_graphs |= sources
+        degraded_graphs |= degraded
+    return rows, source_graphs, degraded_graphs
+
+
+async def _collect_unlabeled_node_rows(
+    engine: Any, remaining: int
+) -> tuple[list[Any], set[str], set[str]]:
+    """Read the genuinely-unlabeled bucket (``label=''``), best-effort.
+
+    The DEPLOYED engine build rejects an empty label argument outright
+    (ValueError), even though `GraphCore::get_nodes_by_label_page` in source
+    handles it via `collect_unlabeled`. Nodes with no label at all are a
+    rounding error next to the labeled graph, so a build that refuses the
+    query must not fail the whole canvas.
+    """
+    if remaining <= 0:
+        return [], set(), set()
+    try:
+        return await _union_label_page(engine, '', remaining)
+    except Exception:
+        logger.debug('engine rejects empty-label read; skipping unlabeled')
+        return [], set(), set()
+
+
+async def _collect_graph_node_rows(
+    engine: Any, node_type: str | None, budget: int
+) -> tuple[list[Any], set[str], set[str]]:
+    """The `(id, properties)` rows backing `/graph/nodes`, union-scoped.
+
+    A ``node_type``-filtered request is a single round trip. The unfiltered
+    canvas enumerates the labels via the engine's own `db.labels()` procedure
+    (`crates/eg-query/src/cypher/proc.rs`) and fans `nodes_by_label` out per
+    label under one shared budget, stopping as soon as the budget is full.
+    The empty-label bucket is queried last, on purpose and for what it
+    actually means: the genuinely unlabeled nodes.
+    """
+    if node_type:
+        return await _union_label_page(engine, node_type, budget)
+    rows, sources, degraded = await _collect_labeled_node_rows(engine, budget)
+    tail, tail_sources, tail_degraded = await _collect_unlabeled_node_rows(
+        engine, budget - len(rows)
+    )
+    rows.extend(tail)
+    return rows, sources | tail_sources, degraded | tail_degraded
+
+
+def _canvas_node_labels(props: dict[str, Any]) -> list[str]:
+    """The labels Cypher's own ``(n:Label)`` predicate would have matched.
+
+    `nodes_by_label` indexes the BROADER `GraphCore.label_index` contract (a
+    node's `type`/`node_type`/`label` scalar fields plus the multi-valued
+    `labels` array -- `labels_of` in `crates/eg-core/src/graph.rs`). Cypher's
+    own `(n:Label)` predicate is deliberately narrower -- EXACTLY `node_type`
+    plus the explicit `labels` array (`node_has_label`/
+    `build_cypher_label_index` in `crates/eg-query/src/cypher/exec.rs`, whose
+    comment says this set is "deliberately narrower than
+    `GraphCore.label_index`'s `type`/`node_type`/`label`"). Derived from
+    EXACTLY those two narrower fields; both are excluded from `properties` in
+    `_canvas_node_from_row` so a label is never duplicated as an ordinary
+    property.
+    """
+    labels: list[str] = []
+    node_type_prop = props.get('node_type')
+    if isinstance(node_type_prop, str) and node_type_prop:
+        labels.append(node_type_prop)
+    extra_labels = props.get('labels')
+    if isinstance(extra_labels, list):
+        labels.extend(
+            item
+            for item in extra_labels
+            if isinstance(item, str) and item and item not in labels
+        )
+    return labels
+
+
+def _canvas_node_from_row(row: Any, node_type: str | None) -> dict[str, Any] | None:
+    """One `(id, properties)` row as a canvas node, or ``None`` to drop it."""
+    if not isinstance(row, (tuple, list)) or len(row) != 2:
+        return None
+    node_id, props = row
+    if not isinstance(props, dict):
+        props = {}
+    labels = _canvas_node_labels(props)
+    if node_type and node_type not in labels:
+        # A broader-index-only match (e.g. a legacy node carrying a bare
+        # `type` property but no `node_type`/`labels`; writing `type` is
+        # retired going forward -- see `retired_node_type_property_error`).
+        # `MATCH (n:<node_type>)` would not have matched it, so a
+        # node_type-filtered result must not include it either (kept
+        # consistent with the unfiltered list this is filtered from).
+        return None
+    return {
+        'id': node_id if isinstance(node_id, str) else '',
+        'labels': labels,
+        'properties': {
+            k: _canvas_property(v)
+            for k, v in props.items()
+            if k not in ('id', 'node_type', 'labels') and not str(k).startswith('_')
+        },
+    }
+
+
+def _build_canvas_nodes(
+    rows: list[Any], node_type: str | None, budget_bytes: int
+) -> list[dict[str, Any]]:
+    """Shape rows into canvas nodes, stopping at the serialized size budget.
+
+    `_public_external_result` enforces a hard serialized-size bound and raises
+    ValueError past it. That bound is what actually broke this endpoint: a
+    `Skill` node carries its whole SKILL.md body, so 256 of them blow the
+    2 MiB ceiling and the canvas 503'd -- the failure looked like an engine
+    error but was entirely ours. Keep a running estimate and stop at the
+    budget so the canvas renders what fits instead of nothing at all.
+    """
+    nodes: list[dict[str, Any]] = []
+    for row in rows or []:
+        node = _canvas_node_from_row(row, node_type)
+        if node is None:
+            continue
+        node, node_size = _canvas_node(node)
+        budget_bytes -= node_size
+        if budget_bytes <= 0:
+            logger.warning(
+                'graph canvas truncated at %d nodes by the result size bound',
+                len(nodes),
+            )
+            break
+        nodes.append(node)
+    return nodes
 
 
 @router.get('/graph/nodes')
@@ -4528,70 +4786,25 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
 
     Returns:
         List of node dictionaries with properties.
+
+    This does not go through Cypher at all. `properties(n)` asked the engine's
+    Cypher RETURN clause to call a function it does not implement
+    (`eg-query`'s `parse_proj_expr` recognizes only a fixed aggregate set plus
+    the special-cased `type(r)`), and `RETURN n` is the ORIGINAL, still-broken
+    whole-object projection documented at `get_graph_stats`. There is no
+    scalar-column way to ask Cypher for "all of a node's properties" (the
+    grammar has no wildcard/`RETURN n.*`), so this uses `nodes_by_label` --
+    the engine's OWN purpose-built native replacement for exactly this
+    `MATCH (n[:Label]) ... LIMIT k` shape -- fanned out across every
+    accessible graph by `_collect_graph_node_rows`.
     """
     if node_type and not _SAFE_GRAPH_LABEL.fullmatch(node_type):
         raise HTTPException(status_code=400, detail='Invalid graph node type')
     try:
-        try:
-            engine = await _get_engine_bounded()
-        except HTTPException as exc:
-            # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- "no engine"
-            # (501) is a distinct condition from a query failing AFTER an
-            # engine was acquired (the D-W6-10 hardening below, which stays
-            # a hard 503 and is NOT touched by this). Only a genuine 503
-            # (bounded deadline/capacity) re-raises here; a still-absent
-            # engine degrades to an honest empty list -- the graph simply
-            # has nothing to show yet, not a backend malfunction.
-            if exc.status_code != 501:
-                raise
+        engine = await _graph_read_engine()
+        if engine is None:
             return []
-
-        # BUG (this fix): `properties(n)` asked the engine's Cypher RETURN
-        # clause to call a function it does not implement. `eg-query`'s
-        # `parse_proj_expr` (crates/eg-query/src/cypher/parser.rs) only
-        # recognizes a fixed aggregate set (count/collect/sum/avg/min/max)
-        # and the special-cased `type(r)` -- there is no general function-
-        # call grammar at all, so `properties(n)` fell through to being
-        # parsed as a bare `properties` variable followed by a stray `(`,
-        # a parse failure the native authority raises back as
-        # `CypherEngineError` (live log: "get_graph_nodes failed:
-        # error_type=CypherEngineError"). `RETURN n` is not the fix either
-        # (api_extensions.py's own history above: that whole-object
-        # projection is the ORIGINAL, still-broken bug -- parser-fragile,
-        # documented at `get_graph_stats`).
-        #
-        # There is no scalar-column way to ask Cypher for "all of a node's
-        # properties" (the grammar has no wildcard/`RETURN n.*`), so this
-        # does not go through Cypher at all: `nodes_by_label` is the
-        # engine's OWN purpose-built native replacement for exactly this
-        # `MATCH (n[:Label]) ... LIMIT k` shape -- ONE bounded round trip
-        # returning `(id, properties)` per node, already decoded
-        # (`GraphComputeEngine.get_nodes_by_label`'s docstring: "bounding
-        # the wire payload so a MATCH (n:Label) … LIMIT k never
-        # materializes the whole graph").
-        #
-        # BUG (this fix): the previous revision passed `node_type or ''`,
-        # believing an empty label meant "no filter" engine-side. It does
-        # not. `GraphCore::get_nodes_by_label_page`
-        # (`crates/eg-core/src/graph.rs`) opens with
-        # `if label.is_empty() { return self.collect_unlabeled(after, limit) }`
-        # -- an empty label selects ONLY nodes carrying no label at all,
-        # which is the opposite of "everything". So the unfiltered canvas
-        # (the default, `node_type=None`) asked for the one bucket the KG
-        # has almost nothing in, and the deployed engine build rejected the
-        # empty argument outright (live log: "get_graph_nodes failed:
-        # error_type=ValueError") -- a 503 on the graph canvas.
-        #
-        # There is no single "all nodes with properties" engine call, so the
-        # unfiltered case enumerates the labels via the engine's own
-        # `db.labels()` procedure (`crates/eg-query/src/cypher/proc.rs`) and
-        # fans out `nodes_by_label` per label under ONE shared item budget,
-        # stopping as soon as the budget is full. The empty-label bucket is
-        # queried last, on purpose and for what it actually means: the
-        # genuinely unlabeled nodes. A `node_type`-filtered request stays
-        # exactly what it was -- a single round trip.
-        nodes_by_label = getattr(engine.backend, 'nodes_by_label', None)
-        if not callable(nodes_by_label):
+        if not callable(getattr(engine.backend, 'nodes_by_label', None)):
             raise HTTPException(
                 status_code=503,
                 detail='Knowledge Graph node query failed',
@@ -4599,153 +4812,24 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
         budget = _MAX_EXTERNAL_COLLECTION_ITEMS
         # Leave headroom under the serialized ceiling for the JSON envelope.
         budget_bytes = (_MAX_EXTERNAL_RESULT_BYTES * 3) // 4
-        # FIX LANE Priority 1: every `nodes_by_label` call below is fanned out
-        # across `_accessible_graphs` and merged (`_union_nodes_by_label`,
-        # de-duped by node id, tenant wins, commons READ catalog allowlist
-        # applied to commons rows) -- see that helper's docstring for why this
-        # goes through `_rows_per_accessible_graph` rather than
-        # `_read_union_cypher` (no Cypher form for this native call).
-        # `_union_nodes_by_label` itself is a plain sync callable (mirrors
-        # `nodes_by_label`'s own shape), so it goes through
-        # `_invoke_governed_helper` exactly like the un-unioned call it
-        # replaces.
-        if node_type:
-            rows, node_sources, node_degraded = await _invoke_governed_helper(
-                _union_nodes_by_label, engine, node_type, budget, deadline=10.0
-            )
-            source_graphs = set(node_sources)
-            degraded_graphs = set(node_degraded)
-        else:
-            rows = []
-            source_graphs = set()
-            degraded_graphs = set()
-            for label in await _distinct_graph_labels(engine):
-                remaining = budget - len(rows)
-                if remaining <= 0:
-                    break
-                # One label must not be able to blank the whole canvas.
-                # Degrading to "every label that COULD be read" is the honest
-                # answer; failing all of them because one failed is not. The
-                # label is named in the log so the cause stays findable.
-                try:
-                    page, label_sources, label_degraded = await _invoke_governed_helper(
-                        _union_nodes_by_label,
-                        engine,
-                        label,
-                        remaining,
-                        deadline=10.0,
-                    )
-                except Exception as label_error:
-                    _log_failure(
-                        f'get_graph_nodes.label.{label}',
-                        label_error,
-                        level=logging.WARNING,
-                    )
-                    continue
-                rows.extend(page or [])
-                source_graphs.update(label_sources)
-                degraded_graphs.update(label_degraded)
-            # The genuinely-unlabeled bucket (`label=''`) is best-effort: the
-            # DEPLOYED engine build rejects an empty label argument outright
-            # (ValueError), even though `GraphCore::get_nodes_by_label_page`
-            # in source handles it via `collect_unlabeled`. Nodes with no
-            # label at all are a rounding error next to the labeled graph, so
-            # a build that refuses the query must not fail the whole canvas.
-            remaining = budget - len(rows)
-            if remaining > 0:
-                try:
-                    page, empty_sources, empty_degraded = await _invoke_governed_helper(
-                        _union_nodes_by_label,
-                        engine,
-                        '',
-                        remaining,
-                        deadline=10.0,
-                    )
-                except Exception:
-                    logger.debug('engine rejects empty-label read; skipping unlabeled')
-                else:
-                    rows.extend(page or [])
-                    source_graphs.update(empty_sources)
-                    degraded_graphs.update(empty_degraded)
-        # `source_graphs`/`degraded_graphs` are computed above for
-        # observability parity with `get_graph_stats`, but this route's
-        # response is a bare JSON array (`list[dict]`, consumed directly by
-        # GraphView.tsx's node list) -- there is no envelope field to carry
-        # them without breaking that contract. Logged instead so the union's
-        # effect stays visible operationally even though it can't ride the
-        # response body.
+        rows, source_graphs, degraded_graphs = await _collect_graph_node_rows(
+            engine, node_type, budget
+        )
+        # `source_graphs`/`degraded_graphs` are computed for observability
+        # parity with `get_graph_stats`, but this route's response is a bare
+        # JSON array (`list[dict]`, consumed directly by GraphView.tsx's node
+        # list) -- there is no envelope field to carry them without breaking
+        # that contract. Logged instead so the union's effect stays visible
+        # operationally even though it can't ride the response body.
         if degraded_graphs:
             logger.warning(
                 'get_graph_nodes: degraded graphs %s (source graphs: %s)',
                 sorted(degraded_graphs),
                 sorted(source_graphs),
             )
-        nodes: list[dict[str, Any]] = []
-        for row in rows or []:
-            if not isinstance(row, (tuple, list)) or len(row) != 2:
-                continue
-            node_id, props = row
-            if not isinstance(props, dict):
-                props = {}
-            # `nodes_by_label` indexes the BROADER `GraphCore.label_index`
-            # contract (a node's `type`/`node_type`/`label` scalar fields
-            # plus the multi-valued `labels` array -- `labels_of` in
-            # `crates/eg-core/src/graph.rs`). Cypher's own `(n:Label)`
-            # predicate is deliberately narrower -- EXACTLY `node_type` plus
-            # the explicit `labels` array (`node_has_label`/
-            # `build_cypher_label_index` in `crates/eg-query/src/cypher/
-            # exec.rs`, whose comment says this set is "deliberately
-            # narrower than `GraphCore.label_index`'s `type`/`node_type`/
-            # `label`"). Derive `labels` from EXACTLY those two narrower
-            # fields, same as before; both are excluded from `properties`
-            # below so a label is never duplicated as an ordinary property.
-            labels: list[str] = []
-            node_type_prop = props.get('node_type')
-            if isinstance(node_type_prop, str) and node_type_prop:
-                labels.append(node_type_prop)
-            extra_labels = props.get('labels')
-            if isinstance(extra_labels, list):
-                labels.extend(
-                    item
-                    for item in extra_labels
-                    if isinstance(item, str) and item and item not in labels
-                )
-            if node_type and node_type not in labels:
-                # A broader-index-only match (e.g. a legacy node carrying a
-                # bare `type` property but no `node_type`/`labels`; writing
-                # `type` is retired going forward -- see
-                # `retired_node_type_property_error`). `MATCH (n:<node_type>)`
-                # would not have matched it, so a node_type-filtered result
-                # must not include it either (kept consistent with the
-                # unfiltered list this is filtered from).
-                continue
-            node = {
-                'id': node_id if isinstance(node_id, str) else '',
-                'labels': labels,
-                'properties': {
-                    k: _canvas_property(v)
-                    for k, v in props.items()
-                    if k not in ('id', 'node_type', 'labels')
-                    and not str(k).startswith('_')
-                },
-            }
-            # `_public_external_result` enforces a hard serialized-size bound
-            # and raises ValueError past it. That bound is what actually broke
-            # this endpoint: a `Skill` node carries its whole SKILL.md body, so
-            # 256 of them blow the 2 MiB ceiling and the canvas 503'd -- the
-            # failure looked like an engine error but was entirely ours. Keep a
-            # running estimate and stop at the budget so the canvas renders
-            # what fits instead of nothing at all.
-            node, node_size = _canvas_node(node)
-            budget_bytes -= node_size
-            if budget_bytes <= 0:
-                logger.warning(
-                    'graph canvas truncated at %d nodes by the result size bound',
-                    len(nodes),
-                )
-                break
-            nodes.append(node)
-        return _public_external_result(nodes)
+        return _public_external_result(
+            _build_canvas_nodes(rows, node_type, budget_bytes)
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -4985,6 +5069,156 @@ async def _engine_graph_sizes() -> dict[str, dict[str, int]]:
         return {}
 
 
+class _Graph3DAccumulator:
+    """Node/edge accumulation state for one `/graph/3d` payload.
+
+    Holds the node interning table (an edge's ``s``/``t`` are INDICES into
+    ``nodes``) and the edge de-duplication set. `truncated` records that
+    something was left out for ANY reason -- the node cap, the edge cap, or a
+    row whose endpoints could not be interned.
+    """
+
+    def __init__(self) -> None:
+        self.index_of: dict[str, int] = {}
+        self.nodes: list[dict[str, Any]] = []
+        self.edges: list[dict[str, Any]] = []
+        # The 3D Cypher is already a GROUP BY on exactly (source, type,
+        # target), so a repeated triple cannot come from the data -- it can
+        # only come from `_read_union_cypher` running the same query once per
+        # accessible graph. Left in, a repeat draws the same line twice at
+        # double additive brightness. Deduped here rather than in the renderer
+        # so the payload itself is what it claims to be.
+        self.seen_edges: set[tuple[str, str, str]] = set()
+        self.truncated = False
+
+    def intern(self, node_id: Any, node_type: Any, name: Any) -> int | None:
+        """This node's index, adding it if new; ``None`` past the node cap."""
+        if not isinstance(node_id, str) or not node_id:
+            return None
+        existing = self.index_of.get(node_id)
+        if existing is not None:
+            return existing
+        if len(self.nodes) >= _GRAPH3D_MAX_NODES:
+            return None
+        idx = len(self.nodes)
+        self.index_of[node_id] = idx
+        self.nodes.append(
+            {
+                'id': node_id,
+                'type': node_type
+                if isinstance(node_type, str) and node_type
+                else 'Unknown',
+                'name': _graph3d_label(name, node_id),
+            }
+        )
+        return idx
+
+    def add_edge(self, row: dict[str, Any]) -> None:
+        """Intern one edge row's endpoints and record the edge, if it is new."""
+        source = self.intern(row.get('s'), row.get('st'), row.get('sn'))
+        target = self.intern(row.get('t'), row.get('tt'), row.get('tn'))
+        if source is None or target is None:
+            self.truncated = True
+            return
+        key = (str(row.get('s')), str(row.get('rt')), str(row.get('t')))
+        if key in self.seen_edges:
+            return
+        self.seen_edges.add(key)
+        weight = row.get('edge_count')
+        rel_type = row.get('rt')
+        self.edges.append(
+            {
+                's': source,
+                't': target,
+                'r': rel_type if isinstance(rel_type, str) else '',
+                'w': weight if isinstance(weight, int) and weight > 0 else 1,
+            }
+        )
+
+    def absorb_edge_rows(self, edge_rows: Any) -> None:
+        """Absorb edge rows until they run out or the edge cap is reached."""
+        for row in edge_rows or []:
+            if len(self.edges) >= _GRAPH3D_MAX_EDGES:
+                self.truncated = True
+                return
+            self.add_edge(row)
+
+    def absorb_isolated_rows(self, rows: Any) -> None:
+        """Intern nodes that participate in no edge."""
+        for row in rows or []:
+            if self.intern(row.get('id'), row.get('nt'), row.get('nn')) is None:
+                self.truncated = True
+
+
+def _graph3d_empty_payload() -> dict[str, Any]:
+    """The honest "no engine yet" answer, shaped like a real payload."""
+    return {
+        'nodes': [],
+        'edges': [],
+        'total_nodes': 0,
+        'total_relationships': 0,
+        'engine_total_nodes': None,
+        'engine_total_relationships': None,
+        'connected_nodes': 0,
+        'isolated_nodes': 0,
+        'truncated': False,
+        'source_graphs': [],
+        'degraded_graphs': [],
+        'available': False,
+    }
+
+
+def _graph3d_payload(
+    acc: _Graph3DAccumulator,
+    connected_nodes: int,
+    node_sources: list[str],
+    engine_sizes: dict[str, Any],
+) -> dict[str, Any]:
+    """Assemble the response body from the accumulator and the engine gauges.
+
+    ``engine_sizes`` is the engine's own view of the same graphs, so the UI
+    can say how much of the graph it is actually drawing instead of implying
+    it is all of it. See `_engine_graph_sizes` for the measured discrepancy
+    this exists to surface.
+    """
+    engine_nodes = sum(
+        engine_sizes.get(graph, {}).get('nodes', 0) for graph in node_sources
+    )
+    engine_edges = sum(
+        engine_sizes.get(graph, {}).get('edges', 0) for graph in node_sources
+    )
+    return {
+        'nodes': acc.nodes,
+        'edges': acc.edges,
+        # Reported from THIS payload, never from a second stats call: the
+        # numbers a caller reads must describe the bytes it was handed.
+        'total_nodes': len(acc.nodes),
+        'total_relationships': len(acc.edges),
+        # `null` when the gauges could not be read -- distinct from 0.
+        'engine_total_nodes': engine_nodes if engine_sizes else None,
+        'engine_total_relationships': engine_edges if engine_sizes else None,
+        'connected_nodes': connected_nodes,
+        'isolated_nodes': max(0, len(acc.nodes) - connected_nodes),
+        'truncated': acc.truncated,
+        'source_graphs': sorted(node_sources),
+        'degraded_graphs': [],
+        'available': True,
+    }
+
+
+def _graph3d_size_bounded(payload: dict[str, Any]) -> dict[str, Any]:
+    """Reject a payload past the 3D view's serialized size bound."""
+    encoded = len(
+        json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+    )
+    if encoded > _GRAPH3D_MAX_RESULT_BYTES:
+        raise HTTPException(
+            status_code=422,
+            detail='Graph payload exceeds the 3D view size bound',
+        )
+    return payload
+
+
 @router.get('/graph/graph3d')
 async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
     """Return a closed node+edge payload sized for a 3D/WebGL renderer.
@@ -5008,29 +5242,13 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
         can see how much of the graph it was handed.
     """
     try:
-        try:
-            engine = await _get_engine_bounded()
-        except HTTPException as exc:
-            # Same contract as get_graph_nodes/get_graph_relationships above:
-            # "no engine yet" (501) is an honest empty graph, not a failure.
-            if exc.status_code != 501:
-                raise
-            return {
-                'nodes': [],
-                'edges': [],
-                'total_nodes': 0,
-                'total_relationships': 0,
-                'engine_total_nodes': None,
-                'engine_total_relationships': None,
-                'connected_nodes': 0,
-                'isolated_nodes': 0,
-                'truncated': False,
-                'source_graphs': [],
-                'degraded_graphs': [],
-                'available': False,
-            }
+        # Same contract as get_graph_nodes/get_graph_relationships above:
+        # "no engine yet" (501) is an honest empty graph, not a failure.
+        engine = await _graph_read_engine()
+        if engine is None:
+            return _graph3d_empty_payload()
 
-        # See the ★ note above for why `count(*)` is in this RETURN clause.
+        # See the star note above for why `count(*)` is in this RETURN clause.
         edge_rows, edge_sources = await _read_union_cypher(
             engine,
             'MATCH (a)-[r]->(b) RETURN a.id as s, a.node_type as st, '
@@ -5040,67 +5258,9 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
             deadline=_GRAPH3D_DEADLINE_SECONDS,
         )
 
-        index_of: dict[str, int] = {}
-        nodes: list[dict[str, Any]] = []
-        edges: list[dict[str, Any]] = []
-        # The Cypher above is already a GROUP BY on exactly (source, type,
-        # target), so a repeated triple cannot come from the data -- it can
-        # only come from `_read_union_cypher` running the same query once per
-        # accessible graph. Left in, a repeat draws the same line twice at
-        # double additive brightness. Deduped here rather than in the renderer
-        # so the payload itself is what it claims to be.
-        seen_edges: set[tuple[str, str, str]] = set()
-        truncated = False
-
-        def intern(node_id: Any, node_type: Any, name: Any) -> int | None:
-            if not isinstance(node_id, str) or not node_id:
-                return None
-            existing = index_of.get(node_id)
-            if existing is not None:
-                return existing
-            if len(nodes) >= _GRAPH3D_MAX_NODES:
-                return None
-            idx = len(nodes)
-            index_of[node_id] = idx
-            nodes.append(
-                {
-                    'id': node_id,
-                    'type': node_type
-                    if isinstance(node_type, str) and node_type
-                    else 'Unknown',
-                    'name': _graph3d_label(name, node_id),
-                }
-            )
-            return idx
-
-        for row in edge_rows or []:
-            if len(edges) >= _GRAPH3D_MAX_EDGES:
-                truncated = True
-                break
-            source = intern(row.get('s'), row.get('st'), row.get('sn'))
-            target = intern(row.get('t'), row.get('tt'), row.get('tn'))
-            if source is None or target is None:
-                truncated = True
-                continue
-            key = (
-                str(row.get('s')),
-                str(row.get('rt')),
-                str(row.get('t')),
-            )
-            if key in seen_edges:
-                continue
-            seen_edges.add(key)
-            weight = row.get('edge_count')
-            edges.append(
-                {
-                    's': source,
-                    't': target,
-                    'r': row.get('rt') if isinstance(row.get('rt'), str) else '',
-                    'w': weight if isinstance(weight, int) and weight > 0 else 1,
-                }
-            )
-
-        connected_nodes = len(nodes)
+        acc = _Graph3DAccumulator()
+        acc.absorb_edge_rows(edge_rows)
+        connected_nodes = len(acc.nodes)
         node_sources = list(edge_sources or [])
 
         if include_isolated:
@@ -5113,49 +5273,12 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
                 deadline=_GRAPH3D_DEADLINE_SECONDS,
             )
             node_sources = sorted(set(node_sources) | set(all_sources or []))
-            for row in all_rows or []:
-                if intern(row.get('id'), row.get('nt'), row.get('nn')) is None:
-                    truncated = True
+            acc.absorb_isolated_rows(all_rows)
 
-        # The engine's own view of the same graphs, so the UI can say how much
-        # of the graph it is actually drawing instead of implying it is all of
-        # it. See `_engine_graph_sizes` for the measured discrepancy this
-        # exists to surface.
         engine_sizes = await _engine_graph_sizes()
-        engine_nodes = 0
-        engine_edges = 0
-        for graph in node_sources:
-            engine_nodes += engine_sizes.get(graph, {}).get('nodes', 0)
-            engine_edges += engine_sizes.get(graph, {}).get('edges', 0)
-
-        payload: dict[str, Any] = {
-            'nodes': nodes,
-            'edges': edges,
-            # Reported from THIS payload, never from a second stats call: the
-            # numbers a caller reads must describe the bytes it was handed.
-            'total_nodes': len(nodes),
-            'total_relationships': len(edges),
-            # `null` when the gauges could not be read -- distinct from 0.
-            'engine_total_nodes': engine_nodes if engine_sizes else None,
-            'engine_total_relationships': engine_edges if engine_sizes else None,
-            'connected_nodes': connected_nodes,
-            'isolated_nodes': max(0, len(nodes) - connected_nodes),
-            'truncated': truncated,
-            'source_graphs': sorted(node_sources),
-            'degraded_graphs': [],
-            'available': True,
-        }
-        encoded = len(
-            json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode(
-                'utf-8'
-            )
+        return _graph3d_size_bounded(
+            _graph3d_payload(acc, connected_nodes, node_sources, engine_sizes)
         )
-        if encoded > _GRAPH3D_MAX_RESULT_BYTES:
-            raise HTTPException(
-                status_code=422,
-                detail='Graph payload exceeds the 3D view size bound',
-            )
-        return payload
     except HTTPException:
         raise
     except Exception as e:
