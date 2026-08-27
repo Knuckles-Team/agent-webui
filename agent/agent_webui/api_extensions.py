@@ -13,6 +13,7 @@ import secrets
 import stat
 import threading
 import time
+from collections.abc import Awaitable, Callable
 from concurrent import futures as _futures
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -2241,6 +2242,362 @@ async def _read_fleet_catalog_cached(
     return result
 
 
+def _mcp_server_ids(server_rows: list[dict[str, Any]] | None) -> list[str]:
+    """Safe-delegation-token-validated server names (helper for `list_all_tools`)."""
+    return [
+        name
+        for row in (server_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        if isinstance(name := row.get('name'), str)
+        and name
+        and _SAFE_DELEGATION_TOKEN.fullmatch(name)
+    ]
+
+
+def _skill_type_buckets(
+    skill_rows: list[dict[str, Any]] | None,
+) -> tuple[list[str], list[str], list[str]]:
+    """Bucket skill-catalog row ids by `skill_type` into (skill, workflow, graph).
+
+    Mirrors the classification `_skills_sections` performs on the same rows --
+    an unclassified row still reads the `skill` toggle namespace, so its id
+    belongs in the first bucket alongside real skills.
+    """
+    skill_ids: list[str] = []
+    skill_workflow_ids: list[str] = []
+    skill_graph_ids: list[str] = []
+    for row in (skill_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+        skill_id = row.get('id')
+        if not isinstance(skill_id, str) or not skill_id:
+            continue
+        skill_type = str(row.get('skill_type') or '').strip().lower()
+        if skill_type == 'workflow':
+            skill_workflow_ids.append(skill_id)
+        elif skill_type == 'graph':
+            skill_graph_ids.append(skill_id)
+        else:
+            skill_ids.append(skill_id)
+    return skill_ids, skill_workflow_ids, skill_graph_ids
+
+
+def _toggle_item_types_and_ids(
+    server_rows: list[dict[str, Any]] | None,
+    skill_rows: list[dict[str, Any]] | None,
+    tools_dir: Path,
+    builtin_dir_present: bool,
+) -> dict[str, list[str]]:
+    """The exact item ids each toggle-preference kind needs (helper for `list_all_tools`).
+
+    Computed BEFORE the toggle batch runs, from the same catalog rows the
+    entry-building loops further down classify again -- a small, deliberate
+    duplication of the classification logic rather than a larger restructuring
+    that would move toggle reads after entry-building.
+    """
+    item_types_and_ids: dict[str, list[str]] = {}
+    if server_rows is not None:
+        item_types_and_ids['mcp_server'] = _mcp_server_ids(server_rows)
+    if builtin_dir_present:
+        item_types_and_ids['builtin_tool'] = [
+            f.stem for f in tools_dir.glob('*.py') if not f.name.startswith('_')
+        ][:_MAX_EXTERNAL_COLLECTION_ITEMS]
+    if skill_rows:
+        skill_ids, skill_workflow_ids, skill_graph_ids = _skill_type_buckets(skill_rows)
+        item_types_and_ids['skill'] = skill_ids
+        item_types_and_ids['skill_workflow'] = skill_workflow_ids
+        item_types_and_ids['skill_graph'] = skill_graph_ids
+    return item_types_and_ids
+
+
+def _toggle_status_section(
+    toggle_states: dict[str, tuple[dict, bool]],
+) -> dict[str, Any]:
+    """Compute `toggle_status` -- non-null `error` iff ANY toggle-preference batch failed.
+
+    `ok` is already threaded per item_type, but every per-ITEM fallback in the
+    entry-building loops elsewhere is a bare `.get(id, True)` -- during a real
+    toggle-read outage that still renders every item "enabled", indistinguishable
+    from a genuine preference. `degraded_item_types` names exactly which item_type(s)'
+    enabled/disabled state is not to be trusted.
+    """
+    toggles_ok = all(ok for _states, ok in toggle_states.values())
+    degraded_item_types = sorted(
+        item_type for item_type, (_states, ok) in toggle_states.items() if not ok
+    )
+    return {
+        'source': 'sql_catalog',
+        'error': (
+            None
+            if toggles_ok
+            else (
+                'One or more toggle-preference reads failed; enable/disable '
+                'state below defaults to "enabled" and may not reflect the '
+                'real persisted preference.'
+            )
+        ),
+        'degraded_item_types': degraded_item_types,
+    }
+
+
+def _latest_discovery_by_server(
+    discovery_rows: list[dict[str, Any]] | None,
+) -> tuple[dict[str, dict[str, Any]], str | None]:
+    """(server_id -> most-recent discovery row, latest observed_at) from discovery rows."""
+    latest_discovery: dict[str, dict[str, Any]] = {}
+    last_synced_at: str | None = None
+    for row in discovery_rows or []:
+        server_id = str(row.get('server_id') or '')
+        observed_at = str(row.get('observed_at') or '')
+        if last_synced_at is None or observed_at > last_synced_at:
+            last_synced_at = observed_at
+        existing = latest_discovery.get(server_id)
+        if existing is None or observed_at > str(existing.get('observed_at') or ''):
+            latest_discovery[server_id] = row
+    return latest_discovery, last_synced_at
+
+
+def _mcp_server_status(
+    enabled: bool, discovery: dict[str, Any] | None, reachable: bool | None
+) -> str:
+    """`'disabled' | 'unavailable' | 'active'` for one MCP server entry."""
+    if not enabled:
+        return 'disabled'
+    if discovery is not None and reachable is False:
+        return 'unavailable'
+    return 'active'
+
+
+def _mcp_server_entry(
+    row: dict[str, Any],
+    mcp_server_toggles: dict[str, bool],
+    latest_discovery: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Shape one server catalog row into an `mcp_tools` entry, or `None` to skip it."""
+    name = row.get('name')
+    if (
+        not isinstance(name, str)
+        or not name
+        or not _SAFE_DELEGATION_TOKEN.fullmatch(name)
+    ):
+        return None
+    server_id = str(row.get('id') or '')
+    enabled = mcp_server_toggles.get(name, True)
+    discovery = latest_discovery.get(server_id)
+    reachable = discovery.get('reachable') if discovery else None
+    tool_count = int(discovery.get('tool_count') or 0) if discovery else 0
+    last_error = discovery.get('last_error') if discovery else None
+    status = _mcp_server_status(enabled, discovery, reachable)
+    return {
+        'name': name,
+        'type': 'MCP Server',
+        'status': status,
+        'enabled': enabled,
+        'tool_count': tool_count,
+        'available': reachable,
+        'error': last_error or None,
+    }
+
+
+def _mcp_status_error(
+    server_rows: list[dict[str, Any]],
+    last_synced_at: str | None,
+    discovery_rows: list[dict[str, Any]] | None,
+) -> str | None:
+    """`mcp_status.error` -- 3 independent failure modes, none of them silent."""
+    if server_rows:
+        mcp_error = None
+    elif last_synced_at:
+        mcp_error = (
+            'The MCP fleet catalog has been synced (last observed '
+            f'{last_synced_at}) but currently has no servers registered.'
+        )
+    else:
+        mcp_error = (
+            'The MCP fleet catalog has no servers and no recorded sync -- '
+            'the hourly fleet-tool-schema-sync job may not have run yet.'
+        )
+    if discovery_rows is None and mcp_error is None:
+        # Servers loaded fine, but the discovery/health probe kind
+        # independently failed -- servers are listed (best-effort) but
+        # their `available`/`tool_count`/`error` fields are unknown
+        # rather than falsely healthy.
+        mcp_error = (
+            'MCP server discovery/health data could not be read; server '
+            'status below reflects registration only, not live '
+            'reachability.'
+        )
+    return mcp_error
+
+
+def _build_mcp_tools_section(
+    server_rows: list[dict[str, Any]] | None,
+    discovery_rows: list[dict[str, Any]] | None,
+    mcp_server_toggles: dict[str, bool],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """`(mcp_tools, mcp_status)` -- registration (`servers`) joined with the latest probe.
+
+    A missing/failed catalog read is reported via `mcp_status`, never silently
+    downgraded to an indistinguishable empty list (fail-closed).
+    """
+    if server_rows is None:
+        return [], {
+            'source': 'unavailable',
+            'error': 'The MCP server catalog could not be read.',
+            'last_synced_at': None,
+        }
+    latest_discovery, last_synced_at = _latest_discovery_by_server(discovery_rows)
+    mcp_tools: list[dict[str, Any]] = []
+    for row in server_rows[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+        entry = _mcp_server_entry(row, mcp_server_toggles, latest_discovery)
+        if entry is not None:
+            mcp_tools.append(entry)
+    mcp_status = {
+        'source': 'sql_catalog',
+        'error': _mcp_status_error(server_rows, last_synced_at, discovery_rows),
+        'last_synced_at': last_synced_at,
+    }
+    return mcp_tools, mcp_status
+
+
+def _build_mcp_prompts_section(
+    prompt_rows: list[dict[str, Any]] | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """`(mcp_prompts, mcp_prompts_status)` -- degrades independently of every other kind."""
+    mcp_prompts: list[dict[str, Any]] = (
+        []
+        if prompt_rows is None
+        else list(prompt_rows)[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+    )
+    mcp_prompts_status = {
+        'source': 'sql_catalog' if prompt_rows is not None else 'unavailable',
+        'error': (
+            None
+            if prompt_rows is not None
+            else 'The MCP prompts catalog could not be read.'
+        ),
+    }
+    return mcp_prompts, mcp_prompts_status
+
+
+def _build_builtin_tools_section(
+    tools_dir: Path,
+    builtin_dir_present: bool,
+    builtin_toggles: dict[str, bool],
+) -> list[dict[str, Any]]:
+    """Bundled Python tool modules shipped with this app -- unrelated to the MCP fleet."""
+    builtin_tools: list[dict[str, Any]] = []
+    if not builtin_dir_present:
+        return builtin_tools
+    for index, f in enumerate(tools_dir.glob('*.py')):
+        if index >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            break
+        if f.name.startswith('_'):
+            continue
+        builtin_enabled = builtin_toggles.get(f.stem, True)
+        builtin_tools.append(
+            {
+                'name': f.stem,
+                'type': 'Built-in Tool',
+                'file_path': f'builtin://{f.stem}',
+                'status': 'enabled' if builtin_enabled else 'disabled',
+                'enabled': builtin_enabled,
+            }
+        )
+    return builtin_tools
+
+
+def _skill_status_section(skill_rows: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """`skill_status` -- same shape as `mcp_status`, at the same top level.
+
+    `catalog_total` is the number of rows the `skills` table actually holds,
+    which is NOT `len(skill_rows)` -- the catalog read stops at
+    `_MAX_EXTERNAL_COLLECTION_ITEMS`. Reporting it makes the truncation visible
+    instead of presenting a page as the whole fleet.
+    """
+    return {
+        'source': 'sql_catalog' if skill_rows is not None else 'unavailable',
+        'error': (
+            None if skill_rows is not None else 'The skills catalog could not be read.'
+        ),
+        'catalog_total': fleet_catalog_total('skills'),
+        'returned': len(skill_rows or []),
+    }
+
+
+def _classify_skill_row(
+    row: dict[str, Any],
+    skill_id: str,
+    skill_toggles: dict[str, bool],
+    skill_workflow_toggles: dict[str, bool],
+    skill_graph_toggles: dict[str, bool],
+) -> tuple[str, dict[str, Any]]:
+    """Classify + shape one skills-catalog row.
+
+    Returns `(bucket, entry)` where `bucket` is one of
+    `'skill' | 'workflow' | 'graph' | 'unclassified'`. An unclassified skill is
+    still a skill -- it is NOT a fourth bucket in the response; the caller
+    lands it in the same list as `'skill'`, distinguished only by
+    `kg_classified: False`.
+    """
+    skill_type = str(row.get('skill_type') or '').strip().lower()
+    classification = row.get('classification') or skill_type.title()
+    entry: dict[str, Any] = {
+        'id': skill_id,
+        'name': row.get('name', ''),
+        'description': row.get('description', ''),
+        'type': classification,
+    }
+    if skill_type in ('skill', 'mcp_skill'):
+        entry['runnable'] = True
+        entry['resource_type'] = 'AGENT_SKILL'
+        entry['kg_classified'] = True
+        entry['enabled'] = skill_toggles.get(skill_id, True)
+        return 'skill', entry
+    if skill_type == 'workflow':
+        entry['file_path'] = row.get('uri') or ''
+        entry['runnable'] = False
+        entry['resource_type'] = 'WORKFLOW_DEFINITION'
+        entry['kg_classified'] = True
+        entry['enabled'] = skill_workflow_toggles.get(skill_id, True)
+        return 'workflow', entry
+    if skill_type == 'graph':
+        entry['file_path'] = row.get('uri') or ''
+        entry['enabled'] = skill_graph_toggles.get(skill_id, True)
+        return 'graph', entry
+    entry['runnable'] = False
+    entry['resource_type'] = None
+    entry['kg_classified'] = False
+    entry['enabled'] = skill_toggles.get(skill_id, True)
+    return 'unclassified', entry
+
+
+def _skills_sections(
+    skill_rows: list[dict[str, Any]] | None,
+    skill_toggles: dict[str, bool],
+    skill_workflow_toggles: dict[str, bool],
+    skill_graph_toggles: dict[str, bool],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], int]:
+    """`(skills, skill_graphs, skill_workflows, unclassified_count)` from the catalog rows."""
+    skills: list[dict[str, Any]] = []
+    skill_graphs: list[dict[str, Any]] = []
+    skill_workflows: list[dict[str, Any]] = []
+    unclassified_count = 0
+    for row in (skill_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+        skill_id = row.get('id')
+        if not isinstance(skill_id, str) or not skill_id:
+            continue
+        bucket, entry = _classify_skill_row(
+            row, skill_id, skill_toggles, skill_workflow_toggles, skill_graph_toggles
+        )
+        if bucket == 'workflow':
+            skill_workflows.append(entry)
+        elif bucket == 'graph':
+            skill_graphs.append(entry)
+        else:
+            skills.append(entry)
+            if bucket == 'unclassified':
+                unclassified_count += 1
+    return skills, skill_graphs, skill_workflows, unclassified_count
+
+
 @router.get('/tools')
 async def list_all_tools() -> dict[str, Any]:
     """Retrieve all MCP servers/tools, built-in tools, skills, skill graphs,
@@ -2294,63 +2651,13 @@ async def list_all_tools() -> dict[str, Any]:
     # skill_workflow/skill_graph) are independent of each other and of the
     # catalog read above -- gather whichever ones this request actually
     # needs CONCURRENTLY (`asyncio.gather` via `_batch_toggle_states_many`)
-    # instead of the previous up-to-5 SEQUENTIAL round trips, which measured
-    # live as the critical-path long pole for data the dashboard tile never
-    # even reads.
-    #
-    # FIX LANE Priority 4: `_batch_toggle_states` now takes the EXACT item
-    # ids being rendered (`WHERE p.id IN $ids`, not a `STARTS WITH $prefix`
-    # scan -- the deployed engine does not parse `STARTS WITH` with a
-    # bound-parameter operand at all, failing 5/5). That means the id lists
-    # below must be computed BEFORE the toggle batch runs, from the same
-    # catalog rows the entry-building loops further down classify again --
-    # a small, deliberate duplication of the classification logic (skill
-    # `skill_type` bucketing, server-name validation) rather than a larger
-    # restructuring that would move toggle reads after entry-building.
+    # instead of up-to-5 sequential round trips.
     tools_dir = get_agent_utilities_dir() / 'tools'
     builtin_dir_present = tools_dir.exists() and tools_dir.is_dir()
 
-    mcp_server_ids = [
-        name
-        for row in (server_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        if isinstance(name := row.get('name'), str)
-        and name
-        and _SAFE_DELEGATION_TOKEN.fullmatch(name)
-    ]
-    builtin_tool_ids = (
-        [f.stem for f in tools_dir.glob('*.py') if not f.name.startswith('_')][
-            :_MAX_EXTERNAL_COLLECTION_ITEMS
-        ]
-        if builtin_dir_present
-        else []
+    item_types_and_ids = _toggle_item_types_and_ids(
+        server_rows, skill_rows, tools_dir, builtin_dir_present
     )
-    # Same three-way `skill_type` bucketing the entry-building loop (below)
-    # uses -- an unclassified row (the `else` branch there) still reads the
-    # `skill` toggle namespace, so its id belongs in `skill_ids` too.
-    skill_ids: list[str] = []
-    skill_workflow_ids: list[str] = []
-    skill_graph_ids: list[str] = []
-    for row in (skill_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-        skill_id = row.get('id')
-        if not isinstance(skill_id, str) or not skill_id:
-            continue
-        skill_type = str(row.get('skill_type') or '').strip().lower()
-        if skill_type == 'workflow':
-            skill_workflow_ids.append(skill_id)
-        elif skill_type == 'graph':
-            skill_graph_ids.append(skill_id)
-        else:
-            skill_ids.append(skill_id)
-
-    item_types_and_ids: dict[str, list[str]] = {}
-    if server_rows is not None:
-        item_types_and_ids['mcp_server'] = mcp_server_ids
-    if builtin_dir_present:
-        item_types_and_ids['builtin_tool'] = builtin_tool_ids
-    if skill_rows:
-        item_types_and_ids['skill'] = skill_ids
-        item_types_and_ids['skill_workflow'] = skill_workflow_ids
-        item_types_and_ids['skill_graph'] = skill_graph_ids
     toggle_states = await _batch_toggle_states_many(engine, item_types_and_ids)
     mcp_server_toggles, _mcp_server_toggles_ok = toggle_states.get(
         'mcp_server', ({}, True)
@@ -2359,248 +2666,41 @@ async def list_all_tools() -> dict[str, Any]:
     skill_toggles, _skill_toggles_ok = toggle_states.get('skill', ({}, True))
     skill_workflow_toggles, _ = toggle_states.get('skill_workflow', ({}, True))
     skill_graph_toggles, _ = toggle_states.get('skill_graph', ({}, True))
-    toggles_ok = all(ok for _states, ok in toggle_states.values())
-    # FIX LANE Priority 4 (item 3): `ok` is already threaded per item_type,
-    # but every per-ITEM fallback in the entry-building loops below is a
-    # bare `.get(id, True)` -- during a real toggle-read outage that still
-    # renders every item "enabled", indistinguishable from a genuine
-    # preference. `degraded_item_types` is additive (never removes/retypes
-    # a field) and names exactly which item_type(s)' enabled/disabled state
-    # below is not to be trusted, so a caller can render a degraded state
-    # per item instead of a silently-wrong "enabled". Frontend rendering of
-    # this is out of scope for this file -- see this lane's report.
-    degraded_item_types = sorted(
-        item_type for item_type, (_states, ok) in toggle_states.items() if not ok
+    toggle_status = _toggle_status_section(toggle_states)
+
+    # 1. MCP servers.
+    mcp_tools, mcp_status = _build_mcp_tools_section(
+        server_rows, discovery_rows, mcp_server_toggles
     )
-    toggle_status = {
-        'source': 'sql_catalog',
-        'error': (
-            None
-            if toggles_ok
-            else (
-                'One or more toggle-preference reads failed; enable/disable '
-                'state below defaults to "enabled" and may not reflect the '
-                'real persisted preference.'
-            )
-        ),
-        'degraded_item_types': degraded_item_types,
-    }
-
-    # 1. MCP servers -- desired registration (`servers`) joined with the most
-    # recent observed probe (`discoveries`, append-only: keep the row with the
-    # latest `observed_at` per server). A missing/failed catalog read is
-    # reported via `mcp_status`, never silently downgraded to an
-    # indistinguishable empty list (fail-closed).
-    mcp_tools: list[dict[str, Any]] = []
-    last_synced_at: str | None = None
-    if server_rows is None:
-        mcp_status = {
-            'source': 'unavailable',
-            'error': 'The MCP server catalog could not be read.',
-            'last_synced_at': None,
-        }
-    else:
-        latest_discovery: dict[str, dict[str, Any]] = {}
-        for row in discovery_rows or []:
-            server_id = str(row.get('server_id') or '')
-            observed_at = str(row.get('observed_at') or '')
-            if last_synced_at is None or observed_at > last_synced_at:
-                last_synced_at = observed_at
-            existing = latest_discovery.get(server_id)
-            if existing is None or observed_at > str(existing.get('observed_at') or ''):
-                latest_discovery[server_id] = row
-
-        for row in server_rows[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-            name = row.get('name')
-            if (
-                not isinstance(name, str)
-                or not name
-                or not _SAFE_DELEGATION_TOKEN.fullmatch(name)
-            ):
-                continue
-            server_id = str(row.get('id') or '')
-            enabled = mcp_server_toggles.get(name, True)
-            discovery = latest_discovery.get(server_id)
-            reachable = discovery.get('reachable') if discovery else None
-            tool_count = int(discovery.get('tool_count') or 0) if discovery else 0
-            last_error = discovery.get('last_error') if discovery else None
-            if not enabled:
-                status = 'disabled'
-            elif discovery is not None and reachable is False:
-                status = 'unavailable'
-            else:
-                status = 'active'
-            mcp_tools.append(
-                {
-                    'name': name,
-                    'type': 'MCP Server',
-                    'status': status,
-                    'enabled': enabled,
-                    'tool_count': tool_count,
-                    'available': reachable,
-                    'error': last_error or None,
-                }
-            )
-
-        if server_rows:
-            mcp_error = None
-        elif last_synced_at:
-            mcp_error = (
-                'The MCP fleet catalog has been synced (last observed '
-                f'{last_synced_at}) but currently has no servers registered.'
-            )
-        else:
-            mcp_error = (
-                'The MCP fleet catalog has no servers and no recorded sync -- '
-                'the hourly fleet-tool-schema-sync job may not have run yet.'
-            )
-        if discovery_rows is None and mcp_error is None:
-            # Servers loaded fine, but the discovery/health probe kind
-            # independently failed -- servers are listed (best-effort) but
-            # their `available`/`tool_count`/`error` fields are unknown
-            # rather than falsely healthy. Report it rather than staying
-            # silent about the degraded (not missing) health data.
-            mcp_error = (
-                'MCP server discovery/health data could not be read; server '
-                'status below reflects registration only, not live '
-                'reachability.'
-            )
-        mcp_status = {
-            'source': 'sql_catalog',
-            'error': mcp_error,
-            'last_synced_at': last_synced_at,
-        }
 
     # Free early-invalidation signal for the fleet-catalog cache (FIX LANE
-    # Priority 3): `last_synced_at` is already computed above from
-    # `discoveries` rows -- no extra engine call. A no-op when `None`/
-    # unchanged; when the hourly sync job has advanced it, the cache is
-    # cleared so the NEXT request refetches instead of serving a
-    # now-superseded snapshot for the rest of the TTL.
-    note_fleet_catalog_sync_time(last_synced_at)
+    # Priority 3): a no-op when unchanged; when the hourly sync job has
+    # advanced it, the cache is cleared so the NEXT request refetches instead
+    # of serving a now-superseded snapshot for the rest of the TTL.
+    note_fleet_catalog_sync_time(mcp_status['last_synced_at'])
 
-    # MCP prompts -- the fleet catalog's own `mcp_prompts` table, never
-    # surfaced anywhere in this app before; already tenant-scoped and
-    # redacted by `_read_fleet_catalog` (registry_api's `_validate_item`).
-    # Degrades independently of every other kind: a `prompts` failure never
-    # discards `servers`/`discoveries`/`skills`, and vice versa.
-    mcp_prompts: list[dict[str, Any]] = (
-        []
-        if prompt_rows is None
-        else list(prompt_rows)[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+    # MCP prompts -- the fleet catalog's own `mcp_prompts` table.
+    mcp_prompts, mcp_prompts_status = _build_mcp_prompts_section(prompt_rows)
+
+    # 2. Built-in Agent Tools.
+    builtin_tools = _build_builtin_tools_section(
+        tools_dir, builtin_dir_present, builtin_toggles
     )
-    mcp_prompts_status = {
-        'source': 'sql_catalog' if prompt_rows is not None else 'unavailable',
-        'error': (
-            None
-            if prompt_rows is not None
-            else 'The MCP prompts catalog could not be read.'
-        ),
-    }
-
-    # 2. Built-in Agent Tools -- bundled Python tool modules shipped with this
-    # app; unrelated to the MCP fleet catalog.
-    builtin_tools = []
-    if builtin_dir_present:
-        for index, f in enumerate(tools_dir.glob('*.py')):
-            if index >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                break
-            if f.name.startswith('_'):
-                continue
-            builtin_enabled = builtin_toggles.get(f.stem, True)
-            builtin_tools.append(
-                {
-                    'name': f.stem,
-                    'type': 'Built-in Tool',
-                    'file_path': f'builtin://{f.stem}',
-                    'status': 'enabled' if builtin_enabled else 'disabled',
-                    'enabled': builtin_enabled,
-                }
-            )
 
     # 3. Skills / Skill Graphs / Skill Workflows -- classified directly by the
-    # SQL catalog's own `skill_type` column (assigned by the sync job's
-    # `classify_skill_type`, which never leaves it blank), never by
-    # filesystem path or a separate KG cross-reference query. Degrades
-    # independently of `servers`/`discoveries`/`prompts` -- a servers hiccup
-    # (the live-observed root cause of "No MCP servers registered" AND "The
-    # MCP fleet catalog could not be read" AND an empty skills list, all
-    # from ONE `servers` failure) no longer discards an otherwise-healthy
-    # skills read, since `skill_rows` is this kind's OWN result, not a
-    # shared all-or-nothing `catalog`.
-    #
-    # An unclassified skill (skill_type outside the recognized set) is still
-    # a skill -- it is NOT a fourth bucket. It lands in `skills` alongside
-    # every other agent skill, distinguished only by `kg_classified: False`
-    # (the UI renders that as an "Unclassified" flag -- see
-    # `RunnabilityBadge` in SkillsView.tsx) so it is discoverable as needing
-    # attention rather than hidden in a separate, easy-to-miss group.
-    skills: list[dict[str, Any]] = []
-    skill_graphs: list[dict[str, Any]] = []
-    skill_workflows: list[dict[str, Any]] = []
-    unclassified_count = 0
-    # `catalog_total` is the number of rows the `skills` table actually holds
-    # (live: 841), which is NOT `len(skill_rows)` -- the catalog read stops at
-    # `_MAX_EXTERNAL_COLLECTION_ITEMS` (256). Reporting it makes the
-    # truncation visible instead of presenting 256 rows as the whole fleet.
-    # `None` means "not known on this request", never a guessed number.
-    skill_catalog_total = fleet_catalog_total('skills')
-    skill_status = {
-        'source': 'sql_catalog' if skill_rows is not None else 'unavailable',
-        'error': (
-            None if skill_rows is not None else 'The skills catalog could not be read.'
-        ),
-        'catalog_total': skill_catalog_total,
-        # How many rows this response actually carries, so
-        # `returned < catalog_total` reads as truncation, not as a shrunken fleet.
-        'returned': len(skill_rows or []),
-    }
-    for row in (skill_rows or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-        skill_id = row.get('id')
-        if not isinstance(skill_id, str) or not skill_id:
-            continue
-        skill_type = str(row.get('skill_type') or '').strip().lower()
-        classification = row.get('classification') or skill_type.title()
-        entry: dict[str, Any] = {
-            'id': skill_id,
-            'name': row.get('name', ''),
-            'description': row.get('description', ''),
-            'type': classification,
-        }
-        if skill_type in ('skill', 'mcp_skill'):
-            entry['runnable'] = True
-            entry['resource_type'] = 'AGENT_SKILL'
-            entry['kg_classified'] = True
-            entry['enabled'] = skill_toggles.get(skill_id, True)
-            skills.append(entry)
-        elif skill_type == 'workflow':
-            entry['file_path'] = row.get('uri') or ''
-            entry['runnable'] = False
-            entry['resource_type'] = 'WORKFLOW_DEFINITION'
-            entry['kg_classified'] = True
-            entry['enabled'] = skill_workflow_toggles.get(skill_id, True)
-            skill_workflows.append(entry)
-        elif skill_type == 'graph':
-            entry['file_path'] = row.get('uri') or ''
-            entry['enabled'] = skill_graph_toggles.get(skill_id, True)
-            skill_graphs.append(entry)
-        else:
-            entry['runnable'] = False
-            entry['resource_type'] = None
-            entry['kg_classified'] = False
-            entry['enabled'] = skill_toggles.get(skill_id, True)
-            skills.append(entry)
-            unclassified_count += 1
+    # SQL catalog's own `skill_type` column.
+    skill_status = _skill_status_section(skill_rows)
+    skills, skill_graphs, skill_workflows, unclassified_count = _skills_sections(
+        skill_rows, skill_toggles, skill_workflow_toggles, skill_graph_toggles
+    )
 
     result = {
         'mcp_tools': mcp_tools,
         'mcp_status': mcp_status,
         'mcp_prompts': mcp_prompts,
         # Additive (not in the frontend's `toolsDataSchema` yet -- zod
-        # ignores unrecognized keys by default, so this is safe to ship
-        # ahead of a frontend change): the `mcp_prompts` analogue of
-        # `mcp_status`, since `prompts` is now an independently-degradable
-        # kind with no other visible failure signal.
+        # ignores unrecognized keys by default): the `mcp_prompts` analogue
+        # of `mcp_status`.
         'mcp_prompts_status': mcp_prompts_status,
         'builtin_tools': builtin_tools,
         'skills': sorted(skills, key=lambda x: x.get('name', '').lower()),
@@ -2610,44 +2710,28 @@ async def list_all_tools() -> dict[str, Any]:
         ),
         # `skill_unclassified` is deliberately ABSENT from this response: an
         # unclassified skill is still a skill and is returned inside `skills`
-        # with `kg_classified: False` (see the comment above the loop), not
-        # in a separate fourth bucket the UI had to render as its own group.
-        # Defect B fix: skills previously had NO signal of their own for "the
-        # skills catalog read failed" other than the deeply-nested
-        # `skill_classification.kg_reachable` boolean -- unlike `mcp_tools`,
-        # which has always had `mcp_status.error` at the top level. This is
-        # the SAME shape as `mcp_status`, at the SAME top level, so a caller
-        # can check `data.skill_status.error` exactly like
-        # `data.mcp_status.error` without reading anything nested.
+        # with `kg_classified: False`, not in a separate fourth bucket.
         'skill_status': skill_status,
-        # Same signal, additive, for the batched toggle-preference reads
-        # (Defect C): `CypherEngineError` on 100% of observed live calls
-        # made every enable/disable toggle look like it worked while being
-        # non-functional fleet-wide, with no visible indication anywhere in
-        # the response. `toggle_status.error` is non-null whenever ANY of
-        # this request's toggle-preference batches failed.
+        # Same signal, additive, for the batched toggle-preference reads.
         'toggle_status': toggle_status,
         # Live catalog classification summary, computed fresh on every call.
         'skill_classification': {
             'source': 'sql_catalog',
-            # Per-kind now (was `catalog is not None`, the whole 4-kind
-            # catalog): a `servers`/`discoveries`/`prompts` failure no
+            # Per-kind: a `servers`/`discoveries`/`prompts` failure no
             # longer reports skills as unreachable when the `skills` kind
             # itself loaded fine, and vice versa.
             'kg_reachable': skill_rows is not None,
             # NOTE (honest naming): every count below is derived from the SQL
             # fleet catalog's own `skill_type` column, NOT from a live KG
-            # lookup -- `classify_skill_type` assigns it at ingest and never
-            # leaves it blank. The `filesystem_*`/`kg_*` names are kept for
-            # wire compatibility with existing consumers; `catalog_total` and
-            # `skill_type_counts` are the accurate, source-named fields.
+            # lookup. The `filesystem_*`/`kg_*` names are kept for wire
+            # compatibility with existing consumers.
             'filesystem_skill_md_count': len(skill_rows or []),
             'kg_agent_skill_count': len(skills),
             'kg_workflow_definition_count': len(skill_workflows),
             'runnable_count': len(skills) - unclassified_count,
             'describe_only_count': len(skill_workflows),
             'unclassified_count': unclassified_count,
-            'catalog_total': skill_catalog_total,
+            'catalog_total': skill_status['catalog_total'],
             'skill_type_counts': {
                 'skill': len(skills),
                 'graph': len(skill_graphs),
@@ -10635,6 +10719,539 @@ async def get_system_prompt(request: Request) -> dict[str, str]:
     return {'system_prompt': 'No active agent loaded.'}
 
 
+async def _slash_help() -> dict:
+    """Render the `/help` command's static command listing."""
+    response_md = (
+        '### Available Commands:\n\n'
+        '- `/help` - Show this help menu\n'
+        '- `/clear` - Clear active chat session\n'
+        '- `/model [model_id]` - View or change current LLM model\n'
+        '- `/tools` - List all available MCP tools\n'
+        '- `/skills` - List loaded custom skills\n'
+        '- `/graph stats` - Display knowledge graph statistics\n'
+        '- `/graph nodes [type]` - List graph nodes\n'
+        '- `/graph search <query>` - Run semantic search on graph\n'
+        '- `/graph impact <symbol>` - Run blast radius/impact analysis\n'
+        '- `/kb list` - List connected knowledge bases\n'
+        '- `/kb search <query>` - Query semantic knowledge base articles\n'
+        '- `/kb ingest <url_or_path>` - Ingest folder/website to KB\n'
+        '- `/sdd specs` - List active spec-driven specifications\n'
+        '- `/sdd constitution` - Read spec governance rules\n'
+        '- `/sdd sync` - Synchronize local files with KG specifications\n'
+        '- `/cron calendar` - View scheduled background tasks\n'
+        '- `/cron logs` - Check cron job execution logs\n'
+        '- `/resources` - List spawned subagents and tasks\n'
+        '- `/resources spawn <name>` - Deploy a new subagent\n'
+    )
+    return {'response_markdown': response_md, 'client_actions': []}
+
+
+async def _slash_clear() -> dict:
+    """Render the `/clear` command's response and client action."""
+    return {
+        'response_markdown': 'Chat session cleared.',
+        'client_actions': [{'action': 'clear_chat'}],
+    }
+
+
+async def _slash_model(args: str, request: Request) -> dict:
+    """View or switch the active LLM model for `/model [model_id]`."""
+    registry = getattr(request.app.state, 'model_registry', None)
+    if not args:
+        current_model = registry.get_default() if registry else None
+        model_id = current_model.id if current_model else 'unknown'
+        response_md = f'Current active model: `{model_id}`.\n\nUse `/model <model_id>` to change it.'
+        return {'response_markdown': response_md, 'client_actions': []}
+    response_md = f'Switched model to `{args}`.'
+    return {
+        'response_markdown': response_md,
+        'client_actions': [{'action': 'set_model', 'value': args}],
+    }
+
+
+async def _slash_tools(request: Request) -> dict:
+    """List registered agent + MCP toolset tools for `/tools`."""
+    agent = getattr(request.app.state, 'agent', None)
+    tools = []
+    if agent and hasattr(agent, '_tools'):
+        for t in agent._tools:
+            tools.append(f'- `{t.name}`: {t.description}')
+    mcp_toolsets = getattr(request.app.state, 'mcp_toolsets', [])
+    for toolset in mcp_toolsets:
+        if hasattr(toolset, 'tools'):
+            for t in toolset.tools:
+                tools.append(f'- `[{toolset.name}] {t.name}`: {t.description}')
+    if not tools:
+        response_md = 'No tools currently registered.'
+    else:
+        response_md = '### Registered Tools:\n\n' + '\n'.join(tools)
+    return {'response_markdown': response_md, 'client_actions': []}
+
+
+async def _slash_skills() -> dict:
+    """List active custom skills for `/skills`."""
+    skills = []
+    helpers_list = get_helper('list_skills')
+    if helpers_list:
+        try:
+            skills_list = await _invoke_governed_helper(helpers_list, deadline=10.0)
+            for s in skills_list:
+                skills.append(f'- **{s["name"]}** (`{s["id"]}`): {s["description"]}')
+        except Exception as e:
+            skills.append(f'Error fetching skills: {type(e).__name__}')
+    if not skills:
+        response_md = 'No custom skills currently active.'
+    else:
+        response_md = '### Active Custom Skills:\n\n' + '\n'.join(skills)
+    return {'response_markdown': response_md, 'client_actions': []}
+
+
+async def _slash_graph_stats(engine) -> str:
+    """Render `/graph stats` -- node/edge counts."""
+    try:
+        num_nodes, num_edges = await _invoke_governed_helper(
+            lambda: (len(engine.graph.nodes), len(engine.graph.edges)),
+            deadline=15.0,
+        )
+        return (
+            '### Knowledge Graph Statistics\n\n'
+            f'- **Total Nodes**: {num_nodes}\n'
+            f'- **Total Relationships**: {num_edges}\n'
+            f'- **Backend Status**: Online (LadybugDB)\n'
+        )
+    except Exception as e:
+        return f'Error querying graph stats: {type(e).__name__}'
+
+
+async def _slash_graph_nodes(engine, node_type: str) -> str:
+    """Render `/graph nodes [type]` -- optionally type-filtered node list."""
+    try:
+        nodes = []
+        graph_nodes = await _invoke_governed_helper(
+            lambda: list(engine.graph.nodes(data=True)),
+            deadline=15.0,
+        )
+        for n, attrs in graph_nodes:
+            ntype = attrs.get('type', 'Unknown')
+            if not node_type or ntype.lower() == node_type.lower():
+                nodes.append(
+                    f'- `{n}` ({ntype}): {attrs.get("description", "No description")}'
+                )
+        if not nodes:
+            return f'No nodes of type `{node_type}` found.'
+        return f'### Graph Nodes ({node_type or "All"}):\n\n' + '\n'.join(nodes[:50])
+    except Exception as e:
+        return f'Error listing nodes: {type(e).__name__}'
+
+
+async def _slash_graph_search(engine, query: str) -> str:
+    """Render `/graph search <query>` -- substring match over id/description."""
+    if not query:
+        return 'Usage: `/graph search <query>`'
+    try:
+        hits = []
+        graph_nodes = await _invoke_governed_helper(
+            lambda: list(engine.graph.nodes(data=True)),
+            deadline=15.0,
+        )
+        for n, attrs in graph_nodes:
+            if (
+                query.lower() in n.lower()
+                or query.lower() in attrs.get('description', '').lower()
+            ):
+                hits.append(
+                    f'- **{n}** ({attrs.get("type", "Node")}): {attrs.get("description", "")}'
+                )
+        if not hits:
+            return f'No search results for query `{query}`.'
+        return f'### Graph Search Results for `{query}`:\n\n' + '\n'.join(hits[:10])
+    except Exception as e:
+        return f'Error searching graph: {type(e).__name__}'
+
+
+def _format_impact_item(item: Any) -> str:
+    """Render one `/graph impact` result row (helper for `_slash_graph_impact`)."""
+    if not isinstance(item, dict):
+        return f'- `{item}`'
+    ident = item.get('id') or item.get('name') or item.get('symbol') or str(item)
+    sev = item.get('severity') or item.get('impact')
+    return f'- `{ident}`' + (f' ({sev})' if sev else '')
+
+
+async def _slash_graph_impact(engine, symbol: str) -> str:
+    """Render `/graph impact <symbol>` -- blast radius impact analysis."""
+    if not symbol:
+        return 'Usage: `/graph impact <symbol>`'
+    try:
+        impact_set = await _invoke_governed_helper(
+            engine.query_impact,
+            symbol,
+            deadline=30.0,
+        )
+    except Exception as e:  # noqa: BLE001
+        return f'Error running impact analysis for `{symbol}`: {type(e).__name__}'
+    if not impact_set:
+        return (
+            f'### Blast Radius Impact Analysis for `{symbol}`\n\n'
+            f'No impacted nodes found (symbol not in graph or has '
+            f'no dependents).'
+        )
+    lines = [
+        f'### Blast Radius Impact Analysis for `{symbol}`\n',
+        f'**{len(impact_set)} item(s) affected:**\n',
+    ]
+    lines.extend(_format_impact_item(item) for item in impact_set[:50])
+    return '\n'.join(lines)
+
+
+async def _slash_graph(args: str) -> dict:
+    """Dispatch `/graph <stats|nodes|search|impact>`."""
+    sub_parts = args.split(maxsplit=1)
+    sub = sub_parts[0].lower() if sub_parts else 'stats'
+    rest = sub_parts[1] if len(sub_parts) > 1 else ''
+
+    try:
+        engine = await _get_engine_bounded()
+    except Exception as e:
+        return {
+            'response_markdown': f'Error: Graph engine not active: {type(e).__name__}',
+            'client_actions': [],
+        }
+
+    if sub in ('', 'stats'):
+        response_md = await _slash_graph_stats(engine)
+    elif sub == 'nodes':
+        response_md = await _slash_graph_nodes(engine, rest.strip())
+    elif sub == 'search':
+        response_md = await _slash_graph_search(engine, rest)
+    elif sub == 'impact':
+        response_md = await _slash_graph_impact(engine, rest)
+    else:
+        response_md = f'Unknown `/graph` subcommand: `{sub}`'
+
+    return {'response_markdown': response_md, 'client_actions': []}
+
+
+async def _slash_kb_list(kb_engine) -> str:
+    """Render `/kb list` -- connected knowledge bases."""
+    try:
+        bases = await _invoke_governed_helper(
+            kb_engine.list_knowledge_bases,
+            deadline=15.0,
+        )
+    except Exception as e:  # noqa: BLE001
+        return f'Error listing knowledge bases: {type(e).__name__}'
+    if not bases:
+        return 'No knowledge bases found.'
+    lines = ['### Connected Knowledge Bases:\n']
+    for b in list(bases)[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+        if isinstance(b, dict):
+            name = b.get('id') or b.get('name', 'unknown')
+            desc = b.get('description') or b.get('name', '')
+            count = b.get('article_count')
+            suffix = f' ({count} articles)' if count is not None else ''
+            lines.append(f'- `{name}` {desc}{suffix}')
+        else:
+            lines.append(f'- `{b}`')
+    return '\n'.join(lines)
+
+
+def _format_kb_hit(h: Any) -> list[str]:
+    """Render one `/kb search` result's lines (helper for `_slash_kb_search`)."""
+    if not isinstance(h, dict):
+        return [f'- {h}']
+    title = h.get('title') or h.get('id', 'Untitled')
+    score = h.get('score') or h.get('relevance')
+    snippet = (h.get('content') or h.get('snippet') or '')[:160]
+    score_s = f' (score: {score})' if score is not None else ''
+    out = [f'- **{title}**{score_s}']
+    if snippet:
+        out.append(f'  > {snippet}')
+    return out
+
+
+async def _slash_kb_search(kb_engine, query: str) -> str:
+    """Render `/kb search <query>` -- semantic KB article search."""
+    if not query:
+        return 'Usage: `/kb search <query>`'
+    try:
+        hits = await _invoke_governed_helper(
+            kb_engine.search,
+            query,
+            deadline=30.0,
+        )
+    except Exception as e:  # noqa: BLE001
+        return f'Error searching knowledge base: {type(e).__name__}'
+    if not hits:
+        return f'No KB results for `{query}`.'
+    lines = [f'### KB Search Results for `{query}`:\n']
+    for h in hits[:10]:
+        lines.extend(_format_kb_hit(h))
+    return '\n'.join(lines)
+
+
+async def _slash_kb_ingest(kb_engine, path: str) -> str:
+    """Render `/kb ingest <url_or_path>` -- start a workspace-docs ingestion job."""
+    if not path:
+        return 'Usage: `/kb ingest <url_or_path>`'
+    try:
+        result = await _invoke_governed_helper(
+            kb_engine.ingest,
+            deadline=120.0,
+            kb_id='workspace-docs',
+            source=_workspace_ingestion_source(path),
+            name='workspace-docs',
+        )
+    except Exception as e:  # noqa: BLE001
+        return f'Failed to ingest `{path}`: {type(e).__name__}'
+    job_id = result.get('job_id') if isinstance(result, dict) else None
+    return f'Started KB ingestion of `{path}` into `workspace-docs`' + (
+        f' (job `{job_id}`).' if job_id else '.'
+    )
+
+
+async def _slash_kb(args: str) -> dict:
+    """Dispatch `/kb <list|search|ingest>`."""
+    sub_parts = args.split(maxsplit=1)
+    sub = sub_parts[0].lower() if sub_parts else 'list'
+    rest = sub_parts[1] if len(sub_parts) > 1 else ''
+
+    try:
+        engine = await _get_engine_bounded()
+        kb_engine = await _invoke_governed_helper(
+            KBIngestionEngine,
+            engine.graph,
+            engine.backend,
+            deadline=10.0,
+        )
+    except Exception as e:  # noqa: BLE001
+        return {
+            'response_markdown': (f'KB backend not available: {type(e).__name__}'),
+            'client_actions': [],
+        }
+
+    if sub == 'list':
+        response_md = await _slash_kb_list(kb_engine)
+    elif sub == 'search':
+        response_md = await _slash_kb_search(kb_engine, rest)
+    elif sub == 'ingest':
+        response_md = await _slash_kb_ingest(kb_engine, rest)
+    else:
+        response_md = f'Unknown `/kb` subcommand: `{sub}`'
+
+    return {'response_markdown': response_md, 'client_actions': []}
+
+
+async def _slash_sdd_specs(manager) -> str:
+    """Render `/sdd specs` -- active spec-driven specifications."""
+    try:
+        specs = manager.list_specs()
+    except Exception as e:  # noqa: BLE001
+        return f'Error listing specs: {type(e).__name__}'
+    if not specs:
+        return 'No specifications found under `.specify/specs`.'
+    lines = ['### Active Spec-Driven Specifications:\n']
+    for s in list(specs)[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+        sd = s.model_dump() if hasattr(s, 'model_dump') else s
+        sid = sd.get('id') if isinstance(sd, dict) else str(s)
+        title = sd.get('title', '') if isinstance(sd, dict) else ''
+        status = sd.get('status', '') if isinstance(sd, dict) else ''
+        lines.append(
+            f'- **{sid}**: {title}' + (f' (Status: `{status}`)' if status else '')
+        )
+    return '\n'.join(lines)
+
+
+async def _slash_sdd_constitution(manager) -> str:
+    """Render `/sdd constitution` -- project governance rules."""
+    try:
+        constitution = manager.get_constitution()
+    except Exception as e:  # noqa: BLE001
+        return f'Error reading constitution: {type(e).__name__}'
+    if not constitution:
+        return 'No constitution found at `.specify/memory/constitution.md`.'
+    if isinstance(constitution, dict):
+        body = (
+            constitution.get('content') or constitution.get('text') or str(constitution)
+        )
+        return f'### Project Constitution\n\n{body}'
+    return f'### Project Constitution\n\n{constitution}'
+
+
+async def _slash_sdd_sync(manager) -> str:
+    """Handle `/sdd sync` -- synchronize local specs with the KG."""
+    try:
+        engine = await _get_engine_bounded()
+        manager.sync_to_memory(engine)
+    except Exception as e:  # noqa: BLE001
+        return f'SDD sync failed: {type(e).__name__}'
+    return 'Synchronized local specifications with the Knowledge Graph.'
+
+
+async def _slash_sdd(args: str) -> dict:
+    """Dispatch `/sdd <specs|constitution|sync>`."""
+    sub = args.strip().lower() or 'specs'
+    try:
+        manager = SDDManager(DEFAULT_AGENT_DIR)
+    except Exception as e:  # noqa: BLE001
+        return {
+            'response_markdown': (f'SDD backend not available: {type(e).__name__}'),
+            'client_actions': [],
+        }
+
+    if sub == 'specs':
+        response_md = await _slash_sdd_specs(manager)
+    elif sub == 'constitution':
+        response_md = await _slash_sdd_constitution(manager)
+    elif sub == 'sync':
+        response_md = await _slash_sdd_sync(manager)
+    else:
+        response_md = f'Unknown `/sdd` subcommand: `{sub}`'
+
+    return {'response_markdown': response_md, 'client_actions': []}
+
+
+def _slash_cron_calendar() -> str:
+    """Render `/cron calendar` -- scheduled background tasks."""
+    try:
+        from agent_utilities.core.scheduler import get_cron_tasks
+
+        registry = get_cron_tasks()
+        tasks = list(registry.tasks)
+    except Exception as e:  # noqa: BLE001
+        return f'Cron scheduler not available: {type(e).__name__}'
+    if not tasks:
+        return 'No scheduled background tasks registered.'
+    lines = ['### Scheduled Background Tasks:\n']
+    for t in tasks[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+        lines.append(
+            f'- `{t.name or t.id}`: every '
+            f'{t.interval_minutes} min '
+            f'(last run: {t.last_run or "never"})'
+        )
+    return '\n'.join(lines)
+
+
+def _slash_cron_logs() -> str:
+    """Render `/cron logs` -- recent cron execution log entries."""
+    try:
+        from agent_utilities.core.scheduler import get_cron_logs
+
+        entries = list(get_cron_logs().entries)
+    except Exception as e:  # noqa: BLE001
+        return f'Cron logs not available: {type(e).__name__}'
+    if not entries:
+        return 'No cron execution logs recorded yet.'
+    lines = ['### Cron Job Execution Logs (recent):\n']
+    for entry in entries[-10:]:
+        lines.append(
+            f'- `{entry.timestamp}` - '
+            f'`{entry.task_name or entry.task_id}` - '
+            f'{entry.status}: {entry.message}'
+        )
+    return '\n'.join(lines)
+
+
+async def _slash_cron(args: str) -> dict:
+    """Dispatch `/cron <calendar|logs>`."""
+    sub = args.strip().lower() or 'calendar'
+    if sub == 'calendar':
+        response_md = _slash_cron_calendar()
+    elif sub == 'logs':
+        response_md = _slash_cron_logs()
+    else:
+        response_md = f'Unknown `/cron` subcommand: `{sub}`'
+
+    return {'response_markdown': response_md, 'client_actions': []}
+
+
+async def _slash_resources_list(engine) -> str:
+    """Render `/resources` (or `/resources list`) -- callable resources."""
+    try:
+        rows = await _invoke_governed_helper(
+            engine.backend.execute,
+            f'MATCH (r:CallableResource) RETURN r '
+            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
+            deadline=15.0,
+        )
+        resources = [
+            row.get('r', {}) for row in rows if isinstance(row.get('r', {}), dict)
+        ]
+    except Exception as e:  # noqa: BLE001
+        return f'Error listing resources: {type(e).__name__}'
+    if not resources:
+        return 'No active subagents or callable resources.'
+    lines = ['### Spawned Subagents and Callable Resources:\n']
+    for r in resources:
+        rid = r.get('id') or r.get('name', 'unknown')
+        rtype = r.get('type') or r.get('kind', 'resource')
+        rstatus = r.get('status', 'unknown')
+        lines.append(f'- **`{rid}`** - Type: `{rtype}` - Status: `{rstatus}`')
+    return '\n'.join(lines)
+
+
+async def _slash_resources_spawn(engine, name: str) -> str:
+    """Handle `/resources spawn <name>` -- spawn a specialized subagent."""
+    if not name:
+        return 'Usage: `/resources spawn <name>`'
+    try:
+        agent = await _invoke_governed_helper(
+            engine.spawn_specialized_agent,
+            deadline=30.0,
+            name=name,
+        )
+    except Exception as e:  # noqa: BLE001
+        return f'Failed to spawn subagent `{name}`: {type(e).__name__}'
+    agent_data = agent.model_dump() if hasattr(agent, 'model_dump') else {'name': name}
+    spawned_id = agent_data.get('id') or agent_data.get('name') or name
+    return f'Spawned subagent **`{spawned_id}`**.'
+
+
+async def _slash_resources(args: str) -> dict:
+    """Dispatch `/resources <list|spawn>`."""
+    sub_parts = args.split(maxsplit=1)
+    sub = sub_parts[0].lower() if sub_parts else 'list'
+    rest = sub_parts[1] if len(sub_parts) > 1 else ''
+
+    try:
+        engine = await _get_engine_bounded()
+    except Exception as e:  # noqa: BLE001
+        return {
+            'response_markdown': (
+                f'Resource backend not available: {type(e).__name__}'
+            ),
+            'client_actions': [],
+        }
+
+    if sub in ('', 'list'):
+        response_md = await _slash_resources_list(engine)
+    elif sub == 'spawn':
+        response_md = await _slash_resources_spawn(engine, rest)
+    else:
+        response_md = f'Unknown `/resources` subcommand: `{sub}`'
+
+    return {'response_markdown': response_md, 'client_actions': []}
+
+
+# Data-driven command dispatch (was a 144-CCN if/elif chain): each handler
+# owns exactly one top-level slash command, keeping `execute_slash_command`
+# itself to pure parsing + lookup. Every handler is called the same way
+# (args, request) regardless of whether it uses either parameter, so the
+# table stays uniform. CX-WEB-01 refactor -- see lane report.
+_SLASH_COMMAND_HANDLERS: dict[str, Callable[[str, Request], Awaitable[dict]]] = {
+    'help': lambda args, request: _slash_help(),
+    'clear': lambda args, request: _slash_clear(),
+    'model': lambda args, request: _slash_model(args, request),
+    'tools': lambda args, request: _slash_tools(request),
+    'skills': lambda args, request: _slash_skills(),
+    'graph': lambda args, request: _slash_graph(args),
+    'kb': lambda args, request: _slash_kb(args),
+    'sdd': lambda args, request: _slash_sdd(args),
+    'cron': lambda args, request: _slash_cron(args),
+    'resources': lambda args, request: _slash_resources(args),
+}
+
+
 @router.post('/commands/execute')
 async def execute_slash_command(payload: dict, request: Request):
     """Execute a slash command centrally inside the backend."""
@@ -10657,499 +11274,13 @@ async def execute_slash_command(payload: dict, request: Request):
     if cmd_name == 'quit':
         cmd_name = 'exit'
 
-    client_actions = []
-
-    if cmd_name == 'help':
-        response_md = (
-            '### Available Commands:\n\n'
-            '- `/help` - Show this help menu\n'
-            '- `/clear` - Clear active chat session\n'
-            '- `/model [model_id]` - View or change current LLM model\n'
-            '- `/tools` - List all available MCP tools\n'
-            '- `/skills` - List loaded custom skills\n'
-            '- `/graph stats` - Display knowledge graph statistics\n'
-            '- `/graph nodes [type]` - List graph nodes\n'
-            '- `/graph search <query>` - Run semantic search on graph\n'
-            '- `/graph impact <symbol>` - Run blast radius/impact analysis\n'
-            '- `/kb list` - List connected knowledge bases\n'
-            '- `/kb search <query>` - Query semantic knowledge base articles\n'
-            '- `/kb ingest <url_or_path>` - Ingest folder/website to KB\n'
-            '- `/sdd specs` - List active spec-driven specifications\n'
-            '- `/sdd constitution` - Read spec governance rules\n'
-            '- `/sdd sync` - Synchronize local files with KG specifications\n'
-            '- `/cron calendar` - View scheduled background tasks\n'
-            '- `/cron logs` - Check cron job execution logs\n'
-            '- `/resources` - List spawned subagents and tasks\n'
-            '- `/resources spawn <name>` - Deploy a new subagent\n'
-        )
-        return {'response_markdown': response_md, 'client_actions': []}
-
-    elif cmd_name == 'clear':
-        return {
-            'response_markdown': 'Chat session cleared.',
-            'client_actions': [{'action': 'clear_chat'}],
-        }
-
-    elif cmd_name == 'model':
-        registry = getattr(request.app.state, 'model_registry', None)
-        if not args:
-            current_model = registry.get_default() if registry else None
-            model_id = current_model.id if current_model else 'unknown'
-            response_md = f'Current active model: `{model_id}`.\n\nUse `/model <model_id>` to change it.'
-        else:
-            client_actions.append({'action': 'set_model', 'value': args})
-            response_md = f'Switched model to `{args}`.'
-        return {'response_markdown': response_md, 'client_actions': client_actions}
-
-    elif cmd_name == 'tools':
-        agent = getattr(request.app.state, 'agent', None)
-        tools = []
-        if agent and hasattr(agent, '_tools'):
-            for t in agent._tools:
-                tools.append(f'- `{t.name}`: {t.description}')
-        mcp_toolsets = getattr(request.app.state, 'mcp_toolsets', [])
-        for toolset in mcp_toolsets:
-            if hasattr(toolset, 'tools'):
-                for t in toolset.tools:
-                    tools.append(f'- `[{toolset.name}] {t.name}`: {t.description}')
-        if not tools:
-            response_md = 'No tools currently registered.'
-        else:
-            response_md = '### Registered Tools:\n\n' + '\n'.join(tools)
-        return {'response_markdown': response_md, 'client_actions': []}
-
-    elif cmd_name == 'skills':
-        skills = []
-        helpers_list = get_helper('list_skills')
-        if helpers_list:
-            try:
-                skills_list = await _invoke_governed_helper(helpers_list, deadline=10.0)
-                for s in skills_list:
-                    skills.append(
-                        f'- **{s["name"]}** (`{s["id"]}`): {s["description"]}'
-                    )
-            except Exception as e:
-                skills.append(f'Error fetching skills: {type(e).__name__}')
-        if not skills:
-            response_md = 'No custom skills currently active.'
-        else:
-            response_md = '### Active Custom Skills:\n\n' + '\n'.join(skills)
-        return {'response_markdown': response_md, 'client_actions': []}
-
-    elif cmd_name == 'graph':
-        sub_parts = args.split(maxsplit=1)
-        sub = sub_parts[0].lower() if sub_parts else 'stats'
-        rest = sub_parts[1] if len(sub_parts) > 1 else ''
-
-        try:
-            engine = await _get_engine_bounded()
-        except Exception as e:
-            return {
-                'response_markdown': f'Error: Graph engine not active: {type(e).__name__}',
-                'client_actions': [],
-            }
-
-        if sub in ('', 'stats'):
-            try:
-                num_nodes, num_edges = await _invoke_governed_helper(
-                    lambda: (len(engine.graph.nodes), len(engine.graph.edges)),
-                    deadline=15.0,
-                )
-                response_md = (
-                    '### Knowledge Graph Statistics\n\n'
-                    f'- **Total Nodes**: {num_nodes}\n'
-                    f'- **Total Relationships**: {num_edges}\n'
-                    f'- **Backend Status**: Online (LadybugDB)\n'
-                )
-            except Exception as e:
-                response_md = f'Error querying graph stats: {type(e).__name__}'
-
-        elif sub == 'nodes':
-            node_type = rest.strip()
-            try:
-                nodes = []
-                graph_nodes = await _invoke_governed_helper(
-                    lambda: list(engine.graph.nodes(data=True)),
-                    deadline=15.0,
-                )
-                for n, attrs in graph_nodes:
-                    ntype = attrs.get('type', 'Unknown')
-                    if not node_type or ntype.lower() == node_type.lower():
-                        nodes.append(
-                            f'- `{n}` ({ntype}): {attrs.get("description", "No description")}'
-                        )
-                if not nodes:
-                    response_md = f'No nodes of type `{node_type}` found.'
-                else:
-                    response_md = (
-                        f'### Graph Nodes ({node_type or "All"}):\n\n'
-                        + '\n'.join(nodes[:50])
-                    )
-            except Exception as e:
-                response_md = f'Error listing nodes: {type(e).__name__}'
-
-        elif sub == 'search':
-            if not rest:
-                response_md = 'Usage: `/graph search <query>`'
-            else:
-                try:
-                    hits = []
-                    graph_nodes = await _invoke_governed_helper(
-                        lambda: list(engine.graph.nodes(data=True)),
-                        deadline=15.0,
-                    )
-                    for n, attrs in graph_nodes:
-                        if (
-                            rest.lower() in n.lower()
-                            or rest.lower() in attrs.get('description', '').lower()
-                        ):
-                            hits.append(
-                                f'- **{n}** ({attrs.get("type", "Node")}): {attrs.get("description", "")}'
-                            )
-                    if not hits:
-                        response_md = f'No search results for query `{rest}`.'
-                    else:
-                        response_md = (
-                            f'### Graph Search Results for `{rest}`:\n\n'
-                            + '\n'.join(hits[:10])
-                        )
-                except Exception as e:
-                    response_md = f'Error searching graph: {type(e).__name__}'
-
-        elif sub == 'impact':
-            if not rest:
-                response_md = 'Usage: `/graph impact <symbol>`'
-            else:
-                try:
-                    impact_set = await _invoke_governed_helper(
-                        engine.query_impact,
-                        rest,
-                        deadline=30.0,
-                    )
-                except Exception as e:  # noqa: BLE001
-                    impact_set = None
-                    response_md = f'Error running impact analysis for `{rest}`: {type(e).__name__}'
-                if impact_set is not None:
-                    if not impact_set:
-                        response_md = (
-                            f'### Blast Radius Impact Analysis for `{rest}`\n\n'
-                            f'No impacted nodes found (symbol not in graph or has '
-                            f'no dependents).'
-                        )
-                    else:
-                        lines = [
-                            f'### Blast Radius Impact Analysis for `{rest}`\n',
-                            f'**{len(impact_set)} item(s) affected:**\n',
-                        ]
-                        for item in impact_set[:50]:
-                            if isinstance(item, dict):
-                                ident = (
-                                    item.get('id')
-                                    or item.get('name')
-                                    or item.get('symbol')
-                                    or str(item)
-                                )
-                                sev = item.get('severity') or item.get('impact')
-                                lines.append(
-                                    f'- `{ident}`' + (f' ({sev})' if sev else '')
-                                )
-                            else:
-                                lines.append(f'- `{item}`')
-                        response_md = '\n'.join(lines)
-        else:
-            response_md = f'Unknown `/graph` subcommand: `{sub}`'
-
-        return {'response_markdown': response_md, 'client_actions': []}
-
-    elif cmd_name == 'kb':
-        sub_parts = args.split(maxsplit=1)
-        sub = sub_parts[0].lower() if sub_parts else 'list'
-        rest = sub_parts[1] if len(sub_parts) > 1 else ''
-
-        try:
-            engine = await _get_engine_bounded()
-            kb_engine = await _invoke_governed_helper(
-                KBIngestionEngine,
-                engine.graph,
-                engine.backend,
-                deadline=10.0,
-            )
-        except Exception as e:  # noqa: BLE001
-            return {
-                'response_markdown': (f'KB backend not available: {type(e).__name__}'),
-                'client_actions': [],
-            }
-
-        if sub == 'list':
-            try:
-                bases = await _invoke_governed_helper(
-                    kb_engine.list_knowledge_bases,
-                    deadline=15.0,
-                )
-            except Exception as e:  # noqa: BLE001
-                bases = None
-                response_md = f'Error listing knowledge bases: {type(e).__name__}'
-            if bases is not None:
-                if not bases:
-                    response_md = 'No knowledge bases found.'
-                else:
-                    lines = ['### Connected Knowledge Bases:\n']
-                    for b in list(bases)[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-                        if isinstance(b, dict):
-                            name = b.get('id') or b.get('name', 'unknown')
-                            desc = b.get('description') or b.get('name', '')
-                            count = b.get('article_count')
-                            suffix = f' ({count} articles)' if count is not None else ''
-                            lines.append(f'- `{name}` {desc}{suffix}')
-                        else:
-                            lines.append(f'- `{b}`')
-                    response_md = '\n'.join(lines)
-        elif sub == 'search':
-            if not rest:
-                response_md = 'Usage: `/kb search <query>`'
-            else:
-                try:
-                    hits = await _invoke_governed_helper(
-                        kb_engine.search,
-                        rest,
-                        deadline=30.0,
-                    )
-                except Exception as e:  # noqa: BLE001
-                    hits = None
-                    response_md = f'Error searching knowledge base: {type(e).__name__}'
-                if hits is not None:
-                    if not hits:
-                        response_md = f'No KB results for `{rest}`.'
-                    else:
-                        lines = [f'### KB Search Results for `{rest}`:\n']
-                        for h in hits[:10]:
-                            if isinstance(h, dict):
-                                title = h.get('title') or h.get('id', 'Untitled')
-                                score = h.get('score') or h.get('relevance')
-                                snippet = (h.get('content') or h.get('snippet') or '')[
-                                    :160
-                                ]
-                                score_s = (
-                                    f' (score: {score})' if score is not None else ''
-                                )
-                                lines.append(f'- **{title}**{score_s}')
-                                if snippet:
-                                    lines.append(f'  > {snippet}')
-                            else:
-                                lines.append(f'- {h}')
-                        response_md = '\n'.join(lines)
-        elif sub == 'ingest':
-            if not rest:
-                response_md = 'Usage: `/kb ingest <url_or_path>`'
-            else:
-                try:
-                    result = await _invoke_governed_helper(
-                        kb_engine.ingest,
-                        deadline=120.0,
-                        kb_id='workspace-docs',
-                        source=_workspace_ingestion_source(rest),
-                        name='workspace-docs',
-                    )
-                    job_id = result.get('job_id') if isinstance(result, dict) else None
-                    response_md = (
-                        f'Started KB ingestion of `{rest}` into `workspace-docs`'
-                        + (f' (job `{job_id}`).' if job_id else '.')
-                    )
-                except Exception as e:  # noqa: BLE001
-                    response_md = f'Failed to ingest `{rest}`: {type(e).__name__}'
-        else:
-            response_md = f'Unknown `/kb` subcommand: `{sub}`'
-
-        return {'response_markdown': response_md, 'client_actions': []}
-
-    elif cmd_name == 'sdd':
-        sub = args.strip().lower() or 'specs'
-        try:
-            manager = SDDManager(DEFAULT_AGENT_DIR)
-        except Exception as e:  # noqa: BLE001
-            return {
-                'response_markdown': (f'SDD backend not available: {type(e).__name__}'),
-                'client_actions': [],
-            }
-
-        if sub == 'specs':
-            try:
-                specs = manager.list_specs()
-            except Exception as e:  # noqa: BLE001
-                specs = None
-                response_md = f'Error listing specs: {type(e).__name__}'
-            if specs is not None:
-                if not specs:
-                    response_md = 'No specifications found under `.specify/specs`.'
-                else:
-                    lines = ['### Active Spec-Driven Specifications:\n']
-                    for s in list(specs)[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-                        sd = s.model_dump() if hasattr(s, 'model_dump') else s
-                        sid = sd.get('id') if isinstance(sd, dict) else str(s)
-                        title = sd.get('title', '') if isinstance(sd, dict) else ''
-                        status = sd.get('status', '') if isinstance(sd, dict) else ''
-                        lines.append(
-                            f'- **{sid}**: {title}'
-                            + (f' (Status: `{status}`)' if status else '')
-                        )
-                    response_md = '\n'.join(lines)
-        elif sub == 'constitution':
-            try:
-                constitution = manager.get_constitution()
-            except Exception as e:  # noqa: BLE001
-                constitution = None
-                response_md = f'Error reading constitution: {type(e).__name__}'
-            else:
-                if not constitution:
-                    response_md = (
-                        'No constitution found at `.specify/memory/constitution.md`.'
-                    )
-                elif isinstance(constitution, dict):
-                    body = (
-                        constitution.get('content')
-                        or constitution.get('text')
-                        or str(constitution)
-                    )
-                    response_md = f'### Project Constitution\n\n{body}'
-                else:
-                    response_md = f'### Project Constitution\n\n{constitution}'
-        elif sub == 'sync':
-            try:
-                engine = await _get_engine_bounded()
-                manager.sync_to_memory(engine)
-                response_md = (
-                    'Synchronized local specifications with the Knowledge Graph.'
-                )
-            except Exception as e:  # noqa: BLE001
-                response_md = f'SDD sync failed: {type(e).__name__}'
-        else:
-            response_md = f'Unknown `/sdd` subcommand: `{sub}`'
-
-        return {'response_markdown': response_md, 'client_actions': []}
-
-    elif cmd_name == 'cron':
-        sub = args.strip().lower() or 'calendar'
-        if sub == 'calendar':
-            try:
-                from agent_utilities.core.scheduler import get_cron_tasks
-
-                registry = get_cron_tasks()
-                tasks = list(registry.tasks)
-            except Exception as e:  # noqa: BLE001
-                tasks = None
-                response_md = f'Cron scheduler not available: {type(e).__name__}'
-            if tasks is not None:
-                if not tasks:
-                    response_md = 'No scheduled background tasks registered.'
-                else:
-                    lines = ['### Scheduled Background Tasks:\n']
-                    for t in tasks[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-                        lines.append(
-                            f'- `{t.name or t.id}`: every '
-                            f'{t.interval_minutes} min '
-                            f'(last run: {t.last_run or "never"})'
-                        )
-                    response_md = '\n'.join(lines)
-        elif sub == 'logs':
-            try:
-                from agent_utilities.core.scheduler import get_cron_logs
-
-                entries = list(get_cron_logs().entries)
-            except Exception as e:  # noqa: BLE001
-                entries = None
-                response_md = f'Cron logs not available: {type(e).__name__}'
-            if entries is not None:
-                if not entries:
-                    response_md = 'No cron execution logs recorded yet.'
-                else:
-                    lines = ['### Cron Job Execution Logs (recent):\n']
-                    for entry in entries[-10:]:
-                        lines.append(
-                            f'- `{entry.timestamp}` - '
-                            f'`{entry.task_name or entry.task_id}` - '
-                            f'{entry.status}: {entry.message}'
-                        )
-                    response_md = '\n'.join(lines)
-        else:
-            response_md = f'Unknown `/cron` subcommand: `{sub}`'
-
-        return {'response_markdown': response_md, 'client_actions': []}
-
-    elif cmd_name == 'resources':
-        sub_parts = args.split(maxsplit=1)
-        sub = sub_parts[0].lower() if sub_parts else 'list'
-        rest = sub_parts[1] if len(sub_parts) > 1 else ''
-
-        try:
-            engine = await _get_engine_bounded()
-        except Exception as e:  # noqa: BLE001
-            return {
-                'response_markdown': (
-                    f'Resource backend not available: {type(e).__name__}'
-                ),
-                'client_actions': [],
-            }
-
-        if sub in ('', 'list'):
-            try:
-                rows = await _invoke_governed_helper(
-                    engine.backend.execute,
-                    f'MATCH (r:CallableResource) RETURN r '
-                    f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
-                    deadline=15.0,
-                )
-                resources = [
-                    row.get('r', {})
-                    for row in rows
-                    if isinstance(row.get('r', {}), dict)
-                ]
-            except Exception as e:  # noqa: BLE001
-                resources = None
-                response_md = f'Error listing resources: {type(e).__name__}'
-            if resources is not None:
-                if not resources:
-                    response_md = 'No active subagents or callable resources.'
-                else:
-                    lines = ['### Spawned Subagents and Callable Resources:\n']
-                    for r in resources:
-                        rid = r.get('id') or r.get('name', 'unknown')
-                        rtype = r.get('type') or r.get('kind', 'resource')
-                        rstatus = r.get('status', 'unknown')
-                        lines.append(
-                            f'- **`{rid}`** - Type: `{rtype}` - Status: `{rstatus}`'
-                        )
-                    response_md = '\n'.join(lines)
-        elif sub == 'spawn':
-            if not rest:
-                response_md = 'Usage: `/resources spawn <name>`'
-            else:
-                try:
-                    agent = await _invoke_governed_helper(
-                        engine.spawn_specialized_agent,
-                        deadline=30.0,
-                        name=rest,
-                    )
-                    agent_data = (
-                        agent.model_dump()
-                        if hasattr(agent, 'model_dump')
-                        else {'name': rest}
-                    )
-                    spawned_id = agent_data.get('id') or agent_data.get('name') or rest
-                    response_md = f'Spawned subagent **`{spawned_id}`**.'
-                except Exception as e:  # noqa: BLE001
-                    response_md = (
-                        f'Failed to spawn subagent `{rest}`: {type(e).__name__}'
-                    )
-        else:
-            response_md = f'Unknown `/resources` subcommand: `{sub}`'
-
-        return {'response_markdown': response_md, 'client_actions': []}
-
-    else:
+    handler = _SLASH_COMMAND_HANDLERS.get(cmd_name)
+    if handler is None:
         return {
             'response_markdown': f'Unknown slash command: `/{cmd_name}`. Type `/help` for a list of available commands.',
             'client_actions': [],
         }
+    return await handler(args, request)
 
 
 @router.get('/commands/autocomplete')
