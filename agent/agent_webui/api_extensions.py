@@ -4428,6 +4428,18 @@ async def _read_union_sql_group_counts(
     flagged for that lane, not fixed here.
     """
 
+    def _absorb(merged: dict[str, int], rows: Any) -> None:
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            k = row.get(key)
+            n = row.get(count_field)
+            if not isinstance(k, str) or not k:
+                continue
+            if not isinstance(n, int) or isinstance(n, bool):
+                continue
+            merged[k] = merged.get(k, 0) + n
+
     def _run() -> tuple[dict[str, int], list[str], list[str]]:
         result = _rows_per_accessible_graph(
             engine, lambda scoped: scoped.sql(statement) or []
@@ -4441,16 +4453,7 @@ async def _read_union_sql_group_counts(
             graphs = [graph_name for graph_name, _rows in per_graph]
         merged: dict[str, int] = {}
         for _graph_name, rows in per_graph:
-            for row in rows or []:
-                if not isinstance(row, dict):
-                    continue
-                k = row.get(key)
-                n = row.get(count_field)
-                if not isinstance(k, str) or not k:
-                    continue
-                if not isinstance(n, int) or isinstance(n, bool):
-                    continue
-                merged[k] = merged.get(k, 0) + n
+            _absorb(merged, rows)
         return merged, graphs, degraded
 
     return await _invoke_governed_helper(_run, deadline=deadline)
@@ -6693,6 +6696,48 @@ async def list_plans() -> list[dict[str, Any]]:
         return []
 
 
+def _dumped(value: Any) -> Any:
+    """A pydantic model as a plain dict; anything else unchanged."""
+    return value.model_dump() if hasattr(value, 'model_dump') else value
+
+
+async def _tasks_for_plan(manager: Any, plan_id: str) -> Any:
+    """One plan's ``Tasks`` document, dumped to plain data."""
+    tasks = await _invoke_governed_helper(manager.get_tasks, plan_id, deadline=10.0)
+    return _dumped(tasks)
+
+
+async def _all_tasks(manager: Any) -> list[Any]:
+    """Every feature's tasks, dumped element-wise and bounded.
+
+    A DIFFERENT instance of the same silent-empty failure family, found
+    auditing this bug: `get_all_tasks()` returns `list[Tasks]` -- a bare LIST
+    of pydantic models, which has no `.model_dump()` of its own (only each
+    ELEMENT does; a bare `list` fails the `hasattr(tasks, 'model_dump')` check
+    that only ever applied to the `plan_id` branch's single `Tasks | None`).
+    The raw list of pydantic objects always reached `_public_external_result`
+    unconverted, which cannot serialize a pydantic instance
+    (`ValueError('...unsupported value')`) -- caught by the broad `except` in
+    the caller and reported as `{}`, indistinguishable from "no tasks in any
+    feature", for ANY non-empty result -- not just an oversized one.
+    """
+    tasks = await _invoke_governed_helper(manager.get_all_tasks, deadline=10.0)
+    return [_dumped(t) for t in (tasks or [])][:_MAX_EXTERNAL_COLLECTION_ITEMS]
+
+
+def _dumped_task_document(raw_tasks: Any) -> Any:
+    """Dump the nested ``tasks`` list of a single-plan document, if present."""
+    if not isinstance(raw_tasks, dict) or not isinstance(raw_tasks.get('tasks'), list):
+        return raw_tasks
+    return {
+        **raw_tasks,
+        'tasks': [
+            _dumped(task)
+            for task in raw_tasks['tasks'][:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        ],
+    }
+
+
 @router.get('/sdd/tasks')
 async def get_tasks(plan_id: str | None = None) -> list[Any] | dict[str, Any]:
     """Retrieve tasks for a plan or all tasks.
@@ -6704,40 +6749,12 @@ async def get_tasks(plan_id: str | None = None) -> list[Any] | dict[str, Any]:
         Tasks data.
     """
     try:
-        if plan_id:
-            plan_id = _validate_runtime_id(plan_id)
         manager = SDDManager(DEFAULT_AGENT_DIR)
         if plan_id:
-            tasks = await _invoke_governed_helper(
-                manager.get_tasks, plan_id, deadline=10.0
-            )
-            raw_tasks = tasks.model_dump() if hasattr(tasks, 'model_dump') else tasks
+            raw_tasks = await _tasks_for_plan(manager, _validate_runtime_id(plan_id))
         else:
-            tasks = await _invoke_governed_helper(manager.get_all_tasks, deadline=10.0)
-            # A DIFFERENT instance of the same silent-empty failure family,
-            # found auditing this bug: `get_all_tasks()` returns `list[Tasks]`
-            # -- a bare LIST of pydantic models, which has no `.model_dump()`
-            # of its own (only each ELEMENT does; a bare `list` fails the
-            # `hasattr(tasks, 'model_dump')` check below, which only ever
-            # applied to the `plan_id` branch's single `Tasks | None`). The
-            # raw list of pydantic objects always reached
-            # `_public_external_result` unconverted, which cannot serialize a
-            # pydantic instance (`ValueError('...unsupported value')`) --
-            # caught by the broad `except` below and reported as `{}`,
-            # indistinguishable from "no tasks in any feature", for ANY
-            # non-empty result -- not just an oversized one.
-            raw_tasks = [
-                t.model_dump() if hasattr(t, 'model_dump') else t for t in (tasks or [])
-            ][:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        if isinstance(raw_tasks, dict) and isinstance(raw_tasks.get('tasks'), list):
-            raw_tasks = {
-                **raw_tasks,
-                'tasks': [
-                    task.model_dump() if hasattr(task, 'model_dump') else task
-                    for task in raw_tasks['tasks'][:_MAX_EXTERNAL_COLLECTION_ITEMS]
-                ],
-            }
-        return _public_external_result(raw_tasks)
+            raw_tasks = await _all_tasks(manager)
+        return _public_external_result(_dumped_task_document(raw_tasks))
     except HTTPException:
         raise
     except Exception as e:
@@ -7200,24 +7217,22 @@ async def get_library_agent(agent_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
-@router.post('/agent-library/agents')
-async def create_library_agent(data: dict[str, Any]) -> dict[str, Any]:
-    """Compose a new locally-delegatable agent from a name, instructions, and tools.
+@dataclass(frozen=True)
+class _LibraryAgentSpec:
+    """One validated Agent Library compose/edit submission."""
 
-    Writes the exact ``CallableResource(resource_type=AGENT_SKILL)`` field
-    contract atomic-skill ingestion produces, so the saved agent is
-    delegatable by name immediately — never a second, UI-only representation.
-    Optionally expands ``bind_server`` into ``USES_TOOL`` edges for every
-    currently-ingested tool of that MCP server, in addition to any explicitly
-    picked ``tool_ids``.
-    """
-    name = str(data.get('name') or '').strip()
-    description = str(data.get('description') or '').strip()
-    instructions = str(data.get('instructions') or '').strip()
-    bind_server = str(data.get('bind_server') or '').strip()
-    model_preference = str(data.get('model_preference') or '').strip()
-    tool_ids = _bounded_identifier_list(data.get('tool_ids'))
+    name: str
+    description: str
+    instructions: str
+    bind_server: str
+    model_preference: str
+    tool_ids: list[str]
 
+
+def _validate_library_agent_fields(
+    name: str, instructions: str, bind_server: str, model_preference: str
+) -> None:
+    """The field contract shared by ``POST`` and ``PUT`` /agent-library/agents."""
     if not name or len(name) > 120:
         raise HTTPException(status_code=422, detail='Agent name is required')
     if not instructions:
@@ -7231,75 +7246,128 @@ async def create_library_agent(data: dict[str, Any]) -> dict[str, Any]:
     if model_preference and not _SAFE_DELEGATION_TOKEN.fullmatch(model_preference):
         raise HTTPException(status_code=400, detail='Invalid model id')
 
+
+def _library_agent_spec(data: dict[str, Any]) -> _LibraryAgentSpec:
+    """Validate an Agent Library submission into a `_LibraryAgentSpec`."""
+    name = str(data.get('name') or '').strip()
+    instructions = str(data.get('instructions') or '').strip()
+    bind_server = str(data.get('bind_server') or '').strip()
+    model_preference = str(data.get('model_preference') or '').strip()
+    _validate_library_agent_fields(name, instructions, bind_server, model_preference)
+    return _LibraryAgentSpec(
+        name=name,
+        description=str(data.get('description') or '').strip(),
+        instructions=instructions,
+        bind_server=bind_server,
+        model_preference=model_preference,
+        tool_ids=_bounded_identifier_list(data.get('tool_ids')),
+    )
+
+
+def _library_tool_bindings(engine: Any, spec: _LibraryAgentSpec) -> list[str]:
+    """The submitted tool ids, plus every ingested tool of a bound MCP server."""
+    resolved_tool_ids = list(spec.tool_ids)
+    if spec.bind_server:
+        server_rows = engine.backend.execute(
+            'MATCH (t:Tool) WHERE t.mcp_server = $s RETURN t.id AS id',
+            {'s': spec.bind_server},
+        )
+        resolved_tool_ids.extend(
+            str(r['id'])
+            for r in (server_rows or [])
+            if isinstance(r, dict) and r.get('id')
+        )
+    return resolved_tool_ids
+
+
+def _bind_agent_tools(
+    engine: Any, resource_id: str, resolved_tool_ids: list[str]
+) -> list[str]:
+    """Link each distinct tool id under ``USES_TOOL``, bounded; returns them sorted."""
+    seen: set[str] = set()
+    for tool_id in resolved_tool_ids:
+        if tool_id in seen or len(seen) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            continue
+        seen.add(tool_id)
+        engine.link_nodes(resource_id, tool_id, 'USES_TOOL')
+    return sorted(seen)
+
+
+def _library_agent_response(
+    agent_id: str, spec: _LibraryAgentSpec, bound_tools: list[str]
+) -> dict[str, Any]:
+    """The response body both the compose and the edit route return."""
+    return {
+        'id': agent_id,
+        'name': spec.name,
+        'description': spec.description or spec.name,
+        'kind': 'local',
+        'mcp_server': spec.bind_server or None,
+        'model_preference': spec.model_preference or None,
+        'tools': bound_tools,
+    }
+
+
+def _persist_library_agent(
+    engine: Any, spec: _LibraryAgentSpec
+) -> tuple[str, list[str]]:
+    """Write the Skill + CallableResource pair and its ``USES_TOOL`` edges."""
+    from agent_utilities.knowledge_graph.ingestion.skill_workflow_ingest import (
+        runnable_skill_digest,
+        skill_reference,
+    )
+
+    source_ref = skill_reference(spec.name)
+    skill_id = f'skill:{source_ref.removeprefix("skill://")}'
+    resource_id = f'resource:{skill_id}'
+    common: dict[str, Any] = {
+        'name': spec.name,
+        'description': spec.description or spec.name,
+        'source_ref': source_ref,
+        'provider_ref': _AGENT_LIBRARY_PROVIDER_REF,
+        'instruction_digest': runnable_skill_digest(spec.instructions),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+    }
+    if spec.bind_server:
+        common['mcp_server'] = spec.bind_server
+    resolved_tool_ids = _library_tool_bindings(engine, spec)
+    engine.add_node(
+        skill_id,
+        'Skill',
+        {**common, 'body': spec.instructions, 'instruction': spec.instructions},
+    )
+    resource_props: dict[str, Any] = {
+        **common,
+        'resource_type': 'AGENT_SKILL',
+        'system_prompt': spec.instructions,
+        'runnable_bound': True,
+    }
+    if spec.model_preference:
+        resource_props['model_preference'] = spec.model_preference
+    engine.add_node(resource_id, 'CallableResource', resource_props)
+    engine.link_nodes(skill_id, resource_id, 'BINDS_RUNNABLE')
+    return resource_id, _bind_agent_tools(engine, resource_id, resolved_tool_ids)
+
+
+@router.post('/agent-library/agents')
+async def create_library_agent(data: dict[str, Any]) -> dict[str, Any]:
+    """Compose a new locally-delegatable agent from a name, instructions, and tools.
+
+    Writes the exact ``CallableResource(resource_type=AGENT_SKILL)`` field
+    contract atomic-skill ingestion produces, so the saved agent is
+    delegatable by name immediately — never a second, UI-only representation.
+    Optionally expands ``bind_server`` into ``USES_TOOL`` edges for every
+    currently-ingested tool of that MCP server, in addition to any explicitly
+    picked ``tool_ids``.
+    """
+    spec = _library_agent_spec(data)
     try:
         engine = await _get_engine_bounded()
-        from agent_utilities.knowledge_graph.ingestion.skill_workflow_ingest import (
-            runnable_skill_digest,
-            skill_reference,
-        )
-
-        def persist_agent() -> tuple[str, list[str]]:
-            source_ref = skill_reference(name)
-            digest = runnable_skill_digest(instructions)
-            skill_id = f'skill:{source_ref.removeprefix("skill://")}'
-            resource_id = f'resource:{skill_id}'
-            ts = datetime.now(timezone.utc).isoformat()
-            common: dict[str, Any] = {
-                'name': name,
-                'description': description or name,
-                'source_ref': source_ref,
-                'provider_ref': _AGENT_LIBRARY_PROVIDER_REF,
-                'instruction_digest': digest,
-                'timestamp': ts,
-            }
-            resolved_tool_ids = list(tool_ids)
-            if bind_server:
-                common['mcp_server'] = bind_server
-                server_rows = engine.backend.execute(
-                    'MATCH (t:Tool) WHERE t.mcp_server = $s RETURN t.id AS id',
-                    {'s': bind_server},
-                )
-                resolved_tool_ids.extend(
-                    str(r['id'])
-                    for r in (server_rows or [])
-                    if isinstance(r, dict) and r.get('id')
-                )
-            engine.add_node(
-                skill_id,
-                'Skill',
-                {**common, 'body': instructions, 'instruction': instructions},
-            )
-            resource_props: dict[str, Any] = {
-                **common,
-                'resource_type': 'AGENT_SKILL',
-                'system_prompt': instructions,
-                'runnable_bound': True,
-            }
-            if model_preference:
-                resource_props['model_preference'] = model_preference
-            engine.add_node(resource_id, 'CallableResource', resource_props)
-            engine.link_nodes(skill_id, resource_id, 'BINDS_RUNNABLE')
-            seen: set[str] = set()
-            for tool_id in resolved_tool_ids:
-                if tool_id in seen or len(seen) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                    continue
-                seen.add(tool_id)
-                engine.link_nodes(resource_id, tool_id, 'USES_TOOL')
-            return resource_id, sorted(seen)
-
         resource_id, bound_tools = await _invoke_governed_helper(
-            persist_agent, deadline=30.0
+            _persist_library_agent, engine, spec, deadline=30.0
         )
         return _public_external_result(
-            {
-                'id': resource_id,
-                'name': name,
-                'description': description or name,
-                'kind': 'local',
-                'mcp_server': bind_server or None,
-                'model_preference': model_preference or None,
-                'tools': bound_tools,
-            }
+            _library_agent_response(resource_id, spec, bound_tools)
         )
     except HTTPException:
         raise
@@ -7308,6 +7376,76 @@ async def create_library_agent(data: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:
         _log_failure('create_library_agent', e)
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+def _load_editable_library_agent(engine: Any, agent_id: str) -> str:
+    """The ``Skill`` id behind an editable, locally-composed Agent Library entry.
+
+    Only an entry this feature itself created
+    (``provider_ref == _AGENT_LIBRARY_PROVIDER_REF``) may be edited; an
+    ingested/external ``A2A_AGENT`` is a 403, matching the restriction
+    ``DELETE`` already enforces for archiving.
+    """
+    rows = engine.backend.execute(
+        'MATCH (r:CallableResource {id: $id}) '
+        'RETURN r.resource_type AS rtype, r.provider_ref AS provider_ref, '
+        'r.source_ref AS source_ref',
+        {'id': agent_id},
+    )
+    if not rows or not isinstance(rows[0], dict):
+        raise HTTPException(status_code=404, detail='Agent not found')
+    rtype = str(rows[0].get('rtype') or '')
+    provider_ref = str(rows[0].get('provider_ref') or '')
+    if rtype != 'AGENT_SKILL' or provider_ref != _AGENT_LIBRARY_PROVIDER_REF:
+        raise HTTPException(
+            status_code=403,
+            detail='Only agents composed in the Agent Library can be edited here',
+        )
+    skill_id = str(rows[0].get('source_ref') or '').removeprefix('skill://')
+    return f'skill:{skill_id}'
+
+
+def _persist_library_agent_update(
+    engine: Any, agent_id: str, spec: _LibraryAgentSpec
+) -> list[str]:
+    """Rewrite an editable entry's Skill + CallableResource and its tool edges."""
+    from agent_utilities.knowledge_graph.ingestion.skill_workflow_ingest import (
+        runnable_skill_digest,
+    )
+
+    skill_id = _load_editable_library_agent(engine, agent_id)
+    common: dict[str, Any] = {
+        'name': spec.name,
+        'description': spec.description or spec.name,
+        'instruction_digest': runnable_skill_digest(spec.instructions),
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+        'mcp_server': spec.bind_server or None,
+        'model_preference': spec.model_preference or None,
+    }
+    engine.backend.execute(
+        'MATCH (s:Skill {id: $id}) '
+        'SET s.name = $name, s.description = $description, '
+        's.instruction_digest = $instruction_digest, s.updated_at = $updated_at, '
+        's.mcp_server = $mcp_server, s.body = $instructions, '
+        's.instruction = $instructions',
+        {'id': skill_id, 'instructions': spec.instructions, **common},
+    )
+    engine.backend.execute(
+        'MATCH (r:CallableResource {id: $id}) '
+        'SET r.name = $name, r.description = $description, '
+        'r.instruction_digest = $instruction_digest, r.updated_at = $updated_at, '
+        'r.mcp_server = $mcp_server, r.model_preference = $model_preference, '
+        'r.system_prompt = $instructions',
+        {'id': agent_id, 'instructions': spec.instructions, **common},
+    )
+    # Full-replace: drop every existing binding then re-add exactly the
+    # submitted set, so the edited agent's tools never accumulate stale
+    # edges from a prior save.
+    engine.backend.execute(
+        'MATCH (r:CallableResource {id: $id})-[e:USES_TOOL]->() DELETE e',
+        {'id': agent_id},
+    )
+    return _bind_agent_tools(engine, agent_id, _library_tool_bindings(engine, spec))
 
 
 @router.put('/agent-library/agents/{agent_id:path}')
@@ -7324,117 +7462,14 @@ async def update_library_agent(agent_id: str, data: dict[str, Any]) -> dict[str,
     so the edited agent's tools always match exactly what was submitted.
     """
     agent_id = _validate_runtime_id(agent_id)
-    name = str(data.get('name') or '').strip()
-    description = str(data.get('description') or '').strip()
-    instructions = str(data.get('instructions') or '').strip()
-    bind_server = str(data.get('bind_server') or '').strip()
-    model_preference = str(data.get('model_preference') or '').strip()
-    tool_ids = _bounded_identifier_list(data.get('tool_ids'))
-
-    if not name or len(name) > 120:
-        raise HTTPException(status_code=422, detail='Agent name is required')
-    if not instructions:
-        raise HTTPException(status_code=422, detail='Agent instructions are required')
-    if len(instructions.encode('utf-8')) > _MAX_INSTRUCTIONS_BYTES:
-        raise HTTPException(
-            status_code=400, detail='Instructions exceed the safety bound'
-        )
-    if bind_server and not _SAFE_DELEGATION_TOKEN.fullmatch(bind_server):
-        raise HTTPException(status_code=400, detail='Invalid MCP server name')
-    if model_preference and not _SAFE_DELEGATION_TOKEN.fullmatch(model_preference):
-        raise HTTPException(status_code=400, detail='Invalid model id')
-
+    spec = _library_agent_spec(data)
     try:
         engine = await _get_engine_bounded()
-        from agent_utilities.knowledge_graph.ingestion.skill_workflow_ingest import (
-            runnable_skill_digest,
+        bound_tools = await _invoke_governed_helper(
+            _persist_library_agent_update, engine, agent_id, spec, deadline=30.0
         )
-
-        def load_existing() -> tuple[str, str]:
-            rows = engine.backend.execute(
-                'MATCH (r:CallableResource {id: $id}) '
-                'RETURN r.resource_type AS rtype, r.provider_ref AS provider_ref, '
-                'r.source_ref AS source_ref',
-                {'id': agent_id},
-            )
-            if not rows or not isinstance(rows[0], dict):
-                raise HTTPException(status_code=404, detail='Agent not found')
-            rtype = str(rows[0].get('rtype') or '')
-            provider_ref = str(rows[0].get('provider_ref') or '')
-            if rtype != 'AGENT_SKILL' or provider_ref != _AGENT_LIBRARY_PROVIDER_REF:
-                raise HTTPException(
-                    status_code=403,
-                    detail='Only agents composed in the Agent Library can be edited here',
-                )
-            skill_id = str(rows[0].get('source_ref') or '').removeprefix('skill://')
-            return f'skill:{skill_id}', str(rows[0].get('source_ref') or '')
-
-        def persist_update() -> list[str]:
-            skill_id, source_ref = load_existing()
-            digest = runnable_skill_digest(instructions)
-            ts = datetime.now(timezone.utc).isoformat()
-            common: dict[str, Any] = {
-                'name': name,
-                'description': description or name,
-                'instruction_digest': digest,
-                'updated_at': ts,
-                'mcp_server': bind_server or None,
-                'model_preference': model_preference or None,
-            }
-            engine.backend.execute(
-                'MATCH (s:Skill {id: $id}) '
-                'SET s.name = $name, s.description = $description, '
-                's.instruction_digest = $instruction_digest, s.updated_at = $updated_at, '
-                's.mcp_server = $mcp_server, s.body = $instructions, '
-                's.instruction = $instructions',
-                {'id': skill_id, 'instructions': instructions, **common},
-            )
-            engine.backend.execute(
-                'MATCH (r:CallableResource {id: $id}) '
-                'SET r.name = $name, r.description = $description, '
-                'r.instruction_digest = $instruction_digest, r.updated_at = $updated_at, '
-                'r.mcp_server = $mcp_server, r.model_preference = $model_preference, '
-                'r.system_prompt = $instructions',
-                {'id': agent_id, 'instructions': instructions, **common},
-            )
-            # Full-replace: drop every existing binding then re-add exactly the
-            # submitted set, so the edited agent's tools never accumulate stale
-            # edges from a prior save.
-            engine.backend.execute(
-                'MATCH (r:CallableResource {id: $id})-[e:USES_TOOL]->() DELETE e',
-                {'id': agent_id},
-            )
-            resolved_tool_ids = list(tool_ids)
-            if bind_server:
-                server_rows = engine.backend.execute(
-                    'MATCH (t:Tool) WHERE t.mcp_server = $s RETURN t.id AS id',
-                    {'s': bind_server},
-                )
-                resolved_tool_ids.extend(
-                    str(r['id'])
-                    for r in (server_rows or [])
-                    if isinstance(r, dict) and r.get('id')
-                )
-            seen: set[str] = set()
-            for tool_id in resolved_tool_ids:
-                if tool_id in seen or len(seen) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                    continue
-                seen.add(tool_id)
-                engine.link_nodes(agent_id, tool_id, 'USES_TOOL')
-            _ = source_ref
-            return sorted(seen)
-
-        bound_tools = await _invoke_governed_helper(persist_update, deadline=30.0)
         return _public_external_result(
-            {
-                'id': agent_id,
-                'name': name,
-                'description': description or name,
-                'kind': 'local',
-                'mcp_server': bind_server or None,
-                'model_preference': model_preference or None,
-                'tools': bound_tools,
-            }
+            _library_agent_response(agent_id, spec, bound_tools)
         )
     except HTTPException:
         raise
