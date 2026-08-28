@@ -3718,6 +3718,53 @@ async def get_cron_logs() -> list[dict[str, Any]]:
         return []
 
 
+_TEXTUAL_UPLOAD_SUFFIXES = frozenset(
+    {'.csv', '.json', '.md', '.rst', '.txt', '.yaml', '.yml'}
+)
+
+
+def _upload_basename(file: UploadFile) -> str:
+    """The validated basename of a browser upload.
+
+    Browser uploads are single files. Reject path-bearing names instead of
+    silently rewriting them, including Windows separators on POSIX hosts.
+    """
+    if file.filename is None or not file.filename.strip():
+        raise HTTPException(status_code=400, detail='Filename is missing')
+    filename = file.filename.strip()
+    if Path(filename).name != filename or '\\' in filename or filename in {'.', '..'}:
+        raise HTTPException(
+            status_code=400, detail='Upload filename must be a basename'
+        )
+    return filename
+
+
+def _is_textual_upload(media_type: str, file_path: Path) -> bool:
+    """True when the persistence guard applies to this upload.
+
+    Binary formats require a format-aware ingestion connector and remain
+    opaque here.
+    """
+    return (
+        media_type.startswith('text/')
+        or file_path.suffix.lower() in _TEXTUAL_UPLOAD_SUFFIXES
+    )
+
+
+def _assert_upload_privacy_safe(payload: bytes) -> None:
+    """Apply the persistence privacy guard to a textual upload."""
+    try:
+        decoded = payload.decode('utf-8')
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail='Text upload is not UTF-8') from exc
+    _safe_content, privacy_report = sanitize_for_persistence(decoded)
+    if privacy_report.changed:
+        raise HTTPException(
+            status_code=400,
+            detail='Upload violates the persistence privacy boundary',
+        )
+
+
 @router.post('/upload')
 async def upload_file(file: Annotated[UploadFile, File()]) -> dict[str, str]:
     """Store one bounded upload atomically inside the configured workspace.
@@ -3728,15 +3775,7 @@ async def upload_file(file: Annotated[UploadFile, File()]) -> dict[str, str]:
     Returns:
         Confirmation containing the saved filename.
     """
-    if file.filename is None or not file.filename.strip():
-        raise HTTPException(status_code=400, detail='Filename is missing')
-    filename = file.filename.strip()
-    # Browser uploads are single files. Reject path-bearing names instead of
-    # silently rewriting them, including Windows separators on POSIX hosts.
-    if Path(filename).name != filename or '\\' in filename or filename in {'.', '..'}:
-        raise HTTPException(
-            status_code=400, detail='Upload filename must be a basename'
-        )
+    filename = _upload_basename(file)
     file_path = resolve_workspace_file(filename)
     limit = _upload_limit()
     payload = bytearray()
@@ -3748,30 +3787,9 @@ async def upload_file(file: Annotated[UploadFile, File()]) -> dict[str, str]:
     finally:
         await file.close()
 
-    # Apply the persistence guard to textual uploads. Binary formats require a
-    # format-aware ingestion connector and remain opaque here.
     media_type = (file.content_type or '').split(';', 1)[0].strip().lower()
-    if media_type.startswith('text/') or file_path.suffix.lower() in {
-        '.csv',
-        '.json',
-        '.md',
-        '.rst',
-        '.txt',
-        '.yaml',
-        '.yml',
-    }:
-        try:
-            decoded = payload.decode('utf-8')
-        except UnicodeDecodeError as exc:
-            raise HTTPException(
-                status_code=400, detail='Text upload is not UTF-8'
-            ) from exc
-        _safe_content, privacy_report = sanitize_for_persistence(decoded)
-        if privacy_report.changed:
-            raise HTTPException(
-                status_code=400,
-                detail='Upload violates the persistence privacy boundary',
-            )
+    if _is_textual_upload(media_type, file_path):
+        _assert_upload_privacy_safe(bytes(payload))
 
     _atomic_private_write(file_path, bytes(payload))
     return {'filename': filename}
@@ -4154,61 +4172,77 @@ def _graph_union_executor(engine: Any) -> Any:
         use_session,
     )
 
+    def _commons_pushdown(
+        graph_name: str, cypher: str, params: dict[str, Any] | None, session: Any
+    ) -> tuple[str, dict[str, Any]]:
+        """Push the commons READ catalog restriction INTO the query text.
+
+        (2026-08-09 owner ruling; `COMMONS_SHAREABLE_NODE_TYPES`) so the engine
+        filters, not this process -- `read_union`/`filter_commons_catalog` were
+        built for a post-hoc Python filter, but that pulls every commons row
+        over the wire first. `apply_commons_catalog_restriction` is the
+        companion primitive built for exactly this pushdown (its own docstring:
+        "closes the label/type-index half of the existence-leak... injected
+        into the query TEXT"). Best-effort: a query shape it can't inject into
+        (no bound variable, `UnscopableQueryError`, or any other failure)
+        leaves the cypher unchanged and is caught by the row-level fallback --
+        this must never fail OPEN.
+        """
+        from agent_utilities.knowledge_graph.core.tenant_sharing import (
+            apply_commons_catalog_restriction,
+        )
+
+        try:
+            exec_cypher, extra_params = apply_commons_catalog_restriction(
+                cypher, session.actor, graph_name
+            )
+        except Exception as exc:  # noqa: BLE001 — pushdown is best-effort; the row-level fallback is the safety net
+            _log_failure('graph_union.commons_restriction', exc, level=logging.DEBUG)
+            return cypher, dict(params or {})
+        exec_params = dict(params or {})
+        exec_params.update(extra_params)
+        return exec_cypher, exec_params
+
+    def _run_scoped(
+        graph_name: str, session: Any, exec_cypher: str, exec_params: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Read `graph_name`, retargeting BOTH the view and the session together.
+
+        `query=`/`params=` are passed as KEYWORDS, not positionally: the real
+        `QueryMixin.query_cypher(self, query, params=None, ...)` signature
+        (`engine_query.py:137`) binds either way, but this route is pinned to
+        the `query` keyword specifically (see
+        `test_execute_cypher_forwards_the_query_text_under_the_query_keyword`)
+        to distinguish it from the MCP tool surface's `cypher`-named field --
+        a future accidental rename to `cypher=` must fail loudly here, which a
+        positional call would silently paper over.
+        """
+        if session is None or graph_name == session.graph:
+            return list(
+                engine.query_cypher(query=exec_cypher, params=exec_params) or []
+            )
+        scoped_engine = engine.for_graph(graph_name)
+        with use_session(session.with_graph(graph_name)):
+            return list(
+                scoped_engine.query_cypher(query=exec_cypher, params=exec_params) or []
+            )
+
     def _execute(
         graph_name: str, cypher: str, params: dict[str, Any] | None
     ) -> list[dict[str, Any]]:
-        session = current_session()
-        exec_cypher, exec_params = cypher, dict(params or {})
-        is_commons = False
-        if session is not None:
-            from agent_utilities.knowledge_graph.core.tenant_sharing import (
-                apply_commons_catalog_restriction,
-                commons_graph_name,
-            )
+        from agent_utilities.knowledge_graph.core.tenant_sharing import (
+            commons_graph_name,
+        )
 
-            is_commons = graph_name == commons_graph_name()
-            if is_commons:
-                # Push the commons READ catalog restriction (2026-08-09 owner
-                # ruling; `COMMONS_SHAREABLE_NODE_TYPES`) INTO the query text so
-                # the engine filters, not this process -- `read_union`/
-                # `filter_commons_catalog` were built for a post-hoc Python
-                # filter, but that pulls every commons row over the wire first.
-                # `apply_commons_catalog_restriction` is the companion primitive
-                # built for exactly this pushdown (its own docstring: "closes
-                # the label/type-index half of the existence-leak... injected
-                # into the query TEXT"). Best-effort: a query shape it can't
-                # inject into (no bound variable, `UnscopableQueryError`, or any
-                # other failure) leaves `exec_cypher` unchanged and is caught
-                # below by the row-level fallback -- this must never fail OPEN.
-                try:
-                    exec_cypher, extra_params = apply_commons_catalog_restriction(
-                        cypher, session.actor, graph_name
-                    )
-                    exec_params.update(extra_params)
-                except Exception as exc:  # noqa: BLE001 — pushdown is best-effort; the row-level fallback below is the safety net
-                    _log_failure(
-                        'graph_union.commons_restriction', exc, level=logging.DEBUG
-                    )
-                    exec_cypher, exec_params = cypher, dict(params or {})
-        # `query=`/`params=` are passed as KEYWORDS, not positionally: the
-        # real `QueryMixin.query_cypher(self, query, params=None, ...)`
-        # signature (`engine_query.py:137`) binds either way, but this route
-        # is pinned to the `query` keyword specifically (see
-        # `test_execute_cypher_forwards_the_query_text_under_the_query_keyword`)
-        # to distinguish it from the MCP tool surface's `cypher`-named field
-        # -- a future accidental rename to `cypher=` must fail loudly here,
-        # which a positional call would silently paper over.
-        if session is None or graph_name == session.graph:
-            rows = list(
-                engine.query_cypher(query=exec_cypher, params=exec_params) or []
+        session = current_session()
+        is_commons = session is not None and graph_name == commons_graph_name()
+        if is_commons:
+            exec_cypher, exec_params = _commons_pushdown(
+                graph_name, cypher, params, session
             )
         else:
-            scoped_engine = engine.for_graph(graph_name)
-            with use_session(session.with_graph(graph_name)):
-                rows = list(
-                    scoped_engine.query_cypher(query=exec_cypher, params=exec_params)
-                    or []
-                )
+            exec_cypher, exec_params = cypher, dict(params or {})
+        rows = _run_scoped(graph_name, session, exec_cypher, exec_params)
         if is_commons and exec_cypher == cypher:
             # The pushdown above did not change the query text -- either it
             # legitimately doesn't apply (privileged actor, no WHERE/RETURN
@@ -8232,6 +8266,30 @@ async def diff_graph_prompt_versions(
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def _bounded_list_result(items: Any) -> list[dict[str, Any]]:
+    """Bound a list-shaped API result, degrading a non-list to []."""
+    bounded = _public_external_result(list(items or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS])
+    return bounded if isinstance(bounded, list) else []
+
+
+def _agent_function_tools(agent: Any) -> list[dict[str, Any]]:
+    """Fallback tool list extracted from the pydantic-ai agent on app state."""
+    if not agent or not hasattr(agent, '_function_tools'):
+        return []
+    return [
+        {
+            'id': name,
+            'name': name,
+            'description': tool.description or '',
+            'enabled': True,
+            'type': 'builtin',
+        }
+        for name, tool in list(agent._function_tools.items())[
+            :_MAX_EXTERNAL_COLLECTION_ITEMS
+        ]
+    ]
+
+
 @router.get('/tools/graph')
 async def list_graph_tools(request: Request) -> list[dict[str, Any]]:
     """List MCP tools from the Knowledge Graph.
@@ -8241,38 +8299,18 @@ async def list_graph_tools(request: Request) -> list[dict[str, Any]]:
     Returns:
         A list of MCP tool dicts sorted alphabetically.
     """
-    try:
-        engine = await _get_engine_bounded()
-    except HTTPException as exc:
-        if exc.status_code == 503:
-            raise
-        engine = None
-    except Exception:
-        engine = None
+    engine = await _optional_engine()
     if engine:
-        tools_result = await _invoke_governed_helper(engine.get_tools, deadline=10.0)
-        tools = list(tools_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        bounded = _public_external_result(tools)
-        return bounded if isinstance(bounded, list) else []
+        return _bounded_list_result(
+            await _invoke_governed_helper(engine.get_tools, deadline=10.0)
+        )
 
-    # Fallback: extract tools from the pydantic-ai agent instance registered on the app state
-    agent = getattr(request.app.state, 'agent', None)
-    if agent and hasattr(agent, '_function_tools'):
-        tools = [
-            {
-                'id': name,
-                'name': name,
-                'description': tool.description or '',
-                'enabled': True,
-                'type': 'builtin',
-            }
-            for name, tool in list(agent._function_tools.items())[
-                :_MAX_EXTERNAL_COLLECTION_ITEMS
-            ]
-        ]
-        bounded = _public_external_result(tools)
-        return bounded if isinstance(bounded, list) else []
-    return []
+    # Fallback: extract tools from the pydantic-ai agent instance registered on
+    # the app state.
+    tools = _agent_function_tools(getattr(request.app.state, 'agent', None))
+    if not tools:
+        return []
+    return _bounded_list_result(tools)
 
 
 @router.post('/tools/graph/{tool_id}/toggle')
@@ -8607,6 +8645,55 @@ async def get_all_sessions() -> list[dict[str, Any]]:
         return []
 
 
+def _read_local_session_detail(
+    db_path: Any, session_id: str, is_admin: bool
+) -> dict[str, Any]:
+    """One session plus its turns, owner-scoped; a miss is a 404."""
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT * FROM sessions WHERE id = ?', (session_id,))
+    sess_row = cursor.fetchone()
+    if not sess_row or (
+        not is_admin and sess_row['owner'] != _actor_id_from_request(None)
+    ):
+        conn.close()
+        raise HTTPException(status_code=404, detail='Session not found')
+
+    sess_dict = dict(sess_row)
+    sess_dict['background'] = bool(sess_dict.get('background', 0))
+    sess_dict['needs_input'] = bool(sess_dict.get('needs_input', 0))
+
+    cursor.execute(
+        'SELECT * FROM turns WHERE session_id = ? ORDER BY turn_number ASC LIMIT ?',
+        (session_id, _MAX_SESSION_TURNS),
+    )
+    sess_dict['turns'] = [dict(t) for t in cursor.fetchall()]
+
+    conn.close()
+    return sess_dict
+
+
+async def _proxied_session_detail(session_id: str, is_admin: bool) -> Any:
+    """One session from the gateway, or ``None`` if it did not answer.
+
+    See `_proxied_sessions`: the gateway store carries no ownership field to
+    verify against, so a non-admin caller cannot be proven to own this
+    session -- fail closed with the same 404 a missing session gets.
+    """
+    try:
+        result = await _proxy_to_gateway('GET', f'/sessions/{session_id}')
+        if not is_admin:
+            raise HTTPException(status_code=404, detail='Session not found')
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('proxy_get_session_details', e, level=logging.WARNING)
+        return None
+
+
 @router.get('/sessions/{session_id}')
 async def get_session_details(session_id: str) -> dict[str, Any]:
     """Retrieve details and turn records for a specific session.
@@ -8619,49 +8706,17 @@ async def get_session_details(session_id: str) -> dict[str, Any]:
     session_id = _validate_runtime_id(session_id)
     is_admin = _current_webui_is_admin()
     if _is_gateway_active():
-        try:
-            result = await _proxy_to_gateway('GET', f'/sessions/{session_id}')
-            if not is_admin:
-                # See get_all_sessions: the gateway store carries no ownership
-                # field to verify against, so a non-admin caller cannot be
-                # proven to own this session — fail closed.
-                raise HTTPException(status_code=404, detail='Session not found')
-            return result
-        except HTTPException:
-            raise
-        except Exception as e:
-            _log_failure('proxy_get_session_details', e, level=logging.WARNING)
+        proxied = await _proxied_session_detail(session_id, is_admin)
+        if proxied is not None:
+            return proxied
 
     db_path = _get_db_path()
     if not db_path.exists():
         raise HTTPException(status_code=404, detail='Database not found')
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        cursor.execute('SELECT * FROM sessions WHERE id = ?', (session_id,))
-        sess_row = cursor.fetchone()
-        if not sess_row:
-            conn.close()
-            raise HTTPException(status_code=404, detail='Session not found')
-        if not is_admin and sess_row['owner'] != _actor_id_from_request(None):
-            conn.close()
-            raise HTTPException(status_code=404, detail='Session not found')
-
-        sess_dict = dict(sess_row)
-        sess_dict['background'] = bool(sess_dict.get('background', 0))
-        sess_dict['needs_input'] = bool(sess_dict.get('needs_input', 0))
-
-        cursor.execute(
-            'SELECT * FROM turns WHERE session_id = ? ORDER BY turn_number ASC LIMIT ?',
-            (session_id, _MAX_SESSION_TURNS),
+        safe_session, _privacy_report = sanitize_for_persistence(
+            _read_local_session_detail(db_path, session_id, is_admin)
         )
-        turns = [dict(t) for t in cursor.fetchall()]
-        sess_dict['turns'] = turns
-
-        conn.close()
-        safe_session, _privacy_report = sanitize_for_persistence(sess_dict)
         return safe_session if isinstance(safe_session, dict) else {}
     except HTTPException:
         raise
@@ -10023,6 +10078,43 @@ async def get_tunnel_hosts() -> dict[str, Any]:
         ) from e
 
 
+def _tunnel_host_port(payload: dict[str, Any]) -> int:
+    """The validated SSH port for a host registration."""
+    try:
+        port = int(payload.get('port', 22))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail='Invalid port') from exc
+    if not 1 <= port <= 65535:
+        raise HTTPException(status_code=400, detail='Invalid port')
+    return port
+
+
+def _tunnel_host_registration(payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate a host registration that must contain no inline secrets."""
+    forbidden = {'password', 'identity_file', 'proxy_command'} & set(payload)
+    if forbidden:
+        raise HTTPException(status_code=400, detail='Unsafe host fields')
+    alias = str(payload['alias']).strip()
+    hostname = str(payload['hostname']).strip()
+    user = str(payload['user']).strip()
+    password_ref = str(payload.get('password_ref') or '').strip() or None
+    if not _SAFE_INVENTORY_TOKEN.fullmatch(alias):
+        raise HTTPException(status_code=400, detail='Invalid host alias')
+    if not _SAFE_HOSTNAME.fullmatch(hostname):
+        raise HTTPException(status_code=400, detail='Invalid hostname')
+    if not _SAFE_INVENTORY_TOKEN.fullmatch(user):
+        raise HTTPException(status_code=400, detail='Invalid account identifier')
+    if password_ref and (len(password_ref) > 512 or '\x00' in password_ref):
+        raise HTTPException(status_code=400, detail='Invalid secret reference')
+    return {
+        'alias': alias,
+        'hostname': hostname,
+        'user': user,
+        'port': _tunnel_host_port(payload),
+        'password_ref': password_ref,
+    }
+
+
 @router.post('/tunnel-manager/hosts')
 async def add_tunnel_host(payload: dict[str, Any]) -> dict[str, str]:
     """Delegate a bounded host registration containing no inline secrets."""
@@ -10034,42 +10126,17 @@ async def add_tunnel_host(payload: dict[str, Any]) -> dict[str, str]:
             detail='Governed tunnel configuration delegation is not configured',
         )
     try:
-        forbidden = {'password', 'identity_file', 'proxy_command'} & set(payload)
-        if forbidden:
-            raise HTTPException(status_code=400, detail='Unsafe host fields')
-        alias = str(payload['alias']).strip()
-        hostname = str(payload['hostname']).strip()
-        user = str(payload['user']).strip()
-        password_ref = str(payload.get('password_ref') or '').strip() or None
-        if not _SAFE_INVENTORY_TOKEN.fullmatch(alias):
-            raise HTTPException(status_code=400, detail='Invalid host alias')
-        if not _SAFE_HOSTNAME.fullmatch(hostname):
-            raise HTTPException(status_code=400, detail='Invalid hostname')
-        if not _SAFE_INVENTORY_TOKEN.fullmatch(user):
-            raise HTTPException(status_code=400, detail='Invalid account identifier')
-        if password_ref and (len(password_ref) > 512 or '\x00' in password_ref):
-            raise HTTPException(status_code=400, detail='Invalid secret reference')
-        try:
-            port = int(payload.get('port', 22))
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail='Invalid port') from exc
-        if not 1 <= port <= 65535:
-            raise HTTPException(status_code=400, detail='Invalid port')
-
+        registration = _tunnel_host_registration(payload)
         result = await _invoke_governed_helper(
             delegated_registration,
             deadline=15.0,
-            alias=alias,
-            hostname=hostname,
-            user=user,
-            port=port,
-            password_ref=password_ref,
+            **registration,
         )
         _public_external_result(result)
         return {
             'status': 'success',
             'message': 'Host registered',
-            'reference': _opaque_reference('host', alias),
+            'reference': _opaque_reference('host', registration['alias']),
         }
     except HTTPException:
         raise
@@ -10420,22 +10487,46 @@ async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, A
     }
 
 
+_MAX_VOICE_UPLOAD_BYTES = 25 * 1024 * 1024
+_MAX_VOICE_TRANSCRIPT_BYTES = 2 * 1024 * 1024
+
+
+def _voice_media_type(file: UploadFile) -> str:
+    """The validated media type of an audio upload."""
+    media_type = (file.content_type or '').split(';', 1)[0].strip().lower()
+    if not (media_type.startswith('audio/') or media_type == 'video/webm'):
+        raise HTTPException(status_code=400, detail='Unsupported audio media type')
+    return media_type
+
+
+async def _read_bounded_upload(file: UploadFile) -> bytes:
+    """Read an upload into memory under the voice-upload size bound."""
+    payload = bytearray()
+    while chunk := await file.read(64 * 1024):
+        payload.extend(chunk)
+        if len(payload) > _MAX_VOICE_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail='Upload too large')
+    if not payload:
+        raise HTTPException(status_code=400, detail='Audio upload is empty')
+    return bytes(payload)
+
+
+def _bounded_transcript(result: Any) -> str:
+    """The transcript text from a delegated transcription result."""
+    text = result.get('text', '') if isinstance(result, dict) else result
+    if not isinstance(text, str):
+        raise ValueError('Transcription result has an invalid shape')
+    if len(text.encode('utf-8')) > _MAX_VOICE_TRANSCRIPT_BYTES:
+        raise ValueError('Transcription result exceeds its safety bound')
+    return text
+
+
 @router.post('/voice/transcribe')
 async def transcribe_voice_chunk(file: UploadFile = File(...)) -> dict[str, str]:
     """Delegate one bounded audio upload to a governed transcription sandbox."""
-    max_upload_bytes = 25 * 1024 * 1024
-    max_transcript_bytes = 2 * 1024 * 1024
     try:
-        media_type = (file.content_type or '').split(';', 1)[0].strip().lower()
-        if not (media_type.startswith('audio/') or media_type == 'video/webm'):
-            raise HTTPException(status_code=400, detail='Unsupported audio media type')
-        payload = bytearray()
-        while chunk := await file.read(64 * 1024):
-            payload.extend(chunk)
-            if len(payload) > max_upload_bytes:
-                raise HTTPException(status_code=413, detail='Upload too large')
-        if not payload:
-            raise HTTPException(status_code=400, detail='Audio upload is empty')
+        media_type = _voice_media_type(file)
+        payload = await _read_bounded_upload(file)
 
         transcriber = get_helper('transcribe_voice')
         if transcriber is None:
@@ -10447,15 +10538,12 @@ async def transcribe_voice_chunk(file: UploadFile = File(...)) -> dict[str, str]
         result = await _invoke_governed_helper(
             transcriber,
             deadline=120.0,
-            content=bytes(payload),
+            content=payload,
             content_type=media_type,
         )
-        text = result.get('text', '') if isinstance(result, dict) else result
-        if not isinstance(text, str):
-            raise ValueError('Transcription result has an invalid shape')
-        if len(text.encode('utf-8')) > max_transcript_bytes:
-            raise ValueError('Transcription result exceeds its safety bound')
-        public_result = _public_external_result({'text': text.strip()})
+        public_result = _public_external_result(
+            {'text': _bounded_transcript(result).strip()}
+        )
         return {'text': str(public_result.get('text') or '')}
     except HTTPException:
         raise
@@ -14251,6 +14339,49 @@ async def edit_ontology_object(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _rehydrated_edit(hist: dict[str, Any], object_id: str) -> Any:
+    """One durable ``object_edit`` record as a ledger `Edit`."""
+    from agent_utilities.knowledge_graph.ontology.edits import Edit, EditType
+
+    return Edit(
+        id=hist['id'],
+        actor=_durable_actor_reference(hist.get('actor', 'system')),
+        edit_type=EditType(hist['edit_type']),
+        object_id=hist.get('object_id', object_id),
+        before=hist.get('before') or {},
+        after=hist.get('after') or {},
+        link_source=hist.get('link_source', ''),
+        link_label=hist.get('link_label', ''),
+        link_target=hist.get('link_target', ''),
+        provenance=hist.get('provenance', ''),
+        invocation_ref=hist.get('invocation_ref', ''),
+        timestamp=hist.get('timestamp', 0.0) or 0.0,
+    )
+
+
+async def _ensure_edit_on_ledger(
+    ontology: Any, backend: Any, object_id: str, edit_id: str
+) -> None:
+    """Register a durable edit on the in-process ledger before reverting it.
+
+    The in-process ledger mirror does not survive across stateless HTTP
+    requests, so rehydrate the original edit from its durable store node.
+    """
+    if ontology.edits.get(edit_id) is not None:
+        return
+    durable_history = await _invoke_governed_helper(
+        _durable_edit_history, backend, object_id, deadline=15.0
+    )
+    for hist in durable_history:
+        if hist.get('id') == edit_id:
+            await _invoke_governed_helper(
+                ontology.edits.rehydrate,
+                _rehydrated_edit(hist, object_id),
+                deadline=15.0,
+            )
+            return
+
+
 @router.post('/ontology/object/{object_id}/revert')
 async def revert_ontology_edit(
     object_id: str, data: dict[str, Any], request: Request
@@ -14261,8 +14392,6 @@ async def revert_ontology_edit(
     """
     object_id = _validate_runtime_id(object_id)
     try:
-        from agent_utilities.knowledge_graph.ontology.edits import Edit, EditType
-
         kg, ontology = await _get_ontology_kg_bounded()
         backend = kg.store
         actor = _actor_id_from_request(request)
@@ -14272,36 +14401,7 @@ async def revert_ontology_edit(
         ):
             raise HTTPException(status_code=422, detail='edit_id is required')
 
-        # The in-process ledger mirror does not survive across stateless HTTP
-        # requests, so rehydrate the original edit from its durable store node
-        # and register it on the ledger before reverting.
-        if ontology.edits.get(str(edit_id)) is None:
-            durable_history = await _invoke_governed_helper(
-                _durable_edit_history, backend, object_id, deadline=15.0
-            )
-            for hist in durable_history:
-                if hist.get('id') == str(edit_id):
-                    rehydrated = Edit(
-                        id=hist['id'],
-                        actor=_durable_actor_reference(hist.get('actor', 'system')),
-                        edit_type=EditType(hist['edit_type']),
-                        object_id=hist.get('object_id', object_id),
-                        before=hist.get('before') or {},
-                        after=hist.get('after') or {},
-                        link_source=hist.get('link_source', ''),
-                        link_label=hist.get('link_label', ''),
-                        link_target=hist.get('link_target', ''),
-                        provenance=hist.get('provenance', ''),
-                        invocation_ref=hist.get('invocation_ref', ''),
-                        timestamp=hist.get('timestamp', 0.0) or 0.0,
-                    )
-                    await _invoke_governed_helper(
-                        ontology.edits.rehydrate,
-                        rehydrated,
-                        deadline=15.0,
-                    )
-                    break
-
+        await _ensure_edit_on_ledger(ontology, backend, object_id, str(edit_id))
         compensating = await _invoke_governed_helper(
             ontology.revert_edit,
             str(edit_id),
