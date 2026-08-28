@@ -1533,6 +1533,62 @@ def _identity_enforced() -> bool:
     return all(_jwt_verifier_fields())
 
 
+def _authorization_header_values(scope: Any) -> list[bytes]:
+    """Every raw ``Authorization`` header value on this scope, in order.
+
+    Kept as a list because "more than one" is itself a rejection condition; see
+    :func:`_validated_bearer_header`.
+    """
+
+    return [
+        value
+        for key, value in scope.get('headers') or []
+        if isinstance(key, bytes) and key.lower() == b'authorization'
+    ]
+
+
+def _prevalidated_jwt_claims(scope: Any) -> dict[str, Any] | None:
+    """Claims an outer HTTP authentication boundary already verified, if any."""
+
+    state = scope.get('state') or {}
+    prevalidated = state.get('user_claims') if isinstance(state, dict) else None
+    if isinstance(prevalidated, dict) and prevalidated.get('auth_type') == 'jwt':
+        return prevalidated
+    return None
+
+
+async def _admit_websocket_tenant(
+    scope: Any,
+    send: Any,
+    *,
+    actor: Any,
+    session: Any,
+) -> bool:
+    """Whether tenant admission permits this websocket; closes it if not.
+
+    ``False`` always means the socket has ALREADY been closed with the code
+    that matches the reason, so the caller must simply return.
+    """
+
+    from .graph_admission import (
+        EngineAdmissionUnavailableError,
+        TenantNotProvisionedError,
+        ensure_tenant_admission,
+    )
+
+    try:
+        await ensure_tenant_admission(actor, session)
+    except TenantNotProvisionedError:
+        _log_ws_denial(scope, reason='tenant-not-provisioned')
+        await send({'type': 'websocket.close', 'code': 4403})
+        return False
+    except EngineAdmissionUnavailableError:
+        _log_ws_denial(scope, reason='engine-admission-unavailable')
+        await send({'type': 'websocket.close', 'code': 4503})
+        return False
+    return True
+
+
 def _ensure_actor_identity_middleware(
     app: FastAPI,
     *,
@@ -1573,19 +1629,13 @@ def _ensure_actor_identity_middleware(
         from agent_utilities.core.config import config
         from agent_utilities.security.auth import parse_bearer_authorization
 
-        state = scope.get('state') or {}
-        prevalidated = state.get('user_claims') if isinstance(state, dict) else None
-        authorization = [
-            value
-            for key, value in scope.get('headers') or []
-            if isinstance(key, bytes) and key.lower() == b'authorization'
-        ]
         try:
-            token = parse_bearer_authorization(authorization)
+            token = parse_bearer_authorization(_authorization_header_values(scope))
         except PermissionError:
             return None
 
-        if isinstance(prevalidated, dict) and prevalidated.get('auth_type') == 'jwt':
+        prevalidated = _prevalidated_jwt_claims(scope)
+        if prevalidated is not None:
             # An outer HTTP authentication boundary already verified this
             # credential; reuse its claims rather than re-verifying.
             try:
@@ -1608,37 +1658,67 @@ def _ensure_actor_identity_middleware(
             scope_type = scope.get('type')
             token, valid_credential = _validated_bearer_header(scope)
             if scope_type == 'http':
-                if not valid_credential:
-                    _log_denial(
-                        scope,
-                        event='authentication',
-                        reason='malformed_or_multiple_authorization_header',
-                    )
-                    body = b'{"detail":"Authentication required"}'
-                    await send(
-                        {
-                            'type': 'http.response.start',
-                            'status': 401,
-                            'headers': [
-                                (b'content-type', b'application/json'),
-                                (b'content-length', str(len(body)).encode('ascii')),
-                            ],
-                        }
-                    )
-                    await send({'type': 'http.response.body', 'body': body})
-                    return
-                actor = await _authenticated_http_actor(scope)
-                if actor is None:
-                    # Unauthenticated, unverifiable, or invalid: the shared
-                    # boundary owns that decision end to end, including which
-                    # paths may proceed without a credential.
-                    await super().__call__(scope, receive, send)
-                    return
-                await self._serve_authenticated_http(actor, scope, receive, send)
+                await self._serve_http(
+                    scope, receive, send, valid_credential=valid_credential
+                )
                 return
             if scope_type != 'websocket':
                 await self.app(scope, receive, send)
                 return
+            await self._serve_websocket(
+                scope,
+                receive,
+                send,
+                token=token,
+                valid_credential=valid_credential,
+            )
+
+        async def _serve_http(
+            self,
+            scope: Any,
+            receive: Any,
+            send: Any,
+            *,
+            valid_credential: bool,
+        ) -> None:
+            """The HTTP leg: reject a malformed header, else mint or delegate."""
+
+            if not valid_credential:
+                _log_denial(
+                    scope,
+                    event='authentication',
+                    reason='malformed_or_multiple_authorization_header',
+                )
+                await _send_json_response(
+                    send,
+                    status=401,
+                    body=b'{"detail":"Authentication required"}',
+                )
+                return
+            actor = await _authenticated_http_actor(scope)
+            if actor is None:
+                # Unauthenticated, unverifiable, or invalid: the shared
+                # boundary owns that decision end to end, including which
+                # paths may proceed without a credential.
+                await super().__call__(scope, receive, send)
+                return
+            await self._serve_authenticated_http(actor, scope, receive, send)
+
+        async def _serve_websocket(
+            self,
+            scope: Any,
+            receive: Any,
+            send: Any,
+            *,
+            token: str | None,
+            valid_credential: bool,
+        ) -> None:
+            """The websocket leg the shared middleware leaves to its callers.
+
+            Every refusal closes with a distinct 44xx/45xx code and a logged
+            reason, because a bare close is indistinguishable from a network
+            failure in a browser (W-18).
+            """
 
             from agent_utilities.core.config import config
 
@@ -1684,22 +1764,25 @@ def _ensure_actor_identity_middleware(
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
 
-            from .graph_admission import (
-                EngineAdmissionUnavailableError,
-                TenantNotProvisionedError,
-                ensure_tenant_admission,
+            if not await _admit_websocket_tenant(
+                scope, send, actor=actor, session=session
+            ):
+                return
+
+            await self._serve_bound_websocket(
+                scope, receive, send, actor=actor, session=session
             )
 
-            try:
-                await ensure_tenant_admission(actor, session)
-            except TenantNotProvisionedError:
-                _log_ws_denial(scope, reason='tenant-not-provisioned')
-                await send({'type': 'websocket.close', 'code': 4403})
-                return
-            except EngineAdmissionUnavailableError:
-                _log_ws_denial(scope, reason='engine-admission-unavailable')
-                await send({'type': 'websocket.close', 'code': 4503})
-                return
+        async def _serve_bound_websocket(
+            self,
+            scope: Any,
+            receive: Any,
+            send: Any,
+            *,
+            actor: Any,
+            session: Any,
+        ) -> None:
+            """Serve the socket with ``actor``/``session`` bound for its lifetime."""
 
             from agent_utilities.knowledge_graph.core.session import (
                 reset_session,
