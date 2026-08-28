@@ -114,6 +114,27 @@ repos:
     language: system
     pass_filenames: false
     always_run: true
+  - id: eslint-staged
+    name: eslint (staged .ts/.tsx) - errors block, warnings (incl. jsx-a11y) reported only
+    # D-FE-7/D-WD-5 self-healing pattern (see the `pnpm-build` hook's own
+    # comment above/below for the full rationale): a `git worktree` checkout
+    # has no `node_modules` of its own until something populates one, so
+    # install once, locally, when missing -- pnpm's content-addressable store
+    # makes a warm install a few seconds, not a fresh download.
+    #
+    # Scoped to the files pre-commit is about to commit (via `files:` below,
+    # not a whole-repo `eslint .`) so this hook enforces the NEW/changed code
+    # a commit actually introduces, the same "don't gate on unrelated debt"
+    # principle as `complexity-staged` above -- not `--max-warnings=0`: the
+    # jsx-a11y rules landed at `warn` (94 pre-existing findings across the
+    # repo; see eslint.config.ts's own comment) specifically so they surface
+    # without blocking every commit that touches an already-noisy file. Once
+    # `pnpm exec eslint .` is fully clean of BOTH errors and warnings, add
+    # `--max-warnings=0` here.
+    entry: bash -c 'if [ ! -d node_modules ]; then pnpm install --frozen-lockfile; fi && pnpm exec eslint "$@"' --
+    language: system
+    files: \.(ts|tsx)$
+    exclude: ^scripts/
   - id: no-fabrication-gate
     name: no-fabrication gate — Ecosystem view (BUG-008 / GOC-28)
     # Static scan rejecting fabricated operational state in production paths
