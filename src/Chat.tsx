@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
-import { ApprovalCard } from '@/components/ApprovalCard'
+import { ApprovalCard, type ApprovalCardProps } from '@/components/ApprovalCard'
 import { Switch } from '@/components/ui/switch'
 import { useChat, type UIMessage } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIDataTypes, type UIMessagePart, type UITools } from 'ai'
@@ -46,6 +46,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type Dispatch,
+  type SetStateAction,
+  type ReactNode,
   type SyntheticEvent,
   type ChangeEvent,
   type KeyboardEvent,
@@ -78,6 +81,13 @@ interface MessagePart {
   type: string
   url?: string
   [key: string]: unknown
+}
+
+/** One pending multi-modal (image) attachment on the composer. */
+interface AttachmentItem {
+  url: string
+  base64: string
+  type: string
 }
 
 /**
@@ -357,6 +367,20 @@ function lookupModelRate(modelId: string | undefined, registry: ModelRegistryPay
   return null
 }
 
+function toNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  return null
+}
+
+/** The first numeric field found under any of `keys`, checked in order. */
+function firstNumber(rec: Record<string, unknown>, ...keys: string[]): number | null {
+  for (const key of keys) {
+    const n = toNumber(rec[key])
+    if (n !== null) return n
+  }
+  return null
+}
+
 /**
  * Extract a token-usage record from an arbitrary object. Returns `null` if
  * the shape doesn't carry any of the recognised fields. Accepts both
@@ -365,9 +389,9 @@ function lookupModelRate(modelId: string | undefined, registry: ModelRegistryPay
 function parseUsage(source: unknown): TokenUsage | null {
   if (!source || typeof source !== 'object') return null
   const rec = source as Record<string, unknown>
-  const total = toNumber(rec.total_tokens) ?? toNumber(rec.totalTokens)
-  const prompt = toNumber(rec.prompt_tokens) ?? toNumber(rec.inputTokens) ?? toNumber(rec.promptTokens)
-  const completion = toNumber(rec.completion_tokens) ?? toNumber(rec.outputTokens) ?? toNumber(rec.completionTokens)
+  const total = firstNumber(rec, 'total_tokens', 'totalTokens')
+  const prompt = firstNumber(rec, 'prompt_tokens', 'inputTokens', 'promptTokens')
+  const completion = firstNumber(rec, 'completion_tokens', 'outputTokens', 'completionTokens')
   if (total === null && prompt === null && completion === null) return null
   const resolvedPrompt = prompt ?? 0
   const resolvedCompletion = completion ?? 0
@@ -378,9 +402,54 @@ function parseUsage(source: unknown): TokenUsage | null {
   }
 }
 
-function toNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  return null
+/** Usage from `message.metadata.usage` (AI SDK v5 `messageMetadata` pipeline). */
+function usageFromMetadata(message: Record<string, unknown>): TokenUsage | null {
+  const metadata = message.metadata
+  if (!metadata || typeof metadata !== 'object') return null
+  const metaRec = metadata as Record<string, unknown>
+  return parseUsage(metaRec.usage) ?? parseUsage(metaRec)
+}
+
+/** True for a sideband data part shaped like a usage update (`data-usage`, `data-token-usage`, …). */
+function isUsageDataPart(part: Record<string, unknown>): boolean {
+  const type = typeof part.type === 'string' ? part.type : ''
+  return type.startsWith('data-') && (type.includes('usage') || type.includes('token'))
+}
+
+/** Usage from every sideband data part (`data-usage`, `data-token-usage`, …). */
+function usageFromParts(message: Record<string, unknown>): TokenUsage[] {
+  const parts = Array.isArray(message.parts) ? (message.parts as unknown[]) : []
+  const found: TokenUsage[] = []
+  for (const rawPart of parts) {
+    if (!rawPart || typeof rawPart !== 'object') continue
+    const part = rawPart as Record<string, unknown>
+    if (!isUsageDataPart(part)) continue
+    const fromData = parseUsage(part.data) ?? parseUsage(part)
+    if (fromData) found.push(fromData)
+  }
+  return found
+}
+
+/** True for an annotation whose `event`/`type` marks it as a usage update. */
+function isUsageAnnotationEvent(ann: Record<string, unknown>): boolean {
+  const event = typeof ann.event === 'string' ? ann.event : ''
+  const type = typeof ann.type === 'string' ? ann.type : ''
+  return event === 'usage' || event === 'TokenUsageUpdate' || type === 'usage' || type === 'TokenUsageUpdate'
+}
+
+/** Usage from the annotations list (`TokenUsageUpdate`, `usage`, …). */
+function usageFromAnnotations(message: Record<string, unknown>): TokenUsage[] {
+  const annotations = message.annotations
+  if (!Array.isArray(annotations)) return []
+  const found: TokenUsage[] = []
+  for (const rawAnn of annotations as unknown[]) {
+    if (!rawAnn || typeof rawAnn !== 'object') continue
+    const ann = rawAnn as Record<string, unknown>
+    const candidate =
+      parseUsage(ann.data) ?? parseUsage(ann.usage) ?? (isUsageAnnotationEvent(ann) ? parseUsage(ann) : null)
+    if (candidate) found.push(candidate)
+  }
+  return found
 }
 
 /**
@@ -398,44 +467,15 @@ function sumSessionUsage(messages: readonly UIMessage[]): TokenUsage {
   for (const rawMessage of messages) {
     const message = rawMessage as unknown as Record<string, unknown>
 
-    // 1. Message-level metadata (AI SDK v5 `messageMetadata` pipeline).
-    const metadata = message.metadata
-    if (metadata && typeof metadata === 'object') {
-      const metaRec = metadata as Record<string, unknown>
-      const direct = parseUsage(metaRec.usage) ?? parseUsage(metaRec)
-      if (direct) addUsage(totals, direct)
-    }
+    const direct = usageFromMetadata(message)
+    if (direct) addUsage(totals, direct)
 
     // 2. Direct `usage` on the message (some backends attach it here).
     const topLevel = parseUsage(message.usage)
     if (topLevel) addUsage(totals, topLevel)
 
-    // 3. Sideband data parts (`data-usage`, `data-token-usage`, …).
-    const parts = Array.isArray(message.parts) ? (message.parts as unknown[]) : []
-    for (const rawPart of parts) {
-      if (!rawPart || typeof rawPart !== 'object') continue
-      const part = rawPart as Record<string, unknown>
-      const type = typeof part.type === 'string' ? part.type : ''
-      if (!type.startsWith('data-')) continue
-      if (!type.includes('usage') && !type.includes('token')) continue
-      const fromData = parseUsage(part.data) ?? parseUsage(part)
-      if (fromData) addUsage(totals, fromData)
-    }
-
-    // 4. Annotations list (`TokenUsageUpdate`, `usage`, …).
-    const annotations = message.annotations
-    if (Array.isArray(annotations)) {
-      for (const rawAnn of annotations as unknown[]) {
-        if (!rawAnn || typeof rawAnn !== 'object') continue
-        const ann = rawAnn as Record<string, unknown>
-        const event = typeof ann.event === 'string' ? ann.event : ''
-        const type = typeof ann.type === 'string' ? ann.type : ''
-        const isUsageEvent =
-          event === 'usage' || event === 'TokenUsageUpdate' || type === 'usage' || type === 'TokenUsageUpdate'
-        const candidate = parseUsage(ann.data) ?? parseUsage(ann.usage) ?? (isUsageEvent ? parseUsage(ann) : null)
-        if (candidate) addUsage(totals, candidate)
-      }
-    }
+    for (const fromData of usageFromParts(message)) addUsage(totals, fromData)
+    for (const candidate of usageFromAnnotations(message)) addUsage(totals, candidate)
   }
 
   return totals
@@ -473,6 +513,28 @@ function formatCost(cost: number): string {
 
 const TOKEN_FORMATTER = new Intl.NumberFormat('en-US')
 
+/** Renders one `reasoning` part's text as a `[progress: ...]` tag when it's a
+ * progress-event payload, or returns the raw text otherwise. */
+function formatReasoningChunk(text: string): string {
+  const progress = parseProgressEventPayload(text)
+  if (!progress) return text
+  const detail = progress.detail ? ` — ${progress.detail}` : ''
+  return `[progress: ${progress.stage} ${progress.status}${detail}]`
+}
+
+/** The bracketed-tag/plain-text chunk for one message part, or `null` for a part
+ * type `extractMessageText` doesn't summarise (e.g. files, unrecognised sideband data). */
+function chunkForPart(part: MessagePart): string | null {
+  if (part.type === 'text' && typeof part.text === 'string') return part.text
+  if (part.type === 'reasoning' && typeof part.text === 'string') return formatReasoningChunk(part.text)
+  if (part.type === 'source-url' && typeof part.url === 'string') return `[source: ${part.url}]`
+  if (part.type.startsWith('tool-') || part.type === 'dynamic-tool') {
+    const name = (part.type === 'dynamic-tool' ? part.toolName : part.type) as string
+    return `[tool: ${name}]`
+  }
+  return null
+}
+
 /**
  * Concatenate the human-readable text of a message's parts. Non-text parts
  * (tool calls, sources, files, reasoning) are summarised as bracketed tags so
@@ -483,21 +545,8 @@ function extractMessageText(message: UIMessage): string {
   if (!parts || parts.length === 0) return ''
   const chunks: string[] = []
   for (const part of parts) {
-    if (part.type === 'text' && typeof part.text === 'string') {
-      chunks.push(part.text)
-    } else if (part.type === 'reasoning' && typeof part.text === 'string') {
-      const progress = parseProgressEventPayload(part.text)
-      chunks.push(
-        progress
-          ? `[progress: ${progress.stage} ${progress.status}${progress.detail ? ` — ${progress.detail}` : ''}]`
-          : part.text,
-      )
-    } else if (part.type === 'source-url' && typeof part.url === 'string') {
-      chunks.push(`[source: ${part.url}]`)
-    } else if (part.type.startsWith('tool-') || part.type === 'dynamic-tool') {
-      const name = (part.type === 'dynamic-tool' ? part.toolName : part.type) as string
-      chunks.push(`[tool: ${name}]`)
-    }
+    const chunk = chunkForPart(part)
+    if (chunk !== null) chunks.push(chunk)
   }
   return chunks.join('\n').trim()
 }
@@ -631,12 +680,371 @@ interface AppAnnotation {
   }
 }
 
+/** True for an annotation that represents a pending human-in-the-loop approval. */
+function isApprovalAnnotation(ann: AppAnnotation): boolean {
+  return (
+    ann.event === 'approval_required' ||
+    ann.data?.event === 'approval_required' ||
+    ann.data?.type === 'approval_required'
+  )
+}
+
+type AppAnnotationData = NonNullable<AppAnnotation['data']>
+type AppAnnotationToolCall = NonNullable<AppAnnotationData['tool_calls']>[number]
+
+/** Builds the `ApprovalCard` `toolPart` prop from a sideband approval annotation.
+ * Defaults `data`/`call` to `{}` up front so every field below is a plain (non-optional)
+ * `??` fallback instead of a repeated `data?.x ?? call?.x` optional-chain. */
+function approvalToolPartFromAnnotation(ann: AppAnnotation, messageId: string): ApprovalCardProps['toolPart'] {
+  const data: AppAnnotationData = ann.data ?? {}
+  const call: AppAnnotationToolCall = data.tool_calls?.[0] ?? {}
+  return {
+    toolName: data.tool_name ?? call.tool_name ?? 'Graph Tool',
+    toolCallId: data.tool_call_id ?? call.tool_call_id ?? `${messageId}-graph-approval`,
+    input: data.args ?? call.args ?? {},
+    state: 'input-available',
+  }
+}
+
 /**
  * Locally defined interfaces to satisfy strict typing requirements
  * while working around complex generic constraints in the AI SDK.
  */
 interface ChatProps {
   pageContext: PageContextEnvelope
+}
+
+/** Arrow-key/Enter/Tab/Escape navigation while the slash-command autocomplete popover
+ * is open. Plain function (no hooks) taking the setters explicitly, so it stays a free
+ * function rather than a second copy of `handleInputKeyDown`'s closure. */
+function handleSuggestionNavigationKeyDown(
+  e: KeyboardEvent<HTMLTextAreaElement>,
+  suggestions: string[],
+  activeSuggestionIndex: number,
+  setActiveSuggestionIndex: Dispatch<SetStateAction<number>>,
+  setInput: Dispatch<SetStateAction<string>>,
+  setSuggestions: Dispatch<SetStateAction<string[]>>,
+): void {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    setActiveSuggestionIndex((prev) => (prev + 1) % suggestions.length)
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    setActiveSuggestionIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length)
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault()
+    setInput(suggestions[activeSuggestionIndex])
+    setSuggestions([])
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    setSuggestions([])
+  }
+}
+
+/** Plain `Enter`-submits-the-form behavior once the autocomplete popover is closed. */
+function handlePlainEnterKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
+  if (e.key !== 'Enter') return
+  if (e.nativeEvent.isComposing || e.shiftKey) return
+  e.preventDefault()
+  e.currentTarget.form?.requestSubmit()
+}
+
+/** The streaming-error banner under the conversation. Plain helper — not a component —
+ * so pulling it out of `Chat` cannot change reconciliation identity: a function that
+ * returns JSX and is called inline is indistinguishable from inlining it. */
+function renderErrorBanner(status: string, error: unknown): ReactNode {
+  if (status !== 'error' || !error) return null
+  return (
+    <div className="px-4 py-3 mx-4 my-2 bg-destructive/10 border border-destructive/20 rounded-md text-destructive text-sm">
+      <strong>Error:</strong> {(error as { message?: string }).message ?? 'Unknown error'}
+    </div>
+  )
+}
+
+/** The slash-command autocomplete popover above the composer. */
+function renderSuggestionsList(
+  suggestions: string[],
+  activeSuggestionIndex: number,
+  onSelect: (suggestion: string) => void,
+): ReactNode {
+  if (suggestions.length === 0) return null
+  return (
+    <div className="absolute bottom-full left-3 right-3 mb-2 max-h-60 overflow-y-auto rounded-lg border border-border bg-background/95 backdrop-blur-md shadow-lg z-50 divide-y divide-border">
+      {suggestions.map((suggestion, index) => (
+        <button
+          key={suggestion}
+          type="button"
+          className={cn(
+            'w-full text-left px-4 py-2 text-sm flex items-center justify-between transition-colors',
+            index === activeSuggestionIndex
+              ? 'bg-accent text-accent-foreground font-medium'
+              : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+          )}
+          onClick={() => {
+            onSelect(suggestion)
+          }}
+        >
+          <span>{suggestion}</span>
+          {index === activeSuggestionIndex && (
+            <span className="text-xs text-muted-foreground bg-background border rounded px-1.5 py-0.5">
+              Tab or Enter
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Thumbnail strip for pending multi-modal (image) attachments. */
+function renderAttachmentPreview(attachments: AttachmentItem[], onRemove: (index: number) => void): ReactNode {
+  if (attachments.length === 0) return null
+  return (
+    <div className="flex flex-wrap gap-2 p-2 border-t bg-muted/30">
+      {attachments.map((attachment, index) => (
+        <div key={index} className="relative group">
+          <img
+            src={attachment.url}
+            alt="attachment"
+            className="h-16 w-16 object-cover rounded-md border border-border bg-background shadow-sm transition-all group-hover:opacity-80"
+          />
+          <button
+            onClick={() => {
+              onRemove(index)
+            }}
+            className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+            title="Remove attachment"
+          >
+            <XIcon className="size-3" />
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** The per-model tools dropdown in the composer toolbar. */
+function renderToolsMenu(
+  availableTools: BuiltinTool[],
+  enabledTools: string[],
+  setEnabledTools: Dispatch<SetStateAction<string[]>>,
+): ReactNode {
+  if (availableTools.length === 0) return null
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <PromptInputButton variant="outline">
+              <Settings2Icon className="size-4" />
+            </PromptInputButton>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Tools</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="start">
+        {availableTools.map((tool) => (
+          <div
+            key={tool.id}
+            className="flex items-center justify-between gap-3 px-2 py-1.5 cursor-pointer hover:bg-accent rounded-sm"
+            onClick={() => {
+              setEnabledTools((prev) =>
+                prev.includes(tool.id) ? prev.filter((id) => id !== tool.id) : [...prev, tool.id],
+              )
+            }}
+          >
+            <div className="flex items-center gap-2">
+              {getToolIcon(tool.id)}
+              <span className="text-sm">{tool.name}</span>
+            </div>
+            <Switch
+              checked={enabledTools.includes(tool.id)}
+              onCheckedChange={(checked) => {
+                setEnabledTools((prev) => (checked ? [...prev, tool.id] : prev.filter((id) => id !== tool.id)))
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+              }}
+            />
+          </div>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+/** The SWE-mode toggle button (always visible, independent of session state). */
+function renderSweModeButton(sweMode: boolean, onToggle: () => void): ReactNode {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <PromptInputButton
+          variant={sweMode ? 'default' : 'outline'}
+          aria-pressed={sweMode}
+          aria-label="Toggle SWE mode"
+          onClick={onToggle}
+        >
+          <Wrench className="size-4" />
+        </PromptInputButton>
+      </TooltipTrigger>
+      <TooltipContent>
+        {sweMode
+          ? 'SWE mode is on — messages run as commands in a live developer workspace'
+          : 'Enable SWE mode: drive a developer-workspace runtime from chat'}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** The provenance/stop controls shown once an SWE runtime session is live. */
+function renderSweControls(
+  sweMode: boolean,
+  sweSessionId: string | null,
+  sweBackend: string,
+  onLoadProvenance: () => void,
+  onStopSession: () => void,
+): ReactNode {
+  if (!sweMode || !sweSessionId) return null
+  return (
+    <>
+      <Badge variant="secondary" className="font-mono text-xs">
+        swe:{sweBackend || sweSessionId}
+      </Badge>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PromptInputButton variant="outline" aria-label="Load KG provenance" onClick={onLoadProvenance}>
+            <GitBranch className="size-4" />
+          </PromptInputButton>
+        </TooltipTrigger>
+        <TooltipContent>Load KG provenance (symbols this session mutated)</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PromptInputButton variant="outline" aria-label="Stop SWE session" onClick={onStopSession}>
+            <Square className="size-4" />
+          </PromptInputButton>
+        </TooltipTrigger>
+        <TooltipContent>Stop SWE session</TooltipContent>
+      </Tooltip>
+    </>
+  )
+}
+
+/** The session token-usage/cost badge + tooltip breakdown. */
+function renderUsageBadge(hasUsage: boolean, sessionUsage: TokenUsage, estimatedCost: number | null): ReactNode {
+  if (!hasUsage) return null
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant="secondary" className="font-mono text-xs">
+          {TOKEN_FORMATTER.format(sessionUsage.total_tokens)} tokens
+          {' · '}
+          {estimatedCost !== null ? formatCost(estimatedCost) : '—'}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent>
+        <div className="text-xs space-y-0.5">
+          <div>
+            <strong>Prompt:</strong> {TOKEN_FORMATTER.format(sessionUsage.prompt_tokens)} tokens
+          </div>
+          <div>
+            <strong>Completion:</strong> {TOKEN_FORMATTER.format(sessionUsage.completion_tokens)} tokens
+          </div>
+          <div>
+            <strong>Total:</strong> {TOKEN_FORMATTER.format(sessionUsage.total_tokens)} tokens
+          </div>
+          <div className="pt-1 border-t">
+            {estimatedCost !== null
+              ? `Estimated cost: ${formatCost(estimatedCost)}`
+              : 'Cost rate not configured for this model'}
+          </div>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** The conversation export dropdown (Markdown/JSON). */
+function renderExportMenu(messages: readonly UIMessage[], conversationId: string | undefined): ReactNode {
+  if (messages.length === 0) return null
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <PromptInputButton variant="outline" aria-label="Export conversation">
+              <DownloadIcon className="size-4" />
+            </PromptInputButton>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Export conversation</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem
+          onClick={() => {
+            exportConversation('markdown', messages, conversationId)
+          }}
+        >
+          Export as Markdown
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => {
+            exportConversation('json', messages, conversationId)
+          }}
+        >
+          Export as JSON
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+/** The model picker: prefers the backend-configured model registry, falling back to
+ * the legacy `/api/configure` list when no registry is populated (single-model / dev
+ * mode). Both branches were previously two separate top-level JSX guards in `Chat`. */
+function renderModelSelect(
+  modelRegistry: ModelRegistryPayload | undefined,
+  configData: RemoteConfig | undefined,
+  model: string,
+  setModel: (value: string) => void,
+): ReactNode {
+  if (!model) return null
+  const onValueChange = (value: string) => {
+    setModel(value)
+  }
+  if ((modelRegistry?.models.length ?? 0) > 0) {
+    return (
+      <PromptInputModelSelect onValueChange={onValueChange} value={model}>
+        <PromptInputModelSelectTrigger className="w-[160px]">
+          <PromptInputModelSelectValue />
+        </PromptInputModelSelectTrigger>
+        <PromptInputModelSelectContent>
+          {modelRegistry!.models.map((m) => (
+            <PromptInputModelSelectItem key={m.id} value={m.id}>
+              {m.name}
+            </PromptInputModelSelectItem>
+          ))}
+        </PromptInputModelSelectContent>
+      </PromptInputModelSelect>
+    )
+  }
+  if (!configData) return null
+  return (
+    <PromptInputModelSelect onValueChange={onValueChange} value={model}>
+      <PromptInputModelSelectTrigger className="w-[120px]">
+        <PromptInputModelSelectValue />
+      </PromptInputModelSelectTrigger>
+      <PromptInputModelSelectContent>
+        {configData.models
+          .filter((m) => m.id && m.name)
+          .map((m) => (
+            <PromptInputModelSelectItem key={m.id} value={m.id}>
+              {m.name}
+            </PromptInputModelSelectItem>
+          ))}
+      </PromptInputModelSelectContent>
+    </PromptInputModelSelect>
+  )
 }
 
 /**
@@ -689,7 +1097,7 @@ const Chat = ({ pageContext }: ChatProps) => {
     }
   })
   const [enabledTools, setEnabledTools] = useState<string[]>([])
-  const [attachments, setAttachments] = useState<{ url: string; base64: string; type: string }[]>([])
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [sweMode, setSweMode] = useState<boolean>(() => {
@@ -1232,31 +1640,16 @@ Available commands:
 
   const handleInputKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (suggestions.length > 0) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        setActiveSuggestionIndex((prev) => (prev + 1) % suggestions.length)
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        setActiveSuggestionIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length)
-      } else if (e.key === 'Enter' || e.key === 'Tab') {
-        e.preventDefault()
-        setInput(suggestions[activeSuggestionIndex])
-        setSuggestions([])
-      } else if (e.key === 'Escape') {
-        e.preventDefault()
-        setSuggestions([])
-      }
+      handleSuggestionNavigationKeyDown(
+        e,
+        suggestions,
+        activeSuggestionIndex,
+        setActiveSuggestionIndex,
+        setInput,
+        setSuggestions,
+      )
     } else {
-      if (e.key === 'Enter') {
-        if (e.nativeEvent.isComposing || e.shiftKey) {
-          return
-        }
-        e.preventDefault()
-        const form = e.currentTarget.form
-        if (form) {
-          form.requestSubmit()
-        }
-      }
+      handlePlainEnterKeyDown(e)
     }
   }
 
@@ -1418,27 +1811,13 @@ Available commands:
                 ))}
 
               {(message as unknown as { annotations?: AppAnnotation[] }).annotations?.map((ann, idx: number) => {
-                const isApproval =
-                  ann.event === 'approval_required' ||
-                  ann.data?.event === 'approval_required' ||
-                  ann.data?.type === 'approval_required'
-
-                if (!isApproval) return null
-
+                if (!isApprovalAnnotation(ann)) return null
                 return (
                   <div className="py-2" key={`ann-${idx}`}>
                     <ApprovalCard
                       onApprove={handleApproveToolCall}
                       onReject={handleRejectToolCall}
-                      toolPart={{
-                        toolName: ann.data?.tool_name ?? ann.data?.tool_calls?.[0]?.tool_name ?? 'Graph Tool',
-                        toolCallId:
-                          ann.data?.tool_call_id ??
-                          ann.data?.tool_calls?.[0]?.tool_call_id ??
-                          `${message.id}-graph-approval`,
-                        input: ann.data?.args ?? ann.data?.tool_calls?.[0]?.args ?? {},
-                        state: 'input-available',
-                      }}
+                      toolPart={approvalToolPartFromAnnotation(ann, message.id)}
                     />
                   </div>
                 )
@@ -1491,44 +1870,17 @@ Available commands:
             </div>
           ))}
           {status === 'submitted' && <Loader />}
-          {status === 'error' && error ? (
-            <div className="px-4 py-3 mx-4 my-2 bg-destructive/10 border border-destructive/20 rounded-md text-destructive text-sm">
-              <strong>Error:</strong> {(error as { message?: string }).message ?? 'Unknown error'}
-            </div>
-          ) : null}
+          {renderErrorBanner(status, error)}
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
 
       <div className="sticky bottom-0 p-3 relative">
-        {suggestions.length > 0 && (
-          <div className="absolute bottom-full left-3 right-3 mb-2 max-h-60 overflow-y-auto rounded-lg border border-border bg-background/95 backdrop-blur-md shadow-lg z-50 divide-y divide-border">
-            {suggestions.map((suggestion, index) => (
-              <button
-                key={suggestion}
-                type="button"
-                className={cn(
-                  'w-full text-left px-4 py-2 text-sm flex items-center justify-between transition-colors',
-                  index === activeSuggestionIndex
-                    ? 'bg-accent text-accent-foreground font-medium'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-                )}
-                onClick={() => {
-                  setInput(suggestion)
-                  setSuggestions([])
-                  textareaRef.current?.focus()
-                }}
-              >
-                <span>{suggestion}</span>
-                {index === activeSuggestionIndex && (
-                  <span className="text-xs text-muted-foreground bg-background border rounded px-1.5 py-0.5">
-                    Tab or Enter
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
+        {renderSuggestionsList(suggestions, activeSuggestionIndex, (suggestion) => {
+          setInput(suggestion)
+          setSuggestions([])
+          textareaRef.current?.focus()
+        })}
         <PromptInput onSubmit={handleSubmit}>
           <PromptInputTextarea
             ref={textareaRef}
@@ -1539,28 +1891,7 @@ Available commands:
             value={input}
             autoFocus={true}
           />
-          {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 p-2 border-t bg-muted/30">
-              {attachments.map((attachment, index) => (
-                <div key={index} className="relative group">
-                  <img
-                    src={attachment.url}
-                    alt="attachment"
-                    className="h-16 w-16 object-cover rounded-md border border-border bg-background shadow-sm transition-all group-hover:opacity-80"
-                  />
-                  <button
-                    onClick={() => {
-                      removeAttachment(index)
-                    }}
-                    className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Remove attachment"
-                  >
-                    <XIcon className="size-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+          {renderAttachmentPreview(attachments, removeAttachment)}
           <PromptInputToolbar>
             <PromptInputTools>
               <input
@@ -1591,203 +1922,25 @@ Available commands:
                   textareaRef.current?.focus()
                 }}
               />
-              {availableTools.length > 0 && (
-                <DropdownMenu>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <DropdownMenuTrigger asChild>
-                        <PromptInputButton variant="outline">
-                          <Settings2Icon className="size-4" />
-                        </PromptInputButton>
-                      </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent>Tools</TooltipContent>
-                  </Tooltip>
-                  <DropdownMenuContent align="start">
-                    {availableTools.map((tool) => (
-                      <div
-                        key={tool.id}
-                        className="flex items-center justify-between gap-3 px-2 py-1.5 cursor-pointer hover:bg-accent rounded-sm"
-                        onClick={() => {
-                          setEnabledTools((prev) =>
-                            prev.includes(tool.id) ? prev.filter((id) => id !== tool.id) : [...prev, tool.id],
-                          )
-                        }}
-                      >
-                        <div className="flex items-center gap-2">
-                          {getToolIcon(tool.id)}
-                          <span className="text-sm">{tool.name}</span>
-                        </div>
-                        <Switch
-                          checked={enabledTools.includes(tool.id)}
-                          onCheckedChange={(checked) => {
-                            setEnabledTools((prev) =>
-                              checked ? [...prev, tool.id] : prev.filter((id) => id !== tool.id),
-                            )
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                          }}
-                        />
-                      </div>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+              {renderToolsMenu(availableTools, enabledTools, setEnabledTools)}
+              {renderSweModeButton(sweMode, handleToggleSweMode)}
+              {renderSweControls(
+                sweMode,
+                sweSessionId,
+                sweBackend,
+                () => {
+                  void loadSweProvenance()
+                },
+                () => {
+                  void stopSweSession()
+                },
               )}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <PromptInputButton
-                    variant={sweMode ? 'default' : 'outline'}
-                    aria-pressed={sweMode}
-                    aria-label="Toggle SWE mode"
-                    onClick={handleToggleSweMode}
-                  >
-                    <Wrench className="size-4" />
-                  </PromptInputButton>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {sweMode
-                    ? 'SWE mode is on — messages run as commands in a live developer workspace'
-                    : 'Enable SWE mode: drive a developer-workspace runtime from chat'}
-                </TooltipContent>
-              </Tooltip>
-              {sweMode && sweSessionId && (
-                <>
-                  <Badge variant="secondary" className="font-mono text-xs">
-                    swe:{sweBackend || sweSessionId}
-                  </Badge>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <PromptInputButton
-                        variant="outline"
-                        aria-label="Load KG provenance"
-                        onClick={() => {
-                          void loadSweProvenance()
-                        }}
-                      >
-                        <GitBranch className="size-4" />
-                      </PromptInputButton>
-                    </TooltipTrigger>
-                    <TooltipContent>Load KG provenance (symbols this session mutated)</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <PromptInputButton
-                        variant="outline"
-                        aria-label="Stop SWE session"
-                        onClick={() => {
-                          void stopSweSession()
-                        }}
-                      >
-                        <Square className="size-4" />
-                      </PromptInputButton>
-                    </TooltipTrigger>
-                    <TooltipContent>Stop SWE session</TooltipContent>
-                  </Tooltip>
-                </>
-              )}
-              {hasUsage && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge variant="secondary" className="font-mono text-xs">
-                      {TOKEN_FORMATTER.format(sessionUsage.total_tokens)} tokens
-                      {' \u00b7 '}
-                      {estimatedCost !== null ? formatCost(estimatedCost) : '\u2014'}
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <div className="text-xs space-y-0.5">
-                      <div>
-                        <strong>Prompt:</strong> {TOKEN_FORMATTER.format(sessionUsage.prompt_tokens)} tokens
-                      </div>
-                      <div>
-                        <strong>Completion:</strong> {TOKEN_FORMATTER.format(sessionUsage.completion_tokens)} tokens
-                      </div>
-                      <div>
-                        <strong>Total:</strong> {TOKEN_FORMATTER.format(sessionUsage.total_tokens)} tokens
-                      </div>
-                      <div className="pt-1 border-t">
-                        {estimatedCost !== null
-                          ? `Estimated cost: ${formatCost(estimatedCost)}`
-                          : 'Cost rate not configured for this model'}
-                      </div>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-              {messages.length > 0 && (
-                <DropdownMenu>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <DropdownMenuTrigger asChild>
-                        <PromptInputButton variant="outline" aria-label="Export conversation">
-                          <DownloadIcon className="size-4" />
-                        </PromptInputButton>
-                      </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent>Export conversation</TooltipContent>
-                  </Tooltip>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuItem
-                      onClick={() => {
-                        exportConversation('markdown', messages, conversationId)
-                      }}
-                    >
-                      Export as Markdown
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        exportConversation('json', messages, conversationId)
-                      }}
-                    >
-                      Export as JSON
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+              {renderUsageBadge(hasUsage, sessionUsage, estimatedCost)}
+              {renderExportMenu(messages, conversationId)}
               {/* Prefer the backend-configured model registry; fall back
                 to the legacy `/api/configure` list when no registry is
                 populated (e.g. single-model / dev mode). */}
-              {(modelRegistry?.models.length ?? 0) > 0 && model && (
-                <PromptInputModelSelect
-                  onValueChange={(value) => {
-                    setModel(value)
-                  }}
-                  value={model}
-                >
-                  <PromptInputModelSelectTrigger className="w-[160px]">
-                    <PromptInputModelSelectValue />
-                  </PromptInputModelSelectTrigger>
-                  <PromptInputModelSelectContent>
-                    {modelRegistry!.models.map((m) => (
-                      <PromptInputModelSelectItem key={m.id} value={m.id}>
-                        {m.name}
-                      </PromptInputModelSelectItem>
-                    ))}
-                  </PromptInputModelSelectContent>
-                </PromptInputModelSelect>
-              )}
-              {(modelRegistry?.models.length ?? 0) === 0 && configQuery.data && model && (
-                <PromptInputModelSelect
-                  onValueChange={(value) => {
-                    setModel(value)
-                  }}
-                  value={model}
-                >
-                  <PromptInputModelSelectTrigger className="w-[120px]">
-                    <PromptInputModelSelectValue />
-                  </PromptInputModelSelectTrigger>
-                  <PromptInputModelSelectContent>
-                    {(configQuery.data as { models: { id: string; name: string }[] }).models
-                      .filter((m) => m.id && m.name)
-                      .map((m) => (
-                        <PromptInputModelSelectItem key={m.id} value={m.id}>
-                          {m.name}
-                        </PromptInputModelSelectItem>
-                      ))}
-                  </PromptInputModelSelectContent>
-                </PromptInputModelSelect>
-              )}
+              {renderModelSelect(modelRegistry, configQuery.data, model, setModel)}
 
               <div className="flex items-center gap-1">
                 <span className="text-xs text-muted-foreground hidden sm:inline" aria-hidden>

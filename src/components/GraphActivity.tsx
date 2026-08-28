@@ -28,7 +28,7 @@ import {
   CameraIcon,
   Loader2Icon,
 } from 'lucide-react'
-import { memo, useState, useRef, useEffect } from 'react'
+import { memo, useState, useRef, useEffect, type ReactNode } from 'react'
 
 /**
  * Interface representing a single event emitted by the agent graph orchestrator.
@@ -88,16 +88,185 @@ interface GraphActivityProps {
 type EventCategory =
   'routing' | 'tool' | 'text' | 'error' | 'elicitation' | 'transition' | 'snapshot' | 'complete' | 'default'
 
+/** Ordered substring → category rules, checked in order (first match wins) — a data
+ * table instead of an if-chain so adding/reordering a rule never touches control flow. */
+const EVENT_CATEGORY_RULES: readonly [needle: string, category: EventCategory][] = [
+  ['routing', 'routing'],
+  ['tool', 'tool'],
+  ['completed', 'complete'],
+  ['complete', 'complete'],
+  ['warning', 'error'],
+  ['error', 'error'],
+  ['elicitation', 'elicitation'],
+  ['node_transition', 'transition'],
+  ['state_snapshot', 'snapshot'],
+  ['text', 'text'],
+]
+
 function getEventCategory(event: string): EventCategory {
-  if (event.includes('routing')) return 'routing'
-  if (event.includes('tool')) return 'tool'
-  if (event.includes('completed') || event.includes('complete')) return 'complete'
-  if (event.includes('warning') || event.includes('error')) return 'error'
-  if (event.includes('elicitation')) return 'elicitation'
-  if (event.includes('node_transition')) return 'transition'
-  if (event.includes('state_snapshot')) return 'snapshot'
-  if (event.includes('text')) return 'text'
-  return 'default'
+  const rule = EVENT_CATEGORY_RULES.find(([needle]) => event.includes(needle))
+  return rule ? rule[1] : 'default'
+}
+
+/** One formatter per known `event` value — a dispatch table instead of a `switch` so
+ * each case is judged (and stays under cap) independently of every other case. `domain`
+ * is the caller-resolved `ev.domain ?? ev.expert ?? ev.subagent ?? 'Specialist'`. */
+const EVENT_LABEL_FORMATTERS: Partial<Record<string, (ev: GraphEvent, domain: string) => string>> = {
+  'expert-metadata': (_ev, domain) => `Handshaking with ${domain} Specialist...`,
+  'tools-bound': (ev, domain) => `Successfully bound ${ev.count ?? 0} tools to ${domain}`,
+  'expert-warning': (ev) => `Expert Warning: ${ev.message ?? 'Unknown issue'}`,
+  routing_started: () => 'Analyzing routing path...',
+  routing_completed: (ev, domain) => {
+    const domainsText = ev.domains ? ev.domains.join(', ') : 'Unknown'
+    const target = domain === 'Specialist' ? domainsText : domain
+    return `Routed to ${target}`
+  },
+  subagent_tool_call: (ev) => `Executing ${ev.tool_name ?? 'tool'}...`,
+  subagent_tool_completed: (ev) =>
+    `Tool ${ev.tool_name ?? 'tool'} completed${ev.duration ? ` (${ev.duration.toFixed(1)}s)` : ''}`,
+  subagent_text: (_ev, domain) => `Streaming response from ${domain}...`,
+  subagent_completed: (ev, domain) => `Expert ${domain} finished${ev.duration ? ` (${ev.duration.toFixed(1)}s)` : ''}`,
+  parallel_execution_started: (ev) => `Executing ${ev.domains?.length ?? 0} domains in parallel`,
+  parallel_execution_completed: () => 'Parallel execution finished',
+  node_transition: (ev) => `${ev.source_node ?? '?'} → ${ev.target_node ?? '?'}`,
+  elicitation: (ev) => `Waiting for input: ${ev.prompt ?? ev.message ?? 'user response needed'}`,
+  state_snapshot: (ev) => `State captured: ${Object.keys(ev.state ?? {}).length} fields`,
+  graph_complete: (ev) => `Graph execution complete${ev.duration ? ` (${ev.duration.toFixed(1)}s total)` : ''}`,
+}
+
+/**
+ * Generates a human-friendly label for common graph events
+ */
+function getEventLabelText(ev: GraphEvent): string {
+  if (!ev.event) return 'Internal activity'
+  const domain = ev.domain ?? ev.expert ?? ev.subagent ?? 'Specialist'
+  const formatter = EVENT_LABEL_FORMATTERS[ev.event]
+  return formatter ? formatter(ev, domain) : ev.event.replace(/_/g, ' ')
+}
+
+/**
+ * Returns the appropriate Lucide icon for a given event type
+ */
+function getEventIcon(event = 'activity'): ReactNode {
+  const category = getEventCategory(event)
+  const color = categoryColors[category]
+  if (event.includes('routing')) return <NetworkIcon className={cn('size-3.5', color)} />
+  if (event.includes('tool')) return <CpuIcon className={cn('size-3.5', color)} />
+  if (event.includes('completed') || event.includes('complete'))
+    return <CheckCircle2Icon className={cn('size-3.5', color)} />
+  if (event.includes('warning') || event.includes('error'))
+    return <AlertTriangleIcon className={cn('size-3.5', color)} />
+  if (event.includes('elicitation')) return <MessageSquareIcon className={cn('size-3.5', color)} />
+  if (event.includes('node_transition')) return <GitBranchIcon className={cn('size-3.5', color)} />
+  if (event.includes('state_snapshot')) return <CameraIcon className={cn('size-3.5', color)} />
+  return <ActivityIcon className={cn('size-3.5', color)} />
+}
+
+/** Shared HH:MM:SS timestamp cell for a timeline row (both the subagent-text and the
+ * generic row shape use the exact same formatting). */
+function formatEventTimestamp(timestamp: number | undefined): string {
+  if (!timestamp) return '--:--:--'
+  return new Date(timestamp * 1000).toLocaleTimeString([], {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
+/** One timeline row for a batched `subagent_text` delta. */
+function renderSubagentTextEventRow(
+  ev: GraphEvent,
+  i: number,
+  category: EventCategory,
+  isLast: boolean,
+  isStreaming?: boolean,
+): ReactNode {
+  const domainName = ev.domain ?? ev.subagent ?? 'Unknown domain'
+  const textPreview = ev.text ?? ''
+  return (
+    <div
+      key={i}
+      className={cn(
+        'relative flex gap-3 text-[11px] leading-tight py-1.5',
+        'border-l-2 ml-[-9px] pl-4',
+        categoryBorderColors[category],
+      )}
+    >
+      {/* Timeline dot */}
+      <div
+        className={cn(
+          'absolute left-[-5px] top-2.5 size-2 rounded-full',
+          categoryDotColors[category],
+          isLast && isStreaming && 'animate-pulse',
+        )}
+      />
+      <span className="text-muted-foreground/50 tabular-nums shrink-0 mt-0.5 w-14">
+        {formatEventTimestamp(ev.timestamp)}
+      </span>
+      <div className="flex flex-col min-w-0">
+        <span className={cn('font-semibold uppercase tracking-tight text-[8px]', categoryColors[category])}>
+          {domainName} Response DELTA
+        </span>
+        <p className="text-foreground/70 font-mono text-[10px] break-all whitespace-pre-wrap line-clamp-3">
+          {textPreview}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** One timeline row for any other (non-`subagent_text`) event. */
+function renderGenericEventRow(
+  ev: GraphEvent,
+  i: number,
+  category: EventCategory,
+  isLast: boolean,
+  isStreaming?: boolean,
+): ReactNode {
+  return (
+    <div key={i} className="relative flex gap-3 text-[11px] leading-tight py-1.5 ml-[-9px] pl-4">
+      {/* Timeline dot */}
+      <div
+        className={cn(
+          'absolute left-[-5px] top-2.5 size-2 rounded-full',
+          categoryDotColors[category],
+          isLast && isStreaming && 'animate-pulse',
+        )}
+      />
+      <span className="text-muted-foreground/50 tabular-nums shrink-0 mt-0.5 w-14">
+        {formatEventTimestamp(ev.timestamp)}
+      </span>
+      <div className="flex flex-col min-w-0">
+        <div className="flex items-center gap-1.5">
+          {getEventIcon(ev.event)}
+          <span className={cn('font-semibold uppercase tracking-tight text-[9px]', categoryColors[category])}>
+            {ev.event}
+          </span>
+          {ev.duration && (
+            <Badge variant="secondary" className="h-3.5 text-[8px] px-1">
+              {ev.duration.toFixed(1)}s
+            </Badge>
+          )}
+        </div>
+        <span className="text-foreground/80 mt-0.5">{getEventLabelText(ev)}</span>
+        {ev.reasoning && <p className="text-muted-foreground italic mt-0.5 text-[10px]">{ev.reasoning}</p>}
+        {ev.tool_args && (
+          <code className="bg-muted/50 px-1.5 py-0.5 rounded text-[10px] mt-1 break-all overflow-hidden line-clamp-2 border border-border/50 font-mono">
+            {ev.tool_args}
+          </code>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** One timeline row, dispatched by event shape. */
+function renderEventRow(ev: GraphEvent, i: number, isLast: boolean, isStreaming?: boolean): ReactNode {
+  const category = getEventCategory(ev.event)
+  return ev.event === 'subagent_text'
+    ? renderSubagentTextEventRow(ev, i, category, isLast, isStreaming)
+    : renderGenericEventRow(ev, i, category, isLast, isStreaming)
 }
 
 const categoryColors: Record<EventCategory, string> = {
@@ -178,69 +347,6 @@ export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) 
 
   if (displayEvents.length === 0) return null
 
-  /**
-   * Returns the appropriate Lucide icon for a given event type
-   */
-  const getIcon = (event = 'activity') => {
-    const category = getEventCategory(event)
-    const color = categoryColors[category]
-    if (event.includes('routing')) return <NetworkIcon className={cn('size-3.5', color)} />
-    if (event.includes('tool')) return <CpuIcon className={cn('size-3.5', color)} />
-    if (event.includes('completed') || event.includes('complete'))
-      return <CheckCircle2Icon className={cn('size-3.5', color)} />
-    if (event.includes('warning') || event.includes('error'))
-      return <AlertTriangleIcon className={cn('size-3.5', color)} />
-    if (event.includes('elicitation')) return <MessageSquareIcon className={cn('size-3.5', color)} />
-    if (event.includes('node_transition')) return <GitBranchIcon className={cn('size-3.5', color)} />
-    if (event.includes('state_snapshot')) return <CameraIcon className={cn('size-3.5', color)} />
-    return <ActivityIcon className={cn('size-3.5', color)} />
-  }
-
-  /**
-   * Generates a human-friendly label for common graph events
-   */
-  const getEventLabel = (ev: GraphEvent) => {
-    if (!ev.event) return 'Internal activity'
-    const domain = ev.domain ?? ev.expert ?? ev.subagent ?? 'Specialist'
-    switch (ev.event) {
-      case 'expert-metadata':
-        return `Handshaking with ${domain} Specialist...`
-      case 'tools-bound':
-        return `Successfully bound ${ev.count ?? 0} tools to ${domain}`
-      case 'expert-warning':
-        return `Expert Warning: ${ev.message ?? 'Unknown issue'}`
-      case 'routing_started':
-        return 'Analyzing routing path...'
-      case 'routing_completed': {
-        const domainsText = ev.domains ? ev.domains.join(', ') : 'Unknown'
-        const target = domain === 'Specialist' ? domainsText : domain
-        return `Routed to ${target}`
-      }
-      case 'subagent_tool_call':
-        return `Executing ${ev.tool_name ?? 'tool'}...`
-      case 'subagent_tool_completed':
-        return `Tool ${ev.tool_name ?? 'tool'} completed${ev.duration ? ` (${ev.duration.toFixed(1)}s)` : ''}`
-      case 'subagent_text':
-        return `Streaming response from ${domain}...`
-      case 'subagent_completed':
-        return `Expert ${domain} finished${ev.duration ? ` (${ev.duration.toFixed(1)}s)` : ''}`
-      case 'parallel_execution_started':
-        return `Executing ${ev.domains?.length ?? 0} domains in parallel`
-      case 'parallel_execution_completed':
-        return 'Parallel execution finished'
-      case 'node_transition':
-        return `${ev.source_node ?? '?'} → ${ev.target_node ?? '?'}`
-      case 'elicitation':
-        return `Waiting for input: ${ev.prompt ?? ev.message ?? 'user response needed'}`
-      case 'state_snapshot':
-        return `State captured: ${Object.keys(ev.state ?? {}).length} fields`
-      case 'graph_complete':
-        return `Graph execution complete${ev.duration ? ` (${ev.duration.toFixed(1)}s total)` : ''}`
-      default:
-        return ev.event.replace(/_/g, ' ')
-    }
-  }
-
   const lastEvent = displayEvents[displayEvents.length - 1]
   const lastCategory = getEventCategory(lastEvent.event)
 
@@ -252,8 +358,8 @@ export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) 
     >
       <CollapsibleTrigger className="flex items-center justify-between w-full gap-2 text-xs font-medium text-muted-foreground hover:text-foreground px-3 py-2">
         <div className="flex items-center gap-2">
-          {getIcon(lastEvent.event)}
-          <span className={cn('transition-colors', categoryColors[lastCategory])}>{getEventLabel(lastEvent)}</span>
+          {getEventIcon(lastEvent.event)}
+          <span className={cn('transition-colors', categoryColors[lastCategory])}>{getEventLabelText(lastEvent)}</span>
           {isStreaming && (
             <Badge variant="outline" className="h-4 text-[9px] gap-1 border-blue-500/30 text-blue-400 animate-pulse">
               <Loader2Icon className="size-2.5 animate-spin" />
@@ -277,99 +383,7 @@ export const GraphActivity = memo(({ events, isStreaming }: GraphActivityProps) 
             {/* Timeline rail */}
             <div className="absolute left-[15px] top-3 bottom-3 w-px bg-border/40" />
 
-            {displayEvents.map((ev, i) => {
-              const category = getEventCategory(ev.event)
-              const isLast = i === displayEvents.length - 1
-
-              if (ev.event === 'subagent_text') {
-                const domainName = ev.domain ?? ev.subagent ?? 'Unknown domain'
-                const textPreview = ev.text ?? ''
-                return (
-                  <div
-                    key={i}
-                    className={cn(
-                      'relative flex gap-3 text-[11px] leading-tight py-1.5',
-                      'border-l-2 ml-[-9px] pl-4',
-                      categoryBorderColors[category],
-                    )}
-                  >
-                    {/* Timeline dot */}
-                    <div
-                      className={cn(
-                        'absolute left-[-5px] top-2.5 size-2 rounded-full',
-                        categoryDotColors[category],
-                        isLast && isStreaming && 'animate-pulse',
-                      )}
-                    />
-                    <span className="text-muted-foreground/50 tabular-nums shrink-0 mt-0.5 w-14">
-                      {ev.timestamp
-                        ? new Date(ev.timestamp * 1000).toLocaleTimeString([], {
-                            hour12: false,
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                          })
-                        : '--:--:--'}
-                    </span>
-                    <div className="flex flex-col min-w-0">
-                      <span
-                        className={cn('font-semibold uppercase tracking-tight text-[8px]', categoryColors[category])}
-                      >
-                        {domainName} Response DELTA
-                      </span>
-                      <p className="text-foreground/70 font-mono text-[10px] break-all whitespace-pre-wrap line-clamp-3">
-                        {textPreview}
-                      </p>
-                    </div>
-                  </div>
-                )
-              }
-
-              return (
-                <div key={i} className="relative flex gap-3 text-[11px] leading-tight py-1.5 ml-[-9px] pl-4">
-                  {/* Timeline dot */}
-                  <div
-                    className={cn(
-                      'absolute left-[-5px] top-2.5 size-2 rounded-full',
-                      categoryDotColors[category],
-                      isLast && isStreaming && 'animate-pulse',
-                    )}
-                  />
-                  <span className="text-muted-foreground/50 tabular-nums shrink-0 mt-0.5 w-14">
-                    {ev.timestamp
-                      ? new Date(ev.timestamp * 1000).toLocaleTimeString([], {
-                          hour12: false,
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                        })
-                      : '--:--:--'}
-                  </span>
-                  <div className="flex flex-col min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      {getIcon(ev.event)}
-                      <span
-                        className={cn('font-semibold uppercase tracking-tight text-[9px]', categoryColors[category])}
-                      >
-                        {ev.event}
-                      </span>
-                      {ev.duration && (
-                        <Badge variant="secondary" className="h-3.5 text-[8px] px-1">
-                          {ev.duration.toFixed(1)}s
-                        </Badge>
-                      )}
-                    </div>
-                    <span className="text-foreground/80 mt-0.5">{getEventLabel(ev)}</span>
-                    {ev.reasoning && <p className="text-muted-foreground italic mt-0.5 text-[10px]">{ev.reasoning}</p>}
-                    {ev.tool_args && (
-                      <code className="bg-muted/50 px-1.5 py-0.5 rounded text-[10px] mt-1 break-all overflow-hidden line-clamp-2 border border-border/50 font-mono">
-                        {ev.tool_args}
-                      </code>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+            {displayEvents.map((ev, i) => renderEventRow(ev, i, i === displayEvents.length - 1, isStreaming))}
           </div>
         </div>
       </CollapsibleContent>
