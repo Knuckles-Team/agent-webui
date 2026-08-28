@@ -55,6 +55,7 @@ tests = "the Python backend test suite: characterization tests plus dashboard/he
 "cspell.json" = "cspell spellcheck dictionary/config"
 "eslint.config.ts" = "ESLint flat config for the TS/React frontend"
 "index.html" = "Vite SPA entry HTML"
+"knip.json" = "advisory dead-code report config (knip) — run via pnpm dlx, never installed into package.json; see WD4-TOOL-02"
 "mkdocs.yml" = "mkdocs site config"
 "opencode.json" = "opencode tool config"
 "package.json" = "npm/pnpm package manifest and scripts"
