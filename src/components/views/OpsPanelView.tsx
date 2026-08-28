@@ -139,6 +139,288 @@ function StateBadge({ state }: { state?: string }) {
   return <Badge variant="secondary">{state}</Badge>
 }
 
+function renderPipelineTable({
+  phases,
+  pendingTrigger,
+  onTriggerPhase,
+}: {
+  phases: PipelinePhase[]
+  pendingTrigger: string | null
+  onTriggerPhase: (phaseName: string) => void
+}) {
+  return (
+    <div className="rounded-md border">
+      <table className="w-full text-sm">
+        <thead className="bg-muted/50">
+          <tr>
+            <th className="text-left p-2 font-medium">Phase</th>
+            <th className="text-left p-2 font-medium">State</th>
+            <th className="text-left p-2 font-medium">Last Run</th>
+            <th className="text-left p-2 font-medium">Progress</th>
+            <th className="text-left p-2 font-medium">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {phases.map((phase, idx) => {
+            const phaseName = phase.name ?? phase.phase ?? `phase-${idx}`
+            const phaseKey = `pipeline:${phaseName}`
+            return (
+              <tr key={phaseKey} className="border-t">
+                <td className="p-2 font-medium">{phaseName}</td>
+                <td className="p-2">
+                  <StateBadge state={phase.state ?? phase.status} />
+                </td>
+                <td className="p-2 text-muted-foreground">
+                  {phase.last_run ? (
+                    <span className="inline-flex items-center gap-1">
+                      <Clock className="size-3" />
+                      {phase.last_run}
+                    </span>
+                  ) : (
+                    '-'
+                  )}
+                </td>
+                <td className="p-2">{formatProgress(phase.progress)}</td>
+                <td className="p-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      onTriggerPhase(phaseName)
+                    }}
+                    disabled={pendingTrigger === phaseKey}
+                  >
+                    <Play className="size-3 mr-1" />
+                    Trigger
+                  </Button>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function renderPipelineCardBody({
+  loadingPipeline,
+  pipelineUnavailable,
+  phases,
+  pendingTrigger,
+  onTriggerPhase,
+}: {
+  loadingPipeline: boolean
+  pipelineUnavailable: boolean
+  phases: PipelinePhase[]
+  pendingTrigger: string | null
+  onTriggerPhase: (phaseName: string) => void
+}) {
+  if (loadingPipeline) return <p className="text-muted-foreground text-sm">Loading pipeline status...</p>
+  if (pipelineUnavailable) return <UnavailableNotice what="Pipeline status" />
+  if (phases.length === 0) return <p className="text-muted-foreground text-sm">No phases reported.</p>
+  return renderPipelineTable({ phases, pendingTrigger, onTriggerPhase })
+}
+
+function renderMaintenanceButtons({
+  pendingTrigger,
+  onTrigger,
+}: {
+  pendingTrigger: string | null
+  onTrigger: (op: string) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {MAINTENANCE_OPERATIONS.map((op) => {
+        const key = `maintenance:${op}`
+        return (
+          <Button
+            key={op}
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              onTrigger(op)
+            }}
+            disabled={pendingTrigger === key}
+          >
+            <Play className="size-3 mr-1" />
+            {op}
+          </Button>
+        )
+      })}
+    </div>
+  )
+}
+
+function renderMaintenanceTable(operations: MaintenanceOp[]) {
+  return (
+    <div className="rounded-md border">
+      <table className="w-full text-sm">
+        <thead className="bg-muted/50">
+          <tr>
+            <th className="text-left p-2 font-medium">Operation</th>
+            <th className="text-left p-2 font-medium">Last Run</th>
+            <th className="text-left p-2 font-medium">Pruned</th>
+            <th className="text-left p-2 font-medium">Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {operations.map((op, idx) => {
+            const opName = op.name ?? op.operation ?? `op-${idx}`
+            return (
+              <tr key={`row-${opName}`} className="border-t">
+                <td className="p-2 font-medium">{opName}</td>
+                <td className="p-2 text-muted-foreground">{op.last_run ?? '-'}</td>
+                <td className="p-2">{op.items_pruned ?? '-'}</td>
+                <td className="p-2">{op.items_updated ?? '-'}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function renderMaintenanceStatusBody({
+  loadingMaintenance,
+  maintenanceUnavailable,
+  operations,
+}: {
+  loadingMaintenance: boolean
+  maintenanceUnavailable: boolean
+  operations: MaintenanceOp[]
+}) {
+  if (loadingMaintenance) return <p className="text-muted-foreground text-sm">Loading maintenance status...</p>
+  if (maintenanceUnavailable) return <UnavailableNotice what="Maintenance status" />
+  if (operations.length === 0) return <p className="text-muted-foreground text-sm">No operations reported.</p>
+  return renderMaintenanceTable(operations)
+}
+
+function renderResourcesTable(resources: CallableResource[]) {
+  return (
+    <div className="rounded-md border">
+      <table className="w-full text-sm">
+        <thead className="bg-muted/50">
+          <tr>
+            <th className="text-left p-2 font-medium">Type</th>
+            <th className="text-left p-2 font-medium">Name</th>
+            <th className="text-left p-2 font-medium">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {resources.map((resource, idx) => {
+            const resourceKey = resource.id ?? resource.name ?? `resource-${idx}`
+            return (
+              <tr key={resourceKey} className="border-t">
+                <td className="p-2">
+                  <Badge variant="secondary" className="gap-1">
+                    <Server className="size-3" />
+                    {resource.type ?? resource.resource_type ?? 'unknown'}
+                  </Badge>
+                </td>
+                <td className="p-2 font-medium">{resource.name ?? resource.id ?? '-'}</td>
+                <td className="p-2 text-muted-foreground">{resource.description ?? '-'}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function renderResourcesCardBody({
+  loadingResources,
+  resourcesUnavailable,
+  resources,
+}: {
+  loadingResources: boolean
+  resourcesUnavailable: boolean
+  resources: CallableResource[]
+}) {
+  if (loadingResources) return <p className="text-muted-foreground text-sm">Loading resources...</p>
+  if (resourcesUnavailable) return <UnavailableNotice what="Callable resources" />
+  if (resources.length === 0) return <p className="text-muted-foreground text-sm">No resources available.</p>
+  return renderResourcesTable(resources)
+}
+
+interface SpawnForm {
+  name: string
+  agent_type: string
+  task: string
+}
+
+function renderSpawnDialog({
+  isOpen,
+  onOpenChange,
+  spawnForm,
+  onFormChange,
+  spawnSubmitting,
+  onCancel,
+  onSpawn,
+}: {
+  isOpen: boolean
+  onOpenChange: (open: boolean) => void
+  spawnForm: SpawnForm
+  onFormChange: (form: SpawnForm) => void
+  spawnSubmitting: boolean
+  onCancel: () => void
+  onSpawn: () => void
+}) {
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Spawn Specialized Agent</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium">Name (optional)</label>
+            <Input
+              value={spawnForm.name}
+              onChange={(e) => {
+                onFormChange({ ...spawnForm, name: e.target.value })
+              }}
+              placeholder="research-specialist"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Agent Type</label>
+            <Input
+              value={spawnForm.agent_type}
+              onChange={(e) => {
+                onFormChange({ ...spawnForm, agent_type: e.target.value })
+              }}
+              placeholder="specialist"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Task</label>
+            <Textarea
+              value={spawnForm.task}
+              onChange={(e) => {
+                onFormChange({ ...spawnForm, task: e.target.value })
+              }}
+              placeholder="Describe the task this agent should handle"
+              rows={4}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onCancel} disabled={spawnSubmitting}>
+              Cancel
+            </Button>
+            <Button onClick={onSpawn} disabled={spawnSubmitting || !spawnForm.task.trim()}>
+              <Sparkles className="size-4 mr-2" />
+              Spawn
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default function OpsPanelView() {
   const [activeTab, setActiveTab] = useState<'pipeline' | 'maintenance' | 'resources'>('pipeline')
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus>({})
@@ -351,65 +633,15 @@ export default function OpsPanelView() {
               </div>
             </CardHeader>
             <CardContent>
-              {loadingPipeline ? (
-                <p className="text-muted-foreground text-sm">Loading pipeline status...</p>
-              ) : pipelineUnavailable ? (
-                <UnavailableNotice what="Pipeline status" />
-              ) : phases.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No phases reported.</p>
-              ) : (
-                <div className="rounded-md border">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th className="text-left p-2 font-medium">Phase</th>
-                        <th className="text-left p-2 font-medium">State</th>
-                        <th className="text-left p-2 font-medium">Last Run</th>
-                        <th className="text-left p-2 font-medium">Progress</th>
-                        <th className="text-left p-2 font-medium">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {phases.map((phase, idx) => {
-                        const phaseName = phase.name ?? phase.phase ?? `phase-${idx}`
-                        const phaseKey = `pipeline:${phaseName}`
-                        return (
-                          <tr key={phaseKey} className="border-t">
-                            <td className="p-2 font-medium">{phaseName}</td>
-                            <td className="p-2">
-                              <StateBadge state={phase.state ?? phase.status} />
-                            </td>
-                            <td className="p-2 text-muted-foreground">
-                              {phase.last_run ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <Clock className="size-3" />
-                                  {phase.last_run}
-                                </span>
-                              ) : (
-                                '-'
-                              )}
-                            </td>
-                            <td className="p-2">{formatProgress(phase.progress)}</td>
-                            <td className="p-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  void triggerPipelinePhase(phaseName)
-                                }}
-                                disabled={pendingTrigger === phaseKey}
-                              >
-                                <Play className="size-3 mr-1" />
-                                Trigger
-                              </Button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {renderPipelineCardBody({
+                loadingPipeline,
+                pipelineUnavailable,
+                phases,
+                pendingTrigger,
+                onTriggerPhase: (phaseName) => {
+                  void triggerPipelinePhase(phaseName)
+                },
+              })}
             </CardContent>
           </Card>
         </TabsContent>
@@ -436,58 +668,13 @@ export default function OpsPanelView() {
               </Button>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                {MAINTENANCE_OPERATIONS.map((op) => {
-                  const key = `maintenance:${op}`
-                  return (
-                    <Button
-                      key={op}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        void triggerMaintenance(op)
-                      }}
-                      disabled={pendingTrigger === key}
-                    >
-                      <Play className="size-3 mr-1" />
-                      {op}
-                    </Button>
-                  )
-                })}
-              </div>
-              {loadingMaintenance ? (
-                <p className="text-muted-foreground text-sm">Loading maintenance status...</p>
-              ) : maintenanceUnavailable ? (
-                <UnavailableNotice what="Maintenance status" />
-              ) : operations.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No operations reported.</p>
-              ) : (
-                <div className="rounded-md border">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th className="text-left p-2 font-medium">Operation</th>
-                        <th className="text-left p-2 font-medium">Last Run</th>
-                        <th className="text-left p-2 font-medium">Pruned</th>
-                        <th className="text-left p-2 font-medium">Updated</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {operations.map((op, idx) => {
-                        const opName = op.name ?? op.operation ?? `op-${idx}`
-                        return (
-                          <tr key={`row-${opName}`} className="border-t">
-                            <td className="p-2 font-medium">{opName}</td>
-                            <td className="p-2 text-muted-foreground">{op.last_run ?? '-'}</td>
-                            <td className="p-2">{op.items_pruned ?? '-'}</td>
-                            <td className="p-2">{op.items_updated ?? '-'}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {renderMaintenanceButtons({
+                pendingTrigger,
+                onTrigger: (op) => {
+                  void triggerMaintenance(op)
+                },
+              })}
+              {renderMaintenanceStatusBody({ loadingMaintenance, maintenanceUnavailable, operations })}
             </CardContent>
           </Card>
         </TabsContent>
@@ -522,106 +709,22 @@ export default function OpsPanelView() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
-              {loadingResources ? (
-                <p className="text-muted-foreground text-sm">Loading resources...</p>
-              ) : resourcesUnavailable ? (
-                <UnavailableNotice what="Callable resources" />
-              ) : resources.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No resources available.</p>
-              ) : (
-                <div className="rounded-md border">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th className="text-left p-2 font-medium">Type</th>
-                        <th className="text-left p-2 font-medium">Name</th>
-                        <th className="text-left p-2 font-medium">Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {resources.map((resource, idx) => {
-                        const resourceKey = resource.id ?? resource.name ?? `resource-${idx}`
-                        return (
-                          <tr key={resourceKey} className="border-t">
-                            <td className="p-2">
-                              <Badge variant="secondary" className="gap-1">
-                                <Server className="size-3" />
-                                {resource.type ?? resource.resource_type ?? 'unknown'}
-                              </Badge>
-                            </td>
-                            <td className="p-2 font-medium">{resource.name ?? resource.id ?? '-'}</td>
-                            <td className="p-2 text-muted-foreground">{resource.description ?? '-'}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
+            <CardContent>{renderResourcesCardBody({ loadingResources, resourcesUnavailable, resources })}</CardContent>
           </Card>
 
-          <Dialog open={isSpawnOpen} onOpenChange={setIsSpawnOpen}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Spawn Specialized Agent</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium">Name (optional)</label>
-                  <Input
-                    value={spawnForm.name}
-                    onChange={(e) => {
-                      setSpawnForm({ ...spawnForm, name: e.target.value })
-                    }}
-                    placeholder="research-specialist"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Agent Type</label>
-                  <Input
-                    value={spawnForm.agent_type}
-                    onChange={(e) => {
-                      setSpawnForm({ ...spawnForm, agent_type: e.target.value })
-                    }}
-                    placeholder="specialist"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Task</label>
-                  <Textarea
-                    value={spawnForm.task}
-                    onChange={(e) => {
-                      setSpawnForm({ ...spawnForm, task: e.target.value })
-                    }}
-                    placeholder="Describe the task this agent should handle"
-                    rows={4}
-                  />
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setIsSpawnOpen(false)
-                    }}
-                    disabled={spawnSubmitting}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      void spawnAgent()
-                    }}
-                    disabled={spawnSubmitting || !spawnForm.task.trim()}
-                  >
-                    <Sparkles className="size-4 mr-2" />
-                    Spawn
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+          {renderSpawnDialog({
+            isOpen: isSpawnOpen,
+            onOpenChange: setIsSpawnOpen,
+            spawnForm,
+            onFormChange: setSpawnForm,
+            spawnSubmitting,
+            onCancel: () => {
+              setIsSpawnOpen(false)
+            },
+            onSpawn: () => {
+              void spawnAgent()
+            },
+          })}
         </TabsContent>
       </Tabs>
     </div>

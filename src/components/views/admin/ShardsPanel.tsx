@@ -26,6 +26,167 @@ function breakerVariant(state: string | undefined): 'default' | 'secondary' | 'd
   return 'secondary'
 }
 
+function renderSummaryCards({
+  topology,
+  endpoints,
+  reachable,
+}: {
+  topology: ShardTopology | null
+  endpoints: ShardTopology['endpoints']
+  reachable: number
+}) {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <Card>
+        <CardContent className="pt-6">
+          <p className="text-sm text-muted-foreground">Mode</p>
+          <p className="text-2xl font-bold capitalize">{topology?.mode ?? '-'}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-6">
+          <p className="text-sm text-muted-foreground">Shards</p>
+          <p className="text-2xl font-bold">{endpoints.length || '-'}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-6">
+          <p className="text-sm text-muted-foreground">Reachable</p>
+          <p className="text-2xl font-bold">
+            {endpoints.length ? `${String(reachable)}/${String(endpoints.length)}` : '-'}
+          </p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-6">
+          <p className="text-sm text-muted-foreground">Default graph</p>
+          <p className="text-lg font-semibold font-mono truncate">{topology?.default_graph ?? '-'}</p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function renderShardRow(ep: ShardTopology['endpoints'][number], idx: number) {
+  return (
+    <div key={ep.endpoint} className="flex items-center justify-between rounded border p-3 text-sm">
+      <div className="flex items-center gap-3 min-w-0">
+        <Server className="size-4 shrink-0 text-muted-foreground" />
+        <div className="flex flex-col min-w-0">
+          <span className="font-mono truncate">{ep.endpoint}</span>
+          <span className="text-xs text-muted-foreground">
+            writer #{idx} {ep.local ? '· local' : '· remote'}
+          </span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {ep.local && <Badge variant="outline">local</Badge>}
+        {ep.breaker && (
+          <Badge variant={breakerVariant(ep.breaker)} className="font-mono text-xs">
+            {ep.breaker}
+          </Badge>
+        )}
+        {ep.reachable ? (
+          <Badge variant="default" className="gap-1">
+            <CheckCircle2 className="size-3" />
+            up
+          </Badge>
+        ) : (
+          <Badge variant="destructive" className="gap-1">
+            <XCircle className="size-3" />
+            down
+          </Badge>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function renderShardsCard(endpoints: ShardTopology['endpoints']) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Shards</CardTitle>
+        <CardDescription>Each configured engine endpoint and its live health.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {endpoints.length === 0 ? (
+          <p className="text-muted-foreground text-sm">No shard endpoints reported.</p>
+        ) : (
+          <div className="space-y-2">{endpoints.map(renderShardRow)}</div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function renderDaemonBadges(daemon: DaemonStatus) {
+  return (
+    <div className="flex flex-wrap gap-2 text-sm">
+      {daemon.role !== undefined && (
+        <Badge variant="secondary" className="gap-1">
+          role: {daemon.role}
+        </Badge>
+      )}
+      <Badge variant={daemon.running ? 'default' : 'outline'} className="gap-1">
+        {daemon.running ? <Loader2 className="size-3 animate-spin" /> : <XCircle className="size-3" />}
+        {daemon.running ? 'running' : 'stopped'}
+      </Badge>
+      {daemon.queue_depth !== undefined && <Badge variant="secondary">queue: {String(daemon.queue_depth)}</Badge>}
+    </div>
+  )
+}
+
+function renderDaemonCard(daemon: DaemonStatus | null) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Daemon</CardTitle>
+        <CardDescription>The consolidated KG background daemon that hosts the local shard.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {daemon ? (
+          renderDaemonBadges(daemon)
+        ) : (
+          <p className="text-muted-foreground text-sm">Daemon status unavailable.</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function renderTopologyBody({
+  unavailable,
+  topologyError,
+  topology,
+  endpoints,
+  reachable,
+  daemon,
+}: {
+  unavailable: boolean
+  topologyError: string | null
+  topology: ShardTopology | null
+  endpoints: ShardTopology['endpoints']
+  reachable: number
+  daemon: DaemonStatus | null
+}) {
+  if (unavailable) {
+    return (
+      <p className="text-muted-foreground text-sm">
+        The <code>/api/dashboard/daemon/shards</code> route is not activated on this backend yet.
+      </p>
+    )
+  }
+  if (topologyError) return <UnavailableNotice what={`Shard topology (${topologyError})`} />
+  return (
+    <>
+      {renderSummaryCards({ topology, endpoints, reachable })}
+      {renderShardsCard(endpoints)}
+      {renderDaemonCard(daemon)}
+    </>
+  )
+}
+
 export default function ShardsPanel() {
   const [topology, setTopology] = useState<ShardTopology | null>(null)
   const [daemon, setDaemon] = useState<DaemonStatus | null>(null)
@@ -86,118 +247,7 @@ export default function ShardsPanel() {
         </Button>
       </div>
 
-      {unavailable ? (
-        <p className="text-muted-foreground text-sm">
-          The <code>/api/dashboard/daemon/shards</code> route is not activated on this backend yet.
-        </p>
-      ) : topologyError ? (
-        <UnavailableNotice what={`Shard topology (${topologyError})`} />
-      ) : (
-        <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-sm text-muted-foreground">Mode</p>
-                <p className="text-2xl font-bold capitalize">{topology?.mode ?? '-'}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-sm text-muted-foreground">Shards</p>
-                <p className="text-2xl font-bold">{endpoints.length || '-'}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-sm text-muted-foreground">Reachable</p>
-                <p className="text-2xl font-bold">
-                  {endpoints.length ? `${String(reachable)}/${String(endpoints.length)}` : '-'}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-sm text-muted-foreground">Default graph</p>
-                <p className="text-lg font-semibold font-mono truncate">{topology?.default_graph ?? '-'}</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Shards</CardTitle>
-              <CardDescription>Each configured engine endpoint and its live health.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {endpoints.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No shard endpoints reported.</p>
-              ) : (
-                <div className="space-y-2">
-                  {endpoints.map((ep, idx) => (
-                    <div key={ep.endpoint} className="flex items-center justify-between rounded border p-3 text-sm">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <Server className="size-4 shrink-0 text-muted-foreground" />
-                        <div className="flex flex-col min-w-0">
-                          <span className="font-mono truncate">{ep.endpoint}</span>
-                          <span className="text-xs text-muted-foreground">
-                            writer #{idx} {ep.local ? '· local' : '· remote'}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {ep.local && <Badge variant="outline">local</Badge>}
-                        {ep.breaker && (
-                          <Badge variant={breakerVariant(ep.breaker)} className="font-mono text-xs">
-                            {ep.breaker}
-                          </Badge>
-                        )}
-                        {ep.reachable ? (
-                          <Badge variant="default" className="gap-1">
-                            <CheckCircle2 className="size-3" />
-                            up
-                          </Badge>
-                        ) : (
-                          <Badge variant="destructive" className="gap-1">
-                            <XCircle className="size-3" />
-                            down
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Daemon</CardTitle>
-              <CardDescription>The consolidated KG background daemon that hosts the local shard.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {daemon ? (
-                <div className="flex flex-wrap gap-2 text-sm">
-                  {daemon.role !== undefined && (
-                    <Badge variant="secondary" className="gap-1">
-                      role: {daemon.role}
-                    </Badge>
-                  )}
-                  <Badge variant={daemon.running ? 'default' : 'outline'} className="gap-1">
-                    {daemon.running ? <Loader2 className="size-3 animate-spin" /> : <XCircle className="size-3" />}
-                    {daemon.running ? 'running' : 'stopped'}
-                  </Badge>
-                  {daemon.queue_depth !== undefined && (
-                    <Badge variant="secondary">queue: {String(daemon.queue_depth)}</Badge>
-                  )}
-                </div>
-              ) : (
-                <p className="text-muted-foreground text-sm">Daemon status unavailable.</p>
-              )}
-            </CardContent>
-          </Card>
-        </>
-      )}
+      {renderTopologyBody({ unavailable, topologyError, topology, endpoints, reachable, daemon })}
     </div>
   )
 }

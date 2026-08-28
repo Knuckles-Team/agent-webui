@@ -184,6 +184,352 @@ function Empty({ children }: { children: ReactNode }) {
   return <div className="py-8 text-center text-sm text-muted-foreground">{children}</div>
 }
 
+function toolBadgeVariant(successRate: number): 'default' | 'secondary' | 'destructive' {
+  if (successRate >= 0.9) return 'default'
+  if (successRate >= 0.5) return 'secondary'
+  return 'destructive'
+}
+
+function renderToolsTab({ unavailable, tools }: { unavailable: boolean; tools: UsageToolStat[] }) {
+  if (unavailable) return <UnavailableNotice what="Tool/skill call stats" />
+  if (tools.length === 0) return <Empty>No tool calls recorded yet.</Empty>
+  return (
+    <div className="space-y-1">
+      {tools.map((t) => (
+        <div key={`${t.name}-${t.category}`} className="flex items-center gap-3 text-sm">
+          <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="w-44 shrink-0 truncate font-mono text-xs">{t.name}</span>
+          <Badge variant="outline" className="shrink-0 text-[10px]">
+            {t.category}
+          </Badge>
+          <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
+            <div
+              className="h-full bg-primary"
+              style={{ width: `${Math.min(100, (t.calls / Math.max(1, tools[0].calls)) * 100)}%` }}
+            />
+          </div>
+          <span className="w-12 text-right tabular-nums">{t.calls}</span>
+          <Badge variant={toolBadgeVariant(t.success_rate)} className="w-14 shrink-0 justify-center text-[10px]">
+            {Math.round(t.success_rate * 100)}%
+          </Badge>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function renderActivityTab({ unavailable, activity }: { unavailable: boolean; activity: UsageActivityCell[] }) {
+  if (unavailable) return <UnavailableNotice what="Activity data" />
+  if (activity.length === 0) return <Empty>No activity yet.</Empty>
+  return <Heatmap cells={activity} />
+}
+
+function renderSessionsTab({
+  unavailable,
+  sessions,
+  onOpenDetail,
+}: {
+  unavailable: boolean
+  sessions: UsageSessionRow[]
+  onOpenDetail: (id: string) => void
+}) {
+  if (unavailable) return <UnavailableNotice what="The session list" />
+  if (sessions.length === 0) return <Empty>No sessions yet.</Empty>
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-left text-xs text-muted-foreground">
+          <th className="pb-2">Project</th>
+          <th className="pb-2">Agent</th>
+          <th className="pb-2 text-right">Msgs</th>
+          <th className="pb-2 text-right">Cost</th>
+          <th className="pb-2 text-center">Grade</th>
+        </tr>
+      </thead>
+      <tbody>
+        {sessions.map((s) => (
+          <tr
+            key={s.id}
+            className="cursor-pointer border-t hover:bg-muted/50"
+            onClick={() => {
+              onOpenDetail(s.id)
+            }}
+          >
+            <td className="py-1.5 font-mono text-xs">{s.project || '—'}</td>
+            <td className="py-1.5">
+              <Badge variant="outline" className="text-[10px]">
+                {s.agent}
+              </Badge>
+            </td>
+            <td className="py-1.5 text-right tabular-nums">{s.message_count}</td>
+            <td className="py-1.5 text-right tabular-nums">{fmtUsd(s.cost_usd)}</td>
+            <td className="py-1.5 text-center">
+              {s.health_grade && (
+                <Badge variant="secondary" className="text-[10px]">
+                  {s.health_grade}
+                </Badge>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function renderSearchTab({
+  searchQ,
+  onSearchQChange,
+  onRunSearch,
+  hits,
+  onOpenDetail,
+}: {
+  searchQ: string
+  onSearchQChange: (v: string) => void
+  onRunSearch: () => void
+  hits: UsageSearchHit[]
+  onOpenDetail: (id: string) => void
+}) {
+  return (
+    <>
+      <div className="flex gap-2">
+        <Input
+          placeholder="Search…"
+          value={searchQ}
+          onChange={(e) => {
+            onSearchQChange(e.target.value)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onRunSearch()
+          }}
+        />
+        <Button onClick={onRunSearch}>
+          <Search className="mr-2 h-4 w-4" />
+          Search
+        </Button>
+      </div>
+      {hits.map((h, i) => (
+        <div
+          key={`${h.session_id}-${h.ordinal}-${i}`}
+          className="cursor-pointer rounded border p-2 text-sm hover:bg-muted/50"
+          onClick={() => {
+            onOpenDetail(h.session_id)
+          }}
+        >
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline" className="text-[10px]">
+              {h.agent}
+            </Badge>
+            <span>{h.project}</span>
+            <span>·</span>
+            <span>{h.role}</span>
+          </div>
+          <div className="mt-1">{h.snippet}</div>
+        </div>
+      ))}
+    </>
+  )
+}
+
+function renderTracesTab({ traces }: { traces: UsageTraces }) {
+  return (
+    <>
+      {traces.traces.map((t) => {
+        const traceUrl = safeExternalUrl(t.url)
+        if (!traceUrl) return null
+        return (
+          <a
+            key={t.session_id}
+            href={traceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block rounded border p-2 text-sm hover:bg-muted/50"
+          >
+            <span className="font-mono text-xs">{t.session_id}</span>
+            <span className="ml-2 text-muted-foreground">{t.project}</span>
+          </a>
+        )
+      })}
+    </>
+  )
+}
+
+function renderSessionDetailSheet({ detail, onClose }: { detail: UsageSessionDetail | null; onClose: () => void }) {
+  return (
+    <Sheet
+      open={!!detail}
+      onOpenChange={(o) => {
+        if (!o) onClose()
+      }}
+    >
+      <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
+        {detail && (
+          <>
+            <SheetHeader>
+              <SheetTitle>{detail.session.project || detail.session.id}</SheetTitle>
+              <SheetDescription>
+                {detail.session.agent} · {detail.session.message_count} messages · {fmtUsd(detail.session.cost_usd)}
+              </SheetDescription>
+            </SheetHeader>
+            <div className="mt-4 space-y-2">
+              {detail.messages.map((m) => (
+                <div key={m.ordinal} className="rounded border p-2 text-sm">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant={m.role === 'user' ? 'secondary' : 'outline'} className="text-[10px]">
+                      {m.role}
+                    </Badge>
+                    {m.model && <span className="font-mono">{m.model}</span>}
+                    {m.output_tokens > 0 && <span>{fmtNum(m.output_tokens)} out</span>}
+                    {m.has_tool_use && <Wrench className="h-3 w-3" />}
+                  </div>
+                  <div className="mt-1 line-clamp-4 whitespace-pre-wrap">{m.content}</div>
+                </div>
+              ))}
+              {detail.tool_calls.length > 0 && (
+                <div className="pt-2">
+                  <div className="mb-1 text-xs font-semibold text-muted-foreground">Tool calls</div>
+                  <div className="flex flex-wrap gap-1">
+                    {detail.tool_calls.map((tc, i) => (
+                      <Badge key={i} variant="outline" className="text-[10px]">
+                        {tc.skill_name ?? tc.tool_name} ({tc.category})
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+interface AdminTenantBarProps {
+  isAdmin: boolean
+  tenantPlaceholder: string
+  tenantInput: string
+  onTenantInputChange: (v: string) => void
+  tenantFilter: string | undefined
+  onViewTenant: () => void
+}
+
+function renderAdminTenantBar({
+  isAdmin,
+  tenantPlaceholder,
+  tenantInput,
+  onTenantInputChange,
+  tenantFilter,
+  onViewTenant,
+}: AdminTenantBarProps) {
+  if (!isAdmin) return null
+  return (
+    <div className="flex items-center gap-1.5">
+      <Users className="h-4 w-4 text-muted-foreground" />
+      <Input
+        placeholder={tenantPlaceholder}
+        value={tenantInput}
+        onChange={(e) => {
+          onTenantInputChange(e.target.value)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onViewTenant()
+        }}
+        className="h-8 w-44 text-xs"
+      />
+      <Button variant="outline" size="sm" className="h-8" onClick={onViewTenant}>
+        View tenant
+      </Button>
+      {tenantFilter && (
+        <Badge variant="secondary" className="text-[10px]">
+          viewing: {tenantFilter}
+        </Badge>
+      )}
+    </div>
+  )
+}
+
+function renderAdminTenantNotice({
+  isAdmin,
+  tenantFilter,
+  defaultTenant,
+}: {
+  isAdmin: boolean
+  tenantFilter: string | undefined
+  defaultTenant: string | null | undefined
+}) {
+  if (!isAdmin) return null
+  return (
+    <p className="text-xs text-muted-foreground">
+      Admin view: showing tenant <span className="font-mono">{tenantFilter ?? defaultTenant ?? 'your own'}</span>.
+      There is no single "every tenant" query — the server requires naming one tenant at a time (never an implicit
+      all-tenant read), so switch tenants above to look at another one.
+    </p>
+  )
+}
+
+function renderDataSourceBadges({ traces }: { traces: UsageTraces | null }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-2 text-xs">
+      <span className="flex items-center gap-1 font-medium text-muted-foreground">
+        <Info className="h-3.5 w-3.5" />
+        Data sources:
+      </span>
+      {sourceRows(Boolean(traces?.enabled)).map((s) => (
+        <Tooltip key={s.label}>
+          <TooltipTrigger asChild>
+            <Badge
+              variant="outline"
+              className={`cursor-default gap-1 border-none text-[10px] ${SOURCE_STATUS_STYLE[s.status]}`}
+            >
+              {s.label}: {SOURCE_STATUS_LABEL[s.status]}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs text-xs">{s.note}</TooltipContent>
+        </Tooltip>
+      ))}
+    </div>
+  )
+}
+
+function kpiValue(unavailable: boolean, value: string): string {
+  return unavailable ? '—' : value
+}
+
+function kpiCost(unavailable: boolean, summary: UsageSummary | null): string {
+  return kpiValue(unavailable, fmtUsd(summary?.totals.cost_usd ?? 0))
+}
+
+function kpiTokens(unavailable: boolean, summary: UsageSummary | null): string {
+  const totals = summary?.totals
+  return kpiValue(unavailable, `${fmtNum(totals?.input_tokens ?? 0)} / ${fmtNum(totals?.output_tokens ?? 0)}`)
+}
+
+function kpiCacheRate(unavailable: boolean, summary: UsageSummary | null): string {
+  return kpiValue(unavailable, `${Math.round((summary?.cache_hit_rate ?? 0) * 100)}%`)
+}
+
+function kpiSessions(unavailable: boolean, summary: UsageSummary | null): string {
+  return kpiValue(unavailable, fmtNum(summary?.session_count ?? 0))
+}
+
+function renderKpiGrid({
+  summaryUnavailable,
+  summary,
+}: {
+  summaryUnavailable: boolean
+  summary: UsageSummary | null
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <Kpi label="Total cost" value={kpiCost(summaryUnavailable, summary)} icon={Coins} />
+      <Kpi label="Tokens (in/out)" value={kpiTokens(summaryUnavailable, summary)} icon={Cpu} />
+      <Kpi label="Cache hit rate" value={kpiCacheRate(summaryUnavailable, summary)} icon={Activity} />
+      <Kpi label="Sessions" value={kpiSessions(summaryUnavailable, summary)} icon={BarChart3} />
+    </div>
+  )
+}
+
 export default function UsageView() {
   const { identity } = useIdentity()
   const isAdmin = roleAtLeast(identity.role, 'admin')
@@ -300,8 +646,6 @@ export default function UsageView() {
     setDetail(await api.getUsageSessionDetail(id))
   }, [])
 
-  const totals = summary?.totals
-
   return (
     <div className="space-y-4 p-4">
       <div className="flex items-center justify-between">
@@ -312,37 +656,16 @@ export default function UsageView() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {isAdmin && (
-            <div className="flex items-center gap-1.5">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder={identity.raw?.tenant ? `tenant (default: ${identity.raw.tenant})` : 'tenant id'}
-                value={tenantInput}
-                onChange={(e) => {
-                  setTenantInput(e.target.value)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') setTenantFilter(tenantInput.trim() || undefined)
-                }}
-                className="h-8 w-44 text-xs"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8"
-                onClick={() => {
-                  setTenantFilter(tenantInput.trim() || undefined)
-                }}
-              >
-                View tenant
-              </Button>
-              {tenantFilter && (
-                <Badge variant="secondary" className="text-[10px]">
-                  viewing: {tenantFilter}
-                </Badge>
-              )}
-            </div>
-          )}
+          {renderAdminTenantBar({
+            isAdmin,
+            tenantPlaceholder: identity.raw?.tenant ? `tenant (default: ${identity.raw.tenant})` : 'tenant id',
+            tenantInput,
+            onTenantInputChange: setTenantInput,
+            tenantFilter,
+            onViewTenant: () => {
+              setTenantFilter(tenantInput.trim() || undefined)
+            },
+          })}
           <Button
             variant="outline"
             size="sm"
@@ -357,55 +680,11 @@ export default function UsageView() {
         </div>
       </div>
 
-      {isAdmin && (
-        <p className="text-xs text-muted-foreground">
-          Admin view: showing tenant{' '}
-          <span className="font-mono">{tenantFilter ?? identity.raw?.tenant ?? 'your own'}</span>. There is no single
-          "every tenant" query — the server requires naming one tenant at a time (never an implicit all-tenant read),
-          so switch tenants above to look at another one.
-        </p>
-      )}
+      {renderAdminTenantNotice({ isAdmin, tenantFilter, defaultTenant: identity.raw?.tenant })}
 
-      <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-2 text-xs">
-        <span className="flex items-center gap-1 font-medium text-muted-foreground">
-          <Info className="h-3.5 w-3.5" />
-          Data sources:
-        </span>
-        {sourceRows(Boolean(traces?.enabled)).map((s) => (
-          <Tooltip key={s.label}>
-            <TooltipTrigger asChild>
-              <Badge
-                variant="outline"
-                className={`cursor-default gap-1 border-none text-[10px] ${SOURCE_STATUS_STYLE[s.status]}`}
-              >
-                {s.label}: {SOURCE_STATUS_LABEL[s.status]}
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs text-xs">{s.note}</TooltipContent>
-          </Tooltip>
-        ))}
-      </div>
+      {renderDataSourceBadges({ traces })}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Total cost" value={summaryUnavailable ? '—' : fmtUsd(totals?.cost_usd ?? 0)} icon={Coins} />
-        <Kpi
-          label="Tokens (in/out)"
-          value={
-            summaryUnavailable ? '—' : `${fmtNum(totals?.input_tokens ?? 0)} / ${fmtNum(totals?.output_tokens ?? 0)}`
-          }
-          icon={Cpu}
-        />
-        <Kpi
-          label="Cache hit rate"
-          value={summaryUnavailable ? '—' : `${Math.round((summary?.cache_hit_rate ?? 0) * 100)}%`}
-          icon={Activity}
-        />
-        <Kpi
-          label="Sessions"
-          value={summaryUnavailable ? '—' : fmtNum(summary?.session_count ?? 0)}
-          icon={BarChart3}
-        />
-      </div>
+      {renderKpiGrid({ summaryUnavailable, summary })}
       {summaryUnavailable && <UnavailableNotice what="The usage summary" />}
 
       <Tabs defaultValue="models">
@@ -461,40 +740,7 @@ export default function UsageView() {
               <CardTitle>Tool, skill &amp; database calls</CardTitle>
               <CardDescription>Frequency and success rate.</CardDescription>
             </CardHeader>
-            <CardContent>
-              {toolsUnavailable ? (
-                <UnavailableNotice what="Tool/skill call stats" />
-              ) : tools.length === 0 ? (
-                <Empty>No tool calls recorded yet.</Empty>
-              ) : (
-                <div className="space-y-1">
-                  {tools.map((t) => (
-                    <div key={`${t.name}-${t.category}`} className="flex items-center gap-3 text-sm">
-                      <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="w-44 shrink-0 truncate font-mono text-xs">{t.name}</span>
-                      <Badge variant="outline" className="shrink-0 text-[10px]">
-                        {t.category}
-                      </Badge>
-                      <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
-                        <div
-                          className="h-full bg-primary"
-                          style={{ width: `${Math.min(100, (t.calls / Math.max(1, tools[0].calls)) * 100)}%` }}
-                        />
-                      </div>
-                      <span className="w-12 text-right tabular-nums">{t.calls}</span>
-                      <Badge
-                        variant={
-                          t.success_rate >= 0.9 ? 'default' : t.success_rate >= 0.5 ? 'secondary' : 'destructive'
-                        }
-                        className="w-14 shrink-0 justify-center text-[10px]"
-                      >
-                        {Math.round(t.success_rate * 100)}%
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
+            <CardContent>{renderToolsTab({ unavailable: toolsUnavailable, tools })}</CardContent>
           </Card>
         </TabsContent>
 
@@ -504,15 +750,7 @@ export default function UsageView() {
               <CardTitle>Activity heatmap</CardTitle>
               <CardDescription>Sessions by day of week × hour.</CardDescription>
             </CardHeader>
-            <CardContent>
-              {activityUnavailable ? (
-                <UnavailableNotice what="Activity data" />
-              ) : activity.length === 0 ? (
-                <Empty>No activity yet.</Empty>
-              ) : (
-                <Heatmap cells={activity} />
-              )}
-            </CardContent>
+            <CardContent>{renderActivityTab({ unavailable: activityUnavailable, activity })}</CardContent>
           </Card>
         </TabsContent>
 
@@ -522,50 +760,13 @@ export default function UsageView() {
               <CardTitle>Top sessions by cost</CardTitle>
             </CardHeader>
             <CardContent>
-              {sessionsUnavailable ? (
-                <UnavailableNotice what="The session list" />
-              ) : sessions.length === 0 ? (
-                <Empty>No sessions yet.</Empty>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-muted-foreground">
-                      <th className="pb-2">Project</th>
-                      <th className="pb-2">Agent</th>
-                      <th className="pb-2 text-right">Msgs</th>
-                      <th className="pb-2 text-right">Cost</th>
-                      <th className="pb-2 text-center">Grade</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sessions.map((s) => (
-                      <tr
-                        key={s.id}
-                        className="cursor-pointer border-t hover:bg-muted/50"
-                        onClick={() => {
-                          void openDetail(s.id)
-                        }}
-                      >
-                        <td className="py-1.5 font-mono text-xs">{s.project || '—'}</td>
-                        <td className="py-1.5">
-                          <Badge variant="outline" className="text-[10px]">
-                            {s.agent}
-                          </Badge>
-                        </td>
-                        <td className="py-1.5 text-right tabular-nums">{s.message_count}</td>
-                        <td className="py-1.5 text-right tabular-nums">{fmtUsd(s.cost_usd)}</td>
-                        <td className="py-1.5 text-center">
-                          {s.health_grade && (
-                            <Badge variant="secondary" className="text-[10px]">
-                              {s.health_grade}
-                            </Badge>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+              {renderSessionsTab({
+                unavailable: sessionsUnavailable,
+                sessions,
+                onOpenDetail: (id) => {
+                  void openDetail(id)
+                },
+              })}
             </CardContent>
           </Card>
         </TabsContent>
@@ -577,45 +778,17 @@ export default function UsageView() {
               <CardDescription>Full-text search across all sessions.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Search…"
-                  value={searchQ}
-                  onChange={(e) => {
-                    setSearchQ(e.target.value)
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void runSearch()
-                  }}
-                />
-                <Button
-                  onClick={() => {
-                    void runSearch()
-                  }}
-                >
-                  <Search className="mr-2 h-4 w-4" />
-                  Search
-                </Button>
-              </div>
-              {hits.map((h, i) => (
-                <div
-                  key={`${h.session_id}-${h.ordinal}-${i}`}
-                  className="cursor-pointer rounded border p-2 text-sm hover:bg-muted/50"
-                  onClick={() => {
-                    void openDetail(h.session_id)
-                  }}
-                >
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Badge variant="outline" className="text-[10px]">
-                      {h.agent}
-                    </Badge>
-                    <span>{h.project}</span>
-                    <span>·</span>
-                    <span>{h.role}</span>
-                  </div>
-                  <div className="mt-1">{h.snippet}</div>
-                </div>
-              ))}
+              {renderSearchTab({
+                searchQ,
+                onSearchQChange: setSearchQ,
+                onRunSearch: () => {
+                  void runSearch()
+                },
+                hits,
+                onOpenDetail: (id) => {
+                  void openDetail(id)
+                },
+              })}
             </CardContent>
           </Card>
         </TabsContent>
@@ -627,75 +800,18 @@ export default function UsageView() {
                 <CardTitle>Langfuse traces</CardTitle>
                 <CardDescription>{traces.host}</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-1">
-                {traces.traces.map((t) => {
-                  const traceUrl = safeExternalUrl(t.url)
-                  if (!traceUrl) return null
-                  return (
-                    <a
-                      key={t.session_id}
-                      href={traceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block rounded border p-2 text-sm hover:bg-muted/50"
-                    >
-                      <span className="font-mono text-xs">{t.session_id}</span>
-                      <span className="ml-2 text-muted-foreground">{t.project}</span>
-                    </a>
-                  )
-                })}
-              </CardContent>
+              <CardContent className="space-y-1">{renderTracesTab({ traces })}</CardContent>
             </Card>
           </TabsContent>
         )}
       </Tabs>
 
-      <Sheet
-        open={!!detail}
-        onOpenChange={(o) => {
-          if (!o) setDetail(null)
-        }}
-      >
-        <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
-          {detail && (
-            <>
-              <SheetHeader>
-                <SheetTitle>{detail.session.project || detail.session.id}</SheetTitle>
-                <SheetDescription>
-                  {detail.session.agent} · {detail.session.message_count} messages · {fmtUsd(detail.session.cost_usd)}
-                </SheetDescription>
-              </SheetHeader>
-              <div className="mt-4 space-y-2">
-                {detail.messages.map((m) => (
-                  <div key={m.ordinal} className="rounded border p-2 text-sm">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Badge variant={m.role === 'user' ? 'secondary' : 'outline'} className="text-[10px]">
-                        {m.role}
-                      </Badge>
-                      {m.model && <span className="font-mono">{m.model}</span>}
-                      {m.output_tokens > 0 && <span>{fmtNum(m.output_tokens)} out</span>}
-                      {m.has_tool_use && <Wrench className="h-3 w-3" />}
-                    </div>
-                    <div className="mt-1 line-clamp-4 whitespace-pre-wrap">{m.content}</div>
-                  </div>
-                ))}
-                {detail.tool_calls.length > 0 && (
-                  <div className="pt-2">
-                    <div className="mb-1 text-xs font-semibold text-muted-foreground">Tool calls</div>
-                    <div className="flex flex-wrap gap-1">
-                      {detail.tool_calls.map((tc, i) => (
-                        <Badge key={i} variant="outline" className="text-[10px]">
-                          {tc.skill_name ?? tc.tool_name} ({tc.category})
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+      {renderSessionDetailSheet({
+        detail,
+        onClose: () => {
+          setDetail(null)
+        },
+      })}
     </div>
   )
 }

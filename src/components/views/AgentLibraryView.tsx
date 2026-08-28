@@ -92,6 +92,591 @@ const EMPTY_CONFIG: ConfigSummary = {
   embedding_models: [],
 }
 
+function renderSuggestionsGrid({
+  loadingSuggestions,
+  suggestions,
+  onStartFromSuggestion,
+}: {
+  loadingSuggestions: boolean
+  suggestions: Suggestion[]
+  onStartFromSuggestion: (s: Suggestion) => void
+}) {
+  if (loadingSuggestions || suggestions.length === 0) return null
+  return (
+    <div className="space-y-3">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+        <Sparkles className="size-3.5 text-emerald-400" /> Suggested, from what is installed
+      </h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {suggestions.slice(0, 6).map((s) => (
+          <div
+            key={s.mcp_server}
+            className="p-3.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 flex flex-col gap-2"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-bold text-sm text-foreground">{s.mcp_server}</span>
+              <Badge variant="secondary" className="text-[10px]">
+                {s.tool_count} tool{s.tool_count === 1 ? '' : 's'}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-muted-foreground">{s.reason}</p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="self-start h-7 text-xs"
+              onClick={() => {
+                onStartFromSuggestion(s)
+              }}
+            >
+              <Plus className="size-3.5 mr-1" /> Build this agent
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function renderAgentCard({ agent, onArchive }: { agent: LibraryAgent; onArchive: (agent: LibraryAgent) => void }) {
+  return (
+    <div
+      key={agent.id}
+      className="p-4 rounded-xl border border-border/40 bg-muted/10 backdrop-blur-sm hover:border-emerald-500/30 transition-all flex flex-col justify-between"
+    >
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {agent.kind === 'a2a' ? (
+              <Globe className="size-4 text-teal-400 shrink-0" />
+            ) : (
+              <Bot className="size-4 text-emerald-400 shrink-0" />
+            )}
+            <h4 className="font-bold text-sm text-foreground truncate">{agent.name}</h4>
+          </div>
+          <Badge
+            variant="outline"
+            className={`text-[10px] font-semibold shrink-0 ${
+              agent.kind === 'a2a'
+                ? 'bg-teal-500/10 border-teal-500/30 text-teal-400'
+                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+            }`}
+          >
+            {agent.kind === 'a2a' ? 'External · A2A' : 'Local'}
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground leading-normal line-clamp-3">
+          {agent.description || 'No description.'}
+        </p>
+        {agent.mcp_server && (
+          <div className="text-[10px] text-muted-foreground mt-2">
+            <Wrench className="size-3 inline mr-1" />
+            bound to <code className="font-mono">{agent.mcp_server}</code>
+          </div>
+        )}
+      </div>
+      <div className="mt-4 flex items-center justify-between border-t border-border/30 pt-3">
+        <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold">
+          <CheckCircle className="size-3" />
+          {agent.runnable_bound === false ? 'Prompt only' : 'Delegatable'}
+        </div>
+        <button
+          onClick={() => {
+            onArchive(agent)
+          }}
+          className="p-1.5 rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
+          aria-label={`Archive ${agent.name}`}
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function renderAgentGrid({
+  loadingAgents,
+  agentsUnavailable,
+  filteredAgents,
+  onArchive,
+}: {
+  loadingAgents: boolean
+  agentsUnavailable: boolean
+  filteredAgents: LibraryAgent[]
+  onArchive: (agent: LibraryAgent) => void
+}) {
+  if (loadingAgents) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 gap-3">
+        <RefreshCw className="size-8 text-emerald-500 animate-spin" />
+        <span className="text-sm text-muted-foreground font-medium">Querying the graph...</span>
+      </div>
+    )
+  }
+  if (agentsUnavailable) {
+    return (
+      <div className="text-center py-12">
+        <UnavailableNotice what="The Agent Library" className="justify-center" />
+      </div>
+    )
+  }
+  if (filteredAgents.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground text-sm">
+        No agents yet. Compose one, or register an external A2A agent.
+      </div>
+    )
+  }
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {filteredAgents.map((agent) => renderAgentCard({ agent, onArchive }))}
+    </div>
+  )
+}
+
+interface LibraryTabProps {
+  loadingSuggestions: boolean
+  suggestions: Suggestion[]
+  onStartFromSuggestion: (s: Suggestion) => void
+  search: string
+  onSearchChange: (v: string) => void
+  onRefresh: () => void
+  loadingAgents: boolean
+  onNewAgent: () => void
+  agentsUnavailable: boolean
+  filteredAgents: LibraryAgent[]
+  onArchive: (agent: LibraryAgent) => void
+}
+
+function renderLibraryTab(props: LibraryTabProps) {
+  const {
+    loadingSuggestions,
+    suggestions,
+    onStartFromSuggestion,
+    search,
+    onSearchChange,
+    onRefresh,
+    loadingAgents,
+    onNewAgent,
+    agentsUnavailable,
+    filteredAgents,
+    onArchive,
+  } = props
+  return (
+    <div className="space-y-6">
+      {renderSuggestionsGrid({ loadingSuggestions, suggestions, onStartFromSuggestion })}
+
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            placeholder="Search your agents..."
+            value={search}
+            onChange={(e) => {
+              onSearchChange(e.target.value)
+            }}
+            className="pl-9 h-9 bg-muted/20"
+          />
+        </div>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-9 w-9 shrink-0"
+          onClick={onRefresh}
+          disabled={loadingAgents}
+        >
+          <RefreshCw className={`size-4 ${loadingAgents ? 'animate-spin' : ''}`} />
+        </Button>
+        <Button size="sm" onClick={onNewAgent}>
+          <Plus className="size-4 mr-1.5" /> New agent
+        </Button>
+      </div>
+
+      <ScrollArea className="h-[calc(100vh-32rem)] min-h-[16rem] pr-2">
+        {renderAgentGrid({ loadingAgents, agentsUnavailable, filteredAgents, onArchive })}
+      </ScrollArea>
+    </div>
+  )
+}
+
+interface ComposeTabProps {
+  composeName: string
+  onComposeNameChange: (v: string) => void
+  composeDescription: string
+  onComposeDescriptionChange: (v: string) => void
+  composeInstructions: string
+  onComposeInstructionsChange: (v: string) => void
+  composeServer: string
+  onComposeServerChange: (v: string) => void
+  serverNames: string[]
+  composeModel: string
+  onComposeModelChange: (v: string) => void
+  chatModels: ChatModelSummary[]
+  loadingTools: boolean
+  toolsUnavailable: boolean
+  tools: LibraryTool[]
+  selectedToolIds: Set<string>
+  onToggleTool: (id: string) => void
+  composing: boolean
+  onCompose: () => void
+}
+
+function renderComposeToolPicker({
+  loadingTools,
+  toolsUnavailable,
+  tools,
+  selectedToolIds,
+  onToggleTool,
+}: Pick<ComposeTabProps, 'loadingTools' | 'toolsUnavailable' | 'tools' | 'selectedToolIds' | 'onToggleTool'>) {
+  if (loadingTools) return <div className="text-xs text-muted-foreground p-2">Loading tools...</div>
+  if (toolsUnavailable) {
+    return (
+      <div className="p-2">
+        <UnavailableNotice what="The tool catalog" />
+      </div>
+    )
+  }
+  if (tools.length === 0) {
+    return (
+      <div className="text-xs text-muted-foreground p-2">
+        No tools ingested yet for this filter — the agent can still run prompt-only.
+      </div>
+    )
+  }
+  return (
+    <>
+      {tools.map((t) => (
+        <label key={t.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/20 cursor-pointer">
+          <Checkbox
+            checked={selectedToolIds.has(t.id)}
+            onCheckedChange={() => {
+              onToggleTool(t.id)
+            }}
+          />
+          <span className="text-xs font-mono">{t.name}</span>
+          {t.mcp_server && <span className="text-[10px] text-muted-foreground ml-auto">{t.mcp_server}</span>}
+        </label>
+      ))}
+    </>
+  )
+}
+
+function renderComposeTab(props: ComposeTabProps) {
+  const {
+    composeName,
+    onComposeNameChange,
+    composeDescription,
+    onComposeDescriptionChange,
+    composeInstructions,
+    onComposeInstructionsChange,
+    composeServer,
+    onComposeServerChange,
+    serverNames,
+    composeModel,
+    onComposeModelChange,
+    chatModels,
+    composing,
+    onCompose,
+  } = props
+  return (
+    <div className="max-w-2xl space-y-5">
+      <div>
+        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Name</label>
+        <Input
+          value={composeName}
+          onChange={(e) => {
+            onComposeNameChange(e.target.value)
+          }}
+          placeholder="e.g. release-notes-writer"
+          className="mt-1 bg-muted/20"
+        />
+      </div>
+      <div>
+        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Description</label>
+        <Input
+          value={composeDescription}
+          onChange={(e) => {
+            onComposeDescriptionChange(e.target.value)
+          }}
+          placeholder="One line: what does this agent do for you?"
+          className="mt-1 bg-muted/20"
+        />
+      </div>
+      <div>
+        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          Instructions (its system prompt)
+        </label>
+        <Textarea
+          value={composeInstructions}
+          onChange={(e) => {
+            onComposeInstructionsChange(e.target.value)
+          }}
+          placeholder="You are a specialist that..."
+          className="mt-1 bg-muted/20 font-mono text-xs leading-relaxed"
+          rows={8}
+        />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            Bind an entire MCP server&apos;s tools (optional)
+          </label>
+          <select
+            value={composeServer}
+            onChange={(e) => {
+              onComposeServerChange(e.target.value)
+            }}
+            className="w-full h-9 mt-1 px-3 rounded-md border border-input bg-muted/20 text-xs"
+          >
+            <option value="">— none —</option>
+            {serverNames.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            Preferred model (optional, advisory)
+          </label>
+          <select
+            value={composeModel}
+            onChange={(e) => {
+              onComposeModelChange(e.target.value)
+            }}
+            className="w-full h-9 mt-1 px-3 rounded-md border border-input bg-muted/20 text-xs"
+          >
+            <option value="">— default —</option>
+            {chatModels.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.id} ({m.provider})
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          Or pick individual tools
+        </label>
+        <div className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-border/20 bg-muted/5 p-2 space-y-1">
+          {renderComposeToolPicker(props)}
+        </div>
+      </div>
+
+      <Button
+        onClick={onCompose}
+        disabled={composing || !composeName.trim() || !composeInstructions.trim()}
+        className="bg-emerald-600 hover:bg-emerald-700"
+      >
+        {composing ? 'Saving...' : 'Save agent to the Library'}
+      </Button>
+    </div>
+  )
+}
+
+interface ExternalTabProps {
+  a2aUrl: string
+  onA2aUrlChange: (v: string) => void
+  a2aCardJson: string
+  onA2aCardJsonChange: (v: string) => void
+  registering: boolean
+  onRegister: () => void
+}
+
+function renderExternalTab({
+  a2aUrl,
+  onA2aUrlChange,
+  a2aCardJson,
+  onA2aCardJsonChange,
+  registering,
+  onRegister,
+}: ExternalTabProps) {
+  return (
+    <div className="max-w-2xl space-y-5">
+      <p className="text-xs text-muted-foreground">
+        Register an outside agent that speaks the A2A protocol. Give its URL and, if it doesn&apos;t publish a
+        discoverable agent card, paste the card JSON yourself.
+      </p>
+      <div>
+        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Agent URL</label>
+        <Input
+          value={a2aUrl}
+          onChange={(e) => {
+            onA2aUrlChange(e.target.value)
+          }}
+          placeholder="https://agent.example.com"
+          className="mt-1 bg-muted/20 font-mono text-xs"
+        />
+      </div>
+      <div>
+        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          Agent card JSON (optional — auto-fetched from the URL if left blank)
+        </label>
+        <Textarea
+          value={a2aCardJson}
+          onChange={(e) => {
+            onA2aCardJsonChange(e.target.value)
+          }}
+          placeholder='{"name": "...", "description": "...", "capabilities": []}'
+          className="mt-1 bg-muted/20 font-mono text-xs"
+          rows={8}
+        />
+      </div>
+      <Button onClick={onRegister} disabled={registering || !a2aUrl.trim()} className="bg-teal-600 hover:bg-teal-700">
+        {registering ? 'Registering...' : 'Register external agent'}
+      </Button>
+    </div>
+  )
+}
+
+function renderChatModelCard(m: ChatModelSummary) {
+  return (
+    <div key={m.id} className="p-3 rounded-lg border border-border/30 bg-muted/5 space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="font-mono font-bold text-xs">{m.id}</span>
+        <Badge variant="outline" className="text-[9px]">
+          {m.provider}
+        </Badge>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {m.intelligence_level && (
+          <Badge variant="secondary" className="text-[9px]">
+            {m.intelligence_level}
+          </Badge>
+        )}
+        {m.can_route && (
+          <Badge variant="secondary" className="text-[9px]">
+            router
+          </Badge>
+        )}
+        {m.can_kg && (
+          <Badge variant="secondary" className="text-[9px]">
+            kg
+          </Badge>
+        )}
+        {m.vision && (
+          <Badge variant="secondary" className="text-[9px]">
+            vision
+          </Badge>
+        )}
+        {m.reasoning && (
+          <Badge variant="secondary" className="text-[9px]">
+            reasoning
+          </Badge>
+        )}
+        {m.tools_enabled && (
+          <Badge variant="secondary" className="text-[9px]">
+            tools
+          </Badge>
+        )}
+      </div>
+      {m.context_window ? (
+        <div className="text-[10px] text-muted-foreground">{m.context_window.toLocaleString()} token context</div>
+      ) : null}
+    </div>
+  )
+}
+
+function renderChatModelsSection({
+  configUnavailable,
+  chatModels,
+}: {
+  configUnavailable: boolean
+  chatModels: ChatModelSummary[]
+}) {
+  return (
+    <div>
+      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Chat models</h3>
+      {configUnavailable ? null : chatModels.length === 0 ? (
+        <div className="text-xs text-muted-foreground">No chat models configured.</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{chatModels.map(renderChatModelCard)}</div>
+      )}
+    </div>
+  )
+}
+
+function renderEmbeddingModelCard(m: EmbeddingModelSummary) {
+  return (
+    <div key={m.id} className="p-3 rounded-lg border border-border/30 bg-muted/5 space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="font-mono font-bold text-xs">{m.id}</span>
+        <Badge variant="outline" className="text-[9px]">
+          {m.provider}
+        </Badge>
+      </div>
+      <div className="text-[10px] text-muted-foreground">
+        chunk {m.chunk_size ?? '—'}
+        {m.context_window ? ` · ${m.context_window.toLocaleString()} token context` : ''}
+      </div>
+    </div>
+  )
+}
+
+function renderEmbeddingModelsSection({
+  configUnavailable,
+  embeddingModels,
+}: {
+  configUnavailable: boolean
+  embeddingModels: EmbeddingModelSummary[]
+}) {
+  return (
+    <div>
+      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Embedding models</h3>
+      {configUnavailable ? null : embeddingModels.length === 0 ? (
+        <div className="text-xs text-muted-foreground">No embedding models configured.</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{embeddingModels.map(renderEmbeddingModelCard)}</div>
+      )}
+    </div>
+  )
+}
+
+function renderConfigTab({
+  loadingConfig,
+  config,
+  configUnavailable,
+}: {
+  loadingConfig: boolean
+  config: ConfigSummary
+  configUnavailable: boolean
+}) {
+  if (loadingConfig) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-center py-12 gap-3">
+          <RefreshCw className="size-8 text-emerald-500 animate-spin" />
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap gap-4 text-xs">
+        <div className="rounded-md border border-border/30 bg-muted/10 px-3 py-2">
+          <div className="text-muted-foreground">App profile</div>
+          <div className="font-bold">{config.app_profile || '—'}</div>
+        </div>
+        <div className="rounded-md border border-border/30 bg-muted/10 px-3 py-2">
+          <div className="text-muted-foreground">Deployment profile</div>
+          <div className="font-bold">{config.deployment_profile || '—'}</div>
+        </div>
+      </div>
+
+      {configUnavailable && <UnavailableNotice what="The model configuration summary" />}
+
+      {renderChatModelsSection({ configUnavailable, chatModels: config.chat_models })}
+      {renderEmbeddingModelsSection({ configUnavailable, embeddingModels: config.embedding_models })}
+      <p className="text-[11px] text-muted-foreground">
+        Read-only view of the active <code>AgentConfig</code> model registry. Secrets and provider credentials are
+        never sent to the browser.
+      </p>
+    </div>
+  )
+}
+
 export default function AgentLibraryView() {
   const [tab, setTab] = useState<TabId>('library')
 
@@ -407,440 +992,69 @@ export default function AgentLibraryView() {
         </CardHeader>
 
         <CardContent>
-          {tab === 'library' && (
-            <div className="space-y-6">
-              {!loadingSuggestions && suggestions.length > 0 && (
-                <div className="space-y-3">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                    <Sparkles className="size-3.5 text-emerald-400" /> Suggested, from what is installed
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {suggestions.slice(0, 6).map((s) => (
-                      <div
-                        key={s.mcp_server}
-                        className="p-3.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 flex flex-col gap-2"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-bold text-sm text-foreground">{s.mcp_server}</span>
-                          <Badge variant="secondary" className="text-[10px]">
-                            {s.tool_count} tool{s.tool_count === 1 ? '' : 's'}
-                          </Badge>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground">{s.reason}</p>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="self-start h-7 text-xs"
-                          onClick={() => {
-                            startFromSuggestion(s)
-                          }}
-                        >
-                          <Plus className="size-3.5 mr-1" /> Build this agent
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+          {tab === 'library' &&
+            renderLibraryTab({
+              loadingSuggestions,
+              suggestions,
+              onStartFromSuggestion: startFromSuggestion,
+              search,
+              onSearchChange: setSearch,
+              onRefresh: () => {
+                void fetchAgents()
+                void fetchSuggestions()
+              },
+              loadingAgents,
+              onNewAgent: () => {
+                setTab('compose')
+              },
+              agentsUnavailable,
+              filteredAgents,
+              onArchive: (agent) => {
+                void handleArchive(agent)
+              },
+            })}
 
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search your agents..."
-                    value={search}
-                    onChange={(e) => {
-                      setSearch(e.target.value)
-                    }}
-                    className="pl-9 h-9 bg-muted/20"
-                  />
-                </div>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-9 w-9 shrink-0"
-                  onClick={() => {
-                    void fetchAgents()
-                    void fetchSuggestions()
-                  }}
-                  disabled={loadingAgents}
-                >
-                  <RefreshCw className={`size-4 ${loadingAgents ? 'animate-spin' : ''}`} />
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setTab('compose')
-                  }}
-                >
-                  <Plus className="size-4 mr-1.5" /> New agent
-                </Button>
-              </div>
+          {tab === 'compose' &&
+            renderComposeTab({
+              composeName,
+              onComposeNameChange: setComposeName,
+              composeDescription,
+              onComposeDescriptionChange: setComposeDescription,
+              composeInstructions,
+              onComposeInstructionsChange: setComposeInstructions,
+              composeServer,
+              onComposeServerChange: (v) => {
+                setComposeServer(v)
+                void fetchTools(v || undefined)
+              },
+              serverNames,
+              composeModel,
+              onComposeModelChange: setComposeModel,
+              chatModels: config.chat_models,
+              loadingTools,
+              toolsUnavailable,
+              tools,
+              selectedToolIds,
+              onToggleTool: toggleTool,
+              composing,
+              onCompose: () => {
+                void handleCompose()
+              },
+            })}
 
-              <ScrollArea className="h-[calc(100vh-32rem)] min-h-[16rem] pr-2">
-                {loadingAgents ? (
-                  <div className="flex flex-col items-center justify-center py-12 gap-3">
-                    <RefreshCw className="size-8 text-emerald-500 animate-spin" />
-                    <span className="text-sm text-muted-foreground font-medium">Querying the graph...</span>
-                  </div>
-                ) : agentsUnavailable ? (
-                  <div className="text-center py-12">
-                    <UnavailableNotice what="The Agent Library" className="justify-center" />
-                  </div>
-                ) : filteredAgents.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground text-sm">
-                    No agents yet. Compose one, or register an external A2A agent.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {filteredAgents.map((agent) => (
-                      <div
-                        key={agent.id}
-                        className="p-4 rounded-xl border border-border/40 bg-muted/10 backdrop-blur-sm hover:border-emerald-500/30 transition-all flex flex-col justify-between"
-                      >
-                        <div>
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              {agent.kind === 'a2a' ? (
-                                <Globe className="size-4 text-teal-400 shrink-0" />
-                              ) : (
-                                <Bot className="size-4 text-emerald-400 shrink-0" />
-                              )}
-                              <h4 className="font-bold text-sm text-foreground truncate">{agent.name}</h4>
-                            </div>
-                            <Badge
-                              variant="outline"
-                              className={`text-[10px] font-semibold shrink-0 ${
-                                agent.kind === 'a2a'
-                                  ? 'bg-teal-500/10 border-teal-500/30 text-teal-400'
-                                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                              }`}
-                            >
-                              {agent.kind === 'a2a' ? 'External · A2A' : 'Local'}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground leading-normal line-clamp-3">
-                            {agent.description || 'No description.'}
-                          </p>
-                          {agent.mcp_server && (
-                            <div className="text-[10px] text-muted-foreground mt-2">
-                              <Wrench className="size-3 inline mr-1" />
-                              bound to <code className="font-mono">{agent.mcp_server}</code>
-                            </div>
-                          )}
-                        </div>
-                        <div className="mt-4 flex items-center justify-between border-t border-border/30 pt-3">
-                          <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold">
-                            <CheckCircle className="size-3" />
-                            {agent.runnable_bound === false ? 'Prompt only' : 'Delegatable'}
-                          </div>
-                          <button
-                            onClick={() => {
-                              void handleArchive(agent)
-                            }}
-                            className="p-1.5 rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
-                            aria-label={`Archive ${agent.name}`}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </ScrollArea>
-            </div>
-          )}
+          {tab === 'external' &&
+            renderExternalTab({
+              a2aUrl,
+              onA2aUrlChange: setA2aUrl,
+              a2aCardJson,
+              onA2aCardJsonChange: setA2aCardJson,
+              registering,
+              onRegister: () => {
+                void handleRegisterA2A()
+              },
+            })}
 
-          {tab === 'compose' && (
-            <div className="max-w-2xl space-y-5">
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Name</label>
-                <Input
-                  value={composeName}
-                  onChange={(e) => {
-                    setComposeName(e.target.value)
-                  }}
-                  placeholder="e.g. release-notes-writer"
-                  className="mt-1 bg-muted/20"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  Description
-                </label>
-                <Input
-                  value={composeDescription}
-                  onChange={(e) => {
-                    setComposeDescription(e.target.value)
-                  }}
-                  placeholder="One line: what does this agent do for you?"
-                  className="mt-1 bg-muted/20"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  Instructions (its system prompt)
-                </label>
-                <Textarea
-                  value={composeInstructions}
-                  onChange={(e) => {
-                    setComposeInstructions(e.target.value)
-                  }}
-                  placeholder="You are a specialist that..."
-                  className="mt-1 bg-muted/20 font-mono text-xs leading-relaxed"
-                  rows={8}
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Bind an entire MCP server&apos;s tools (optional)
-                  </label>
-                  <select
-                    value={composeServer}
-                    onChange={(e) => {
-                      setComposeServer(e.target.value)
-                      void fetchTools(e.target.value || undefined)
-                    }}
-                    className="w-full h-9 mt-1 px-3 rounded-md border border-input bg-muted/20 text-xs"
-                  >
-                    <option value="">— none —</option>
-                    {serverNames.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Preferred model (optional, advisory)
-                  </label>
-                  <select
-                    value={composeModel}
-                    onChange={(e) => {
-                      setComposeModel(e.target.value)
-                    }}
-                    className="w-full h-9 mt-1 px-3 rounded-md border border-input bg-muted/20 text-xs"
-                  >
-                    <option value="">— default —</option>
-                    {config.chat_models.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.id} ({m.provider})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  Or pick individual tools
-                </label>
-                <div className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-border/20 bg-muted/5 p-2 space-y-1">
-                  {loadingTools ? (
-                    <div className="text-xs text-muted-foreground p-2">Loading tools...</div>
-                  ) : toolsUnavailable ? (
-                    <div className="p-2">
-                      <UnavailableNotice what="The tool catalog" />
-                    </div>
-                  ) : tools.length === 0 ? (
-                    <div className="text-xs text-muted-foreground p-2">
-                      No tools ingested yet for this filter — the agent can still run prompt-only.
-                    </div>
-                  ) : (
-                    tools.map((t) => (
-                      <label
-                        key={t.id}
-                        className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/20 cursor-pointer"
-                      >
-                        <Checkbox
-                          checked={selectedToolIds.has(t.id)}
-                          onCheckedChange={() => {
-                            toggleTool(t.id)
-                          }}
-                        />
-                        <span className="text-xs font-mono">{t.name}</span>
-                        {t.mcp_server && (
-                          <span className="text-[10px] text-muted-foreground ml-auto">{t.mcp_server}</span>
-                        )}
-                      </label>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <Button
-                onClick={() => {
-                  void handleCompose()
-                }}
-                disabled={composing || !composeName.trim() || !composeInstructions.trim()}
-                className="bg-emerald-600 hover:bg-emerald-700"
-              >
-                {composing ? 'Saving...' : 'Save agent to the Library'}
-              </Button>
-            </div>
-          )}
-
-          {tab === 'external' && (
-            <div className="max-w-2xl space-y-5">
-              <p className="text-xs text-muted-foreground">
-                Register an outside agent that speaks the A2A protocol. Give its URL and, if it doesn&apos;t publish a
-                discoverable agent card, paste the card JSON yourself.
-              </p>
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  Agent URL
-                </label>
-                <Input
-                  value={a2aUrl}
-                  onChange={(e) => {
-                    setA2aUrl(e.target.value)
-                  }}
-                  placeholder="https://agent.example.com"
-                  className="mt-1 bg-muted/20 font-mono text-xs"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  Agent card JSON (optional — auto-fetched from the URL if left blank)
-                </label>
-                <Textarea
-                  value={a2aCardJson}
-                  onChange={(e) => {
-                    setA2aCardJson(e.target.value)
-                  }}
-                  placeholder='{"name": "...", "description": "...", "capabilities": []}'
-                  className="mt-1 bg-muted/20 font-mono text-xs"
-                  rows={8}
-                />
-              </div>
-              <Button
-                onClick={() => {
-                  void handleRegisterA2A()
-                }}
-                disabled={registering || !a2aUrl.trim()}
-                className="bg-teal-600 hover:bg-teal-700"
-              >
-                {registering ? 'Registering...' : 'Register external agent'}
-              </Button>
-            </div>
-          )}
-
-          {tab === 'config' && (
-            <div className="space-y-6">
-              {loadingConfig ? (
-                <div className="flex items-center justify-center py-12 gap-3">
-                  <RefreshCw className="size-8 text-emerald-500 animate-spin" />
-                </div>
-              ) : (
-                <>
-                  <div className="flex flex-wrap gap-4 text-xs">
-                    <div className="rounded-md border border-border/30 bg-muted/10 px-3 py-2">
-                      <div className="text-muted-foreground">App profile</div>
-                      <div className="font-bold">{config.app_profile || '—'}</div>
-                    </div>
-                    <div className="rounded-md border border-border/30 bg-muted/10 px-3 py-2">
-                      <div className="text-muted-foreground">Deployment profile</div>
-                      <div className="font-bold">{config.deployment_profile || '—'}</div>
-                    </div>
-                  </div>
-
-                  {configUnavailable && <UnavailableNotice what="The model configuration summary" />}
-
-                  <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
-                      Chat models
-                    </h3>
-                    {configUnavailable ? null : config.chat_models.length === 0 ? (
-                      <div className="text-xs text-muted-foreground">No chat models configured.</div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {config.chat_models.map((m) => (
-                          <div key={m.id} className="p-3 rounded-lg border border-border/30 bg-muted/5 space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <span className="font-mono font-bold text-xs">{m.id}</span>
-                              <Badge variant="outline" className="text-[9px]">
-                                {m.provider}
-                              </Badge>
-                            </div>
-                            <div className="flex flex-wrap gap-1">
-                              {m.intelligence_level && (
-                                <Badge variant="secondary" className="text-[9px]">
-                                  {m.intelligence_level}
-                                </Badge>
-                              )}
-                              {m.can_route && (
-                                <Badge variant="secondary" className="text-[9px]">
-                                  router
-                                </Badge>
-                              )}
-                              {m.can_kg && (
-                                <Badge variant="secondary" className="text-[9px]">
-                                  kg
-                                </Badge>
-                              )}
-                              {m.vision && (
-                                <Badge variant="secondary" className="text-[9px]">
-                                  vision
-                                </Badge>
-                              )}
-                              {m.reasoning && (
-                                <Badge variant="secondary" className="text-[9px]">
-                                  reasoning
-                                </Badge>
-                              )}
-                              {m.tools_enabled && (
-                                <Badge variant="secondary" className="text-[9px]">
-                                  tools
-                                </Badge>
-                              )}
-                            </div>
-                            {m.context_window ? (
-                              <div className="text-[10px] text-muted-foreground">
-                                {m.context_window.toLocaleString()} token context
-                              </div>
-                            ) : null}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
-                      Embedding models
-                    </h3>
-                    {configUnavailable ? null : config.embedding_models.length === 0 ? (
-                      <div className="text-xs text-muted-foreground">No embedding models configured.</div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {config.embedding_models.map((m) => (
-                          <div key={m.id} className="p-3 rounded-lg border border-border/30 bg-muted/5 space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="font-mono font-bold text-xs">{m.id}</span>
-                              <Badge variant="outline" className="text-[9px]">
-                                {m.provider}
-                              </Badge>
-                            </div>
-                            <div className="text-[10px] text-muted-foreground">
-                              chunk {m.chunk_size ?? '—'}
-                              {m.context_window ? ` · ${m.context_window.toLocaleString()} token context` : ''}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Read-only view of the active <code>AgentConfig</code> model registry. Secrets and provider
-                    credentials are never sent to the browser.
-                  </p>
-                </>
-              )}
-            </div>
-          )}
+          {tab === 'config' && renderConfigTab({ loadingConfig, config, configUnavailable })}
         </CardContent>
       </Card>
     </div>

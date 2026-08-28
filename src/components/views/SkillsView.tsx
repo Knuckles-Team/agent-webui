@@ -445,6 +445,772 @@ function CognitiveBox({
   )
 }
 
+interface McpServerCardHandlers {
+  onToggleServer: (name: string, enabled: boolean) => void
+  onEditServer: (name: string) => void
+  onDeleteServer: (name: string) => void
+  onToggleExpansion: (name: string) => void
+  onToggleTool: (serverName: string, toolName: string, enabled: boolean) => void
+  onLoadMore: (serverName: string, offset: number) => void
+}
+
+function renderMcpServerHeaderActions({
+  server,
+  onToggleServer,
+  onEditServer,
+  onDeleteServer,
+}: {
+  server: MCPTool
+} & Pick<McpServerCardHandlers, 'onToggleServer' | 'onEditServer' | 'onDeleteServer'>) {
+  return (
+    <div className="flex items-center gap-2">
+      <Badge
+        variant="outline"
+        className={`text-[10px] font-semibold ${server.enabled ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}
+      >
+        {server.enabled ? 'Active' : 'Disabled'}
+      </Badge>
+      <button
+        onClick={() => {
+          onToggleServer(server.name, server.enabled)
+        }}
+        className={`px-2.5 py-1 rounded text-xs font-bold transition-all border ${
+          server.enabled
+            ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
+            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+        }`}
+      >
+        {server.enabled ? 'Disable' : 'Enable'}
+      </button>
+      <button
+        title={`Edit ${server.name}`}
+        aria-label={`Edit ${server.name}`}
+        onClick={() => {
+          onEditServer(server.name)
+        }}
+        className="p-1.5 rounded border border-border/40 text-muted-foreground hover:text-foreground hover:border-border transition-all"
+      >
+        <Pencil className="size-3.5" />
+      </button>
+      <button
+        title={`Remove ${server.name}`}
+        aria-label={`Remove ${server.name}`}
+        onClick={() => {
+          onDeleteServer(server.name)
+        }}
+        className="p-1.5 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-all"
+      >
+        <Trash2 className="size-3.5" />
+      </button>
+    </div>
+  )
+}
+
+function renderMcpServerStatus(server: MCPTool) {
+  return (
+    <>
+      {server.status === 'unavailable' && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 mt-2 text-amber-300">
+          <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+          <p className="text-xs">{server.error ?? 'Unavailable for an unreported reason.'}</p>
+        </div>
+      )}
+      {typeof server.tool_count === 'number' && (
+        <div className="space-y-1.5 mt-2">
+          <div className="text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">Served tools: </span>
+            <code className="font-mono bg-muted/40 px-1 py-0.5 rounded text-[10px]">{server.tool_count}</code>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+function renderMcpToolRow({
+  serverName,
+  tool,
+  onToggleTool,
+}: {
+  serverName: string
+  tool: LiveMCPTool
+} & Pick<McpServerCardHandlers, 'onToggleTool'>) {
+  return (
+    <div
+      key={tool.name}
+      className="flex items-start justify-between p-2.5 rounded-md border border-border/20 bg-muted/10"
+    >
+      <div className="space-y-1 pr-2">
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono font-bold text-xs text-foreground">{tool.name}</span>
+        </div>
+        {tool.description && (
+          <p className="text-[10px] text-muted-foreground leading-normal line-clamp-2">{tool.description}</p>
+        )}
+      </div>
+      <button
+        onClick={() => {
+          onToggleTool(serverName, tool.name, tool.enabled)
+        }}
+        className={`px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 border transition-all ${
+          tool.enabled
+            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
+            : 'bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20'
+        }`}
+      >
+        {tool.enabled ? 'ON' : 'OFF'}
+      </button>
+    </div>
+  )
+}
+
+function renderMcpToolsList({
+  serverTools,
+  isLoadingTools,
+  toolPageError,
+  serverName,
+  onToggleTool,
+}: {
+  serverTools: LiveMCPTool[]
+  isLoadingTools: boolean
+  toolPageError: string | undefined
+  serverName: string
+} & Pick<McpServerCardHandlers, 'onToggleTool'>) {
+  if (isLoadingTools && serverTools.length === 0) {
+    return (
+      <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground font-medium">
+        <RefreshCw className="size-3.5 animate-spin text-teal-400" />
+        <span>Discovering tools...</span>
+      </div>
+    )
+  }
+  if (serverTools.length === 0) {
+    return (
+      <div className="text-xs text-muted-foreground py-2">
+        {toolPageError ? 'No tools could be read for this MCP server.' : 'No tools exposed by this MCP server.'}
+      </div>
+    )
+  }
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+      {serverTools.map((tool) => renderMcpToolRow({ serverName, tool, onToggleTool }))}
+    </div>
+  )
+}
+
+function renderMcpToolsPanelBanner(message: string | null | undefined) {
+  if (!message) return null
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-amber-300">
+      <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+      <p className="text-xs">{message}</p>
+    </div>
+  )
+}
+
+function renderMcpToolsShowingCount({ shown, total }: { shown: number; total: number }) {
+  if (shown === 0) return null
+  return (
+    <div className="text-[10px] text-muted-foreground">
+      Showing <span className="font-semibold text-foreground">{shown}</span> of{' '}
+      <span className="font-semibold text-foreground">{total}</span> tools, alphabetically.
+    </div>
+  )
+}
+
+function renderMcpLoadMoreButton({
+  serverName,
+  shown,
+  total,
+  isLoadingTools,
+  onLoadMore,
+}: {
+  serverName: string
+  shown: number
+  total: number
+  isLoadingTools: boolean
+} & Pick<McpServerCardHandlers, 'onLoadMore'>) {
+  if (shown >= total) return null
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="w-full gap-1.5 text-xs"
+      disabled={isLoadingTools}
+      onClick={() => {
+        onLoadMore(serverName, shown)
+      }}
+    >
+      {isLoadingTools ? <RefreshCw className="size-3.5 animate-spin" /> : <ChevronDown className="size-3.5" />}
+      Load {Math.min(MCP_TOOL_PAGE_SIZE, total - shown)} more
+    </Button>
+  )
+}
+
+function renderMcpToolsPanel({
+  serverName,
+  toolPage,
+  isLoadingTools,
+  onToggleTool,
+  onLoadMore,
+}: {
+  serverName: string
+  toolPage: McpToolPageState | undefined
+  isLoadingTools: boolean
+} & Pick<McpServerCardHandlers, 'onToggleTool' | 'onLoadMore'>) {
+  const serverTools = toolPage?.tools ?? []
+  const toolTotal = toolPage?.total ?? 0
+  return (
+    <div className="mt-3 bg-muted/5 rounded-lg border border-border/20 p-3 space-y-2">
+      {renderMcpToolsPanelBanner(toolPage?.error)}
+      {renderMcpToolsPanelBanner(toolPage?.toggleError)}
+      {renderMcpToolsShowingCount({ shown: serverTools.length, total: toolTotal })}
+      {renderMcpToolsList({
+        serverTools,
+        isLoadingTools,
+        toolPageError: toolPage?.error,
+        serverName,
+        onToggleTool,
+      })}
+      {renderMcpLoadMoreButton({
+        serverName,
+        shown: serverTools.length,
+        total: toolTotal,
+        isLoadingTools,
+        onLoadMore,
+      })}
+    </div>
+  )
+}
+
+function renderMcpServerExpandSection({
+  server,
+  isExpanded,
+  toolPage,
+  isLoadingTools,
+  onToggleExpansion,
+  onToggleTool,
+  onLoadMore,
+}: {
+  server: MCPTool
+  isExpanded: boolean
+  toolPage: McpToolPageState | undefined
+  isLoadingTools: boolean
+} & Pick<McpServerCardHandlers, 'onToggleExpansion' | 'onToggleTool' | 'onLoadMore'>) {
+  if (!server.enabled) return null
+  return (
+    <div className="mt-4 border-t border-border/20 pt-3">
+      <button
+        onClick={() => {
+          onToggleExpansion(server.name)
+        }}
+        className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground transition-all"
+      >
+        <Sliders className="size-3.5 text-teal-400" />
+        <span>Manage MCP Tools</span>
+        {isExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+      </button>
+
+      {isExpanded &&
+        renderMcpToolsPanel({ serverName: server.name, toolPage, isLoadingTools, onToggleTool, onLoadMore })}
+    </div>
+  )
+}
+
+function renderMcpServerCard({
+  server,
+  isExpanded,
+  toolPage,
+  isLoadingTools,
+  onToggleServer,
+  onEditServer,
+  onDeleteServer,
+  onToggleExpansion,
+  onToggleTool,
+  onLoadMore,
+}: {
+  server: MCPTool
+  isExpanded: boolean
+  toolPage: McpToolPageState | undefined
+  isLoadingTools: boolean
+} & McpServerCardHandlers) {
+  return (
+    <div
+      key={server.name}
+      className="p-4 rounded-xl border border-border/40 bg-muted/10 backdrop-blur-sm hover:border-emerald-500/30 transition-all flex flex-col justify-between"
+    >
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2">
+            <Wrench className="size-4 text-emerald-400" />
+            <h4 className="font-bold text-sm text-foreground">{server.name}</h4>
+          </div>
+          {renderMcpServerHeaderActions({ server, onToggleServer, onEditServer, onDeleteServer })}
+        </div>
+        {renderMcpServerStatus(server)}
+      </div>
+
+      {renderMcpServerExpandSection({
+        server,
+        isExpanded,
+        toolPage,
+        isLoadingTools,
+        onToggleExpansion,
+        onToggleTool,
+        onLoadMore,
+      })}
+
+      <div className="mt-4 flex items-center justify-between border-t border-border/30 pt-3 text-[11px] text-muted-foreground">
+        <span>Protocol: MCP Server v1.0</span>
+        <div className="flex items-center gap-1 text-emerald-400 font-bold">
+          <CheckCircle className="size-3" /> Handshake Verified
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function renderMcpServersList({
+  filteredMcp,
+  expandedMcp,
+  mcpTools,
+  loadingMcpTools,
+  handlers,
+}: {
+  filteredMcp: MCPTool[]
+  expandedMcp: Record<string, boolean | undefined>
+  mcpTools: Record<string, McpToolPageState | undefined>
+  loadingMcpTools: Record<string, boolean | undefined>
+  handlers: McpServerCardHandlers
+}) {
+  if (filteredMcp.length === 0) return null
+  return (
+    <div className="grid grid-cols-1 gap-4">
+      {filteredMcp.map((server) =>
+        renderMcpServerCard({
+          server,
+          isExpanded: !!expandedMcp[server.name],
+          toolPage: mcpTools[server.name],
+          isLoadingTools: !!loadingMcpTools[server.name],
+          ...handlers,
+        }),
+      )}
+    </div>
+  )
+}
+
+function renderMcpEmptyState(mcpStatusError: string | null) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+      <span className="text-muted-foreground text-sm">No MCP servers registered.</span>
+      {!mcpStatusError && (
+        <span className="text-[10px] text-muted-foreground/70">
+          Checked the MCP fleet catalog — it genuinely has no servers configured.
+        </span>
+      )}
+    </div>
+  )
+}
+
+function renderMcpTab({
+  data,
+  filteredMcp,
+  expandedMcp,
+  mcpTools,
+  loadingMcpTools,
+  onAddServer,
+  handlers,
+}: {
+  data: ToolsData
+  filteredMcp: MCPTool[]
+  expandedMcp: Record<string, boolean | undefined>
+  mcpTools: Record<string, McpToolPageState | undefined>
+  loadingMcpTools: Record<string, boolean | undefined>
+  onAddServer: () => void
+  handlers: McpServerCardHandlers
+}) {
+  return (
+    <div className="space-y-4">
+      {/* A catalog failure is surfaced whether or not the list came back
+          empty. Previously this banner lived ONLY in the
+          `filteredMcp.length === 0` branch, so a partial backend failure --
+          some servers listed, the read degraded -- rendered as a healthy
+          fleet and was reported to us as "some servers show 0 tools". */}
+      {data.mcp_status.error && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-amber-300">
+          <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+          <p className="text-xs">{data.mcp_status.error}</p>
+        </div>
+      )}
+      <div className="flex justify-end">
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={onAddServer}>
+          <Plus className="size-3.5" />
+          Add MCP Server
+        </Button>
+      </div>
+      {filteredMcp.length === 0
+        ? renderMcpEmptyState(data.mcp_status.error)
+        : renderMcpServersList({ filteredMcp, expandedMcp, mcpTools, loadingMcpTools, handlers })}
+    </div>
+  )
+}
+
+function renderBuiltinToolCard({
+  tool,
+  onToggle,
+}: {
+  tool: BuiltinTool
+  onToggle: (name: string, enabled: boolean) => void
+}) {
+  return (
+    <div
+      key={tool.name}
+      className="p-4 rounded-xl border border-border/40 bg-muted/10 backdrop-blur-sm hover:border-emerald-500/30 transition-all flex flex-col justify-between"
+    >
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2">
+            <Code className="size-4 text-emerald-400" />
+            <h4 className="font-bold text-sm text-foreground">{tool.name}</h4>
+          </div>
+          <button
+            onClick={() => {
+              onToggle(tool.name, tool.enabled)
+            }}
+            className={`px-2 py-0.75 rounded text-[10px] font-bold border transition-all ${
+              tool.enabled
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                : 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
+            }`}
+          >
+            {tool.enabled ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
+        <div className="space-y-1.5 mt-2">
+          <div className="text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">File Path: </span>
+            <span className="font-mono text-muted-foreground text-[10px] break-all">{tool.file_path}</span>
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 flex items-center justify-between border-t border-border/30 pt-3 text-[11px] text-muted-foreground">
+        <span>Source: agent-utilities core</span>
+        <div className="flex items-center gap-1 text-emerald-400 font-bold">
+          <CheckCircle className="size-3" /> Class Ingested
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function renderBuiltinTab({
+  filteredBuiltin,
+  onToggle,
+}: {
+  filteredBuiltin: BuiltinTool[]
+  onToggle: (name: string, enabled: boolean) => void
+}) {
+  return (
+    <div className="space-y-4">
+      {filteredBuiltin.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground text-sm">No built-in tools found.</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filteredBuiltin.map((tool) => renderBuiltinToolCard({ tool, onToggle }))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function renderKgUnreachableNotice(kgReachable: boolean) {
+  if (kgReachable) return null
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-amber-300">
+      <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+      <div className="text-xs">
+        <p className="font-bold">Knowledge Graph unreachable</p>
+        <p className="text-amber-300/80">
+          Skill/workflow classification could not be verified against the KG on this request. Every discovered skill is
+          still listed below, each carrying an &ldquo;unclassified&rdquo; badge rather than having a kind guessed from
+          its filesystem path.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function renderCatalogTotalSuffix(classification: SkillClassificationSummary) {
+  if (
+    typeof classification.catalog_total !== 'number' ||
+    classification.catalog_total <= classification.filesystem_skill_md_count
+  ) {
+    return null
+  }
+  return (
+    <>
+      {' of '}
+      <span className="font-semibold text-foreground">{classification.catalog_total}</span>
+    </>
+  )
+}
+
+function renderUnclassifiedSuffix(unclassifiedCount: number) {
+  if (unclassifiedCount <= 0) return null
+  return (
+    <>
+      {' '}
+      · <span className="font-semibold text-amber-400">{unclassifiedCount}</span> badged unclassified
+    </>
+  )
+}
+
+function renderCognitiveSummary({ data, allSkillsCount }: { data: ToolsData; allSkillsCount: number }) {
+  const classification = data.skill_classification
+  return (
+    <div className="text-[10px] text-muted-foreground px-1">
+      <span className="font-semibold text-foreground">{classification.filesystem_skill_md_count}</span>
+      {renderCatalogTotalSuffix(classification)} in the fleet catalog ·{' '}
+      <span className="font-semibold text-emerald-400">{allSkillsCount}</span> skill ·{' '}
+      <span className="font-semibold text-teal-400">{data.skill_graphs.length}</span> skill-graph ·{' '}
+      <span className="font-semibold text-sky-400">{data.skill_workflows.length}</span> skill-workflow
+      {renderUnclassifiedSuffix(classification.unclassified_count)}
+    </div>
+  )
+}
+
+function renderCognitiveTab({
+  data,
+  allSkillsCount,
+  groupedSkills,
+  groupedGraphs,
+  groupedWorkflows,
+  filteredSkillsCount,
+  filteredGraphsCount,
+  filteredWorkflowsCount,
+  onToggleCognitive,
+}: {
+  data: ToolsData
+  allSkillsCount: number
+  groupedSkills: [string, CognitiveItem[]][]
+  groupedGraphs: [string, CognitiveItem[]][]
+  groupedWorkflows: [string, CognitiveItem[]][]
+  filteredSkillsCount: number
+  filteredGraphsCount: number
+  filteredWorkflowsCount: number
+  onToggleCognitive: (type: 'skill' | 'skill_graph' | 'skill_workflow', id: string, enabled: boolean) => void
+}) {
+  return (
+    <div className="space-y-4">
+      {renderKgUnreachableNotice(data.skill_classification.kg_reachable)}
+      {renderCognitiveSummary({ data, allSkillsCount })}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <CognitiveBox
+          icon={Zap}
+          iconClassName="text-emerald-400"
+          title="Skills"
+          description="Catalog skill_type: skill / mcp_skill"
+          groups={groupedSkills}
+          totalCount={filteredSkillsCount}
+          emptyLabel="No matching skills found."
+          onToggle={(item) => {
+            onToggleCognitive('skill', item.id, item.enabled)
+          }}
+          renderSecondary={(item) => (
+            <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">
+              {item.description ?? 'No description available.'}
+            </p>
+          )}
+        />
+
+        <CognitiveBox
+          icon={Network}
+          iconClassName="text-teal-400"
+          title="Skill Graphs"
+          description="Catalog skill_type: graph"
+          groups={groupedGraphs}
+          totalCount={filteredGraphsCount}
+          emptyLabel="No matching graphs found."
+          onToggle={(item) => {
+            onToggleCognitive('skill_graph', item.id, item.enabled)
+          }}
+          renderSecondary={(item) => (
+            <div className="text-[9px] text-muted-foreground font-mono truncate break-all">{item.file_path}</div>
+          )}
+        />
+
+        <CognitiveBox
+          icon={GitBranch}
+          iconClassName="text-sky-400"
+          title="Skill Workflows"
+          description="Catalog skill_type: workflow"
+          groups={groupedWorkflows}
+          totalCount={filteredWorkflowsCount}
+          emptyLabel="No matching workflows found."
+          onToggle={(item) => {
+            onToggleCognitive('skill_workflow', item.id, item.enabled)
+          }}
+          renderSecondary={(item) => (
+            <div className="text-[9px] text-muted-foreground font-mono truncate break-all">{item.file_path}</div>
+          )}
+        />
+      </div>
+    </div>
+  )
+}
+
+interface ActiveTabContentProps {
+  activeTab: 'mcp' | 'builtin' | 'cognitive'
+  data: ToolsData
+  filteredMcp: MCPTool[]
+  expandedMcp: Record<string, boolean | undefined>
+  mcpTools: Record<string, McpToolPageState | undefined>
+  loadingMcpTools: Record<string, boolean | undefined>
+  onAddServer: () => void
+  mcpHandlers: McpServerCardHandlers
+  filteredBuiltin: BuiltinTool[]
+  onToggleBuiltin: (name: string, enabled: boolean) => void
+  allSkillsCount: number
+  groupedSkills: [string, CognitiveItem[]][]
+  groupedGraphs: [string, CognitiveItem[]][]
+  groupedWorkflows: [string, CognitiveItem[]][]
+  filteredSkillsCount: number
+  filteredGraphsCount: number
+  filteredWorkflowsCount: number
+  onToggleCognitive: (type: 'skill' | 'skill_graph' | 'skill_workflow', id: string, enabled: boolean) => void
+}
+
+function renderActiveTabContent(props: ActiveTabContentProps) {
+  if (props.activeTab === 'mcp') {
+    return renderMcpTab({
+      data: props.data,
+      filteredMcp: props.filteredMcp,
+      expandedMcp: props.expandedMcp,
+      mcpTools: props.mcpTools,
+      loadingMcpTools: props.loadingMcpTools,
+      onAddServer: props.onAddServer,
+      handlers: props.mcpHandlers,
+    })
+  }
+  if (props.activeTab === 'builtin') {
+    return renderBuiltinTab({ filteredBuiltin: props.filteredBuiltin, onToggle: props.onToggleBuiltin })
+  }
+  return renderCognitiveTab({
+    data: props.data,
+    allSkillsCount: props.allSkillsCount,
+    groupedSkills: props.groupedSkills,
+    groupedGraphs: props.groupedGraphs,
+    groupedWorkflows: props.groupedWorkflows,
+    filteredSkillsCount: props.filteredSkillsCount,
+    filteredGraphsCount: props.filteredGraphsCount,
+    filteredWorkflowsCount: props.filteredWorkflowsCount,
+    onToggleCognitive: props.onToggleCognitive,
+  })
+}
+
+function renderNavTabs({
+  activeTab,
+  onSetActiveTab,
+  mcpCount,
+  builtinCount,
+  cognitiveCount,
+}: {
+  activeTab: 'mcp' | 'builtin' | 'cognitive'
+  onSetActiveTab: (tab: 'mcp' | 'builtin' | 'cognitive') => void
+  mcpCount: number
+  builtinCount: number
+  cognitiveCount: number
+}) {
+  const tabs: { id: 'mcp' | 'builtin' | 'cognitive'; label: string; icon: LucideIcon; count: number }[] = [
+    { id: 'mcp', label: 'MCP Servers', icon: Wrench, count: mcpCount },
+    { id: 'builtin', label: 'Built-in Tools', icon: Code, count: builtinCount },
+    { id: 'cognitive', label: 'Cognitive Skills', icon: Layers, count: cognitiveCount },
+  ]
+  return (
+    <div className="flex flex-wrap gap-2 mt-4 border-b border-border/40 pb-2">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          onClick={() => {
+            onSetActiveTab(tab.id)
+          }}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all border ${
+            activeTab === tab.id
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold'
+              : 'bg-transparent border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <tab.icon className="size-3.5" />
+          <span>{tab.label}</span>
+          <Badge variant="secondary" className="px-1.5 py-0.25 text-[10px] bg-muted/40">
+            {tab.count}
+          </Badge>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function renderMcpServerDialog({
+  mcpServerDialog,
+  mcpServerSchema,
+  savingMcpServer,
+  onOpenChange,
+  onNameChange,
+  formContext,
+  onSubmit,
+}: {
+  mcpServerDialog: { mode: 'add' | 'edit'; name: string } | null
+  mcpServerSchema: JsonSchema | null
+  savingMcpServer: boolean
+  onOpenChange: (open: boolean) => void
+  onNameChange: (name: string) => void
+  formContext: (dialog: { mode: 'add' | 'edit'; name: string }) => PageContextEnvelope
+  onSubmit: (dialog: { mode: 'add' | 'edit'; name: string }, inputs: Record<string, unknown>) => void
+}) {
+  return (
+    <Dialog open={mcpServerDialog !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{mcpServerDialog?.mode === 'edit' ? 'Edit MCP Server' : 'Add MCP Server'}</DialogTitle>
+        </DialogHeader>
+        {mcpServerDialog && mcpServerSchema && (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label htmlFor="mcp-server-name" className="text-sm font-medium">
+                Name <span className="text-destructive">*</span>
+              </label>
+              <Input
+                id="mcp-server-name"
+                value={mcpServerDialog.name}
+                disabled={mcpServerDialog.mode === 'edit'}
+                placeholder="ansible-tower-mcp"
+                onChange={(event) => {
+                  onNameChange(event.target.value)
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                {mcpServerDialog.mode === 'edit'
+                  ? 'The catalog key -- not editable once created.'
+                  : 'A unique catalog key, e.g. matching the *-mcp deployment name.'}
+              </p>
+            </div>
+            <SchemaActionForm
+              schema={mcpServerSchema}
+              context={formContext(mcpServerDialog)}
+              busy={savingMcpServer}
+              onSubmit={(inputs) => {
+                onSubmit(mcpServerDialog, inputs)
+              }}
+            />
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default function SkillsView() {
   const [data, setData] = useState<ToolsData>({
     mcp_tools: [],
@@ -843,37 +1609,13 @@ export default function SkillsView() {
             </div>
           </div>
 
-          {/* Pretty Categorized Navigation Tabs */}
-          <div className="flex flex-wrap gap-2 mt-4 border-b border-border/40 pb-2">
-            {[
-              { id: 'mcp', label: 'MCP Servers', icon: Wrench, count: data.mcp_tools.length },
-              { id: 'builtin', label: 'Built-in Tools', icon: Code, count: data.builtin_tools.length },
-              {
-                id: 'cognitive',
-                label: 'Cognitive Skills',
-                icon: Layers,
-                count: allSkills.length + data.skill_graphs.length + data.skill_workflows.length,
-              },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id as 'mcp' | 'builtin' | 'cognitive')
-                }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all border ${
-                  activeTab === tab.id
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold'
-                    : 'bg-transparent border-transparent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <tab.icon className="size-3.5" />
-                <span>{tab.label}</span>
-                <Badge variant="secondary" className="px-1.5 py-0.25 text-[10px] bg-muted/40">
-                  {tab.count}
-                </Badge>
-              </button>
-            ))}
-          </div>
+          {renderNavTabs({
+            activeTab,
+            onSetActiveTab: setActiveTab,
+            mcpCount: data.mcp_tools.length,
+            builtinCount: data.builtin_tools.length,
+            cognitiveCount: allSkills.length + data.skill_graphs.length + data.skill_workflows.length,
+          })}
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[calc(100vh-20rem)] pr-4">
@@ -883,408 +1625,49 @@ export default function SkillsView() {
                 <span className="text-sm text-muted-foreground font-medium">Querying graph registry...</span>
               </div>
             ) : (
-              <>
-                {/* 1. MCP Tools */}
-                {activeTab === 'mcp' && (
-                  <div className="space-y-4">
-                    {/* A catalog failure is surfaced whether or not the list
-                        came back empty. Previously this banner lived ONLY in
-                        the `filteredMcp.length === 0` branch, so a partial
-                        backend failure -- some servers listed, the read
-                        degraded -- rendered as a healthy fleet and was
-                        reported to us as "some servers show 0 tools". */}
-                    {data.mcp_status.error && (
-                      <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-amber-300">
-                        <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-                        <p className="text-xs">{data.mcp_status.error}</p>
-                      </div>
-                    )}
-                    <div className="flex justify-end">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5"
-                        onClick={() => {
-                          void openAddMcpServer()
-                        }}
-                      >
-                        <Plus className="size-3.5" />
-                        Add MCP Server
-                      </Button>
-                    </div>
-                    {filteredMcp.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-                        <span className="text-muted-foreground text-sm">No MCP servers registered.</span>
-                        {!data.mcp_status.error && (
-                          <span className="text-[10px] text-muted-foreground/70">
-                            Checked the MCP fleet catalog — it genuinely has no servers configured.
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 gap-4">
-                        {filteredMcp.map((server) => {
-                          const isExpanded = !!expandedMcp[server.name]
-                          const toolPage = mcpTools[server.name]
-                          const serverTools = toolPage?.tools ?? []
-                          const toolTotal = toolPage?.total ?? 0
-                          const isLoadingTools = !!loadingMcpTools[server.name]
-
-                          return (
-                            <div
-                              key={server.name}
-                              className="p-4 rounded-xl border border-border/40 bg-muted/10 backdrop-blur-sm hover:border-emerald-500/30 transition-all flex flex-col justify-between"
-                            >
-                              <div>
-                                <div className="flex items-center justify-between gap-2 mb-2">
-                                  <div className="flex items-center gap-2">
-                                    <Wrench className="size-4 text-emerald-400" />
-                                    <h4 className="font-bold text-sm text-foreground">{server.name}</h4>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Badge
-                                      variant="outline"
-                                      className={`text-[10px] font-semibold ${server.enabled ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}
-                                    >
-                                      {server.enabled ? 'Active' : 'Disabled'}
-                                    </Badge>
-                                    <button
-                                      onClick={() => {
-                                        void handleToggleMcpServer(server.name, server.enabled)
-                                      }}
-                                      className={`px-2.5 py-1 rounded text-xs font-bold transition-all border ${
-                                        server.enabled
-                                          ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
-                                          : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
-                                      }`}
-                                    >
-                                      {server.enabled ? 'Disable' : 'Enable'}
-                                    </button>
-                                    <button
-                                      title={`Edit ${server.name}`}
-                                      aria-label={`Edit ${server.name}`}
-                                      onClick={() => {
-                                        void openEditMcpServer(server.name)
-                                      }}
-                                      className="p-1.5 rounded border border-border/40 text-muted-foreground hover:text-foreground hover:border-border transition-all"
-                                    >
-                                      <Pencil className="size-3.5" />
-                                    </button>
-                                    <button
-                                      title={`Remove ${server.name}`}
-                                      aria-label={`Remove ${server.name}`}
-                                      onClick={() => {
-                                        void handleDeleteMcpServer(server.name)
-                                      }}
-                                      className="p-1.5 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-all"
-                                    >
-                                      <Trash2 className="size-3.5" />
-                                    </button>
-                                  </div>
-                                </div>
-                                {server.status === 'unavailable' && (
-                                  <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 mt-2 text-amber-300">
-                                    <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-                                    <p className="text-xs">
-                                      {server.error ?? 'Unavailable for an unreported reason.'}
-                                    </p>
-                                  </div>
-                                )}
-                                {typeof server.tool_count === 'number' && (
-                                  <div className="space-y-1.5 mt-2">
-                                    <div className="text-xs text-muted-foreground">
-                                      <span className="font-semibold text-foreground">Served tools: </span>
-                                      <code className="font-mono bg-muted/40 px-1 py-0.5 rounded text-[10px]">
-                                        {server.tool_count}
-                                      </code>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Sub-tools list control toggle */}
-                              {server.enabled && (
-                                <div className="mt-4 border-t border-border/20 pt-3">
-                                  <button
-                                    onClick={() => {
-                                      toggleMcpExpansion(server.name)
-                                    }}
-                                    className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground transition-all"
-                                  >
-                                    <Sliders className="size-3.5 text-teal-400" />
-                                    <span>Manage MCP Tools</span>
-                                    {isExpanded ? (
-                                      <ChevronUp className="size-3.5" />
-                                    ) : (
-                                      <ChevronDown className="size-3.5" />
-                                    )}
-                                  </button>
-
-                                  {isExpanded && (
-                                    <div className="mt-3 bg-muted/5 rounded-lg border border-border/20 p-3 space-y-2">
-                                      {toolPage?.error && (
-                                        <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-amber-300">
-                                          <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-                                          <p className="text-xs">{toolPage.error}</p>
-                                        </div>
-                                      )}
-                                      {toolPage?.toggleError && (
-                                        <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-amber-300">
-                                          <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-                                          <p className="text-xs">{toolPage.toggleError}</p>
-                                        </div>
-                                      )}
-                                      {serverTools.length > 0 && (
-                                        <div className="text-[10px] text-muted-foreground">
-                                          Showing{' '}
-                                          <span className="font-semibold text-foreground">{serverTools.length}</span>{' '}
-                                          of <span className="font-semibold text-foreground">{toolTotal}</span> tools,
-                                          alphabetically.
-                                        </div>
-                                      )}
-                                      {isLoadingTools && serverTools.length === 0 ? (
-                                        <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground font-medium">
-                                          <RefreshCw className="size-3.5 animate-spin text-teal-400" />
-                                          <span>Discovering tools...</span>
-                                        </div>
-                                      ) : serverTools.length === 0 ? (
-                                        <div className="text-xs text-muted-foreground py-2">
-                                          {toolPage?.error
-                                            ? 'No tools could be read for this MCP server.'
-                                            : 'No tools exposed by this MCP server.'}
-                                        </div>
-                                      ) : (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                          {serverTools.map((tool) => (
-                                            <div
-                                              key={tool.name}
-                                              className="flex items-start justify-between p-2.5 rounded-md border border-border/20 bg-muted/10"
-                                            >
-                                              <div className="space-y-1 pr-2">
-                                                <div className="flex items-center gap-1.5">
-                                                  <span className="font-mono font-bold text-xs text-foreground">
-                                                    {tool.name}
-                                                  </span>
-                                                </div>
-                                                {tool.description && (
-                                                  <p className="text-[10px] text-muted-foreground leading-normal line-clamp-2">
-                                                    {tool.description}
-                                                  </p>
-                                                )}
-                                              </div>
-                                              <button
-                                                onClick={() => {
-                                                  void handleToggleMcpTool(server.name, tool.name, tool.enabled)
-                                                }}
-                                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 border transition-all ${
-                                                  tool.enabled
-                                                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
-                                                    : 'bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20'
-                                                }`}
-                                              >
-                                                {tool.enabled ? 'ON' : 'OFF'}
-                                              </button>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                      {serverTools.length < toolTotal && (
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          className="w-full gap-1.5 text-xs"
-                                          disabled={isLoadingTools}
-                                          onClick={() => {
-                                            void loadMcpTools(server.name, serverTools.length)
-                                          }}
-                                        >
-                                          {isLoadingTools ? (
-                                            <RefreshCw className="size-3.5 animate-spin" />
-                                          ) : (
-                                            <ChevronDown className="size-3.5" />
-                                          )}
-                                          Load {Math.min(MCP_TOOL_PAGE_SIZE, toolTotal - serverTools.length)} more
-                                        </Button>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              <div className="mt-4 flex items-center justify-between border-t border-border/30 pt-3 text-[11px] text-muted-foreground">
-                                <span>Protocol: MCP Server v1.0</span>
-                                <div className="flex items-center gap-1 text-emerald-400 font-bold">
-                                  <CheckCircle className="size-3" /> Handshake Verified
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 2. Built-in Agent Tools */}
-                {activeTab === 'builtin' && (
-                  <div className="space-y-4">
-                    {filteredBuiltin.length === 0 ? (
-                      <div className="text-center py-12 text-muted-foreground text-sm">No built-in tools found.</div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {filteredBuiltin.map((tool) => (
-                          <div
-                            key={tool.name}
-                            className="p-4 rounded-xl border border-border/40 bg-muted/10 backdrop-blur-sm hover:border-emerald-500/30 transition-all flex flex-col justify-between"
-                          >
-                            <div>
-                              <div className="flex items-center justify-between gap-2 mb-2">
-                                <div className="flex items-center gap-2">
-                                  <Code className="size-4 text-emerald-400" />
-                                  <h4 className="font-bold text-sm text-foreground">{tool.name}</h4>
-                                </div>
-                                <button
-                                  onClick={() => {
-                                    void handleToggleBuiltin(tool.name, tool.enabled)
-                                  }}
-                                  className={`px-2 py-0.75 rounded text-[10px] font-bold border transition-all ${
-                                    tool.enabled
-                                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
-                                      : 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
-                                  }`}
-                                >
-                                  {tool.enabled ? 'Enabled' : 'Disabled'}
-                                </button>
-                              </div>
-                              <div className="space-y-1.5 mt-2">
-                                <div className="text-xs text-muted-foreground">
-                                  <span className="font-semibold text-foreground">File Path: </span>
-                                  <span className="font-mono text-muted-foreground text-[10px] break-all">
-                                    {tool.file_path}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="mt-4 flex items-center justify-between border-t border-border/30 pt-3 text-[11px] text-muted-foreground">
-                              <span>Source: agent-utilities core</span>
-                              <div className="flex items-center gap-1 text-emerald-400 font-bold">
-                                <CheckCircle className="size-3" /> Class Ingested
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 3. Cognitive Registry - classified by the KG's own resource_type
-                    truth (GOC-60-W06 / E7), organized by domain, 4 boxes:
-                    runnable skills / skill graphs / describe-only workflows /
-                    items the KG has no record of yet. */}
-                {activeTab === 'cognitive' && (
-                  <div className="space-y-4">
-                    {!data.skill_classification.kg_reachable && (
-                      <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-amber-300">
-                        <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-                        <div className="text-xs">
-                          <p className="font-bold">Knowledge Graph unreachable</p>
-                          <p className="text-amber-300/80">
-                            Skill/workflow classification could not be verified against the KG on this request. Every
-                            discovered skill is still listed below, each carrying an &ldquo;unclassified&rdquo; badge
-                            rather than having a kind guessed from its filesystem path.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                    <div className="text-[10px] text-muted-foreground px-1">
-                      <span className="font-semibold text-foreground">
-                        {data.skill_classification.filesystem_skill_md_count}
-                      </span>
-                      {typeof data.skill_classification.catalog_total === 'number' &&
-                        data.skill_classification.catalog_total >
-                          data.skill_classification.filesystem_skill_md_count && (
-                          <>
-                            {' of '}
-                            <span className="font-semibold text-foreground">
-                              {data.skill_classification.catalog_total}
-                            </span>
-                          </>
-                        )}{' '}
-                      in the fleet catalog · <span className="font-semibold text-emerald-400">{allSkills.length}</span>{' '}
-                      skill · <span className="font-semibold text-teal-400">{data.skill_graphs.length}</span>{' '}
-                      skill-graph · <span className="font-semibold text-sky-400">{data.skill_workflows.length}</span>{' '}
-                      skill-workflow
-                      {data.skill_classification.unclassified_count > 0 && (
-                        <>
-                          {' '}
-                          ·{' '}
-                          <span className="font-semibold text-amber-400">
-                            {data.skill_classification.unclassified_count}
-                          </span>{' '}
-                          badged unclassified
-                        </>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                      <CognitiveBox
-                        icon={Zap}
-                        iconClassName="text-emerald-400"
-                        title="Skills"
-                        description="Catalog skill_type: skill / mcp_skill"
-                        groups={groupedSkills}
-                        totalCount={filteredSkills.length}
-                        emptyLabel="No matching skills found."
-                        onToggle={(item) => {
-                          void handleToggleCognitive('skill', item.id, item.enabled)
-                        }}
-                        renderSecondary={(item) => (
-                          <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">
-                            {item.description ?? 'No description available.'}
-                          </p>
-                        )}
-                      />
-
-                      <CognitiveBox
-                        icon={Network}
-                        iconClassName="text-teal-400"
-                        title="Skill Graphs"
-                        description="Catalog skill_type: graph"
-                        groups={groupedGraphs}
-                        totalCount={filteredGraphs.length}
-                        emptyLabel="No matching graphs found."
-                        onToggle={(item) => {
-                          void handleToggleCognitive('skill_graph', item.id, item.enabled)
-                        }}
-                        renderSecondary={(item) => (
-                          <div className="text-[9px] text-muted-foreground font-mono truncate break-all">
-                            {item.file_path}
-                          </div>
-                        )}
-                      />
-
-                      <CognitiveBox
-                        icon={GitBranch}
-                        iconClassName="text-sky-400"
-                        title="Skill Workflows"
-                        description="Catalog skill_type: workflow"
-                        groups={groupedWorkflows}
-                        totalCount={filteredWorkflows.length}
-                        emptyLabel="No matching workflows found."
-                        onToggle={(item) => {
-                          void handleToggleCognitive('skill_workflow', item.id, item.enabled)
-                        }}
-                        renderSecondary={(item) => (
-                          <div className="text-[9px] text-muted-foreground font-mono truncate break-all">
-                            {item.file_path}
-                          </div>
-                        )}
-                      />
-                    </div>
-                  </div>
-                )}
-              </>
+              renderActiveTabContent({
+                activeTab,
+                data,
+                filteredMcp,
+                expandedMcp,
+                mcpTools,
+                loadingMcpTools,
+                onAddServer: () => {
+                  void openAddMcpServer()
+                },
+                mcpHandlers: {
+                  onToggleServer: (name, enabled) => {
+                    void handleToggleMcpServer(name, enabled)
+                  },
+                  onEditServer: (name) => {
+                    void openEditMcpServer(name)
+                  },
+                  onDeleteServer: (name) => {
+                    void handleDeleteMcpServer(name)
+                  },
+                  onToggleExpansion: toggleMcpExpansion,
+                  onToggleTool: (serverName, toolName, enabled) => {
+                    void handleToggleMcpTool(serverName, toolName, enabled)
+                  },
+                  onLoadMore: (serverName, offset) => {
+                    void loadMcpTools(serverName, offset)
+                  },
+                },
+                filteredBuiltin,
+                onToggleBuiltin: (name, enabled) => {
+                  void handleToggleBuiltin(name, enabled)
+                },
+                allSkillsCount: allSkills.length,
+                groupedSkills,
+                groupedGraphs,
+                groupedWorkflows,
+                filteredSkillsCount: filteredSkills.length,
+                filteredGraphsCount: filteredGraphs.length,
+                filteredWorkflowsCount: filteredWorkflows.length,
+                onToggleCognitive: (type, id, enabled) => {
+                  void handleToggleCognitive(type, id, enabled)
+                },
+              })
             )}
           </ScrollArea>
         </CardContent>
@@ -1293,49 +1676,21 @@ export default function SkillsView() {
       {/* Add / Edit MCP Server -- schema-derived form (BUG-260 pattern): the
           fields come from the live /mcp/server-schema response, never
           hand-listed, matching LLMTemplatesView/ConfigurationView's approach. */}
-      <Dialog
-        open={mcpServerDialog !== null}
-        onOpenChange={(open) => {
+      {renderMcpServerDialog({
+        mcpServerDialog,
+        mcpServerSchema,
+        savingMcpServer,
+        onOpenChange: (open) => {
           if (!open) setMcpServerDialog(null)
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{mcpServerDialog?.mode === 'edit' ? 'Edit MCP Server' : 'Add MCP Server'}</DialogTitle>
-          </DialogHeader>
-          {mcpServerDialog && mcpServerSchema && (
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label htmlFor="mcp-server-name" className="text-sm font-medium">
-                  Name <span className="text-destructive">*</span>
-                </label>
-                <Input
-                  id="mcp-server-name"
-                  value={mcpServerDialog.name}
-                  disabled={mcpServerDialog.mode === 'edit'}
-                  placeholder="ansible-tower-mcp"
-                  onChange={(event) => {
-                    setMcpServerDialog({ ...mcpServerDialog, name: event.target.value })
-                  }}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {mcpServerDialog.mode === 'edit'
-                    ? 'The catalog key -- not editable once created.'
-                    : 'A unique catalog key, e.g. matching the *-mcp deployment name.'}
-                </p>
-              </div>
-              <SchemaActionForm
-                schema={mcpServerSchema}
-                context={mcpServerFormContext(mcpServerDialog)}
-                busy={savingMcpServer}
-                onSubmit={(inputs) => {
-                  void submitMcpServer(mcpServerDialog, inputs)
-                }}
-              />
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+        },
+        onNameChange: (name) => {
+          if (mcpServerDialog) setMcpServerDialog({ ...mcpServerDialog, name })
+        },
+        formContext: mcpServerFormContext,
+        onSubmit: (dialog, inputs) => {
+          void submitMcpServer(dialog, inputs)
+        },
+      })}
     </div>
   )
 }

@@ -46,6 +46,147 @@ function fmt(n: number | undefined): string {
   return String(n)
 }
 
+function renderStatsSummary({
+  stats,
+  placement,
+}: {
+  stats: GraphStats | null
+  placement: ShardTopology['endpoints']
+}) {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+      <div className="rounded border p-3">
+        <p className="text-sm text-muted-foreground">Nodes</p>
+        <p className="text-2xl font-bold">{fmt(stats?.total_nodes)}</p>
+      </div>
+      <div className="rounded border p-3">
+        <p className="text-sm text-muted-foreground">Relationships</p>
+        <p className="text-2xl font-bold">{fmt(stats?.total_relationships)}</p>
+      </div>
+      <div className="rounded border p-3">
+        <p className="text-sm text-muted-foreground">Shard placement</p>
+        <p className="text-lg font-semibold">{placement.length ? `${String(placement.length)} shard(s)` : '-'}</p>
+      </div>
+    </div>
+  )
+}
+
+function renderCountsByType({ byType, nodeTypes }: { byType: [string, number][]; nodeTypes: GraphNodeTypes | null }) {
+  if (byType.length === 0) return null
+  return (
+    <div>
+      <p className="text-sm font-medium mb-2 flex items-center gap-1">
+        <Database className="size-3.5" />
+        Counts by type
+        <span className="text-muted-foreground font-normal">
+          ({fmt(nodeTypes?.type_count)} types, {fmt(nodeTypes?.total_typed_nodes)} nodes)
+        </span>
+      </p>
+      {nodeTypes?.partial === true && (
+        <p className="mb-2 flex items-center gap-1.5 text-xs text-amber-500">
+          <AlertTriangle className="size-3.5 shrink-0" />
+          Partial — excludes {nodeTypes.degraded_graphs.join(', ')}.
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {byType.map(([type, count]) => (
+          <Badge key={type} variant="outline" className="gap-1">
+            {type}
+            <span className="text-muted-foreground">{fmt(count)}</span>
+          </Badge>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function renderPartialStatsNotice(stats: GraphStats | null) {
+  if (stats?.partial !== true) return null
+  return (
+    <p className="flex items-center gap-1.5 text-xs text-amber-500">
+      <AlertTriangle className="size-3.5 shrink-0" />
+      These totals are partial — {(stats.degraded_graphs ?? []).join(', ')} could not be read.
+    </p>
+  )
+}
+
+function renderPlacementList(placement: ShardTopology['endpoints']) {
+  if (placement.length === 0) return null
+  return (
+    <div>
+      <p className="text-sm font-medium mb-2">Placed on</p>
+      <div className="flex flex-wrap gap-2">
+        {placement.map((ep) => (
+          <Badge
+            key={ep.endpoint}
+            variant={ep.reachable ? 'default' : 'destructive'}
+            className="font-mono text-xs gap-1"
+          >
+            {ep.endpoint}
+            {ep.local && <span className="opacity-70">· local</span>}
+          </Badge>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function renderActiveGraphCard({
+  defaultGraph,
+  stats,
+  placement,
+  byType,
+  nodeTypes,
+}: {
+  defaultGraph: string
+  stats: GraphStats | null
+  placement: ShardTopology['endpoints']
+  byType: [string, number][]
+  nodeTypes: GraphNodeTypes | null
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Network className="size-4" />
+          <span className="font-mono">{defaultGraph}</span>
+          <Badge variant="secondary">active</Badge>
+        </CardTitle>
+        <CardDescription>The active graph tenant served by this backend.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {renderStatsSummary({ stats, placement })}
+        {renderCountsByType({ byType, nodeTypes })}
+        {renderPartialStatsNotice(stats)}
+        {renderPlacementList(placement)}
+      </CardContent>
+    </Card>
+  )
+}
+
+function renderIndexedSourcesBody({
+  loading,
+  sourcesUnavailable,
+  sources,
+}: {
+  loading: boolean
+  sourcesUnavailable: boolean
+  sources: string[]
+}) {
+  if (loading) return <Loader2 className="size-4 animate-spin text-muted-foreground" />
+  if (sourcesUnavailable) return <UnavailableNotice what="Indexed source tenants" />
+  if (sources.length === 0) return <p className="text-muted-foreground text-sm">No indexed source tenants reported.</p>
+  return (
+    <div className="flex flex-wrap gap-2">
+      {sources.map((s) => (
+        <Badge key={s} variant="secondary" className="font-mono text-xs">
+          {s}
+        </Badge>
+      ))}
+    </div>
+  )
+}
+
 export default function TenantsPanel() {
   const [stats, setStats] = useState<GraphStats | null>(null)
   const [nodeTypes, setNodeTypes] = useState<GraphNodeTypes | null>(null)
@@ -109,84 +250,7 @@ export default function TenantsPanel() {
       </div>
 
       {/* Active graph tenant — REAL stats + placement */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Network className="size-4" />
-            <span className="font-mono">{defaultGraph}</span>
-            <Badge variant="secondary">active</Badge>
-          </CardTitle>
-          <CardDescription>The active graph tenant served by this backend.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <div className="rounded border p-3">
-              <p className="text-sm text-muted-foreground">Nodes</p>
-              <p className="text-2xl font-bold">{fmt(stats?.total_nodes)}</p>
-            </div>
-            <div className="rounded border p-3">
-              <p className="text-sm text-muted-foreground">Relationships</p>
-              <p className="text-2xl font-bold">{fmt(stats?.total_relationships)}</p>
-            </div>
-            <div className="rounded border p-3">
-              <p className="text-sm text-muted-foreground">Shard placement</p>
-              <p className="text-lg font-semibold">
-                {placement.length ? `${String(placement.length)} shard(s)` : '-'}
-              </p>
-            </div>
-          </div>
-
-          {byType.length > 0 && (
-            <div>
-              <p className="text-sm font-medium mb-2 flex items-center gap-1">
-                <Database className="size-3.5" />
-                Counts by type
-                <span className="text-muted-foreground font-normal">
-                  ({fmt(nodeTypes?.type_count)} types, {fmt(nodeTypes?.total_typed_nodes)} nodes)
-                </span>
-              </p>
-              {nodeTypes?.partial === true && (
-                <p className="mb-2 flex items-center gap-1.5 text-xs text-amber-500">
-                  <AlertTriangle className="size-3.5 shrink-0" />
-                  Partial — excludes {nodeTypes.degraded_graphs.join(', ')}.
-                </p>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {byType.map(([type, count]) => (
-                  <Badge key={type} variant="outline" className="gap-1">
-                    {type}
-                    <span className="text-muted-foreground">{fmt(count)}</span>
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
-          {stats?.partial === true && (
-            <p className="flex items-center gap-1.5 text-xs text-amber-500">
-              <AlertTriangle className="size-3.5 shrink-0" />
-              These totals are partial — {(stats.degraded_graphs ?? []).join(', ')} could not be read.
-            </p>
-          )}
-
-          {placement.length > 0 && (
-            <div>
-              <p className="text-sm font-medium mb-2">Placed on</p>
-              <div className="flex flex-wrap gap-2">
-                {placement.map((ep) => (
-                  <Badge
-                    key={ep.endpoint}
-                    variant={ep.reachable ? 'default' : 'destructive'}
-                    className="font-mono text-xs gap-1"
-                  >
-                    {ep.endpoint}
-                    {ep.local && <span className="opacity-70">· local</span>}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {renderActiveGraphCard({ defaultGraph, stats, placement, byType, nodeTypes })}
 
       {/* Indexed source tenants — REAL */}
       <Card>
@@ -197,23 +261,7 @@ export default function TenantsPanel() {
           </CardTitle>
           <CardDescription>Ingested source-systems that carry code in the graph.</CardDescription>
         </CardHeader>
-        <CardContent>
-          {loading ? (
-            <Loader2 className="size-4 animate-spin text-muted-foreground" />
-          ) : sourcesUnavailable ? (
-            <UnavailableNotice what="Indexed source tenants" />
-          ) : sources.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No indexed source tenants reported.</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {sources.map((s) => (
-                <Badge key={s} variant="secondary" className="font-mono text-xs">
-                  {s}
-                </Badge>
-              ))}
-            </div>
-          )}
-        </CardContent>
+        <CardContent>{renderIndexedSourcesBody({ loading, sourcesUnavailable, sources })}</CardContent>
       </Card>
 
       <p className="text-xs text-muted-foreground">

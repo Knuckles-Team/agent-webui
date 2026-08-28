@@ -49,80 +49,75 @@ function jsonResponse(body: unknown, init: { ok?: boolean; status?: number } = {
   } as unknown as Response
 }
 
-function routeFetch(input: RequestInfo | URL): Promise<Response> {
-  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-  const path = url.replace(/^https?:\/\/[^/]+/, '')
+// Ordered route table: first matching entry wins, same short-circuit
+// semantics as the if-chain it replaces (`Array.find` stops at the first
+// match). Each `match` predicate is its own trivial function, so the caps
+// live on the table's shape, not on one long branch chain.
+interface RouteEntry {
+  match: (path: string) => boolean
+  respond: () => Response
+}
 
+const ROUTE_TABLE: RouteEntry[] = [
   // Memory
-  if (path.startsWith('/api/enhanced/graph/nodes') && path.includes('node_type=Memory')) {
-    return Promise.resolve(jsonResponse([mockMemoryNode]))
-  }
-  if (path.startsWith('/api/enhanced/graph/memory')) {
-    return Promise.resolve(jsonResponse({ status: 'success', id: 'mem_test' }))
-  }
+  {
+    match: (p) => p.startsWith('/api/enhanced/graph/nodes') && p.includes('node_type=Memory'),
+    respond: () => jsonResponse([mockMemoryNode]),
+  },
+  {
+    match: (p) => p.startsWith('/api/enhanced/graph/memory'),
+    respond: () => jsonResponse({ status: 'success', id: 'mem_test' }),
+  },
 
   // Graph (GraphView)
-  if (path.startsWith('/api/enhanced/graph/stats')) {
-    return Promise.resolve(jsonResponse(mockGraphStats))
-  }
-  if (path.startsWith('/api/enhanced/graph/node-types')) {
-    return Promise.resolve(jsonResponse(mockGraphNodeTypes))
-  }
-  if (path.startsWith('/api/enhanced/graph/relationships')) {
-    return Promise.resolve(jsonResponse(mockGraphRelationships))
-  }
-  if (path.startsWith('/api/enhanced/graph/nodes')) {
-    return Promise.resolve(jsonResponse(mockGraphNodes))
-  }
-  if (path.startsWith('/api/enhanced/graph/query')) {
-    return Promise.resolve(jsonResponse([]))
-  }
-  if (path.startsWith('/api/enhanced/graph/magma')) {
-    return Promise.resolve(jsonResponse([]))
-  }
+  { match: (p) => p.startsWith('/api/enhanced/graph/stats'), respond: () => jsonResponse(mockGraphStats) },
+  { match: (p) => p.startsWith('/api/enhanced/graph/node-types'), respond: () => jsonResponse(mockGraphNodeTypes) },
+  {
+    match: (p) => p.startsWith('/api/enhanced/graph/relationships'),
+    respond: () => jsonResponse(mockGraphRelationships),
+  },
+  { match: (p) => p.startsWith('/api/enhanced/graph/nodes'), respond: () => jsonResponse(mockGraphNodes) },
+  { match: (p) => p.startsWith('/api/enhanced/graph/query'), respond: () => jsonResponse([]) },
+  { match: (p) => p.startsWith('/api/enhanced/graph/magma'), respond: () => jsonResponse([]) },
 
   // SDD
-  if (path.startsWith('/api/enhanced/sdd/constitution')) {
-    return Promise.resolve(
+  {
+    match: (p) => p.startsWith('/api/enhanced/sdd/constitution'),
+    respond: () =>
       jsonResponse({
         governance_rules: ['Rule 1', 'Rule 2'],
         tech_stack: { language: 'Python' },
         quality_gates: ['Gate 1'],
       }),
-    )
-  }
-  if (path.startsWith('/api/enhanced/sdd/specs')) {
-    return Promise.resolve(jsonResponse([mockSpec]))
-  }
-  if (path.startsWith('/api/enhanced/sdd/plans')) {
-    return Promise.resolve(jsonResponse([mockPlan]))
-  }
-  if (path.startsWith('/api/enhanced/sdd/tasks')) {
-    return Promise.resolve(jsonResponse({ tasks: [mockTask] }))
-  }
-  if (path.startsWith('/api/enhanced/sdd/spec')) {
-    return Promise.resolve(jsonResponse({ ...mockSpec, id: 'new_spec' }))
-  }
-  if (path.startsWith('/api/enhanced/sdd/sync')) {
-    return Promise.resolve(jsonResponse({ status: 'success' }))
-  }
+  },
+  { match: (p) => p.startsWith('/api/enhanced/sdd/specs'), respond: () => jsonResponse([mockSpec]) },
+  { match: (p) => p.startsWith('/api/enhanced/sdd/plans'), respond: () => jsonResponse([mockPlan]) },
+  { match: (p) => p.startsWith('/api/enhanced/sdd/tasks'), respond: () => jsonResponse({ tasks: [mockTask] }) },
+  {
+    match: (p) => p.startsWith('/api/enhanced/sdd/spec'),
+    respond: () => jsonResponse({ ...mockSpec, id: 'new_spec' }),
+  },
+  { match: (p) => p.startsWith('/api/enhanced/sdd/sync'), respond: () => jsonResponse({ status: 'success' }) },
 
   // Knowledge base
-  if (path.startsWith('/api/enhanced/kb/list')) {
-    return Promise.resolve(jsonResponse([mockKnowledgeBase]))
-  }
-  if (path.startsWith('/api/enhanced/kb/search')) {
-    return Promise.resolve(jsonResponse([mockArticle]))
-  }
-  if (path.startsWith('/api/enhanced/kb/ingest')) {
-    return Promise.resolve(jsonResponse({ status: 'success', job_id: 'test_job' }))
-  }
-  if (path.startsWith('/api/enhanced/kb/health')) {
-    return Promise.resolve(jsonResponse({ health_status: 'healthy', issues: [] }))
-  }
+  { match: (p) => p.startsWith('/api/enhanced/kb/list'), respond: () => jsonResponse([mockKnowledgeBase]) },
+  { match: (p) => p.startsWith('/api/enhanced/kb/search'), respond: () => jsonResponse([mockArticle]) },
+  {
+    match: (p) => p.startsWith('/api/enhanced/kb/ingest'),
+    respond: () => jsonResponse({ status: 'success', job_id: 'test_job' }),
+  },
+  {
+    match: (p) => p.startsWith('/api/enhanced/kb/health'),
+    respond: () => jsonResponse({ health_status: 'healthy', issues: [] }),
+  },
+]
 
+function routeFetch(input: RequestInfo | URL): Promise<Response> {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+  const path = url.replace(/^https?:\/\/[^/]+/, '')
+  const entry = ROUTE_TABLE.find((r) => r.match(path))
   // Unknown route: behave like an empty-but-OK backend.
-  return Promise.resolve(jsonResponse([]))
+  return Promise.resolve(entry ? entry.respond() : jsonResponse([]))
 }
 
 function installDefaultFetch(): void {
@@ -283,45 +278,71 @@ const GL_STRING_PARAMS = new Map<unknown, string>([
 // above.
 const GL_ZERO_PROGRAM_PARAMS = new Set<unknown>([GL_ACTIVE_UNIFORMS, GL_ACTIVE_ATTRIBUTES])
 
+// `create*` factories (createFramebuffer/createTexture/createBuffer/...) must
+// return a truthy handle — sigma throws if a framebuffer comes back falsy.
+function webglCreateNoop() {
+  return {}
+}
+// Everything else is a no-op returning undefined.
+function webglNoop() {
+  return undefined
+}
+// A STRING for the handful of pnames three.js's own version check parses
+// (see the sentinel doc above); the pre-existing `0` for every other
+// parameter, unchanged from before this string case existed — sigma's
+// numeric feature-detection still gets exactly what it always got.
+function webglGetParameter(pname: unknown): unknown {
+  return GL_STRING_PARAMS.get(pname) ?? 0
+}
+function webglGetProgramParameter(_program: unknown, pname: unknown): unknown {
+  return GL_ZERO_PROGRAM_PARAMS.has(pname) ? 0 : true
+}
+
+function isSentinelProp(prop: PropertyKey): prop is string {
+  return typeof prop === 'string' && prop in GL_CONSTANT_SENTINELS
+}
+
+function isCreateProp(prop: PropertyKey): prop is string {
+  return typeof prop === 'string' && prop.startsWith('create')
+}
+
+// Ordered dispatch table, same shape/precedent as `ROUTE_TABLE` above: each
+// `test` is a trivial predicate, so the caps live on the table, not on one
+// long if-chain. `resolve` returns the value/function `get` hands back.
+const WEBGL_PROP_HANDLERS: { test: (prop: PropertyKey) => boolean; resolve: (prop: PropertyKey) => unknown }[] = [
+  { test: isSentinelProp, resolve: (prop) => GL_CONSTANT_SENTINELS[prop as string] },
+  { test: (prop) => prop === 'getParameter', resolve: () => webglGetParameter },
+  { test: (prop) => prop === 'getProgramParameter', resolve: () => webglGetProgramParameter },
+  // Nothing to enumerate — `ACTIVE_UNIFORMS`/`ACTIVE_ATTRIBUTES` are always
+  // reported as `0` by `webglGetProgramParameter`, so these are never
+  // actually called for a real index, but a concrete no-op (rather than the
+  // shared `webglNoop`) documents that on purpose.
+  { test: (prop) => prop === 'getActiveUniform' || prop === 'getActiveAttrib', resolve: () => () => null },
+  {
+    test: (prop) => prop in WEBGL_VALUE_MEMBERS,
+    resolve: (prop) => {
+      const v = WEBGL_VALUE_MEMBERS[prop as string]
+      return typeof v === 'function' ? v : () => v
+    },
+  },
+  { test: (prop) => prop === 'getExtension', resolve: () => () => null },
+  { test: isCreateProp, resolve: () => webglCreateNoop },
+]
+
+function resolveWebGLProp(canvas: HTMLCanvasElement, prop: PropertyKey): unknown {
+  if (prop === 'canvas') return canvas
+  const entry = WEBGL_PROP_HANDLERS.find((h) => h.test(prop))
+  return entry ? entry.resolve(prop) : webglNoop
+}
+
 function createWebGLContext(canvas: HTMLCanvasElement): RenderingContext {
-  // `create*` factories (createFramebuffer/createTexture/createBuffer/...) must
-  // return a truthy handle — sigma throws if a framebuffer comes back falsy.
-  const createNoop = () => ({})
-  // Everything else is a no-op returning undefined.
-  const noop = () => undefined
   // A flat proxy over a plain object (no recursive prototype tricks): unknown
   // member access yields a no-op function so any GL call during init is safe.
   return new Proxy(
     {},
     {
       get(_target, prop) {
-        if (prop === 'canvas') return canvas
-        if (typeof prop === 'string' && prop in GL_CONSTANT_SENTINELS) return GL_CONSTANT_SENTINELS[prop]
-        if (prop === 'getParameter') {
-          // A STRING for the handful of pnames three.js's own version check
-          // parses (see the sentinel doc above); the pre-existing `0` for
-          // every other parameter, unchanged from before this string case
-          // existed — sigma's numeric feature-detection still gets exactly
-          // what it always got.
-          return (pname: unknown) => GL_STRING_PARAMS.get(pname) ?? 0
-        }
-        if (prop === 'getProgramParameter') {
-          return (_program: unknown, pname: unknown) => (GL_ZERO_PROGRAM_PARAMS.has(pname) ? 0 : true)
-        }
-        // Nothing to enumerate — `ACTIVE_UNIFORMS`/`ACTIVE_ATTRIBUTES` are
-        // always reported as `0` above, so these are never actually called
-        // for a real index, but a concrete no-op (rather than the shared
-        // `noop` used for other unknown methods) documents that on purpose.
-        if (prop === 'getActiveUniform' || prop === 'getActiveAttrib') {
-          return () => null
-        }
-        if (prop in WEBGL_VALUE_MEMBERS) {
-          const v = WEBGL_VALUE_MEMBERS[prop as string]
-          return typeof v === 'function' ? v : () => v
-        }
-        if (prop === 'getExtension') return () => null
-        if (typeof prop === 'string' && prop.startsWith('create')) return createNoop
-        return noop
+        return resolveWebGLProp(canvas, prop)
       },
     },
   ) as unknown as RenderingContext
