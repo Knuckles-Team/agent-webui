@@ -1132,9 +1132,13 @@ class WebUIAuthorizationMiddleware:
         required_scope: str,
         method: str,
         path: str,
-    ) -> tuple[str, str] | None:
+    ) -> tuple[str, str | None] | None:
         """``(required_role, resolved_role)`` when the caller's WebUI role is
-        below what this route demands, otherwise ``None``."""
+        below what this route demands, otherwise ``None``.
+
+        ``resolved_role`` is ``None`` when the actor carries no recognised
+        WebUI role at all -- that is a denial, not an absent shortfall, and it
+        reaches the denial payload verbatim."""
 
         role_requirement = self._role_requirement(
             required_scope=required_scope, method=method, path=path
@@ -2102,7 +2106,7 @@ def _register_canonical_graph_routes(app: FastAPI) -> None:
 def _parsed_widget_subscription(raw: str) -> set[str] | None:
     """The widget ids a ``/ws/dashboard`` subscribe message names.
 
-    ``None`` for anything that is not a well-formed subscription -- unparseable
+    ``None`` for anything that is not a well-formed subscription -- unparsable
     JSON, a non-object, a different message type, or a non-list ``widget_ids``.
     Every such message leaves the existing subscription untouched, exactly as
     the inline ``continue`` branches did.

@@ -1940,18 +1940,32 @@ async def _batch_toggle_states(
     return _toggle_states_from_rows(res, pref_to_item), True
 
 
+def _pref_row_item_id(row: Any, pref_to_item: dict[str, str]) -> str | None:
+    """The item id a `:Preference` row maps back to, or ``None`` for no match.
+
+    A row that is not a mapping, carries a non-string ``id``, or names a
+    preference this batch did not ask about all resolve the same way: the row
+    contributes nothing. Non-string ids could never match -- `pref_to_item` is
+    keyed by ``str`` -- so rejecting them changes no outcome, it only lets the
+    lookup be typed.
+    """
+    if not isinstance(row, dict):
+        return None
+    row_id = row.get('id')
+    if not isinstance(row_id, str):
+        return None
+    return pref_to_item.get(row_id)
+
+
 def _toggle_states_from_rows(
     rows: Any, pref_to_item: dict[str, str]
 ) -> dict[str, bool]:
     """Map `:Preference` rows back onto the item ids the caller asked about."""
     states: dict[str, bool] = {}
     for row in rows or []:
-        if not isinstance(row, dict):
-            continue
-        item_id = pref_to_item.get(row.get('id'))
-        if item_id is None:
-            continue
-        states[item_id] = row.get('value') == 'enabled'
+        item_id = _pref_row_item_id(row, pref_to_item)
+        if item_id is not None:
+            states[item_id] = row.get('value') == 'enabled'
     return states
 
 
