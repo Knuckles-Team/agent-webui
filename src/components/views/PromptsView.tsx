@@ -30,7 +30,7 @@ interface PromptDetail {
   instructions?: { core_directive?: string; [k: string]: unknown }
   tools?: string[]
   metadata?: { topic?: string; tone?: string; style?: string; [k: string]: unknown }
-  rules?: { [k: string]: unknown }
+  rules?: Record<string, unknown>
   [key: string]: unknown
 }
 
@@ -260,13 +260,7 @@ export default function PromptsView() {
               Prompt Profiles
             </CardTitle>
             <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                onClick={startNewPrompt}
-                title="New prompt"
-              >
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={startNewPrompt} title="New prompt">
                 <Plus className="size-3.5" />
               </Button>
               <Button
@@ -334,7 +328,7 @@ export default function PromptsView() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-lg font-bold text-foreground">
-                {isNew ? 'New Prompt' : (promptDetail?.title || selectedName || 'Prompt Editor')}
+                {isNew ? 'New Prompt' : (promptDetail?.title ?? selectedName ?? 'Prompt Editor')}
               </CardTitle>
               <CardDescription>Customize behavior directives, goals, and role specifications.</CardDescription>
             </div>

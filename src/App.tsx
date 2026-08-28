@@ -30,16 +30,16 @@ import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
 import { cn } from './lib/utils.ts'
 import ChatPanel from './components/ChatPanel'
-// Lazy: only reachable behind `isObjectDetail`. A static import here pinned it
-// into the entry chunk and defeated nav-registry's dynamic import of the same
-// module (vite: "dynamically imported ... but also statically imported").
-const ObjectView = lazy(() => import('./components/views/ObjectView'))
 import { ROUTES, matchRoute, roleAtLeast } from './lib/nav-registry.ts'
 import { useIdentity } from './lib/auth.ts'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
 import { getDefaultPageActions, PageContextProvider, type PageContextSelection } from './lib/page-context.tsx'
+// Lazy: only reachable behind `isObjectDetail`. A static import here pinned it
+// into the entry chunk and defeated nav-registry's dynamic import of the same
+// module (vite: "dynamically imported ... but also statically imported").
+const ObjectView = lazy(() => import('./components/views/ObjectView'))
 
 /**
  * Global React Query client instance for managing server state.

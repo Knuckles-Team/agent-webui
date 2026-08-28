@@ -421,7 +421,9 @@ describe('EcosystemView (action failure feedback)', () => {
       '/api/enhanced/repository-manager/repos': () =>
         Promise.resolve(
           new Response(
-            JSON.stringify([{ reference: 'org/repo', label: 'repo', branch_state: 'clean', modified_count: 0, status: 'ok' }]),
+            JSON.stringify([
+              { reference: 'org/repo', label: 'repo', branch_state: 'clean', modified_count: 0, status: 'ok' },
+            ]),
             { status: 200 },
           ),
         ),

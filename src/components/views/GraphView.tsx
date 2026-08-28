@@ -152,6 +152,18 @@ function isStatsUnreliable(status: GraphLoadStatus): boolean {
 /** Split a `Promise.allSettled` result triple into which fetches failed, and
  * whether any of the failures was an authorization denial (401/403) rather
  * than any other failure. */
+/** Split a settled three-way fetch into failed labels and a forbidden flag.
+ *
+ * `forbidden` is returned through an explicitly-typed function boundary rather
+ * than read from a `let` mutated inside the `forEach`. TS's control-flow
+ * analysis does not track assignments made inside a nested closure, so a
+ * `let forbidden = false` set to `true` only within the callback still
+ * type-narrows to the literal `false` at every read after the loop -- correct
+ * at runtime, but it made `no-unnecessary-condition` flag the later
+ * `forbidden ? ... : ...` as always-falsy. (WD4-WEB-00 fixed the same lint
+ * error inline with a `.some()`; this extraction supersedes it and fixes the
+ * narrowing the same way, so both branches agree on the behaviour.)
+ */
 function classifyResults(results: PromiseSettledResult<unknown>[]): { failed: string[]; forbidden: boolean } {
   const failed: string[] = []
   let forbidden = false
