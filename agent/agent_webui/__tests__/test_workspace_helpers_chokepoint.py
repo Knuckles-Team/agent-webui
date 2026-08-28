@@ -32,6 +32,31 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[3]  # .../agent-webui
 
 
+def _is_create_agent_web_app_call(node: ast.Call) -> bool:
+    """True if ``node`` is a call to (possibly attribute-qualified)
+    ``create_agent_web_app``."""
+    func = node.func
+    name = func.id if isinstance(func, ast.Name) else getattr(func, 'attr', None)
+    return name == 'create_agent_web_app'
+
+
+def _workspace_helpers_arg(node: ast.Call) -> ast.expr | None:
+    """The ``workspace_helpers`` argument expression, keyword OR 2nd
+    positional -- ``None`` if the call does not supply one at all."""
+    for kw in node.keywords:
+        if kw.arg == 'workspace_helpers':
+            return kw.value
+    if len(node.args) >= 2:
+        return node.args[1]
+    return None
+
+
+def _is_literal_empty_dict(expr: ast.expr | None) -> bool:
+    """True only for an ``{}`` AST node -- a variable/call/populated dict
+    cannot be determined statically and is deliberately NOT flagged."""
+    return isinstance(expr, ast.Dict) and not expr.keys
+
+
 def find_empty_workspace_helpers_calls(source: str, filename: str) -> list[str]:
     """Return one ``"<filename>:<lineno>"`` entry per ``create_agent_web_app``
     call in ``source`` whose ``workspace_helpers`` argument (keyword OR 2nd
@@ -48,24 +73,9 @@ def find_empty_workspace_helpers_calls(source: str, filename: str) -> list[str]:
 
     violations: list[str] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
+        if not isinstance(node, ast.Call) or not _is_create_agent_web_app_call(node):
             continue
-        func = node.func
-        name = func.id if isinstance(func, ast.Name) else getattr(func, 'attr', None)
-        if name != 'create_agent_web_app':
-            continue
-
-        helpers_arg: ast.expr | None = None
-        for kw in node.keywords:
-            if kw.arg == 'workspace_helpers':
-                helpers_arg = kw.value
-                break
-        if helpers_arg is None and len(node.args) >= 2:
-            helpers_arg = node.args[1]
-
-        if helpers_arg is None:
-            continue  # cannot tell statically -- not this gate's job to guess
-        if isinstance(helpers_arg, ast.Dict) and not helpers_arg.keys:
+        if _is_literal_empty_dict(_workspace_helpers_arg(node)):
             violations.append(f'{filename}:{node.lineno}')
     return violations
 
