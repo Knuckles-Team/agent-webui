@@ -164,9 +164,7 @@ function renderIntegrationGrid({
   }
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {items.map((item) =>
-        renderIntegrationCard({ item, isSelected: selectedId === item.packageId, onSelect }),
-      )}
+      {items.map((item) => renderIntegrationCard({ item, isSelected: selectedId === item.packageId, onSelect }))}
     </div>
   )
 }

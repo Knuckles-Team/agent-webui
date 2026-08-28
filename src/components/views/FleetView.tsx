@@ -47,7 +47,9 @@ function renderDomainRow({
       <div className="flex items-center gap-3">
         <span className="font-medium">{domain}</span>
         <Badge variant="secondary">{d.active} active</Badge>
-        <Badge variant={d.error_rate > 0.2 ? 'destructive' : 'outline'}>{(d.error_rate * 100).toFixed(0)}% errors</Badge>
+        <Badge variant={d.error_rate > 0.2 ? 'destructive' : 'outline'}>
+          {(d.error_rate * 100).toFixed(0)}% errors
+        </Badge>
         <span className="text-xs text-muted-foreground">{d.total} total</span>
       </div>
       <div className="flex gap-2">
@@ -227,7 +229,13 @@ function totalErrored(health: FleetHealth | null): number | '—' {
   return Object.values(health.domains).reduce((n, d) => n + d.errored, 0)
 }
 
-function renderFleetSummaryCards({ health, topology }: { health: FleetHealth | null; topology: FleetTopology | null }) {
+function renderFleetSummaryCards({
+  health,
+  topology,
+}: {
+  health: FleetHealth | null
+  topology: FleetTopology | null
+}) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       <SummaryCard label="Sessions" value={health?.sessions.total ?? '—'} />

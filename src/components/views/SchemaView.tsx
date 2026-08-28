@@ -159,7 +159,11 @@ function renderSelectedEdgeDetail(edge: OntologySchemaEdgeData) {
 }
 
 function deriveSchemaGraphNodes(schema: OntologySchemaGraph | null) {
-  if (!schema) return { nodes: [] as GraphNode[], relationships: [] as ReturnType<typeof ontologySchemaGraphToGraphNodes>['relationships'] }
+  if (!schema)
+    return {
+      nodes: [] as GraphNode[],
+      relationships: [] as ReturnType<typeof ontologySchemaGraphToGraphNodes>['relationships'],
+    }
   return ontologySchemaGraphToGraphNodes(schema)
 }
 

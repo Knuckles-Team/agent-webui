@@ -258,7 +258,10 @@ function renderNeighboursList({
           }}
           className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
         >
-          <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: nodeTypeColor(node.type, isDark) }} />
+          <span
+            className="inline-block h-2 w-2 shrink-0 rounded-full"
+            style={{ background: nodeTypeColor(node.type, isDark) }}
+          />
           <span className="min-w-0 flex-1 truncate">{node.name}</span>
           <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{degree}</span>
         </button>
@@ -446,8 +449,8 @@ function renderTypesRelsTabs({
           <CardHeader className="pb-2">
             <CardDescription className="text-xs">
               The whole graph&apos;s type distribution, from the engine&apos;s own aggregate — for scale, not what is
-              currently drawn (that is {numberFormat.format(nodeCount)} nodes: {clusterCount} clusters and{' '}
-              {leafCount} real). Click a type to keep only matching nodes on the canvas.
+              currently drawn (that is {numberFormat.format(nodeCount)} nodes: {clusterCount} clusters and {leafCount}{' '}
+              real). Click a type to keep only matching nodes on the canvas.
             </CardDescription>
           </CardHeader>
           <CardContent className="min-h-0 p-0">
@@ -467,8 +470,8 @@ function renderTypesRelsTabs({
         <Card className="h-full">
           <CardHeader className="pb-2">
             <CardDescription className="text-xs">
-              {relTypes.length} relationship types currently in view (cluster links plus any real edges inside
-              expanded clusters). Untick one to drop its edges.
+              {relTypes.length} relationship types currently in view (cluster links plus any real edges inside expanded
+              clusters). Untick one to drop its edges.
             </CardDescription>
           </CardHeader>
           <CardContent className="min-h-0 p-0">

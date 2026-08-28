@@ -30,7 +30,7 @@ interface PromptDetail {
   instructions?: { core_directive?: string; [k: string]: unknown }
   tools?: string[]
   metadata?: { topic?: string; tone?: string; style?: string; [k: string]: unknown }
-  rules?: { [k: string]: unknown }
+  rules?: Record<string, unknown>
   [key: string]: unknown
 }
 
@@ -151,7 +151,10 @@ function renderNewPromptNameField({
 }) {
   return (
     <div className="mb-4 border border-emerald-500/20 rounded-xl p-4 bg-emerald-500/5 backdrop-blur-sm">
-      <label htmlFor="new-prompt-name" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      <label
+        htmlFor="new-prompt-name"
+        className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
+      >
         Prompt Name (id) *
       </label>
       <Input
@@ -390,7 +393,11 @@ function renderToolsSection({
             }}
             className="h-8 bg-muted/20 text-xs"
           />
-          <Button size="sm" onClick={onAddTool} className="h-8 bg-emerald-600 hover:bg-emerald-700 text-xs font-semibold shrink-0">
+          <Button
+            size="sm"
+            onClick={onAddTool}
+            className="h-8 bg-emerald-600 hover:bg-emerald-700 text-xs font-semibold shrink-0"
+          >
             Bind Tool
           </Button>
         </div>
@@ -410,8 +417,7 @@ interface FormEditorProps {
 }
 
 function renderFormEditor(props: FormEditorProps) {
-  const { promptDetail, newTool, onFieldChange, onNestedFieldChange, onNewToolChange, onAddTool, onRemoveTool } =
-    props
+  const { promptDetail, newTool, onFieldChange, onNestedFieldChange, onNewToolChange, onAddTool, onRemoveTool } = props
   return (
     <div className="space-y-6 pb-8">
       {renderGeneralParamsSection({ promptDetail, onFieldChange })}
@@ -495,7 +501,12 @@ function renderEditorHeader(props: EditorHeaderProps) {
             Raw JSON
           </Button>
         </div>
-        <Button size="sm" onClick={onSave} disabled={saving || !promptDetail} className="bg-emerald-600 hover:bg-emerald-700">
+        <Button
+          size="sm"
+          onClick={onSave}
+          disabled={saving || !promptDetail}
+          className="bg-emerald-600 hover:bg-emerald-700"
+        >
           <Save className="size-4 mr-1.5" />
           {saveButtonLabel(saving, isNew)}
         </Button>
@@ -718,13 +729,7 @@ export default function PromptsView() {
               Prompt Profiles
             </CardTitle>
             <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                onClick={startNewPrompt}
-                title="New prompt"
-              >
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={startNewPrompt} title="New prompt">
                 <Plus className="size-3.5" />
               </Button>
               <Button

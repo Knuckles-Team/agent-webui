@@ -461,10 +461,9 @@ function renderAdminTenantNotice({
   if (!isAdmin) return null
   return (
     <p className="text-xs text-muted-foreground">
-      Admin view: showing tenant{' '}
-      <span className="font-mono">{tenantFilter ?? defaultTenant ?? 'your own'}</span>. There is no single "every
-      tenant" query — the server requires naming one tenant at a time (never an implicit all-tenant read), so switch
-      tenants above to look at another one.
+      Admin view: showing tenant <span className="font-mono">{tenantFilter ?? defaultTenant ?? 'your own'}</span>.
+      There is no single "every tenant" query — the server requires naming one tenant at a time (never an implicit
+      all-tenant read), so switch tenants above to look at another one.
     </p>
   )
 }
@@ -498,7 +497,7 @@ function kpiValue(unavailable: boolean, value: string): string {
 }
 
 function kpiCost(unavailable: boolean, summary: UsageSummary | null): string {
-  return kpiValue(unavailable, fmtUsd(summary?.totals?.cost_usd ?? 0))
+  return kpiValue(unavailable, fmtUsd(summary?.totals.cost_usd ?? 0))
 }
 
 function kpiTokens(unavailable: boolean, summary: UsageSummary | null): string {

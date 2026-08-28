@@ -190,8 +190,8 @@ function renderSessionsGrid({
           </div>
           <h3 className="font-semibold text-lg">No Durable Sessions Found</h3>
           <p className="text-muted-foreground text-sm max-w-sm mt-1 mb-6">
-            Start an agent execution loop in the terminal UI or spin up an autonomous goal to view session history
-            and attachment handles here.
+            Start an agent execution loop in the terminal UI or spin up an autonomous goal to view session history and
+            attachment handles here.
           </p>
         </CardContent>
       </Card>
@@ -224,7 +224,11 @@ function renderTurnBubble(turn: Turn, index: number) {
             : 'bg-muted/15 border-border/10 prose prose-invert max-w-none prose-sm',
         )}
       >
-        {turn.role === 'user' ? <p className="whitespace-pre-wrap">{turn.content}</p> : <Response>{turn.content}</Response>}
+        {turn.role === 'user' ? (
+          <p className="whitespace-pre-wrap">{turn.content}</p>
+        ) : (
+          <Response>{turn.content}</Response>
+        )}
       </div>
     </div>
   )

@@ -77,9 +77,7 @@ function renderBooleanField(name: string, label: string, field: JsonSchema, ctx:
           <span className="block text-sm font-medium">
             {label} {required.has(name) && <span className="text-destructive">*</span>}
           </span>
-          {field.description && (
-            <span className="block text-xs text-muted-foreground">{field.description}</span>
-          )}
+          {field.description && <span className="block text-xs text-muted-foreground">{field.description}</span>}
         </span>
       </label>
       {issue && <p className="text-xs text-destructive">{issue.message}</p>}
@@ -127,7 +125,12 @@ function renderSelectWidget(
   )
 }
 
-function renderTextareaWidget(name: string, type: string | undefined, common: ValueWidgetCommon, update: FieldRenderContext['update']) {
+function renderTextareaWidget(
+  name: string,
+  type: string | undefined,
+  common: ValueWidgetCommon,
+  update: FieldRenderContext['update'],
+) {
   return (
     <div className="relative">
       <Textarea
@@ -188,7 +191,7 @@ function renderValueField(
   const { formId, state, issues, required } = ctx
   const id = `${formId}-${name}`
   const issue = issues.find((item) => item.field === name)
-  const isSensitive = Boolean(field.format === 'password' || field.writeOnly || field['x-sensitive'])
+  const isSensitive = field.format === 'password' || field.writeOnly === true || field['x-sensitive'] === true
   const common: ValueWidgetCommon = {
     id,
     name,

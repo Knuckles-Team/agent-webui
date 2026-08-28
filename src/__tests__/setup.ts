@@ -64,12 +64,18 @@ const ROUTE_TABLE: RouteEntry[] = [
     match: (p) => p.startsWith('/api/enhanced/graph/nodes') && p.includes('node_type=Memory'),
     respond: () => jsonResponse([mockMemoryNode]),
   },
-  { match: (p) => p.startsWith('/api/enhanced/graph/memory'), respond: () => jsonResponse({ status: 'success', id: 'mem_test' }) },
+  {
+    match: (p) => p.startsWith('/api/enhanced/graph/memory'),
+    respond: () => jsonResponse({ status: 'success', id: 'mem_test' }),
+  },
 
   // Graph (GraphView)
   { match: (p) => p.startsWith('/api/enhanced/graph/stats'), respond: () => jsonResponse(mockGraphStats) },
   { match: (p) => p.startsWith('/api/enhanced/graph/node-types'), respond: () => jsonResponse(mockGraphNodeTypes) },
-  { match: (p) => p.startsWith('/api/enhanced/graph/relationships'), respond: () => jsonResponse(mockGraphRelationships) },
+  {
+    match: (p) => p.startsWith('/api/enhanced/graph/relationships'),
+    respond: () => jsonResponse(mockGraphRelationships),
+  },
   { match: (p) => p.startsWith('/api/enhanced/graph/nodes'), respond: () => jsonResponse(mockGraphNodes) },
   { match: (p) => p.startsWith('/api/enhanced/graph/query'), respond: () => jsonResponse([]) },
   { match: (p) => p.startsWith('/api/enhanced/graph/magma'), respond: () => jsonResponse([]) },
@@ -87,7 +93,10 @@ const ROUTE_TABLE: RouteEntry[] = [
   { match: (p) => p.startsWith('/api/enhanced/sdd/specs'), respond: () => jsonResponse([mockSpec]) },
   { match: (p) => p.startsWith('/api/enhanced/sdd/plans'), respond: () => jsonResponse([mockPlan]) },
   { match: (p) => p.startsWith('/api/enhanced/sdd/tasks'), respond: () => jsonResponse({ tasks: [mockTask] }) },
-  { match: (p) => p.startsWith('/api/enhanced/sdd/spec'), respond: () => jsonResponse({ ...mockSpec, id: 'new_spec' }) },
+  {
+    match: (p) => p.startsWith('/api/enhanced/sdd/spec'),
+    respond: () => jsonResponse({ ...mockSpec, id: 'new_spec' }),
+  },
   { match: (p) => p.startsWith('/api/enhanced/sdd/sync'), respond: () => jsonResponse({ status: 'success' }) },
 
   // Knowledge base

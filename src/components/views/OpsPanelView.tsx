@@ -709,9 +709,7 @@ export default function OpsPanelView() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
-              {renderResourcesCardBody({ loadingResources, resourcesUnavailable, resources })}
-            </CardContent>
+            <CardContent>{renderResourcesCardBody({ loadingResources, resourcesUnavailable, resources })}</CardContent>
           </Card>
 
           {renderSpawnDialog({

@@ -117,7 +117,11 @@ function renderPlacementList(placement: ShardTopology['endpoints']) {
       <p className="text-sm font-medium mb-2">Placed on</p>
       <div className="flex flex-wrap gap-2">
         {placement.map((ep) => (
-          <Badge key={ep.endpoint} variant={ep.reachable ? 'default' : 'destructive'} className="font-mono text-xs gap-1">
+          <Badge
+            key={ep.endpoint}
+            variant={ep.reachable ? 'default' : 'destructive'}
+            className="font-mono text-xs gap-1"
+          >
             {ep.endpoint}
             {ep.local && <span className="opacity-70">· local</span>}
           </Badge>

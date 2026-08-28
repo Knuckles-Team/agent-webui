@@ -181,7 +181,7 @@ function renderAgentCard({ agent, onArchive }: { agent: LibraryAgent; onArchive:
         </div>
         <button
           onClick={() => {
-            void onArchive(agent)
+            onArchive(agent)
           }}
           className="p-1.5 rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
           aria-label={`Archive ${agent.name}`}
@@ -277,7 +277,13 @@ function renderLibraryTab(props: LibraryTabProps) {
             className="pl-9 h-9 bg-muted/20"
           />
         </div>
-        <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={onRefresh} disabled={loadingAgents}>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-9 w-9 shrink-0"
+          onClick={onRefresh}
+          disabled={loadingAgents}
+        >
           <RefreshCw className={`size-4 ${loadingAgents ? 'animate-spin' : ''}`} />
         </Button>
         <Button size="sm" onClick={onNewAgent}>

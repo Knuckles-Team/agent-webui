@@ -233,8 +233,7 @@ function renderActiveFilters({
 }
 
 function renderSearchFacetsCard(props: SearchFacetsCardProps) {
-  const { query, onQueryChange, objectType, onObjectTypeChange, draftFilter, onDraftFilterChange, onAddFilter } =
-    props
+  const { query, onQueryChange, objectType, onObjectTypeChange, draftFilter, onDraftFilterChange, onAddFilter } = props
   return (
     <Card>
       <CardHeader>

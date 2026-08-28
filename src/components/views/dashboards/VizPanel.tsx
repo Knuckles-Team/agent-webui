@@ -47,7 +47,12 @@ type VizRunOutcome =
   | { kind: 'error'; message: string }
   | { kind: 'render'; render: VizRenderResult }
 
-async function runVizQuery(params: { query: string; mark: VizMark; xField: string; yField: string }): Promise<VizRunOutcome> {
+async function runVizQuery(params: {
+  query: string
+  mark: VizMark
+  xField: string
+  yField: string
+}): Promise<VizRunOutcome> {
   const r = await plotFromQuery(params)
   if (r.unavailable) return { kind: 'unavailable' }
   if (!r.ok) return { kind: 'error', message: r.error ?? 'Render failed' }
@@ -120,8 +125,8 @@ function renderVizBody({
       <div className="rounded-md border border-amber-500/50 bg-amber-50/50 dark:bg-amber-500/10 p-3 flex items-start gap-2 text-sm">
         <AlertTriangle className="size-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
         <p className="text-muted-foreground">
-          No chart rendered — <span className="font-mono">{noDataReason}</span>. This reflects the query's real
-          result, not a fabricated empty chart.
+          No chart rendered — <span className="font-mono">{noDataReason}</span>. This reflects the query's real result,
+          not a fabricated empty chart.
         </p>
       </div>
     )

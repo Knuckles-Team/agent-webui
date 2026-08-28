@@ -145,7 +145,11 @@ function renderDaemonCard(daemon: DaemonStatus | null) {
         <CardDescription>The consolidated KG background daemon that hosts the local shard.</CardDescription>
       </CardHeader>
       <CardContent>
-        {daemon ? renderDaemonBadges(daemon) : <p className="text-muted-foreground text-sm">Daemon status unavailable.</p>}
+        {daemon ? (
+          renderDaemonBadges(daemon)
+        ) : (
+          <p className="text-muted-foreground text-sm">Daemon status unavailable.</p>
+        )}
       </CardContent>
     </Card>
   )

@@ -285,11 +285,7 @@ function renderGoalsListBody({
       </div>
     )
   }
-  return (
-    <>
-      {goals.map((g) => renderGoalListItem({ g, isSelected: selectedGoalId === g.goal_id, onSelect }))}
-    </>
-  )
+  return <>{goals.map((g) => renderGoalListItem({ g, isSelected: selectedGoalId === g.goal_id, onSelect }))}</>
 }
 
 function renderStatusBanner(selectedGoal: GoalRun | null) {
@@ -310,7 +306,9 @@ function renderStatusBanner(selectedGoal: GoalRun | null) {
         {selectedGoal.status === 'running' && <Loader2 className="size-4 animate-spin" />}
         <span className="capitalize">{selectedGoal.status} Execution Banner</span>
       </div>
-      <p className="font-mono text-[11px] opacity-80">{selectedGoal.summary || 'Loop is performing verification sweeps...'}</p>
+      <p className="font-mono text-[11px] opacity-80">
+        {selectedGoal.summary || 'Loop is performing verification sweeps...'}
+      </p>
     </div>
   )
 }
