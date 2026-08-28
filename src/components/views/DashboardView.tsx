@@ -216,6 +216,20 @@ const ICON_MAP: Record<string, ReactNode | undefined> = {
 
 /* ── Format Helpers ──────────────────────────────────────────────── */
 
+function formatBytes(value: number): string {
+  if (value >= 1e9) return `${(value / 1e9).toFixed(1)} GB`
+  if (value >= 1e6) return `${(value / 1e6).toFixed(1)} MB`
+  if (value >= 1e3) return `${(value / 1e3).toFixed(1)} KB`
+  return `${value} B`
+}
+
+function formatDuration(value: number): string {
+  if (value >= 86400) return `${Math.floor(value / 86400)}d`
+  if (value >= 3600) return `${Math.floor(value / 3600)}h`
+  if (value >= 60) return `${Math.floor(value / 60)}m`
+  return `${value}s`
+}
+
 function formatValue(value: number | string | boolean, format: string, suffix: string): string {
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
   if (typeof value === 'string') return `${value}${suffix}`
@@ -224,21 +238,27 @@ function formatValue(value: number | string | boolean, format: string, suffix: s
     case 'percent':
       return `${value}${suffix || '%'}`
     case 'bytes':
-      if (value >= 1e9) return `${(value / 1e9).toFixed(1)} GB`
-      if (value >= 1e6) return `${(value / 1e6).toFixed(1)} MB`
-      if (value >= 1e3) return `${(value / 1e3).toFixed(1)} KB`
-      return `${value} B`
+      return formatBytes(value)
     case 'duration':
-      if (value >= 86400) return `${Math.floor(value / 86400)}d`
-      if (value >= 3600) return `${Math.floor(value / 3600)}h`
-      if (value >= 60) return `${Math.floor(value / 60)}m`
-      return `${value}s`
+      return formatDuration(value)
     default:
       return `${typeof value === 'number' ? value.toLocaleString() : value}${suffix}`
   }
 }
 
 /* ── Widget Block Component ──────────────────────────────────────── */
+
+const WARNING_LABEL_KEYWORDS = ['down', 'failed', 'stopped', 'unhealthy']
+const GOOD_LABEL_KEYWORDS = ['up', 'running', 'healthy']
+
+function labelMatchesKeyword(label: string, keywords: string[]): boolean {
+  const lower = label.toLowerCase()
+  return keywords.some((keyword) => lower.includes(keyword))
+}
+
+function isHighlightedNumber(highlight: boolean, value: number | string | boolean | undefined): value is number {
+  return highlight && typeof value === 'number' && value > 0
+}
 
 function WidgetBlock({
   label,
@@ -255,22 +275,9 @@ function WidgetBlock({
 }) {
   const displayValue = value !== undefined ? formatValue(value, format, suffix) : '—'
 
-  const isWarning =
-    highlight &&
-    typeof value === 'number' &&
-    value > 0 &&
-    (label.toLowerCase().includes('down') ||
-      label.toLowerCase().includes('failed') ||
-      label.toLowerCase().includes('stopped') ||
-      label.toLowerCase().includes('unhealthy'))
-
-  const isGood =
-    highlight &&
-    typeof value === 'number' &&
-    value > 0 &&
-    (label.toLowerCase().includes('up') ||
-      label.toLowerCase().includes('running') ||
-      label.toLowerCase().includes('healthy'))
+  const isHighlighted = isHighlightedNumber(highlight, value)
+  const isWarning = isHighlighted && labelMatchesKeyword(label, WARNING_LABEL_KEYWORDS)
+  const isGood = isHighlighted && labelMatchesKeyword(label, GOOD_LABEL_KEYWORDS)
 
   return (
     <div className="flex flex-col items-center justify-center px-3 py-2 min-w-[70px]">
@@ -291,6 +298,63 @@ function WidgetBlock({
 
 /* ── Widget Card Component ───────────────────────────────────────── */
 
+function widgetCardWrapperClassName(service: ServiceConfig): string {
+  return cn(
+    'group relative rounded-xl border widget-card widget-enter',
+    'bg-card/50 backdrop-blur-md',
+    'hover:bg-card/80',
+    'hover:border-primary/20',
+    service.column_span === 2 && 'col-span-2',
+    service.column_span === 3 && 'col-span-3',
+    service.column_span === 4 && 'col-span-4',
+  )
+}
+
+function widgetCardAccentClassName(status: WidgetData['status']): string {
+  return cn(
+    'absolute bottom-0 left-0 right-0 h-[2px] rounded-b-xl opacity-0 group-hover:opacity-100 transition-opacity',
+    status === 'ok' && 'bg-gradient-to-r from-emerald-500/0 via-emerald-500/60 to-emerald-500/0',
+    status === 'error' && 'bg-gradient-to-r from-red-500/0 via-red-500/60 to-red-500/0',
+    status === 'unknown' && 'bg-gradient-to-r from-zinc-500/0 via-zinc-500/40 to-zinc-500/0',
+  )
+}
+
+function widgetCardBody(isLoading: boolean, data: WidgetData | undefined): ReactNode {
+  if (isLoading && !data) {
+    return (
+      <div className="flex items-center justify-center py-4 w-full">
+        <div className="flex gap-1">
+          <div className="size-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:0ms]" />
+          <div className="size-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:150ms]" />
+          <div className="size-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:300ms]" />
+        </div>
+      </div>
+    )
+  }
+  if (data?.status === 'error') {
+    return (
+      <div className="flex items-center justify-center py-3 w-full text-xs text-red-400/80">
+        {data.error ?? 'Connection failed'}
+      </div>
+    )
+  }
+  if (data) {
+    return Object.entries(data.fields).map(([key, value]) => (
+      <WidgetBlock
+        key={key}
+        label={key.replace(/_/g, ' ')}
+        value={value}
+        highlight={key === 'running' || key === 'stopped' || key === 'up' || key === 'down' || key === 'failed'}
+      />
+    ))
+  }
+  return (
+    <div className="flex items-center justify-center py-3 w-full text-xs text-muted-foreground/50">
+      No data available
+    </div>
+  )
+}
+
 function WidgetCard({ service, data, isLoading }: { service: ServiceConfig; data?: WidgetData; isLoading: boolean }) {
   const icon = ICON_MAP[service.icon] ?? <LayoutGrid className="size-5" />
   const status = data?.status ?? 'unknown'
@@ -304,17 +368,7 @@ function WidgetCard({ service, data, isLoading }: { service: ServiceConfig; data
   }[status]
 
   return (
-    <div
-      className={cn(
-        'group relative rounded-xl border widget-card widget-enter',
-        'bg-card/50 backdrop-blur-md',
-        'hover:bg-card/80',
-        'hover:border-primary/20',
-        service.column_span === 2 && 'col-span-2',
-        service.column_span === 3 && 'col-span-3',
-        service.column_span === 4 && 'col-span-4',
-      )}
-    >
+    <div className={widgetCardWrapperClassName(service)}>
       {/* Card Header */}
       <div className="flex items-center justify-between px-4 pt-3 pb-2">
         <div className="flex items-center gap-2.5">
@@ -348,43 +402,11 @@ function WidgetCard({ service, data, isLoading }: { service: ServiceConfig; data
 
       {/* Widget Data Blocks */}
       <div className="flex items-stretch justify-center divide-x divide-border/30 px-2 pb-3">
-        {isLoading && !data ? (
-          <div className="flex items-center justify-center py-4 w-full">
-            <div className="flex gap-1">
-              <div className="size-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:0ms]" />
-              <div className="size-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:150ms]" />
-              <div className="size-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:300ms]" />
-            </div>
-          </div>
-        ) : data?.status === 'error' ? (
-          <div className="flex items-center justify-center py-3 w-full text-xs text-red-400/80">
-            {data.error ?? 'Connection failed'}
-          </div>
-        ) : data ? (
-          Object.entries(data.fields).map(([key, value]) => (
-            <WidgetBlock
-              key={key}
-              label={key.replace(/_/g, ' ')}
-              value={value}
-              highlight={key === 'running' || key === 'stopped' || key === 'up' || key === 'down' || key === 'failed'}
-            />
-          ))
-        ) : (
-          <div className="flex items-center justify-center py-3 w-full text-xs text-muted-foreground/50">
-            No data available
-          </div>
-        )}
+        {widgetCardBody(isLoading, data)}
       </div>
 
       {/* Subtle bottom gradient accent */}
-      <div
-        className={cn(
-          'absolute bottom-0 left-0 right-0 h-[2px] rounded-b-xl opacity-0 group-hover:opacity-100 transition-opacity',
-          status === 'ok' && 'bg-gradient-to-r from-emerald-500/0 via-emerald-500/60 to-emerald-500/0',
-          status === 'error' && 'bg-gradient-to-r from-red-500/0 via-red-500/60 to-red-500/0',
-          status === 'unknown' && 'bg-gradient-to-r from-zinc-500/0 via-zinc-500/40 to-zinc-500/0',
-        )}
-      />
+      <div className={widgetCardAccentClassName(status)} />
     </div>
   )
 }
@@ -459,6 +481,93 @@ function ServiceGroupSection({
 }
 
 /* ── Main Dashboard View ─────────────────────────────────────────── */
+
+function connectionStatusIndicator(isConnected: boolean): ReactNode {
+  if (isConnected) {
+    return (
+      <>
+        <Wifi className="size-3.5 text-emerald-500" aria-hidden="true" />
+        <span className="text-emerald-500">Live</span>
+      </>
+    )
+  }
+  return (
+    <>
+      <WifiOff className="size-3.5 text-amber-500" aria-hidden="true" />
+      <span className="text-amber-500">Polling</span>
+    </>
+  )
+}
+
+function freshnessBannerContent(dataFreshness: DataFreshness): {
+  ariaLive: 'polite' | 'assertive'
+  className: string
+  message: string
+} {
+  if (dataFreshness === 'reset') {
+    return {
+      ariaLive: 'assertive',
+      className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
+      message:
+        'Reconnected after a dropped connection — some updates may have been missed. Showing the latest snapshot.',
+    }
+  }
+  return {
+    ariaLive: 'polite',
+    className: 'bg-muted/50 text-muted-foreground border-border/40',
+    message: 'Connection lost — the data below may be out of date while reconnecting.',
+  }
+}
+
+function dashboardBodyContent({
+  isLoading,
+  filteredGroups,
+  dashboardData,
+  dataFreshness,
+  isGroupCollapsedFn,
+  onToggleCollapsed,
+}: {
+  isLoading: boolean
+  filteredGroups: ServiceGroup[]
+  dashboardData: { data: Record<string, WidgetData> } | undefined
+  dataFreshness: DataFreshness
+  isGroupCollapsedFn: (group: ServiceGroup) => boolean
+  onToggleCollapsed: (group: ServiceGroup) => void
+}): ReactNode {
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4">
+        <div className="relative">
+          <div className="size-12 rounded-full border-2 border-primary/20 animate-pulse" />
+          <div className="absolute inset-0 size-12 rounded-full border-t-2 border-primary animate-spin" />
+        </div>
+        <p className="text-sm text-muted-foreground animate-pulse">Loading dashboard...</p>
+      </div>
+    )
+  }
+  if (filteredGroups.length === 0) {
+    // D-W6-9: this used to be the ENTIRE landing experience whenever no
+    // services.yaml/mcp_config.json was populated -- a literal, static
+    // "No services configured" placeholder with no real data behind it.
+    // DefaultOverviewPanel replaces it with a zero-configuration summary
+    // built from surfaces that are already reachable (prompts/tools/
+    // models/KG/health), never seeded/fabricated data.
+    return <DefaultOverviewPanel />
+  }
+  return filteredGroups.map((group) => (
+    <ServiceGroupSection
+      key={group.name}
+      group={group}
+      data={dashboardData?.data ?? {}}
+      isLoading={isLoading}
+      dataFreshness={dataFreshness}
+      collapsed={isGroupCollapsedFn(group)}
+      onToggleCollapsed={() => {
+        onToggleCollapsed(group)
+      }}
+    />
+  ))
+}
 
 export default function DashboardView() {
   const [searchQuery, setSearchQuery] = useState('')
@@ -726,17 +835,7 @@ export default function DashboardView() {
               screen reader hears "Live" <-> "Polling" transitions instead of
               relying on the icon color alone. */}
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status" aria-live="polite">
-            {isConnected ? (
-              <>
-                <Wifi className="size-3.5 text-emerald-500" aria-hidden="true" />
-                <span className="text-emerald-500">Live</span>
-              </>
-            ) : (
-              <>
-                <WifiOff className="size-3.5 text-amber-500" aria-hidden="true" />
-                <span className="text-amber-500">Polling</span>
-              </>
-            )}
+            {connectionStatusIndicator(isConnected)}
           </div>
 
           {/* Refresh */}
@@ -771,57 +870,33 @@ export default function DashboardView() {
           'reset' means a reconnect proved a gap occurred (data was just
           replaced by a fresh snapshot and may have skipped updates, so it is
           announced immediately, `aria-live="assertive"`). */}
-      {dataFreshness !== 'fresh' && (
-        <div
-          id={DATA_FRESHNESS_BANNER_ID}
-          role="status"
-          aria-live={dataFreshness === 'reset' ? 'assertive' : 'polite'}
-          className={cn(
-            'px-6 py-1.5 text-xs border-b',
-            dataFreshness === 'reset'
-              ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
-              : 'bg-muted/50 text-muted-foreground border-border/40',
-          )}
-        >
-          {dataFreshness === 'reset'
-            ? 'Reconnected after a dropped connection — some updates may have been missed. Showing the latest snapshot.'
-            : 'Connection lost — the data below may be out of date while reconnecting.'}
-        </div>
-      )}
+      {dataFreshness !== 'fresh' &&
+        (() => {
+          const banner = freshnessBannerContent(dataFreshness)
+          return (
+            <div
+              id={DATA_FRESHNESS_BANNER_ID}
+              role="status"
+              aria-live={banner.ariaLive}
+              className={cn('px-6 py-1.5 text-xs border-b', banner.className)}
+            >
+              {banner.message}
+            </div>
+          )
+        })()}
 
       {/* Dashboard Content */}
       <div className="flex-1 overflow-auto p-6">
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center h-full gap-4">
-            <div className="relative">
-              <div className="size-12 rounded-full border-2 border-primary/20 animate-pulse" />
-              <div className="absolute inset-0 size-12 rounded-full border-t-2 border-primary animate-spin" />
-            </div>
-            <p className="text-sm text-muted-foreground animate-pulse">Loading dashboard...</p>
-          </div>
-        ) : filteredGroups.length === 0 ? (
-          // D-W6-9: this used to be the ENTIRE landing experience whenever no
-          // services.yaml/mcp_config.json was populated -- a literal, static
-          // "No services configured" placeholder with no real data behind it.
-          // DefaultOverviewPanel replaces it with a zero-configuration summary
-          // built from surfaces that are already reachable (prompts/tools/
-          // models/KG/health), never seeded/fabricated data.
-          <DefaultOverviewPanel />
-        ) : (
-          filteredGroups.map((group) => (
-            <ServiceGroupSection
-              key={group.name}
-              group={group}
-              data={dashboardData?.data ?? {}}
-              isLoading={isLoading}
-              dataFreshness={dataFreshness}
-              collapsed={isGroupCollapsed(group)}
-              onToggleCollapsed={() => {
-                setCollapsedOverrides((prev) => ({ ...prev, [group.name]: !isGroupCollapsed(group) }))
-              }}
-            />
-          ))
-        )}
+        {dashboardBodyContent({
+          isLoading,
+          filteredGroups,
+          dashboardData,
+          dataFreshness,
+          isGroupCollapsedFn: isGroupCollapsed,
+          onToggleCollapsed: (group) => {
+            setCollapsedOverrides((prev) => ({ ...prev, [group.name]: !isGroupCollapsed(group) }))
+          },
+        })}
       </div>
     </div>
   )
