@@ -91,6 +91,397 @@ function backgroundHex(isDark: boolean): string {
   return cssColorToHex(token, isDark ? '#0a0d14' : '#f6f7fb')
 }
 
+function renderCanvasBadges({
+  clusterCount,
+  leafCount,
+  edgeCount,
+  expandedCount,
+  pendingCount,
+}: {
+  clusterCount: number
+  leafCount: number
+  edgeCount: number
+  expandedCount: number
+  pendingCount: number
+}) {
+  return (
+    <div className="absolute left-3 top-3 flex flex-wrap items-center gap-1.5">
+      <Badge variant="secondary" className="font-mono text-[10px]">
+        {numberFormat.format(clusterCount)} clusters
+      </Badge>
+      {leafCount > 0 ? (
+        <Badge variant="secondary" className="font-mono text-[10px]">
+          {numberFormat.format(leafCount)} real nodes
+        </Badge>
+      ) : null}
+      <Badge variant="secondary" className="font-mono text-[10px]">
+        {numberFormat.format(edgeCount)} edges in view
+      </Badge>
+      {expandedCount > 0 ? (
+        <Badge variant="outline" className="text-[10px]">
+          {expandedCount} cluster{expandedCount === 1 ? '' : 's'} expanded
+        </Badge>
+      ) : null}
+      {pendingCount > 0 ? (
+        <Badge variant="outline" className="text-[10px]">
+          <RefreshCw className="mr-1 h-3 w-3 animate-spin" /> loading {pendingCount}
+        </Badge>
+      ) : null}
+    </div>
+  )
+}
+
+function renderCanvasControls({
+  selected,
+  onIsolate,
+  hops,
+  onHopsChange,
+  onShowAll,
+  showAllDisabled,
+  onReframe,
+}: {
+  selected: number | null
+  onIsolate: () => void
+  hops: (typeof HOP_CHOICES)[number]
+  onHopsChange: (h: (typeof HOP_CHOICES)[number]) => void
+  onShowAll: () => void
+  showAllDisabled: boolean
+  onReframe: () => void
+}) {
+  return (
+    <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-1.5">
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={onIsolate}
+        disabled={selected == null}
+        title="Show only this node's neighbourhood"
+      >
+        <ScanSearch className="mr-1.5 h-3.5 w-3.5" /> Isolate
+      </Button>
+      <div className="flex overflow-hidden rounded-md border bg-background/80 backdrop-blur">
+        {HOP_CHOICES.map((choice) => (
+          <button
+            key={choice}
+            type="button"
+            onClick={() => {
+              onHopsChange(choice)
+            }}
+            title="How many hops of context a selection reveals"
+            className={`px-2 py-1 text-[11px] transition-colors ${
+              hops === choice ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+            }`}
+          >
+            {choice} hop{choice > 1 ? 's' : ''}
+          </button>
+        ))}
+      </div>
+      <Button size="sm" variant="secondary" onClick={onShowAll} disabled={showAllDisabled}>
+        <Eye className="mr-1.5 h-3.5 w-3.5" /> Show all
+      </Button>
+      <Button size="sm" variant="secondary" onClick={onReframe}>
+        <Crosshair className="mr-1.5 h-3.5 w-3.5" /> Re-frame
+      </Button>
+    </div>
+  )
+}
+
+interface SelectedNodeType {
+  id: string
+  name: string
+  type: string
+}
+
+interface SelectedMetaType {
+  kind: string
+  level?: number | null
+  nodeCount?: number
+  edgeCount?: number
+  clusterId?: string | null
+}
+
+function renderClusterExpandControls({
+  selectedMeta,
+  isExpanded,
+  isPending,
+  onCollapse,
+  onExpand,
+}: {
+  selectedMeta: SelectedMetaType
+  isExpanded: boolean
+  isPending: boolean
+  onCollapse: () => void
+  onExpand: () => void
+}) {
+  if (selectedMeta.kind !== 'cluster') return null
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Badge variant="outline" className="text-[10px]">
+          {numberFormat.format(selectedMeta.nodeCount ?? 0)} members
+        </Badge>
+        <Badge variant="outline" className="text-[10px]">
+          ~{numberFormat.format(selectedMeta.edgeCount ?? 0)} internal edges
+        </Badge>
+      </div>
+      {isExpanded ? (
+        <Button size="sm" variant="outline" onClick={onCollapse}>
+          <Undo2 className="mr-1.5 h-3.5 w-3.5" /> Collapse
+        </Button>
+      ) : (
+        <Button size="sm" variant="outline" onClick={onExpand} disabled={isPending}>
+          <Boxes className="mr-1.5 h-3.5 w-3.5" />
+          {isPending ? 'Expanding…' : 'Expand'}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function renderNeighboursList({
+  neighbours,
+  isDark,
+  onSelect,
+}: {
+  neighbours: { index: number; node: SelectedNodeType; degree: number }[]
+  isDark: boolean
+  onSelect: (index: number) => void
+}) {
+  return (
+    <div className="space-y-1">
+      {neighbours.map(({ index, node, degree }) => (
+        <button
+          key={node.id}
+          type="button"
+          onClick={() => {
+            onSelect(index)
+          }}
+          className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
+        >
+          <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: nodeTypeColor(node.type, isDark) }} />
+          <span className="min-w-0 flex-1 truncate">{node.name}</span>
+          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{degree}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function renderSelectedPanel({
+  selectedNode,
+  selectedMeta,
+  isDark,
+  isExpanded,
+  isPending,
+  onCollapse,
+  onExpand,
+  neighbours,
+  onSelectNeighbour,
+  onUnpin,
+}: {
+  selectedNode: SelectedNodeType
+  selectedMeta: SelectedMetaType
+  isDark: boolean
+  isExpanded: boolean
+  isPending: boolean
+  onCollapse: () => void
+  onExpand: () => void
+  neighbours: { index: number; node: SelectedNodeType; degree: number }[]
+  onSelectNeighbour: (index: number) => void
+  onUnpin: () => void
+}) {
+  return (
+    <Card className="min-h-0 flex-1">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          {selectedMeta.kind === 'cluster' ? <Boxes className="h-4 w-4" /> : <Layers className="h-4 w-4" />}
+          {selectedMeta.kind === 'cluster' ? 'Cluster' : 'Node'}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="min-h-0 p-0">
+        <ScrollArea className="h-[300px] px-4 pb-4">
+          <div className="space-y-3">
+            <div>
+              <div className="text-sm font-medium leading-tight">{selectedNode.name}</div>
+              <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{ background: nodeTypeColor(selectedNode.type, isDark) }}
+                />
+                {selectedNode.type}
+                {selectedMeta.level != null ? <span className="opacity-60">· level {selectedMeta.level}</span> : null}
+              </div>
+              <div className="mt-1 break-all font-mono text-[10px] text-muted-foreground/80">{selectedNode.id}</div>
+            </div>
+
+            {renderClusterExpandControls({ selectedMeta, isExpanded, isPending, onCollapse, onExpand })}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="text-[10px]">
+                {neighbours.length} neighbours in view
+              </Badge>
+              <Button size="sm" variant="ghost" onClick={onUnpin}>
+                Unpin
+              </Button>
+            </div>
+            {renderNeighboursList({ neighbours, isDark, onSelect: onSelectNeighbour })}
+          </div>
+        </ScrollArea>
+      </CardContent>
+    </Card>
+  )
+}
+
+function renderRelTypesList({
+  relTypes,
+  relTypeCount,
+  hiddenRelTypes,
+  onToggle,
+}: {
+  relTypes: string[]
+  relTypeCount: number[]
+  hiddenRelTypes: Set<string>
+  onToggle: (type: string) => void
+}) {
+  return (
+    <div className="space-y-0.5">
+      {relTypes.map((type, index) => {
+        const hidden = hiddenRelTypes.has(type)
+        return (
+          <button
+            key={type}
+            type="button"
+            onClick={() => {
+              onToggle(type)
+            }}
+            className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted ${
+              hidden ? 'opacity-40' : ''
+            }`}
+          >
+            <span
+              className={`inline-block h-2 w-2 shrink-0 rounded-sm border ${
+                hidden ? 'border-muted-foreground' : 'border-primary bg-primary'
+              }`}
+            />
+            <span className="min-w-0 flex-1 truncate font-mono">{type}</span>
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+              {numberFormat.format(relTypeCount[index])}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function renderLoadError(error: string | null) {
+  if (!error) return null
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Could not load</CardTitle>
+        <CardDescription>{error}</CardDescription>
+      </CardHeader>
+    </Card>
+  )
+}
+
+function renderRootLoadingOverlay(rootLoading: boolean) {
+  if (!rootLoading) return null
+  return (
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 text-sm text-muted-foreground backdrop-blur-sm">
+      <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Reading the top level…
+    </div>
+  )
+}
+
+function resolveSelection(
+  model: { nodes: SelectedNodeType[] },
+  scope: { meta: SelectedMetaType[] },
+  selected: number | null,
+): { node: SelectedNodeType; meta: SelectedMetaType } | null {
+  if (selected == null) return null
+  return { node: model.nodes[selected], meta: scope.meta[selected] }
+}
+
+function renderTypesRelsTabs({
+  nodeCount,
+  clusterCount,
+  leafCount,
+  breakdown,
+  breakdownLoading,
+  breakdownError,
+  highlightType,
+  onSelectType,
+  relTypes,
+  relTypeCount,
+  hiddenRelTypes,
+  onToggleRelType,
+}: {
+  nodeCount: number
+  clusterCount: number
+  leafCount: number
+  breakdown: NodeTypeBreakdownData | null
+  breakdownLoading: boolean
+  breakdownError: string | null
+  highlightType: string | null
+  onSelectType: (type: string | null) => void
+  relTypes: string[]
+  relTypeCount: number[]
+  hiddenRelTypes: Set<string>
+  onToggleRelType: (type: string) => void
+}) {
+  return (
+    <Tabs defaultValue="types" className="flex min-h-0 flex-1 flex-col">
+      <TabsList className="w-full">
+        <TabsTrigger value="types" className="flex-1 text-xs">
+          Node types
+        </TabsTrigger>
+        <TabsTrigger value="rels" className="flex-1 text-xs">
+          <Filter className="mr-1 h-3 w-3" /> Relationships
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="types" className="min-h-0 flex-1">
+        <Card className="h-full">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-xs">
+              The whole graph&apos;s type distribution, from the engine&apos;s own aggregate — for scale, not what is
+              currently drawn (that is {numberFormat.format(nodeCount)} nodes: {clusterCount} clusters and{' '}
+              {leafCount} real). Click a type to keep only matching nodes on the canvas.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="min-h-0 p-0">
+            <ScrollArea className="h-[300px] px-4 pb-4">
+              <NodeTypeBreakdown
+                data={breakdown}
+                loading={breakdownLoading}
+                error={breakdownError}
+                selectedType={highlightType}
+                onSelectType={onSelectType}
+              />
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      </TabsContent>
+      <TabsContent value="rels" className="min-h-0 flex-1">
+        <Card className="h-full">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-xs">
+              {relTypes.length} relationship types currently in view (cluster links plus any real edges inside
+              expanded clusters). Untick one to drop its edges.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="min-h-0 p-0">
+            <ScrollArea className="h-[290px] px-4 pb-4">
+              {renderRelTypesList({ relTypes, relTypeCount, hiddenRelTypes, onToggle: onToggleRelType })}
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </Tabs>
+  )
+}
+
 export default function Graph3DLodView() {
   const isDark = useIsDarkMode()
   const explorer = useLodExplorer({ transport: LOD_TRANSPORT, graph: LOD_GRAPH_SCOPE })
@@ -201,8 +592,7 @@ export default function Graph3DLodView() {
     })
   }, [])
 
-  const selectedNode = selected != null ? model.nodes[selected] : null
-  const selectedMeta = selected != null ? scope.meta[selected] : null
+  const selection = resolveSelection(model, scope, selected)
   const selectedNeighbours = useMemo(() => {
     if (selected == null) return []
     return neighbours(model, selected)
@@ -232,15 +622,17 @@ export default function Graph3DLodView() {
     [scope, model, explorer],
   )
 
+  const selectedClusterId = selection?.meta.clusterId
+
   const expandSelected = useCallback(() => {
-    if (!selectedMeta?.clusterId) return
-    explorer.expand(selectedMeta.clusterId).catch(() => undefined)
-  }, [selectedMeta, explorer])
+    if (!selectedClusterId) return
+    explorer.expand(selectedClusterId).catch(() => undefined)
+  }, [selectedClusterId, explorer])
 
   const collapseSelected = useCallback(() => {
-    if (!selectedMeta?.clusterId) return
-    explorer.collapse(selectedMeta.clusterId)
-  }, [selectedMeta, explorer])
+    if (!selectedClusterId) return
+    explorer.collapse(selectedClusterId)
+  }, [selectedClusterId, explorer])
 
   const clusterCount = scope.meta.filter((m) => m.kind === 'cluster').length
   const leafCount = scope.meta.filter((m) => m.kind === 'leaf').length
@@ -280,14 +672,7 @@ export default function Graph3DLodView() {
         </div>
       </div>
 
-      {explorer.error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Could not load</CardTitle>
-            <CardDescription>{explorer.error}</CardDescription>
-          </CardHeader>
-        </Card>
-      ) : null}
+      {renderLoadError(explorer.error)}
 
       {/*
         `h-[70vh]` (a viewport-relative unit, ALWAYS definite, unlike an
@@ -318,11 +703,7 @@ export default function Graph3DLodView() {
       */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">
         <Card className="relative h-[70vh] min-h-[440px] overflow-hidden p-0">
-          {explorer.rootLoading ? (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 text-sm text-muted-foreground backdrop-blur-sm">
-              <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Reading the top level…
-            </div>
-          ) : null}
+          {renderRootLoadingOverlay(explorer.rootLoading)}
           <Graph3DCanvas
             model={model}
             isDark={isDark}
@@ -340,240 +721,56 @@ export default function Graph3DLodView() {
             emphasisMask={explorer.emphasisMask}
             fixedPositions={scope.fixedPositions}
           />
-          <div className="absolute left-3 top-3 flex flex-wrap items-center gap-1.5">
-            <Badge variant="secondary" className="font-mono text-[10px]">
-              {numberFormat.format(clusterCount)} clusters
-            </Badge>
-            {leafCount > 0 ? (
-              <Badge variant="secondary" className="font-mono text-[10px]">
-                {numberFormat.format(leafCount)} real nodes
-              </Badge>
-            ) : null}
-            <Badge variant="secondary" className="font-mono text-[10px]">
-              {numberFormat.format(model.edges.length)} edges in view
-            </Badge>
-            {explorer.expandedIds.size > 0 ? (
-              <Badge variant="outline" className="text-[10px]">
-                {explorer.expandedIds.size} cluster{explorer.expandedIds.size === 1 ? '' : 's'} expanded
-              </Badge>
-            ) : null}
-            {explorer.pending.size > 0 ? (
-              <Badge variant="outline" className="text-[10px]">
-                <RefreshCw className="mr-1 h-3 w-3 animate-spin" /> loading {explorer.pending.size}
-              </Badge>
-            ) : null}
-          </div>
-          <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-1.5">
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={isolate}
-              disabled={selected == null}
-              title="Show only this node's neighbourhood"
-            >
-              <ScanSearch className="mr-1.5 h-3.5 w-3.5" /> Isolate
-            </Button>
-            <div className="flex overflow-hidden rounded-md border bg-background/80 backdrop-blur">
-              {HOP_CHOICES.map((choice) => (
-                <button
-                  key={choice}
-                  type="button"
-                  onClick={() => {
-                    setHops(choice)
-                  }}
-                  title="How many hops of context a selection reveals"
-                  className={`px-2 py-1 text-[11px] transition-colors ${
-                    hops === choice ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
-                  }`}
-                >
-                  {choice} hop{choice > 1 ? 's' : ''}
-                </button>
-              ))}
-            </div>
-            <Button size="sm" variant="secondary" onClick={showAll} disabled={!revealed && !highlightType}>
-              <Eye className="mr-1.5 h-3.5 w-3.5" /> Show all
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                setFrameToken((token) => token + 1)
-              }}
-            >
-              <Crosshair className="mr-1.5 h-3.5 w-3.5" /> Re-frame
-            </Button>
-          </div>
+          {renderCanvasBadges({
+            clusterCount,
+            leafCount,
+            edgeCount: model.edges.length,
+            expandedCount: explorer.expandedIds.size,
+            pendingCount: explorer.pending.size,
+          })}
+          {renderCanvasControls({
+            selected,
+            onIsolate: isolate,
+            hops,
+            onHopsChange: setHops,
+            onShowAll: showAll,
+            showAllDisabled: !revealed && !highlightType,
+            onReframe: () => {
+              setFrameToken((token) => token + 1)
+            },
+          })}
         </Card>
 
         <div className="flex min-h-0 flex-col gap-4">
-          {selectedNode && selected != null && selectedMeta ? (
-            <Card className="min-h-0 flex-1">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  {selectedMeta.kind === 'cluster' ? <Boxes className="h-4 w-4" /> : <Layers className="h-4 w-4" />}
-                  {selectedMeta.kind === 'cluster' ? 'Cluster' : 'Node'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="min-h-0 p-0">
-                <ScrollArea className="h-[300px] px-4 pb-4">
-                  <div className="space-y-3">
-                    <div>
-                      <div className="text-sm font-medium leading-tight">{selectedNode.name}</div>
-                      <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <span
-                          className="inline-block h-2 w-2 rounded-full"
-                          style={{ background: nodeTypeColor(selectedNode.type, isDark) }}
-                        />
-                        {selectedNode.type}
-                        {selectedMeta.level != null ? (
-                          <span className="opacity-60">· level {selectedMeta.level}</span>
-                        ) : null}
-                      </div>
-                      <div className="mt-1 break-all font-mono text-[10px] text-muted-foreground/80">
-                        {selectedNode.id}
-                      </div>
-                    </div>
-
-                    {selectedMeta.kind === 'cluster' ? (
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-2 text-xs">
-                          <Badge variant="outline" className="text-[10px]">
-                            {numberFormat.format(selectedMeta.nodeCount ?? 0)} members
-                          </Badge>
-                          <Badge variant="outline" className="text-[10px]">
-                            ~{numberFormat.format(selectedMeta.edgeCount ?? 0)} internal edges
-                          </Badge>
-                        </div>
-                        {explorer.expandedIds.has(selectedMeta.clusterId ?? '') ? (
-                          <Button size="sm" variant="outline" onClick={collapseSelected}>
-                            <Undo2 className="mr-1.5 h-3.5 w-3.5" /> Collapse
-                          </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={expandSelected}
-                            disabled={explorer.pending.has(selectedMeta.clusterId ?? '')}
-                          >
-                            <Boxes className="mr-1.5 h-3.5 w-3.5" />
-                            {explorer.pending.has(selectedMeta.clusterId ?? '') ? 'Expanding…' : 'Expand'}
-                          </Button>
-                        )}
-                      </div>
-                    ) : null}
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline" className="text-[10px]">
-                        {selectedNeighbours.length} neighbours in view
-                      </Badge>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setSelected(null)
-                        }}
-                      >
-                        Unpin
-                      </Button>
-                    </div>
-                    <div className="space-y-1">
-                      {selectedNeighbours.map(({ index, node, degree }) => (
-                        <button
-                          key={node.id}
-                          type="button"
-                          onClick={() => {
-                            setSelected(index)
-                          }}
-                          className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
-                        >
-                          <span
-                            className="inline-block h-2 w-2 shrink-0 rounded-full"
-                            style={{ background: nodeTypeColor(node.type, isDark) }}
-                          />
-                          <span className="min-w-0 flex-1 truncate">{node.name}</span>
-                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{degree}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          ) : (
-            <Tabs defaultValue="types" className="flex min-h-0 flex-1 flex-col">
-              <TabsList className="w-full">
-                <TabsTrigger value="types" className="flex-1 text-xs">
-                  Node types
-                </TabsTrigger>
-                <TabsTrigger value="rels" className="flex-1 text-xs">
-                  <Filter className="mr-1 h-3 w-3" /> Relationships
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="types" className="min-h-0 flex-1">
-                <Card className="h-full">
-                  <CardHeader className="pb-2">
-                    <CardDescription className="text-xs">
-                      The whole graph&apos;s type distribution, from the engine&apos;s own aggregate — for scale, not
-                      what is currently drawn (that is {numberFormat.format(model.nodes.length)} nodes: {clusterCount}{' '}
-                      clusters and {leafCount} real). Click a type to keep only matching nodes on the canvas.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="min-h-0 p-0">
-                    <ScrollArea className="h-[300px] px-4 pb-4">
-                      <NodeTypeBreakdown
-                        data={breakdown}
-                        loading={breakdownLoading}
-                        error={breakdownError}
-                        selectedType={highlightType}
-                        onSelectType={setHighlightType}
-                      />
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-              <TabsContent value="rels" className="min-h-0 flex-1">
-                <Card className="h-full">
-                  <CardHeader className="pb-2">
-                    <CardDescription className="text-xs">
-                      {model.relTypes.length} relationship types currently in view (cluster links plus any real edges
-                      inside expanded clusters). Untick one to drop its edges.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="min-h-0 p-0">
-                    <ScrollArea className="h-[290px] px-4 pb-4">
-                      <div className="space-y-0.5">
-                        {model.relTypes.map((type, index) => {
-                          const hidden = hiddenRelTypes.has(type)
-                          return (
-                            <button
-                              key={type}
-                              type="button"
-                              onClick={() => {
-                                toggleRelType(type)
-                              }}
-                              className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted ${
-                                hidden ? 'opacity-40' : ''
-                              }`}
-                            >
-                              <span
-                                className={`inline-block h-2 w-2 shrink-0 rounded-sm border ${
-                                  hidden ? 'border-muted-foreground' : 'border-primary bg-primary'
-                                }`}
-                              />
-                              <span className="min-w-0 flex-1 truncate font-mono">{type}</span>
-                              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                                {numberFormat.format(model.relTypeCount[index])}
-                              </span>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          )}
+          {selection
+            ? renderSelectedPanel({
+                selectedNode: selection.node,
+                selectedMeta: selection.meta,
+                isDark,
+                isExpanded: explorer.expandedIds.has(selection.meta.clusterId ?? ''),
+                isPending: explorer.pending.has(selection.meta.clusterId ?? ''),
+                onCollapse: collapseSelected,
+                onExpand: expandSelected,
+                neighbours: selectedNeighbours,
+                onSelectNeighbour: setSelected,
+                onUnpin: () => {
+                  setSelected(null)
+                },
+              })
+            : renderTypesRelsTabs({
+                nodeCount: model.nodes.length,
+                clusterCount,
+                leafCount,
+                breakdown,
+                breakdownLoading,
+                breakdownError,
+                highlightType,
+                onSelectType: setHighlightType,
+                relTypes: model.relTypes,
+                relTypeCount: model.relTypeCount,
+                hiddenRelTypes,
+                onToggleRelType: toggleRelType,
+              })}
         </div>
       </div>
     </div>
