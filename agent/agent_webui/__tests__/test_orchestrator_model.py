@@ -311,3 +311,64 @@ async def test_reply_stream_falls_back_to_final_text_with_no_text_delta_events(
 
     assert chunks[-1] == 'ANSWER FROM THE GRAPH'
     assert chunks.count('ANSWER FROM THE GRAPH') == 1
+
+
+# --- characterization for _latest_user_text (WD10-C-MISC, pre-refactor) ------
+#
+# Extracted before splitting _latest_user_text into helpers, to pin the exact
+# branch behavior: str content, list-of-str content, list-of-object content
+# (``.content`` preferred over ``.text``, falsy ``.content`` falls through to
+# ``.text``), skipping non-ModelRequest/non-UserPromptPart entries, and
+# walking backward past a tool-return-only turn to the prior real user turn.
+
+
+class _ContentLike:
+    def __init__(self, content: str | None = None, text: str | None = None) -> None:
+        self.content = content
+        self.text = text
+
+
+def test_latest_user_text_prefers_last_request_str_content() -> None:
+    from agent_webui.orchestrator_model import _latest_user_text
+
+    messages = [_user_message('first'), _user_message('second')]
+    assert _latest_user_text(messages) == 'second'
+
+
+def test_latest_user_text_joins_list_of_str_items() -> None:
+    from agent_webui.orchestrator_model import _latest_user_text
+
+    message = ModelRequest(parts=[UserPromptPart(content=['a', 'b'])])
+    assert _latest_user_text([message]) == 'a\nb'
+
+
+def test_latest_user_text_reads_content_attr_over_text_attr() -> None:
+    from agent_webui.orchestrator_model import _latest_user_text
+
+    item = _ContentLike(content='from-content', text='from-text')
+    message = ModelRequest(parts=[UserPromptPart(content=[item])])
+    assert _latest_user_text([message]) == 'from-content'
+
+
+def test_latest_user_text_falls_back_to_text_attr_when_content_falsy() -> None:
+    from agent_webui.orchestrator_model import _latest_user_text
+
+    item = _ContentLike(content='', text='from-text')
+    message = ModelRequest(parts=[UserPromptPart(content=[item])])
+    assert _latest_user_text([message]) == 'from-text'
+
+
+def test_latest_user_text_skips_non_user_prompt_parts_and_walks_backward() -> None:
+    from agent_webui.orchestrator_model import _latest_user_text
+
+    # Newest ModelRequest carries no UserPromptPart content -- must keep
+    # walking backward to the prior real user turn instead of returning ''.
+    empty_request = ModelRequest(parts=[])
+    messages = [_user_message('earlier real turn'), empty_request]
+    assert _latest_user_text(messages) == 'earlier real turn'
+
+
+def test_latest_user_text_returns_empty_for_no_user_requests() -> None:
+    from agent_webui.orchestrator_model import _latest_user_text
+
+    assert _latest_user_text([]) == ''
