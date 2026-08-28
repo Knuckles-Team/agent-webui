@@ -39,6 +39,98 @@ export interface VizPanelProps {
   onRemove?: () => void
 }
 
+type VizRenderResult = NonNullable<ReturnType<typeof adaptVizResult>>
+
+type VizRunOutcome =
+  | { kind: 'unavailable' }
+  | { kind: 'no-data'; reason: string }
+  | { kind: 'error'; message: string }
+  | { kind: 'render'; render: VizRenderResult }
+
+async function runVizQuery(params: { query: string; mark: VizMark; xField: string; yField: string }): Promise<VizRunOutcome> {
+  const r = await plotFromQuery(params)
+  if (r.unavailable) return { kind: 'unavailable' }
+  if (!r.ok) return { kind: 'error', message: r.error ?? 'Render failed' }
+  const reason = vizUnavailableReason(r.data)
+  if (reason) return { kind: 'no-data', reason }
+  const adapted = adaptVizResult(r.data)
+  if (!adapted) return { kind: 'error', message: 'Response did not carry a recognisable rendered image.' }
+  return { kind: 'render', render: adapted }
+}
+
+function renderVizChartImage(render: VizRenderResult, mark: VizMark, xField: string, yField: string) {
+  if (render.format === 'png') {
+    return (
+      <img
+        src={render.dataUrl}
+        alt={`${mark} chart of ${yField} vs ${xField}`}
+        className="max-w-full rounded-md border"
+        data-testid="viz-panel-image"
+      />
+    )
+  }
+  return (
+    <a href={render.dataUrl} download={`chart.${render.format}`} className="text-sm underline">
+      Download {render.format.toUpperCase()} render
+    </a>
+  )
+}
+
+function renderVizChart(render: VizRenderResult, mark: VizMark, xField: string, yField: string) {
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <Badge variant={render.exact ? 'default' : 'secondary'}>{render.exact ? 'exact' : 'approximated'}</Badge>
+        <Badge variant="outline">tier: {render.lodTier}</Badge>
+        <Badge variant="outline">rows: {render.rowCount.toLocaleString()}</Badge>
+        {render.rowsReturned !== undefined && render.rowsReturned !== render.rowsRendered ? (
+          <Badge variant="outline">
+            {render.rowsRendered?.toLocaleString()} of {render.rowsReturned.toLocaleString()} rows sent
+          </Badge>
+        ) : null}
+        {render.wallTimeMs !== undefined ? <Badge variant="outline">{render.wallTimeMs} ms</Badge> : null}
+      </div>
+      {renderVizChartImage(render, mark, xField, yField)}
+    </div>
+  )
+}
+
+function renderVizBody({
+  routeUnavailable,
+  noDataReason,
+  error,
+  render,
+  mark,
+  xField,
+  yField,
+}: {
+  routeUnavailable: boolean
+  noDataReason: string | null
+  error: string | null
+  render: VizRenderResult | null
+  mark: VizMark
+  xField: string
+  yField: string
+}) {
+  if (routeUnavailable) {
+    return <CapabilityNotice label="/graph/viz" detail="Wire graph_viz in agent_utilities to see live renders here." />
+  }
+  if (noDataReason) {
+    return (
+      <div className="rounded-md border border-amber-500/50 bg-amber-50/50 dark:bg-amber-500/10 p-3 flex items-start gap-2 text-sm">
+        <AlertTriangle className="size-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+        <p className="text-muted-foreground">
+          No chart rendered — <span className="font-mono">{noDataReason}</span>. This reflects the query's real
+          result, not a fabricated empty chart.
+        </p>
+      </div>
+    )
+  }
+  if (error) return <PanelError message={error} />
+  if (!render) return <p className="text-sm text-muted-foreground">Enter a query, x field, and y field, then run.</p>
+  return renderVizChart(render, mark, xField, yField)
+}
+
 export function VizPanel({
   title,
   initialQuery,
@@ -63,28 +155,11 @@ export function VizPanel({
     setLoading(true)
     setError(null)
     setNoDataReason(null)
-    const r = await plotFromQuery({ query, mark, xField, yField })
-    setRouteUnavailable(r.unavailable)
-    if (r.unavailable) {
-      setRender(null)
-    } else if (r.ok) {
-      const reason = vizUnavailableReason(r.data)
-      if (reason) {
-        setNoDataReason(reason)
-        setRender(null)
-      } else {
-        const adapted = adaptVizResult(r.data)
-        if (adapted) {
-          setRender(adapted)
-        } else {
-          setRender(null)
-          setError('Response did not carry a recognisable rendered image.')
-        }
-      }
-    } else {
-      setRender(null)
-      setError(r.error ?? 'Render failed')
-    }
+    const outcome = await runVizQuery({ query, mark, xField, yField })
+    setRouteUnavailable(outcome.kind === 'unavailable')
+    setRender(outcome.kind === 'render' ? outcome.render : null)
+    setNoDataReason(outcome.kind === 'no-data' ? outcome.reason : null)
+    setError(outcome.kind === 'error' ? outcome.message : null)
     setLoading(false)
   }
 
@@ -155,47 +230,7 @@ export function VizPanel({
         />
       </div>
 
-      {routeUnavailable ? (
-        <CapabilityNotice label="/graph/viz" detail="Wire graph_viz in agent_utilities to see live renders here." />
-      ) : noDataReason ? (
-        <div className="rounded-md border border-amber-500/50 bg-amber-50/50 dark:bg-amber-500/10 p-3 flex items-start gap-2 text-sm">
-          <AlertTriangle className="size-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
-          <p className="text-muted-foreground">
-            No chart rendered — <span className="font-mono">{noDataReason}</span>. This reflects the query's real
-            result, not a fabricated empty chart.
-          </p>
-        </div>
-      ) : error ? (
-        <PanelError message={error} />
-      ) : render ? (
-        <div className="space-y-2">
-          <div className="flex flex-wrap gap-2">
-            <Badge variant={render.exact ? 'default' : 'secondary'}>{render.exact ? 'exact' : 'approximated'}</Badge>
-            <Badge variant="outline">tier: {render.lodTier}</Badge>
-            <Badge variant="outline">rows: {render.rowCount.toLocaleString()}</Badge>
-            {render.rowsReturned !== undefined && render.rowsReturned !== render.rowsRendered ? (
-              <Badge variant="outline">
-                {render.rowsRendered?.toLocaleString()} of {render.rowsReturned.toLocaleString()} rows sent
-              </Badge>
-            ) : null}
-            {render.wallTimeMs !== undefined ? <Badge variant="outline">{render.wallTimeMs} ms</Badge> : null}
-          </div>
-          {render.format === 'png' ? (
-            <img
-              src={render.dataUrl}
-              alt={`${mark} chart of ${yField} vs ${xField}`}
-              className="max-w-full rounded-md border"
-              data-testid="viz-panel-image"
-            />
-          ) : (
-            <a href={render.dataUrl} download={`chart.${render.format}`} className="text-sm underline">
-              Download {render.format.toUpperCase()} render
-            </a>
-          )}
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">Enter a query, x field, and y field, then run.</p>
-      )}
+      {renderVizBody({ routeUnavailable, noDataReason, error, render, mark, xField, yField })}
     </PanelShell>
   )
 }
