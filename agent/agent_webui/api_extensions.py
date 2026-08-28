@@ -888,15 +888,14 @@ def _bounded_query_params(value: Any) -> dict[str, Any]:
     return bounded
 
 
-def _workspace_ingestion_source(source: Any) -> str:
-    """Confine direct KB ingestion to a relative path in the workspace.
+def _require_local_kb_source(source: Any) -> str:
+    """Validate that a KB source is a bounded, relative, in-workspace path.
 
     Network sources need a separately governed fetch connector so redirects,
     DNS changes, address ranges, response size, and credentials can be checked
     at the transport boundary. This WebUI route deliberately does not fetch
     caller-selected URLs itself.
     """
-
     if not isinstance(source, str) or not source.strip():
         raise HTTPException(status_code=400, detail='KB source is required')
     candidate = source.strip()
@@ -908,23 +907,36 @@ def _workspace_ingestion_source(source: Any) -> str:
             status_code=400,
             detail='Remote KB sources require a governed ingestion connector',
         )
-    target = resolve_workspace_file(candidate)
-    if target.exists() and target.is_dir():
-        entries_seen = 0
-        for root, dirs, files in os.walk(target, followlinks=False):
-            for name in [*dirs, *files]:
-                entries_seen += 1
-                if entries_seen > _MAX_LIST_FILES:
-                    raise HTTPException(
-                        status_code=400,
-                        detail='KB source tree exceeds its file limit',
-                    )
-                if (Path(root) / name).is_symlink():
-                    raise HTTPException(
-                        status_code=400,
-                        detail='KB source tree cannot contain symbolic links',
-                    )
-    elif target.exists() and not target.is_file():
+    return candidate
+
+
+def _assert_ingestible_tree(target: Path) -> None:
+    """Refuse a KB source tree that is too large or contains a symbolic link."""
+    entries_seen = 0
+    for root, dirs, files in os.walk(target, followlinks=False):
+        for name in (*dirs, *files):
+            entries_seen += 1
+            if entries_seen > _MAX_LIST_FILES:
+                raise HTTPException(
+                    status_code=400,
+                    detail='KB source tree exceeds its file limit',
+                )
+            if (Path(root) / name).is_symlink():
+                raise HTTPException(
+                    status_code=400,
+                    detail='KB source tree cannot contain symbolic links',
+                )
+
+
+def _workspace_ingestion_source(source: Any) -> str:
+    """Confine direct KB ingestion to a relative path in the workspace."""
+
+    target = resolve_workspace_file(_require_local_kb_source(source))
+    if not target.exists():
+        return str(target)
+    if target.is_dir():
+        _assert_ingestible_tree(target)
+    elif not target.is_file():
         raise HTTPException(status_code=400, detail='KB source type is unsupported')
     return str(target)
 
@@ -9736,49 +9748,54 @@ async def get_prompt_by_name(name: str) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__)
 
 
+def _prompt_section(data: dict[str, Any], key: str) -> dict[str, Any]:
+    """The named nested section of a prompt document, created if absent/invalid."""
+    section = data.get(key)
+    if not isinstance(section, dict):
+        section = {}
+        data[key] = section
+    return section
+
+
+def _sync_flat_prompt_properties(data: dict[str, Any]) -> None:
+    """Sync flat properties back to the standard nested structure."""
+    title = data.get('title')
+    if title is not None:
+        _prompt_section(data, 'identity')['role'] = title
+
+    goal = data.get('goal')
+    if goal is not None:
+        _prompt_section(data, 'identity')['goal'] = goal
+        _prompt_section(data, 'metadata')['description'] = goal
+
+    core_directive = data.get('core_directive')
+    if core_directive is not None:
+        _prompt_section(data, 'instructions')['core_directive'] = core_directive
+
+
+def _privacy_safe_prompt_document(data: dict[str, Any]) -> dict[str, Any]:
+    """Bound and privacy-check a caller-submitted prompt document."""
+    bounded_data = _bounded_external_value(data)
+    if not isinstance(bounded_data, dict):
+        raise ValueError('Prompt document has an invalid shape')
+    safe_data, privacy_report = sanitize_for_persistence(bounded_data)
+    if privacy_report.changed or not isinstance(safe_data, dict):
+        raise HTTPException(
+            status_code=400,
+            detail='Prompt violates the persistence privacy boundary',
+        )
+    return safe_data
+
+
 @router.put('/prompts/{name}')
 async def update_prompt_by_name(name: str, data: dict[str, Any]) -> dict[str, Any]:
     """Update details for a single prompt file."""
-    import json
-
     f = resolve_prompt_file(name)
     try:
-        bounded_data = _bounded_external_value(data)
-        if not isinstance(bounded_data, dict):
-            raise ValueError('Prompt document has an invalid shape')
-        safe_data, privacy_report = sanitize_for_persistence(bounded_data)
-        if privacy_report.changed or not isinstance(safe_data, dict):
-            raise HTTPException(
-                status_code=400,
-                detail='Prompt violates the persistence privacy boundary',
-            )
-        data = safe_data
-
-        # Sync flat properties back to standard nested structure
-        title = data.get('title')
-        goal = data.get('goal')
-        core_directive = data.get('core_directive')
-
-        if title is not None:
-            if 'identity' not in data or not isinstance(data['identity'], dict):
-                data['identity'] = {}
-            data['identity']['role'] = title
-
-        if goal is not None:
-            if 'identity' not in data or not isinstance(data['identity'], dict):
-                data['identity'] = {}
-            data['identity']['goal'] = goal
-            if 'metadata' not in data or not isinstance(data['metadata'], dict):
-                data['metadata'] = {}
-            data['metadata']['description'] = goal
-
-        if core_directive is not None:
-            if 'instructions' not in data or not isinstance(data['instructions'], dict):
-                data['instructions'] = {}
-            data['instructions']['core_directive'] = core_directive
-
+        document = _privacy_safe_prompt_document(data)
+        _sync_flat_prompt_properties(document)
         payload = json.dumps(
-            data,
+            document,
             indent=2,
             sort_keys=True,
             allow_nan=False,
@@ -12577,6 +12594,57 @@ def _locate_object_graph(
     return None
 
 
+def _interface_implementers_by_type(ontology: Any) -> dict[str, list[str]]:
+    """Concrete types declared as interface implementers (programmatic targets)."""
+    implementers_by_type: dict[str, list[str]] = {}
+    for iface in ontology.interfaces.list_interfaces():
+        try:
+            implementers = list(ontology.interfaces.find_implementers(iface.name))
+        except Exception:  # noqa: BLE001
+            continue
+        for t in implementers:
+            implementers_by_type.setdefault(t, []).append(iface.name)
+    return implementers_by_type
+
+
+def _absorb_label_counts(live_types: dict[str, int], row: dict[str, Any]) -> None:
+    """Fold one ``labels(n), count(n)`` row into the running label histogram."""
+    labels = row.get('labels') or []
+    if isinstance(labels, str):
+        labels = [labels]
+    count = int(row.get('count', 0) or 0)
+    for label in labels:
+        if label and not str(label).startswith('_'):
+            live_types[label] = live_types.get(label, 0) + count
+
+
+async def _live_object_type_counts() -> dict[str, int]:
+    """Live node labels present in the store, with their counts.
+
+    FIX LANE Priority 1: unioned across every graph this actor may read
+    (`_read_union_cypher`), not `backend.execute`/`kg.store` alone --
+    otherwise the commons-only catalog types (`Tool`, `Skill`, ...) never
+    appear in the Object Explorer's type list at all. The commons READ catalog
+    restriction is pushed into the query text automatically by
+    `_graph_union_executor` (see its docstring) so a foreign tenant's count
+    here is already scoped to `COMMONS_SHAREABLE_NODE_TYPES`.
+    """
+    live_types: dict[str, int] = {}
+    try:
+        engine = await _get_engine_bounded()
+        rows, _source_graphs = await _read_union_cypher(
+            engine,
+            'MATCH (n) RETURN labels(n) as labels, count(n) as count',
+            None,
+            deadline=15.0,
+        )
+        for row in rows or []:
+            _absorb_label_counts(live_types, row)
+    except Exception:  # noqa: BLE001
+        return {}
+    return live_types
+
+
 @router.get('/ontology/object-types')
 async def list_object_types() -> list[dict[str, Any]]:
     """List ontology object/node types (registry types + interface implementers).
@@ -12587,45 +12655,8 @@ async def list_object_types() -> list[dict[str, Any]]:
     """
     try:
         _kg, ontology = await _get_ontology_kg_bounded()
-
-        # Concrete types declared as interface implementers (programmatic targets).
-        implementers_by_type: dict[str, list[str]] = {}
-        for iface in ontology.interfaces.list_interfaces():
-            try:
-                for t in ontology.interfaces.find_implementers(iface.name):
-                    implementers_by_type.setdefault(t, []).append(iface.name)
-            except Exception:  # noqa: BLE001
-                continue
-
-        # Live node labels present in the store. FIX LANE Priority 1: unioned
-        # across every graph this actor may read (`_read_union_cypher`), not
-        # `backend.execute`/`kg.store` alone -- otherwise the commons-only
-        # catalog types (`Tool`, `Skill`, ...) never appear in the Object
-        # Explorer's type list at all. The commons READ catalog restriction is
-        # pushed into the query text automatically by `_graph_union_executor`
-        # (see its docstring) so a foreign tenant's count here is already
-        # scoped to `COMMONS_SHAREABLE_NODE_TYPES`.
-        live_types: dict[str, int] = {}
-        try:
-            engine = await _get_engine_bounded()
-            rows, _source_graphs = await _read_union_cypher(
-                engine,
-                'MATCH (n) RETURN labels(n) as labels, count(n) as count',
-                None,
-                deadline=15.0,
-            )
-            for row in rows or []:
-                labels = row.get('labels') or []
-                if isinstance(labels, str):
-                    labels = [labels]
-                for label in labels:
-                    if label and not str(label).startswith('_'):
-                        live_types[label] = live_types.get(label, 0) + int(
-                            row.get('count', 0) or 0
-                        )
-        except Exception:  # noqa: BLE001
-            live_types = {}
-
+        implementers_by_type = _interface_implementers_by_type(ontology)
+        live_types = await _live_object_type_counts()
         names = set(implementers_by_type) | set(live_types)
         return [
             {
@@ -12721,6 +12752,57 @@ def _object_set_rows(
     return enforce(rows, actor)
 
 
+@dataclass(frozen=True)
+class _ObjectSearchSpec:
+    """One validated ``/object-set/search`` request."""
+
+    query: str
+    kind: Any
+    limit: int
+    filters: list[Any]
+
+
+def _object_search_spec(data: dict[str, Any]) -> _ObjectSearchSpec:
+    """Validate ``{query, filters, kind, limit}`` into an `_ObjectSearchSpec`."""
+    query = str(data.get('query', '') or '')
+    kind = data.get('kind')
+    limit = int(data.get('limit', 50) or 50)
+    if (
+        len(query.encode('utf-8')) > 8192
+        or not 1 <= limit <= _MAX_EXTERNAL_COLLECTION_ITEMS
+    ):
+        raise HTTPException(status_code=400, detail='Invalid object search bounds')
+    if kind is not None and (
+        not isinstance(kind, str) or len(kind.encode('utf-8')) > 128
+    ):
+        raise HTTPException(status_code=400, detail='Invalid object kind')
+    return _ObjectSearchSpec(
+        query=query,
+        kind=kind,
+        limit=limit,
+        filters=_object_set_property_filters({'filter': data.get('filters') or []}),
+    )
+
+
+def _scoped_object_search(
+    engine: Any, spec: _ObjectSearchSpec, actor: Any, scoped_engine: Any
+) -> list[dict[str, Any]]:
+    """Search ONE graph's ontology facade and return its summary rows."""
+    facade = _ontology_facade_for(engine, scoped_engine)
+    if facade is None:
+        return []
+    _scoped_kg, scoped_ontology = facade
+    base, remaining_filters = _object_set_base(
+        scoped_ontology, str(spec.kind) if spec.kind else '', spec.filters
+    )
+    result = base.search(
+        spec.query,
+        filters=remaining_filters or None,
+        limit=spec.limit,
+    )
+    return _object_set_rows(scoped_ontology, result, actor, limit=spec.limit)
+
+
 @router.post('/ontology/object-set/search')
 async def ontology_object_set_search(
     data: dict[str, Any], request: Request
@@ -12730,81 +12812,30 @@ async def ontology_object_set_search(
     Body: ``{query, filters, kind}`` — ``kind`` is an object type / interface to
     scope to (omit for a graph-wide search); ``filters`` is an optional list of
     ``{property, op, value}`` typed predicates; ``query`` is the search string.
+
+    FIX LANE Priority 1: fanned out across every graph this actor may read
+    (`_union_engine_call` -- `_rows_per_accessible_graph` under a per-graph
+    ``(kg, ontology)`` facade, `_ontology_facade_for`) and merged by object id
+    -- the ontology layer has no Cypher seam (`_read_union_cypher` does not
+    apply), so this is the "call the engine once per accessible graph and
+    merge" case. ``limit`` is pushed down to EACH graph's ``.search(...)`` call
+    (not fetched unbounded then sliced); the merge is re-trimmed to ``limit``
+    below since the union of two ``limit``-bounded per-graph results can
+    exceed it.
     """
     try:
-        _kg, ontology = await _get_ontology_kg_bounded()
+        _kg, _ontology = await _get_ontology_kg_bounded()
         actor = _actor_context(request)
-        query = str(data.get('query', '') or '')
-        kind = data.get('kind')
-        limit = int(data.get('limit', 50) or 50)
-        raw_filters = data.get('filters') or []
-        if (
-            len(query.encode('utf-8')) > 8192
-            or not 1 <= limit <= _MAX_EXTERNAL_COLLECTION_ITEMS
-        ):
-            raise HTTPException(status_code=400, detail='Invalid object search bounds')
-        if kind is not None and (
-            not isinstance(kind, str) or len(kind.encode('utf-8')) > 128
-        ):
-            raise HTTPException(status_code=400, detail='Invalid object kind')
-        if not isinstance(raw_filters, list) or len(raw_filters) > 64:
-            raise HTTPException(status_code=400, detail='Invalid object filters')
-        try:
-            _bounded_external_value(raw_filters)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=400, detail='Invalid object filters'
-            ) from exc
-
-        from agent_utilities.knowledge_graph.ontology.object_set import PropertyFilter
-
-        filters = []
-        for f in raw_filters:
-            if isinstance(f, dict) and (f.get('property') or f.get('field')):
-                filters.append(
-                    PropertyFilter(
-                        field=str(f.get('property') or f.get('field')),
-                        op=str(f.get('op', 'eq')),
-                        value=f.get('value'),
-                    )
-                )
-
-        # FIX LANE Priority 1: fanned out across every graph this actor may
-        # read (`_union_engine_call` -- `_rows_per_accessible_graph` under a
-        # per-graph `(kg, ontology)` facade, `_ontology_facade_for`) and
-        # merged by object id -- the ontology layer has no Cypher seam
-        # (`_read_union_cypher` does not apply), so this is the "call the
-        # engine once per accessible graph and merge" case. `limit` is pushed
-        # down to EACH graph's `.search(...)` call (not fetched unbounded then
-        # sliced); the merge is re-trimmed to `limit` below since the union of
-        # two `limit`-bounded per-graph results can exceed it.
+        spec = _object_search_spec(data)
         engine = await _get_engine_bounded()
 
         def execute_search(scoped_engine: Any) -> list[dict[str, Any]]:
-            facade = _ontology_facade_for(engine, scoped_engine)
-            if facade is None:
-                return []
-            _scoped_kg, scoped_ontology = facade
-            remaining_filters = filters
-            if kind:
-                base = scoped_ontology.object_set_of_type(str(kind))
-            elif filters:
-                base = scoped_ontology.dynamic_object_set(filters=filters)
-                remaining_filters = []  # already applied to the base set
-            else:
-                # Graph-wide: a dynamic set over a permissive predicate.
-                base = scoped_ontology.dynamic_object_set(lambda props: True)
-            result = base.search(
-                query,
-                filters=remaining_filters or None,
-                limit=limit,
-            )
-            return _object_set_rows(scoped_ontology, result, actor, limit=limit)
+            return _scoped_object_search(engine, spec, actor, scoped_engine)
 
         rows, _source_graphs, _degraded = await _invoke_governed_helper(
             _union_engine_call, engine, actor, execute_search, deadline=30.0
         )
-        rows = rows[:limit]
+        rows = rows[: spec.limit]
         return _public_external_result(
             {
                 'ids': [r.get('id') for r in rows],
