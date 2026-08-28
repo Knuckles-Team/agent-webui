@@ -7822,34 +7822,84 @@ async def update_backend_config(data: dict[str, Any]) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def _rendered_prompt_value(entry: Any) -> str:
+    """Render one `_system_prompts` entry (a string or a callable) to text."""
+    if isinstance(entry, str):
+        return entry
+    try:
+        result = entry()
+    except Exception:
+        return f'[Dynamic prompt: {getattr(entry, "__name__", "function")}]'
+    return str(result) if result is not None else ''
+
+
+def _declared_system_prompts(agent: Any) -> list[str]:
+    """The agent's declared `_system_prompts`, each rendered to text."""
+    return [
+        _rendered_prompt_value(entry)
+        for entry in agent._system_prompts
+        if isinstance(entry, str) or callable(entry)
+    ]
+
+
 def _extract_system_prompt(agent: Any) -> str:
     """Helper to safely extract system prompt from a Pydantic AI agent instance."""
     if not agent:
         return ''
     if hasattr(agent, '_system_prompts'):
-        prompts = []
-        for p in agent._system_prompts:
-            if isinstance(p, str):
-                prompts.append(p)
-            elif callable(p):
-                try:
-                    res = p()
-                    prompts.append(str(res) if res is not None else '')
-                except Exception:
-                    prompts.append(
-                        f'[Dynamic prompt: {getattr(p, "__name__", "function")}]'
-                    )
+        prompts = _declared_system_prompts(agent)
         if prompts:
             return '\n\n'.join(prompts)
 
     sys_prompt = getattr(agent, 'system_prompt', '')
-    if callable(sys_prompt):
-        try:
-            res = sys_prompt()
-            return str(res) if res is not None else ''
-        except Exception:
-            return str(sys_prompt)
-    return str(sys_prompt) if sys_prompt is not None else ''
+    if not callable(sys_prompt):
+        return str(sys_prompt) if sys_prompt is not None else ''
+    try:
+        result = sys_prompt()
+    except Exception:
+        return str(sys_prompt)
+    return str(result) if result is not None else ''
+
+
+async def _optional_engine() -> Any | None:
+    """Acquire the engine, degrading to ``None`` on anything but a real 503."""
+    try:
+        return await _get_engine_bounded()
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise
+        return None
+    except Exception:
+        return None
+
+
+def _system_prompt_record(sys_prompt: str) -> dict[str, Any]:
+    """The agent's own system prompt, shaped like a stored prompt record."""
+    return {
+        'id': 'system_prompt',
+        'name': 'System Prompt',
+        'content': sys_prompt,
+        'description': 'The default system prompt configured for this agent.',
+        'author': 'System',
+        'version': 1,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def _graph_prompt_records(engine: Any) -> list[Any] | None:
+    """The KG's prompt records, or ``None`` when the engine could not serve them."""
+    try:
+        prompt_result = await _invoke_governed_helper(
+            engine.get_all_prompts, deadline=10.0
+        )
+        prompts = list(prompt_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        bounded = _public_external_result(prompts)
+        return bounded if isinstance(bounded, list) else []
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('api_extension', e)
+        return None
 
 
 @router.get('/prompts/graph')
@@ -7861,46 +7911,17 @@ async def list_graph_prompts(request: Request) -> list[dict[str, Any]]:
     Returns:
         A list of prompt dicts with id, name, content, and metadata.
     """
-    try:
-        engine = await _get_engine_bounded()
-    except HTTPException as exc:
-        if exc.status_code == 503:
-            raise
-        engine = None
-    except Exception:
-        engine = None
+    engine = await _optional_engine()
     if engine:
-        try:
-            prompt_result = await _invoke_governed_helper(
-                engine.get_all_prompts, deadline=10.0
-            )
-            prompts = list(prompt_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-            bounded = _public_external_result(prompts)
-            return bounded if isinstance(bounded, list) else []
-        except HTTPException:
-            raise
-        except Exception as e:
-            _log_failure('api_extension', e)
+        records = await _graph_prompt_records(engine)
+        if records is not None:
+            return records
     # Fallback to returning agent's system prompt as a default prompt
-    agent = getattr(request.app.state, 'agent', None)
-    if agent:
-        sys_prompt = _extract_system_prompt(agent)
-        if sys_prompt:
-            bounded = _public_external_result(
-                [
-                    {
-                        'id': 'system_prompt',
-                        'name': 'System Prompt',
-                        'content': sys_prompt,
-                        'description': 'The default system prompt configured for this agent.',
-                        'author': 'System',
-                        'version': 1,
-                        'created_at': datetime.now(timezone.utc).isoformat(),
-                    }
-                ]
-            )
-            return bounded if isinstance(bounded, list) else []
-    return []
+    sys_prompt = _extract_system_prompt(getattr(request.app.state, 'agent', None))
+    if not sys_prompt:
+        return []
+    bounded = _public_external_result([_system_prompt_record(sys_prompt)])
+    return bounded if isinstance(bounded, list) else []
 
 
 @router.get('/prompts/graph/{prompt_id}')
@@ -7916,14 +7937,7 @@ async def get_graph_prompt(prompt_id: str, request: Request) -> dict[str, Any]:
         The prompt dict with full content.
     """
     prompt_id = _validate_runtime_id(prompt_id)
-    try:
-        engine = await _get_engine_bounded()
-    except HTTPException as exc:
-        if exc.status_code == 503:
-            raise
-        engine = None
-    except Exception:
-        engine = None
+    engine = await _optional_engine()
     if engine:
         result = await _invoke_governed_helper(
             engine.get_prompt, prompt_id, deadline=10.0
@@ -7935,22 +7949,12 @@ async def get_graph_prompt(prompt_id: str, request: Request) -> dict[str, Any]:
             raise HTTPException(status_code=422, detail='Invalid prompt record')
         return bounded
 
-    agent = getattr(request.app.state, 'agent', None)
-    if prompt_id == 'system_prompt' and agent:
-        sys_prompt = _extract_system_prompt(agent)
-        if sys_prompt:
-            bounded = _public_external_result(
-                {
-                    'id': 'system_prompt',
-                    'name': 'System Prompt',
-                    'content': sys_prompt,
-                    'description': 'The default system prompt configured for this agent.',
-                    'author': 'System',
-                    'version': 1,
-                    'created_at': datetime.now(timezone.utc).isoformat(),
-                }
-            )
-            return bounded if isinstance(bounded, dict) else {}
+    sys_prompt = ''
+    if prompt_id == 'system_prompt':
+        sys_prompt = _extract_system_prompt(getattr(request.app.state, 'agent', None))
+    if sys_prompt:
+        bounded = _public_external_result(_system_prompt_record(sys_prompt))
+        return bounded if isinstance(bounded, dict) else {}
     raise HTTPException(status_code=404, detail=f'Prompt {prompt_id} not found')
 
 
@@ -10083,31 +10087,43 @@ async def list_docker_containers() -> list[dict[str, Any]]:
         ) from e
 
 
+def _repository_child_path(child: Path, workspace: Path) -> Path | None:
+    """One directory entry as a workspace-contained git repo path, or ``None``."""
+    if child.is_symlink() or not child.is_dir():
+        return None
+    resolved = child.resolve()
+    try:
+        resolved.relative_to(workspace)
+    except ValueError:
+        return None
+    return resolved if (resolved / '.git').exists() else None
+
+
+def _collect_repositories_under(
+    root: Path, workspace: Path, discovered: dict[Path, None]
+) -> None:
+    """Add `root` and its immediate git-repository children to `discovered`."""
+    if root.is_symlink() or not root.is_dir():
+        return
+    if (root / '.git').exists():
+        discovered[root] = None
+    try:
+        for child in root.iterdir():
+            if len(discovered) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                return
+            resolved = _repository_child_path(child, workspace)
+            if resolved is not None:
+                discovered[resolved] = None
+    except OSError as exc:
+        _log_failure('api_extension', exc, level=logging.DEBUG)
+
+
 def discover_workspace_repositories() -> list[Path]:
     """Return real git repositories visible under the configured workspace."""
     workspace = get_workspace_dir().resolve()
-    roots = [workspace / 'agent-packages', workspace]
     discovered: dict[Path, None] = {}
-    for root in roots:
-        if root.is_symlink() or not root.is_dir():
-            continue
-        if (root / '.git').exists():
-            discovered[root] = None
-        try:
-            for child in root.iterdir():
-                if len(discovered) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                    break
-                if child.is_symlink() or not child.is_dir():
-                    continue
-                resolved = child.resolve()
-                try:
-                    resolved.relative_to(workspace)
-                except ValueError:
-                    continue
-                if (resolved / '.git').exists():
-                    discovered[resolved] = None
-        except OSError as exc:
-            _log_failure('api_extension', exc, level=logging.DEBUG)
+    for root in (workspace / 'agent-packages', workspace):
+        _collect_repositories_under(root, workspace, discovered)
     return sorted(discovered, key=lambda path: path.name.lower())[
         :_MAX_EXTERNAL_COLLECTION_ITEMS
     ]
@@ -13187,6 +13203,56 @@ async def ontology_object_set_aggregate(data: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _is_property_filter_spec(spec: Any) -> bool:
+    """True when a raw filter entry names the property it predicates on."""
+    return isinstance(spec, dict) and bool(spec.get('property') or spec.get('field'))
+
+
+def _property_filter_from(spec: dict[str, Any]) -> Any:
+    """One raw filter entry as an ontology `PropertyFilter`."""
+    from agent_utilities.knowledge_graph.ontology.object_set import PropertyFilter
+
+    return PropertyFilter(
+        field=str(spec.get('property') or spec.get('field')),
+        op=str(spec.get('op', 'eq')),
+        value=spec.get('value'),
+    )
+
+
+def _object_set_property_filters(data: dict[str, Any]) -> list[Any]:
+    """Validate and build the `PropertyFilter`s from ``{filter|filters}``."""
+    raw_filters = data.get('filter') or data.get('filters') or []
+    if not isinstance(raw_filters, list) or len(raw_filters) > 64:
+        raise HTTPException(status_code=400, detail='Invalid object filters')
+    try:
+        _bounded_external_value(raw_filters)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail='Invalid object filters') from exc
+    return [_property_filter_from(f) for f in raw_filters if _is_property_filter_spec(f)]
+
+
+def _object_set_base(
+    ontology: Any, kind: str, filters: list[Any]
+) -> tuple[Any, list[Any]]:
+    """The base ObjectSet plus the filters still to apply at search time.
+
+    A ``kind`` scopes to a type/interface and leaves the filters for `search`;
+    filters alone materialise a dynamic set that has already consumed them.
+    """
+    if kind:
+        return ontology.object_set_of_type(kind), filters
+    if filters:
+        return ontology.dynamic_object_set(filters=filters), []
+    return ontology.dynamic_object_set(lambda props: True), filters
+
+
+def _object_set_query(data: dict[str, Any]) -> str:
+    query = str(data.get('query', '') or '')
+    if len(query.encode('utf-8')) > 8192:
+        raise HTTPException(status_code=400, detail='Invalid object query')
+    return query
+
+
 def _resolve_object_set_ids(
     ontology: Any,
     data: dict[str, Any],
@@ -13200,46 +13266,18 @@ def _resolve_object_set_ids(
     ``query`` string materialise the set through the real OntologySystem. Returns
     ``(ids, kind)`` where ``kind`` echoes the scoping type/interface (or '').
     """
-    from agent_utilities.knowledge_graph.ontology.object_set import PropertyFilter
-
     kind = str(data.get('kind') or '')
     if len(kind.encode('utf-8')) > 128:
         raise HTTPException(status_code=400, detail='Invalid object kind')
     limit = max(1, min(int(limit), _MAX_EXTERNAL_COLLECTION_ITEMS))
     explicit = data.get('ids')
     if explicit is not None:
-        ids = _bounded_identifier_list(explicit)[:limit]
-        return ids, kind
+        return _bounded_identifier_list(explicit)[:limit], kind
 
-    raw_filters = data.get('filter') or data.get('filters') or []
-    if not isinstance(raw_filters, list) or len(raw_filters) > 64:
-        raise HTTPException(status_code=400, detail='Invalid object filters')
-    try:
-        _bounded_external_value(raw_filters)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail='Invalid object filters') from exc
-    filters = []
-    for f in raw_filters:
-        if isinstance(f, dict) and (f.get('property') or f.get('field')):
-            filters.append(
-                PropertyFilter(
-                    field=str(f.get('property') or f.get('field')),
-                    op=str(f.get('op', 'eq')),
-                    value=f.get('value'),
-                )
-            )
-
-    if kind:
-        base = ontology.object_set_of_type(kind)
-    elif filters:
-        base = ontology.dynamic_object_set(filters=filters)
-        filters = []
-    else:
-        base = ontology.dynamic_object_set(lambda props: True)
-
-    query = str(data.get('query', '') or '')
-    if len(query.encode('utf-8')) > 8192:
-        raise HTTPException(status_code=400, detail='Invalid object query')
+    base, filters = _object_set_base(
+        ontology, kind, _object_set_property_filters(data)
+    )
+    query = _object_set_query(data)
     if query or filters:
         base = base.search(query, filters=filters or None, limit=limit)
     return [str(i) for i in base.ids()[:limit]], kind
@@ -13763,6 +13801,105 @@ def _durable_edit_history(backend: Any, object_id: str) -> list[dict[str, Any]]:
     return edits
 
 
+async def _object_derived_properties(
+    ontology: Any, view_props: dict[str, Any], object_type: Any, actor: Any
+) -> dict[str, Any]:
+    """The object's derived properties; a compute failure degrades to {}."""
+    try:
+        return await _invoke_governed_helper(
+            ontology.derive_all,
+            view_props,
+            object_type=object_type,
+            actor_id=actor.actor_id,
+            deadline=30.0,
+        )
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _object_markings(object_id: str) -> list[Any]:
+    """The object's security markings; an unreadable set degrades to []."""
+    from agent_utilities.knowledge_graph.ontology.permissioning import markings_for
+
+    try:
+        return sorted(markings_for(object_id))
+    except Exception:  # noqa: BLE001
+        return []
+
+
+async def _object_edit_history(
+    ontology: Any, backend: Any, object_id: str
+) -> list[Any]:
+    """The object's edit history.
+
+    Prefer the durable, cross-request audit trail from the store; fall back to
+    the in-process ledger mirror when nothing was persisted.
+    """
+    history = await _invoke_governed_helper(
+        _durable_edit_history, backend, object_id, deadline=15.0
+    )
+    if history:
+        return history
+    try:
+        fallback_history = await _invoke_governed_helper(
+            ontology.history,
+            object_id,
+            deadline=15.0,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    return [e.model_dump(mode='json') for e in fallback_history]
+
+
+def _object_view_payload(
+    ontology: Any, object_type: Any, layout_choice: str
+) -> dict[str, Any]:
+    """Resolve the requested layout into a concrete view payload.
+
+    ``configured`` serves the stored ObjectView widget composition for this
+    type (when one exists); ``standard`` derives the layout from the type's
+    interface schema. The selection genuinely changes the returned ``view``.
+    """
+    if not object_type:
+        return {}
+    configured = (
+        _load_object_views().get(str(object_type))
+        if layout_choice == 'configured'
+        else None
+    )
+    if configured is None:
+        return _standard_object_view(ontology, str(object_type))
+    return {
+        'object_type': object_type,
+        'view_type': 'configured',
+        **configured,
+    }
+
+
+def _enforced_object_properties(
+    props: dict[str, Any], object_id: str, actor: Any
+) -> dict[str, Any]:
+    """Run the object through the fine-grained permissioning gate.
+
+    A fully-redacted/denied object is a 404, not an empty object.
+    """
+    from agent_utilities.knowledge_graph.ontology.permissioning import enforce
+
+    props.setdefault('id', object_id)
+    enforced = enforce([props], actor)
+    if not enforced:
+        raise HTTPException(status_code=404, detail='Object not found or denied')
+    return enforced[0]
+
+
+def _object_type_of(view_props: dict[str, Any]) -> Any:
+    return (
+        view_props.get('type')
+        or view_props.get('_type')
+        or view_props.get('object_type')
+    )
+
+
 @router.get('/ontology/object/{object_id}')
 async def get_ontology_object(
     object_id: str, request: Request, layout: str = 'standard'
@@ -13793,10 +13930,6 @@ async def get_ontology_object(
         raise HTTPException(status_code=400, detail='Invalid object layout')
     try:
         from agent_utilities.knowledge_graph.core.session import current_session
-        from agent_utilities.knowledge_graph.ontology.permissioning import (
-            enforce,
-            markings_for,
-        )
 
         engine = await _get_engine_bounded()
         located = await _invoke_governed_helper(
@@ -13811,75 +13944,17 @@ async def get_ontology_object(
         _scoped_kg, ontology = facade
         backend = scoped_engine.backend
         actor = _actor_context(request)
-        session = current_session()
 
-        with _session_scoped_to(session, graph_name):
-            props.setdefault('id', object_id)
-            enforced = enforce([props], actor)
-            if not enforced:
-                raise HTTPException(
-                    status_code=404, detail='Object not found or denied'
-                )
-            view_props = enforced[0]
-
-            object_type = (
-                view_props.get('type')
-                or view_props.get('_type')
-                or view_props.get('object_type')
+        with _session_scoped_to(current_session(), graph_name):
+            view_props = _enforced_object_properties(props, object_id, actor)
+            object_type = _object_type_of(view_props)
+            derived = await _object_derived_properties(
+                ontology, view_props, object_type, actor
             )
-            try:
-                derived = await _invoke_governed_helper(
-                    ontology.derive_all,
-                    view_props,
-                    object_type=object_type,
-                    actor_id=actor.actor_id,
-                    deadline=30.0,
-                )
-            except Exception:  # noqa: BLE001
-                derived = {}
-            try:
-                markings = sorted(markings_for(object_id))
-            except Exception:  # noqa: BLE001
-                markings = []
-            # Prefer the durable, cross-request audit trail from the store;
-            # fall back to the in-process ledger mirror when nothing was
-            # persisted.
-            history = await _invoke_governed_helper(
-                _durable_edit_history, backend, object_id, deadline=15.0
-            )
-            if not history:
-                try:
-                    fallback_history = await _invoke_governed_helper(
-                        ontology.history,
-                        object_id,
-                        deadline=15.0,
-                    )
-                    history = [e.model_dump(mode='json') for e in fallback_history]
-                except Exception:  # noqa: BLE001
-                    history = []
-
-            # Resolve the requested layout into a concrete view payload.
-            # ``configured`` serves the stored ObjectView widget composition
-            # for this type (when one exists); ``standard`` derives the
-            # layout from the type's interface schema. The selection
-            # genuinely changes the returned ``view``.
+            markings = _object_markings(object_id)
+            history = await _object_edit_history(ontology, backend, object_id)
             layout_choice = (layout or 'standard').strip().lower()
-            view: dict[str, Any] = {}
-            if object_type:
-                configured = (
-                    _load_object_views().get(str(object_type))
-                    if layout_choice == 'configured'
-                    else None
-                )
-                if configured is not None:
-                    view = {
-                        'object_type': object_type,
-                        'view_type': 'configured',
-                        **configured,
-                    }
-                else:
-                    view = _standard_object_view(ontology, str(object_type))
-
+            view = _object_view_payload(ontology, object_type, layout_choice)
             links = await _invoke_governed_helper(
                 _node_links, backend, object_id, deadline=15.0
             )
