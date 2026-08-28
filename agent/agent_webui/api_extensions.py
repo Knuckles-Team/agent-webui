@@ -6833,9 +6833,13 @@ async def get_tasks(plan_id: str | None = None) -> list[Any] | dict[str, Any]:
         Tasks data.
     """
     try:
+        # The id is validated BEFORE the manager is constructed, preserving the
+        # original order: a bad plan_id must not reach SDDManager at all.
+        if plan_id:
+            plan_id = _validate_runtime_id(plan_id)
         manager = SDDManager(DEFAULT_AGENT_DIR)
         if plan_id:
-            raw_tasks = await _tasks_for_plan(manager, _validate_runtime_id(plan_id))
+            raw_tasks = await _tasks_for_plan(manager, plan_id)
         else:
             raw_tasks = await _all_tasks(manager)
         return _public_external_result(_dumped_task_document(raw_tasks))
