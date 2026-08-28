@@ -2975,6 +2975,75 @@ def _public_mcp_tool_entry(
     return None
 
 
+def _validate_mcp_tool_page_request(server_name: str, offset: int, limit: int) -> None:
+    """Validate the server name and page window for a tool-page request."""
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
+        raise HTTPException(status_code=400, detail='Invalid MCP server name')
+    if offset < 0:
+        raise HTTPException(status_code=400, detail='offset must not be negative')
+    if not 1 <= limit <= _MCP_TOOL_PAGE_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f'limit must be between 1 and {_MCP_TOOL_PAGE_MAX}',
+        )
+
+
+def _sorted_named_tools(tools: Any) -> list[tuple[str, str, dict[str, Any]]]:
+    """Order the WHOLE delegated list (stable across pages) before paging.
+
+    Nothing here walks a tool's payload -- only its already-validated name --
+    so an oversized fleet list costs a sort, not a bounding walk over ~1,131
+    schemas.
+    """
+    named: list[tuple[str, str, dict[str, Any]]] = []
+    for t in tools:
+        if not isinstance(t, dict):
+            continue
+        tool_name = str(t.get('name') or '')
+        if not _SAFE_DELEGATION_TOKEN.fullmatch(tool_name):
+            continue
+        named.append((tool_name.lower(), tool_name, t))
+    named.sort(key=lambda item: (item[0], item[1]))
+    return named
+
+
+def _enriched_mcp_tool_page(
+    page: list[tuple[str, str, dict[str, Any]]],
+    server_name: str,
+    toggle_states: dict[str, bool],
+) -> tuple[list[dict[str, Any]], int]:
+    """Shape one page of tools, counting the descriptors that had to be dropped."""
+    enriched_tools: list[dict[str, Any]] = []
+    dropped = 0
+    for _key, tool_name, raw in page:
+        entry = _public_mcp_tool_entry(
+            raw,
+            tool_name,
+            enabled=toggle_states.get(f'{server_name}:{tool_name}', True),
+        )
+        if entry is None:
+            dropped += 1
+            continue
+        enriched_tools.append(entry)
+    return enriched_tools, dropped
+
+
+def _toggle_status_envelope(toggles_ok: bool) -> dict[str, Any]:
+    """The toggle-preference provenance block returned with a tool page."""
+    return {
+        'source': 'kg_preferences',
+        'error': (
+            None
+            if toggles_ok
+            else (
+                'The tool toggle-preference read failed; every tool '
+                'below defaults to "enabled" and may not reflect the '
+                'real persisted preference.'
+            )
+        ),
+    }
+
+
 @router.get('/mcp/servers/{server_name}/tools')
 async def list_mcp_server_tools(
     server_name: str,
@@ -3002,15 +3071,7 @@ async def list_mcp_server_tools(
     """
 
     engine = await _get_engine_bounded()
-    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
-        raise HTTPException(status_code=400, detail='Invalid MCP server name')
-    if offset < 0:
-        raise HTTPException(status_code=400, detail='offset must not be negative')
-    if not 1 <= limit <= _MCP_TOOL_PAGE_MAX:
-        raise HTTPException(
-            status_code=400,
-            detail=f'limit must be between 1 and {_MCP_TOOL_PAGE_MAX}',
-        )
+    _validate_mcp_tool_page_request(server_name, offset, limit)
     delegated_inventory = get_helper('list_mcp_server_tools')
     if delegated_inventory is None:
         raise HTTPException(
@@ -3027,19 +3088,7 @@ async def list_mcp_server_tools(
         if not isinstance(tools, list):
             raise ValueError('Governed MCP inventory returned an invalid shape')
 
-        # Order the WHOLE list first (stable across pages), THEN cut the page.
-        # Nothing here walks a tool's payload -- only its already-validated
-        # name -- so an oversized fleet list costs a sort, not a bounding
-        # walk over ~1,131 schemas.
-        named: list[tuple[str, str, dict[str, Any]]] = []
-        for t in tools:
-            if not isinstance(t, dict):
-                continue
-            tool_name = str(t.get('name') or '')
-            if not _SAFE_DELEGATION_TOKEN.fullmatch(tool_name):
-                continue
-            named.append((tool_name.lower(), tool_name, t))
-        named.sort(key=lambda item: (item[0], item[1]))
+        named = _sorted_named_tools(tools)
         total = len(named)
         page = named[offset : offset + limit]
 
@@ -3047,19 +3096,9 @@ async def list_mcp_server_tools(
         toggle_states, toggles_ok = await _batch_toggle_states(
             engine, 'mcp_tool', toggle_ids
         )
-
-        enriched_tools: list[dict[str, Any]] = []
-        dropped = 0
-        for _key, tool_name, raw in page:
-            entry = _public_mcp_tool_entry(
-                raw,
-                tool_name,
-                enabled=toggle_states.get(f'{server_name}:{tool_name}', True),
-            )
-            if entry is None:
-                dropped += 1
-                continue
-            enriched_tools.append(entry)
+        enriched_tools, dropped = _enriched_mcp_tool_page(
+            page, server_name, toggle_states
+        )
         return {
             'server': server_name,
             'tools': enriched_tools,
@@ -3071,18 +3110,7 @@ async def list_mcp_server_tools(
             # counted here rather than just vanishing from `tools`.
             'dropped': dropped,
             'has_more': offset + len(page) < total,
-            'toggle_status': {
-                'source': 'kg_preferences',
-                'error': (
-                    None
-                    if toggles_ok
-                    else (
-                        'The tool toggle-preference read failed; every tool '
-                        'below defaults to "enabled" and may not reflect the '
-                        'real persisted preference.'
-                    )
-                ),
-            },
+            'toggle_status': _toggle_status_envelope(toggles_ok),
         }
 
     except HTTPException:
@@ -8501,6 +8529,53 @@ def _scrub_existing_session_rows(conn: Any) -> None:
             )
 
 
+async def _proxied_sessions(is_admin: bool) -> list[Any] | None:
+    """Sessions from the epistemic-gateway, or ``None`` if it did not answer.
+
+    The proxied gateway session store carries no per-caller ownership field
+    (unlike the local store), so a non-admin caller's "own sessions" cannot be
+    verified from this data. Fail closed rather than show every session to
+    every user (AU-OS fail-closed rule: a degraded read must never grant
+    permission).
+    """
+    try:
+        proxied = await _proxy_to_gateway('GET', '/sessions')
+    except Exception as e:
+        _log_failure('proxy_get_all_sessions', e, level=logging.WARNING)
+        return None
+    if proxied is None:
+        return None
+    if not is_admin:
+        return []
+    return proxied if isinstance(proxied, list) else []
+
+
+def _read_local_sessions(db_path: Any, is_admin: bool) -> list[dict[str, Any]]:
+    """The durable sqlite sessions this caller may see, newest first."""
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    if is_admin:
+        cursor.execute(
+            'SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?',
+            (_MAX_SESSION_RECORDS,),
+        )
+    else:
+        cursor.execute(
+            'SELECT * FROM sessions WHERE owner = ? ORDER BY updated_at DESC LIMIT ?',
+            (_actor_id_from_request(None), _MAX_SESSION_RECORDS),
+        )
+    rows = cursor.fetchall()
+    res = []
+    for row in rows:
+        d = dict(row)
+        d['background'] = bool(d.get('background', 0))
+        d['needs_input'] = bool(d.get('needs_input', 0))
+        res.append(d)
+    conn.close()
+    return res
+
+
 @router.get('/sessions')
 async def get_all_sessions() -> list[dict[str, Any]]:
     """Retrieve durable sqlite-backed agent sessions (TUI-20).
@@ -8515,47 +8590,17 @@ async def get_all_sessions() -> list[dict[str, Any]]:
     """
     is_admin = _current_webui_is_admin()
     if _is_gateway_active():
-        try:
-            proxied = await _proxy_to_gateway('GET', '/sessions')
-        except Exception as e:
-            _log_failure('proxy_get_all_sessions', e, level=logging.WARNING)
-            proxied = None
+        proxied = await _proxied_sessions(is_admin)
         if proxied is not None:
-            if is_admin:
-                return proxied if isinstance(proxied, list) else []
-            # The proxied epistemic-gateway session store carries no per-caller
-            # ownership field (unlike the local store below), so a non-admin
-            # caller's "own sessions" cannot be verified from this data. Fail
-            # closed rather than show every session to every user (AU-OS
-            # fail-closed rule: a degraded read must never grant permission).
-            return []
+            return proxied
 
     db_path = _get_db_path()
     if not db_path.exists():
         return []
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        if is_admin:
-            cursor.execute(
-                'SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?',
-                (_MAX_SESSION_RECORDS,),
-            )
-        else:
-            cursor.execute(
-                'SELECT * FROM sessions WHERE owner = ? ORDER BY updated_at DESC LIMIT ?',
-                (_actor_id_from_request(None), _MAX_SESSION_RECORDS),
-            )
-        rows = cursor.fetchall()
-        res = []
-        for row in rows:
-            d = dict(row)
-            d['background'] = bool(d.get('background', 0))
-            d['needs_input'] = bool(d.get('needs_input', 0))
-            res.append(d)
-        conn.close()
-        safe_sessions, _privacy_report = sanitize_for_persistence(res)
+        safe_sessions, _privacy_report = sanitize_for_persistence(
+            _read_local_sessions(db_path, is_admin)
+        )
         return safe_sessions if isinstance(safe_sessions, list) else []
     except Exception as e:
         _log_failure('api_extension', e)
@@ -8960,9 +9005,8 @@ async def run_goal_loop(
     _write_goal_session_status(db_path, session_id, final_status.value)
 
 
-@router.post('/goals')
-async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, Any]:
-    """Launch a new backgrounded autonomous goal execution loop (ORCH-5.0)."""
+def _sanitized_goal_request(payload: StartGoalPayload) -> tuple[str, list[str]]:
+    """Validate and privacy-sanitize a goal submission's objective/constraints."""
     if payload.validation_cmd:
         raise HTTPException(
             status_code=400,
@@ -8989,25 +9033,17 @@ async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, 
         raise HTTPException(status_code=400, detail='Goal constraints exceed limits')
     if not safe_objective:
         raise HTTPException(status_code=400, detail='Goal objective is required')
+    return safe_objective, safe_constraints
 
-    if _is_gateway_active():
-        try:
-            return await _proxy_to_gateway(
-                'POST',
-                '/goals',
-                {
-                    'objective': safe_objective,
-                    'max_iterations': payload.max_iterations,
-                    'validation_action': payload.validation_action,
-                    'constraints': safe_constraints,
-                },
-            )
-        except Exception as e:
-            _log_failure('proxy_create_goal', e, level=logging.WARNING)
 
-    session_id = str(uuid.uuid4())
-    goal_id = str(uuid.uuid4())
-
+def _goal_spec_for(
+    payload: StartGoalPayload,
+    safe_objective: str,
+    safe_constraints: list[str],
+    goal_id: str,
+    session_id: str,
+) -> Any:
+    """The `GoalSpec` a goal run is launched from."""
     spec = GoalSpec.parse_goal_input(safe_objective)
     spec.id = goal_id
     spec.session_id = session_id
@@ -9016,11 +9052,13 @@ async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, 
     spec.validation_cmd = ''
     if safe_constraints:
         spec.constraints = safe_constraints
+    return spec
 
-    db_path = _get_db_path()
-    owner = _actor_id_from_request(request)
 
-    # Initialize session and initial turn record
+def _initialize_goal_session(
+    db_path: Any, session_id: str, goal_id: str, owner: str, spec: Any
+) -> None:
+    """Initialize the session and its initial turn record."""
     try:
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
@@ -9070,6 +9108,36 @@ async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, 
             status_code=500,
             detail=f'Database initialization failed: {type(e).__name__}',
         )
+
+
+@router.post('/goals')
+async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, Any]:
+    """Launch a new backgrounded autonomous goal execution loop (ORCH-5.0)."""
+    safe_objective, safe_constraints = _sanitized_goal_request(payload)
+
+    if _is_gateway_active():
+        try:
+            return await _proxy_to_gateway(
+                'POST',
+                '/goals',
+                {
+                    'objective': safe_objective,
+                    'max_iterations': payload.max_iterations,
+                    'validation_action': payload.validation_action,
+                    'constraints': safe_constraints,
+                },
+            )
+        except Exception as e:
+            _log_failure('proxy_create_goal', e, level=logging.WARNING)
+
+    session_id = str(uuid.uuid4())
+    goal_id = str(uuid.uuid4())
+    spec = _goal_spec_for(
+        payload, safe_objective, safe_constraints, goal_id, session_id
+    )
+    _initialize_goal_session(
+        _get_db_path(), session_id, goal_id, _actor_id_from_request(request), spec
+    )
 
     task = asyncio.create_task(
         run_goal_loop(
@@ -10247,16 +10315,20 @@ async def list_workspace_repos() -> list[dict[str, Any]]:
     return repos
 
 
-@router.post('/repository-manager/bulk')
-async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, Any]:
-    """Run a bounded read-only status action across referenced workspace repos.
+# Map the high-level bulk action to a concrete command. Only whitelisted,
+# non-destructive commands are dispatched.
+_BULK_ACTION_COMMANDS: dict[str, list[str]] = {
+    'status': ['git', 'diff', '--quiet', '--no-ext-diff'],
+}
 
-    Repository paths, names, commands, and command output never cross the API
-    boundary. Mutating repository operations must use the governed repository
-    manager delegation surface instead.
-    """
-    import subprocess
 
+def _is_repo_reference(value: Any) -> bool:
+    """True for an opaque ``repo:<32 hex>`` reference this API hands out."""
+    return isinstance(value, str) and bool(re.fullmatch(r'repo:[0-9a-f]{32}', value))
+
+
+def _bulk_action_request(payload: dict[str, Any]) -> tuple[str, list[str], list[str]]:
+    """Validate ``{action, targets}`` into ``(action, targets, command)``."""
     action = payload.get('action', '')
     targets = payload.get('targets', [])
     if (
@@ -10265,27 +10337,65 @@ async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, A
         or not action
         or not targets
         or len(targets) > 100
-        or any(
-            not isinstance(value, str) or not re.fullmatch(r'repo:[0-9a-f]{32}', value)
-            for value in targets
-        )
+        or not all(_is_repo_reference(value) for value in targets)
     ):
         raise HTTPException(status_code=400, detail='Missing action or targets list')
-
-    # Map the high-level action to a concrete command. Only whitelisted,
-    # non-destructive commands are dispatched.
-    command_map: dict[str, list[str]] = {
-        'status': ['git', 'diff', '--quiet', '--no-ext-diff'],
-    }
-    cmd = command_map.get(action)
+    cmd = _BULK_ACTION_COMMANDS.get(action)
     if cmd is None:
         raise HTTPException(
             status_code=400,
             detail=(
-                f'Unsupported bulk action {action!r}. Supported: {sorted(command_map)}'
+                f'Unsupported bulk action {action!r}. '
+                f'Supported: {sorted(_BULK_ACTION_COMMANDS)}'
             ),
         )
+    return action, targets, cmd
 
+
+def _repo_bulk_action_result(
+    cmd: list[str], repo_path: Any, reference: str
+) -> dict[str, Any]:
+    """Run the whitelisted probe against one repo; a failure is reported per-repo."""
+    import subprocess
+
+    try:
+        git_env = _git_probe_environment()
+        proc = subprocess.run(
+            cmd,
+            cwd=str(repo_path),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            env=git_env,
+        )
+        staged = subprocess.run(
+            ['git', 'diff', '--cached', '--quiet', '--no-ext-diff'],
+            cwd=str(repo_path),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            env=git_env,
+        )
+        if proc.returncode not in (0, 1) or staged.returncode not in (0, 1):
+            raise RuntimeError('repository state probe failed')
+    except Exception as e:  # noqa: BLE001 - report per-repo failure
+        return {'status': 'error', 'detail': type(e).__name__}
+    return {
+        'reference': reference,
+        'status': 'success',
+        'modified': proc.returncode == 1 or staged.returncode == 1,
+    }
+
+
+@router.post('/repository-manager/bulk')
+async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, Any]:
+    """Run a bounded read-only status action across referenced workspace repos.
+
+    Repository paths, names, commands, and command output never cross the API
+    boundary. Mutating repository operations must use the governed repository
+    manager delegation surface instead.
+    """
+    action, targets, cmd = _bulk_action_request(payload)
     repositories = {
         _opaque_reference('repo', str(path)): path
         for path in discover_workspace_repositories()
@@ -10296,35 +10406,7 @@ async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, A
         if repo_path is None:
             results.append({'status': 'error', 'detail': 'repo not found'})
             continue
-        try:
-            git_env = _git_probe_environment()
-            proc = subprocess.run(
-                cmd,
-                cwd=str(repo_path),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=5,
-                env=git_env,
-            )
-            staged = subprocess.run(
-                ['git', 'diff', '--cached', '--quiet', '--no-ext-diff'],
-                cwd=str(repo_path),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=5,
-                env=git_env,
-            )
-            if proc.returncode not in (0, 1) or staged.returncode not in (0, 1):
-                raise RuntimeError('repository state probe failed')
-            results.append(
-                {
-                    'reference': str(reference),
-                    'status': 'success',
-                    'modified': proc.returncode == 1 or staged.returncode == 1,
-                }
-            )
-        except Exception as e:  # noqa: BLE001 - report per-repo failure
-            results.append({'status': 'error', 'detail': type(e).__name__})
+        results.append(_repo_bulk_action_result(cmd, repo_path, str(reference)))
 
     failures = [r for r in results if r['status'] != 'success']
     logger.info(
@@ -10464,6 +10546,45 @@ async def _call_mcp_tool(
     return _public_external_result(result, truncate_lists=True)
 
 
+def _jira_response_payload(resp: Any) -> Any:
+    """Unwrap the Jira MCP ``{status_code, data}`` envelope.
+
+    The MCP tool returns {status_code, data}. Treat any non-2xx (e.g. the Jira
+    site being unavailable) as an honest backend error, not empty data.
+    """
+    if not isinstance(resp, dict):
+        return resp
+    status_code = resp.get('status_code')
+    if status_code is not None and not 200 <= int(status_code) < 300:
+        raise RuntimeError(f'Jira returned HTTP {status_code}')
+    return resp.get('data', resp)
+
+
+def _jira_issue_card(issue: dict[str, Any], fields: dict[str, Any]) -> dict[str, Any]:
+    """One Jira issue as a Kanban card."""
+    return {
+        'id': issue.get('key'),
+        'title': fields.get('summary', ''),
+        'priority': (fields.get('priority') or {}).get('name'),
+        'assignee': (fields.get('assignee') or {}).get('displayName'),
+    }
+
+
+def _jira_kanban_columns(issues: Any) -> list[dict[str, Any]]:
+    """Bucket issues into Kanban columns by their status name."""
+    columns: dict[str, dict[str, Any]] = {}
+    for issue in issues[:100] if isinstance(issues, list) else []:
+        if not isinstance(issue, dict):
+            continue
+        fields = issue.get('fields', {}) or {}
+        status_name = (fields.get('status') or {}).get('name', 'Unknown')
+        col = columns.setdefault(
+            status_name, {'id': status_name, 'title': status_name, 'issues': []}
+        )
+        col['issues'].append(_jira_issue_card(issue, fields))
+    return list(columns.values())
+
+
 @router.get('/ecosystem/atlassian/kanban')
 async def get_atlassian_kanban(jql: str = 'ORDER BY updated DESC'):
     """Retrieve Jira issues grouped by status (Kanban format) via ``atlassian-mcp``.
@@ -10474,8 +10595,6 @@ async def get_atlassian_kanban(jql: str = 'ORDER BY updated DESC'):
     (defaults to most-recently-updated). Surfaces an honest error if the
     server or Jira is unreachable.
     """
-    import json as _json
-
     if not jql.strip() or len(jql.encode('utf-8')) > 8192:
         raise HTTPException(status_code=400, detail='Invalid JQL query')
 
@@ -10485,45 +10604,18 @@ async def get_atlassian_kanban(jql: str = 'ORDER BY updated DESC'):
             'atlassian_jira_issue',
             {
                 'action': 'search_for_issues_using_jql',
-                'params_json': _json.dumps({'jql': jql, 'max_results': 100}),
+                'params_json': json.dumps({'jql': jql, 'max_results': 100}),
             },
         )
+        payload = _jira_response_payload(resp)
     except Exception as e:  # noqa: BLE001
         return _service_error(e, columns=[])
-    # The MCP tool returns {status_code, data}. Treat any non-2xx (e.g. the
-    # Jira site being unavailable) as an honest backend error, not empty data.
-    if isinstance(resp, dict):
-        status_code = resp.get('status_code')
-        if status_code is not None and not (200 <= int(status_code) < 300):
-            return _service_error(
-                RuntimeError(f'Jira returned HTTP {status_code}'), columns=[]
-            )
-        payload = resp.get('data', resp)
-    else:
-        payload = resp
     issues = payload.get('issues', []) if isinstance(payload, dict) else []
-    columns: dict[str, dict[str, Any]] = {}
-    for issue in issues[:100] if isinstance(issues, list) else []:
-        if not isinstance(issue, dict):
-            continue
-        fields = issue.get('fields', {}) or {}
-        status_name = (fields.get('status') or {}).get('name', 'Unknown')
-        col = columns.setdefault(
-            status_name, {'id': status_name, 'title': status_name, 'issues': []}
-        )
-        col['issues'].append(
-            {
-                'id': issue.get('key'),
-                'title': fields.get('summary', ''),
-                'priority': (fields.get('priority') or {}).get('name'),
-                'assignee': (fields.get('assignee') or {}).get('displayName'),
-            }
-        )
     bounded = _public_external_result(
         {
             'status': 'success',
             'source': 'live',
-            'columns': list(columns.values()),
+            'columns': _jira_kanban_columns(issues),
         }
     )
     return bounded if isinstance(bounded, dict) else {'status': 'error'}
