@@ -233,7 +233,12 @@ describe('attachMcpAppBridge', () => {
         const { callTool } = createHangingCallTool()
         const detach = attachMcpAppBridge({ frameWindow, initProps: {}, policy: () => true, callTool })
 
-        dispatchFromFrame(frameWindow, { type: 'mcpapp/tool-call', id: 'call-slow', name: 'graph_jobs', arguments: {} })
+        dispatchFromFrame(frameWindow, {
+          type: 'mcpapp/tool-call',
+          id: 'call-slow',
+          name: 'graph_jobs',
+          arguments: {},
+        })
         expect(posted).toEqual([])
 
         vi.advanceTimersByTime(CALL_TIMEOUT_MS)
@@ -248,7 +253,12 @@ describe('attachMcpAppBridge', () => {
 
         // The freed slot accepts a new call immediately -- the timeout did
         // not leave the in-flight accounting stuck.
-        dispatchFromFrame(frameWindow, { type: 'mcpapp/tool-call', id: 'call-after', name: 'graph_jobs', arguments: {} })
+        dispatchFromFrame(frameWindow, {
+          type: 'mcpapp/tool-call',
+          id: 'call-after',
+          name: 'graph_jobs',
+          arguments: {},
+        })
         expect(callTool).toHaveBeenCalledTimes(2)
         detach()
       } finally {
@@ -263,13 +273,18 @@ describe('attachMcpAppBridge', () => {
         const { callTool, resolvers } = createHangingCallTool()
         const detach = attachMcpAppBridge({ frameWindow, initProps: {}, policy: () => true, callTool })
 
-        dispatchFromFrame(frameWindow, { type: 'mcpapp/tool-call', id: 'call-late', name: 'graph_jobs', arguments: {} })
+        dispatchFromFrame(frameWindow, {
+          type: 'mcpapp/tool-call',
+          id: 'call-late',
+          name: 'graph_jobs',
+          arguments: {},
+        })
         vi.advanceTimersByTime(CALL_TIMEOUT_MS)
         expect(posted).toHaveLength(1) // the timeout error
 
         resolvers[0]({ ignored: true }) // the real backend answers late
         vi.useRealTimers()
-        await new Promise((r) => setTimeout(r, 0)) // flush the settled promise's microtask
+        await new Promise((resolve) => setTimeout(resolve, 0)) // flush the settled promise's microtask
         expect(posted).toHaveLength(1) // still just the timeout -- no late double post
         detach()
       } finally {

@@ -87,16 +87,12 @@ describe('WorkflowEditorView', () => {
 
   it('D-W5WR-4: shows a typed error instead of silently rendering an empty saved-workflow list on a real backend failure', async () => {
     const toastErrorSpy = vi.spyOn(toast, 'error').mockImplementation(() => 'toast-id')
-    vi.mocked(api.listWorkflows).mockRejectedValueOnce(
-      new Error('Knowledge Graph workflow query failed'),
-    )
+    vi.mocked(api.listWorkflows).mockRejectedValueOnce(new Error('Knowledge Graph workflow query failed'))
 
     render(<WorkflowEditorView />)
 
     await waitFor(() => {
-      expect(toastErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to load saved workflows'),
-      )
+      expect(toastErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to load saved workflows'))
     })
 
     toastErrorSpy.mockRestore()

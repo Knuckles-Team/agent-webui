@@ -266,15 +266,24 @@ export default function GraphView() {
       const results = [statsResult, nodesResult, relsResult]
 
       const failed: string[] = []
-      let forbidden = false
       results.forEach((result, i) => {
-        if (result.status === 'rejected') {
-          failed.push(GRAPH_FETCH_LABELS[i])
-          if (result.reason instanceof ApiError && (result.reason.status === 401 || result.reason.status === 403)) {
-            forbidden = true
-          }
-        }
+        if (result.status === 'rejected') failed.push(GRAPH_FETCH_LABELS[i])
       })
+      // `.some()` rather than a `let` mutated inside the `forEach` above: TS's
+      // control-flow analysis does not track assignments made inside a nested
+      // closure, so a `let forbidden = false` set to `true` only within a
+      // callback still type-narrows to the literal `false` at every read
+      // after the loop -- correct at runtime, but it makes `no-unnecessary-
+      // condition` (correctly, per what the type checker can prove) flag the
+      // later `forbidden ? ... : ...` as always-falsy. Deriving it as a
+      // `const` from `.some()` keeps the same result with a type the checker
+      // can actually verify.
+      const forbidden = results.some(
+        (result) =>
+          result.status === 'rejected' &&
+          result.reason instanceof ApiError &&
+          (result.reason.status === 401 || result.reason.status === 403),
+      )
 
       let nextStats = stats
       if (statsResult.status === 'fulfilled') {

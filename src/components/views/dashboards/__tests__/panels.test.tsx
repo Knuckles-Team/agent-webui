@@ -151,8 +151,7 @@ describe('TracesPanel', () => {
 
 // A real (tiny, valid) 1x1 PNG, base64-encoded -- proves the panel decodes an
 // actual image, not just any string.
-const TINY_PNG_B64 =
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+const TINY_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
 describe('VizPanel (GOC-88, D-VZ-1 V5)', () => {
   beforeEach(() => {
@@ -297,7 +296,16 @@ describe('VizPanel (GOC-88, D-VZ-1 V5)', () => {
         },
       },
     }) as unknown as typeof fetch
-    render(<VizPanel title="Chart" initialQuery="" initialMark="scatter" initialXField="" initialYField="" refreshSignal={0} />)
+    render(
+      <VizPanel
+        title="Chart"
+        initialQuery=""
+        initialMark="scatter"
+        initialXField=""
+        initialYField=""
+        refreshSignal={0}
+      />,
+    )
     expect(screen.getByText(/Enter a query/)).toBeInTheDocument()
     const spy = global.fetch as unknown as ReturnType<typeof vi.fn>
     expect(spy.mock.calls.length).toBe(0)

@@ -112,9 +112,7 @@ function WorkflowEditorInner() {
       // rendering the same empty state a genuinely-workflow-free graph would
       // show (same class of fix GraphView.tsx already applies).
       console.error('Failed to list workflows', err)
-      toast.error(
-        `Failed to load saved workflows: ${err instanceof Error ? err.message : String(err)}`,
-      )
+      toast.error(`Failed to load saved workflows: ${err instanceof Error ? err.message : String(err)}`)
       setSaved([])
     }
   }, [])

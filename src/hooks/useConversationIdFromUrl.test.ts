@@ -31,9 +31,7 @@ describe('conversation route resolution', () => {
   it('treats every registered nav-registry route as an application route, not a conversation id', () => {
     for (const route of ROUTES) {
       if (isDynamicPath(route.path)) continue
-      expect(isApplicationRoute(route.path), `${route.id} (${route.path}) should be an application route`).toBe(
-        true,
-      )
+      expect(isApplicationRoute(route.path), `${route.id} (${route.path}) should be an application route`).toBe(true)
       expect(
         resolveConversationId(route.path, '', '/some-conversation'),
         `${route.id} (${route.path}) must not be read as a conversation id`,

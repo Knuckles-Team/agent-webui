@@ -75,7 +75,9 @@ afterEach(() => {
 describe('ObservabilityView — Runs (Phase D: no /api/runs platform)', () => {
   it('renders a run list from graph_traces action=search and its execution DAG with real parent/child nesting', async () => {
     mockGatewayFetch({
-      searchBody: tracesSearchBody([{ trace_id: 'trace-1', name: 'Chat run: fix the widget', status: 'ok', duration: 512 }]),
+      searchBody: tracesSearchBody([
+        { trace_id: 'trace-1', name: 'Chat run: fix the widget', status: 'ok', duration: 512 },
+      ]),
       waterfallBody: tracesWaterfallBody({
         // Deliberately a different display string than the run-list row's `name`
         // above, so the two panels' independent renders of "this run's name" are
