@@ -744,6 +744,82 @@ class OIDCBrowserSessionMiddleware:
                 mode = value.decode('latin-1').strip().lower()
         return mode == 'navigate' or 'text/html' in accept
 
+    async def _dispatch_owned_route(self, scope: Any, send: Any, path: str) -> None:
+        """The login bootstrap is answered here and never forwarded, so the
+        identity gate below is untouched and still sees zero exempt API
+        paths."""
+        try:
+            if path == LOGIN_PATH:
+                await self._handle_login(scope, send)
+            elif path == CALLBACK_PATH:
+                await self._handle_callback(scope, send)
+            elif path == LOGOUT_PATH:
+                await self._handle_logout(scope, send)
+            else:
+                await self._handle_session(scope, send)
+        except OIDCConfigurationError:
+            logger.exception('Agent WebUI browser SSO is misconfigured')
+            await self._respond(send, 503, body=b'{"detail":"Sign-in is unavailable"}')
+
+    @staticmethod
+    def _is_owned_http_path(scope_type: str, path: str) -> bool:
+        return scope_type == 'http' and path in _OWNED_PATHS
+
+    @staticmethod
+    def _session_has_access_token(session: dict[str, Any] | None) -> bool:
+        return bool(session and session.get('access_token'))
+
+    def _is_navigable_http(self, scope_type: str, scope: Any) -> bool:
+        return scope_type == 'http' and self._is_browser_navigation(scope)
+
+    @staticmethod
+    def _has_own_bearer_credential(scope: Any) -> bool:
+        """A caller that brought its own credential is a service client; never
+        substitute a browser session for it."""
+        return any(
+            key.decode('latin-1').lower() == 'authorization'
+            for key, _value in scope.get('headers') or []
+        )
+
+    async def _renew_expired_session(
+        self, scope: Any, session: dict[str, Any]
+    ) -> tuple[dict[str, Any] | None, list[tuple[bytes, bytes]] | None]:
+        """Attempt the refresh-token grant for an expired session that still
+        carries one. Returns ``(None, None)`` if the refresh itself fails."""
+        refreshed = await self._token_request(
+            {
+                'grant_type': 'refresh_token',
+                'refresh_token': str(session['refresh_token']),
+            }
+        )
+        if refreshed is None:
+            return None, None
+        new_session = self._session_from_tokens(refreshed)
+        cookies = _session_cookie_headers(
+            self._seal(new_session), secure=_is_secure(scope)
+        )
+        return new_session, cookies
+
+    async def _resolve_session(
+        self, scope: Any
+    ) -> tuple[dict[str, Any] | None, list[tuple[bytes, bytes]] | None]:
+        """Unseal the session cookie and, if it is expired, either silently
+        renew it (refresh token present) or discard it (no refresh token /
+        renewal failed). Returns ``(session_or_None, refreshed_cookies_or_None)``."""
+        session = self._unseal(_read_session_cookie(_cookies(scope)))
+        if session is None:
+            return None, None
+        expires_at = session.get('expires_at')
+        expired = (
+            not isinstance(expires_at, int | float)
+            or time.time() >= float(expires_at) - _EXPIRY_SKEW_S
+        )
+        if not expired:
+            return session, None
+        if session.get('refresh_token'):
+            return await self._renew_expired_session(scope, session)
+        return None, None
+
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         scope_type = scope.get('type')
         if scope_type not in {'http', 'websocket'}:
@@ -751,61 +827,17 @@ class OIDCBrowserSessionMiddleware:
             return
 
         path = str(scope.get('path') or '')
-        if scope_type == 'http' and path in _OWNED_PATHS:
-            # The login bootstrap is answered here and never forwarded, so the
-            # identity gate below is untouched and still sees zero exempt API
-            # paths.
-            try:
-                if path == LOGIN_PATH:
-                    await self._handle_login(scope, send)
-                elif path == CALLBACK_PATH:
-                    await self._handle_callback(scope, send)
-                elif path == LOGOUT_PATH:
-                    await self._handle_logout(scope, send)
-                else:
-                    await self._handle_session(scope, send)
-            except OIDCConfigurationError:
-                logger.exception('Agent WebUI browser SSO is misconfigured')
-                await self._respond(
-                    send, 503, body=b'{"detail":"Sign-in is unavailable"}'
-                )
+        if self._is_owned_http_path(scope_type, path):
+            await self._dispatch_owned_route(scope, send, path)
             return
 
-        # A caller that brought its own credential is a service client; never
-        # substitute a browser session for it.
-        if any(
-            key.decode('latin-1').lower() == 'authorization'
-            for key, _value in scope.get('headers') or []
-        ):
+        if self._has_own_bearer_credential(scope):
             await self.app(scope, receive, send)
             return
 
-        session = self._unseal(_read_session_cookie(_cookies(scope)))
-        refreshed_cookies: list[tuple[bytes, bytes]] | None = None
-        if session is not None:
-            expires_at = session.get('expires_at')
-            expired = (
-                not isinstance(expires_at, int | float)
-                or time.time() >= float(expires_at) - _EXPIRY_SKEW_S
-            )
-            if expired and session.get('refresh_token'):
-                refreshed = await self._token_request(
-                    {
-                        'grant_type': 'refresh_token',
-                        'refresh_token': str(session['refresh_token']),
-                    }
-                )
-                if refreshed is None:
-                    session = None
-                else:
-                    session = self._session_from_tokens(refreshed)
-                    refreshed_cookies = _session_cookie_headers(
-                        self._seal(session), secure=_is_secure(scope)
-                    )
-            elif expired:
-                session = None
+        session, refreshed_cookies = await self._resolve_session(scope)
 
-        if session and session.get('access_token'):
+        if self._session_has_access_token(session):
             await self._forward(
                 scope,
                 receive,
@@ -815,7 +847,7 @@ class OIDCBrowserSessionMiddleware:
             )
             return
 
-        if scope_type == 'http' and self._is_browser_navigation(scope):
+        if self._is_navigable_http(scope_type, scope):
             # Send the human to the identity provider instead of handing them a
             # bare 401 they cannot act on.  API and XHR callers still fall
             # through to the unmodified gate and get their 401.
