@@ -7064,6 +7064,46 @@ async def list_library_tools(mcp_server: str | None = None) -> list[dict[str, An
         return []
 
 
+def _library_bound_servers(bound_rows: Any) -> set[str]:
+    """The mcp_servers that already have an Agent Library entry bound."""
+    return {
+        str(row.get('server'))
+        for row in (bound_rows or [])
+        if isinstance(row, dict) and row.get('server')
+    }
+
+
+def _tool_names_by_server(tool_rows: Any) -> dict[str, list[str]]:
+    """Group ``:Tool`` rows by owning mcp_server, keeping up to 8 sample names."""
+    by_server: dict[str, list[str]] = {}
+    for row in tool_rows or []:
+        if not isinstance(row, dict):
+            continue
+        server = row.get('server')
+        if not server:
+            continue
+        names = by_server.setdefault(str(server), [])
+        name = row.get('name')
+        if name and len(names) < 8:
+            names.append(str(name))
+    return by_server
+
+
+def _library_agent_suggestion(
+    server: str, names: list[str], tool_rows: Any
+) -> dict[str, Any]:
+    """The proposal for one server that has no Agent Library entry yet."""
+    return {
+        'mcp_server': server,
+        'tool_count': sum(1 for r in tool_rows if r.get('server') == server),
+        'sample_tools': names,
+        'reason': (
+            f"Tools from '{server}' are installed and ingested, "
+            'but no agent in the Library uses them yet.'
+        ),
+    }
+
+
 @router.get('/agent-library/suggestions')
 async def suggest_library_agents() -> list[dict[str, Any]]:
     """Suggest agents to build, derived from the installed tool inventory.
@@ -7091,41 +7131,12 @@ async def suggest_library_agents() -> list[dict[str, Any]]:
             {'skill': 'AGENT_SKILL', 'ref': _AGENT_LIBRARY_PROVIDER_REF},
             deadline=15.0,
         )
-        bound = {
-            str(row.get('server'))
-            for row in (bound_rows or [])
-            if isinstance(row, dict) and row.get('server')
-        }
-        by_server: dict[str, list[str]] = {}
-        for row in tool_rows or []:
-            if not isinstance(row, dict):
-                continue
-            server = row.get('server')
-            if not server:
-                continue
-            server = str(server)
-            names = by_server.setdefault(server, [])
-            name = row.get('name')
-            if name and len(names) < 8:
-                names.append(str(name))
-
-        suggestions: list[dict[str, Any]] = []
-        for server, names in by_server.items():
-            if server in bound:
-                continue
-            suggestions.append(
-                {
-                    'mcp_server': server,
-                    'tool_count': sum(
-                        1 for r in tool_rows if r.get('server') == server
-                    ),
-                    'sample_tools': names,
-                    'reason': (
-                        f"Tools from '{server}' are installed and ingested, "
-                        'but no agent in the Library uses them yet.'
-                    ),
-                }
-            )
+        bound = _library_bound_servers(bound_rows)
+        suggestions = [
+            _library_agent_suggestion(server, names, tool_rows)
+            for server, names in _tool_names_by_server(tool_rows).items()
+            if server not in bound
+        ]
         suggestions.sort(key=lambda s: s.get('tool_count', 0), reverse=True)
         bounded = _public_external_result(suggestions[:_MAX_EXTERNAL_COLLECTION_ITEMS])
         return bounded if isinstance(bounded, list) else []
@@ -9143,6 +9154,52 @@ _CONFIG_FIELD_DECL = re.compile(r'^    (\w+)\s*:\s*[^=\n]+=\s*Field\(')
 _config_field_groups_cache: dict[str, str] | None = None
 
 
+def _config_source_text() -> str:
+    """The installed `AgentConfig` source, read as data and never executed."""
+    from agent_utilities.core.config import AgentConfig
+
+    source_file = inspect.getsourcefile(AgentConfig)
+    if not source_file:
+        return ''
+    path = Path(source_file)
+    if path.is_symlink():
+        raise RuntimeError('refusing symbolic-link source file')
+    text = path.read_text(encoding='utf-8')
+    if len(text) > 4 * 1024 * 1024:
+        raise ValueError('config source exceeds the safety bound')
+    return text
+
+
+def _config_class_body_lines(text: str) -> list[str]:
+    """Just the lines inside `class AgentConfig(...)`'s body."""
+    body: list[str] = []
+    in_class = False
+    for line in text.splitlines():
+        if line.startswith('class AgentConfig('):
+            in_class = True
+            continue
+        if in_class and line.startswith('class '):
+            break  # AgentConfigProxy (or the next class) ends the body
+        if in_class:
+            body.append(line)
+    return body
+
+
+def _parse_config_field_groups(text: str) -> dict[str, str]:
+    """Attribute each field declaration to its nearest preceding section."""
+    groups: dict[str, str] = {}
+    current_section = 'General'
+    for line in _config_class_body_lines(text):
+        marker = _CONFIG_SECTION_MARKER.match(line)
+        if marker:
+            current_section = marker.group(1)
+            continue
+        field = _CONFIG_FIELD_DECL.match(line)
+        if field:
+            groups[field.group(1)] = current_section
+    return groups
+
+
 def _config_field_groups() -> dict[str, str]:
     """Best-effort ``{field_name: section_title}`` map for every `AgentConfig` field.
 
@@ -9164,37 +9221,8 @@ def _config_field_groups() -> dict[str, str]:
     if _config_field_groups_cache is not None:
         return _config_field_groups_cache
 
-    groups: dict[str, str] = {}
     try:
-        import inspect
-
-        from agent_utilities.core.config import AgentConfig
-
-        source_file = inspect.getsourcefile(AgentConfig)
-        if source_file:
-            path = Path(source_file)
-            if path.is_symlink():
-                raise RuntimeError('refusing symbolic-link source file')
-            text = path.read_text(encoding='utf-8')
-            if len(text) > 4 * 1024 * 1024:
-                raise ValueError('config source exceeds the safety bound')
-            current_section = 'General'
-            in_class = False
-            for line in text.splitlines():
-                if line.startswith('class AgentConfig('):
-                    in_class = True
-                    continue
-                if in_class and line.startswith('class '):
-                    break  # AgentConfigProxy (or the next class) ends the body
-                if not in_class:
-                    continue
-                marker = _CONFIG_SECTION_MARKER.match(line)
-                if marker:
-                    current_section = marker.group(1)
-                    continue
-                field = _CONFIG_FIELD_DECL.match(line)
-                if field:
-                    groups[field.group(1)] = current_section
+        groups = _parse_config_field_groups(_config_source_text())
     except Exception as e:  # noqa: BLE001 - best-effort; an empty map degrades to "Other"
         _log_failure('config_field_groups_parse', e, level=logging.WARNING)
         groups = {}
@@ -12870,6 +12898,78 @@ def _ids_present_in_graph(backend: Any, ids: list[str]) -> set[str]:
     return present
 
 
+@dataclass(frozen=True)
+class _PivotSpec:
+    """One validated ``/object-set/pivot`` request."""
+
+    ids: list[str]
+    link_type: Any
+    group_by: str
+    direction: str
+
+
+def _pivot_spec(data: dict[str, Any]) -> _PivotSpec:
+    """Validate ``{ids, link_type, group_by, direction}`` into a `_PivotSpec`."""
+    link_type = data.get('link_type')
+    group_by = str(data.get('group_by', '') or '')
+    direction = str(data.get('direction', 'out') or 'out')
+    if not group_by or len(group_by.encode('utf-8')) > 128:
+        raise HTTPException(status_code=422, detail='group_by is required')
+    if direction not in {'in', 'out', 'both'}:
+        raise HTTPException(status_code=400, detail='Invalid pivot direction')
+    if link_type is not None and (
+        not isinstance(link_type, str) or len(link_type.encode('utf-8')) > 128
+    ):
+        raise HTTPException(status_code=400, detail='Invalid link type')
+    return _PivotSpec(
+        ids=_bounded_identifier_list(data.get('ids')),
+        link_type=link_type,
+        group_by=group_by,
+        direction=direction,
+    )
+
+
+def _scoped_pivot(engine: Any, spec: _PivotSpec, scoped_engine: Any) -> Any:
+    """Pivot ONE graph's view of the seed ids, or ``None`` if it has no facade."""
+    facade = _ontology_facade_for(engine, scoped_engine)
+    if facade is None:
+        return None
+    _scoped_kg, scoped_ontology = facade
+    return scoped_ontology.object_set(spec.ids).pivot(
+        spec.link_type,
+        spec.group_by,
+        direction=spec.direction,
+    )
+
+
+def _merge_pivot_group(
+    merged_groups: dict[Any, list[str]], seen: set[str], pivot: Any
+) -> None:
+    """Fold one graph's pivot buckets in, deduped by linked-object id."""
+    for key, member_ids in pivot.groups.items():
+        bucket = merged_groups.setdefault(key, [])
+        for member_id in member_ids:
+            if member_id in seen:
+                continue
+            seen.add(member_id)
+            bucket.append(member_id)
+
+
+def _merge_pivot_results(
+    per_graph: list[tuple[str | None, Any]], fallback_link_type: Any
+) -> tuple[Any, dict[Any, list[str]]]:
+    """Merge per-graph pivots into ``(link_type, groups)``, tenant-first."""
+    resolved_link_type = fallback_link_type or '*'
+    merged_groups: dict[Any, list[str]] = {}
+    seen: set[str] = set()
+    for _graph_name, pivot in per_graph:
+        if pivot is None:
+            continue
+        resolved_link_type = pivot.link_type
+        _merge_pivot_group(merged_groups, seen, pivot)
+    return resolved_link_type, merged_groups
+
+
 @router.post('/ontology/object-set/pivot')
 async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
     """Pivot an object set across a link type, grouping the linked set.
@@ -12886,60 +12986,26 @@ async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
     """
     try:
         _kg, _ontology = await _get_ontology_kg_bounded()
-        ids = _bounded_identifier_list(data.get('ids'))
-        link_type = data.get('link_type')
-        group_by = str(data.get('group_by', '') or '')
-        direction = str(data.get('direction', 'out') or 'out')
-        if not group_by or len(group_by.encode('utf-8')) > 128:
-            raise HTTPException(status_code=422, detail='group_by is required')
-        if direction not in {'in', 'out', 'both'}:
-            raise HTTPException(status_code=400, detail='Invalid pivot direction')
-        if link_type is not None and (
-            not isinstance(link_type, str) or len(link_type.encode('utf-8')) > 128
-        ):
-            raise HTTPException(status_code=400, detail='Invalid link type')
-
+        spec = _pivot_spec(data)
         engine = await _get_engine_bounded()
 
         def execute_pivot(scoped_engine: Any) -> Any:
-            facade = _ontology_facade_for(engine, scoped_engine)
-            if facade is None:
-                return None
-            _scoped_kg, scoped_ontology = facade
-            return scoped_ontology.object_set(ids).pivot(
-                link_type,
-                group_by,
-                direction=direction,
-            )
+            return _scoped_pivot(engine, spec, scoped_engine)
 
         def _run() -> list[tuple[str | None, Any]]:
             result = _rows_per_accessible_graph(engine, execute_pivot)
             if result is None:
                 return [(None, execute_pivot(engine))]
             per_graph, _degraded = result
-            return [(graph_name, value) for graph_name, value in per_graph]
+            return list(per_graph)
 
-        per_graph = await _invoke_governed_helper(_run, deadline=30.0)
-
-        resolved_link_type = link_type or '*'
-        merged_groups: dict[Any, list[str]] = {}
-        seen: set[str] = set()
-        for _graph_name, pivot in per_graph:
-            if pivot is None:
-                continue
-            resolved_link_type = pivot.link_type
-            for key, member_ids in pivot.groups.items():
-                bucket = merged_groups.setdefault(key, [])
-                for member_id in member_ids:
-                    if member_id in seen:
-                        continue
-                    seen.add(member_id)
-                    bucket.append(member_id)
-
+        resolved_link_type, merged_groups = _merge_pivot_results(
+            await _invoke_governed_helper(_run, deadline=30.0), spec.link_type
+        )
         return _public_external_result(
             {
                 'link_type': resolved_link_type,
-                'group_by': group_by,
+                'group_by': spec.group_by,
                 'groups': {str(k): v for k, v in merged_groups.items()},
             }
         )
@@ -13324,6 +13390,85 @@ async def ontology_object_set_save(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _object_set_member_ids(raw_ids: Any) -> list[Any]:
+    """Decode a durable node's ``member_ids`` (JSON string or list)."""
+    try:
+        return json.loads(raw_ids) if isinstance(raw_ids, str) else (raw_ids or [])
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _object_set_node_record(node: dict[str, Any]) -> dict[str, Any]:
+    """One durable ``object_set`` node as a saved-set record."""
+    member_ids = _object_set_member_ids(node.get('member_ids'))
+    return {
+        'id': node['id'],
+        'name': node.get('name', ''),
+        'kind': node.get('kind', ''),
+        'shared': bool(node.get('shared', False)),
+        'ids': member_ids,
+        'count': int(node.get('count', len(member_ids))),
+        'created_at': node.get('created_at', 0.0),
+        'actor': _durable_actor_reference(node.get('actor', 'system')),
+    }
+
+
+def _merged_object_sets(rows: Any) -> dict[str, dict[str, Any]]:
+    """Merge the JSON mirror with the durable KG nodes, mirror first.
+
+    A set saved by any worker is visible this way; the mirror wins on id
+    collision because it is the copy this process last wrote.
+    """
+    merged: dict[str, dict[str, Any]] = {}
+    for rec in list(_load_object_sets().values())[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+        if isinstance(rec, dict) and rec.get('id'):
+            merged[rec['id']] = rec
+    for row in rows or []:
+        node = row.get('n', {}) if isinstance(row, dict) else {}
+        if not isinstance(node, dict) or not node.get('id'):
+            continue
+        merged.setdefault(node['id'], _object_set_node_record(node))
+    return merged
+
+
+def _object_set_summary(record: dict[str, Any]) -> dict[str, Any]:
+    """The listable projection of a saved set (no member ids)."""
+    return {
+        'id': record['id'],
+        'name': record.get('name', ''),
+        'kind': record.get('kind', ''),
+        'shared': bool(record.get('shared', False)),
+        'count': int(record.get('count', len(record.get('ids', []) or []))),
+        'created_at': record.get('created_at', 0.0),
+        'actor': _durable_actor_reference(record.get('actor', 'system')),
+    }
+
+
+def _object_set_is_visible(
+    record: dict[str, Any], actor_id: str, actor_is_admin: bool
+) -> bool:
+    """A non-shared set is only listed for its owner, or an admin/system actor."""
+    return bool(
+        record.get('shared')
+        or _durable_actor_reference(record.get('actor', 'system')) == actor_id
+        or actor_is_admin
+    )
+
+
+async def _durable_object_set_rows(backend: Any) -> Any:
+    """The durable ``object_set`` nodes; a failed read degrades to []."""
+    try:
+        return await _invoke_governed_helper(
+            backend.execute,
+            f"MATCH (n {{type: 'object_set'}}) RETURN n "
+            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
+            {},
+            deadline=15.0,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+
 @router.get('/ontology/object-set/list')
 async def ontology_object_set_list(request: Request) -> dict[str, Any]:
     """List saved ObjectSets for the Explorer 'saved sets' panel.
@@ -13332,71 +13477,19 @@ async def ontology_object_set_list(request: Request) -> dict[str, Any]:
     saved by any worker is visible. A non-shared set is only listed for its
     owning actor (or for an admin/system actor); shared sets are visible to all.
     """
-    import json
-
     try:
         kg, _ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
         actor = _actor_context(request)
         actor_id = _durable_actor_reference(actor.actor_id)
         actor_is_admin = bool(
             set(actor.roles).intersection({'admin', 'system', 'kg:admin'})
         )
 
-        merged: dict[str, dict[str, Any]] = {}
-        for rec in list(_load_object_sets().values())[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-            if isinstance(rec, dict) and rec.get('id'):
-                merged[rec['id']] = rec
-
-        try:
-            rows = await _invoke_governed_helper(
-                backend.execute,
-                f"MATCH (n {{type: 'object_set'}}) RETURN n "
-                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
-                {},
-                deadline=15.0,
-            )
-        except Exception:  # noqa: BLE001
-            rows = []
-        for row in rows or []:
-            node = row.get('n', {}) if isinstance(row, dict) else {}
-            if not isinstance(node, dict) or not node.get('id'):
-                continue
-            raw_ids = node.get('member_ids')
-            try:
-                member_ids = (
-                    json.loads(raw_ids) if isinstance(raw_ids, str) else (raw_ids or [])
-                )
-            except Exception:  # noqa: BLE001
-                member_ids = []
-            merged.setdefault(
-                node['id'],
-                {
-                    'id': node['id'],
-                    'name': node.get('name', ''),
-                    'kind': node.get('kind', ''),
-                    'shared': bool(node.get('shared', False)),
-                    'ids': member_ids,
-                    'count': int(node.get('count', len(member_ids))),
-                    'created_at': node.get('created_at', 0.0),
-                    'actor': _durable_actor_reference(node.get('actor', 'system')),
-                },
-            )
-
+        merged = _merged_object_sets(await _durable_object_set_rows(kg.store))
         visible = [
-            {
-                'id': r['id'],
-                'name': r.get('name', ''),
-                'kind': r.get('kind', ''),
-                'shared': bool(r.get('shared', False)),
-                'count': int(r.get('count', len(r.get('ids', []) or []))),
-                'created_at': r.get('created_at', 0.0),
-                'actor': _durable_actor_reference(r.get('actor', 'system')),
-            }
-            for r in merged.values()
-            if r.get('shared')
-            or _durable_actor_reference(r.get('actor', 'system')) == actor_id
-            or actor_is_admin
+            _object_set_summary(record)
+            for record in merged.values()
+            if _object_set_is_visible(record, actor_id, actor_is_admin)
         ]
         visible.sort(key=lambda r: r.get('created_at') or 0.0, reverse=True)
         visible = visible[:_MAX_EXTERNAL_COLLECTION_ITEMS]
@@ -13811,6 +13904,77 @@ async def get_ontology_object(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+async def _edit_property_set(
+    ontology: Any, object_id: str, data: dict[str, Any], actor: Any
+) -> Any:
+    """``property_set``: record a bounded property write on the object."""
+    properties = data.get('properties')
+    if not isinstance(properties, dict):
+        prop = data.get('property')
+        if not prop:
+            raise HTTPException(
+                status_code=422,
+                detail='property_set requires properties or property+value',
+            )
+        properties = {str(prop): data.get('value')}
+    return await _invoke_governed_helper(
+        ontology.set_property_edit,
+        object_id,
+        _bounded_query_params(properties),
+        actor=actor,
+        deadline=30.0,
+    )
+
+
+def _link_edit_arguments(data: dict[str, Any], edit_type: str) -> tuple[str, str]:
+    """Validate the ``(target, label)`` a link_add/link_remove edit needs."""
+    target = data.get('target') or data.get('link_target')
+    label = str(data.get('link_type') or data.get('link') or 'related')
+    if not target:
+        raise HTTPException(status_code=422, detail=f'{edit_type} requires target')
+    target = _validate_runtime_id(str(target))
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(label):
+        raise HTTPException(status_code=400, detail='Invalid link type')
+    return target, label
+
+
+async def _edit_link_add(
+    ontology: Any, object_id: str, data: dict[str, Any], actor: Any
+) -> Any:
+    """``link_add``: journal a new labelled edge from the object."""
+    target, label = _link_edit_arguments(data, 'link_add')
+    return await _invoke_governed_helper(
+        ontology.edits.add_link,
+        object_id,
+        target,
+        label,
+        actor=actor,
+        deadline=30.0,
+    )
+
+
+async def _edit_link_remove(
+    ontology: Any, object_id: str, data: dict[str, Any], actor: Any
+) -> Any:
+    """``link_remove``: journal the removal of a labelled edge."""
+    target, label = _link_edit_arguments(data, 'link_remove')
+    return await _invoke_governed_helper(
+        ontology.edits.remove_link,
+        object_id,
+        target,
+        label,
+        actor=actor,
+        deadline=30.0,
+    )
+
+
+_ONTOLOGY_EDIT_HANDLERS: dict[str, Any] = {
+    'property_set': _edit_property_set,
+    'link_add': _edit_link_add,
+    'link_remove': _edit_link_remove,
+}
+
+
 @router.post('/ontology/object/{object_id}/edit')
 async def edit_ontology_object(
     object_id: str, data: dict[str, Any], request: Request
@@ -13826,63 +13990,12 @@ async def edit_ontology_object(
         backend = kg.store
         actor = _actor_id_from_request(request)
         edit_type = str(data.get('edit_type', 'property_set') or 'property_set')
-
-        if edit_type == 'property_set':
-            properties = data.get('properties')
-            if not isinstance(properties, dict):
-                prop = data.get('property')
-                if not prop:
-                    raise HTTPException(
-                        status_code=422,
-                        detail='property_set requires properties or property+value',
-                    )
-                properties = {str(prop): data.get('value')}
-            properties = _bounded_query_params(properties)
-            edit = await _invoke_governed_helper(
-                ontology.set_property_edit,
-                object_id,
-                properties,
-                actor=actor,
-                deadline=30.0,
-            )
-        elif edit_type == 'link_add':
-            target = data.get('target') or data.get('link_target')
-            label = str(data.get('link_type') or data.get('link') or 'related')
-            if not target:
-                raise HTTPException(status_code=422, detail='link_add requires target')
-            target = _validate_runtime_id(str(target))
-            if not _SAFE_DELEGATION_TOKEN.fullmatch(label):
-                raise HTTPException(status_code=400, detail='Invalid link type')
-            edit = await _invoke_governed_helper(
-                ontology.edits.add_link,
-                object_id,
-                target,
-                label,
-                actor=actor,
-                deadline=30.0,
-            )
-        elif edit_type == 'link_remove':
-            target = data.get('target') or data.get('link_target')
-            label = str(data.get('link_type') or data.get('link') or 'related')
-            if not target:
-                raise HTTPException(
-                    status_code=422, detail='link_remove requires target'
-                )
-            target = _validate_runtime_id(str(target))
-            if not _SAFE_DELEGATION_TOKEN.fullmatch(label):
-                raise HTTPException(status_code=400, detail='Invalid link type')
-            edit = await _invoke_governed_helper(
-                ontology.edits.remove_link,
-                object_id,
-                target,
-                label,
-                actor=actor,
-                deadline=30.0,
-            )
-        else:
+        handler = _ONTOLOGY_EDIT_HANDLERS.get(edit_type)
+        if handler is None:
             raise HTTPException(
                 status_code=422, detail=f'unsupported edit_type: {edit_type}'
             )
+        edit = await handler(ontology, object_id, data, actor)
 
         return _public_external_result(
             {
