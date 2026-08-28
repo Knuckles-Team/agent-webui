@@ -1933,18 +1933,22 @@ async def _batch_toggle_states(
     except Exception as e:
         _log_toggle_batch_failure(item_type, e)
         return {}, False
+    return _toggle_states_from_rows(res, pref_to_item), True
+
+
+def _toggle_states_from_rows(
+    rows: Any, pref_to_item: dict[str, str]
+) -> dict[str, bool]:
+    """Map `:Preference` rows back onto the item ids the caller asked about."""
     states: dict[str, bool] = {}
-    for row in res or []:
+    for row in rows or []:
         if not isinstance(row, dict):
             continue
-        row_id = row.get('id')
-        if not isinstance(row_id, str):
-            continue
-        item_id = pref_to_item.get(row_id)
+        item_id = pref_to_item.get(row.get('id'))
         if item_id is None:
             continue
         states[item_id] = row.get('value') == 'enabled'
-    return states, True
+    return states
 
 
 async def _batch_toggle_states_many(
@@ -6292,6 +6296,23 @@ async def render_viz(data: dict[str, Any]) -> dict[str, Any]:
 # the canonical `build_code_nav_query` so the UI and the graph_code_nav MCP tool
 # share one query contract; scoped by source_system (e.g. 'gitlab:gitlab.example').
 # ---------------------------------------------------------------------------
+def _code_nav_bounds(data: dict[str, Any]) -> tuple[int, int]:
+    """The validated ``(depth, limit)`` for a code-graph navigation."""
+    depth = int(data.get('depth', 3) or 3)
+    limit = int(data.get('limit', 200) or 200)
+    if not 1 <= depth <= 10 or not 1 <= limit <= _MAX_EXTERNAL_COLLECTION_ITEMS:
+        raise HTTPException(status_code=400, detail='Invalid code navigation bounds')
+    return depth, limit
+
+
+def _validate_code_nav_inputs(data: dict[str, Any]) -> None:
+    """Reject a non-string or oversized symbol/node_id/source_system."""
+    for field in ('symbol', 'node_id', 'source_system'):
+        value = data.get(field, '')
+        if not isinstance(value, str) or len(value.encode('utf-8')) > 2048:
+            raise HTTPException(status_code=400, detail='Invalid code navigation input')
+
+
 @router.post('/code/nav')
 async def code_nav(data: dict[str, Any]) -> dict[str, Any]:
     """Navigate the resolved code graph.
@@ -6304,18 +6325,8 @@ async def code_nav(data: dict[str, Any]) -> dict[str, Any]:
         from agent_utilities.mcp.tools.query_tools import build_code_nav_query
 
         action = str(data.get('action', 'find_definition'))
-        depth = int(data.get('depth', 3) or 3)
-        limit = int(data.get('limit', 200) or 200)
-        if not 1 <= depth <= 10 or not 1 <= limit <= _MAX_EXTERNAL_COLLECTION_ITEMS:
-            raise HTTPException(
-                status_code=400, detail='Invalid code navigation bounds'
-            )
-        for field in ('symbol', 'node_id', 'source_system'):
-            value = data.get(field, '')
-            if not isinstance(value, str) or len(value.encode('utf-8')) > 2048:
-                raise HTTPException(
-                    status_code=400, detail='Invalid code navigation input'
-                )
+        depth, limit = _code_nav_bounds(data)
+        _validate_code_nav_inputs(data)
         cypher, params = build_code_nav_query(
             action=action,
             symbol=str(data.get('symbol', '')),
@@ -7103,46 +7114,52 @@ async def list_library_tools(mcp_server: str | None = None) -> list[dict[str, An
         raise HTTPException(status_code=400, detail='Invalid MCP server filter')
     try:
         engine = await _get_engine_bounded()
-        if mcp_server:
-            query = (
-                'MATCH (t:Tool) WHERE t.mcp_server = $s RETURN t.id AS id, '
-                't.name AS name, t.mcp_server AS mcp_server, t.tags AS tags '
-                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
-            )
-            params = {'s': mcp_server}
-        else:
-            query = (
-                'MATCH (t:Tool) RETURN t.id AS id, t.name AS name, '
-                't.mcp_server AS mcp_server, t.tags AS tags '
-                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
-            )
-            params = {}
+        query, params = _library_tool_query(mcp_server)
         rows = await _invoke_governed_helper(
             engine.backend.execute, query, params, deadline=15.0
         )
-        tools = [
-            {
-                'id': r.get('id'),
-                'name': r.get('name'),
-                'mcp_server': r.get('mcp_server'),
-                'tags': r.get('tags') or [],
-            }
-            for r in (rows or [])
-            if isinstance(r, dict) and r.get('id')
-        ]
-        tools.sort(
-            key=lambda t: (
-                str(t.get('mcp_server') or ''),
-                str(t.get('name') or '').lower(),
-            )
-        )
-        bounded = _public_external_result(tools)
-        return bounded if isinstance(bounded, list) else []
+        return _bounded_list_result(_sorted_library_tools(rows))
     except HTTPException:
         raise
     except Exception as e:
         _log_failure('list_library_tools', e)
         return []
+
+
+def _library_tool_query(mcp_server: str | None) -> tuple[str, dict[str, Any]]:
+    """The `:Tool` listing query, optionally scoped to one owning mcp_server."""
+    projection = (
+        'RETURN t.id AS id, t.name AS name, '
+        't.mcp_server AS mcp_server, t.tags AS tags '
+        f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+    )
+    if mcp_server:
+        return (
+            f'MATCH (t:Tool) WHERE t.mcp_server = $s {projection}',
+            {'s': mcp_server},
+        )
+    return f'MATCH (t:Tool) {projection}', {}
+
+
+def _sorted_library_tools(rows: Any) -> list[dict[str, Any]]:
+    """Tool-picker entries, ordered by owning server then name."""
+    tools = [
+        {
+            'id': r.get('id'),
+            'name': r.get('name'),
+            'mcp_server': r.get('mcp_server'),
+            'tags': r.get('tags') or [],
+        }
+        for r in (rows or [])
+        if isinstance(r, dict) and r.get('id')
+    ]
+    tools.sort(
+        key=lambda t: (
+            str(t.get('mcp_server') or ''),
+            str(t.get('name') or '').lower(),
+        )
+    )
+    return tools
 
 
 def _library_bound_servers(bound_rows: Any) -> set[str]:
@@ -8802,15 +8819,7 @@ async def submit_session_reply(
 ) -> dict[str, Any]:
     """Submit an interactive user reply turn to a waiting agent session."""
     session_id = _validate_runtime_id(session_id)
-    raw_content = payload.get('content', '')
-    if not isinstance(raw_content, str):
-        raise HTTPException(status_code=400, detail='Reply content must be text')
-    if len(raw_content.encode('utf-8')) > _MAX_SESSION_REPLY_BYTES:
-        raise HTTPException(status_code=400, detail='Reply content exceeds its limit')
-    safe_content, _privacy_report = sanitize_for_persistence(raw_content)
-    content = str(safe_content).strip()
-    if not content:
-        raise HTTPException(status_code=400, detail='Reply content cannot be empty')
+    content = _session_reply_content(payload)
     if _is_gateway_active():
         try:
             return await _proxy_to_gateway(
@@ -8826,54 +8835,73 @@ async def submit_session_reply(
         raise HTTPException(status_code=404, detail='Database not found')
 
     try:
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-
-        cursor.execute('SELECT turn_count FROM sessions WHERE id = ?', (session_id,))
-        row = cursor.fetchone()
-        if not row:
-            conn.close()
-            raise HTTPException(status_code=404, detail='Session not found')
-
-        turn_num = row[0]
-        turn_id = str(uuid.uuid4())
-
-        cursor.execute(
-            'INSERT INTO turns (id, session_id, turn_number, role, content, created_at, status, usage_json, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (
-                turn_id,
-                session_id,
-                turn_num + 1,
-                'user',
-                content,
-                time.time(),
-                'completed',
-                '{}',
-                0,
-            ),
-        )
-
-        cursor.execute(
-            'UPDATE sessions SET turn_count = turn_count + 1, needs_input = 0, updated_at = ? WHERE id = ?',
-            (time.time(), session_id),
-        )
-
-        conn.commit()
-        conn.close()
-
-        # Wake up background runner if it is paused waiting for input
-        if session_id in background_goal_runs:
-            run = background_goal_runs[session_id]
-            run['user_reply'] = content
-            if run['event']:
-                run['event'].set()
-
+        _append_session_reply_turn(db_path, session_id, content)
+        _wake_waiting_goal_run(session_id, content)
         return {'status': 'success', 'message': 'Reply submitted successfully.'}
     except HTTPException:
         raise
     except Exception as e:
         _log_failure('api_extension', e)
         raise HTTPException(status_code=500, detail=type(e).__name__)
+
+
+def _session_reply_content(payload: dict[str, Any]) -> str:
+    """The bounded, privacy-sanitized text of an interactive reply turn."""
+    raw_content = payload.get('content', '')
+    if not isinstance(raw_content, str):
+        raise HTTPException(status_code=400, detail='Reply content must be text')
+    if len(raw_content.encode('utf-8')) > _MAX_SESSION_REPLY_BYTES:
+        raise HTTPException(status_code=400, detail='Reply content exceeds its limit')
+    safe_content, _privacy_report = sanitize_for_persistence(raw_content)
+    content = str(safe_content).strip()
+    if not content:
+        raise HTTPException(status_code=400, detail='Reply content cannot be empty')
+    return content
+
+
+def _append_session_reply_turn(db_path: Any, session_id: str, content: str) -> None:
+    """Record the reply as the session's next user turn; a miss is a 404."""
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT turn_count FROM sessions WHERE id = ?', (session_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail='Session not found')
+
+    cursor.execute(
+        'INSERT INTO turns (id, session_id, turn_number, role, content, created_at, status, usage_json, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (
+            str(uuid.uuid4()),
+            session_id,
+            row[0] + 1,
+            'user',
+            content,
+            time.time(),
+            'completed',
+            '{}',
+            0,
+        ),
+    )
+
+    cursor.execute(
+        'UPDATE sessions SET turn_count = turn_count + 1, needs_input = 0, updated_at = ? WHERE id = ?',
+        (time.time(), session_id),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def _wake_waiting_goal_run(session_id: str, content: str) -> None:
+    """Wake up the background runner if it is paused waiting for input."""
+    run = background_goal_runs.get(session_id)
+    if run is None:
+        return
+    run['user_reply'] = content
+    if run['event']:
+        run['event'].set()
 
 
 @router.post('/sessions/{session_id}/cancel')
@@ -11126,7 +11154,20 @@ async def get_searxng_search(q: str = 'agent-utilities'):
     if isinstance(data, dict) and data.get('error'):
         return _service_error(RuntimeError(data['error']), query=q, results=[])
     raw_results = data.get('results', []) if isinstance(data, dict) else data
-    results = [
+    bounded = _public_external_result(
+        {
+            'status': 'success',
+            'source': 'live',
+            'query': q,
+            'results': _searxng_result_records(raw_results),
+        }
+    )
+    return bounded if isinstance(bounded, dict) else {'status': 'error'}
+
+
+def _searxng_result_records(raw_results: Any) -> list[dict[str, Any]]:
+    """SearXNG hits in the shape EcosystemView.tsx consumes."""
+    return [
         {
             'title': r.get('title'),
             'url': r.get('url'),
@@ -11136,15 +11177,6 @@ async def get_searxng_search(q: str = 'agent-utilities'):
         for r in (raw_results if isinstance(raw_results, list) else [])
         if isinstance(r, dict)
     ]
-    bounded = _public_external_result(
-        {
-            'status': 'success',
-            'source': 'live',
-            'query': q,
-            'results': results,
-        }
-    )
-    return bounded if isinstance(bounded, dict) else {'status': 'error'}
 
 
 @router.get('/ecosystem/homeassistant/devices')
@@ -12144,6 +12176,17 @@ async def list_workflows() -> list[dict[str, Any]]:
         ) from e
 
 
+def _palette_agent_entry(agent_props: dict[str, Any]) -> dict[str, Any]:
+    """One `:Agent` node as a workflow-editor palette entry."""
+    tools = agent_props.get('tools')
+    return {
+        'id': agent_props.get('id') or agent_props.get('name', ''),
+        'name': agent_props.get('name', agent_props.get('id', '')),
+        'system_prompt': agent_props.get('system_prompt'),
+        'tools': tools.split(',') if isinstance(tools, str) and tools else tools,
+    }
+
+
 @router.get('/workflows/capabilities')
 async def workflow_capabilities() -> dict[str, list[dict[str, Any]]]:
     """Return the palette catalog (agents/tools/skills) in a single call.
@@ -12164,22 +12207,11 @@ async def workflow_capabilities() -> dict[str, list[dict[str, Any]]]:
             f'MATCH (a:Agent) RETURN a LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
             deadline=15.0,
         )
-        for row in rows:
-            a = row.get('a', {})
-            if not isinstance(a, dict):
-                continue
-            agents.append(
-                {
-                    'id': a.get('id') or a.get('name', ''),
-                    'name': a.get('name', a.get('id', '')),
-                    'system_prompt': a.get('system_prompt'),
-                    'tools': (
-                        a.get('tools', '').split(',')
-                        if isinstance(a.get('tools'), str) and a.get('tools')
-                        else a.get('tools')
-                    ),
-                }
-            )
+        agents = [
+            _palette_agent_entry(row.get('a', {}))
+            for row in rows
+            if isinstance(row.get('a', {}), dict)
+        ]
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
@@ -12187,16 +12219,18 @@ async def workflow_capabilities() -> dict[str, list[dict[str, Any]]]:
     # Tools + skills reuse the categorized /tools catalog.
     try:
         catalog = await list_all_tools()
-        for t in catalog.get('mcp_tools', []) + catalog.get('builtin_tools', []):
-            tools.append({'id': t.get('name', ''), 'name': t.get('name', '')})
-        for s in catalog.get('skills', []) + catalog.get('skill_graphs', []):
-            skills.append(
-                {
-                    'id': s.get('id', s.get('name', '')),
-                    'name': s.get('name', ''),
-                    'description': s.get('description', ''),
-                }
-            )
+        tools = [
+            {'id': t.get('name', ''), 'name': t.get('name', '')}
+            for t in catalog.get('mcp_tools', []) + catalog.get('builtin_tools', [])
+        ]
+        skills = [
+            {
+                'id': s.get('id', s.get('name', '')),
+                'name': s.get('name', ''),
+                'description': s.get('description', ''),
+            }
+            for s in catalog.get('skills', []) + catalog.get('skill_graphs', [])
+        ]
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
@@ -13098,6 +13132,26 @@ async def ontology_object_set_search(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _search_around_bounds(data: dict[str, Any]) -> tuple[Any, int, int, str]:
+    """Validate ``{link_type, hops, cap, direction}`` for a search-around."""
+    link_type = data.get('link_type')
+    hops = int(data.get('hops', 1) or 1)
+    cap = int(
+        data.get('cap', _MAX_EXTERNAL_COLLECTION_ITEMS)
+        or _MAX_EXTERNAL_COLLECTION_ITEMS
+    )
+    direction = str(data.get('direction', 'out') or 'out')
+    if not 1 <= hops <= 10 or not 1 <= cap <= _MAX_EXTERNAL_COLLECTION_ITEMS:
+        raise HTTPException(status_code=400, detail='Invalid traversal bounds')
+    if direction not in {'in', 'out', 'both'}:
+        raise HTTPException(status_code=400, detail='Invalid traversal direction')
+    if link_type is not None and (
+        not isinstance(link_type, str) or len(link_type.encode('utf-8')) > 128
+    ):
+        raise HTTPException(status_code=400, detail='Invalid link type')
+    return link_type, hops, cap, direction
+
+
 @router.post('/ontology/object-set/search-around')
 async def ontology_object_set_search_around(
     data: dict[str, Any], request: Request
@@ -13109,21 +13163,7 @@ async def ontology_object_set_search_around(
     try:
         actor = _actor_context(request)
         ids = _bounded_identifier_list(data.get('ids'), required=True)
-        link_type = data.get('link_type')
-        hops = int(data.get('hops', 1) or 1)
-        cap = int(
-            data.get('cap', _MAX_EXTERNAL_COLLECTION_ITEMS)
-            or _MAX_EXTERNAL_COLLECTION_ITEMS
-        )
-        direction = str(data.get('direction', 'out') or 'out')
-        if not 1 <= hops <= 10 or not 1 <= cap <= _MAX_EXTERNAL_COLLECTION_ITEMS:
-            raise HTTPException(status_code=400, detail='Invalid traversal bounds')
-        if direction not in {'in', 'out', 'both'}:
-            raise HTTPException(status_code=400, detail='Invalid traversal direction')
-        if link_type is not None and (
-            not isinstance(link_type, str) or len(link_type.encode('utf-8')) > 128
-        ):
-            raise HTTPException(status_code=400, detail='Invalid link type')
+        link_type, hops, cap, direction = _search_around_bounds(data)
 
         # FIX LANE Priority 1: fanned out per accessible graph and merged by
         # object id, same reasoning as `ontology_object_set_search` above. A
