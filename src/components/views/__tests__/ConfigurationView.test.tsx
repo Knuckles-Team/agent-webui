@@ -64,6 +64,16 @@ const CONFIG_GROUPS = {
 
 const SECRET_STATUS = { fields: { OPENAI_API_KEY: true } }
 
+/** GET routes the mock answers, checked in this order — same as the original
+ * if-chain — via URL substring match. Each entry's `key` looks up an optional
+ * per-test `overrides` responder before falling back to its default body. */
+const GET_ROUTES: { match: string; key: string; fallback: () => Response }[] = [
+  { match: '/config/schema', key: 'schema', fallback: () => jsonResponse(AGENT_CONFIG_SCHEMA) },
+  { match: '/config/groups', key: 'groups', fallback: () => jsonResponse(CONFIG_GROUPS) },
+  { match: '/config/secret-status', key: 'secretStatus', fallback: () => jsonResponse(SECRET_STATUS) },
+  { match: '/api/enhanced/config', key: 'config', fallback: () => jsonResponse(CONFIG_DOCUMENT) },
+]
+
 function mockFetch(overrides: Partial<Record<string, () => Response>> = {}) {
   const putCalls: { url: string; body: unknown }[] = []
   global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -72,17 +82,10 @@ function mockFetch(overrides: Partial<Record<string, () => Response>> = {}) {
       putCalls.push({ url, body: init.body ? JSON.parse(init.body as string) : null })
       return Promise.resolve(overrides.put ? overrides.put() : jsonResponse({ status: 'success' }))
     }
-    if (url.includes('/config/schema')) {
-      return Promise.resolve(overrides.schema ? overrides.schema() : jsonResponse(AGENT_CONFIG_SCHEMA))
-    }
-    if (url.includes('/config/groups')) {
-      return Promise.resolve(overrides.groups ? overrides.groups() : jsonResponse(CONFIG_GROUPS))
-    }
-    if (url.includes('/config/secret-status')) {
-      return Promise.resolve(overrides.secretStatus ? overrides.secretStatus() : jsonResponse(SECRET_STATUS))
-    }
-    if (url.includes('/api/enhanced/config')) {
-      return Promise.resolve(overrides.config ? overrides.config() : jsonResponse(CONFIG_DOCUMENT))
+    const route = GET_ROUTES.find((r) => url.includes(r.match))
+    if (route) {
+      const override = overrides[route.key]
+      return Promise.resolve(override ? override() : route.fallback())
     }
     return Promise.reject(new Error(`unexpected fetch: ${url}`))
   }) as unknown as typeof fetch
