@@ -39,6 +39,7 @@ import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 import { useIdentity } from '@/lib/auth'
 import { ROLE_ORDER, type Role } from '@/lib/nav-registry'
 import { fetchPrincipalsAndRoles, grantRole, revokeRole, type PrincipalsState } from '@/lib/user-management-api'
+import type { AgentIdentity } from '@/lib/admin-api'
 
 function IdentityCard() {
   const { identity, loading } = useIdentity()
@@ -118,7 +119,30 @@ function IdentityCard() {
   )
 }
 
-function PrincipalsSection({ isAdmin }: { isAdmin: boolean }) {
+type MutationResult = Awaited<ReturnType<typeof grantRole>>
+
+/** Toast a grant/revoke `MutationResult`, one message per outcome `kind`. */
+function toastMutationOutcome(
+  result: MutationResult,
+  copy: { ok: string; unavailable: string; forbidden: string; error: string },
+) {
+  switch (result.kind) {
+    case 'ok':
+      toast.success(copy.ok)
+      return
+    case 'unavailable':
+      toast.error(`${copy.unavailable}: ${result.detail}`)
+      return
+    case 'forbidden':
+      toast.error(`Forbidden: ${copy.forbidden} (${result.detail})`)
+      return
+    case 'error':
+      toast.error(`${copy.error}: ${result.detail}`)
+  }
+}
+
+/** All principals-admin state + mutations, kept out of the section's render body. */
+function usePrincipalsAdmin() {
   const [state, setState] = useState<PrincipalsState | null>(null)
   const [loading, setLoading] = useState(false)
   const [newIdentityId, setNewIdentityId] = useState('')
@@ -144,42 +168,215 @@ function PrincipalsSection({ isAdmin }: { isAdmin: boolean }) {
     setMutating(true)
     const result = await grantRole(newIdentityId.trim(), newRole)
     setMutating(false)
+    toastMutationOutcome(result, {
+      ok: `Granted ${newRole} to ${newIdentityId.trim()}.`,
+      unavailable: 'Role grants are not available yet',
+      forbidden: 'you are not permitted to grant roles.',
+      error: 'Grant failed',
+    })
     if (result.kind === 'ok') {
-      toast.success(`Granted ${newRole} to ${newIdentityId.trim()}.`)
       setNewIdentityId('')
       void refresh()
-      return
     }
-    if (result.kind === 'unavailable') {
-      toast.error(`Role grants are not available yet: ${result.detail}`)
-      return
-    }
-    if (result.kind === 'forbidden') {
-      toast.error(`Forbidden: you are not permitted to grant roles. (${result.detail})`)
-      return
-    }
-    toast.error(`Grant failed: ${result.detail}`)
   }
 
   const handleRevoke = async (identityId: string, role: string) => {
     setMutating(true)
     const result = await revokeRole(identityId, role)
     setMutating(false)
-    if (result.kind === 'ok') {
-      toast.success(`Revoked ${role} from ${identityId}.`)
-      void refresh()
-      return
-    }
-    if (result.kind === 'unavailable') {
-      toast.error(`Role revocation is not available yet: ${result.detail}`)
-      return
-    }
-    if (result.kind === 'forbidden') {
-      toast.error(`Forbidden: you are not permitted to revoke roles. (${result.detail})`)
-      return
-    }
-    toast.error(`Revoke failed: ${result.detail}`)
+    toastMutationOutcome(result, {
+      ok: `Revoked ${role} from ${identityId}.`,
+      unavailable: 'Role revocation is not available yet',
+      forbidden: 'you are not permitted to revoke roles.',
+      error: 'Revoke failed',
+    })
+    if (result.kind === 'ok') void refresh()
   }
+
+  return {
+    state,
+    loading,
+    newIdentityId,
+    setNewIdentityId,
+    newRole,
+    setNewRole,
+    mutating,
+    refresh,
+    handleGrant,
+    handleRevoke,
+  }
+}
+
+function PrincipalRow({
+  identity,
+  isAdmin,
+  mutating,
+  onRevoke,
+}: {
+  identity: AgentIdentity
+  isAdmin: boolean
+  mutating: boolean
+  onRevoke: (identityId: string, role: string) => void
+}) {
+  return (
+    <div className="rounded border p-2 text-sm flex items-center justify-between gap-2">
+      <div>
+        <span className="font-mono">{identity.id}</span>
+        <div className="flex flex-wrap gap-1 mt-1">
+          {(identity.roles ?? []).map((role: string) => (
+            <Badge key={role} variant="outline" className="text-xs gap-1">
+              <KeyRound className="size-3" />
+              {role}
+              {isAdmin && (
+                <button
+                  type="button"
+                  aria-label={`Revoke ${role} from ${identity.id}`}
+                  className="ml-1 opacity-60 hover:opacity-100"
+                  disabled={mutating}
+                  onClick={() => {
+                    onRevoke(identity.id, role)
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </Badge>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PrincipalsListBody({
+  loading,
+  state,
+  isAdmin,
+  mutating,
+  onRevoke,
+}: {
+  loading: boolean
+  state: PrincipalsState | null
+  isAdmin: boolean
+  mutating: boolean
+  onRevoke: (identityId: string, role: string) => void
+}) {
+  if (loading || state === null) {
+    return <Loader2 className="size-5 animate-spin text-muted-foreground" />
+  }
+  if (state.kind === 'unavailable') {
+    return (
+      <div className="space-y-2" data-testid="principals-state-unavailable">
+        <UnavailableNotice what="Principals and role grants" />
+        {state.detail && <p className="text-xs text-muted-foreground font-mono">{state.detail}</p>}
+        <p className="text-xs text-muted-foreground">
+          No REST route lists RBAC principals or grants roles yet (the engine's <code>RbacAdmin</code>/
+          <code>GetIdentity</code> methods are UDS-only today). This panel will populate as soon as one exists.
+        </p>
+      </div>
+    )
+  }
+  if (state.kind === 'forbidden') {
+    return (
+      <div className="space-y-2" data-testid="principals-state-forbidden">
+        <p className="text-sm text-destructive flex items-center gap-2">
+          <ShieldAlert className="size-4 shrink-0" /> You do not have permission to view principals and role grants.
+        </p>
+        {state.detail && <p className="text-xs text-muted-foreground font-mono">{state.detail}</p>}
+      </div>
+    )
+  }
+  if (state.kind === 'error') {
+    return (
+      <div className="space-y-2" data-testid="principals-state-error">
+        <p className="text-sm text-destructive flex items-center gap-2">
+          <ShieldAlert className="size-4 shrink-0" /> Could not read principals and role grants.
+        </p>
+        <p className="text-xs text-muted-foreground font-mono">{state.detail}</p>
+      </div>
+    )
+  }
+  if (state.kind === 'empty') {
+    return (
+      <p className="text-sm text-muted-foreground" data-testid="principals-state-empty">
+        No principals reported. This is a confirmed empty roster, not a failed read.
+      </p>
+    )
+  }
+  return (
+    <div className="space-y-2" data-testid="principals-state-ready">
+      {(state.policy.identities ?? []).map((identity) => (
+        <PrincipalRow
+          key={identity.id}
+          identity={identity}
+          isAdmin={isAdmin}
+          mutating={mutating}
+          onRevoke={onRevoke}
+        />
+      ))}
+    </div>
+  )
+}
+
+function GrantForm({
+  newIdentityId,
+  setNewIdentityId,
+  newRole,
+  setNewRole,
+  mutating,
+  onGrant,
+}: {
+  newIdentityId: string
+  setNewIdentityId: (v: string) => void
+  newRole: Role
+  setNewRole: (v: Role) => void
+  mutating: boolean
+  onGrant: () => void
+}) {
+  return (
+    <div className="flex items-end gap-2 pt-2 border-t" data-testid="user-mgmt-grant-form">
+      <div className="flex-1">
+        <label htmlFor="grant-identity-id" className="text-xs font-semibold text-muted-foreground uppercase">
+          Principal id
+        </label>
+        <Input
+          id="grant-identity-id"
+          value={newIdentityId}
+          onChange={(e) => {
+            setNewIdentityId(e.target.value)
+          }}
+          placeholder="e.g. 5102c7f9…"
+          className="h-9"
+        />
+      </div>
+      <div>
+        <label htmlFor="grant-role" className="text-xs font-semibold text-muted-foreground uppercase">
+          Role
+        </label>
+        <select
+          id="grant-role"
+          value={newRole}
+          onChange={(e) => {
+            setNewRole(e.target.value as Role)
+          }}
+          className="w-full rounded-md border px-2 text-xs bg-muted/20 border-border/40 font-mono h-9"
+        >
+          {ROLE_ORDER.map((role) => (
+            <option key={role} value={role}>
+              {role}
+            </option>
+          ))}
+        </select>
+      </div>
+      <Button onClick={onGrant} disabled={mutating} size="sm">
+        Grant
+      </Button>
+    </div>
+  )
+}
+
+function PrincipalsSection({ isAdmin }: { isAdmin: boolean }) {
+  const admin = usePrincipalsAdmin()
 
   return (
     <Card data-testid="user-mgmt-principals">
@@ -195,123 +392,36 @@ function PrincipalsSection({ isAdmin }: { isAdmin: boolean }) {
           variant="outline"
           size="sm"
           onClick={() => {
-            void refresh()
+            void admin.refresh()
           }}
-          disabled={loading}
+          disabled={admin.loading}
         >
-          <RefreshCw className={loading ? 'size-4 animate-spin' : 'size-4'} />
+          <RefreshCw className={admin.loading ? 'size-4 animate-spin' : 'size-4'} />
           <span className="ml-2">Refresh</span>
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        {loading || state === null ? (
-          <Loader2 className="size-5 animate-spin text-muted-foreground" />
-        ) : state.kind === 'unavailable' ? (
-          <div className="space-y-2" data-testid="principals-state-unavailable">
-            <UnavailableNotice what="Principals and role grants" />
-            {state.detail && <p className="text-xs text-muted-foreground font-mono">{state.detail}</p>}
-            <p className="text-xs text-muted-foreground">
-              No REST route lists RBAC principals or grants roles yet (the engine's <code>RbacAdmin</code>/
-              <code>GetIdentity</code> methods are UDS-only today). This panel will populate as soon as one exists.
-            </p>
-          </div>
-        ) : state.kind === 'forbidden' ? (
-          <div className="space-y-2" data-testid="principals-state-forbidden">
-            <p className="text-sm text-destructive flex items-center gap-2">
-              <ShieldAlert className="size-4 shrink-0" /> You do not have permission to view principals and role
-              grants.
-            </p>
-            {state.detail && <p className="text-xs text-muted-foreground font-mono">{state.detail}</p>}
-          </div>
-        ) : state.kind === 'error' ? (
-          <div className="space-y-2" data-testid="principals-state-error">
-            <p className="text-sm text-destructive flex items-center gap-2">
-              <ShieldAlert className="size-4 shrink-0" /> Could not read principals and role grants.
-            </p>
-            <p className="text-xs text-muted-foreground font-mono">{state.detail}</p>
-          </div>
-        ) : state.kind === 'empty' ? (
-          <p className="text-sm text-muted-foreground" data-testid="principals-state-empty">
-            No principals reported. This is a confirmed empty roster, not a failed read.
-          </p>
-        ) : (
-          <div className="space-y-2" data-testid="principals-state-ready">
-            {(state.policy.identities ?? []).map((identity) => (
-              <div key={identity.id} className="rounded border p-2 text-sm flex items-center justify-between gap-2">
-                <div>
-                  <span className="font-mono">{identity.id}</span>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {(identity.roles ?? []).map((role) => (
-                      <Badge key={role} variant="outline" className="text-xs gap-1">
-                        <KeyRound className="size-3" />
-                        {role}
-                        {isAdmin && (
-                          <button
-                            type="button"
-                            aria-label={`Revoke ${role} from ${identity.id}`}
-                            className="ml-1 opacity-60 hover:opacity-100"
-                            disabled={mutating}
-                            onClick={() => {
-                              void handleRevoke(identity.id, role)
-                            }}
-                          >
-                            ×
-                          </button>
-                        )}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <PrincipalsListBody
+          loading={admin.loading}
+          state={admin.state}
+          isAdmin={isAdmin}
+          mutating={admin.mutating}
+          onRevoke={(identityId, role) => {
+            void admin.handleRevoke(identityId, role)
+          }}
+        />
 
         {isAdmin ? (
-          <div className="flex items-end gap-2 pt-2 border-t" data-testid="user-mgmt-grant-form">
-            <div className="flex-1">
-              <label htmlFor="grant-identity-id" className="text-xs font-semibold text-muted-foreground uppercase">
-                Principal id
-              </label>
-              <Input
-                id="grant-identity-id"
-                value={newIdentityId}
-                onChange={(e) => {
-                  setNewIdentityId(e.target.value)
-                }}
-                placeholder="e.g. 5102c7f9…"
-                className="h-9"
-              />
-            </div>
-            <div>
-              <label htmlFor="grant-role" className="text-xs font-semibold text-muted-foreground uppercase">
-                Role
-              </label>
-              <select
-                id="grant-role"
-                value={newRole}
-                onChange={(e) => {
-                  setNewRole(e.target.value as Role)
-                }}
-                className="w-full rounded-md border px-2 text-xs bg-muted/20 border-border/40 font-mono h-9"
-              >
-                {ROLE_ORDER.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <Button
-              onClick={() => {
-                void handleGrant()
-              }}
-              disabled={mutating}
-              size="sm"
-            >
-              Grant
-            </Button>
-          </div>
+          <GrantForm
+            newIdentityId={admin.newIdentityId}
+            setNewIdentityId={admin.setNewIdentityId}
+            newRole={admin.newRole}
+            setNewRole={admin.setNewRole}
+            mutating={admin.mutating}
+            onGrant={() => {
+              void admin.handleGrant()
+            }}
+          />
         ) : (
           <p className="text-xs text-muted-foreground pt-2 border-t">Admin role required to grant or revoke roles.</p>
         )}
