@@ -49,6 +49,16 @@ export function resolveJsonSchema(schema: JsonSchema, root: JsonSchema): JsonSch
   return variant ? { ...base, ...resolveJsonSchema(variant, root), anyOf: undefined, oneOf: undefined } : base
 }
 
+/** First concrete (non-null) type named by a `anyOf`/`oneOf` variant list. */
+function firstVariantType(variants: JsonSchema[] | undefined, root: JsonSchema): string | undefined {
+  if (!variants) return undefined
+  for (const variant of variants) {
+    const type = schemaType(variant, root)
+    if (type && type !== 'null') return type
+  }
+  return undefined
+}
+
 export function schemaType(schema: JsonSchema, root: JsonSchema): string | undefined {
   if (schema.$ref) {
     const target = localRef(root, schema.$ref)
@@ -56,47 +66,73 @@ export function schemaType(schema: JsonSchema, root: JsonSchema): string | undef
   }
   if (Array.isArray(schema.type)) return schema.type.find((item) => item !== 'null')
   if (schema.type) return schema.type
-  const variants = schema.anyOf ?? schema.oneOf
-  if (variants) {
-    for (const variant of variants) {
-      const type = schemaType(variant, root)
-      if (type && type !== 'null') return type
-    }
-  }
+  const fromVariants = firstVariantType(schema.anyOf ?? schema.oneOf, root)
+  if (fromVariants) return fromVariants
   if (schema.properties) return 'object'
+  return undefined
+}
+
+/** A field name matching one of `context.filters`, exactly or case-insensitively. */
+function filterValue(name: string, normalized: string, context: PageContextEnvelope): unknown {
+  if (name in context.filters) return context.filters[name]
+  const matchingFilter = Object.entries(context.filters).find(([key]) => key.toLowerCase() === normalized)
+  return matchingFilter?.[1]
+}
+
+const CONTEXT_NAMES = new Set(['page_context', 'context'])
+const ROUTE_NAMES = new Set(['route', 'page_route'])
+const VIEW_NAMES = new Set(['view', 'page_view'])
+
+/** Whole-page-context aliases: the envelope itself, its filters, the route, or the view. */
+function pageValue(normalized: string, type: string | undefined, context: PageContextEnvelope): unknown {
+  if (CONTEXT_NAMES.has(normalized)) return type === 'object' ? context : undefined
+  if (normalized === 'filters') return type === 'object' ? context.filters : undefined
+  if (ROUTE_NAMES.has(normalized)) return context.route
+  if (VIEW_NAMES.has(normalized)) return context.view
+  return undefined
+}
+
+const TIME_ASOF_NAMES = new Set(['as_of', 'asof', 'timestamp'])
+const TIME_START_NAMES = new Set(['from', 'start', 'start_time'])
+const TIME_END_NAMES = new Set(['to', 'end', 'end_time'])
+
+/** Active time-range aliases, when the page context carries a time range. */
+function timeRangeValue(normalized: string, context: PageContextEnvelope): unknown {
+  if (!context.timeRange) return undefined
+  if (TIME_ASOF_NAMES.has(normalized)) return context.timeRange.asOf
+  if (TIME_START_NAMES.has(normalized)) return context.timeRange.start
+  if (TIME_END_NAMES.has(normalized)) return context.timeRange.end
+  if (normalized === 'timezone') return context.timeRange.timezone
+  return undefined
+}
+
+const SELECTION_ID_NAMES = new Set(['id', 'selection_id', 'node_id', 'object_id', 'memory_id', 'vertex_id', 'target'])
+const SELECTION_IDS_NAMES = new Set(['ids', 'node_ids', 'object_ids', 'selection_ids'])
+
+/** Active-selection aliases: a single id, an array of ids, or the selection's label. */
+function selectionValue(normalized: string, type: string | undefined, context: PageContextEnvelope): unknown {
+  const selection = context.selection.at(0)
+  if (!selection) return undefined
+  if (SELECTION_ID_NAMES.has(normalized)) return selection.id
+  if (type === 'array' && SELECTION_IDS_NAMES.has(normalized)) return context.selection.map((item) => item.id)
+  if (normalized === 'label' || normalized === 'name') return selection.label
   return undefined
 }
 
 function contextualValue(name: string, field: JsonSchema, context: PageContextEnvelope): unknown {
   const normalized = name.toLowerCase()
   const type = schemaType(field, field)
-  const selection = context.selection.at(0)
 
-  if (name in context.filters) return context.filters[name]
-  const matchingFilter = Object.entries(context.filters).find(([key]) => key.toLowerCase() === normalized)
-  if (matchingFilter) return matchingFilter[1]
+  const filtered = filterValue(name, normalized, context)
+  if (filtered !== undefined) return filtered
 
-  if (normalized === 'page_context' || normalized === 'context') return type === 'object' ? context : undefined
-  if (normalized === 'filters') return type === 'object' ? context.filters : undefined
-  if (normalized === 'route' || normalized === 'page_route') return context.route
-  if (normalized === 'view' || normalized === 'page_view') return context.view
+  const paged = pageValue(normalized, type, context)
+  if (paged !== undefined) return paged
 
-  if (context.timeRange) {
-    if (['as_of', 'asof', 'timestamp'].includes(normalized)) return context.timeRange.asOf
-    if (['from', 'start', 'start_time'].includes(normalized)) return context.timeRange.start
-    if (['to', 'end', 'end_time'].includes(normalized)) return context.timeRange.end
-    if (normalized === 'timezone') return context.timeRange.timezone
-  }
+  const timed = timeRangeValue(normalized, context)
+  if (timed !== undefined) return timed
 
-  if (!selection) return undefined
-  if (['id', 'selection_id', 'node_id', 'object_id', 'memory_id', 'vertex_id', 'target'].includes(normalized)) {
-    return selection.id
-  }
-  if (type === 'array' && ['ids', 'node_ids', 'object_ids', 'selection_ids'].includes(normalized)) {
-    return context.selection.map((item) => item.id)
-  }
-  if (normalized === 'label' || normalized === 'name') return selection.label
-  return undefined
+  return selectionValue(normalized, type, context)
 }
 
 function formValue(value: unknown, type: string | undefined): SchemaFormValue {
@@ -126,6 +162,52 @@ function isEmpty(value: SchemaFormValue | undefined): boolean {
   return value === undefined || (typeof value === 'string' && value.trim() === '')
 }
 
+interface FieldResult {
+  value?: unknown
+  issue?: string
+}
+
+/** Parse one form value as a JSON-schema number/integer, or report why it can't be. */
+function materializeNumber(type: string, raw: SchemaFormValue | undefined): FieldResult {
+  const number = Number(raw)
+  if (!Number.isFinite(number) || (type === 'integer' && !Number.isInteger(number))) {
+    return { issue: `Expected ${type}` }
+  }
+  return { value: number }
+}
+
+/** Parse one form value as a JSON-schema object/array, or report why it can't be. */
+function materializeJson(type: string, raw: SchemaFormValue | undefined): FieldResult {
+  try {
+    const parsed = JSON.parse(String(raw)) as unknown
+    const validShape =
+      type === 'array'
+        ? Array.isArray(parsed)
+        : Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed)
+    return validShape ? { value: parsed } : { issue: `Expected a JSON ${type}` }
+  } catch {
+    return { issue: `Expected valid JSON ${type}` }
+  }
+}
+
+/** Convert one field's raw form value into its typed proposal value, or a validation issue. */
+function materializeField(
+  name: string,
+  field: JsonSchema,
+  type: string | undefined,
+  raw: SchemaFormValue | undefined,
+  required: Set<string>,
+): FieldResult {
+  if (isEmpty(raw)) {
+    return required.has(name) ? { issue: 'Required value is missing' } : {}
+  }
+  if (field.const !== undefined) return { value: field.const }
+  if (type === 'boolean') return { value: typeof raw === 'boolean' ? raw : raw === 'true' }
+  if (type === 'number' || type === 'integer') return materializeNumber(type, raw)
+  if (type === 'object' || type === 'array') return materializeJson(type, raw)
+  return { value: String(raw) }
+}
+
 /** Convert editable form state back into the exact typed proposal sent to preflight. */
 export function materializeSchemaInputs(schema: JsonSchema, state: SchemaFormState): MaterializedInputs {
   const inputs: Record<string, unknown> = {}
@@ -136,43 +218,10 @@ export function materializeSchemaInputs(schema: JsonSchema, state: SchemaFormSta
     const field = resolveJsonSchema(rawField, schema)
     const type = schemaType(field, schema)
     const raw = field.const !== undefined ? formValue(field.const, type) : state[name]
+    const result = materializeField(name, field, type, raw, required)
 
-    if (isEmpty(raw)) {
-      if (required.has(name)) issues.push({ field: name, message: 'Required value is missing' })
-      continue
-    }
-
-    if (field.const !== undefined) {
-      inputs[name] = field.const
-      continue
-    }
-
-    if (type === 'boolean') {
-      inputs[name] = typeof raw === 'boolean' ? raw : raw === 'true'
-      continue
-    }
-    if (type === 'number' || type === 'integer') {
-      const number = Number(raw)
-      if (!Number.isFinite(number) || (type === 'integer' && !Number.isInteger(number))) {
-        issues.push({ field: name, message: `Expected ${type}` })
-      } else inputs[name] = number
-      continue
-    }
-    if (type === 'object' || type === 'array') {
-      try {
-        const parsed = JSON.parse(String(raw)) as unknown
-        const validShape =
-          type === 'array'
-            ? Array.isArray(parsed)
-            : Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed)
-        if (!validShape) issues.push({ field: name, message: `Expected a JSON ${type}` })
-        else inputs[name] = parsed
-      } catch {
-        issues.push({ field: name, message: `Expected valid JSON ${type}` })
-      }
-      continue
-    }
-    inputs[name] = String(raw)
+    if (result.issue) issues.push({ field: name, message: result.issue })
+    else if (result.value !== undefined) inputs[name] = result.value
   }
 
   return { inputs, issues }

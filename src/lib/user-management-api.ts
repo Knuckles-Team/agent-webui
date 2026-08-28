@@ -42,6 +42,7 @@
 
 import { z } from 'zod'
 import { gatewayPost } from './gateway'
+import type { GatewayResult } from './gateway'
 import { looseArray } from './api-validation'
 import type { RbacPolicy, RbacRole, RbacGrant, AgentIdentity } from './admin-api'
 
@@ -95,13 +96,29 @@ export type PrincipalsState =
   | { kind: 'empty' }
   | { kind: 'ready'; policy: RbacPolicy }
 
-export async function fetchPrincipalsAndRoles(): Promise<PrincipalsState> {
-  const r = await gatewayPost<unknown>('/configure', { action: 'rbac_list' })
+/** Resolve a failed/unavailable `rbac_list` response into its terminal state, or `null` when the call itself succeeded. */
+function resolveListFailure(r: GatewayResult<unknown>): PrincipalsState | null {
   if (r.unavailable) return { kind: 'unavailable', detail: r.error }
   if (!r.ok) {
     if (isForbiddenError(r.error)) return { kind: 'forbidden', detail: r.error }
     return { kind: 'error', detail: r.error ?? 'Request failed' }
   }
+  return null
+}
+
+/** Classify a successfully parsed policy as `empty` (nothing to show) or `ready`. */
+function policyToState(policy: RbacPolicy): PrincipalsState {
+  const { roles, grants, identities } = policy
+  if (roles.length === 0 && grants.length === 0 && (identities ?? []).length === 0) {
+    return { kind: 'empty' }
+  }
+  return { kind: 'ready', policy }
+}
+
+export async function fetchPrincipalsAndRoles(): Promise<PrincipalsState> {
+  const r = await gatewayPost<unknown>('/configure', { action: 'rbac_list' })
+  const failure = resolveListFailure(r)
+  if (failure) return failure
   if (isUnrecognizedConfigureAction(r.data)) {
     return { kind: 'unavailable', detail: r.data.error }
   }
@@ -113,11 +130,7 @@ export async function fetchPrincipalsAndRoles(): Promise<PrincipalsState> {
       detail: `Unexpected response shape from /api/graph/configure (rbac_list): ${issue.path.join('.')} ${issue.message}`,
     }
   }
-  const { roles, grants, identities } = parsed.data
-  if (roles.length === 0 && grants.length === 0 && (identities ?? []).length === 0) {
-    return { kind: 'empty' }
-  }
-  return { kind: 'ready', policy: parsed.data }
+  return policyToState(parsed.data)
 }
 
 /** Result of a grant/revoke attempt. `kind: 'ok'` is the ONLY success case --
@@ -130,31 +143,36 @@ export type RoleMutationResult =
   | { kind: 'error'; detail: string }
   | { kind: 'ok' }
 
+/** Resolve a failed/unavailable grant-or-revoke response into its terminal state, or `null` when it succeeded. */
+function resolveMutationFailure(r: GatewayResult<unknown>): RoleMutationResult | null {
+  if (r.unavailable) return { kind: 'unavailable', detail: r.error ?? 'Route not found' }
+  if (!r.ok) {
+    if (isForbiddenError(r.error)) return { kind: 'forbidden', detail: r.error ?? 'Forbidden' }
+    return { kind: 'error', detail: r.error ?? 'Request failed' }
+  }
+  return null
+}
+
+/** True when the response body carries the specific `{ [successKey]: true }` confirmation. */
+function confirmedRoleMutation(data: unknown, successKey: string): boolean {
+  return Boolean(
+    data && typeof data === 'object' && !Array.isArray(data) && (data as Record<string, unknown>)[successKey] === true,
+  )
+}
+
 async function probeRoleMutation(
   action: 'rbac_grant' | 'rbac_revoke',
   identityId: string,
   role: string,
 ): Promise<RoleMutationResult> {
   const r = await gatewayPost<unknown>('/configure', { action, identity_id: identityId, role })
-  if (r.unavailable) {
-    return { kind: 'unavailable', detail: r.error ?? 'Route not found' }
-  }
-  if (!r.ok) {
-    if (isForbiddenError(r.error)) return { kind: 'forbidden', detail: r.error ?? 'Forbidden' }
-    return { kind: 'error', detail: r.error ?? 'Request failed' }
-  }
+  const failure = resolveMutationFailure(r)
+  if (failure) return failure
   if (isUnrecognizedConfigureAction(r.data)) {
     return { kind: 'unavailable', detail: r.data.error }
   }
   const successKey = action === 'rbac_grant' ? 'granted' : 'revoked'
-  if (
-    r.data &&
-    typeof r.data === 'object' &&
-    !Array.isArray(r.data) &&
-    (r.data as Record<string, unknown>)[successKey] === true
-  ) {
-    return { kind: 'ok' }
-  }
+  if (confirmedRoleMutation(r.data, successKey)) return { kind: 'ok' }
   return { kind: 'error', detail: 'Server did not confirm the role change.' }
 }
 

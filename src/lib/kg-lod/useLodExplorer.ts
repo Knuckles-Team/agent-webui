@@ -35,9 +35,17 @@
  * renders being wrong, just incomplete.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 
-import type { ClusterSummary, ExpandEdge, ExpandNode, LodGraphScope, LodTransport } from './contract'
+import type {
+  ClusterSummary,
+  ExpandEdge,
+  ExpandNode,
+  ExpandResponse,
+  LodGraphScope,
+  LodTile,
+  LodTransport,
+} from './contract'
 import { clustersToScope, emptyScope, expandToScope, mergeScopes, removeClusterNode, type LodScope } from './lodGraph'
 
 export interface UseLodExplorerOptions {
@@ -85,6 +93,82 @@ interface AccumulatedExpansion {
    * cascade `collapse()` to nested expansions; see that function.
    */
   ancestorExpansionId: string | null
+}
+
+/** Fold one `expand` tile's nodes/clusters into the running accumulator, tagged for this expansion. */
+function applyExpandTile(
+  tile: LodTile<ExpandResponse>,
+  clusterId: string,
+  parentLevel: number,
+  accNodes: ExpandNode[],
+  accClusters: ClusterSummary[],
+): LodScope {
+  accNodes.push(...tile.data.nodes)
+  accClusters.push(...tile.data.child_clusters)
+  const edges: ExpandEdge[] = tile.done ? tile.data.edges : []
+  const childScope = expandToScope({ nodes: accNodes, edges, child_clusters: accClusters }, parentLevel)
+  return { ...childScope, meta: childScope.meta.map((m) => ({ ...m, originClusterId: clusterId })) }
+}
+
+interface ExpandTileSinkParams {
+  transport: LodTransport
+  graph: LodGraphScope
+  clusterId: string
+  parentLevel: number
+  ancestorExpansionId: string | null
+  controller: AbortController
+  setExpanded: Dispatch<SetStateAction<Map<string, AccumulatedExpansion>>>
+  setLastExpandedId: Dispatch<SetStateAction<string | null>>
+  setFollowIndex: Dispatch<SetStateAction<number | null>>
+}
+
+/** The parent level and ancestor expansion (if any) that `clusterId` expands from, per the current scope's meta. */
+function resolveExpansionContext(
+  scope: LodScope,
+  clusterId: string,
+): { parentLevel: number; ancestorExpansionId: string | null } {
+  const clusterMeta = scope.meta.find((m) => m.clusterId === clusterId)
+  return { parentLevel: clusterMeta?.level ?? 0, ancestorExpansionId: clusterMeta?.originClusterId ?? null }
+}
+
+/** Cancel any in-flight fetch for `clusterId`, register a fresh one, and mark it pending. */
+function beginExpansion(
+  clusterId: string,
+  expandAbort: Map<string, AbortController>,
+  setPending: Dispatch<SetStateAction<ReadonlySet<string>>>,
+): AbortController {
+  expandAbort.get(clusterId)?.abort()
+  const controller = new AbortController()
+  expandAbort.set(clusterId, controller)
+  setPending((current) => new Set(current).add(clusterId))
+  return controller
+}
+
+/**
+ * Consume `transport.expand`'s tiles, folding each into `expanded` state as
+ * it lands (progressive tiles -- see this file's module doc). Returns
+ * whether the stream was aborted mid-flight, and (when it wasn't) whether
+ * any tile actually carried nodes or child clusters.
+ */
+async function consumeExpandTiles(p: ExpandTileSinkParams): Promise<{ aborted: boolean; hasChildren: boolean }> {
+  const accNodes: ExpandNode[] = []
+  const accClusters: ClusterSummary[] = []
+  let sawAnyTile = false
+  for await (const tile of p.transport.expand(p.graph, p.clusterId, p.controller.signal)) {
+    if (p.controller.signal.aborted) return { aborted: true, hasChildren: false }
+    sawAnyTile = true
+    const childScope = applyExpandTile(tile, p.clusterId, p.parentLevel, accNodes, accClusters)
+    p.setExpanded((current) => {
+      const next = new Map(current)
+      next.set(p.clusterId, { scope: childScope, ancestorExpansionId: p.ancestorExpansionId })
+      return next
+    })
+    p.setLastExpandedId(p.clusterId)
+    if (tile.done) {
+      p.setFollowIndex(accNodes.length > 0 || accClusters.length > 0 ? 0 : null)
+    }
+  }
+  return { aborted: false, hasChildren: sawAnyTile && (accNodes.length > 0 || accClusters.length > 0) }
 }
 
 export function useLodExplorer({ transport, graph }: UseLodExplorerOptions): UseLodExplorerResult {
@@ -156,40 +240,23 @@ export function useLodExplorer({ transport, graph }: UseLodExplorerOptions): Use
   const expand = useCallback(
     async (clusterId: string): Promise<ExpandOutcome> => {
       if (expanded.has(clusterId)) return 'no-children'
-      const clusterMeta = scope.meta.find((m) => m.clusterId === clusterId)
-      const parentLevel = clusterMeta?.level ?? 0
-      const ancestorExpansionId = clusterMeta?.originClusterId ?? null
+      const { parentLevel, ancestorExpansionId } = resolveExpansionContext(scope, clusterId)
+      const controller = beginExpansion(clusterId, expandAbort.current, setPending)
 
-      expandAbort.current.get(clusterId)?.abort()
-      const controller = new AbortController()
-      expandAbort.current.set(clusterId, controller)
-      setPending((current) => new Set(current).add(clusterId))
-
-      const accNodes: ExpandNode[] = []
-      const accClusters: ClusterSummary[] = []
-      let sawAnyTile = false
       try {
-        for await (const tile of transport.expand(graph, clusterId, controller.signal)) {
-          if (controller.signal.aborted) return 'error'
-          sawAnyTile = true
-          accNodes.push(...tile.data.nodes)
-          accClusters.push(...tile.data.child_clusters)
-          const edges: ExpandEdge[] = tile.done ? tile.data.edges : []
-          let childScope = expandToScope({ nodes: accNodes, edges, child_clusters: accClusters }, parentLevel)
-          childScope = {
-            ...childScope,
-            meta: childScope.meta.map((m) => ({ ...m, originClusterId: clusterId })),
-          }
-          setExpanded((current) => {
-            const next = new Map(current)
-            next.set(clusterId, { scope: childScope, ancestorExpansionId })
-            return next
-          })
-          setLastExpandedId(clusterId)
-          if (tile.done) {
-            setFollowIndex(accNodes.length > 0 || accClusters.length > 0 ? 0 : null)
-          }
-        }
+        const result = await consumeExpandTiles({
+          transport,
+          graph,
+          clusterId,
+          parentLevel,
+          ancestorExpansionId,
+          controller,
+          setExpanded,
+          setLastExpandedId,
+          setFollowIndex,
+        })
+        if (result.aborted) return 'error'
+        return result.hasChildren ? 'expanded' : 'no-children'
       } catch (err) {
         if (controller.signal.aborted) return 'error'
         setError(err instanceof Error ? err.message : String(err))
@@ -201,8 +268,6 @@ export function useLodExplorer({ transport, graph }: UseLodExplorerOptions): Use
           return next
         })
       }
-      if (!sawAnyTile || (accNodes.length === 0 && accClusters.length === 0)) return 'no-children'
-      return 'expanded'
     },
     [transport, graph, expanded, scope],
   )

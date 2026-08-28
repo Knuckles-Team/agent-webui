@@ -133,12 +133,14 @@ export function makeRefId(kind: WorkflowNodeKind, id: string): string {
   return id.startsWith(`${prefix}:`) ? id : `${prefix}:${id}`
 }
 
-/**
- * Topologically orders nodes following edge direction (source → target). Falls
- * back to insertion order for nodes in cycles or disconnected components so the
- * result is always a total order over the input nodes.
- */
-function topologicalOrder(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowNode[] {
+interface TopoGraph {
+  indexById: Map<string, number>
+  indegree: Map<string, number>
+  adjacency: Map<string, string[]>
+}
+
+/** The id→index map, in-degree counts, and adjacency list for Kahn's algorithm, ignoring edges to/from unknown nodes. */
+function buildTopoGraph(nodes: WorkflowNode[], edges: WorkflowEdge[]): TopoGraph {
   const indexById = new Map(nodes.map((n, i) => [n.id, i]))
   const indegree = new Map<string, number>(nodes.map((n) => [n.id, 0]))
   const adjacency = new Map<string, string[]>(nodes.map((n) => [n.id, []]))
@@ -148,11 +150,12 @@ function topologicalOrder(nodes: WorkflowNode[], edges: WorkflowEdge[]): Workflo
     adjacency.get(edge.source)!.push(edge.target)
     indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1)
   }
+  return { indexById, indegree, adjacency }
+}
 
-  // Seed the queue with roots, preserving original ordering for determinism.
-  const ready = nodes.filter((n) => (indegree.get(n.id) ?? 0) === 0).map((n) => n.id)
-  ready.sort((a, b) => (indexById.get(a) ?? 0) - (indexById.get(b) ?? 0))
-
+/** Kahn's algorithm proper: drain `ready` in deterministic (original-index) order, mutating `graph.indegree`. */
+function runKahn(ready: string[], graph: TopoGraph): string[] {
+  const { indexById, indegree, adjacency } = graph
   const ordered: string[] = []
   const seen = new Set<string>()
   while (ready.length > 0) {
@@ -167,6 +170,24 @@ function topologicalOrder(nodes: WorkflowNode[], edges: WorkflowEdge[]): Workflo
       if (remaining <= 0 && !seen.has(target)) ready.push(target)
     }
   }
+  return ordered
+}
+
+/**
+ * Topologically orders nodes following edge direction (source → target). Falls
+ * back to insertion order for nodes in cycles or disconnected components so the
+ * result is always a total order over the input nodes.
+ */
+function topologicalOrder(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowNode[] {
+  const graph = buildTopoGraph(nodes, edges)
+  const { indexById, indegree } = graph
+
+  // Seed the queue with roots, preserving original ordering for determinism.
+  const ready = nodes.filter((n) => (indegree.get(n.id) ?? 0) === 0).map((n) => n.id)
+  ready.sort((a, b) => (indexById.get(a) ?? 0) - (indexById.get(b) ?? 0))
+
+  const ordered = runKahn(ready, graph)
+  const seen = new Set(ordered)
 
   // Append any nodes left out by cycles, in insertion order.
   for (const node of nodes) {
@@ -265,6 +286,23 @@ export function fromWorkflowSpec(spec: WorkflowSpec, canvas?: WorkflowCanvas | n
  * node declares a `requiredCapability` that the connected agent's `tools` /
  * config do not satisfy. If capability data is absent, no warning is produced.
  */
+/** The capability warning for one edge, or `null` when it isn't a step→agent pair needing one. */
+function capabilityWarningForEdge(source: WorkflowNode, target: WorkflowNode): string | null {
+  // Step → Agent where the step requires a capability.
+  const step = [source, target].find((n) => n.data.kind === 'step')
+  const agent = [source, target].find((n) => n.data.kind === 'agent')
+  if (!step || !agent) return null
+
+  const required = step.data.config?.requiredCapability
+  if (!required) return null
+
+  const caps = agent.data.config?.tools ?? []
+  if (caps.length === 0) return null // No capability data — skip gracefully.
+
+  if (caps.some((c) => c.toLowerCase().includes(required.toLowerCase()))) return null
+  return `"${agent.data.label}" lacks required capability "${required}" for step "${step.data.label}"`
+}
+
 export function validateCapabilities(nodes: WorkflowNode[], edges: WorkflowEdge[]): string[] {
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const warnings: string[] = []
@@ -273,21 +311,8 @@ export function validateCapabilities(nodes: WorkflowNode[], edges: WorkflowEdge[
     const source = byId.get(edge.source)
     const target = byId.get(edge.target)
     if (!source || !target) continue
-
-    // Step → Agent where the step requires a capability.
-    const step = [source, target].find((n) => n.data.kind === 'step')
-    const agent = [source, target].find((n) => n.data.kind === 'agent')
-    if (!step || !agent) continue
-
-    const required = step.data.config?.requiredCapability
-    if (!required) continue
-
-    const caps = agent.data.config?.tools ?? []
-    if (caps.length === 0) continue // No capability data — skip gracefully.
-
-    if (!caps.some((c) => c.toLowerCase().includes(required.toLowerCase()))) {
-      warnings.push(`"${agent.data.label}" lacks required capability "${required}" for step "${step.data.label}"`)
-    }
+    const warning = capabilityWarningForEdge(source, target)
+    if (warning) warnings.push(warning)
   }
 
   return warnings

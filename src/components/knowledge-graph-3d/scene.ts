@@ -555,37 +555,46 @@ export class Graph3DScene {
   private applyState(): void {
     const model = this.model
     if (!model || !this.nodes) return
-    const n = model.nodes.length
     const focus = this.selected ?? this.hovered
 
-    if (focus == null) {
-      this.tier.fill(TIER_NORMAL)
-    } else {
-      this.tier.fill(TIER_DIMMED)
-      // BFS to `contextHops`, keeping the hop number as the tier.
-      this.tier[focus] = TIER_SELECTED
-      let frontier = [focus]
-      for (let hop = 1; hop <= this.contextHops && frontier.length > 0; hop += 1) {
-        const next: number[] = []
-        const tierForHop = hop === 1 ? TIER_NEIGHBOUR : TIER_CONTEXT
-        for (const node of frontier) {
-          for (let k = model.adjOffset[node]; k < model.adjOffset[node + 1]; k += 1) {
-            const nb = model.adjTarget[k]
-            if (this.relFilter && !this.relFilter.has(model.edges[model.adjEdge[k]].r)) continue
-            if (this.tier[nb] !== TIER_DIMMED) continue
-            this.tier[nb] = tierForHop
-            next.push(nb)
-          }
-        }
-        frontier = next
-      }
-    }
-    if (this.visible) {
-      for (let i = 0; i < n; i += 1) if (this.visible[i] === 0) this.tier[i] = TIER_HIDDEN
-    }
+    if (focus == null) this.tier.fill(TIER_NORMAL)
+    else this.computeFocusTiers(model, focus)
+    this.applyVisibilityMask(model.nodes.length)
 
     this.writeInstances()
     this.writeEdges()
+  }
+
+  /** Fill `this.tier` via BFS to `contextHops`, keeping the hop number as the tier. */
+  private computeFocusTiers(model: Graph3DModel, focus: number): void {
+    this.tier.fill(TIER_DIMMED)
+    this.tier[focus] = TIER_SELECTED
+    let frontier = [focus]
+    for (let hop = 1; hop <= this.contextHops && frontier.length > 0; hop += 1) {
+      const tierForHop = hop === 1 ? TIER_NEIGHBOUR : TIER_CONTEXT
+      frontier = this.expandFrontier(model, frontier, tierForHop)
+    }
+  }
+
+  /** One BFS hop: every un-tiered neighbour of `frontier`, tiered and returned as the next frontier. */
+  private expandFrontier(model: Graph3DModel, frontier: number[], tierForHop: number): number[] {
+    const next: number[] = []
+    for (const node of frontier) {
+      for (let k = model.adjOffset[node]; k < model.adjOffset[node + 1]; k += 1) {
+        const nb = model.adjTarget[k]
+        if (this.relFilter && !this.relFilter.has(model.edges[model.adjEdge[k]].r)) continue
+        if (this.tier[nb] !== TIER_DIMMED) continue
+        this.tier[nb] = tierForHop
+        next.push(nb)
+      }
+    }
+    return next
+  }
+
+  /** Force hidden nodes (per `this.visible`) to `TIER_HIDDEN`, after focus tiering. */
+  private applyVisibilityMask(n: number): void {
+    if (!this.visible) return
+    for (let i = 0; i < n; i += 1) if (this.visible[i] === 0) this.tier[i] = TIER_HIDDEN
   }
 
   /** Push per-instance matrices and colours. One linear pass, no allocation. */
@@ -609,6 +618,28 @@ export class Graph3DScene {
     }
     this.nodes.instanceMatrix.needsUpdate = true
     if (this.nodes.instanceColor) this.nodes.instanceColor.needsUpdate = true
+  }
+
+  /** Base tint gain for one edge, before the emphasis dim, given the current focus. */
+  private edgeBaseGain(s: number, t: number, edgeR: string, focus: number | null): number {
+    if (
+      this.tier[s] === TIER_HIDDEN ||
+      this.tier[t] === TIER_HIDDEN ||
+      (this.relFilter && !this.relFilter.has(edgeR))
+    ) {
+      return 0
+    }
+    if (focus == null) return 1.15
+    if (s === focus || t === focus) return 2.0
+    // The context ring's own edges: present, clearly secondary.
+    if (this.tier[s] >= TIER_CONTEXT && this.tier[t] >= TIER_CONTEXT) return 0.3
+    return 0.05
+  }
+
+  /** Tint gain for one edge: base gain, dimmed further when either endpoint is de-emphasized. */
+  private edgeGain(s: number, t: number, edgeR: string, focus: number | null): number {
+    const gain = this.edgeBaseGain(s, t, edgeR, focus)
+    return this.emphasis && (this.emphasis[s] === 0 || this.emphasis[t] === 0) ? gain * EMPHASIS_DIM_GAIN : gain
   }
 
   /**
@@ -636,27 +667,7 @@ export class Graph3DScene {
       posArray[o + 4] = this.positions[t * 3 + 1]
       posArray[o + 5] = this.positions[t * 3 + 2]
 
-      let gain: number
-      if (
-        this.tier[s] === TIER_HIDDEN ||
-        this.tier[t] === TIER_HIDDEN ||
-        (this.relFilter && !this.relFilter.has(edge.r))
-      ) {
-        gain = 0
-      } else if (focus == null) {
-        gain = 1.15
-      } else if (s === focus || t === focus) {
-        gain = 2.0
-      } else if (this.tier[s] >= TIER_CONTEXT && this.tier[t] >= TIER_CONTEXT) {
-        // The context ring's own edges: present, clearly secondary.
-        gain = 0.3
-      } else {
-        gain = 0.05
-      }
-
-      if (this.emphasis && (this.emphasis[s] === 0 || this.emphasis[t] === 0)) {
-        gain *= EMPHASIS_DIM_GAIN
-      }
+      const gain = this.edgeGain(s, t, edge.r, focus)
 
       // An edge takes its colour from its endpoints, so a relationship reads
       // as a gradient between the two types it connects.
@@ -688,10 +699,8 @@ export class Graph3DScene {
     this.frameVisible()
   }
 
-  /** Frame the visible nodes: fit them, then glide there. */
-  frameVisible(): void {
-    const model = this.model
-    if (!model || model.nodes.length === 0) return
+  /** Centroid of the visible nodes' positions, and how many were visible. */
+  private visibleCentroid(model: Graph3DModel): { cx: number; cy: number; cz: number; count: number } {
     let cx = 0
     let cy = 0
     let cz = 0
@@ -703,15 +712,18 @@ export class Graph3DScene {
       cz += this.positions[i * 3 + 2]
       count += 1
     }
-    if (count === 0) return
-    cx /= count
-    cy /= count
-    cz /= count
-    // A PERCENTILE radius, not the maximum: a graph almost always has a
-    // handful of weakly-attached nodes flung far out by the charge force, and
-    // framing to the furthest of them shrinks the part anyone wants to look
-    // at into a speck in the middle. p92 keeps the body of the graph filling
-    // the viewport and lets the stragglers sit just outside it.
+    if (count === 0) return { cx, cy, cz, count }
+    return { cx: cx / count, cy: cy / count, cz: cz / count, count }
+  }
+
+  /**
+   * A PERCENTILE radius, not the maximum: a graph almost always has a
+   * handful of weakly-attached nodes flung far out by the charge force, and
+   * framing to the furthest of them shrinks the part anyone wants to look at
+   * into a speck in the middle. p92 keeps the body of the graph filling the
+   * viewport and lets the stragglers sit just outside it.
+   */
+  private visibleP92Radius(model: Graph3DModel, cx: number, cy: number, cz: number, count: number): number {
     const distances = new Float64Array(count)
     let written = 0
     for (let i = 0; i < model.nodes.length; i += 1) {
@@ -723,7 +735,16 @@ export class Graph3DScene {
       written += 1
     }
     distances.sort()
-    const radius = Math.max(1, distances[Math.floor((written - 1) * 0.92)])
+    return Math.max(1, distances[Math.floor((written - 1) * 0.92)])
+  }
+
+  /** Frame the visible nodes: fit them, then glide there. */
+  frameVisible(): void {
+    const model = this.model
+    if (!model || model.nodes.length === 0) return
+    const { cx, cy, cz, count } = this.visibleCentroid(model)
+    if (count === 0) return
+    const radius = this.visibleP92Radius(model, cx, cy, cz, count)
     const distance = (radius * 1.12) / Math.tan((this.camera.fov * Math.PI) / 360)
     const direction = new Vector3().subVectors(this.camera.position, this.controls.target).normalize()
     if (direction.lengthSq() < 1e-6) direction.set(0.35, 0.25, 1).normalize()
@@ -837,42 +858,47 @@ export class Graph3DScene {
 
   // ── frame loop ─────────────────────────────────────────────────────────
 
-  private loop = (now: number): void => {
-    if (this.disposed) return
-    this.raf = window.requestAnimationFrame(this.loop)
+  /** Advance the camera fly-to tween by one frame, if one is in flight. */
+  private advanceTween(now: number): void {
+    if (!this.tween) return
+    const t = Math.min(1, (now - this.tween.start) / this.tween.duration)
+    const k = easeInOutCubic(t)
+    this.camera.position.lerpVectors(this.tween.from, this.tween.to, k)
+    this.controls.target.lerpVectors(this.tween.fromTarget, this.tween.toTarget, k)
+    if (t >= 1) this.tween = null
+  }
 
-    if (this.tween) {
-      const t = Math.min(1, (now - this.tween.start) / this.tween.duration)
-      const k = easeInOutCubic(t)
-      this.camera.position.lerpVectors(this.tween.from, this.tween.to, k)
-      this.controls.target.lerpVectors(this.tween.fromTarget, this.tween.toTarget, k)
-      if (t >= 1) this.tween = null
+  /**
+   * Exponential approach to the newest layout snapshot. 0.14 settles in ~15
+   * frames -- fast enough to track the worker, slow enough to read as motion
+   * rather than a jump.
+   */
+  private advanceSettling(): void {
+    if (!this.settling) return
+    let moved = 0
+    for (let i = 0; i < this.positions.length; i += 1) {
+      const delta = this.targetPositions[i] - this.positions[i]
+      this.positions[i] += delta * 0.14
+      moved += Math.abs(delta)
     }
+    this.writeInstances()
+    this.writeEdges()
+    if (moved < this.positions.length * 0.01) this.settling = false
+  }
 
-    if (this.settling) {
-      // Exponential approach to the newest layout snapshot. 0.14 settles in
-      // ~15 frames -- fast enough to track the worker, slow enough to read as
-      // motion rather than a jump.
-      let moved = 0
-      for (let i = 0; i < this.positions.length; i += 1) {
-        const delta = this.targetPositions[i] - this.positions[i]
-        this.positions[i] += delta * 0.14
-        moved += Math.abs(delta)
-      }
-      this.writeInstances()
-      this.writeEdges()
-      if (moved < this.positions.length * 0.01) this.settling = false
+  /** Re-pick under the pointer if it moved since the last frame, and fire the hover callback. */
+  private processPointerPick(): void {
+    if (!this.pointerDirty || !this.lastPointer) return
+    this.pointerDirty = false
+    const hit = this.pick(this.lastPointer.x, this.lastPointer.y)
+    if (hit !== this.hovered) {
+      this.setHover(hit)
+      this.callbacks.onHover(hit, this.lastPointer.x, this.lastPointer.y)
     }
+  }
 
-    if (this.pointerDirty && this.lastPointer) {
-      this.pointerDirty = false
-      const hit = this.pick(this.lastPointer.x, this.lastPointer.y)
-      if (hit !== this.hovered) {
-        this.setHover(hit)
-        this.callbacks.onHover(hit, this.lastPointer.x, this.lastPointer.y)
-      }
-    }
-
+  /** Update controls and draw one frame (composer, or a plain render with no post-processing). */
+  private renderFrame(): void {
     this.controls.update()
     // Count draw calls for the WHOLE frame, post-processing included. Three's
     // default per-render reset would otherwise report only the composer's
@@ -888,14 +914,27 @@ export class Graph3DScene {
     }
     if (this.composer) this.composer.render()
     else this.renderer.render(this.scene, this.camera)
+  }
 
+  /** Update the rolling FPS counter, and report it every ~500ms. */
+  private trackFps(now: number): void {
     this.frames += 1
-    if (now - this.fpsSince >= 500) {
-      const fps = (this.frames * 1000) / (now - this.fpsSince)
-      this.callbacks.onStats(fps, this.renderer.info.render.calls)
-      this.frames = 0
-      this.fpsSince = now
-    }
+    if (now - this.fpsSince < 500) return
+    const fps = (this.frames * 1000) / (now - this.fpsSince)
+    this.callbacks.onStats(fps, this.renderer.info.render.calls)
+    this.frames = 0
+    this.fpsSince = now
+  }
+
+  private loop = (now: number): void => {
+    if (this.disposed) return
+    this.raf = window.requestAnimationFrame(this.loop)
+
+    this.advanceTween(now)
+    this.advanceSettling()
+    this.processPointerPick()
+    this.renderFrame()
+    this.trackFps(now)
   }
 
   dispose(): void {

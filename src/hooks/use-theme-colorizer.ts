@@ -3,25 +3,28 @@ import { useState, useEffect } from 'react'
 const DEFAULT_BASE_COLOR = '0.52 0.18 260'
 const DECIMAL_COMPONENT = /^-?(?:\d+(?:\.\d*)?|\.\d+)$/
 
+/** True when `lightness`/`chroma`/`hue` are each finite and within OKLCH's valid range. */
+function isValidOklchTriple(lightness: number, chroma: number, hue: number): boolean {
+  return (
+    Number.isFinite(lightness) &&
+    Number.isFinite(chroma) &&
+    Number.isFinite(hue) &&
+    lightness >= 0 &&
+    lightness <= 1 &&
+    chroma >= 0 &&
+    chroma <= 0.5 &&
+    hue >= -360 &&
+    hue <= 360
+  )
+}
+
 /** Accept only three finite OKLCH numeric components from local persistence. */
 export function normalizeBaseColor(value: string): string | null {
   const components = value.trim().split(/\s+/)
   if (components.length !== 3 || components.some((component) => !DECIMAL_COMPONENT.test(component))) return null
 
   const [lightness, chroma, hue] = components.map(Number)
-  if (
-    !Number.isFinite(lightness) ||
-    !Number.isFinite(chroma) ||
-    !Number.isFinite(hue) ||
-    lightness < 0 ||
-    lightness > 1 ||
-    chroma < 0 ||
-    chroma > 0.5 ||
-    hue < -360 ||
-    hue > 360
-  ) {
-    return null
-  }
+  if (!isValidOklchTriple(lightness, chroma, hue)) return null
   return `${lightness} ${chroma} ${hue}`
 }
 
