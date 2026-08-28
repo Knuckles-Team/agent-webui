@@ -272,13 +272,17 @@ describe('Chat handleSlashCommand', () => {
     expect(screen.getAllByText('Model B').length).toBeGreaterThan(0)
   })
 
-  it('BUG: a server-returned clear_chat client action does NOT wipe the conversation', async () => {
-    // Pins an observed defect, not fixed here (see lane report): `clear_chat`
-    // calls `setMessages([])` mid-branch, but the unconditional
-    // `setMessages([...messages, userMsg, replyMsg])` that runs right after
-    // the switch (using the stale pre-command `messages` closure) overwrites
-    // it in the same tick, so the reply -- and the clear -- never actually
-    // takes visible effect.
+  it('BUG-CX-076 (fixed): a server-returned clear_chat client action is not revived by a stale closure', async () => {
+    // Was: `clear_chat` calls `setMessages([])` mid-branch, but the
+    // unconditional `setMessages([...messages, userMsg, replyMsg])` that ran
+    // right after (closing over the pre-command `messages` value) silently
+    // overwrote the clear in the same tick, reviving the "cleared" chat with
+    // the just-typed command plus its reply. Fixed by switching that append
+    // to the functional updater form, which always applies on top of the
+    // latest state instead of the stale closure. Two things must now both be
+    // true: the reply is visible, AND the transcript was actually reset to
+    // just the two new messages (not `/whatever`'s predecessors surviving
+    // the clear).
     fetchImpl = (path) => {
       if (path === '/api/enhanced/commands/execute') {
         return Promise.resolve(
@@ -290,9 +294,21 @@ describe('Chat handleSlashCommand', () => {
       }
       return undefined as unknown as Promise<Response>
     }
-    await sendSlashCommand('/whatever')
+    const { user, textarea } = await sendSlashCommand('/help')
+    await waitFor(() => {
+      expect(screen.getByText(/Agent WebUI Slash Commands/i)).toBeInTheDocument()
+    })
+
+    await user.type(textarea, '/whatever{Enter}')
     await waitFor(() => {
       expect(screen.getByText(/Clearing now\./)).toBeInTheDocument()
     })
+
+    // The pre-clear `/help` transcript must be gone: `clear_chat` reset the
+    // conversation and the stale-closure append must not have brought it back.
+    expect(screen.queryByText(/Agent WebUI Slash Commands/i)).not.toBeInTheDocument()
+    // Only the `/whatever` command echo and its reply should remain visible.
+    expect(screen.getByText('/whatever')).toBeInTheDocument()
+    expect(screen.getByText(/Clearing now\./)).toBeInTheDocument()
   })
 })

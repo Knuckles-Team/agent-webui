@@ -11501,6 +11501,7 @@ async def _slash_help() -> dict:
         '### Available Commands:\n\n'
         '- `/help` - Show this help menu\n'
         '- `/clear` - Clear active chat session\n'
+        '- `/exit` (alias `/quit`) - End and clear the active chat session\n'
         '- `/model [model_id]` - View or change current LLM model\n'
         '- `/tools` - List all available MCP tools\n'
         '- `/skills` - List loaded custom skills\n'
@@ -11526,6 +11527,26 @@ async def _slash_clear() -> dict:
     """Render the `/clear` command's response and client action."""
     return {
         'response_markdown': 'Chat session cleared.',
+        'client_actions': [{'action': 'clear_chat'}],
+    }
+
+
+async def _slash_exit() -> dict:
+    """Render the `/exit` command's response and client action.
+
+    BUG-CX-020: `execute_slash_command` remaps `quit` -> `exit` before
+    dispatch, but `_SLASH_COMMAND_HANDLERS` never had an `'exit'` key, so
+    `/quit` and `/exit` always fell through to "Unknown slash command".
+    There is no server-side session to terminate for a web chat, so this
+    ends the visible conversation the same way `/clear` does and says so
+    explicitly, rather than pretending to close anything.
+    """
+    return {
+        'response_markdown': (
+            'Chat session ended. There is nothing to exit in a web '
+            'session, so the conversation has been cleared; start a new '
+            'one whenever you like.'
+        ),
         'client_actions': [{'action': 'clear_chat'}],
     }
 
@@ -12017,6 +12038,7 @@ async def _slash_resources(args: str) -> dict:
 _SLASH_COMMAND_HANDLERS: dict[str, Callable[[str, Request], Awaitable[dict]]] = {
     'help': lambda args, request: _slash_help(),
     'clear': lambda args, request: _slash_clear(),
+    'exit': lambda args, request: _slash_exit(),
     'model': lambda args, request: _slash_model(args, request),
     'tools': lambda args, request: _slash_tools(request),
     'skills': lambda args, request: _slash_skills(),

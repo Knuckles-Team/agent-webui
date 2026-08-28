@@ -1633,7 +1633,14 @@ Available commands:
       parts: [{ type: 'text', text: assistantReply }],
     }
 
-    setMessages([...messages, userMsg, replyMsg])
+    // BUG-CX-076: this used to be `setMessages([...messages, userMsg, replyMsg])`,
+    // closing over the `messages` value captured when `handleSlashCommand` was
+    // called. If the awaited `dispatchSlashCommand` above triggered a
+    // `clear_chat` client action (which calls `setMessages([])` synchronously),
+    // that stale closure would silently revive the just-cleared conversation
+    // once this line ran. The functional updater form always applies on top of
+    // the latest state, race or not.
+    setMessages((prev) => [...prev, userMsg, replyMsg])
     setInput('')
     return true
   }
