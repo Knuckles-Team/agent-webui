@@ -288,6 +288,22 @@ const LOADING_STATE: EcoState = { status: 'loading' }
 // caller DOES pass `itemSchema` (BUG-012's GitHub/GitLab call sites do), a
 // per-field drift is a typed, diagnosable `error` state instead of a value
 // silently reaching the render as `undefined`.
+/** The three envelope statuses that resolve to a fixed `EcoState` without
+ * looking at the item list at all. Returns null for 'success' and for any
+ * unrecognized status, both of which the caller handles separately. */
+function classifyKnownEnvelopeStatus(status: unknown, reason: string | undefined): EcoState | null {
+  if (status === 'capability_unavailable') {
+    return { status: 'unavailable', reason: reason ?? 'No backend is wired for this capability.' }
+  }
+  if (status === 'needs_input') {
+    return { status: 'unavailable', reason: reason ?? 'Additional input is required.' }
+  }
+  if (status === 'error') {
+    return { status: 'error', reason: reason ?? 'The service reported an error.' }
+  }
+  return null
+}
+
 function classifyEcosystemList<T>(
   json: unknown,
   key: string,
@@ -320,26 +336,16 @@ function classifyEcosystemList<T>(
     return { state: { status: parsed.data.length > 0 ? 'ready' : 'empty' }, items: parsed.data }
   }
 
-  switch (obj.status) {
-    case 'capability_unavailable':
-      return {
-        state: { status: 'unavailable', reason: reason ?? 'No backend is wired for this capability.' },
-        items: [],
-      }
-    case 'needs_input':
-      return { state: { status: 'unavailable', reason: reason ?? 'Additional input is required.' }, items: [] }
-    case 'error':
-      return { state: { status: 'error', reason: reason ?? 'The service reported an error.' }, items: [] }
-    case 'success':
-      return withValidatedItems()
-    default:
-      // Unrecognized envelope shape. If it happens to carry a real-looking
-      // array, surface it rather than discard real data -- but never invent
-      // a "ready, empty" state for a contract we don't understand.
-      return rawItems.length > 0
-        ? withValidatedItems()
-        : { state: { status: 'error', reason: 'Unexpected response shape from the backend.' }, items: [] }
-  }
+  const knownState = classifyKnownEnvelopeStatus(obj.status, reason)
+  if (knownState) return { state: knownState, items: [] }
+  if (obj.status === 'success') return withValidatedItems()
+
+  // Unrecognized envelope shape. If it happens to carry a real-looking
+  // array, surface it rather than discard real data -- but never invent
+  // a "ready, empty" state for a contract we don't understand.
+  return rawItems.length > 0
+    ? withValidatedItems()
+    : { state: { status: 'error', reason: 'Unexpected response shape from the backend.' }, items: [] }
 }
 
 /**
@@ -525,6 +531,1721 @@ const COVERED_ECOSYSTEM_SERVICES = new Set([
 ])
 
 const catalogServicesSchema = looseArray(z.string())
+
+interface DevOpsDomainProps {
+  ecoStatus: Record<string, EcoState>
+  kanbanColumns: KanbanColumn[]
+  githubRepo: string
+  onGithubRepoChange: (value: string) => void
+  onLoadGithubRepo: () => void
+  githubPrs: GithubPr[]
+  githubWorkflows: GithubWorkflow[]
+  gitlabMrs: GitlabMr[]
+  gitlabPipelines: GitlabPipeline[]
+  portainerStacks: PortainerStack[]
+}
+
+/* 6. OTHER INTEGRATIONS DOMAIN */
+function OtherDomain({ catalogState, catalogServices }: { catalogState: EcoState; catalogServices: string[] }) {
+  return (
+    <div className="space-y-6 animate-in fade-in-50 duration-200">
+      <Card className="border border-border/80 shadow-md">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Compass className="text-primary size-5" /> Other Installed Integrations
+          </CardTitle>
+          <CardDescription>
+            Every MCP server / agent package the live catalog reports that has no dedicated dashboard yet. A server
+            never disappears from this list just because no one has hand-built it a card.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <ServiceNotice state={catalogState} emptyLabel="No additional integrations were reported." />
+          {catalogState.status === 'ready' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {catalogServices
+                .filter((service) => !COVERED_ECOSYSTEM_SERVICES.has(service))
+                .sort((a, b) => a.localeCompare(b))
+                .map((service) => (
+                  <Card
+                    key={service}
+                    className="p-4 bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Layers className="text-muted-foreground size-4 shrink-0" />
+                      <h4 className="font-bold text-xs text-foreground tracking-tight truncate">{service}</h4>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className="mt-3 w-fit text-[9px] uppercase border-amber-500/30 text-amber-500 bg-amber-500/10"
+                    >
+                      No dedicated dashboard implemented yet
+                    </Badge>
+                  </Card>
+                ))}
+              {catalogServices.filter((service) => !COVERED_ECOSYSTEM_SERVICES.has(service)).length === 0 && (
+                <p className="text-sm text-muted-foreground col-span-full">
+                  Every server the live catalog reports already has a dedicated section elsewhere in this view.
+                </p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+/* 2. DATA & RESEARCH DOMAIN */
+interface ResearchDomainProps {
+  ecoStatus: Record<string, EcoState>
+  resources: SystemResources | null
+  trainedModels: TrainedModel[]
+  scholarxPapers: ScholarxPaper[]
+}
+
+/** Systems telemetry gauges CPU/RAM/Disk */
+function CpuGaugeCard({ resources }: { resources: SystemResources | null }) {
+  return (
+    <Card className="border border-border/85 shadow-sm hover:border-primary/20 transition-all">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-bold flex items-center gap-1.5">
+            <Cpu className="text-primary size-4" /> CPU Workload
+          </CardTitle>
+          <Activity className="size-4 text-emerald-500 animate-pulse" />
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.cpu_percent}%</div>
+        <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden">
+          <div
+            className="bg-primary h-full transition-all duration-500"
+            // no-fabrication-allow: cosmetic progress-bar width only, not the
+            // displayed number (line above has no fallback). This branch only
+            // renders when ecoStatus.resources.status === 'ready', i.e. a real
+            // fetch already populated `resources`; the `?? 0` is an
+            // impossible-in-practice defensive default TS requires, and 0 is
+            // an honest "no bar" rather than a plausible fake percentage.
+            style={{ width: `${resources?.cpu_percent ?? 0}%` }}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function RamGaugeCard({ resources }: { resources: SystemResources | null }) {
+  return (
+    <Card className="border border-border/85 shadow-sm hover:border-primary/20 transition-all">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-bold flex items-center gap-1.5">
+          <Server className="text-primary size-4" /> RAM Utilization
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.memory.percent}%</div>
+        <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden mb-1">
+          <div
+            className="bg-purple-500 h-full transition-all duration-500"
+            // no-fabrication-allow: same as the CPU gauge above -- cosmetic
+            // bar width only, gated behind a real successful fetch, 0 (not a
+            // plausible fake percentage) is the defensive default.
+            style={{ width: `${resources?.memory.percent ?? 0}%` }}
+          />
+        </div>
+        <div className="text-xs text-muted-foreground flex justify-between">
+          <span>Used: {resources?.memory.used_gb} GB</span>
+          <span>Total: {resources?.memory.total_gb} GB</span>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function DiskGaugeCard({ resources }: { resources: SystemResources | null }) {
+  return (
+    <Card className="border border-border/85 shadow-sm hover:border-primary/20 transition-all">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-bold flex items-center gap-1.5">
+          <HardDrive className="text-primary size-4" /> Disk Capacity
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.disk.percent}%</div>
+        <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden mb-1">
+          <div
+            className="bg-blue-500 h-full transition-all duration-500"
+            // no-fabrication-allow: same as the CPU gauge above -- cosmetic
+            // bar width only, gated behind a real successful fetch, 0 (not a
+            // plausible fake percentage) is the defensive default.
+            style={{ width: `${resources?.disk.percent ?? 0}%` }}
+          />
+        </div>
+        <div className="text-xs text-muted-foreground flex justify-between">
+          <span>Used: {resources?.disk.used_gb} GB</span>
+          <span>Total: {resources?.disk.total_gb} GB</span>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function SystemGaugesCard({
+  ecoStatus,
+  resources,
+}: {
+  ecoStatus: Record<string, EcoState>
+  resources: SystemResources | null
+}) {
+  if (ecoStatus.resources.status !== 'ready') return <ServiceNotice state={ecoStatus.resources} />
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <CpuGaugeCard resources={resources} />
+      <RamGaugeCard resources={resources} />
+      <DiskGaugeCard resources={resources} />
+    </div>
+  )
+}
+
+/** Fitted model ranking (D-WUI-BUG-008: this used to render a fabricated
+ * "TrainingMetrics" shape -- hyperparameters, a live epoch counter, a
+ * "Simulated Convergence" loss curve -- that never matched what the backend
+ * actually returns. The real `rank_models` endpoint reports already-fitted
+ * models ranked by stored test R^2; there is no live epoch/loss stream. */
+function TrainedModelsCard({
+  ecoStatus,
+  trainedModels,
+}: {
+  ecoStatus: Record<string, EcoState>
+  trainedModels: TrainedModel[]
+}) {
+  return (
+    <Card className="border border-border/80 shadow-md">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Sliders className="text-primary size-5" /> Fitted Model Ranking (Data-Science-MCP)
+        </CardTitle>
+        <CardDescription>Models fitted in the current engine session, ranked by stored test R&sup2;</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <ServiceNotice
+          state={ecoStatus.training}
+          emptyLabel="No trained models registered in the current engine session."
+        />
+        {ecoStatus.training.status === 'ready' && (
+          <table className="w-full text-left border-collapse text-xs">
+            <thead className="bg-accent/40 border-b">
+              <tr>
+                <th className="p-2 font-semibold text-muted-foreground">Model ID</th>
+                <th className="p-2 font-semibold text-muted-foreground">Dataset</th>
+                <th className="p-2 font-semibold text-muted-foreground">Model</th>
+                <th className="p-2 font-semibold text-muted-foreground text-right">R&sup2; (test)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y font-mono">
+              {trainedModels.map((m) => (
+                <tr key={m.model_id} className="hover:bg-accent/10 transition-colors">
+                  <td className="p-2 font-bold text-primary">{m.model_id}</td>
+                  <td className="p-2 text-muted-foreground">{m.dataset}</td>
+                  <td className="p-2 text-foreground truncate max-w-[240px]" title={m.model_str}>
+                    {m.model_str}
+                  </td>
+                  <td className="p-2 text-right font-bold text-emerald-500">{m.r2_test.toFixed(4)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** ScholarX Research Scientific literature */
+function ScholarxCard({
+  ecoStatus,
+  scholarxPapers,
+}: {
+  ecoStatus: Record<string, EcoState>
+  scholarxPapers: ScholarxPaper[]
+}) {
+  return (
+    <Card className="border border-border/80 shadow-md">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Compass className="text-primary size-5" /> Scientific Publications database (ScholarX)
+        </CardTitle>
+        <CardDescription>
+          Scientific paper metadata registries downloaded locally for Offline Graph training
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <ServiceNotice state={ecoStatus.scholarx} emptyLabel="No downloaded papers reported." />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {ecoStatus.scholarx.status === 'ready' &&
+            scholarxPapers.map((paper) => (
+              <Card
+                key={paper.id}
+                className="p-4 bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold font-mono text-primary uppercase">{paper.id}</span>
+                    <Badge variant="secondary" className="text-[9px] uppercase">
+                      {paper.category}
+                    </Badge>
+                  </div>
+                  <h4 className="font-bold text-xs text-foreground tracking-tight pt-2 leading-snug line-clamp-2">
+                    {paper.title}
+                  </h4>
+                  <p className="text-[10px] text-muted-foreground pt-1">Author: {paper.author}</p>
+                </div>
+                <div className="pt-3 border-t mt-3 flex justify-between items-center text-[10px] text-emerald-500 font-bold">
+                  <span className="flex items-center gap-1">
+                    <Check className="size-3" /> Ready
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] bg-emerald-500/5 text-emerald-600 border-emerald-500/20"
+                  >
+                    {paper.status}
+                  </Badge>
+                </div>
+              </Card>
+            ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/** D-WUI-BUG-008: this card used to render a hardcoded, permanent
+ * `latencyData` array of five invented trace rows (fake trace IDs, routes,
+ * latencies, and token counts) labeled "Live call spans" under a
+ * Langfuse-Agent heading. No `/api/enhanced/ecosystem/*` route exists for
+ * trace/latency data at all -- `langfuse-agent` is only listed as an
+ * installed package by `/ecosystem/services`, it has no read endpoint wired
+ * here. Removed rather than left displaying invented numbers; a real card
+ * requires a backend route first (see BUG-REMEDIATION-DESIGNS.md#bug-008). */
+function LangfuseUnavailableCard() {
+  return (
+    <Card className="border border-border/80 shadow-md">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Activity className="text-primary size-5" /> Agent API Execution Latency Traces (Langfuse-Agent)
+        </CardTitle>
+        <CardDescription>Live call spans, execution times, and token cost tracking logs</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ServiceNotice
+          state={{
+            status: 'unavailable',
+            reason:
+              'No backend endpoint is wired for Langfuse trace data. Add a ' +
+              'GET /api/enhanced/ecosystem/langfuse/traces route before this card can show real data.',
+          }}
+        />
+      </CardContent>
+    </Card>
+  )
+}
+
+function ResearchDomain({ ecoStatus, resources, trainedModels, scholarxPapers }: ResearchDomainProps) {
+  return (
+    <div className="space-y-6 animate-in fade-in-50 duration-200">
+      <SystemGaugesCard ecoStatus={ecoStatus} resources={resources} />
+      <TrainedModelsCard ecoStatus={ecoStatus} trainedModels={trainedModels} />
+      <ScholarxCard ecoStatus={ecoStatus} scholarxPapers={scholarxPapers} />
+      <LangfuseUnavailableCard />
+    </div>
+  )
+}
+
+/* 3. INFRASTRUCTURE HUB DOMAIN */
+interface NewHostDraft {
+  alias: string
+  hostname: string
+  user: string
+  port: number
+  password_ref: string
+}
+
+interface InfraDomainProps {
+  ecoStatus: Record<string, EcoState>
+  uptimeMonitors: UptimeMonitor[]
+  searxngQuery: string
+  onSearxngQueryChange: (value: string) => void
+  onRunSearxngSearch: () => void
+  searxngLoading: boolean
+  searxngResults: SearxngResult[]
+  containerInventoryError: string | null
+  containers: ContainerInfo[]
+  onRefreshContainers: () => void
+  hostsUnavailable: boolean
+  hosts: Host[]
+  addHostOpen: boolean
+  onAddHostOpenChange: (open: boolean) => void
+  onAddHostSubmit: (e: SyntheticEvent) => void
+  newHost: NewHostDraft
+  onNewHostChange: (host: NewHostDraft) => void
+  searchProcess: string
+  onSearchProcessChange: (value: string) => void
+  onRefreshProcesses: () => void
+  filteredProcesses: ProcessInfo[]
+}
+
+function InfraDomain({
+  ecoStatus,
+  uptimeMonitors,
+  searxngQuery,
+  onSearxngQueryChange,
+  onRunSearxngSearch,
+  searxngLoading,
+  searxngResults,
+  containerInventoryError,
+  containers,
+  onRefreshContainers,
+  hostsUnavailable,
+  hosts,
+  addHostOpen,
+  onAddHostOpenChange,
+  onAddHostSubmit,
+  newHost,
+  onNewHostChange,
+  searchProcess,
+  onSearchProcessChange,
+  onRefreshProcesses,
+  filteredProcesses,
+}: InfraDomainProps) {
+  return (
+    <div className="space-y-6 animate-in fade-in-50 duration-200">
+      {/* Uptime Kuma monitors */}
+      <Card className="border border-border/80 shadow-md">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="text-emerald-500 size-5 animate-pulse" /> Service Uptime timelines (Uptime-Kuma-Agent)
+          </CardTitle>
+          <CardDescription>Active health checks on gateways, DNS databases and storage streams</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <ServiceNotice state={ecoStatus.uptime} emptyLabel="No monitors reported." />
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {ecoStatus.uptime.status === 'ready' &&
+              uptimeMonitors.map((m) => (
+                <Card
+                  key={m.name}
+                  className="p-4 bg-accent/5 hover:border-primary/20 transition-all flex flex-col justify-between"
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h4 className="font-bold text-xs text-foreground truncate">{m.name}</h4>
+                      <span className="text-[10px] font-mono text-muted-foreground truncate block">{m.url}</span>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={cn('capitalize scale-90 font-semibold px-2 py-0.5 rounded-full border', {
+                        'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': m.status === 'up',
+                        'bg-red-500/10 border-red-500/25 text-red-600': m.status === 'down',
+                      })}
+                    >
+                      {m.status}
+                    </Badge>
+                  </div>
+                  <div className="pt-4 space-y-1 border-t mt-3">
+                    <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+                      <span>Uptime 24h:</span>
+                      <span className="font-bold text-foreground">{m.uptime_24h}%</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+                      <span>Latency:</span>
+                      <span className="font-bold text-primary">{m.latency}ms</span>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* SearXNG searchranks and keyword plotting */}
+      <Card className="border border-border/80 shadow-md">
+        <CardHeader className="flex flex-col md:flex-row md:items-center justify-between pb-3 gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Search className="text-primary size-5" /> Metasearch Aggregation & Ranks (SearXNG-MCP)
+            </CardTitle>
+            <CardDescription>
+              Aggregate web query rankings parsed across google, duckduckgo and github engines
+            </CardDescription>
+          </div>
+          <div className="flex gap-2 max-w-sm w-full">
+            <Input
+              placeholder="Search keywords..."
+              value={searxngQuery}
+              onChange={(e) => {
+                onSearxngQueryChange(e.target.value)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onRunSearxngSearch()
+              }}
+            />
+            <Button onClick={onRunSearxngSearch} disabled={searxngLoading}>
+              {searxngLoading ? <RefreshCw className="size-4 animate-spin" /> : 'Search'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {ecoStatus.searxng.status === 'empty' ? (
+            <div className="text-center py-6 text-xs text-muted-foreground font-mono border rounded-md">
+              Search something to load results
+            </div>
+          ) : (
+            <ServiceNotice state={ecoStatus.searxng} />
+          )}
+          {ecoStatus.searxng.status === 'ready' && (
+            <div className="space-y-2.5">
+              {searxngResults.map((r, idx) => (
+                <div
+                  key={idx}
+                  className="flex justify-between items-center p-3 border rounded-md bg-accent/5 hover:border-primary/30 transition-all"
+                >
+                  <div className="space-y-0.5 truncate pr-2">
+                    <h4 className="text-xs font-bold text-foreground truncate">{r.title}</h4>
+                    <span className="text-[10px] font-mono text-muted-foreground truncate block">{r.url}</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Badge
+                      variant="outline"
+                      className="font-mono text-[9px] uppercase tracking-wide bg-primary/5 text-primary border-primary/20"
+                    >
+                      {r.engine}
+                    </Badge>
+                    <Badge variant="secondary" className="font-mono text-xs font-bold">
+                      Score: {r.score}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Docker socket container grids */}
+      <Card className="border border-border/80 shadow-md">
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Database className="text-primary size-5" /> Docker Daemon Containers
+            </CardTitle>
+            <CardDescription>Direct unix-socket queries to /var/run/docker.sock</CardDescription>
+          </div>
+          <Button variant="outline" size="icon" onClick={onRefreshContainers}>
+            <RefreshCw className="size-4" />
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {containerInventoryError ? (
+            <div
+              role="status"
+              className="rounded-md border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-300"
+            >
+              <strong>Live Docker inventory unavailable.</strong> {containerInventoryError} No simulated containers are
+              shown.
+            </div>
+          ) : containers.length === 0 ? (
+            <div className="rounded-md border p-4 text-sm text-muted-foreground">No containers reported.</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {containers.map((c, index) => (
+                <Card
+                  key={c.reference}
+                  className="bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between"
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <CardTitle className="text-sm font-bold truncate tracking-tight text-primary">
+                        Container workload {index + 1}
+                      </CardTitle>
+                      <Badge
+                        variant="outline"
+                        className={cn('capitalize px-2 py-0.5 text-xs font-semibold rounded-full border', {
+                          'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': c.state === 'running',
+                          'bg-red-500/10 border-red-500/25 text-red-600': c.state === 'exited',
+                          'bg-amber-500/10 border-amber-500/25 text-amber-600': c.state === 'paused',
+                        })}
+                      >
+                        {c.state}
+                      </Badge>
+                    </div>
+                    <CardDescription className="text-xs truncate font-mono text-muted-foreground pt-1">
+                      Opaque operational reference
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pb-3 text-xs leading-relaxed text-muted-foreground flex-1 flex flex-col justify-end">
+                    <p>
+                      Direct container mutation is disabled. Submit lifecycle changes through governed GraphOS
+                      delegation.
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Active processes tree and SSH tunnel console */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 flex flex-col gap-6">
+          <Card className="border border-border/80 shadow-md">
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Network className="text-primary size-5" /> Host Aliases Inventory
+                </CardTitle>
+                <CardDescription>Ansible configurations loaded via tunnel-manager</CardDescription>
+              </div>
+              <Dialog open={addHostOpen} onOpenChange={onAddHostOpenChange}>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="gap-1.5">
+                    <Plus className="size-4" /> Add Host
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <form onSubmit={onAddHostSubmit}>
+                    <DialogHeader>
+                      <DialogTitle>Add SSH Host Alias</DialogTitle>
+                      <DialogDescription>Input new node configurations for SSH command forwarding.</DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <label className="text-right text-sm font-medium">Alias</label>
+                        <Input
+                          className="col-span-3"
+                          placeholder="production-node"
+                          value={newHost.alias}
+                          onChange={(e) => {
+                            onNewHostChange({ ...newHost, alias: e.target.value })
+                          }}
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <label className="text-right text-sm font-medium">IP/Host</label>
+                        <Input
+                          className="col-span-3"
+                          placeholder="192.0.2.12"
+                          value={newHost.hostname}
+                          onChange={(e) => {
+                            onNewHostChange({ ...newHost, hostname: e.target.value })
+                          }}
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <label className="text-right text-sm font-medium">User</label>
+                        <Input
+                          className="col-span-3"
+                          placeholder="ubuntu"
+                          value={newHost.user}
+                          onChange={(e) => {
+                            onNewHostChange({ ...newHost, user: e.target.value })
+                          }}
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <label className="text-right text-sm font-medium">Port</label>
+                        <Input
+                          type="number"
+                          className="col-span-3"
+                          value={newHost.port}
+                          onChange={(e) => {
+                            onNewHostChange({ ...newHost, port: parseInt(e.target.value) || 22 })
+                          }}
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <label className="text-right text-sm font-medium">Password ref</label>
+                        <Input
+                          className="col-span-3"
+                          placeholder="secret-provider://reference"
+                          value={newHost.password_ref}
+                          onChange={(e) => {
+                            onNewHostChange({ ...newHost, password_ref: e.target.value })
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button type="submit">Register Host</Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </CardHeader>
+            <CardContent>
+              {hostsUnavailable && <UnavailableNotice what="The configured hosts inventory" className="mb-4" />}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {hosts.map((h, index) => (
+                  <div
+                    key={h.reference}
+                    className="flex flex-col gap-3 p-4 bg-accent/10 border rounded-lg hover:border-primary/40 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-sm tracking-wide text-primary">Configured host {index + 1}</h3>
+                      <Badge variant={h.status === 'active' ? 'default' : 'secondary'} className="capitalize">
+                        {h.status}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p>
+                        <strong className="text-foreground">Port:</strong>{' '}
+                        {h.port_configured ? 'configured' : 'default'}
+                      </p>
+                      <p>
+                        <strong className="text-foreground">Identity:</strong>{' '}
+                        {h.identity_configured ? 'configured' : 'default'}
+                      </p>
+                      <p>
+                        <strong className="text-foreground">Password:</strong>{' '}
+                        {h.password_configured ? 'secret reference configured' : 'not configured'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Governed remote execution boundary */}
+          <Card className="border border-border/80 shadow-md">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Terminal className="text-green-500 size-5" /> Governed Remote Operations
+              </CardTitle>
+              <CardDescription>Remote execution is mediated by GraphOS ActionPolicy.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
+                Raw shell commands are not accepted by this UI. Use a typed GraphOS delegation action; it will apply
+                authorization, approval, argument validation, timeouts, audit references, and redacted results before
+                dispatch.
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Active Process tree */}
+        <Card className="border border-border/80 shadow-md">
+          <CardHeader className="pb-3">
+            <div className="flex justify-between items-center">
+              <CardTitle className="text-sm font-bold flex items-center gap-1.5">
+                <Terminal className="text-primary size-4.5" /> Process Workloads
+              </CardTitle>
+              <Button variant="outline" size="icon" className="size-8" onClick={onRefreshProcesses}>
+                <RefreshCw className="size-3.5" />
+              </Button>
+            </div>
+            <Input
+              placeholder="Filter opaque workload reference..."
+              className="h-8 text-xs mt-2"
+              value={searchProcess}
+              onChange={(e) => {
+                onSearchProcessChange(e.target.value)
+              }}
+            />
+          </CardHeader>
+          <CardContent className="p-0 border-t max-h-[380px] overflow-y-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead className="bg-accent/40 sticky top-0 border-b">
+                <tr>
+                  <th className="p-2 font-semibold text-muted-foreground">Workload</th>
+                  <th className="p-2 font-semibold text-muted-foreground text-right">CPU</th>
+                  <th className="p-2 font-semibold text-muted-foreground text-right">Memory</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y font-mono">
+                {filteredProcesses.map((p) => (
+                  <tr key={p.reference} className="hover:bg-accent/10 transition-colors">
+                    <td className="p-2 text-muted-foreground font-bold">Opaque reference</td>
+                    <td className="p-2 text-right text-green-500 font-bold">{p.cpu}%</td>
+                    <td className="p-2 text-right text-blue-500 font-bold">{p.memory}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+/* 4. LIFESTYLE & AUTOMATION DOMAIN */
+interface LifestyleDomainProps {
+  ecoStatus: Record<string, EcoState>
+  haDevices: HaDevice[]
+  nextcloudEvents: NextcloudEvent[]
+  microsoftEmails: MicrosoftEmail[]
+}
+
+function LifestyleDomain({ ecoStatus, haDevices, nextcloudEvents, microsoftEmails }: LifestyleDomainProps) {
+  return (
+    <div className="space-y-6 animate-in fade-in-50 duration-200">
+      {/* IoT Device sliders (Home-Assistant-Agent) */}
+      <Card className="border border-border/80 shadow-md">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sliders className="text-primary size-5" /> IoT Home automation controls (Home-Assistant-Agent)
+          </CardTitle>
+          <CardDescription>
+            Visual dials, thermostats, and lights controls loaded from local Home Assistant server
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <ServiceNotice state={ecoStatus.homeassistant} emptyLabel="No Home Assistant entities reported." />
+          {ecoStatus.homeassistant.status === 'ready' && (
+            <>
+              {/*
+                      D-WUI-BUG-008: the brightness slider, thermostat +/-
+                      buttons, and power toggle below used to call
+                      `updateDeviceState`/`updateThermostatTemp`, which only
+                      mutated local React state and showed a
+                      `toast.success('IoT command dispatched...')` -- no
+                      request was ever sent to Home Assistant. There is no
+                      write/command endpoint under
+                      `/api/enhanced/ecosystem/homeassistant/*` at all (only
+                      the GET .../devices read exists), so this is a
+                      read-only view until a real command endpoint is wired.
+                    */}
+              <ReadOnlyNotice reason="Device state below is read-only. No command endpoint is wired here yet, so controls that would send a write are not shown." />
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                {haDevices.map((d) => (
+                  <Card
+                    key={d.entity_id}
+                    className="p-4 bg-accent/5 flex flex-col justify-between hover:border-primary/20 transition-all"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <h4 className="font-bold text-xs text-foreground truncate">{d.friendly_name}</h4>
+                        <Badge
+                          variant={d.state === 'on' || d.state === 'heat' ? 'default' : 'secondary'}
+                          className="capitalize text-[9px]"
+                        >
+                          {d.state}
+                        </Badge>
+                      </div>
+                      <span className="text-[10px] font-mono text-muted-foreground">{d.entity_id}</span>
+                    </div>
+
+                    {/* Brightness readout for lights */}
+                    {d.brightness !== undefined && (
+                      <div className="pt-4 space-y-1">
+                        <div className="flex justify-between text-[10px] font-mono">
+                          <span>Brightness:</span>
+                          <span className="font-bold">{d.brightness}%</span>
+                        </div>
+                        <div className="w-full bg-accent h-1.5 rounded-full overflow-hidden">
+                          <div className="bg-primary h-full" style={{ width: `${d.brightness}%` }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Climate readout */}
+                    {d.temperature !== undefined && d.target_temp !== undefined && (
+                      <div className="pt-4 text-xs font-mono flex justify-between">
+                        <span>
+                          Room: <strong className="text-foreground">{d.temperature}°C</strong>
+                        </span>
+                        <span>
+                          Target: <strong className="text-primary">{d.target_temp}°C</strong>
+                        </span>
+                      </div>
+                    )}
+                  </Card>
+                ))}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Nextcloud Tasks / Calendars & MS Outlook Inbox */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Calendars Nextcloud */}
+        <Card className="border border-border/80 shadow-md lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="text-primary size-5" /> Calendar & Tasks Agenda (Nextcloud-Agent)
+            </CardTitle>
+            <CardDescription>Productivity synchronizer wiring personal schedule with CalDAV servers</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ServiceNotice state={ecoStatus.nextcloud} emptyLabel="No upcoming calendar events reported." />
+            <div className="space-y-2">
+              <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Upcoming Calendars</h5>
+              <div className="space-y-2">
+                {ecoStatus.nextcloud.status === 'ready' &&
+                  nextcloudEvents.map((ev) => (
+                    <div key={ev.id} className="flex items-center justify-between p-2 border rounded-md bg-accent/5">
+                      <div className="space-y-0.5">
+                        <h4 className="text-xs font-semibold text-foreground">{ev.title}</h4>
+                        <span className="text-[10px] font-mono text-muted-foreground">
+                          {new Date(ev.start).toLocaleString()}
+                        </span>
+                      </div>
+                      <Badge variant="secondary" className="text-[9px] uppercase tracking-wide">
+                        {ev.type}
+                      </Badge>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            <div className="border-t pt-4 space-y-2">
+              <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Pending Tasks</h5>
+              {/* D-WUI-BUG-008: `nextcloudTasks` is always `[]` -- the
+                        backend only wires `list_calendars`/
+                        `list_calendar_events`, there is no tasks read path.
+                        Rendering an empty task grid here was
+                        indistinguishable from "you have zero tasks", which
+                        is not what's actually true. Say so explicitly. */}
+              <ServiceNotice
+                state={{
+                  status: 'unavailable',
+                  reason:
+                    'Nextcloud tasks have no backend read path wired (only calendars/events are). ' +
+                    'This section cannot show real data until one is added.',
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* MS Exchange / Outlook */}
+        <Card className="border border-border/80 shadow-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm font-bold">
+              <Mail className="text-blue-500 size-4.5" /> Outlook Graph Inbox (Microsoft-Agent)
+            </CardTitle>
+            <CardDescription>Synced MS Exchange emails summaries</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ServiceNotice state={ecoStatus.microsoft} emptyLabel="No inbox messages reported." />
+            <div className="space-y-2.5">
+              {ecoStatus.microsoft.status === 'ready' &&
+                microsoftEmails.map((mail) => (
+                  <div
+                    key={mail.id}
+                    className="p-3 border rounded-md hover:border-primary/20 transition-all bg-accent/5 space-y-1 relative"
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-primary truncate max-w-[120px]">{mail.from}</span>
+                      <span className="text-[9px] font-mono text-muted-foreground">{mail.received}</span>
+                    </div>
+                    <h4 className="text-xs font-bold text-foreground leading-snug truncate pr-6">{mail.subject}</h4>
+                    {mail.importance === 'high' && (
+                      <span
+                        className="absolute top-3 right-3 text-red-500 font-extrabold text-[10px]"
+                        title="High Importance"
+                      >
+                        !
+                      </span>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/*
+              D-WUI-BUG-008: this entire section used to be a permanent,
+              hardcoded five-day meal plan (real-looking recipe names,
+              calories, protein grams) and a hardcoded six-exercise workout
+              split, both labeled as if pulled live from Mealie-MCP and
+              Wger-Agent. Neither ever fetched anything -- `mealPlan` and
+              `workoutRoutines` were `useState` literals with no backing
+              request, and the interactive "Servings"/"muscle filter"
+              controls only recomputed derived numbers from that invented
+              data. No `/api/enhanced/ecosystem/mealie/*` or
+              `/api/enhanced/ecosystem/wger/*` read route exists at all
+              (`mealie-mcp`/`wger-agent` are only listed as installed
+              packages by `/ecosystem/services`). Per BUG-REMEDIATION-DESIGNS
+              #bug-008, an honest "unavailable" here is the correct outcome,
+              not a regression -- the accompanying "Biometrics & Meal
+              Calibration" card was pure marketing copy describing behavior
+              that never existed and is removed with it.
+            */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="border border-border/80 shadow-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="text-primary size-5" /> Culinary Meal Planner (Mealie-MCP)
+            </CardTitle>
+            <CardDescription>Scale ingredients and recipes dynamically</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ServiceNotice
+              state={{
+                status: 'unavailable',
+                reason:
+                  'No backend endpoint is wired for Mealie meal-plan data. Add a ' +
+                  'GET /api/enhanced/ecosystem/mealie/plan route before this card can show real data.',
+              }}
+            />
+          </CardContent>
+        </Card>
+
+        <Card className="border border-border/80 shadow-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Flame className="text-orange-500 size-5" /> Workout Splits Builder (Wger-Agent)
+            </CardTitle>
+            <CardDescription>Tailor strength splits and reps counters</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ServiceNotice
+              state={{
+                status: 'unavailable',
+                reason:
+                  'No backend endpoint is wired for Wger workout-routine data. Add a ' +
+                  'GET /api/enhanced/ecosystem/wger/routines route before this card can show real data.',
+              }}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+/* 5. MEDIA & UTILITIES DOMAIN */
+interface MediaDomainProps {
+  ecoStatus: Record<string, EcoState>
+  qbittorrentTorrents: QbittorrentTorrent[]
+  mediaDownloads: MediaDownload[]
+  stirlingJobs: StirlingJob[]
+  repos: RepoInfo[]
+  repoInventoryError: string | null
+  selectedRepos: string[]
+  onSelectedReposChange: (repos: string[]) => void
+  bulkActionRunning: boolean
+  onRunBulkStatus: () => void
+}
+
+function MediaDomain({
+  ecoStatus,
+  qbittorrentTorrents,
+  mediaDownloads,
+  stirlingJobs,
+  repos,
+  repoInventoryError,
+  selectedRepos,
+  onSelectedReposChange,
+  bulkActionRunning,
+  onRunBulkStatus,
+}: MediaDomainProps) {
+  return (
+    <div className="space-y-6 animate-in fade-in-50 duration-200">
+      {/* qBittorrent downloads list displaying speed limits */}
+      <Card className="border border-border/80 shadow-md">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="text-primary size-5" /> Active Torrents Download speedometers (qBittorrent-Agent)
+          </CardTitle>
+          <CardDescription>Network traffic speed limiters and seed ratio checks</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <ServiceNotice state={ecoStatus.qbittorrent} emptyLabel="No active torrents reported." />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {ecoStatus.qbittorrent.status === 'ready' &&
+              qbittorrentTorrents.map((t) => (
+                <Card key={t.name} className="p-4 bg-accent/5 hover:border-primary/20 transition-all space-y-4">
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="truncate">
+                      <h4 className="font-bold text-xs text-foreground truncate" title={t.name}>
+                        {t.name}
+                      </h4>
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        Size: {t.size} | Status: <strong className="capitalize">{t.status}</strong>
+                      </span>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className="text-[9px] uppercase tracking-wide bg-primary/5 text-primary border-primary/20"
+                    >
+                      {t.progress}%
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="w-full bg-accent h-2 rounded-full overflow-hidden">
+                      <div
+                        className="bg-primary h-full transition-all duration-300"
+                        style={{ width: `${t.progress}%` }}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 text-[10px] font-mono text-muted-foreground pt-0.5">
+                      <div>
+                        DL Speed: <span className="font-bold text-green-500">{t.dl_speed}</span>
+                      </div>
+                      <div className="text-right">
+                        UL Speed: <span className="font-bold text-blue-500">{t.ul_speed}</span>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Video downloader yt-dlp form and task list */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="border border-border/80 shadow-md lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Download className="text-primary size-5" /> yt-dlp Video Downloader queue (Media-Downloader)
+            </CardTitle>
+            <CardDescription>Submit streaming video URLs to download as local MP3/MP4 files</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/*
+                    D-WUI-BUG-008: this form used to call `addMediaDownload`,
+                    which never sent the URL anywhere -- it fabricated a
+                    queue row client-side with a randomly generated (non-backend) id,
+                    then a `setTimeout` swapped in a fixed fake title
+                    ("Self-driven coding agents presentation"), 45.2%
+                    progress, and "5.8 MB/s" after 2 seconds, regardless of
+                    what URL was entered. `media-downloader-mcp` only
+                    exposes a fire-and-forget `download_media` action with
+                    no way to read back a queue/history (see
+                    `get_mediadownloader_downloads` in
+                    `api_extensions.py`), so there is no honest "submit and
+                    watch progress" UI possible today -- the read-only GET
+                    below reports that explicitly instead.
+                  */}
+            <ReadOnlyNotice reason="Submitting a download is not available: media-downloader-mcp exposes only a fire-and-forget action with no queue to read back or show progress from." />
+            <div className="border-t pt-4 space-y-2">
+              <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Queue Status</h5>
+              <ServiceNotice state={ecoStatus.mediadownloader} emptyLabel="No active downloads reported." />
+              <div className="space-y-2.5">
+                {ecoStatus.mediadownloader.status === 'ready' &&
+                  mediaDownloads.map((dl) => (
+                    <div
+                      key={dl.id}
+                      className="p-3 border rounded-md bg-accent/5 hover:border-primary/20 transition-all space-y-2"
+                    >
+                      <div className="flex justify-between items-center text-xs">
+                        <h4 className="font-bold text-foreground truncate max-w-[280px]" title={dl.title}>
+                          {dl.title}
+                        </h4>
+                        <span className="font-mono font-bold text-primary">{dl.progress}%</span>
+                      </div>
+                      <div className="w-full bg-accent h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-primary h-full transition-all" style={{ width: `${dl.progress}%` }} />
+                      </div>
+                      <div className="flex justify-between text-[10px] font-mono text-muted-foreground pt-0.5">
+                        <span>
+                          Status: <strong className="capitalize text-foreground">{dl.status}</strong>
+                        </span>
+                        <span>Speed: {dl.speed}</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Stirling PDF action split/merge/compress triggers */}
+        <Card className="border border-border/80 shadow-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm font-bold">
+              <FileText className="text-red-500 size-4.5" /> Stirling PDF Actions (StirlingPDF-Agent)
+            </CardTitle>
+            <CardDescription>Convert, split, or merge files</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/*
+                    D-WUI-BUG-008: these four buttons used to call
+                    `submitStirlingPdf`, which fabricated a job entirely
+                    client-side (a randomly generated, non-backend id, filename
+                    `processed_<action>_doc.pdf`, no file was ever selected
+                    or uploaded) and showed `toast.success('...launched
+                    successfully')` immediately, then a `setTimeout` flipped
+                    it to "completed" after 3s with another toast -- no PDF
+                    was ever processed. `stirlingpdf-mcp` exposes only a
+                    synchronous one-shot `pdf_action` with no persistent job
+                    list (see `get_stirlingpdf_jobs`), so a queued-jobs UI
+                    cannot be honest here without a file-upload + durable
+                    job store this lane does not own.
+                  */}
+            <ReadOnlyNotice reason="PDF actions are not available in this view: Stirling-PDF processes synchronously (no file upload/job queue is wired here)." />
+            <div className="border-t pt-4 space-y-2">
+              <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Jobs Status</h5>
+              <ServiceNotice state={ecoStatus.stirlingpdf} emptyLabel="No PDF jobs reported." />
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {ecoStatus.stirlingpdf.status === 'ready' &&
+                  stirlingJobs.map((job) => (
+                    <div
+                      key={job.id}
+                      className="flex justify-between items-center p-2 border rounded-md text-xs bg-accent/5"
+                    >
+                      <div className="truncate max-w-[120px] pr-2">
+                        <span className="font-bold block truncate" title={job.filename}>
+                          {job.filename}
+                        </span>
+                        <span className="text-[9px] font-mono text-muted-foreground uppercase">
+                          {job.action} | {job.timestamp}
+                        </span>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className={cn('capitalize scale-90', {
+                          'bg-emerald-500/10 text-emerald-600 border-emerald-500/25': job.status === 'completed',
+                          'bg-amber-500/10 text-amber-600 border-amber-500/25': job.status === 'running',
+                        })}
+                      >
+                        {job.status}
+                      </Badge>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Cloned git repositories branches */}
+      <Card className="border border-border/80 shadow-md">
+        <CardHeader className="flex flex-col md:flex-row md:items-center justify-between pb-3 gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <GitPullRequest className="text-primary size-5" /> Repositories Workspace Matrix
+            </CardTitle>
+            <CardDescription>Monitor branches, structural drift, and staging modifications</CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              onClick={onRunBulkStatus}
+              disabled={bulkActionRunning || selectedRepos.length === 0}
+            >
+              <RefreshCw className={cn('size-4', { 'animate-spin': bulkActionRunning })} />
+              Check Status ({selectedRepos.length})
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0 border-t">
+          <table className="w-full text-left border-collapse text-sm">
+            <thead className="bg-accent/40 border-b">
+              <tr>
+                <th className="p-4 w-12 text-center">
+                  <input
+                    type="checkbox"
+                    checked={repos.length > 0 && selectedRepos.length === repos.length}
+                    disabled={repos.length === 0}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        onSelectedReposChange(repos.map((r) => r.reference))
+                      } else {
+                        onSelectedReposChange([])
+                      }
+                    }}
+                    className="rounded border-gray-300 focus:ring-primary size-4 cursor-pointer"
+                  />
+                </th>
+                <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                  Repository
+                </th>
+                <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                  Branch State
+                </th>
+                <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                  Local Drift
+                </th>
+                <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                  Sync status
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {repoInventoryError && (
+                <tr>
+                  <td colSpan={5} className="p-4 text-sm text-amber-700 dark:text-amber-300">
+                    <strong>Live repository inventory unavailable.</strong> {repoInventoryError} No simulated
+                    repositories are shown.
+                  </td>
+                </tr>
+              )}
+              {!repoInventoryError && repos.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="p-4 text-sm text-muted-foreground">
+                    No Git repositories were discovered in the configured workspace.
+                  </td>
+                </tr>
+              )}
+              {repos.map((r) => (
+                <tr key={r.reference} className="hover:bg-accent/10 transition-colors">
+                  <td className="p-4 text-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedRepos.includes(r.reference)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          onSelectedReposChange([...selectedRepos, r.reference])
+                        } else {
+                          onSelectedReposChange(selectedRepos.filter((n) => n !== r.reference))
+                        }
+                      }}
+                      className="rounded border-gray-300 focus:ring-primary size-4 cursor-pointer"
+                    />
+                  </td>
+                  <td className="p-4 font-bold text-foreground tracking-tight flex flex-col pt-3 pb-3">
+                    <span>{r.label}</span>
+                  </td>
+                  <td className="p-4 font-semibold text-muted-foreground">
+                    <Badge variant="secondary" className="font-mono text-xs">
+                      {r.branch_state}
+                    </Badge>
+                  </td>
+                  <td className="p-4 font-mono font-bold text-xs text-amber-500">
+                    {r.modified_count < 0
+                      ? 'unavailable'
+                      : r.modified_count > 0
+                        ? 'tracked drift detected'
+                        : 'no tracked drift'}
+                  </td>
+                  <td className="p-4">
+                    <Badge
+                      variant="outline"
+                      className={cn('capitalize px-2 py-0.5 text-xs font-semibold rounded-full border', {
+                        'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': r.status === 'clean',
+                        'bg-amber-500/10 border-amber-500/25 text-amber-600': r.status === 'modified',
+                        'bg-red-500/10 border-red-500/25 text-red-600': r.status === 'unavailable',
+                      })}
+                    >
+                      {r.status}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+type DomainKey = 'devops' | 'research' | 'infra' | 'lifestyle' | 'media' | 'other'
+
+const DOMAIN_NAV_ITEMS: { key: DomainKey; label: string; icon: typeof GitPullRequest }[] = [
+  { key: 'devops', label: 'DevOps & Tasks', icon: GitPullRequest },
+  { key: 'research', label: 'Data & Research', icon: BarChart2 },
+  { key: 'infra', label: 'Infrastructure Hub', icon: Network },
+  { key: 'lifestyle', label: 'Lifestyle & Home', icon: Heart },
+  { key: 'media', label: 'Media & Utilities', icon: Download },
+  { key: 'other', label: 'Other Integrations', icon: Compass },
+]
+
+function DomainNavButton({
+  active,
+  label,
+  icon: Icon,
+  badge,
+  onClick,
+}: {
+  active: boolean
+  label: string
+  icon: typeof GitPullRequest
+  badge?: number
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
+        active
+          ? 'bg-primary text-primary-foreground shadow-md'
+          : 'hover:bg-accent text-muted-foreground hover:text-foreground'
+      }`}
+    >
+      <Icon className="size-4" />
+      {label}
+      {badge !== undefined && (
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+          {badge}
+        </Badge>
+      )}
+    </button>
+  )
+}
+
+/** Premium Glassmorphic Domain Selection Navbar */
+function DomainNavbar({
+  activeDomain,
+  onDomainChange,
+  otherBadgeCount,
+  loading,
+  onRefresh,
+}: {
+  activeDomain: DomainKey
+  onDomainChange: (domain: DomainKey) => void
+  otherBadgeCount: number | null
+  loading: boolean
+  onRefresh: () => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-2 p-1.5 bg-accent/30 rounded-lg border border-border shadow-sm items-center justify-between">
+      <div className="flex flex-wrap gap-2">
+        {DOMAIN_NAV_ITEMS.map((item) => (
+          <DomainNavButton
+            key={item.key}
+            active={activeDomain === item.key}
+            label={item.label}
+            icon={item.icon}
+            badge={item.key === 'other' && otherBadgeCount !== null ? otherBadgeCount : undefined}
+            onClick={() => {
+              onDomainChange(item.key)
+            }}
+          />
+        ))}
+      </div>
+
+      <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading} className="gap-1.5">
+        <RefreshCw className={cn('size-3.5', { 'animate-spin': loading })} />
+        Refresh
+      </Button>
+    </div>
+  )
+}
+
+/* 1. DEVOPS & TASKS DOMAIN */
+
+/** Jira / Atlassian Kanban board */
+function KanbanBoardCard({
+  ecoStatus,
+  kanbanColumns,
+}: {
+  ecoStatus: Record<string, EcoState>
+  kanbanColumns: KanbanColumn[]
+}) {
+  return (
+    <Card className="border border-border/80 shadow-md">
+      <CardHeader>
+        <div className="flex justify-between items-center">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <LayoutGrid className="text-primary size-5" /> Agile Scrum Board (Atlassian-Agent)
+            </CardTitle>
+            <CardDescription>Visual Sprint logs and backlog mapping inside Atlassian APIs</CardDescription>
+          </div>
+          <Badge variant="outline" className="text-xs bg-primary/5 text-primary border-primary/20">
+            Active Sprint
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <ServiceNotice state={ecoStatus.kanban} emptyLabel="No sprint columns reported." />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {ecoStatus.kanban.status === 'ready' &&
+            kanbanColumns.map((col) => (
+              <div key={col.id} className="bg-accent/15 p-4 rounded-lg border border-border/40 space-y-3">
+                <div className="flex justify-between items-center border-b pb-2">
+                  <span className="font-bold text-xs uppercase tracking-wide text-muted-foreground">{col.title}</span>
+                  <Badge variant="secondary" className="font-mono text-xs">
+                    {col.issues.length}
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  {col.issues.map((iss) => (
+                    <div
+                      key={iss.id}
+                      className="p-3 bg-background border rounded-md hover:border-primary/30 transition-all shadow-sm space-y-2"
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="font-mono text-[10px] font-bold text-primary">{iss.id}</span>
+                        <Badge
+                          className="text-[9px] uppercase tracking-wide scale-90"
+                          variant={iss.priority === 'Highest' || iss.priority === 'High' ? 'destructive' : 'secondary'}
+                        >
+                          {iss.priority}
+                        </Badge>
+                      </div>
+                      <h4 className="text-xs font-semibold text-foreground leading-snug">{iss.title}</h4>
+                      <div className="flex justify-end pt-1">
+                        <span className="size-5 rounded-full bg-accent text-[9px] font-extrabold flex items-center justify-center border uppercase text-muted-foreground">
+                          {iss.assignee.substring(0, 2)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {col.issues.length === 0 && (
+                    <div className="text-center py-6 text-xs text-muted-foreground font-mono">Column Empty</div>
+                  )}
+                </div>
+              </div>
+            ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function GithubCard({
+  ecoStatus,
+  githubRepo,
+  onGithubRepoChange,
+  onLoadGithubRepo,
+  githubPrs,
+  githubWorkflows,
+}: {
+  ecoStatus: Record<string, EcoState>
+  githubRepo: string
+  onGithubRepoChange: (value: string) => void
+  onLoadGithubRepo: () => void
+  githubPrs: GithubPr[]
+  githubWorkflows: GithubWorkflow[]
+}) {
+  return (
+    <Card className="border border-border/80 shadow-md">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-sm font-bold">
+          <GitBranch className="text-purple-500 size-4.5" /> Pull Requests & Workflows (GitHub-Agent)
+        </CardTitle>
+        <CardDescription>Live actions CI execution streams</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* BUG-012: `get_github_prs` requires an explicit
+            `owner/name` selector -- a PR list is inherently
+            per-repository, and the backend returns
+            `needs_input` (not an error, not fabricated data)
+            without one. This is the only place the selector can
+            come from. */}
+        <div className="flex items-center gap-2">
+          <Input
+            value={githubRepo}
+            onChange={(e) => {
+              onGithubRepoChange(e.target.value)
+            }}
+            placeholder="owner/name"
+            className="h-7 text-xs font-mono"
+            aria-label="GitHub repository (owner/name)"
+          />
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onLoadGithubRepo}>
+            Load
+          </Button>
+        </div>
+        <ServiceNotice state={ecoStatus.github} emptyLabel="No open pull requests reported." />
+        <div className="space-y-2.5">
+          {ecoStatus.github.status === 'ready' &&
+            githubPrs.map((pr) => (
+              <div key={pr.id} className="flex items-center justify-between p-2.5 border rounded-md bg-accent/5">
+                <div className="space-y-1 truncate pr-2">
+                  <h4 className="text-xs font-bold text-foreground truncate flex items-center gap-1.5">
+                    #{pr.id}{' '}
+                    {isRenderableUrl(pr.web_url) ? (
+                      <a href={pr.web_url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                        {pr.title}
+                      </a>
+                    ) : (
+                      pr.title
+                    )}
+                  </h4>
+                  <p className="text-[10px] text-muted-foreground font-mono truncate">
+                    by {pr.author ?? 'unknown'} | branch:{' '}
+                    <span className="text-primary font-semibold">{pr.branch ?? 'unknown'}</span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <Badge
+                    variant="outline"
+                    className="capitalize text-[10px] bg-emerald-500/5 text-emerald-600 border-emerald-500/20"
+                  >
+                    {pr.status}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+        </div>
+
+        <div className="border-t pt-4 space-y-2">
+          <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">CI Actions Runs</h5>
+          <div className="space-y-1.5 text-xs">
+            {ecoStatus.github.status === 'ready' &&
+              githubWorkflows.map((wf, idx) => (
+                <div key={wf.id ?? idx} className="flex justify-between items-center font-mono">
+                  <span className="text-foreground">
+                    Run #{wf.run_number ?? '?'} - {wf.name ?? 'unnamed workflow'}
+                  </span>
+                  <Badge variant="default" className="text-[9px] px-1 py-0">
+                    {wf.conclusion ?? wf.status ?? 'unknown'}
+                  </Badge>
+                </div>
+              ))}
+            {ecoStatus.github.status === 'ready' && githubWorkflows.length === 0 && (
+              <div className="text-muted-foreground">No CI runs reported.</div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function GitlabCard({
+  ecoStatus,
+  gitlabMrs,
+  gitlabPipelines,
+}: {
+  ecoStatus: Record<string, EcoState>
+  gitlabMrs: GitlabMr[]
+  gitlabPipelines: GitlabPipeline[]
+}) {
+  return (
+    <Card className="border border-border/80 shadow-md">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-sm font-bold">
+          <GitMerge className="text-orange-500 size-4.5" /> Merge Requests & Pipelines (GitLab-API)
+        </CardTitle>
+        <CardDescription>GitLab server integration logs</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <ServiceNotice state={ecoStatus.gitlab} emptyLabel="No open merge requests reported." />
+        <div className="space-y-2.5">
+          {ecoStatus.gitlab.status === 'ready' &&
+            gitlabMrs.map((mr) => (
+              <div key={mr.id} className="flex items-center justify-between p-2.5 border rounded-md bg-accent/5">
+                <div className="space-y-1 truncate pr-2">
+                  <h4 className="text-xs font-bold text-foreground truncate">
+                    !{mr.id}{' '}
+                    {isRenderableUrl(mr.web_url) ? (
+                      <a href={mr.web_url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                        {mr.title}
+                      </a>
+                    ) : (
+                      mr.title
+                    )}
+                  </h4>
+                  <p className="text-[10px] text-muted-foreground font-mono">
+                    by {mr.author ?? 'unknown'} | target: {mr.target_branch}
+                  </p>
+                </div>
+                <Badge className="text-[9px] uppercase">{mr.status}</Badge>
+              </div>
+            ))}
+        </div>
+
+        <div className="border-t pt-4 space-y-2">
+          <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Pipelines Runs</h5>
+          <div className="space-y-1.5 text-xs">
+            {ecoStatus.gitlab.status === 'ready' &&
+              gitlabPipelines.map((p) => (
+                <div key={p.id} className="flex justify-between items-center font-mono">
+                  <span className="text-foreground">
+                    Pipeline #{p.id} ({p.ref})
+                  </span>
+                  {p.duration && <span className="text-muted-foreground text-[10px]">{p.duration}</span>}
+                  <Badge variant="secondary" className="text-[9px]">
+                    {p.status}
+                  </Badge>
+                </div>
+              ))}
+            {ecoStatus.gitlab.status === 'ready' && gitlabPipelines.length === 0 && (
+              <div className="text-muted-foreground">No pipeline runs reported.</div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/** Portainer stack list */
+function PortainerCard({
+  ecoStatus,
+  portainerStacks,
+}: {
+  ecoStatus: Record<string, EcoState>
+  portainerStacks: PortainerStack[]
+}) {
+  return (
+    <Card className="border border-border/80 shadow-md">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Layers className="text-primary size-5" /> Docker Compose Stacks (Portainer-Agent)
+        </CardTitle>
+        <CardDescription>Multi-host service stacks loaded dynamically from Portainer environments</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <ServiceNotice state={ecoStatus.portainer} emptyLabel="No Portainer stacks reported." />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {ecoStatus.portainer.status === 'ready' &&
+            portainerStacks.map((stack) => (
+              <Card
+                key={stack.name}
+                className="p-4 bg-accent/5 hover:border-primary/30 transition-all flex flex-col justify-between"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-bold text-sm text-foreground leading-snug">{stack.name}</h4>
+                    <p className="text-xs text-muted-foreground pt-1">{stack.services} services configured</p>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="capitalize scale-90 bg-emerald-500/10 text-emerald-600 border-emerald-500/25"
+                  >
+                    {stack.status}
+                  </Badge>
+                </div>
+                <div className="pt-4 flex justify-between items-center text-[10px] font-mono text-muted-foreground border-t mt-3">
+                  <span>Deploy Type:</span>
+                  <span className="font-bold text-foreground">{stack.type}</span>
+                </div>
+              </Card>
+            ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function DevOpsDomain({
+  ecoStatus,
+  kanbanColumns,
+  githubRepo,
+  onGithubRepoChange,
+  onLoadGithubRepo,
+  githubPrs,
+  githubWorkflows,
+  gitlabMrs,
+  gitlabPipelines,
+  portainerStacks,
+}: DevOpsDomainProps) {
+  return (
+    <div className="space-y-6 animate-in fade-in-50 duration-200">
+      <KanbanBoardCard ecoStatus={ecoStatus} kanbanColumns={kanbanColumns} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <GithubCard
+          ecoStatus={ecoStatus}
+          githubRepo={githubRepo}
+          onGithubRepoChange={onGithubRepoChange}
+          onLoadGithubRepo={onLoadGithubRepo}
+          githubPrs={githubPrs}
+          githubWorkflows={githubWorkflows}
+        />
+        <GitlabCard ecoStatus={ecoStatus} gitlabMrs={gitlabMrs} gitlabPipelines={gitlabPipelines} />
+      </div>
+
+      <PortainerCard ecoStatus={ecoStatus} portainerStacks={portainerStacks} />
+    </div>
+  )
+}
 
 export default function EcosystemView() {
   const [activeDomain, setActiveDomain] = useState<'devops' | 'research' | 'infra' | 'lifestyle' | 'media' | 'other'>(
@@ -1009,1532 +2730,117 @@ export default function EcosystemView() {
 
   return (
     <div className="w-full h-full flex flex-col gap-6 text-foreground bg-background">
-      {/* Premium Glassmorphic Domain Selection Navbar */}
-      <div className="flex flex-wrap gap-2 p-1.5 bg-accent/30 rounded-lg border border-border shadow-sm items-center justify-between">
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => {
-              setActiveDomain('devops')
-            }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
-              activeDomain === 'devops'
-                ? 'bg-primary text-primary-foreground shadow-md'
-                : 'hover:bg-accent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <GitPullRequest className="size-4" />
-            DevOps & Tasks
-          </button>
-          <button
-            onClick={() => {
-              setActiveDomain('research')
-            }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
-              activeDomain === 'research'
-                ? 'bg-primary text-primary-foreground shadow-md'
-                : 'hover:bg-accent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <BarChart2 className="size-4" />
-            Data & Research
-          </button>
-          <button
-            onClick={() => {
-              setActiveDomain('infra')
-            }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
-              activeDomain === 'infra'
-                ? 'bg-primary text-primary-foreground shadow-md'
-                : 'hover:bg-accent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <Network className="size-4" />
-            Infrastructure Hub
-          </button>
-          <button
-            onClick={() => {
-              setActiveDomain('lifestyle')
-            }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
-              activeDomain === 'lifestyle'
-                ? 'bg-primary text-primary-foreground shadow-md'
-                : 'hover:bg-accent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <Heart className="size-4" />
-            Lifestyle & Home
-          </button>
-          <button
-            onClick={() => {
-              setActiveDomain('media')
-            }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
-              activeDomain === 'media'
-                ? 'bg-primary text-primary-foreground shadow-md'
-                : 'hover:bg-accent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <Download className="size-4" />
-            Media & Utilities
-          </button>
-          <button
-            onClick={() => {
-              setActiveDomain('other')
-            }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
-              activeDomain === 'other'
-                ? 'bg-primary text-primary-foreground shadow-md'
-                : 'hover:bg-accent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <Compass className="size-4" />
-            Other Integrations
-            {catalogState.status === 'ready' && (
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                {catalogServices.filter((s) => !COVERED_ECOSYSTEM_SERVICES.has(s)).length}
-              </Badge>
-            )}
-          </button>
-        </div>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            void loadEcosystemData()
-            void fetchHosts()
-            void fetchSystems()
-            void fetchContainers()
-            void fetchRepos()
-            void fetchEcosystemCatalog()
-          }}
-          disabled={loading}
-          className="gap-1.5"
-        >
-          <RefreshCw className={cn('size-3.5', { 'animate-spin': loading })} />
-          Refresh
-        </Button>
-      </div>
+      <DomainNavbar
+        activeDomain={activeDomain}
+        onDomainChange={setActiveDomain}
+        otherBadgeCount={
+          catalogState.status === 'ready'
+            ? catalogServices.filter((s) => !COVERED_ECOSYSTEM_SERVICES.has(s)).length
+            : null
+        }
+        loading={loading}
+        onRefresh={() => {
+          void loadEcosystemData()
+          void fetchHosts()
+          void fetchSystems()
+          void fetchContainers()
+          void fetchRepos()
+          void fetchEcosystemCatalog()
+        }}
+      />
 
       {/* Primary content areas rendering */}
       <div className="flex-1 min-h-[600px] space-y-6">
         {/* 1. DEVOPS & TASKS DOMAIN */}
         {activeDomain === 'devops' && (
-          <div className="space-y-6 animate-in fade-in-50 duration-200">
-            {/* Jira / Atlassian Kanban board */}
-            <Card className="border border-border/80 shadow-md">
-              <CardHeader>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <LayoutGrid className="text-primary size-5" /> Agile Scrum Board (Atlassian-Agent)
-                    </CardTitle>
-                    <CardDescription>Visual Sprint logs and backlog mapping inside Atlassian APIs</CardDescription>
-                  </div>
-                  <Badge variant="outline" className="text-xs bg-primary/5 text-primary border-primary/20">
-                    Active Sprint
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ServiceNotice state={ecoStatus.kanban} emptyLabel="No sprint columns reported." />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {ecoStatus.kanban.status === 'ready' &&
-                    kanbanColumns.map((col) => (
-                      <div key={col.id} className="bg-accent/15 p-4 rounded-lg border border-border/40 space-y-3">
-                        <div className="flex justify-between items-center border-b pb-2">
-                          <span className="font-bold text-xs uppercase tracking-wide text-muted-foreground">
-                            {col.title}
-                          </span>
-                          <Badge variant="secondary" className="font-mono text-xs">
-                            {col.issues.length}
-                          </Badge>
-                        </div>
-                        <div className="space-y-2">
-                          {col.issues.map((iss) => (
-                            <div
-                              key={iss.id}
-                              className="p-3 bg-background border rounded-md hover:border-primary/30 transition-all shadow-sm space-y-2"
-                            >
-                              <div className="flex justify-between items-center">
-                                <span className="font-mono text-[10px] font-bold text-primary">{iss.id}</span>
-                                <Badge
-                                  className="text-[9px] uppercase tracking-wide scale-90"
-                                  variant={
-                                    iss.priority === 'Highest' || iss.priority === 'High' ? 'destructive' : 'secondary'
-                                  }
-                                >
-                                  {iss.priority}
-                                </Badge>
-                              </div>
-                              <h4 className="text-xs font-semibold text-foreground leading-snug">{iss.title}</h4>
-                              <div className="flex justify-end pt-1">
-                                <span className="size-5 rounded-full bg-accent text-[9px] font-extrabold flex items-center justify-center border uppercase text-muted-foreground">
-                                  {iss.assignee.substring(0, 2)}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                          {col.issues.length === 0 && (
-                            <div className="text-center py-6 text-xs text-muted-foreground font-mono">
-                              Column Empty
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* GitHub Actions & GitLab Pipelines */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card className="border border-border/80 shadow-md">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-sm font-bold">
-                    <GitBranch className="text-purple-500 size-4.5" /> Pull Requests & Workflows (GitHub-Agent)
-                  </CardTitle>
-                  <CardDescription>Live actions CI execution streams</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* BUG-012: `get_github_prs` requires an explicit
-                      `owner/name` selector -- a PR list is inherently
-                      per-repository, and the backend returns
-                      `needs_input` (not an error, not fabricated data)
-                      without one. This is the only place the selector can
-                      come from. */}
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={githubRepo}
-                      onChange={(e) => {
-                        setGithubRepo(e.target.value)
-                      }}
-                      placeholder="owner/name"
-                      className="h-7 text-xs font-mono"
-                      aria-label="GitHub repository (owner/name)"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs"
-                      onClick={() => {
-                        window.localStorage.setItem('ecosystem.githubRepo', githubRepo.trim())
-                        void loadEcosystemData()
-                      }}
-                    >
-                      Load
-                    </Button>
-                  </div>
-                  <ServiceNotice state={ecoStatus.github} emptyLabel="No open pull requests reported." />
-                  <div className="space-y-2.5">
-                    {ecoStatus.github.status === 'ready' &&
-                      githubPrs.map((pr) => (
-                        <div
-                          key={pr.id}
-                          className="flex items-center justify-between p-2.5 border rounded-md bg-accent/5"
-                        >
-                          <div className="space-y-1 truncate pr-2">
-                            <h4 className="text-xs font-bold text-foreground truncate flex items-center gap-1.5">
-                              #{pr.id}{' '}
-                              {isRenderableUrl(pr.web_url) ? (
-                                <a
-                                  href={pr.web_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="hover:underline"
-                                >
-                                  {pr.title}
-                                </a>
-                              ) : (
-                                pr.title
-                              )}
-                            </h4>
-                            <p className="text-[10px] text-muted-foreground font-mono truncate">
-                              by {pr.author ?? 'unknown'} | branch:{' '}
-                              <span className="text-primary font-semibold">{pr.branch ?? 'unknown'}</span>
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <Badge
-                              variant="outline"
-                              className="capitalize text-[10px] bg-emerald-500/5 text-emerald-600 border-emerald-500/20"
-                            >
-                              {pr.status}
-                            </Badge>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-
-                  <div className="border-t pt-4 space-y-2">
-                    <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
-                      CI Actions Runs
-                    </h5>
-                    <div className="space-y-1.5 text-xs">
-                      {ecoStatus.github.status === 'ready' &&
-                        githubWorkflows.map((wf, idx) => (
-                          <div key={wf.id ?? idx} className="flex justify-between items-center font-mono">
-                            <span className="text-foreground">
-                              Run #{wf.run_number ?? '?'} - {wf.name ?? 'unnamed workflow'}
-                            </span>
-                            <Badge variant="default" className="text-[9px] px-1 py-0">
-                              {wf.conclusion ?? wf.status ?? 'unknown'}
-                            </Badge>
-                          </div>
-                        ))}
-                      {ecoStatus.github.status === 'ready' && githubWorkflows.length === 0 && (
-                        <div className="text-muted-foreground">No CI runs reported.</div>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border border-border/80 shadow-md">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-sm font-bold">
-                    <GitMerge className="text-orange-500 size-4.5" /> Merge Requests & Pipelines (GitLab-API)
-                  </CardTitle>
-                  <CardDescription>GitLab server integration logs</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <ServiceNotice state={ecoStatus.gitlab} emptyLabel="No open merge requests reported." />
-                  <div className="space-y-2.5">
-                    {ecoStatus.gitlab.status === 'ready' &&
-                      gitlabMrs.map((mr) => (
-                        <div
-                          key={mr.id}
-                          className="flex items-center justify-between p-2.5 border rounded-md bg-accent/5"
-                        >
-                          <div className="space-y-1 truncate pr-2">
-                            <h4 className="text-xs font-bold text-foreground truncate">
-                              !{mr.id}{' '}
-                              {isRenderableUrl(mr.web_url) ? (
-                                <a
-                                  href={mr.web_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="hover:underline"
-                                >
-                                  {mr.title}
-                                </a>
-                              ) : (
-                                mr.title
-                              )}
-                            </h4>
-                            <p className="text-[10px] text-muted-foreground font-mono">
-                              by {mr.author ?? 'unknown'} | target: {mr.target_branch}
-                            </p>
-                          </div>
-                          <Badge className="text-[9px] uppercase">{mr.status}</Badge>
-                        </div>
-                      ))}
-                  </div>
-
-                  <div className="border-t pt-4 space-y-2">
-                    <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Pipelines Runs</h5>
-                    <div className="space-y-1.5 text-xs">
-                      {ecoStatus.gitlab.status === 'ready' &&
-                        gitlabPipelines.map((p) => (
-                          <div key={p.id} className="flex justify-between items-center font-mono">
-                            <span className="text-foreground">
-                              Pipeline #{p.id} ({p.ref})
-                            </span>
-                            {p.duration && <span className="text-muted-foreground text-[10px]">{p.duration}</span>}
-                            <Badge variant="secondary" className="text-[9px]">
-                              {p.status}
-                            </Badge>
-                          </div>
-                        ))}
-                      {ecoStatus.gitlab.status === 'ready' && gitlabPipelines.length === 0 && (
-                        <div className="text-muted-foreground">No pipeline runs reported.</div>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Portainer stack list */}
-            <Card className="border border-border/80 shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Layers className="text-primary size-5" /> Docker Compose Stacks (Portainer-Agent)
-                </CardTitle>
-                <CardDescription>
-                  Multi-host service stacks loaded dynamically from Portainer environments
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ServiceNotice state={ecoStatus.portainer} emptyLabel="No Portainer stacks reported." />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {ecoStatus.portainer.status === 'ready' &&
-                    portainerStacks.map((stack) => (
-                      <Card
-                        key={stack.name}
-                        className="p-4 bg-accent/5 hover:border-primary/30 transition-all flex flex-col justify-between"
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h4 className="font-bold text-sm text-foreground leading-snug">{stack.name}</h4>
-                            <p className="text-xs text-muted-foreground pt-1">{stack.services} services configured</p>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className="capitalize scale-90 bg-emerald-500/10 text-emerald-600 border-emerald-500/25"
-                          >
-                            {stack.status}
-                          </Badge>
-                        </div>
-                        <div className="pt-4 flex justify-between items-center text-[10px] font-mono text-muted-foreground border-t mt-3">
-                          <span>Deploy Type:</span>
-                          <span className="font-bold text-foreground">{stack.type}</span>
-                        </div>
-                      </Card>
-                    ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <DevOpsDomain
+            ecoStatus={ecoStatus}
+            kanbanColumns={kanbanColumns}
+            githubRepo={githubRepo}
+            onGithubRepoChange={setGithubRepo}
+            onLoadGithubRepo={() => {
+              window.localStorage.setItem('ecosystem.githubRepo', githubRepo.trim())
+              void loadEcosystemData()
+            }}
+            githubPrs={githubPrs}
+            githubWorkflows={githubWorkflows}
+            gitlabMrs={gitlabMrs}
+            gitlabPipelines={gitlabPipelines}
+            portainerStacks={portainerStacks}
+          />
         )}
 
         {/* 2. DATA & RESEARCH DOMAIN */}
         {activeDomain === 'research' && (
-          <div className="space-y-6 animate-in fade-in-50 duration-200">
-            {/* Systems telemetry gauges CPU/RAM/Disk */}
-            {ecoStatus.resources.status !== 'ready' ? (
-              <ServiceNotice state={ecoStatus.resources} />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card className="border border-border/85 shadow-sm hover:border-primary/20 transition-all">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm font-bold flex items-center gap-1.5">
-                        <Cpu className="text-primary size-4" /> CPU Workload
-                      </CardTitle>
-                      <Activity className="size-4 text-emerald-500 animate-pulse" />
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.cpu_percent}%</div>
-                    <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-primary h-full transition-all duration-500"
-                        // no-fabrication-allow: cosmetic progress-bar width only, not the
-                        // displayed number (line above has no fallback). This branch only
-                        // renders when ecoStatus.resources.status === 'ready', i.e. a real
-                        // fetch already populated `resources`; the `?? 0` is an
-                        // impossible-in-practice defensive default TS requires, and 0 is
-                        // an honest "no bar" rather than a plausible fake percentage.
-                        style={{ width: `${resources?.cpu_percent ?? 0}%` }}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border border-border/85 shadow-sm hover:border-primary/20 transition-all">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-bold flex items-center gap-1.5">
-                      <Server className="text-primary size-4" /> RAM Utilization
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.memory.percent}%</div>
-                    <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden mb-1">
-                      <div
-                        className="bg-purple-500 h-full transition-all duration-500"
-                        // no-fabrication-allow: same as the CPU gauge above -- cosmetic
-                        // bar width only, gated behind a real successful fetch, 0 (not a
-                        // plausible fake percentage) is the defensive default.
-                        style={{ width: `${resources?.memory.percent ?? 0}%` }}
-                      />
-                    </div>
-                    <div className="text-xs text-muted-foreground flex justify-between">
-                      <span>Used: {resources?.memory.used_gb} GB</span>
-                      <span>Total: {resources?.memory.total_gb} GB</span>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border border-border/85 shadow-sm hover:border-primary/20 transition-all">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-bold flex items-center gap-1.5">
-                      <HardDrive className="text-primary size-4" /> Disk Capacity
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-3xl font-extrabold tracking-tight mb-2">{resources?.disk.percent}%</div>
-                    <div className="w-full bg-accent h-2.5 rounded-full overflow-hidden mb-1">
-                      <div
-                        className="bg-blue-500 h-full transition-all duration-500"
-                        // no-fabrication-allow: same as the CPU gauge above -- cosmetic
-                        // bar width only, gated behind a real successful fetch, 0 (not a
-                        // plausible fake percentage) is the defensive default.
-                        style={{ width: `${resources?.disk.percent ?? 0}%` }}
-                      />
-                    </div>
-                    <div className="text-xs text-muted-foreground flex justify-between">
-                      <span>Used: {resources?.disk.used_gb} GB</span>
-                      <span>Total: {resources?.disk.total_gb} GB</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-
-            {/* Fitted model ranking (D-WUI-BUG-008: this used to render a
-                fabricated "TrainingMetrics" shape -- hyperparameters, a live
-                epoch counter, a "Simulated Convergence" loss curve -- that
-                never matched what the backend actually returns. The real
-                `rank_models` endpoint reports already-fitted models ranked
-                by stored test R^2; there is no live epoch/loss stream. */}
-            <Card className="border border-border/80 shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sliders className="text-primary size-5" /> Fitted Model Ranking (Data-Science-MCP)
-                </CardTitle>
-                <CardDescription>
-                  Models fitted in the current engine session, ranked by stored test R&sup2;
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ServiceNotice
-                  state={ecoStatus.training}
-                  emptyLabel="No trained models registered in the current engine session."
-                />
-                {ecoStatus.training.status === 'ready' && (
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead className="bg-accent/40 border-b">
-                      <tr>
-                        <th className="p-2 font-semibold text-muted-foreground">Model ID</th>
-                        <th className="p-2 font-semibold text-muted-foreground">Dataset</th>
-                        <th className="p-2 font-semibold text-muted-foreground">Model</th>
-                        <th className="p-2 font-semibold text-muted-foreground text-right">R&sup2; (test)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y font-mono">
-                      {trainedModels.map((m) => (
-                        <tr key={m.model_id} className="hover:bg-accent/10 transition-colors">
-                          <td className="p-2 font-bold text-primary">{m.model_id}</td>
-                          <td className="p-2 text-muted-foreground">{m.dataset}</td>
-                          <td className="p-2 text-foreground truncate max-w-[240px]" title={m.model_str}>
-                            {m.model_str}
-                          </td>
-                          <td className="p-2 text-right font-bold text-emerald-500">{m.r2_test.toFixed(4)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* ScholarX Research Scientific literature */}
-            <Card className="border border-border/80 shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Compass className="text-primary size-5" /> Scientific Publications database (ScholarX)
-                </CardTitle>
-                <CardDescription>
-                  Scientific paper metadata registries downloaded locally for Offline Graph training
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ServiceNotice state={ecoStatus.scholarx} emptyLabel="No downloaded papers reported." />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {ecoStatus.scholarx.status === 'ready' &&
-                    scholarxPapers.map((paper) => (
-                      <Card
-                        key={paper.id}
-                        className="p-4 bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between"
-                      >
-                        <div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-bold font-mono text-primary uppercase">{paper.id}</span>
-                            <Badge variant="secondary" className="text-[9px] uppercase">
-                              {paper.category}
-                            </Badge>
-                          </div>
-                          <h4 className="font-bold text-xs text-foreground tracking-tight pt-2 leading-snug line-clamp-2">
-                            {paper.title}
-                          </h4>
-                          <p className="text-[10px] text-muted-foreground pt-1">Author: {paper.author}</p>
-                        </div>
-                        <div className="pt-3 border-t mt-3 flex justify-between items-center text-[10px] text-emerald-500 font-bold">
-                          <span className="flex items-center gap-1">
-                            <Check className="size-3" /> Ready
-                          </span>
-                          <Badge
-                            variant="outline"
-                            className="text-[9px] bg-emerald-500/5 text-emerald-600 border-emerald-500/20"
-                          >
-                            {paper.status}
-                          </Badge>
-                        </div>
-                      </Card>
-                    ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* D-WUI-BUG-008: this card used to render a hardcoded, permanent
-                `latencyData` array of five invented trace rows (fake trace
-                IDs, routes, latencies, and token counts) labeled "Live call
-                spans" under a Langfuse-Agent heading. No
-                `/api/enhanced/ecosystem/*` route exists for trace/latency
-                data at all -- `langfuse-agent` is only listed as an
-                installed package by `/ecosystem/services`, it has no read
-                endpoint wired here. Removed rather than left displaying
-                invented numbers; a real card requires a backend route
-                first (see BUG-REMEDIATION-DESIGNS.md#bug-008). */}
-            <Card className="border border-border/80 shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="text-primary size-5" /> Agent API Execution Latency Traces (Langfuse-Agent)
-                </CardTitle>
-                <CardDescription>Live call spans, execution times, and token cost tracking logs</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ServiceNotice
-                  state={{
-                    status: 'unavailable',
-                    reason:
-                      'No backend endpoint is wired for Langfuse trace data. Add a ' +
-                      'GET /api/enhanced/ecosystem/langfuse/traces route before this card can show real data.',
-                  }}
-                />
-              </CardContent>
-            </Card>
-          </div>
+          <ResearchDomain
+            ecoStatus={ecoStatus}
+            resources={resources}
+            trainedModels={trainedModels}
+            scholarxPapers={scholarxPapers}
+          />
         )}
 
         {/* 3. INFRASTRUCTURE HUB DOMAIN */}
         {activeDomain === 'infra' && (
-          <div className="space-y-6 animate-in fade-in-50 duration-200">
-            {/* Uptime Kuma monitors */}
-            <Card className="border border-border/80 shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="text-emerald-500 size-5 animate-pulse" /> Service Uptime timelines
-                  (Uptime-Kuma-Agent)
-                </CardTitle>
-                <CardDescription>Active health checks on gateways, DNS databases and storage streams</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ServiceNotice state={ecoStatus.uptime} emptyLabel="No monitors reported." />
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                  {ecoStatus.uptime.status === 'ready' &&
-                    uptimeMonitors.map((m) => (
-                      <Card
-                        key={m.name}
-                        className="p-4 bg-accent/5 hover:border-primary/20 transition-all flex flex-col justify-between"
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h4 className="font-bold text-xs text-foreground truncate">{m.name}</h4>
-                            <span className="text-[10px] font-mono text-muted-foreground truncate block">{m.url}</span>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className={cn('capitalize scale-90 font-semibold px-2 py-0.5 rounded-full border', {
-                              'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': m.status === 'up',
-                              'bg-red-500/10 border-red-500/25 text-red-600': m.status === 'down',
-                            })}
-                          >
-                            {m.status}
-                          </Badge>
-                        </div>
-                        <div className="pt-4 space-y-1 border-t mt-3">
-                          <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                            <span>Uptime 24h:</span>
-                            <span className="font-bold text-foreground">{m.uptime_24h}%</span>
-                          </div>
-                          <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                            <span>Latency:</span>
-                            <span className="font-bold text-primary">{m.latency}ms</span>
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* SearXNG searchranks and keyword plotting */}
-            <Card className="border border-border/80 shadow-md">
-              <CardHeader className="flex flex-col md:flex-row md:items-center justify-between pb-3 gap-4">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Search className="text-primary size-5" /> Metasearch Aggregation & Ranks (SearXNG-MCP)
-                  </CardTitle>
-                  <CardDescription>
-                    Aggregate web query rankings parsed across google, duckduckgo and github engines
-                  </CardDescription>
-                </div>
-                <div className="flex gap-2 max-w-sm w-full">
-                  <Input
-                    placeholder="Search keywords..."
-                    value={searxngQuery}
-                    onChange={(e) => {
-                      setSearxngQuery(e.target.value)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') void runSearxngSearch()
-                    }}
-                  />
-                  <Button
-                    onClick={() => {
-                      void runSearxngSearch()
-                    }}
-                    disabled={searxngLoading}
-                  >
-                    {searxngLoading ? <RefreshCw className="size-4 animate-spin" /> : 'Search'}
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {ecoStatus.searxng.status === 'empty' ? (
-                  <div className="text-center py-6 text-xs text-muted-foreground font-mono border rounded-md">
-                    Search something to load results
-                  </div>
-                ) : (
-                  <ServiceNotice state={ecoStatus.searxng} />
-                )}
-                {ecoStatus.searxng.status === 'ready' && (
-                  <div className="space-y-2.5">
-                    {searxngResults.map((r, idx) => (
-                      <div
-                        key={idx}
-                        className="flex justify-between items-center p-3 border rounded-md bg-accent/5 hover:border-primary/30 transition-all"
-                      >
-                        <div className="space-y-0.5 truncate pr-2">
-                          <h4 className="text-xs font-bold text-foreground truncate">{r.title}</h4>
-                          <span className="text-[10px] font-mono text-muted-foreground truncate block">{r.url}</span>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <Badge
-                            variant="outline"
-                            className="font-mono text-[9px] uppercase tracking-wide bg-primary/5 text-primary border-primary/20"
-                          >
-                            {r.engine}
-                          </Badge>
-                          <Badge variant="secondary" className="font-mono text-xs font-bold">
-                            Score: {r.score}
-                          </Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Docker socket container grids */}
-            <Card className="border border-border/80 shadow-md">
-              <CardHeader className="flex flex-row items-center justify-between pb-3">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Database className="text-primary size-5" /> Docker Daemon Containers
-                  </CardTitle>
-                  <CardDescription>Direct unix-socket queries to /var/run/docker.sock</CardDescription>
-                </div>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => {
-                    void fetchContainers()
-                  }}
-                >
-                  <RefreshCw className="size-4" />
-                </Button>
-              </CardHeader>
-              <CardContent>
-                {containerInventoryError ? (
-                  <div
-                    role="status"
-                    className="rounded-md border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-300"
-                  >
-                    <strong>Live Docker inventory unavailable.</strong> {containerInventoryError} No simulated
-                    containers are shown.
-                  </div>
-                ) : containers.length === 0 ? (
-                  <div className="rounded-md border p-4 text-sm text-muted-foreground">No containers reported.</div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {containers.map((c, index) => (
-                      <Card
-                        key={c.reference}
-                        className="bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between"
-                      >
-                        <CardHeader className="pb-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <CardTitle className="text-sm font-bold truncate tracking-tight text-primary">
-                              Container workload {index + 1}
-                            </CardTitle>
-                            <Badge
-                              variant="outline"
-                              className={cn('capitalize px-2 py-0.5 text-xs font-semibold rounded-full border', {
-                                'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': c.state === 'running',
-                                'bg-red-500/10 border-red-500/25 text-red-600': c.state === 'exited',
-                                'bg-amber-500/10 border-amber-500/25 text-amber-600': c.state === 'paused',
-                              })}
-                            >
-                              {c.state}
-                            </Badge>
-                          </div>
-                          <CardDescription className="text-xs truncate font-mono text-muted-foreground pt-1">
-                            Opaque operational reference
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent className="pb-3 text-xs leading-relaxed text-muted-foreground flex-1 flex flex-col justify-end">
-                          <p>
-                            Direct container mutation is disabled. Submit lifecycle changes through governed GraphOS
-                            delegation.
-                          </p>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Active processes tree and SSH tunnel console */}
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-              <div className="xl:col-span-2 flex flex-col gap-6">
-                <Card className="border border-border/80 shadow-md">
-                  <CardHeader className="flex flex-row items-center justify-between pb-3">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <Network className="text-primary size-5" /> Host Aliases Inventory
-                      </CardTitle>
-                      <CardDescription>Ansible configurations loaded via tunnel-manager</CardDescription>
-                    </div>
-                    <Dialog open={addHostOpen} onOpenChange={setAddHostOpen}>
-                      <DialogTrigger asChild>
-                        <Button size="sm" className="gap-1.5">
-                          <Plus className="size-4" /> Add Host
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <form
-                          onSubmit={(e) => {
-                            void handleAddHost(e)
-                          }}
-                        >
-                          <DialogHeader>
-                            <DialogTitle>Add SSH Host Alias</DialogTitle>
-                            <DialogDescription>
-                              Input new node configurations for SSH command forwarding.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="grid gap-4 py-4">
-                            <div className="grid grid-cols-4 items-center gap-4">
-                              <label className="text-right text-sm font-medium">Alias</label>
-                              <Input
-                                className="col-span-3"
-                                placeholder="production-node"
-                                value={newHost.alias}
-                                onChange={(e) => {
-                                  setNewHost({ ...newHost, alias: e.target.value })
-                                }}
-                              />
-                            </div>
-                            <div className="grid grid-cols-4 items-center gap-4">
-                              <label className="text-right text-sm font-medium">IP/Host</label>
-                              <Input
-                                className="col-span-3"
-                                placeholder="192.0.2.12"
-                                value={newHost.hostname}
-                                onChange={(e) => {
-                                  setNewHost({ ...newHost, hostname: e.target.value })
-                                }}
-                              />
-                            </div>
-                            <div className="grid grid-cols-4 items-center gap-4">
-                              <label className="text-right text-sm font-medium">User</label>
-                              <Input
-                                className="col-span-3"
-                                placeholder="ubuntu"
-                                value={newHost.user}
-                                onChange={(e) => {
-                                  setNewHost({ ...newHost, user: e.target.value })
-                                }}
-                              />
-                            </div>
-                            <div className="grid grid-cols-4 items-center gap-4">
-                              <label className="text-right text-sm font-medium">Port</label>
-                              <Input
-                                type="number"
-                                className="col-span-3"
-                                value={newHost.port}
-                                onChange={(e) => {
-                                  setNewHost({ ...newHost, port: parseInt(e.target.value) || 22 })
-                                }}
-                              />
-                            </div>
-                            <div className="grid grid-cols-4 items-center gap-4">
-                              <label className="text-right text-sm font-medium">Password ref</label>
-                              <Input
-                                className="col-span-3"
-                                placeholder="secret-provider://reference"
-                                value={newHost.password_ref}
-                                onChange={(e) => {
-                                  setNewHost({ ...newHost, password_ref: e.target.value })
-                                }}
-                              />
-                            </div>
-                          </div>
-                          <DialogFooter>
-                            <Button type="submit">Register Host</Button>
-                          </DialogFooter>
-                        </form>
-                      </DialogContent>
-                    </Dialog>
-                  </CardHeader>
-                  <CardContent>
-                    {hostsUnavailable && <UnavailableNotice what="The configured hosts inventory" className="mb-4" />}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {hosts.map((h, index) => (
-                        <div
-                          key={h.reference}
-                          className="flex flex-col gap-3 p-4 bg-accent/10 border rounded-lg hover:border-primary/40 transition-colors"
-                        >
-                          <div className="flex items-center justify-between">
-                            <h3 className="font-bold text-sm tracking-wide text-primary">
-                              Configured host {index + 1}
-                            </h3>
-                            <Badge variant={h.status === 'active' ? 'default' : 'secondary'} className="capitalize">
-                              {h.status}
-                            </Badge>
-                          </div>
-                          <div className="text-xs text-muted-foreground space-y-1">
-                            <p>
-                              <strong className="text-foreground">Port:</strong>{' '}
-                              {h.port_configured ? 'configured' : 'default'}
-                            </p>
-                            <p>
-                              <strong className="text-foreground">Identity:</strong>{' '}
-                              {h.identity_configured ? 'configured' : 'default'}
-                            </p>
-                            <p>
-                              <strong className="text-foreground">Password:</strong>{' '}
-                              {h.password_configured ? 'secret reference configured' : 'not configured'}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Governed remote execution boundary */}
-                <Card className="border border-border/80 shadow-md">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Terminal className="text-green-500 size-5" /> Governed Remote Operations
-                    </CardTitle>
-                    <CardDescription>Remote execution is mediated by GraphOS ActionPolicy.</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="rounded-md border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
-                      Raw shell commands are not accepted by this UI. Use a typed GraphOS delegation action; it will
-                      apply authorization, approval, argument validation, timeouts, audit references, and redacted
-                      results before dispatch.
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Active Process tree */}
-              <Card className="border border-border/80 shadow-md">
-                <CardHeader className="pb-3">
-                  <div className="flex justify-between items-center">
-                    <CardTitle className="text-sm font-bold flex items-center gap-1.5">
-                      <Terminal className="text-primary size-4.5" /> Process Workloads
-                    </CardTitle>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="size-8"
-                      onClick={() => {
-                        void fetchSystems()
-                      }}
-                    >
-                      <RefreshCw className="size-3.5" />
-                    </Button>
-                  </div>
-                  <Input
-                    placeholder="Filter opaque workload reference..."
-                    className="h-8 text-xs mt-2"
-                    value={searchProcess}
-                    onChange={(e) => {
-                      setSearchProcess(e.target.value)
-                    }}
-                  />
-                </CardHeader>
-                <CardContent className="p-0 border-t max-h-[380px] overflow-y-auto">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead className="bg-accent/40 sticky top-0 border-b">
-                      <tr>
-                        <th className="p-2 font-semibold text-muted-foreground">Workload</th>
-                        <th className="p-2 font-semibold text-muted-foreground text-right">CPU</th>
-                        <th className="p-2 font-semibold text-muted-foreground text-right">Memory</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y font-mono">
-                      {filteredProcesses.map((p) => (
-                        <tr key={p.reference} className="hover:bg-accent/10 transition-colors">
-                          <td className="p-2 text-muted-foreground font-bold">Opaque reference</td>
-                          <td className="p-2 text-right text-green-500 font-bold">{p.cpu}%</td>
-                          <td className="p-2 text-right text-blue-500 font-bold">{p.memory}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
+          <InfraDomain
+            ecoStatus={ecoStatus}
+            uptimeMonitors={uptimeMonitors}
+            searxngQuery={searxngQuery}
+            onSearxngQueryChange={setSearxngQuery}
+            onRunSearxngSearch={() => {
+              void runSearxngSearch()
+            }}
+            searxngLoading={searxngLoading}
+            searxngResults={searxngResults}
+            containerInventoryError={containerInventoryError}
+            containers={containers}
+            onRefreshContainers={() => {
+              void fetchContainers()
+            }}
+            hostsUnavailable={hostsUnavailable}
+            hosts={hosts}
+            addHostOpen={addHostOpen}
+            onAddHostOpenChange={setAddHostOpen}
+            onAddHostSubmit={(e) => {
+              void handleAddHost(e)
+            }}
+            newHost={newHost}
+            onNewHostChange={setNewHost}
+            searchProcess={searchProcess}
+            onSearchProcessChange={setSearchProcess}
+            onRefreshProcesses={() => {
+              void fetchSystems()
+            }}
+            filteredProcesses={filteredProcesses}
+          />
         )}
 
         {/* 4. LIFESTYLE & AUTOMATION DOMAIN */}
         {activeDomain === 'lifestyle' && (
-          <div className="space-y-6 animate-in fade-in-50 duration-200">
-            {/* IoT Device sliders (Home-Assistant-Agent) */}
-            <Card className="border border-border/80 shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sliders className="text-primary size-5" /> IoT Home automation controls (Home-Assistant-Agent)
-                </CardTitle>
-                <CardDescription>
-                  Visual dials, thermostats, and lights controls loaded from local Home Assistant server
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ServiceNotice state={ecoStatus.homeassistant} emptyLabel="No Home Assistant entities reported." />
-                {ecoStatus.homeassistant.status === 'ready' && (
-                  <>
-                    {/*
-                      D-WUI-BUG-008: the brightness slider, thermostat +/-
-                      buttons, and power toggle below used to call
-                      `updateDeviceState`/`updateThermostatTemp`, which only
-                      mutated local React state and showed a
-                      `toast.success('IoT command dispatched...')` -- no
-                      request was ever sent to Home Assistant. There is no
-                      write/command endpoint under
-                      `/api/enhanced/ecosystem/homeassistant/*` at all (only
-                      the GET .../devices read exists), so this is a
-                      read-only view until a real command endpoint is wired.
-                    */}
-                    <ReadOnlyNotice reason="Device state below is read-only. No command endpoint is wired here yet, so controls that would send a write are not shown." />
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                      {haDevices.map((d) => (
-                        <Card
-                          key={d.entity_id}
-                          className="p-4 bg-accent/5 flex flex-col justify-between hover:border-primary/20 transition-all"
-                        >
-                          <div className="space-y-1">
-                            <div className="flex justify-between items-center">
-                              <h4 className="font-bold text-xs text-foreground truncate">{d.friendly_name}</h4>
-                              <Badge
-                                variant={d.state === 'on' || d.state === 'heat' ? 'default' : 'secondary'}
-                                className="capitalize text-[9px]"
-                              >
-                                {d.state}
-                              </Badge>
-                            </div>
-                            <span className="text-[10px] font-mono text-muted-foreground">{d.entity_id}</span>
-                          </div>
-
-                          {/* Brightness readout for lights */}
-                          {d.brightness !== undefined && (
-                            <div className="pt-4 space-y-1">
-                              <div className="flex justify-between text-[10px] font-mono">
-                                <span>Brightness:</span>
-                                <span className="font-bold">{d.brightness}%</span>
-                              </div>
-                              <div className="w-full bg-accent h-1.5 rounded-full overflow-hidden">
-                                <div className="bg-primary h-full" style={{ width: `${d.brightness}%` }} />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Climate readout */}
-                          {d.temperature !== undefined && d.target_temp !== undefined && (
-                            <div className="pt-4 text-xs font-mono flex justify-between">
-                              <span>
-                                Room: <strong className="text-foreground">{d.temperature}°C</strong>
-                              </span>
-                              <span>
-                                Target: <strong className="text-primary">{d.target_temp}°C</strong>
-                              </span>
-                            </div>
-                          )}
-                        </Card>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Nextcloud Tasks / Calendars & MS Outlook Inbox */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Calendars Nextcloud */}
-              <Card className="border border-border/80 shadow-md lg:col-span-2">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Calendar className="text-primary size-5" /> Calendar & Tasks Agenda (Nextcloud-Agent)
-                  </CardTitle>
-                  <CardDescription>
-                    Productivity synchronizer wiring personal schedule with CalDAV servers
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <ServiceNotice state={ecoStatus.nextcloud} emptyLabel="No upcoming calendar events reported." />
-                  <div className="space-y-2">
-                    <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
-                      Upcoming Calendars
-                    </h5>
-                    <div className="space-y-2">
-                      {ecoStatus.nextcloud.status === 'ready' &&
-                        nextcloudEvents.map((ev) => (
-                          <div
-                            key={ev.id}
-                            className="flex items-center justify-between p-2 border rounded-md bg-accent/5"
-                          >
-                            <div className="space-y-0.5">
-                              <h4 className="text-xs font-semibold text-foreground">{ev.title}</h4>
-                              <span className="text-[10px] font-mono text-muted-foreground">
-                                {new Date(ev.start).toLocaleString()}
-                              </span>
-                            </div>
-                            <Badge variant="secondary" className="text-[9px] uppercase tracking-wide">
-                              {ev.type}
-                            </Badge>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-
-                  <div className="border-t pt-4 space-y-2">
-                    <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Pending Tasks</h5>
-                    {/* D-WUI-BUG-008: `nextcloudTasks` is always `[]` -- the
-                        backend only wires `list_calendars`/
-                        `list_calendar_events`, there is no tasks read path.
-                        Rendering an empty task grid here was
-                        indistinguishable from "you have zero tasks", which
-                        is not what's actually true. Say so explicitly. */}
-                    <ServiceNotice
-                      state={{
-                        status: 'unavailable',
-                        reason:
-                          'Nextcloud tasks have no backend read path wired (only calendars/events are). ' +
-                          'This section cannot show real data until one is added.',
-                      }}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* MS Exchange / Outlook */}
-              <Card className="border border-border/80 shadow-md">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-sm font-bold">
-                    <Mail className="text-blue-500 size-4.5" /> Outlook Graph Inbox (Microsoft-Agent)
-                  </CardTitle>
-                  <CardDescription>Synced MS Exchange emails summaries</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <ServiceNotice state={ecoStatus.microsoft} emptyLabel="No inbox messages reported." />
-                  <div className="space-y-2.5">
-                    {ecoStatus.microsoft.status === 'ready' &&
-                      microsoftEmails.map((mail) => (
-                        <div
-                          key={mail.id}
-                          className="p-3 border rounded-md hover:border-primary/20 transition-all bg-accent/5 space-y-1 relative"
-                        >
-                          <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-bold text-primary truncate max-w-[120px]">
-                              {mail.from}
-                            </span>
-                            <span className="text-[9px] font-mono text-muted-foreground">{mail.received}</span>
-                          </div>
-                          <h4 className="text-xs font-bold text-foreground leading-snug truncate pr-6">
-                            {mail.subject}
-                          </h4>
-                          {mail.importance === 'high' && (
-                            <span
-                              className="absolute top-3 right-3 text-red-500 font-extrabold text-[10px]"
-                              title="High Importance"
-                            >
-                              !
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/*
-              D-WUI-BUG-008: this entire section used to be a permanent,
-              hardcoded five-day meal plan (real-looking recipe names,
-              calories, protein grams) and a hardcoded six-exercise workout
-              split, both labeled as if pulled live from Mealie-MCP and
-              Wger-Agent. Neither ever fetched anything -- `mealPlan` and
-              `workoutRoutines` were `useState` literals with no backing
-              request, and the interactive "Servings"/"muscle filter"
-              controls only recomputed derived numbers from that invented
-              data. No `/api/enhanced/ecosystem/mealie/*` or
-              `/api/enhanced/ecosystem/wger/*` read route exists at all
-              (`mealie-mcp`/`wger-agent` are only listed as installed
-              packages by `/ecosystem/services`). Per BUG-REMEDIATION-DESIGNS
-              #bug-008, an honest "unavailable" here is the correct outcome,
-              not a regression -- the accompanying "Biometrics & Meal
-              Calibration" card was pure marketing copy describing behavior
-              that never existed and is removed with it.
-            */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card className="border border-border/80 shadow-md">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Calendar className="text-primary size-5" /> Culinary Meal Planner (Mealie-MCP)
-                  </CardTitle>
-                  <CardDescription>Scale ingredients and recipes dynamically</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ServiceNotice
-                    state={{
-                      status: 'unavailable',
-                      reason:
-                        'No backend endpoint is wired for Mealie meal-plan data. Add a ' +
-                        'GET /api/enhanced/ecosystem/mealie/plan route before this card can show real data.',
-                    }}
-                  />
-                </CardContent>
-              </Card>
-
-              <Card className="border border-border/80 shadow-md">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Flame className="text-orange-500 size-5" /> Workout Splits Builder (Wger-Agent)
-                  </CardTitle>
-                  <CardDescription>Tailor strength splits and reps counters</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ServiceNotice
-                    state={{
-                      status: 'unavailable',
-                      reason:
-                        'No backend endpoint is wired for Wger workout-routine data. Add a ' +
-                        'GET /api/enhanced/ecosystem/wger/routines route before this card can show real data.',
-                    }}
-                  />
-                </CardContent>
-              </Card>
-            </div>
-          </div>
+          <LifestyleDomain
+            ecoStatus={ecoStatus}
+            haDevices={haDevices}
+            nextcloudEvents={nextcloudEvents}
+            microsoftEmails={microsoftEmails}
+          />
         )}
 
         {/* 5. MEDIA & UTILITIES DOMAIN */}
         {activeDomain === 'media' && (
-          <div className="space-y-6 animate-in fade-in-50 duration-200">
-            {/* qBittorrent downloads list displaying speed limits */}
-            <Card className="border border-border/80 shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="text-primary size-5" /> Active Torrents Download speedometers
-                  (qBittorrent-Agent)
-                </CardTitle>
-                <CardDescription>Network traffic speed limiters and seed ratio checks</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ServiceNotice state={ecoStatus.qbittorrent} emptyLabel="No active torrents reported." />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {ecoStatus.qbittorrent.status === 'ready' &&
-                    qbittorrentTorrents.map((t) => (
-                      <Card key={t.name} className="p-4 bg-accent/5 hover:border-primary/20 transition-all space-y-4">
-                        <div className="flex justify-between items-start gap-2">
-                          <div className="truncate">
-                            <h4 className="font-bold text-xs text-foreground truncate" title={t.name}>
-                              {t.name}
-                            </h4>
-                            <span className="text-[10px] font-mono text-muted-foreground">
-                              Size: {t.size} | Status: <strong className="capitalize">{t.status}</strong>
-                            </span>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className="text-[9px] uppercase tracking-wide bg-primary/5 text-primary border-primary/20"
-                          >
-                            {t.progress}%
-                          </Badge>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <div className="w-full bg-accent h-2 rounded-full overflow-hidden">
-                            <div
-                              className="bg-primary h-full transition-all duration-300"
-                              style={{ width: `${t.progress}%` }}
-                            />
-                          </div>
-                          <div className="grid grid-cols-2 text-[10px] font-mono text-muted-foreground pt-0.5">
-                            <div>
-                              DL Speed: <span className="font-bold text-green-500">{t.dl_speed}</span>
-                            </div>
-                            <div className="text-right">
-                              UL Speed: <span className="font-bold text-blue-500">{t.ul_speed}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Video downloader yt-dlp form and task list */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <Card className="border border-border/80 shadow-md lg:col-span-2">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Download className="text-primary size-5" /> yt-dlp Video Downloader queue (Media-Downloader)
-                  </CardTitle>
-                  <CardDescription>Submit streaming video URLs to download as local MP3/MP4 files</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/*
-                    D-WUI-BUG-008: this form used to call `addMediaDownload`,
-                    which never sent the URL anywhere -- it fabricated a
-                    queue row client-side with a randomly generated (non-backend) id,
-                    then a `setTimeout` swapped in a fixed fake title
-                    ("Self-driven coding agents presentation"), 45.2%
-                    progress, and "5.8 MB/s" after 2 seconds, regardless of
-                    what URL was entered. `media-downloader-mcp` only
-                    exposes a fire-and-forget `download_media` action with
-                    no way to read back a queue/history (see
-                    `get_mediadownloader_downloads` in
-                    `api_extensions.py`), so there is no honest "submit and
-                    watch progress" UI possible today -- the read-only GET
-                    below reports that explicitly instead.
-                  */}
-                  <ReadOnlyNotice reason="Submitting a download is not available: media-downloader-mcp exposes only a fire-and-forget action with no queue to read back or show progress from." />
-                  <div className="border-t pt-4 space-y-2">
-                    <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Queue Status</h5>
-                    <ServiceNotice state={ecoStatus.mediadownloader} emptyLabel="No active downloads reported." />
-                    <div className="space-y-2.5">
-                      {ecoStatus.mediadownloader.status === 'ready' &&
-                        mediaDownloads.map((dl) => (
-                          <div
-                            key={dl.id}
-                            className="p-3 border rounded-md bg-accent/5 hover:border-primary/20 transition-all space-y-2"
-                          >
-                            <div className="flex justify-between items-center text-xs">
-                              <h4 className="font-bold text-foreground truncate max-w-[280px]" title={dl.title}>
-                                {dl.title}
-                              </h4>
-                              <span className="font-mono font-bold text-primary">{dl.progress}%</span>
-                            </div>
-                            <div className="w-full bg-accent h-1.5 rounded-full overflow-hidden">
-                              <div className="bg-primary h-full transition-all" style={{ width: `${dl.progress}%` }} />
-                            </div>
-                            <div className="flex justify-between text-[10px] font-mono text-muted-foreground pt-0.5">
-                              <span>
-                                Status: <strong className="capitalize text-foreground">{dl.status}</strong>
-                              </span>
-                              <span>Speed: {dl.speed}</span>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Stirling PDF action split/merge/compress triggers */}
-              <Card className="border border-border/80 shadow-md">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-sm font-bold">
-                    <FileText className="text-red-500 size-4.5" /> Stirling PDF Actions (StirlingPDF-Agent)
-                  </CardTitle>
-                  <CardDescription>Convert, split, or merge files</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/*
-                    D-WUI-BUG-008: these four buttons used to call
-                    `submitStirlingPdf`, which fabricated a job entirely
-                    client-side (a randomly generated, non-backend id, filename
-                    `processed_<action>_doc.pdf`, no file was ever selected
-                    or uploaded) and showed `toast.success('...launched
-                    successfully')` immediately, then a `setTimeout` flipped
-                    it to "completed" after 3s with another toast -- no PDF
-                    was ever processed. `stirlingpdf-mcp` exposes only a
-                    synchronous one-shot `pdf_action` with no persistent job
-                    list (see `get_stirlingpdf_jobs`), so a queued-jobs UI
-                    cannot be honest here without a file-upload + durable
-                    job store this lane does not own.
-                  */}
-                  <ReadOnlyNotice reason="PDF actions are not available in this view: Stirling-PDF processes synchronously (no file upload/job queue is wired here)." />
-                  <div className="border-t pt-4 space-y-2">
-                    <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Jobs Status</h5>
-                    <ServiceNotice state={ecoStatus.stirlingpdf} emptyLabel="No PDF jobs reported." />
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {ecoStatus.stirlingpdf.status === 'ready' &&
-                        stirlingJobs.map((job) => (
-                          <div
-                            key={job.id}
-                            className="flex justify-between items-center p-2 border rounded-md text-xs bg-accent/5"
-                          >
-                            <div className="truncate max-w-[120px] pr-2">
-                              <span className="font-bold block truncate" title={job.filename}>
-                                {job.filename}
-                              </span>
-                              <span className="text-[9px] font-mono text-muted-foreground uppercase">
-                                {job.action} | {job.timestamp}
-                              </span>
-                            </div>
-                            <Badge
-                              variant="outline"
-                              className={cn('capitalize scale-90', {
-                                'bg-emerald-500/10 text-emerald-600 border-emerald-500/25': job.status === 'completed',
-                                'bg-amber-500/10 text-amber-600 border-amber-500/25': job.status === 'running',
-                              })}
-                            >
-                              {job.status}
-                            </Badge>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Cloned git repositories branches */}
-            <Card className="border border-border/80 shadow-md">
-              <CardHeader className="flex flex-col md:flex-row md:items-center justify-between pb-3 gap-4">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <GitPullRequest className="text-primary size-5" /> Repositories Workspace Matrix
-                  </CardTitle>
-                  <CardDescription>Monitor branches, structural drift, and staging modifications</CardDescription>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    className="gap-1.5"
-                    onClick={() => {
-                      void runBulkRepoAction('status')
-                    }}
-                    disabled={bulkActionRunning || selectedRepos.length === 0}
-                  >
-                    <RefreshCw className={cn('size-4', { 'animate-spin': bulkActionRunning })} />
-                    Check Status ({selectedRepos.length})
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="p-0 border-t">
-                <table className="w-full text-left border-collapse text-sm">
-                  <thead className="bg-accent/40 border-b">
-                    <tr>
-                      <th className="p-4 w-12 text-center">
-                        <input
-                          type="checkbox"
-                          checked={repos.length > 0 && selectedRepos.length === repos.length}
-                          disabled={repos.length === 0}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedRepos(repos.map((r) => r.reference))
-                            } else {
-                              setSelectedRepos([])
-                            }
-                          }}
-                          className="rounded border-gray-300 focus:ring-primary size-4 cursor-pointer"
-                        />
-                      </th>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                        Repository
-                      </th>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                        Branch State
-                      </th>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                        Local Drift
-                      </th>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                        Sync status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {repoInventoryError && (
-                      <tr>
-                        <td colSpan={5} className="p-4 text-sm text-amber-700 dark:text-amber-300">
-                          <strong>Live repository inventory unavailable.</strong> {repoInventoryError} No simulated
-                          repositories are shown.
-                        </td>
-                      </tr>
-                    )}
-                    {!repoInventoryError && repos.length === 0 && (
-                      <tr>
-                        <td colSpan={5} className="p-4 text-sm text-muted-foreground">
-                          No Git repositories were discovered in the configured workspace.
-                        </td>
-                      </tr>
-                    )}
-                    {repos.map((r) => (
-                      <tr key={r.reference} className="hover:bg-accent/10 transition-colors">
-                        <td className="p-4 text-center">
-                          <input
-                            type="checkbox"
-                            checked={selectedRepos.includes(r.reference)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedRepos((prev) => [...prev, r.reference])
-                              } else {
-                                setSelectedRepos((prev) => prev.filter((n) => n !== r.reference))
-                              }
-                            }}
-                            className="rounded border-gray-300 focus:ring-primary size-4 cursor-pointer"
-                          />
-                        </td>
-                        <td className="p-4 font-bold text-foreground tracking-tight flex flex-col pt-3 pb-3">
-                          <span>{r.label}</span>
-                        </td>
-                        <td className="p-4 font-semibold text-muted-foreground">
-                          <Badge variant="secondary" className="font-mono text-xs">
-                            {r.branch_state}
-                          </Badge>
-                        </td>
-                        <td className="p-4 font-mono font-bold text-xs text-amber-500">
-                          {r.modified_count < 0
-                            ? 'unavailable'
-                            : r.modified_count > 0
-                              ? 'tracked drift detected'
-                              : 'no tracked drift'}
-                        </td>
-                        <td className="p-4">
-                          <Badge
-                            variant="outline"
-                            className={cn('capitalize px-2 py-0.5 text-xs font-semibold rounded-full border', {
-                              'bg-emerald-500/10 border-emerald-500/25 text-emerald-600': r.status === 'clean',
-                              'bg-amber-500/10 border-amber-500/25 text-amber-600': r.status === 'modified',
-                              'bg-red-500/10 border-red-500/25 text-red-600': r.status === 'unavailable',
-                            })}
-                          >
-                            {r.status}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-          </div>
+          <MediaDomain
+            ecoStatus={ecoStatus}
+            qbittorrentTorrents={qbittorrentTorrents}
+            mediaDownloads={mediaDownloads}
+            stirlingJobs={stirlingJobs}
+            repos={repos}
+            repoInventoryError={repoInventoryError}
+            selectedRepos={selectedRepos}
+            onSelectedReposChange={setSelectedRepos}
+            bulkActionRunning={bulkActionRunning}
+            onRunBulkStatus={() => {
+              void runBulkRepoAction('status')
+            }}
+          />
         )}
 
         {/* 6. OTHER INTEGRATIONS DOMAIN (BUG-018, GOC-25) — the live catalog
@@ -2543,53 +2849,7 @@ export default function EcosystemView() {
             dedicated card elsewhere in this view (COVERED_ECOSYSTEM_SERVICES)
             gets a generic descriptor with an explicit "no dedicated
             dashboard yet" reason instead of being silently omitted. */}
-        {activeDomain === 'other' && (
-          <div className="space-y-6 animate-in fade-in-50 duration-200">
-            <Card className="border border-border/80 shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Compass className="text-primary size-5" /> Other Installed Integrations
-                </CardTitle>
-                <CardDescription>
-                  Every MCP server / agent package the live catalog reports that has no dedicated dashboard yet. A
-                  server never disappears from this list just because no one has hand-built it a card.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ServiceNotice state={catalogState} emptyLabel="No additional integrations were reported." />
-                {catalogState.status === 'ready' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {catalogServices
-                      .filter((service) => !COVERED_ECOSYSTEM_SERVICES.has(service))
-                      .sort((a, b) => a.localeCompare(b))
-                      .map((service) => (
-                        <Card
-                          key={service}
-                          className="p-4 bg-accent/5 border hover:border-primary/20 transition-all flex flex-col justify-between"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Layers className="text-muted-foreground size-4 shrink-0" />
-                            <h4 className="font-bold text-xs text-foreground tracking-tight truncate">{service}</h4>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className="mt-3 w-fit text-[9px] uppercase border-amber-500/30 text-amber-500 bg-amber-500/10"
-                          >
-                            No dedicated dashboard implemented yet
-                          </Badge>
-                        </Card>
-                      ))}
-                    {catalogServices.filter((service) => !COVERED_ECOSYSTEM_SERVICES.has(service)).length === 0 && (
-                      <p className="text-sm text-muted-foreground col-span-full">
-                        Every server the live catalog reports already has a dedicated section elsewhere in this view.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        )}
+        {activeDomain === 'other' && <OtherDomain catalogState={catalogState} catalogServices={catalogServices} />}
       </div>
     </div>
   )

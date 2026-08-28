@@ -66,21 +66,47 @@ function StateBadge({ state }: { state: ReadinessState }) {
   )
 }
 
+function evidenceCountDetail(check: ReadinessCheck): string | null {
+  return typeof check.evidence_count === 'number' ? `evidence: ${String(check.evidence_count)}` : null
+}
+
+function coveragePctDetail(check: ReadinessCheck): string | null {
+  return typeof check.coverage_pct === 'number' ? `coverage: ${check.coverage_pct.toFixed(1)}%` : null
+}
+
+function coveredExpectedDetail(check: ReadinessCheck): string | null {
+  return typeof check.covered === 'number' && typeof check.expected === 'number'
+    ? `${String(check.covered)}/${String(check.expected)} connectors`
+    : null
+}
+
+function countDetail(check: ReadinessCheck): string | null {
+  return typeof check.count === 'number' ? `${String(check.count)} routes resolved` : null
+}
+
+function missingDetail(check: ReadinessCheck): string | null {
+  if (!Array.isArray(check.missing) || check.missing.length === 0) return null
+  return `missing: ${check.missing.slice(0, 4).join(', ')}${check.missing.length > 4 ? '…' : ''}`
+}
+
+function latencyDetail(check: ReadinessCheck): string | null {
+  return typeof check.latency_ms === 'number' ? `${check.latency_ms.toFixed(1)}ms` : null
+}
+
+const DETAIL_FIELDS: ((check: ReadinessCheck) => string | null)[] = [
+  evidenceCountDetail,
+  coveragePctDetail,
+  coveredExpectedDetail,
+  countDetail,
+  missingDetail,
+  latencyDetail,
+]
+
 /** Best-effort, defensive read of the few extra fields checks commonly carry
  * (evidence_count, coverage_pct, expected/covered, missing, digest, …) —
  * never assumed present, since each check kind carries a different subset. */
 function checkDetailLine(check: ReadinessCheck): string | null {
-  const parts: string[] = []
-  if (typeof check.evidence_count === 'number') parts.push(`evidence: ${String(check.evidence_count)}`)
-  if (typeof check.coverage_pct === 'number') parts.push(`coverage: ${check.coverage_pct.toFixed(1)}%`)
-  if (typeof check.covered === 'number' && typeof check.expected === 'number') {
-    parts.push(`${String(check.covered)}/${String(check.expected)} connectors`)
-  }
-  if (typeof check.count === 'number') parts.push(`${String(check.count)} routes resolved`)
-  if (Array.isArray(check.missing) && check.missing.length > 0) {
-    parts.push(`missing: ${check.missing.slice(0, 4).join(', ')}${check.missing.length > 4 ? '…' : ''}`)
-  }
-  if (typeof check.latency_ms === 'number') parts.push(`${check.latency_ms.toFixed(1)}ms`)
+  const parts = DETAIL_FIELDS.map((field) => field(check)).filter((part): part is string => part !== null)
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
@@ -97,6 +123,149 @@ function CheckRow({ name, check }: { name: keyof typeof READINESS_CHECK_LABELS; 
       <td className="py-2 text-sm text-muted-foreground">{detail ?? '—'}</td>
     </tr>
   )
+}
+
+function RefreshIcon({ loading }: { loading: boolean }) {
+  return loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />
+}
+
+function UnavailableRouteNotice() {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+        <HelpCircle className="size-4 shrink-0" />
+        The readiness capability is not activated on this backend yet (route not served). This is not a claim about
+        graph readiness — it is an unreached endpoint.
+      </CardContent>
+    </Card>
+  )
+}
+
+function ErrorNotice({ error }: { error: string }) {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-2 p-4 text-sm text-destructive">
+        <XCircle className="size-4 shrink-0" />
+        {error}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** Overall-card body: required failures + degraded reasons are independent —
+ * both can render at once — and "all ready" only when neither is present. */
+function OverallStatusBody({ snapshot }: { snapshot: ReadinessSnapshot }) {
+  const allReady = snapshot.required_failures.length === 0 && snapshot.degraded_reasons.length === 0
+  return (
+    <>
+      {snapshot.required_failures.length > 0 && (
+        <div className="flex items-start gap-2 text-destructive">
+          <XCircle className="size-4 mt-0.5 shrink-0" />
+          <span>Required check(s) failing: {snapshot.required_failures.join(', ')}</span>
+        </div>
+      )}
+      {snapshot.degraded_reasons.length > 0 && (
+        <div className="flex items-start gap-2 text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+          <ul className="list-disc pl-4">
+            {snapshot.degraded_reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {allReady && (
+        <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+          <CheckCircle2 className="size-4" />
+          Every check reported ready.
+        </div>
+      )}
+    </>
+  )
+}
+
+function OverallCard({ snapshot }: { snapshot: ReadinessSnapshot }) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle>Overall</CardTitle>
+          <CardDescription>
+            Observed {snapshot.observed_at} · <code className="text-xs">{snapshot.snapshot_id}</code>
+          </CardDescription>
+        </div>
+        <StateBadge state={snapshot.overall} />
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2 text-sm">
+        <OverallStatusBody snapshot={snapshot} />
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Clock className="size-3.5" />
+          Refresh mode: {snapshot.refresh.mode}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ChecksCard({ snapshot }: { snapshot: ReadinessSnapshot }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Checks</CardTitle>
+        <CardDescription>Every check the backend runs on this probe — none are skipped or cached.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b text-xs uppercase text-muted-foreground">
+                <th className="pb-2 pr-4 font-medium">Check</th>
+                <th className="pb-2 pr-4 font-medium">State</th>
+                <th className="pb-2 pr-4 font-medium">Reason</th>
+                <th className="pb-2 font-medium">Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {READINESS_CHECK_ORDER.map((name) => (
+                <CheckRow key={name} name={name} check={snapshot.checks[name]} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function SnapshotSection({ snapshot }: { snapshot: ReadinessSnapshot }) {
+  return (
+    <>
+      <OverallCard snapshot={snapshot} />
+      <ChecksCard snapshot={snapshot} />
+    </>
+  )
+}
+
+function LoadingProbeNotice() {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" />
+        Running the live readiness probe…
+      </CardContent>
+    </Card>
+  )
+}
+
+/** True only while no snapshot, no error, and no unavailable-route notice is
+ * showing — i.e. the very first probe is still in flight. */
+function shouldShowLoadingProbe(
+  snapshot: ReadinessSnapshot | null,
+  error: string | null,
+  unavailableRoute: boolean,
+  loading: boolean,
+): boolean {
+  return !snapshot && !error && !unavailableRoute && loading
 }
 
 export default function GraphOSReadinessView() {
@@ -139,6 +308,8 @@ export default function GraphOSReadinessView() {
     load()
   }, [load])
 
+  const showLoadingProbe = shouldShowLoadingProbe(snapshot, error, unavailableRoute, loading)
+
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
       <div className="flex items-center justify-between gap-2">
@@ -150,110 +321,15 @@ export default function GraphOSReadinessView() {
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-          {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+          <RefreshIcon loading={loading} />
           Refresh
         </Button>
       </div>
 
-      {unavailableRoute && (
-        <Card>
-          <CardContent className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-            <HelpCircle className="size-4 shrink-0" />
-            The readiness capability is not activated on this backend yet (route not served). This is not a claim about
-            graph readiness — it is an unreached endpoint.
-          </CardContent>
-        </Card>
-      )}
-
-      {error && !unavailableRoute && (
-        <Card>
-          <CardContent className="flex items-center gap-2 p-4 text-sm text-destructive">
-            <XCircle className="size-4 shrink-0" />
-            {error}
-          </CardContent>
-        </Card>
-      )}
-
-      {snapshot && (
-        <>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Overall</CardTitle>
-                <CardDescription>
-                  Observed {snapshot.observed_at} · <code className="text-xs">{snapshot.snapshot_id}</code>
-                </CardDescription>
-              </div>
-              <StateBadge state={snapshot.overall} />
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2 text-sm">
-              {snapshot.required_failures.length > 0 && (
-                <div className="flex items-start gap-2 text-destructive">
-                  <XCircle className="size-4 mt-0.5 shrink-0" />
-                  <span>Required check(s) failing: {snapshot.required_failures.join(', ')}</span>
-                </div>
-              )}
-              {snapshot.degraded_reasons.length > 0 && (
-                <div className="flex items-start gap-2 text-amber-600 dark:text-amber-400">
-                  <AlertTriangle className="size-4 mt-0.5 shrink-0" />
-                  <ul className="list-disc pl-4">
-                    {snapshot.degraded_reasons.map((reason) => (
-                      <li key={reason}>{reason}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {snapshot.required_failures.length === 0 && snapshot.degraded_reasons.length === 0 && (
-                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-                  <CheckCircle2 className="size-4" />
-                  Every check reported ready.
-                </div>
-              )}
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Clock className="size-3.5" />
-                Refresh mode: {snapshot.refresh.mode}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Checks</CardTitle>
-              <CardDescription>
-                Every check the backend runs on this probe — none are skipped or cached.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b text-xs uppercase text-muted-foreground">
-                      <th className="pb-2 pr-4 font-medium">Check</th>
-                      <th className="pb-2 pr-4 font-medium">State</th>
-                      <th className="pb-2 pr-4 font-medium">Reason</th>
-                      <th className="pb-2 font-medium">Detail</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {READINESS_CHECK_ORDER.map((name) => (
-                      <CheckRow key={name} name={name} check={snapshot.checks[name]} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </>
-      )}
-
-      {!snapshot && !error && !unavailableRoute && loading && (
-        <Card>
-          <CardContent className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            Running the live readiness probe…
-          </CardContent>
-        </Card>
-      )}
+      {unavailableRoute && <UnavailableRouteNotice />}
+      {error && !unavailableRoute && <ErrorNotice error={error} />}
+      {snapshot && <SnapshotSection snapshot={snapshot} />}
+      {showLoadingProbe && <LoadingProbeNotice />}
     </div>
   )
 }

@@ -32,17 +32,34 @@ interface AnalystResponse {
   citations: string[]
 }
 
+/** First non-nullish value among the candidates, or undefined. */
+function firstDefined(...vals: unknown[]): unknown {
+  for (const v of vals) {
+    if (v !== null && v !== undefined) return v
+  }
+  return undefined
+}
+
+function asString(v: unknown): string | null {
+  return typeof v === 'string' ? v : null
+}
+
+function asRows(v: unknown): Record<string, unknown>[] {
+  return Array.isArray(v) ? (v as Record<string, unknown>[]) : []
+}
+
+function asStringArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.map((c) => String(c)) : []
+}
+
 /** Pull the query/answer/rows/citations out of the (loosely typed) response. */
 function adaptResponse(raw: unknown): AnalystResponse {
   const obj = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-  const queryVal = obj.query ?? obj.cypher ?? obj.sql ?? obj.generated_query
-  const rowsVal = obj.rows ?? obj.results ?? obj.data
-  const citeVal = obj.citations ?? obj.sources
   return {
-    query: typeof queryVal === 'string' ? queryVal : null,
-    answer: typeof obj.answer === 'string' ? obj.answer : typeof obj.text === 'string' ? obj.text : null,
-    rows: Array.isArray(rowsVal) ? (rowsVal as Record<string, unknown>[]) : [],
-    citations: Array.isArray(citeVal) ? citeVal.map((c) => String(c)) : [],
+    query: asString(firstDefined(obj.query, obj.cypher, obj.sql, obj.generated_query)),
+    answer: asString(firstDefined(obj.answer, obj.text)),
+    rows: asRows(firstDefined(obj.rows, obj.results, obj.data)),
+    citations: asStringArray(firstDefined(obj.citations, obj.sources)),
   }
 }
 
@@ -77,6 +94,104 @@ function ResultTable({ rows }: { rows: Record<string, unknown>[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function modeDescription(mode: Mode): string {
+  return mode === 'query' ? 'NL → query translation (`/graph/nl-query`)' : 'Full analyst loop (`/graph/ask-data`)'
+}
+
+function canAsk(loading: boolean, question: string): boolean {
+  return !loading && question.trim().length > 0
+}
+
+function AskIcon({ loading }: { loading: boolean }) {
+  return loading ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Send className="size-4 mr-2" />
+}
+
+function UnavailableNotice({ mode }: { mode: Mode }) {
+  return (
+    <div className="rounded-md border border-amber-500/50 bg-amber-50/50 dark:bg-amber-500/10 p-3 flex items-start gap-2 text-sm">
+      <AlertTriangle className="size-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+      <p className="text-muted-foreground">
+        The <span className="font-mono">{mode === 'query' ? '/graph/nl-query' : '/graph/ask-data'}</span> gateway route
+        is not activated on this backend yet.
+      </p>
+    </div>
+  )
+}
+
+function ErrorNotice({ error }: { error: string }) {
+  return (
+    <pre className="rounded border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive whitespace-pre-wrap break-words">
+      {error}
+    </pre>
+  )
+}
+
+function AnswerCard({ response }: { response: AnalystResponse }) {
+  if (!response.answer) return null
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Sparkles className="size-4" />
+          Answer
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <p className="text-sm whitespace-pre-wrap">{response.answer}</p>
+        {response.citations.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-2">
+            {response.citations.map((c, i) => (
+              <Badge key={`${c}-${String(i)}`} variant="secondary" className="font-mono text-xs">
+                {c}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function QueryCard({ query }: { query: string | null }) {
+  if (!query) return null
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Generated query</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <pre className="rounded bg-muted/40 p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-words">
+          {query}
+        </pre>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ResultsCard({ rows }: { rows: Record<string, unknown>[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Results</CardTitle>
+        <CardDescription>{rows.length} row(s)</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ResultTable rows={rows} />
+      </CardContent>
+    </Card>
+  )
+}
+
+function ResponseSection({ response }: { response: AnalystResponse }) {
+  return (
+    <div className="space-y-4">
+      <AnswerCard response={response} />
+      <QueryCard query={response.query} />
+      <ResultsCard rows={response.rows} />
     </div>
   )
 }
@@ -121,11 +236,7 @@ export default function DataAnalystView() {
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <div>
             <CardTitle>Ask a question</CardTitle>
-            <CardDescription>
-              {mode === 'query'
-                ? 'NL → query translation (`/graph/nl-query`)'
-                : 'Full analyst loop (`/graph/ask-data`)'}
-            </CardDescription>
+            <CardDescription>{modeDescription(mode)}</CardDescription>
           </div>
           <Tabs
             value={mode}
@@ -163,80 +274,18 @@ export default function DataAnalystView() {
               onClick={() => {
                 void ask()
               }}
-              disabled={loading || !question.trim()}
+              disabled={!canAsk(loading, question)}
             >
-              {loading ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Send className="size-4 mr-2" />}
+              <AskIcon loading={loading} />
               Ask
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {unavailable && (
-        <div className="rounded-md border border-amber-500/50 bg-amber-50/50 dark:bg-amber-500/10 p-3 flex items-start gap-2 text-sm">
-          <AlertTriangle className="size-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
-          <p className="text-muted-foreground">
-            The <span className="font-mono">{mode === 'query' ? '/graph/nl-query' : '/graph/ask-data'}</span> gateway
-            route is not activated on this backend yet.
-          </p>
-        </div>
-      )}
-
-      {error && (
-        <pre className="rounded border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive whitespace-pre-wrap break-words">
-          {error}
-        </pre>
-      )}
-
-      {response && (
-        <div className="space-y-4">
-          {response.answer && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Sparkles className="size-4" />
-                  Answer
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <p className="text-sm whitespace-pre-wrap">{response.answer}</p>
-                {response.citations.length > 0 && (
-                  <div className="flex flex-wrap gap-1 pt-2">
-                    {response.citations.map((c, i) => (
-                      <Badge key={`${c}-${String(i)}`} variant="secondary" className="font-mono text-xs">
-                        {c}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {response.query && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Generated query</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <pre className="rounded bg-muted/40 p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-words">
-                  {response.query}
-                </pre>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Results</CardTitle>
-              <CardDescription>{response.rows.length} row(s)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResultTable rows={response.rows} />
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {unavailable && <UnavailableNotice mode={mode} />}
+      {error && <ErrorNotice error={error} />}
+      {response && <ResponseSection response={response} />}
     </div>
   )
 }

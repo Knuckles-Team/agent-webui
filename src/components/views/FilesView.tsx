@@ -94,33 +94,34 @@ function formatDate(iso: string | undefined): string {
  * `modified` key (without the `_iso` suffix) is also honored for
  * deployments that used the unspec'd earlier shape.
  */
+/** First value among the candidates that is a string, else undefined. */
+function firstString(...vals: unknown[]): string | undefined {
+  for (const v of vals) {
+    if (typeof v === 'string') return v
+  }
+  return undefined
+}
+
+function extractFileRecord(rec: Record<string, unknown>): FileEntry | null {
+  const name = firstString(rec.name, rec.filename)
+  if (!name) return null
+  return {
+    name,
+    size: typeof rec.size === 'number' ? rec.size : undefined,
+    modified: firstString(rec.modified_iso, rec.modified),
+    isDir: typeof rec.is_dir === 'boolean' ? rec.is_dir : undefined,
+  }
+}
+
+function normalizeFileEntry(item: unknown): FileEntry | null {
+  if (typeof item === 'string') return { name: item }
+  if (item && typeof item === 'object') return extractFileRecord(item as Record<string, unknown>)
+  return null
+}
+
 function normalizeFiles(raw: unknown): FileEntry[] {
   if (!Array.isArray(raw)) return []
-  return raw
-    .map((item): FileEntry | null => {
-      if (typeof item === 'string') {
-        return { name: item }
-      }
-      if (item && typeof item === 'object') {
-        const rec = item as Record<string, unknown>
-        const name = typeof rec.name === 'string' ? rec.name : typeof rec.filename === 'string' ? rec.filename : null
-        if (!name) return null
-        const modified =
-          typeof rec.modified_iso === 'string'
-            ? rec.modified_iso
-            : typeof rec.modified === 'string'
-              ? rec.modified
-              : undefined
-        return {
-          name,
-          size: typeof rec.size === 'number' ? rec.size : undefined,
-          modified,
-          isDir: typeof rec.is_dir === 'boolean' ? rec.is_dir : undefined,
-        }
-      }
-      return null
-    })
-    .filter((f): f is FileEntry => f !== null)
+  return raw.map(normalizeFileEntry).filter((f): f is FileEntry => f !== null)
 }
 
 async function extractErrorMessage(res: Response, fallback: string): Promise<string> {
@@ -301,6 +302,404 @@ function FileTreeRow({
         )}
       </CollapsibleContent>
     </Collapsible>
+  )
+}
+
+interface FileTreeAreaProps {
+  loading: boolean
+  tree: FileTreeNode[]
+  visibleRoots: FileTreeNode[]
+  previewFile: string | null
+  searchVisible: Set<string> | null
+  isExpanded: (path: string) => boolean
+  onToggleExpand: (path: string) => void
+  onSelectFile: (path: string) => void
+  onDownloadFile: (path: string) => void
+  onRequestDelete: (path: string) => void
+}
+
+function FileTreeArea({
+  loading,
+  tree,
+  visibleRoots,
+  previewFile,
+  searchVisible,
+  isExpanded,
+  onToggleExpand,
+  onSelectFile,
+  onDownloadFile,
+  onRequestDelete,
+}: FileTreeAreaProps) {
+  if (loading) return <p className="text-muted-foreground text-sm">Loading files...</p>
+  if (tree.length === 0) return <p className="text-muted-foreground text-sm">No files found.</p>
+  if (visibleRoots.length === 0) return <p className="text-muted-foreground text-sm">No files match your search.</p>
+  return (
+    <div role="tree" aria-label="Workspace files">
+      {visibleRoots.map((node) => (
+        <FileTreeRow
+          key={node.path}
+          node={node}
+          depth={0}
+          selectedPath={previewFile}
+          visibleFilter={searchVisible}
+          isExpanded={isExpanded}
+          onToggleExpand={onToggleExpand}
+          onSelectFile={onSelectFile}
+          onDownloadFile={onDownloadFile}
+          onRequestDelete={onRequestDelete}
+        />
+      ))}
+    </div>
+  )
+}
+
+interface FileListCardProps extends FileTreeAreaProps {
+  searchQuery: string
+  uploading: boolean
+  onRefresh: () => void
+  onUploadClick: () => void
+  onNewFile: () => void
+  onSearchChange: (value: string) => void
+}
+
+/** File list card: header actions + search + the file tree. */
+function FileListCard({
+  loading,
+  tree,
+  visibleRoots,
+  previewFile,
+  searchVisible,
+  isExpanded,
+  onToggleExpand,
+  onSelectFile,
+  onDownloadFile,
+  onRequestDelete,
+  searchQuery,
+  uploading,
+  onRefresh,
+  onUploadClick,
+  onNewFile,
+  onSearchChange,
+}: FileListCardProps) {
+  return (
+    <Card className="flex flex-col">
+      <CardHeader>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle>Workspace Files</CardTitle>
+            <CardDescription>Managed files in your agent workspace</CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading} title="Refresh">
+              <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+            </Button>
+            <Button variant="outline" size="sm" onClick={onUploadClick} disabled={uploading}>
+              <Upload className="size-4 mr-1" />
+              {uploading ? 'Uploading…' : 'Upload'}
+            </Button>
+            <Button size="sm" onClick={onNewFile}>
+              <Plus className="size-4 mr-1" />
+              New File
+            </Button>
+          </div>
+        </div>
+        <div className="relative mt-2">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            placeholder="Search files..."
+            className="pl-9"
+            value={searchQuery}
+            onChange={(e) => {
+              onSearchChange(e.target.value)
+            }}
+          />
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full pr-4">
+          <FileTreeArea
+            loading={loading}
+            tree={tree}
+            visibleRoots={visibleRoots}
+            previewFile={previewFile}
+            searchVisible={searchVisible}
+            isExpanded={isExpanded}
+            onToggleExpand={onToggleExpand}
+            onSelectFile={onSelectFile}
+            onDownloadFile={onDownloadFile}
+            onRequestDelete={onRequestDelete}
+          />
+        </ScrollArea>
+      </CardContent>
+    </Card>
+  )
+}
+
+function previewDescription(previewFile: string | null, isEditing: boolean): string {
+  if (!previewFile) return 'Select a file to preview'
+  return isEditing ? 'Editing file contents' : 'Read-only preview'
+}
+
+function PreviewHeaderActions({
+  previewFile,
+  isEditing,
+  saving,
+  onCancelEdit,
+  onSaveEdit,
+  onStartEdit,
+  onDownload,
+}: {
+  previewFile: string
+  isEditing: boolean
+  saving: boolean
+  onCancelEdit: () => void
+  onSaveEdit: () => void
+  onStartEdit: () => void
+  onDownload: () => void
+}) {
+  if (isEditing) {
+    return (
+      <>
+        <Button variant="outline" size="sm" onClick={onCancelEdit} disabled={saving}>
+          <X className="size-4 mr-1" />
+          Cancel
+        </Button>
+        <Button size="sm" onClick={onSaveEdit} disabled={saving}>
+          <Save className="size-4 mr-1" />
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+      </>
+    )
+  }
+  return (
+    <>
+      {isEditable(previewFile) && (
+        <Button variant="outline" size="sm" onClick={onStartEdit}>
+          <Pencil className="size-4 mr-1" />
+          Edit
+        </Button>
+      )}
+      <Button variant="outline" size="sm" onClick={onDownload}>
+        <Download className="size-4 mr-1" />
+        Download
+      </Button>
+    </>
+  )
+}
+
+function PreviewContentArea({
+  previewFile,
+  isEditing,
+  editBuffer,
+  previewContent,
+  onEditBufferChange,
+}: {
+  previewFile: string | null
+  isEditing: boolean
+  editBuffer: string
+  previewContent: string
+  onEditBufferChange: (value: string) => void
+}) {
+  if (!previewFile) {
+    return (
+      <div className="h-full flex items-center justify-center border-2 border-dashed rounded-md border-muted">
+        <div className="text-center">
+          <FileIcon className="size-10 mx-auto text-muted-foreground mb-2" />
+          <p className="text-sm text-muted-foreground">No file selected</p>
+        </div>
+      </div>
+    )
+  }
+  if (isEditing) {
+    return (
+      <Textarea
+        value={editBuffer}
+        onChange={(e) => {
+          onEditBufferChange(e.target.value)
+        }}
+        className="h-full min-h-0 font-mono text-xs resize-none"
+        placeholder="File contents..."
+      />
+    )
+  }
+  return (
+    <ScrollArea className="h-full bg-muted/30 rounded-md p-4">
+      <pre className="text-xs whitespace-pre-wrap font-mono">{previewContent}</pre>
+    </ScrollArea>
+  )
+}
+
+/** Preview / editor panel */
+function PreviewCard({
+  previewFile,
+  isEditing,
+  saving,
+  editBuffer,
+  previewContent,
+  onCancelEdit,
+  onSaveEdit,
+  onStartEdit,
+  onDownload,
+  onEditBufferChange,
+}: {
+  previewFile: string | null
+  isEditing: boolean
+  saving: boolean
+  editBuffer: string
+  previewContent: string
+  onCancelEdit: () => void
+  onSaveEdit: () => void
+  onStartEdit: () => void
+  onDownload: (filename: string) => void
+  onEditBufferChange: (value: string) => void
+}) {
+  return (
+    <Card className="flex flex-col">
+      <CardHeader>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <CardTitle className="truncate">{previewFile ?? 'Preview'}</CardTitle>
+            <CardDescription>{previewDescription(previewFile, isEditing)}</CardDescription>
+          </div>
+          {previewFile && (
+            <div className="flex gap-2 shrink-0">
+              <PreviewHeaderActions
+                previewFile={previewFile}
+                isEditing={isEditing}
+                saving={saving}
+                onCancelEdit={onCancelEdit}
+                onSaveEdit={onSaveEdit}
+                onStartEdit={onStartEdit}
+                onDownload={() => {
+                  onDownload(previewFile)
+                }}
+              />
+            </div>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1 overflow-hidden">
+        <PreviewContentArea
+          previewFile={previewFile}
+          isEditing={isEditing}
+          editBuffer={editBuffer}
+          previewContent={previewContent}
+          onEditBufferChange={onEditBufferChange}
+        />
+      </CardContent>
+    </Card>
+  )
+}
+
+function NewFileDialog({
+  open,
+  onOpenChange,
+  newFileName,
+  onNameChange,
+  newFileContent,
+  onContentChange,
+  saving,
+  onCancel,
+  onCreate,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  newFileName: string
+  onNameChange: (value: string) => void
+  newFileContent: string
+  onContentChange: (value: string) => void
+  saving: boolean
+  onCancel: () => void
+  onCreate: () => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New File</DialogTitle>
+          <DialogDescription>
+            Create a new workspace file. Only <code>.md</code> and <code>.json</code> files are supported by the
+            backend writer.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="new-file-name" className="text-sm font-medium">
+              Filename
+            </label>
+            <Input
+              id="new-file-name"
+              value={newFileName}
+              onChange={(e) => {
+                onNameChange(e.target.value)
+              }}
+              placeholder="notes.md"
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <label htmlFor="new-file-content" className="text-sm font-medium">
+              Content
+            </label>
+            <Textarea
+              id="new-file-content"
+              value={newFileContent}
+              onChange={(e) => {
+                onContentChange(e.target.value)
+              }}
+              placeholder="File contents..."
+              className="mt-1 font-mono text-xs"
+              rows={10}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={onCreate} disabled={saving}>
+            {saving ? 'Saving…' : 'Create'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DeleteFileDialog({
+  deleteCandidate,
+  deleting,
+  onOpenChange,
+  onCancel,
+  onConfirm,
+}: {
+  deleteCandidate: string | null
+  deleting: boolean
+  onOpenChange: (open: boolean) => void
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <Dialog open={deleteCandidate !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete file</DialogTitle>
+          <DialogDescription>
+            This will permanently remove <code className="font-mono">{deleteCandidate}</code> from the workspace. This
+            action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel} disabled={deleting}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={onConfirm} disabled={deleting}>
+            <Trash2 className="size-4 mr-1" />
+            {deleting ? 'Deleting…' : 'Delete'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -557,286 +956,82 @@ export default function FilesView() {
         }}
       />
 
-      {/* File list */}
-      <Card className="flex flex-col">
-        <CardHeader>
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <CardTitle>Workspace Files</CardTitle>
-              <CardDescription>Managed files in your agent workspace</CardDescription>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  void fetchFiles()
-                }}
-                disabled={loading}
-                title="Refresh"
-              >
-                <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => uploadInputRef.current?.click()} disabled={uploading}>
-                <Upload className="size-4 mr-1" />
-                {uploading ? 'Uploading…' : 'Upload'}
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setIsNewFileOpen(true)
-                }}
-              >
-                <Plus className="size-4 mr-1" />
-                New File
-              </Button>
-            </div>
-          </div>
-          <div className="relative mt-2">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <Input
-              placeholder="Search files..."
-              className="pl-9"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value)
-              }}
-            />
-          </div>
-        </CardHeader>
-        <CardContent className="flex-1 overflow-hidden">
-          <ScrollArea className="h-full pr-4">
-            {loading ? (
-              <p className="text-muted-foreground text-sm">Loading files...</p>
-            ) : tree.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No files found.</p>
-            ) : visibleRoots.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No files match your search.</p>
-            ) : (
-              <div role="tree" aria-label="Workspace files">
-                {visibleRoots.map((node) => (
-                  <FileTreeRow
-                    key={node.path}
-                    node={node}
-                    depth={0}
-                    selectedPath={previewFile}
-                    visibleFilter={searchVisible}
-                    isExpanded={isExpanded}
-                    onToggleExpand={toggleExpand}
-                    onSelectFile={(path) => {
-                      void handlePreview(path)
-                    }}
-                    onDownloadFile={handleDownload}
-                    onRequestDelete={(path) => {
-                      setDeleteCandidate(path)
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </ScrollArea>
-        </CardContent>
-      </Card>
+      <FileListCard
+        loading={loading}
+        tree={tree}
+        visibleRoots={visibleRoots}
+        previewFile={previewFile}
+        searchVisible={searchVisible}
+        isExpanded={isExpanded}
+        onToggleExpand={toggleExpand}
+        onSelectFile={(path) => {
+          void handlePreview(path)
+        }}
+        onDownloadFile={handleDownload}
+        onRequestDelete={(path) => {
+          setDeleteCandidate(path)
+        }}
+        searchQuery={searchQuery}
+        uploading={uploading}
+        onRefresh={() => {
+          void fetchFiles()
+        }}
+        onUploadClick={() => uploadInputRef.current?.click()}
+        onNewFile={() => {
+          setIsNewFileOpen(true)
+        }}
+        onSearchChange={setSearchQuery}
+      />
 
-      {/* Preview / editor panel */}
-      <Card className="flex flex-col">
-        <CardHeader>
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <CardTitle className="truncate">{previewFile ?? 'Preview'}</CardTitle>
-              <CardDescription>
-                {previewFile
-                  ? isEditing
-                    ? 'Editing file contents'
-                    : 'Read-only preview'
-                  : 'Select a file to preview'}
-              </CardDescription>
-            </div>
-            {previewFile && (
-              <div className="flex gap-2 shrink-0">
-                {isEditing ? (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setIsEditing(false)
-                        setEditBuffer(previewContent)
-                      }}
-                      disabled={saving}
-                    >
-                      <X className="size-4 mr-1" />
-                      Cancel
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        void handleSaveEdit()
-                      }}
-                      disabled={saving}
-                    >
-                      <Save className="size-4 mr-1" />
-                      {saving ? 'Saving…' : 'Save'}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    {isEditable(previewFile) && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setIsEditing(true)
-                        }}
-                      >
-                        <Pencil className="size-4 mr-1" />
-                        Edit
-                      </Button>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        handleDownload(previewFile)
-                      }}
-                    >
-                      <Download className="size-4 mr-1" />
-                      Download
-                    </Button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="flex-1 overflow-hidden">
-          {previewFile ? (
-            isEditing ? (
-              <Textarea
-                value={editBuffer}
-                onChange={(e) => {
-                  setEditBuffer(e.target.value)
-                }}
-                className="h-full min-h-0 font-mono text-xs resize-none"
-                placeholder="File contents..."
-              />
-            ) : (
-              <ScrollArea className="h-full bg-muted/30 rounded-md p-4">
-                <pre className="text-xs whitespace-pre-wrap font-mono">{previewContent}</pre>
-              </ScrollArea>
-            )
-          ) : (
-            <div className="h-full flex items-center justify-center border-2 border-dashed rounded-md border-muted">
-              <div className="text-center">
-                <FileIcon className="size-10 mx-auto text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground">No file selected</p>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <PreviewCard
+        previewFile={previewFile}
+        isEditing={isEditing}
+        saving={saving}
+        editBuffer={editBuffer}
+        previewContent={previewContent}
+        onCancelEdit={() => {
+          setIsEditing(false)
+          setEditBuffer(previewContent)
+        }}
+        onSaveEdit={() => {
+          void handleSaveEdit()
+        }}
+        onStartEdit={() => {
+          setIsEditing(true)
+        }}
+        onDownload={handleDownload}
+        onEditBufferChange={setEditBuffer}
+      />
 
-      {/* New file dialog */}
-      <Dialog open={isNewFileOpen} onOpenChange={setIsNewFileOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New File</DialogTitle>
-            <DialogDescription>
-              Create a new workspace file. Only <code>.md</code> and <code>.json</code> files are supported by the
-              backend writer.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="new-file-name" className="text-sm font-medium">
-                Filename
-              </label>
-              <Input
-                id="new-file-name"
-                value={newFileName}
-                onChange={(e) => {
-                  setNewFileName(e.target.value)
-                }}
-                placeholder="notes.md"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <label htmlFor="new-file-content" className="text-sm font-medium">
-                Content
-              </label>
-              <Textarea
-                id="new-file-content"
-                value={newFileContent}
-                onChange={(e) => {
-                  setNewFileContent(e.target.value)
-                }}
-                placeholder="File contents..."
-                className="mt-1 font-mono text-xs"
-                rows={10}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsNewFileOpen(false)
-              }}
-              disabled={saving}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                void handleCreateFile()
-              }}
-              disabled={saving}
-            >
-              {saving ? 'Saving…' : 'Create'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NewFileDialog
+        open={isNewFileOpen}
+        onOpenChange={setIsNewFileOpen}
+        newFileName={newFileName}
+        onNameChange={setNewFileName}
+        newFileContent={newFileContent}
+        onContentChange={setNewFileContent}
+        saving={saving}
+        onCancel={() => {
+          setIsNewFileOpen(false)
+        }}
+        onCreate={() => {
+          void handleCreateFile()
+        }}
+      />
 
-      {/* Delete-confirmation dialog */}
-      <Dialog
-        open={deleteCandidate !== null}
+      <DeleteFileDialog
+        deleteCandidate={deleteCandidate}
+        deleting={deleting}
         onOpenChange={(open) => {
           if (!open && !deleting) setDeleteCandidate(null)
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete file</DialogTitle>
-            <DialogDescription>
-              This will permanently remove <code className="font-mono">{deleteCandidate}</code> from the workspace.
-              This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDeleteCandidate(null)
-              }}
-              disabled={deleting}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                void handleConfirmDelete()
-              }}
-              disabled={deleting}
-            >
-              <Trash2 className="size-4 mr-1" />
-              {deleting ? 'Deleting…' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onCancel={() => {
+          setDeleteCandidate(null)
+        }}
+        onConfirm={() => {
+          void handleConfirmDelete()
+        }}
+      />
     </div>
   )
 }

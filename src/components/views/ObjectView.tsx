@@ -153,23 +153,38 @@ export interface ObjectViewProps {
   onNavigate?: (targetId: string, targetType?: string) => void
 }
 
+/** Render a boolean value as its literal text. */
+function formatBoolean(value: boolean): string {
+  return value ? 'true' : 'false'
+}
+
+/** Render a `'true'`/other string as a boolean-typed value's literal text. */
+function formatStringAsBoolean(value: string): string {
+  return value === 'true' ? 'true' : 'false'
+}
+
+/** Parse a string as a date and format it, or null if it doesn't parse. */
+function formatStringAsDate(value: string): string | null {
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleString()
+}
+
+/** Format a string value honoring its declared value-type. */
+function formatStringValue(value: string, valueType?: string): string {
+  if (valueType === 'boolean') return formatStringAsBoolean(value)
+  if (valueType === 'timestamp' || valueType === 'date') {
+    const formatted = formatStringAsDate(value)
+    if (formatted !== null) return formatted
+  }
+  return value
+}
+
 /** Format a typed value for display, honoring its value-type. */
 export function formatValue(value: unknown, valueType?: string): string {
   if (value === null || value === undefined) return '—'
-  if (typeof value === 'boolean') {
-    return value ? 'true' : 'false'
-  }
-  if (typeof value === 'number') {
-    return String(value)
-  }
-  if (typeof value === 'string') {
-    if (valueType === 'boolean') return value === 'true' ? 'true' : 'false'
-    if (valueType === 'timestamp' || valueType === 'date') {
-      const d = new Date(value)
-      if (!Number.isNaN(d.getTime())) return d.toLocaleString()
-    }
-    return value
-  }
+  if (typeof value === 'boolean') return formatBoolean(value)
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'string') return formatStringValue(value, valueType)
   return JSON.stringify(value)
 }
 
@@ -195,6 +210,420 @@ export function applyOrder<T>(items: T[], order: string[] | undefined, keyOf: (i
     const rb = rank.has(keyOf(b)) ? rank.get(keyOf(b))! : Number.MAX_SAFE_INTEGER
     return ra - rb
   })
+}
+
+/** Derive an initial edit-dialog draft string from a property's current value. */
+function draftFromValue(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (value !== null && value !== undefined) return JSON.stringify(value)
+  return ''
+}
+
+function ObjectMarkings({ markings }: { markings: string[] }) {
+  return (
+    <div className="flex flex-wrap justify-end gap-1" data-testid="object-markings">
+      {markings.length === 0 ? (
+        <Badge variant="secondary" className="gap-1 text-xs">
+          <Shield className="size-3" />
+          unrestricted
+        </Badge>
+      ) : (
+        markings.map((m) => (
+          <Badge key={m} variant="destructive" className="gap-1 text-xs">
+            <Shield className="size-3" />
+            {m}
+          </Badge>
+        ))
+      )}
+    </div>
+  )
+}
+
+/** Header: object identity + markings */
+function ObjectHeaderCard({ data, isPanel }: { data: OntologyObject; isPanel: boolean }) {
+  const headerTitle = data.layout?.title ?? data.title ?? data.id
+  return (
+    <Card className="border-border/40">
+      <CardHeader className={cn(isPanel && 'p-4')}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <CardTitle className={cn('flex items-center gap-2', isPanel ? 'text-base' : 'text-xl')}>
+              <Boxes className={cn(isPanel ? 'size-4' : 'size-5', 'text-primary shrink-0')} />
+              <span className="truncate">{headerTitle}</span>
+            </CardTitle>
+            <CardDescription className="flex items-center gap-2 font-mono text-xs mt-1">
+              <Hash className="size-3" />
+              <span className="truncate">{data.id}</span>
+              <Badge variant="outline" className="ml-1">
+                {data.object_type}
+              </Badge>
+            </CardDescription>
+          </div>
+          <ObjectMarkings markings={data.markings} />
+        </div>
+      </CardHeader>
+    </Card>
+  )
+}
+
+function PropertyRow({
+  prop,
+  onEdit,
+}: {
+  prop: OntologyPropertyValue
+  onEdit: (prop: OntologyPropertyValue) => void
+}) {
+  return (
+    <div
+      className="flex items-center justify-between gap-3 rounded border border-border/30 px-3 py-2"
+      data-testid={`property-${prop.name}`}
+    >
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium truncate">{prop.title ?? prop.name}</span>
+          {prop.value_type && (
+            <Badge variant="outline" className="text-[10px] py-0">
+              {prop.value_type}
+            </Badge>
+          )}
+        </div>
+        <span className="text-xs text-muted-foreground break-all">{formatValue(prop.value, prop.value_type)}</span>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label={`Edit ${prop.name}`}
+        onClick={() => {
+          onEdit(prop)
+        }}
+      >
+        <Pencil className="size-3" />
+      </Button>
+    </div>
+  )
+}
+
+function PropertiesCard({
+  properties,
+  isPanel,
+  onEdit,
+}: {
+  properties: OntologyPropertyValue[]
+  isPanel: boolean
+  onEdit: (prop: OntologyPropertyValue) => void
+}) {
+  return (
+    <Card>
+      <CardHeader className={cn(isPanel && 'p-4 pb-2')}>
+        <CardTitle className="text-sm flex items-center gap-2">
+          <TypeIcon className="size-4" />
+          Properties
+        </CardTitle>
+      </CardHeader>
+      <CardContent className={cn('space-y-2', isPanel && 'p-4 pt-0')}>
+        {properties.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No properties.</p>
+        ) : (
+          properties.map((prop) => <PropertyRow key={prop.name} prop={prop} onEdit={onEdit} />)
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** DERIVED — visually distinguished (sparkle + dashed accent) */
+function DerivedPropertyRow({ derived }: { derived: OntologyDerivedValue }) {
+  return (
+    <div
+      className="rounded border border-primary/20 bg-background/40 px-3 py-2"
+      data-testid={`derived-${derived.name}`}
+    >
+      <div className="flex items-center gap-2">
+        <Sparkles className="size-3 text-primary/70" />
+        <span className="text-xs font-medium truncate">{derived.title ?? derived.name}</span>
+        {derived.value_type && (
+          <Badge variant="outline" className="text-[10px] py-0">
+            {derived.value_type}
+          </Badge>
+        )}
+      </div>
+      <span className="text-xs text-muted-foreground break-all">{formatValue(derived.value, derived.value_type)}</span>
+      {derived.expression && (
+        <code className="mt-1 block text-[10px] text-primary/60 font-mono break-all">{derived.expression}</code>
+      )}
+    </div>
+  )
+}
+
+function DerivedPropertiesCard({ derived, isPanel }: { derived: OntologyDerivedValue[]; isPanel: boolean }) {
+  return (
+    <Card className="border-dashed border-primary/40 bg-primary/[0.02]">
+      <CardHeader className={cn(isPanel && 'p-4 pb-2')}>
+        <CardTitle className="text-sm flex items-center gap-2 text-primary">
+          <Sparkles className="size-4" />
+          Derived Properties
+        </CardTitle>
+        <CardDescription className="text-xs">Computed from the ontology, read-only.</CardDescription>
+      </CardHeader>
+      <CardContent className={cn('space-y-2', isPanel && 'p-4 pt-0')}>
+        {derived.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No derived properties.</p>
+        ) : (
+          derived.map((d) => <DerivedPropertyRow key={d.name} derived={d} />)
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** PROPERTIES + DERIVED tab */
+function PropertiesTab({
+  properties,
+  derived,
+  isPanel,
+  onEdit,
+}: {
+  properties: OntologyPropertyValue[]
+  derived: OntologyDerivedValue[]
+  isPanel: boolean
+  onEdit: (prop: OntologyPropertyValue) => void
+}) {
+  return (
+    <TabsContent value="properties" className="space-y-4">
+      <PropertiesCard properties={properties} isPanel={isPanel} onEdit={onEdit} />
+      <DerivedPropertiesCard derived={derived} isPanel={isPanel} />
+    </TabsContent>
+  )
+}
+
+function LinkRow({
+  link,
+  onNavigate,
+}: {
+  link: OntologyLink
+  onNavigate?: (targetId: string, targetType?: string) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onNavigate?.(link.target_id, link.target_type)}
+      className="flex w-full items-center justify-between gap-2 rounded border border-border/30 px-3 py-2 text-left hover:bg-muted/30 transition-colors"
+      data-testid={`link-${link.target_id}`}
+    >
+      <span className="flex items-center gap-2 min-w-0">
+        <Badge variant="outline" className="text-[10px] py-0">
+          {link.direction === 'out' ? '→' : '←'}
+        </Badge>
+        <span className="text-xs truncate">{link.target_title ?? link.target_id}</span>
+      </span>
+      {link.target_type && (
+        <Badge variant="secondary" className="text-[10px] py-0 shrink-0">
+          {link.target_type}
+        </Badge>
+      )}
+    </button>
+  )
+}
+
+function LinkGroupSection({
+  linkType,
+  links,
+  onNavigate,
+}: {
+  linkType: string
+  links: OntologyLink[]
+  onNavigate?: (targetId: string, targetType?: string) => void
+}) {
+  return (
+    <div data-testid={`link-group-${linkType}`}>
+      <div className="mb-1 flex items-center gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {links[0]?.title ?? linkType}
+        </span>
+        <Badge variant="secondary" className="text-[10px] py-0">
+          {links.length}
+        </Badge>
+      </div>
+      <Separator className="mb-2" />
+      <div className="space-y-1">
+        {links.map((link) => (
+          <LinkRow key={`${link.direction}:${link.target_id}`} link={link} onNavigate={onNavigate} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** LINKS tab — grouped by type, each navigable */
+function LinksTab({
+  linkGroups,
+  isPanel,
+  onNavigate,
+}: {
+  linkGroups: { linkType: string; links: OntologyLink[] }[]
+  isPanel: boolean
+  onNavigate?: (targetId: string, targetType?: string) => void
+}) {
+  return (
+    <TabsContent value="links" className="space-y-4">
+      <Card>
+        <CardHeader className={cn(isPanel && 'p-4 pb-2')}>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Link2 className="size-4" />
+            Links
+          </CardTitle>
+        </CardHeader>
+        <CardContent className={cn('space-y-4', isPanel && 'p-4 pt-0')}>
+          {linkGroups.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No links.</p>
+          ) : (
+            linkGroups.map(({ linkType, links }) => (
+              <LinkGroupSection key={linkType} linkType={linkType} links={links} onNavigate={onNavigate} />
+            ))
+          )}
+        </CardContent>
+      </Card>
+    </TabsContent>
+  )
+}
+
+function HistoryEntry({
+  edit,
+  onRevert,
+  revertPending,
+}: {
+  edit: OntologyEdit
+  onRevert: (editId: string) => void
+  revertPending: boolean
+}) {
+  return (
+    <div className="relative pl-6" data-testid={`history-${edit.edit_id}`}>
+      <span className="absolute -left-[9px] top-1 size-4 rounded-full border-2 border-primary/60 bg-background" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-[10px] py-0">
+              {edit.kind}
+            </Badge>
+            {edit.target && <span className="text-xs font-medium truncate">{edit.target}</span>}
+            {edit.reverted && (
+              <Badge variant="secondary" className="text-[10px] py-0">
+                reverted
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground mt-0.5 font-mono">
+            <Calendar className="size-3" />
+            {new Date(edit.timestamp).toLocaleString()}
+            {edit.actor && <span>· {edit.actor}</span>}
+          </div>
+          {(edit.old_value !== undefined || edit.new_value !== undefined) && (
+            <p className="text-[11px] text-muted-foreground mt-1 break-all">
+              {formatValue(edit.old_value)} → {formatValue(edit.new_value)}
+            </p>
+          )}
+        </div>
+        {!edit.reverted && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={`Revert ${edit.edit_id}`}
+            disabled={revertPending}
+            onClick={() => {
+              onRevert(edit.edit_id)
+            }}
+          >
+            <RotateCcw className="size-3" />
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** EDIT HISTORY timeline + revert (full only; panel hides the tab) */
+function HistoryTab({
+  history,
+  onRevert,
+  revertPending,
+}: {
+  history: OntologyEdit[]
+  onRevert: (editId: string) => void
+  revertPending: boolean
+}) {
+  return (
+    <TabsContent value="history" className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <History className="size-4" />
+            Edit History
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {history.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No recorded edits.</p>
+          ) : (
+            <div className="relative border-l-2 border-border/30 ml-3 space-y-4">
+              {history.map((edit) => (
+                <HistoryEntry key={edit.edit_id} edit={edit} onRevert={onRevert} revertPending={revertPending} />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </TabsContent>
+  )
+}
+
+/** Inline property-edit dialog */
+function EditPropertyDialog({
+  editProp,
+  editDraft,
+  onDraftChange,
+  onOpenChange,
+  onSubmit,
+  submitPending,
+}: {
+  editProp: OntologyPropertyValue | null
+  editDraft: string
+  onDraftChange: (v: string) => void
+  onOpenChange: (open: boolean) => void
+  onSubmit: () => void
+  submitPending: boolean
+}) {
+  return (
+    <Dialog open={Boolean(editProp)} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit property</DialogTitle>
+          <DialogDescription>
+            {editProp ? (editProp.title ?? editProp.name) : ''}
+            {editProp?.value_type ? ` (${editProp.value_type})` : ''}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <Input
+            aria-label="Property value"
+            value={editDraft}
+            onChange={(e) => {
+              onDraftChange(e.target.value)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                onSubmit()
+              }
+            }}
+          />
+          <Button className="w-full" onClick={onSubmit} disabled={submitPending}>
+            Save edit
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 /**
@@ -273,12 +702,7 @@ export default function ObjectView({ objectId, variant = 'full', layout = 'stand
 
   const openEdit = (prop: OntologyPropertyValue) => {
     setEditProp(prop)
-    const v = prop.value
-    let draft = ''
-    if (typeof v === 'string') draft = v
-    else if (typeof v === 'number' || typeof v === 'boolean') draft = String(v)
-    else if (v !== null && v !== undefined) draft = JSON.stringify(v)
-    setEditDraft(draft)
+    setEditDraft(draftFromValue(prop.value))
   }
 
   const submitEdit = () => {
@@ -299,49 +723,13 @@ export default function ObjectView({ objectId, variant = 'full', layout = 'stand
     )
   }
 
-  const headerTitle = data.layout?.title ?? data.title ?? data.id
-
   return (
     <div
       className={cn('space-y-6', isPanel ? 'p-3 max-w-md text-sm' : 'p-0')}
       data-testid="object-view"
       data-variant={variant}
     >
-      {/* Header: object identity + markings */}
-      <Card className="border-border/40">
-        <CardHeader className={cn(isPanel && 'p-4')}>
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <CardTitle className={cn('flex items-center gap-2', isPanel ? 'text-base' : 'text-xl')}>
-                <Boxes className={cn(isPanel ? 'size-4' : 'size-5', 'text-primary shrink-0')} />
-                <span className="truncate">{headerTitle}</span>
-              </CardTitle>
-              <CardDescription className="flex items-center gap-2 font-mono text-xs mt-1">
-                <Hash className="size-3" />
-                <span className="truncate">{data.id}</span>
-                <Badge variant="outline" className="ml-1">
-                  {data.object_type}
-                </Badge>
-              </CardDescription>
-            </div>
-            <div className="flex flex-wrap justify-end gap-1" data-testid="object-markings">
-              {data.markings.length === 0 ? (
-                <Badge variant="secondary" className="gap-1 text-xs">
-                  <Shield className="size-3" />
-                  unrestricted
-                </Badge>
-              ) : (
-                data.markings.map((m) => (
-                  <Badge key={m} variant="destructive" className="gap-1 text-xs">
-                    <Shield className="size-3" />
-                    {m}
-                  </Badge>
-                ))
-              )}
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
+      <ObjectHeaderCard data={data} isPanel={isPanel} />
 
       <Tabs defaultValue="properties" className="w-full">
         <TabsList className={cn('grid w-full', isPanel ? 'grid-cols-2' : 'grid-cols-3')}>
@@ -350,252 +738,31 @@ export default function ObjectView({ objectId, variant = 'full', layout = 'stand
           {!isPanel && <TabsTrigger value="history">History</TabsTrigger>}
         </TabsList>
 
-        {/* PROPERTIES + DERIVED */}
-        <TabsContent value="properties" className="space-y-4">
-          <Card>
-            <CardHeader className={cn(isPanel && 'p-4 pb-2')}>
-              <CardTitle className="text-sm flex items-center gap-2">
-                <TypeIcon className="size-4" />
-                Properties
-              </CardTitle>
-            </CardHeader>
-            <CardContent className={cn('space-y-2', isPanel && 'p-4 pt-0')}>
-              {orderedProperties.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No properties.</p>
-              ) : (
-                orderedProperties.map((prop) => (
-                  <div
-                    key={prop.name}
-                    className="flex items-center justify-between gap-3 rounded border border-border/30 px-3 py-2"
-                    data-testid={`property-${prop.name}`}
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium truncate">{prop.title ?? prop.name}</span>
-                        {prop.value_type && (
-                          <Badge variant="outline" className="text-[10px] py-0">
-                            {prop.value_type}
-                          </Badge>
-                        )}
-                      </div>
-                      <span className="text-xs text-muted-foreground break-all">
-                        {formatValue(prop.value, prop.value_type)}
-                      </span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Edit ${prop.name}`}
-                      onClick={() => {
-                        openEdit(prop)
-                      }}
-                    >
-                      <Pencil className="size-3" />
-                    </Button>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
+        <PropertiesTab properties={orderedProperties} derived={data.derived} isPanel={isPanel} onEdit={openEdit} />
 
-          {/* DERIVED — visually distinguished (sparkle + dashed accent) */}
-          <Card className="border-dashed border-primary/40 bg-primary/[0.02]">
-            <CardHeader className={cn(isPanel && 'p-4 pb-2')}>
-              <CardTitle className="text-sm flex items-center gap-2 text-primary">
-                <Sparkles className="size-4" />
-                Derived Properties
-              </CardTitle>
-              <CardDescription className="text-xs">Computed from the ontology, read-only.</CardDescription>
-            </CardHeader>
-            <CardContent className={cn('space-y-2', isPanel && 'p-4 pt-0')}>
-              {data.derived.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No derived properties.</p>
-              ) : (
-                data.derived.map((d) => (
-                  <div
-                    key={d.name}
-                    className="rounded border border-primary/20 bg-background/40 px-3 py-2"
-                    data-testid={`derived-${d.name}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="size-3 text-primary/70" />
-                      <span className="text-xs font-medium truncate">{d.title ?? d.name}</span>
-                      {d.value_type && (
-                        <Badge variant="outline" className="text-[10px] py-0">
-                          {d.value_type}
-                        </Badge>
-                      )}
-                    </div>
-                    <span className="text-xs text-muted-foreground break-all">
-                      {formatValue(d.value, d.value_type)}
-                    </span>
-                    {d.expression && (
-                      <code className="mt-1 block text-[10px] text-primary/60 font-mono break-all">
-                        {d.expression}
-                      </code>
-                    )}
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+        <LinksTab linkGroups={linkGroups} isPanel={isPanel} onNavigate={onNavigate} />
 
-        {/* LINKS — grouped by type, each navigable */}
-        <TabsContent value="links" className="space-y-4">
-          <Card>
-            <CardHeader className={cn(isPanel && 'p-4 pb-2')}>
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Link2 className="size-4" />
-                Links
-              </CardTitle>
-            </CardHeader>
-            <CardContent className={cn('space-y-4', isPanel && 'p-4 pt-0')}>
-              {linkGroups.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No links.</p>
-              ) : (
-                linkGroups.map(({ linkType, links }) => (
-                  <div key={linkType} data-testid={`link-group-${linkType}`}>
-                    <div className="mb-1 flex items-center gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {links[0]?.title ?? linkType}
-                      </span>
-                      <Badge variant="secondary" className="text-[10px] py-0">
-                        {links.length}
-                      </Badge>
-                    </div>
-                    <Separator className="mb-2" />
-                    <div className="space-y-1">
-                      {links.map((link) => (
-                        <button
-                          key={`${link.direction}:${link.target_id}`}
-                          type="button"
-                          onClick={() => onNavigate?.(link.target_id, link.target_type)}
-                          className="flex w-full items-center justify-between gap-2 rounded border border-border/30 px-3 py-2 text-left hover:bg-muted/30 transition-colors"
-                          data-testid={`link-${link.target_id}`}
-                        >
-                          <span className="flex items-center gap-2 min-w-0">
-                            <Badge variant="outline" className="text-[10px] py-0">
-                              {link.direction === 'out' ? '→' : '←'}
-                            </Badge>
-                            <span className="text-xs truncate">{link.target_title ?? link.target_id}</span>
-                          </span>
-                          {link.target_type && (
-                            <Badge variant="secondary" className="text-[10px] py-0 shrink-0">
-                              {link.target_type}
-                            </Badge>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* EDIT HISTORY timeline + revert (full only; panel hides the tab) */}
         {!isPanel && (
-          <TabsContent value="history" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <History className="size-4" />
-                  Edit History
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {sortedHistory.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No recorded edits.</p>
-                ) : (
-                  <div className="relative border-l-2 border-border/30 ml-3 space-y-4">
-                    {sortedHistory.map((edit) => (
-                      <div key={edit.edit_id} className="relative pl-6" data-testid={`history-${edit.edit_id}`}>
-                        <span className="absolute -left-[9px] top-1 size-4 rounded-full border-2 border-primary/60 bg-background" />
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="text-[10px] py-0">
-                                {edit.kind}
-                              </Badge>
-                              {edit.target && <span className="text-xs font-medium truncate">{edit.target}</span>}
-                              {edit.reverted && (
-                                <Badge variant="secondary" className="text-[10px] py-0">
-                                  reverted
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 text-[10px] text-muted-foreground mt-0.5 font-mono">
-                              <Calendar className="size-3" />
-                              {new Date(edit.timestamp).toLocaleString()}
-                              {edit.actor && <span>· {edit.actor}</span>}
-                            </div>
-                            {(edit.old_value !== undefined || edit.new_value !== undefined) && (
-                              <p className="text-[11px] text-muted-foreground mt-1 break-all">
-                                {formatValue(edit.old_value)} → {formatValue(edit.new_value)}
-                              </p>
-                            )}
-                          </div>
-                          {!edit.reverted && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              aria-label={`Revert ${edit.edit_id}`}
-                              disabled={revertMutation.isPending}
-                              onClick={() => {
-                                revertMutation.mutate(edit.edit_id)
-                              }}
-                            >
-                              <RotateCcw className="size-3" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+          <HistoryTab
+            history={sortedHistory}
+            onRevert={(editId) => {
+              revertMutation.mutate(editId)
+            }}
+            revertPending={revertMutation.isPending}
+          />
         )}
       </Tabs>
 
-      {/* Inline property-edit dialog */}
-      <Dialog
-        open={Boolean(editProp)}
+      <EditPropertyDialog
+        editProp={editProp}
+        editDraft={editDraft}
+        onDraftChange={setEditDraft}
         onOpenChange={(open) => {
           if (!open) setEditProp(null)
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit property</DialogTitle>
-            <DialogDescription>
-              {editProp ? (editProp.title ?? editProp.name) : ''}
-              {editProp?.value_type ? ` (${editProp.value_type})` : ''}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Input
-              aria-label="Property value"
-              value={editDraft}
-              onChange={(e) => {
-                setEditDraft(e.target.value)
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  submitEdit()
-                }
-              }}
-            />
-            <Button className="w-full" onClick={submitEdit} disabled={editMutation.isPending}>
-              Save edit
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        onSubmit={submitEdit}
+        submitPending={editMutation.isPending}
+      />
     </div>
   )
 }

@@ -149,6 +149,486 @@ function isStatsUnreliable(status: GraphLoadStatus): boolean {
   return false
 }
 
+/** Split a `Promise.allSettled` result triple into which fetches failed, and
+ * whether any of the failures was an authorization denial (401/403) rather
+ * than any other failure. */
+function classifyResults(results: PromiseSettledResult<unknown>[]): { failed: string[]; forbidden: boolean } {
+  const failed: string[] = []
+  let forbidden = false
+  results.forEach((result, i) => {
+    if (result.status === 'rejected') {
+      failed.push(GRAPH_FETCH_LABELS[i])
+      if (result.reason instanceof ApiError && (result.reason.status === 401 || result.reason.status === 403)) {
+        forbidden = true
+      }
+    }
+  })
+  return { failed, forbidden }
+}
+
+/** Decide the next `GraphLoadStatus` from a completed three-way fetch. Order
+ * matters: total failure beats an honest `available: false` beats a partial
+ * failure beats a genuinely empty graph. */
+function resolveLoadStatus(
+  failed: string[],
+  totalRequests: number,
+  forbidden: boolean,
+  statsAvailable: boolean | undefined,
+  statsTotalNodes: number,
+  nodesLength: number,
+): GraphLoadStatus {
+  if (failed.length === totalRequests) return { kind: 'error', failed, forbidden }
+  if (statsAvailable === false) return { kind: 'unavailable' }
+  if (failed.length > 0) return { kind: 'degraded', failed, forbidden }
+  if (statsTotalNodes === 0 && nodesLength === 0) return { kind: 'empty' }
+  return { kind: 'ready' }
+}
+
+/** Fire the one toast (if any) that corresponds to a newly-resolved load status. */
+function toastForLoadStatus(status: GraphLoadStatus): void {
+  if (status.kind === 'error') {
+    toast.error(
+      status.forbidden
+        ? "You don't have permission to view the knowledge graph."
+        : 'The knowledge graph is unavailable right now.',
+    )
+    return
+  }
+  if (status.kind === 'unavailable') {
+    toast.error('The knowledge graph engine is not available right now.')
+    return
+  }
+  if (status.kind === 'degraded') {
+    toast.error(`Partial graph data: ${status.failed.join(', ')} failed to load.`)
+  }
+}
+
+function GraphSummaryHeader({
+  loadStatus,
+  stats,
+  loading,
+  onRefresh,
+}: {
+  loadStatus: GraphLoadStatus
+  stats: GraphStats
+  loading: boolean
+  onRefresh: () => void
+}) {
+  return (
+    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0">
+      <div>
+        <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-500 flex items-center gap-2">
+          <Network className="size-6 text-emerald-400" />
+          Unified Graph Workspace
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Execute cypher commands, traverse MAGMA orthogonal contexts, and view live active clusters.
+        </p>
+      </div>
+      <div className="flex items-center gap-2 w-full sm:w-auto">
+        <Badge variant="outline" className="h-7 bg-muted/20 border-border/40 text-xs">
+          Nodes: {isStatsUnreliable(loadStatus) ? '—' : stats.total_nodes}
+        </Badge>
+        <Badge variant="outline" className="h-7 bg-muted/20 border-border/40 text-xs">
+          Edges: {isStatsUnreliable(loadStatus) ? '—' : stats.total_relationships}
+        </Badge>
+        {/* The backend has always reported when a union read skipped a graph.
+            The zod schema above used to strip `partial`/`degraded_graphs`, so
+            a half-read total rendered as an authoritative one. Surfaced here
+            rather than merely un-stripped: an honest field nobody renders is
+            still a silent degrade. */}
+        {stats.partial === true && (
+          <Badge
+            variant="outline"
+            className="h-7 border-amber-500/40 bg-amber-500/10 text-xs text-amber-500"
+            data-testid="graph-stats-partial"
+            title={`These totals exclude: ${(stats.degraded_graphs ?? []).join(', ')}`}
+          >
+            <AlertTriangle className="mr-1 size-3" />
+            Partial
+          </Badge>
+        )}
+        <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
+          <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function sampleNoticeText(
+  typeFilter: string | null,
+  nodesLength: number,
+  stats: GraphStats,
+  breakdown: NodeTypeBreakdownData | null,
+  loadStatus: GraphLoadStatus,
+): string {
+  if (typeFilter === null) {
+    const total = isStatsUnreliable(loadStatus) ? '?' : stats.total_nodes.toLocaleString()
+    return `Sample: ${String(nodesLength)} of ${total} nodes — pick a type to drill down`
+  }
+  const typeTotal = (breakdown?.by_type[typeFilter] ?? nodesLength).toLocaleString()
+  return `${typeFilter}: showing ${String(nodesLength)} of ${typeTotal}`
+}
+
+interface VisualizationCanvasAreaProps {
+  activeTab: string
+  loadStatus: GraphLoadStatus
+  typeFilter: string | null
+  nodes: GraphNode[]
+  relationships: GraphRelationship[]
+  stats: GraphStats
+  breakdown: NodeTypeBreakdownData | null
+  onUpdateNode: (id: string, properties: Record<string, unknown>) => void
+  onDeleteNode: (id: string) => void
+  onAddNode: (labels: string[], properties: Record<string, unknown>) => void
+  selectedNode: GraphNode | null
+  onSelectNode: (node: GraphNode | null) => void
+}
+
+function CanvasErrorNotice({ loadStatus }: { loadStatus: Extract<GraphLoadStatus, { kind: 'error' }> }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center gap-2 p-8">
+      <ShieldAlert className="size-10 text-red-400" />
+      <p className="text-sm font-semibold">
+        {loadStatus.forbidden
+          ? "You don't have permission to view the knowledge graph."
+          : 'The knowledge graph is unavailable right now.'}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Failed to load: {loadStatus.failed.join(', ')}
+        {loadStatus.forbidden ? ' (403 Forbidden)' : ''}
+      </p>
+    </div>
+  )
+}
+
+function CanvasEmptyNotice() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center gap-2 p-8">
+      <Inbox className="size-10 text-muted-foreground/40" />
+      <p className="text-sm font-semibold text-muted-foreground">The knowledge graph has no nodes yet.</p>
+    </div>
+  )
+}
+
+function CanvasUnavailableNotice() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center gap-2 p-8">
+      <Database className="size-10 text-amber-500" />
+      <p className="text-sm font-semibold">The knowledge graph engine is not available right now.</p>
+      <p className="text-xs text-muted-foreground">
+        The server could not obtain a graph engine handle for this request. This is not the same as an empty graph —
+        retry shortly, or check the server's graph engine status if it persists.
+      </p>
+    </div>
+  )
+}
+
+/** The ready/degraded/loading canvas: the graph itself, its bounded-sample
+ * notice, and — only while `degraded` — the partial-data banner. */
+function CanvasReady({
+  loadStatus,
+  typeFilter,
+  nodes,
+  relationships,
+  stats,
+  breakdown,
+  onUpdateNode,
+  onDeleteNode,
+  onAddNode,
+  selectedNode,
+  onSelectNode,
+}: Omit<VisualizationCanvasAreaProps, 'activeTab'>) {
+  return (
+    <>
+      {loadStatus.kind === 'degraded' && (
+        <div className="absolute top-2 left-2 right-2 z-10 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-500">
+          <AlertTriangle className="size-3.5 shrink-0" />
+          <span>
+            Showing partial data — {loadStatus.failed.join(', ')} failed to load
+            {loadStatus.forbidden ? ' (permission denied)' : ''}.
+          </span>
+        </div>
+      )}
+      {/* The canvas is a bounded sample and must say so. Before this, 256
+          nodes out of 25,121 rendered with nothing to distinguish them from
+          "the graph" — and unfiltered, they are not even a random 256:
+          `/graph/nodes` fills its budget by draining labels in
+          `db.labels()` order, so it returns the alphabetically-first labels
+          and never reaches RuntimeSignal/WorkItem/Concept at all. */}
+      <div
+        className="absolute top-2 right-2 z-10 rounded-md border border-border/40 bg-card/90 px-2.5 py-1 text-xs text-muted-foreground backdrop-blur-sm"
+        data-testid="graph-sample-notice"
+      >
+        {sampleNoticeText(typeFilter, nodes.length, stats, breakdown, loadStatus)}
+      </div>
+      <GraphCanvas
+        nodes={nodes}
+        relationships={relationships}
+        onUpdateNode={onUpdateNode}
+        onDeleteNode={onDeleteNode}
+        onAddNode={onAddNode}
+        selectedNodeExternally={selectedNode}
+        onSelectNode={onSelectNode}
+      />
+    </>
+  )
+}
+
+/** The four mutually-exclusive `loadStatus.kind` renderings of the
+ * visualization canvas area (error / empty / unavailable / ready-or-degraded).
+ * Every branch used to also re-check `activeTab === 'visualization'`; that
+ * check is hoisted to a single early return since it gates all four equally. */
+function VisualizationCanvasArea(props: VisualizationCanvasAreaProps) {
+  const { activeTab, loadStatus } = props
+  if (activeTab !== 'visualization') return null
+  if (loadStatus.kind === 'error') return <CanvasErrorNotice loadStatus={loadStatus} />
+  if (loadStatus.kind === 'empty') return <CanvasEmptyNotice />
+  if (loadStatus.kind === 'unavailable') return <CanvasUnavailableNotice />
+  // The remaining possible kinds are exactly 'ready' | 'degraded' | 'loading'
+  // — CanvasReady itself branches on 'degraded' for the partial-data banner.
+  return <CanvasReady {...props} />
+}
+
+/* Tab 1: Network Visualization.
+
+   Layout change, and the reason for it: on a 25k-node graph the canvas can
+   only ever show a bounded sample, so the sample cannot be the whole view.
+   The real type distribution sits permanently beside it and doubles as the
+   filter — read the shape of the graph, click a type, and the canvas becomes
+   a drill-down into something you chose rather than an arbitrary slice you
+   didn't. */
+function VisualizationTab({
+  activeTab,
+  loadStatus,
+  typeFilter,
+  onTypeFilterChange,
+  nodes,
+  relationships,
+  stats,
+  breakdown,
+  breakdownLoading,
+  breakdownError,
+  onUpdateNode,
+  onDeleteNode,
+  onAddNode,
+  selectedNode,
+  onSelectNode,
+}: VisualizationCanvasAreaProps & {
+  onTypeFilterChange: (type: string | null) => void
+  breakdownLoading: boolean
+  breakdownError: string | null
+}) {
+  return (
+    <TabsContent value="visualization" className="flex-1 overflow-hidden mt-4">
+      <Card className="h-full border-border/40 bg-card/60 backdrop-blur-md flex flex-row">
+        <div className="hidden w-56 shrink-0 border-r border-border/30 md:block">
+          <NodeTypeBreakdown
+            data={breakdown}
+            loading={breakdownLoading}
+            error={breakdownError}
+            selectedType={typeFilter}
+            onSelectType={onTypeFilterChange}
+          />
+        </div>
+        <CardContent className="flex-1 p-0 relative overflow-hidden h-full min-h-[450px]">
+          <VisualizationCanvasArea
+            activeTab={activeTab}
+            loadStatus={loadStatus}
+            typeFilter={typeFilter}
+            nodes={nodes}
+            relationships={relationships}
+            stats={stats}
+            breakdown={breakdown}
+            onUpdateNode={onUpdateNode}
+            onDeleteNode={onDeleteNode}
+            onAddNode={onAddNode}
+            selectedNode={selectedNode}
+            onSelectNode={onSelectNode}
+          />
+        </CardContent>
+      </Card>
+    </TabsContent>
+  )
+}
+
+/* Tab 2: Cypher Console Terminal */
+function CypherTab({
+  cypherQuery,
+  onQueryChange,
+  onRun,
+  executingCypher,
+  cypherResults,
+}: {
+  cypherQuery: string
+  onQueryChange: (value: string) => void
+  onRun: () => void
+  executingCypher: boolean
+  cypherResults: unknown[] | null
+}) {
+  return (
+    <TabsContent value="cypher" className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden mt-4">
+      <Card className="lg:col-span-1 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
+        <CardHeader className="pb-3 border-b border-border/30">
+          <CardTitle className="text-sm font-bold flex items-center gap-2">
+            <Terminal className="size-4 text-emerald-400" />
+            Query Editor
+          </CardTitle>
+          <CardDescription>Enter Cypher graph query syntax.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex-1 flex flex-col p-4 gap-4">
+          <Textarea
+            value={cypherQuery}
+            onChange={(e) => {
+              onQueryChange(e.target.value)
+            }}
+            className="flex-1 font-mono text-xs bg-muted/10 border-border/40 p-3 resize-none h-[250px] lg:h-auto"
+            placeholder="MATCH (n) RETURN n LIMIT 10"
+          />
+          <Button onClick={onRun} disabled={executingCypher} className="bg-emerald-600 hover:bg-emerald-700 w-full">
+            <Play className="size-4 mr-2" />
+            {executingCypher ? 'Executing...' : 'Run Query'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-2 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
+        <CardHeader className="pb-3 border-b border-border/30 flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-sm font-bold">Execution Output</CardTitle>
+            <CardDescription>Formatted tabular cypher nodes return.</CardDescription>
+          </div>
+          {cypherResults && (
+            <Badge variant="secondary" className="text-[10px]">
+              {cypherResults.length} records returned
+            </Badge>
+          )}
+        </CardHeader>
+        <CardContent className="flex-1 overflow-hidden p-0 bg-muted/5">
+          <ScrollArea className="h-full">
+            {cypherResults ? (
+              <pre className="p-4 font-mono text-xs text-muted-foreground whitespace-pre overflow-auto">
+                {JSON.stringify(cypherResults, null, 2)}
+              </pre>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground">
+                <Database className="size-10 text-muted-foreground/30 mb-2" />
+                <p className="text-xs">No active execution dataset found. Submit a query to inspect live nodes.</p>
+              </div>
+            )}
+          </ScrollArea>
+        </CardContent>
+      </Card>
+    </TabsContent>
+  )
+}
+
+/* Tab 3: MAGMA Orthogonal views retriever */
+function MagmaTab({
+  magmaQuery,
+  onQueryChange,
+  magmaView,
+  onViewChange,
+  onRun,
+  retrievingMagma,
+  magmaResults,
+}: {
+  magmaQuery: string
+  onQueryChange: (value: string) => void
+  magmaView: 'semantic' | 'structural' | 'temporal' | 'hybrid'
+  onViewChange: (view: 'semantic' | 'structural' | 'temporal' | 'hybrid') => void
+  onRun: () => void
+  retrievingMagma: boolean
+  magmaResults: unknown[] | null
+}) {
+  return (
+    <TabsContent value="magma" className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden mt-4">
+      <Card className="lg:col-span-1 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
+        <CardHeader className="pb-3 border-b border-border/30">
+          <CardTitle className="text-sm font-bold flex items-center gap-2">
+            <Brain className="size-4 text-emerald-400" />
+            Orthogonal Scanning
+          </CardTitle>
+          <CardDescription>Leverage multi-perspective contextual slices.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex-1 flex flex-col p-4 gap-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground">Orthogonal Perspective View</label>
+            <select
+              value={magmaView}
+              onChange={(e) => {
+                onViewChange(e.target.value as 'semantic' | 'structural' | 'temporal' | 'hybrid')
+              }}
+              className="w-full h-10 px-3 rounded-md border border-input bg-muted/20 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="semantic" className="bg-background text-foreground">
+                Semantic View (NL concepts)
+              </option>
+              <option value="structural" className="bg-background text-foreground">
+                Structural View (Code inheritance)
+              </option>
+              <option value="temporal" className="bg-background text-foreground">
+                Temporal View (Execution logs/crons)
+              </option>
+              <option value="hybrid" className="bg-background text-foreground">
+                Hybrid Synthesized View
+              </option>
+            </select>
+          </div>
+          <div className="space-y-1.5 flex-1 flex flex-col">
+            <label className="text-xs font-semibold text-muted-foreground">Target Prompt Context / Seed</label>
+            <Textarea
+              value={magmaQuery}
+              onChange={(e) => {
+                onQueryChange(e.target.value)
+              }}
+              className="flex-1 font-mono text-xs bg-muted/10 border-border/40 p-3 resize-none h-[180px] lg:h-auto"
+              placeholder="Enter retrieval keywords or context snippet..."
+            />
+          </div>
+          <Button
+            onClick={onRun}
+            disabled={retrievingMagma}
+            className="bg-emerald-600 hover:bg-emerald-700 w-full shrink-0"
+          >
+            <Sparkles className="size-4 mr-2" />
+            {retrievingMagma ? 'Scanning...' : 'Retrieve MAGMA Context'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-2 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
+        <CardHeader className="pb-3 border-b border-border/30 flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-sm font-bold">Retrieved Perspectives Context</CardTitle>
+            <CardDescription>Nodes grouped by perspective weights.</CardDescription>
+          </div>
+          {magmaResults && (
+            <Badge variant="secondary" className="text-[10px]">
+              {magmaResults.length} vectors returned
+            </Badge>
+          )}
+        </CardHeader>
+        <CardContent className="flex-1 overflow-hidden p-0 bg-muted/5">
+          <ScrollArea className="h-full">
+            {magmaResults ? (
+              <pre className="p-4 font-mono text-xs text-muted-foreground whitespace-pre overflow-auto">
+                {JSON.stringify(magmaResults, null, 2)}
+              </pre>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground">
+                <Layers className="size-10 text-muted-foreground/30 mb-2" />
+                <p className="text-xs">No active MAGMA orthogonal context slices retrieved. Submit keywords above.</p>
+              </div>
+            )}
+          </ScrollArea>
+        </CardContent>
+      </Card>
+    </TabsContent>
+  )
+}
+
 export default function GraphView() {
   const [stats, setStats] = useState<GraphStats>({ total_nodes: 0, total_relationships: 0 })
   const [breakdown, setBreakdown] = useState<NodeTypeBreakdownData | null>(null)
@@ -264,17 +744,7 @@ export default function GraphView() {
         fetchValidated('/api/enhanced/graph/relationships', looseArray(graphRelationshipSchema)),
       ])
       const results = [statsResult, nodesResult, relsResult]
-
-      const failed: string[] = []
-      let forbidden = false
-      results.forEach((result, i) => {
-        if (result.status === 'rejected') {
-          failed.push(GRAPH_FETCH_LABELS[i])
-          if (result.reason instanceof ApiError && (result.reason.status === 401 || result.reason.status === 403)) {
-            forbidden = true
-          }
-        }
-      })
+      const { failed, forbidden } = classifyResults(results)
 
       let nextStats = stats
       if (statsResult.status === 'fulfilled') {
@@ -288,30 +758,16 @@ export default function GraphView() {
       }
       if (relsResult.status === 'fulfilled') setRelationships(relsResult.value)
 
-      if (failed.length === results.length) {
-        setLoadStatus({ kind: 'error', failed, forbidden })
-        toast.error(
-          forbidden
-            ? "You don't have permission to view the knowledge graph."
-            : 'The knowledge graph is unavailable right now.',
-        )
-      } else if (nextStats.available === false) {
-        // The backend answered (this wasn't a fetch failure) but explicitly
-        // disclaimed its own numbers: `available: false` means the graph
-        // engine handle could not be acquired server-side, so total_nodes: 0
-        // is not "the graph is empty" — it's "we don't know." Checked before
-        // the `empty` branch below so this honest signal isn't rendered as a
-        // connected-but-empty graph.
-        setLoadStatus({ kind: 'unavailable' })
-        toast.error('The knowledge graph engine is not available right now.')
-      } else if (failed.length > 0) {
-        setLoadStatus({ kind: 'degraded', failed, forbidden })
-        toast.error(`Partial graph data: ${failed.join(', ')} failed to load.`)
-      } else if (nextStats.total_nodes === 0 && nextNodes.length === 0) {
-        setLoadStatus({ kind: 'empty' })
-      } else {
-        setLoadStatus({ kind: 'ready' })
-      }
+      const status = resolveLoadStatus(
+        failed,
+        results.length,
+        forbidden,
+        nextStats.available,
+        nextStats.total_nodes,
+        nextNodes.length,
+      )
+      setLoadStatus(status)
+      toastForLoadStatus(status)
     } finally {
       setLoading(false)
     }
@@ -376,53 +832,15 @@ export default function GraphView() {
 
   return (
     <div className="space-y-6 h-[calc(100vh-12rem)] flex flex-col">
-      {/* Dynamic Summary Cards */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0">
-        <div>
-          <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-500 flex items-center gap-2">
-            <Network className="size-6 text-emerald-400" />
-            Unified Graph Workspace
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Execute cypher commands, traverse MAGMA orthogonal contexts, and view live active clusters.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Badge variant="outline" className="h-7 bg-muted/20 border-border/40 text-xs">
-            Nodes: {isStatsUnreliable(loadStatus) ? '—' : stats.total_nodes}
-          </Badge>
-          <Badge variant="outline" className="h-7 bg-muted/20 border-border/40 text-xs">
-            Edges: {isStatsUnreliable(loadStatus) ? '—' : stats.total_relationships}
-          </Badge>
-          {/* The backend has always reported when a union read skipped a graph.
-              The zod schema above used to strip `partial`/`degraded_graphs`, so
-              a half-read total rendered as an authoritative one. Surfaced here
-              rather than merely un-stripped: an honest field nobody renders is
-              still a silent degrade. */}
-          {stats.partial === true && (
-            <Badge
-              variant="outline"
-              className="h-7 border-amber-500/40 bg-amber-500/10 text-xs text-amber-500"
-              data-testid="graph-stats-partial"
-              title={`These totals exclude: ${(stats.degraded_graphs ?? []).join(', ')}`}
-            >
-              <AlertTriangle className="mr-1 size-3" />
-              Partial
-            </Badge>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              void fetchData()
-              void fetchBreakdown()
-            }}
-            disabled={loading}
-          >
-            <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
-      </div>
+      <GraphSummaryHeader
+        loadStatus={loadStatus}
+        stats={stats}
+        loading={loading}
+        onRefresh={() => {
+          void fetchData()
+          void fetchBreakdown()
+        }}
+      />
 
       {/* Structured Graph Tab List */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
@@ -441,247 +859,45 @@ export default function GraphView() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Tab 1: Network Visualization.
+        <VisualizationTab
+          activeTab={activeTab}
+          loadStatus={loadStatus}
+          typeFilter={typeFilter}
+          onTypeFilterChange={setTypeFilter}
+          nodes={nodes}
+          relationships={relationships}
+          stats={stats}
+          breakdown={breakdown}
+          breakdownLoading={breakdownLoading}
+          breakdownError={breakdownError}
+          onUpdateNode={handleUpdateNode}
+          onDeleteNode={handleDeleteNode}
+          onAddNode={handleAddNode}
+          selectedNode={selectedNode}
+          onSelectNode={setSelectedNode}
+        />
 
-            Layout change, and the reason for it: on a 25k-node graph the canvas
-            can only ever show a bounded sample, so the sample cannot be the
-            whole view. The real type distribution sits permanently beside it
-            and doubles as the filter — read the shape of the graph, click a
-            type, and the canvas becomes a drill-down into something you chose
-            rather than an arbitrary slice you didn't. */}
-        <TabsContent value="visualization" className="flex-1 overflow-hidden mt-4">
-          <Card className="h-full border-border/40 bg-card/60 backdrop-blur-md flex flex-row">
-            <div className="hidden w-56 shrink-0 border-r border-border/30 md:block">
-              <NodeTypeBreakdown
-                data={breakdown}
-                loading={breakdownLoading}
-                error={breakdownError}
-                selectedType={typeFilter}
-                onSelectType={setTypeFilter}
-              />
-            </div>
-            <CardContent className="flex-1 p-0 relative overflow-hidden h-full min-h-[450px]">
-              {activeTab === 'visualization' && loadStatus.kind === 'error' && (
-                <div className="flex flex-col items-center justify-center h-full text-center gap-2 p-8">
-                  <ShieldAlert className="size-10 text-red-400" />
-                  <p className="text-sm font-semibold">
-                    {loadStatus.forbidden
-                      ? "You don't have permission to view the knowledge graph."
-                      : 'The knowledge graph is unavailable right now.'}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Failed to load: {loadStatus.failed.join(', ')}
-                    {loadStatus.forbidden ? ' (403 Forbidden)' : ''}
-                  </p>
-                </div>
-              )}
-              {activeTab === 'visualization' && loadStatus.kind === 'empty' && (
-                <div className="flex flex-col items-center justify-center h-full text-center gap-2 p-8">
-                  <Inbox className="size-10 text-muted-foreground/40" />
-                  <p className="text-sm font-semibold text-muted-foreground">The knowledge graph has no nodes yet.</p>
-                </div>
-              )}
-              {activeTab === 'visualization' && loadStatus.kind === 'unavailable' && (
-                <div className="flex flex-col items-center justify-center h-full text-center gap-2 p-8">
-                  <Database className="size-10 text-amber-500" />
-                  <p className="text-sm font-semibold">The knowledge graph engine is not available right now.</p>
-                  <p className="text-xs text-muted-foreground">
-                    The server could not obtain a graph engine handle for this request. This is not the same as an
-                    empty graph — retry shortly, or check the server's graph engine status if it persists.
-                  </p>
-                </div>
-              )}
-              {activeTab === 'visualization' &&
-                (loadStatus.kind === 'ready' || loadStatus.kind === 'degraded' || loadStatus.kind === 'loading') && (
-                  <>
-                    {loadStatus.kind === 'degraded' && (
-                      <div className="absolute top-2 left-2 right-2 z-10 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-500">
-                        <AlertTriangle className="size-3.5 shrink-0" />
-                        <span>
-                          Showing partial data — {loadStatus.failed.join(', ')} failed to load
-                          {loadStatus.forbidden ? ' (permission denied)' : ''}.
-                        </span>
-                      </div>
-                    )}
-                    {/* The canvas is a bounded sample and must say so. Before
-                        this, 256 nodes out of 25,121 rendered with nothing to
-                        distinguish them from "the graph" — and unfiltered, they
-                        are not even a random 256: `/graph/nodes` fills its
-                        budget by draining labels in `db.labels()` order, so it
-                        returns the alphabetically-first labels and never
-                        reaches RuntimeSignal/WorkItem/Concept at all. */}
-                    <div
-                      className="absolute top-2 right-2 z-10 rounded-md border border-border/40 bg-card/90 px-2.5 py-1 text-xs text-muted-foreground backdrop-blur-sm"
-                      data-testid="graph-sample-notice"
-                    >
-                      {typeFilter === null
-                        ? `Sample: ${String(nodes.length)} of ${isStatsUnreliable(loadStatus) ? '?' : stats.total_nodes.toLocaleString()} nodes — pick a type to drill down`
-                        : `${typeFilter}: showing ${String(nodes.length)} of ${(breakdown?.by_type[typeFilter] ?? nodes.length).toLocaleString()}`}
-                    </div>
-                    <GraphCanvas
-                      nodes={nodes}
-                      relationships={relationships}
-                      onUpdateNode={handleUpdateNode}
-                      onDeleteNode={handleDeleteNode}
-                      onAddNode={handleAddNode}
-                      selectedNodeExternally={selectedNode}
-                      onSelectNode={setSelectedNode}
-                    />
-                  </>
-                )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+        <CypherTab
+          cypherQuery={cypherQuery}
+          onQueryChange={setCypherQuery}
+          onRun={() => {
+            void runCypherQuery()
+          }}
+          executingCypher={executingCypher}
+          cypherResults={cypherResults}
+        />
 
-        {/* Tab 2: Cypher Console Terminal */}
-        <TabsContent value="cypher" className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden mt-4">
-          <Card className="lg:col-span-1 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
-            <CardHeader className="pb-3 border-b border-border/30">
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <Terminal className="size-4 text-emerald-400" />
-                Query Editor
-              </CardTitle>
-              <CardDescription>Enter Cypher graph query syntax.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1 flex flex-col p-4 gap-4">
-              <Textarea
-                value={cypherQuery}
-                onChange={(e) => {
-                  setCypherQuery(e.target.value)
-                }}
-                className="flex-1 font-mono text-xs bg-muted/10 border-border/40 p-3 resize-none h-[250px] lg:h-auto"
-                placeholder="MATCH (n) RETURN n LIMIT 10"
-              />
-              <Button
-                onClick={() => {
-                  void runCypherQuery()
-                }}
-                disabled={executingCypher}
-                className="bg-emerald-600 hover:bg-emerald-700 w-full"
-              >
-                <Play className="size-4 mr-2" />
-                {executingCypher ? 'Executing...' : 'Run Query'}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="lg:col-span-2 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
-            <CardHeader className="pb-3 border-b border-border/30 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-sm font-bold">Execution Output</CardTitle>
-                <CardDescription>Formatted tabular cypher nodes return.</CardDescription>
-              </div>
-              {cypherResults && (
-                <Badge variant="secondary" className="text-[10px]">
-                  {cypherResults.length} records returned
-                </Badge>
-              )}
-            </CardHeader>
-            <CardContent className="flex-1 overflow-hidden p-0 bg-muted/5">
-              <ScrollArea className="h-full">
-                {cypherResults ? (
-                  <pre className="p-4 font-mono text-xs text-muted-foreground whitespace-pre overflow-auto">
-                    {JSON.stringify(cypherResults, null, 2)}
-                  </pre>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground">
-                    <Database className="size-10 text-muted-foreground/30 mb-2" />
-                    <p className="text-xs">No active execution dataset found. Submit a query to inspect live nodes.</p>
-                  </div>
-                )}
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Tab 3: MAGMA Orthogonal views retriever */}
-        <TabsContent value="magma" className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden mt-4">
-          <Card className="lg:col-span-1 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
-            <CardHeader className="pb-3 border-b border-border/30">
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <Brain className="size-4 text-emerald-400" />
-                Orthogonal Scanning
-              </CardTitle>
-              <CardDescription>Leverage multi-perspective contextual slices.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1 flex flex-col p-4 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground">Orthogonal Perspective View</label>
-                <select
-                  value={magmaView}
-                  onChange={(e) => {
-                    setMagmaView(e.target.value as 'semantic' | 'structural' | 'temporal' | 'hybrid')
-                  }}
-                  className="w-full h-10 px-3 rounded-md border border-input bg-muted/20 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
-                  <option value="semantic" className="bg-background text-foreground">
-                    Semantic View (NL concepts)
-                  </option>
-                  <option value="structural" className="bg-background text-foreground">
-                    Structural View (Code inheritance)
-                  </option>
-                  <option value="temporal" className="bg-background text-foreground">
-                    Temporal View (Execution logs/crons)
-                  </option>
-                  <option value="hybrid" className="bg-background text-foreground">
-                    Hybrid Synthesized View
-                  </option>
-                </select>
-              </div>
-              <div className="space-y-1.5 flex-1 flex flex-col">
-                <label className="text-xs font-semibold text-muted-foreground">Target Prompt Context / Seed</label>
-                <Textarea
-                  value={magmaQuery}
-                  onChange={(e) => {
-                    setMagmaQuery(e.target.value)
-                  }}
-                  className="flex-1 font-mono text-xs bg-muted/10 border-border/40 p-3 resize-none h-[180px] lg:h-auto"
-                  placeholder="Enter retrieval keywords or context snippet..."
-                />
-              </div>
-              <Button
-                onClick={() => {
-                  void runMagmaRetrieve()
-                }}
-                disabled={retrievingMagma}
-                className="bg-emerald-600 hover:bg-emerald-700 w-full shrink-0"
-              >
-                <Sparkles className="size-4 mr-2" />
-                {retrievingMagma ? 'Scanning...' : 'Retrieve MAGMA Context'}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="lg:col-span-2 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
-            <CardHeader className="pb-3 border-b border-border/30 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-sm font-bold">Retrieved Perspectives Context</CardTitle>
-                <CardDescription>Nodes grouped by perspective weights.</CardDescription>
-              </div>
-              {magmaResults && (
-                <Badge variant="secondary" className="text-[10px]">
-                  {magmaResults.length} vectors returned
-                </Badge>
-              )}
-            </CardHeader>
-            <CardContent className="flex-1 overflow-hidden p-0 bg-muted/5">
-              <ScrollArea className="h-full">
-                {magmaResults ? (
-                  <pre className="p-4 font-mono text-xs text-muted-foreground whitespace-pre overflow-auto">
-                    {JSON.stringify(magmaResults, null, 2)}
-                  </pre>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground">
-                    <Layers className="size-10 text-muted-foreground/30 mb-2" />
-                    <p className="text-xs">
-                      No active MAGMA orthogonal context slices retrieved. Submit keywords above.
-                    </p>
-                  </div>
-                )}
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </TabsContent>
+        <MagmaTab
+          magmaQuery={magmaQuery}
+          onQueryChange={setMagmaQuery}
+          magmaView={magmaView}
+          onViewChange={setMagmaView}
+          onRun={() => {
+            void runMagmaRetrieve()
+          }}
+          retrievingMagma={retrievingMagma}
+          magmaResults={magmaResults}
+        />
       </Tabs>
     </div>
   )
