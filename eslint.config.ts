@@ -61,6 +61,14 @@ export default defineConfig(
       // (their own tooling/tsconfig), so the typed lint can't resolve them.
       'e2e/**',
       'playwright.config.ts',
+      // dependency-cruiser's config (WD4-TOOL-02) is CommonJS build tooling,
+      // not app source, so it is outside `tsconfig.json`'s `include` and the
+      // typed lint cannot resolve it either -- same class as the two above.
+      // ★ This error appeared ONLY on the merged tree: WD4-TOOL-02 added the
+      // file and WD4-WEB-00 wired eslint to lint everything, and neither lane
+      // could see the interaction from its own branch. Both were green
+      // individually; the combination was not.
+      '.dependency-cruiser.cjs',
       // scripts/ (pre-commit hook entries, GOC-28's no-fabrication gate) is
       // plain Node ESM run directly via `node scripts/*.mjs`, not part of
       // `tsconfig.json`'s `include` -- same "outside the TS build project"
