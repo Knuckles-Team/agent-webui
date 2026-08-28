@@ -6457,21 +6457,14 @@ async def search_kb(query: str, kb_id: str | None = None) -> list[dict[str, Any]
     if kb_id and not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
         raise HTTPException(status_code=400, detail='Invalid KB identifier')
     try:
-        try:
-            engine = await _get_engine_bounded()
-        except HTTPException as exc:
-            # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- this route
-            # already anticipated a None engine below (`engine.graph if
-            # engine else None`), but `_get_engine_bounded()` raises rather
-            # than returning None, so that ternary was dead code. KB search
-            # is a separate subsystem from the graph engine's own live
-            # backend, so a still-absent engine degrades to None here
-            # (KBIngestionEngine is constructed with graph=None,
-            # backend=None); a genuine 503 still hard-fails.
-            if exc.status_code != 501:
-                raise
-            engine = None
-
+        # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- this route already
+        # anticipated a None engine (`engine.graph if engine else None`), but
+        # `_get_engine_bounded()` raises rather than returning None, so that
+        # ternary was dead code. KB search is a separate subsystem from the
+        # graph engine's own live backend, so a still-absent engine degrades
+        # to None here (KBIngestionEngine is constructed with graph=None,
+        # backend=None); a genuine 503 still hard-fails.
+        engine = await _graph_read_engine()
         kb_engine = await _invoke_governed_helper(
             KBIngestionEngine,
             engine.graph if engine else None,
@@ -6484,10 +6477,7 @@ async def search_kb(query: str, kb_id: str | None = None) -> list[dict[str, Any]
             kb_id=kb_id,
             deadline=30.0,
         )
-        bounded = _public_external_result(
-            list(results or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        )
-        return bounded if isinstance(bounded, list) else []
+        return _bounded_list_result(results)
     except HTTPException:
         raise
     except Exception as e:
@@ -7238,6 +7228,25 @@ async def suggest_library_agents() -> list[dict[str, Any]]:
         return []
 
 
+def _library_agent_tool_refs(tool_rows: Any) -> list[dict[str, Any]]:
+    """The `{id, name}` refs of the tools an Agent Library entry binds."""
+    return [
+        {'id': t.get('id'), 'name': t.get('name')}
+        for t in (tool_rows or [])
+        if isinstance(t, dict) and (t.get('id') or t.get('name'))
+    ]
+
+
+def _library_agent_row(rows: Any) -> dict[str, Any]:
+    """The `CallableResource` row behind an Agent Library entry, or a 404."""
+    if not rows or not isinstance(rows[0].get('r'), dict):
+        raise HTTPException(status_code=404, detail='Agent not found')
+    row = rows[0]['r']
+    if str(row.get('resource_type') or '') not in {'AGENT_SKILL', 'A2A_AGENT'}:
+        raise HTTPException(status_code=404, detail='Agent not found')
+    return row
+
+
 @router.get('/agent-library/agents/{agent_id:path}')
 async def get_library_agent(agent_id: str) -> dict[str, Any]:
     """Return one Agent Library entry with its instructions and bound tools."""
@@ -7251,11 +7260,7 @@ async def get_library_agent(agent_id: str) -> dict[str, Any]:
             {'id': agent_id},
             deadline=10.0,
         )
-        if not rows or not isinstance(rows[0].get('r'), dict):
-            raise HTTPException(status_code=404, detail='Agent not found')
-        row = rows[0]['r']
-        if str(row.get('resource_type') or '') not in {'AGENT_SKILL', 'A2A_AGENT'}:
-            raise HTTPException(status_code=404, detail='Agent not found')
+        row = _library_agent_row(rows)
         view = _library_agent_view(row)
         view['instructions'] = row.get('system_prompt') or ''
         view['endpoint'] = row.get('endpoint')
@@ -7266,11 +7271,7 @@ async def get_library_agent(agent_id: str) -> dict[str, Any]:
             {'id': agent_id},
             deadline=10.0,
         )
-        view['tools'] = [
-            {'id': t.get('id'), 'name': t.get('name')}
-            for t in (tool_rows or [])
-            if isinstance(t, dict) and (t.get('id') or t.get('name'))
-        ]
+        view['tools'] = _library_agent_tool_refs(tool_rows)
         return _public_external_result(view)
     except HTTPException:
         raise
@@ -8427,30 +8428,7 @@ async def _proxy_to_gateway(method: str, path: str, json_data: Any = None) -> An
     return _public_external_result(json.loads(body), truncate_lists=True)
 
 
-def _get_db_path() -> Path:
-    # Use the shared TUI location when available, otherwise the WebUI's XDG data
-    # directory. Never materialize a process-relative database.
-    try:
-        from agent_terminal_ui.session_manager import DEFAULT_DB_PATH
-
-        configured_db_path = Path(DEFAULT_DB_PATH).expanduser()
-        if configured_db_path.is_symlink():
-            raise RuntimeError('Refusing symbolic-link session database')
-        db_path = configured_db_path.resolve()
-    except ImportError:
-        db_path = _WEBUI_DATA_DIR / 'agent_terminal_ui.db'
-
-    if db_path.is_symlink():
-        raise RuntimeError('Refusing symbolic-link session database')
-    _private_directory(db_path.parent)
-
-    # Initialize the SQLite schema and privacy migration fail-closed.
-    conn = None
-    try:
-        import sqlite3
-
-        conn = sqlite3.connect(str(db_path))
-        conn.executescript("""
+_WEBUI_SESSION_SCHEMA = """
             PRAGMA secure_delete = ON;
 
             CREATE TABLE IF NOT EXISTS sessions (
@@ -8488,35 +8466,82 @@ def _get_db_path() -> Path:
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
-        """)
-        # `owner` (CONCEPT:AU-ECO.ui.session-owner-visibility) was added after this table
-        # existed in the wild; CREATE TABLE IF NOT EXISTS does not retrofit a column onto
-        # an already-created table, so migrate it explicitly. Idempotent: sqlite raises
-        # "duplicate column name" on a DB that already has it.
-        try:
-            conn.execute("ALTER TABLE sessions ADD COLUMN owner TEXT DEFAULT ''")
-        except sqlite3.OperationalError as exc:
-            if 'duplicate column name' not in str(exc).lower():
-                raise
-        marker = conn.execute(
-            "SELECT value FROM webui_schema_meta WHERE key = 'privacy_version'"
-        ).fetchone()
-        if marker is None or marker[0] != '1':
-            _scrub_existing_session_rows(conn)
-            conn.execute(
-                "INSERT OR REPLACE INTO webui_schema_meta (key, value) VALUES ('privacy_version', '1')"
-            )
+        """
+
+
+def _resolved_session_db_path() -> Path:
+    """Where the session database lives.
+
+    Use the shared TUI location when available, otherwise the WebUI's XDG data
+    directory. Never materialize a process-relative database.
+    """
+    try:
+        from agent_terminal_ui.session_manager import DEFAULT_DB_PATH
+
+        configured_db_path = Path(DEFAULT_DB_PATH).expanduser()
+        if configured_db_path.is_symlink():
+            raise RuntimeError('Refusing symbolic-link session database')
+        db_path = configured_db_path.resolve()
+    except ImportError:
+        db_path = _WEBUI_DATA_DIR / 'agent_terminal_ui.db'
+
+    if db_path.is_symlink():
+        raise RuntimeError('Refusing symbolic-link session database')
+    return db_path
+
+
+def _migrate_session_owner_column(conn: Any) -> None:
+    """Retrofit the `owner` column onto an already-created sessions table.
+
+    `owner` (CONCEPT:AU-ECO.ui.session-owner-visibility) was added after this
+    table existed in the wild; CREATE TABLE IF NOT EXISTS does not retrofit a
+    column onto an already-created table, so migrate it explicitly.
+    Idempotent: sqlite raises "duplicate column name" on a DB that already
+    has it.
+    """
+    try:
+        conn.execute("ALTER TABLE sessions ADD COLUMN owner TEXT DEFAULT ''")
+    except sqlite3.OperationalError as exc:
+        if 'duplicate column name' not in str(exc).lower():
+            raise
+
+
+def _apply_session_privacy_migration(conn: Any) -> None:
+    """Run the one-time privacy scrub, once, recorded by a schema marker."""
+    marker = conn.execute(
+        "SELECT value FROM webui_schema_meta WHERE key = 'privacy_version'"
+    ).fetchone()
+    if marker is None or marker[0] != '1':
+        _scrub_existing_session_rows(conn)
+        conn.execute(
+            "INSERT OR REPLACE INTO webui_schema_meta (key, value) VALUES ('privacy_version', '1')"
+        )
+
+
+def _initialize_session_database(db_path: Path) -> None:
+    """Initialize the SQLite schema and privacy migration fail-closed."""
+    conn = None
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript(_WEBUI_SESSION_SCHEMA)
+        _migrate_session_owner_column(conn)
+        _apply_session_privacy_migration(conn)
         conn.commit()
         conn.close()
         os.chmod(db_path, 0o600)
     except Exception as e:
         if conn is not None:
-            try:
+            with contextlib.suppress(Exception):
+                # Preserve the primary failure.
                 conn.close()
-            except Exception:  # noqa: BLE001 - preserve the primary failure
-                pass
         _log_failure('session_database_initialization', e)
         raise RuntimeError('Session persistence is unavailable') from e
+
+
+def _get_db_path() -> Path:
+    db_path = _resolved_session_db_path()
+    _private_directory(db_path.parent)
+    _initialize_session_database(db_path)
     return db_path
 
 
@@ -10014,6 +10039,48 @@ async def list_ecosystem_services() -> list[str]:
     return services[:_MAX_EXTERNAL_COLLECTION_ITEMS]
 
 
+def _bounded_tunnel_inventory(raw_hosts: Any) -> list[tuple[Any, Any]]:
+    """The delegated host inventory as `(key, record)` pairs, render-capped.
+
+    Slice to the render cap BEFORE bounding, not after: the same defect as
+    the MCP-tools/skills/CallableResource bug family -- bounding the WHOLE
+    raw inventory first raised ValueError('...oversized collection') for any
+    host list/mapping over 256 entries, caught by the caller's broad
+    `except` and surfaced as a 502 indistinguishable from the adapter being
+    down.
+    """
+    if isinstance(raw_hosts, dict):
+        capped: Any = dict(list(raw_hosts.items())[:_MAX_EXTERNAL_COLLECTION_ITEMS])
+    elif isinstance(raw_hosts, list):
+        capped = raw_hosts[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+    else:
+        raise ValueError('Governed tunnel inventory returned an invalid shape')
+    bounded = _public_external_result(capped)
+    if isinstance(bounded, dict):
+        return list(bounded.items())
+    if isinstance(bounded, list):
+        return list(enumerate(bounded, start=1))
+    raise ValueError('Governed tunnel inventory returned an invalid shape')
+
+
+def _tunnel_host_view(inventory_key: Any, record: Any) -> dict[str, Any]:
+    """One inventory entry as an opaque, secret-free host reference."""
+    public = record if isinstance(record, dict) else {}
+    identity = str(
+        public.get('reference')
+        or public.get('id')
+        or public.get('alias')
+        or inventory_key
+    )
+    return {
+        'reference': _opaque_reference('host', identity),
+        'status': 'configured',
+        'port_configured': bool(public.get('port')),
+        'identity_configured': bool(public.get('identity_file')),
+        'password_configured': bool(public.get('password_configured')),
+    }
+
+
 @router.get('/tunnel-manager/hosts')
 async def get_tunnel_hosts() -> dict[str, Any]:
     """Retrieve opaque SSH inventory through a governed host adapter."""
@@ -10025,49 +10092,15 @@ async def get_tunnel_hosts() -> dict[str, Any]:
             detail='Governed tunnel inventory delegation is not configured',
         )
     try:
-        raw_hosts = await _invoke_governed_helper(
-            delegated_inventory,
-            deadline=10.0,
+        inventory = _bounded_tunnel_inventory(
+            await _invoke_governed_helper(delegated_inventory, deadline=10.0)
         )
-        # Slice to the render cap BEFORE bounding, not after: the same
-        # defect as the MCP-tools/skills/CallableResource bug family --
-        # bounding the WHOLE raw inventory first raised
-        # ValueError('...oversized collection') for any host list/mapping
-        # over 256 entries, caught by the broad `except` below and
-        # surfaced as a 502 indistinguishable from the adapter being down.
-        if isinstance(raw_hosts, dict):
-            raw_hosts = dict(list(raw_hosts.items())[:_MAX_EXTERNAL_COLLECTION_ITEMS])
-        elif isinstance(raw_hosts, list):
-            raw_hosts = raw_hosts[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        else:
-            raise ValueError('Governed tunnel inventory returned an invalid shape')
-        raw_hosts = _public_external_result(raw_hosts)
-        if isinstance(raw_hosts, dict):
-            inventory = list(raw_hosts.items())
-        elif isinstance(raw_hosts, list):
-            inventory = list(enumerate(raw_hosts, start=1))
-        else:
-            raise ValueError('Governed tunnel inventory returned an invalid shape')
-
-        hosts = []
-        for inventory_key, record in inventory:
-            public = record if isinstance(record, dict) else {}
-            identity = str(
-                public.get('reference')
-                or public.get('id')
-                or public.get('alias')
-                or inventory_key
-            )
-            hosts.append(
-                {
-                    'reference': _opaque_reference('host', identity),
-                    'status': 'configured',
-                    'port_configured': bool(public.get('port')),
-                    'identity_configured': bool(public.get('identity_file')),
-                    'password_configured': bool(public.get('password_configured')),
-                }
-            )
-        return {'hosts': hosts}
+        return {
+            'hosts': [
+                _tunnel_host_view(inventory_key, record)
+                for inventory_key, record in inventory
+            ]
+        }
     except HTTPException:
         raise
     except Exception as e:
