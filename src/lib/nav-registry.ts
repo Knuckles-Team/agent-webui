@@ -315,6 +315,20 @@ export const ROUTES: readonly RouteDef[] = [
 
   // ------------------------------------------------------------- Knowledge
   {
+    id: 'knowledge.atlas',
+    path: '/explore',
+    label: 'Atlas',
+    section: 'knowledge',
+    blurb:
+      'Explore every kind of data the graph holds — filter it one way, then view it as a table, a tree, or in 3D.',
+    icon: Compass,
+    minRole: 'reader',
+    // The 3D renderer declines on a phone and says so; the table, JSON and 2D
+    // renderers are usable, so the page as a whole adapts rather than being unusable.
+    mobile: 'adapted',
+    element: lazy(() => import('@/components/views/AtlasView')),
+  },
+  {
     id: 'knowledge.graph',
     path: '/graph',
     label: 'Knowledge Graph',
