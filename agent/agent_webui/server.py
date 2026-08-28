@@ -2038,6 +2038,163 @@ def _ensure_rate_limit_middleware(app: FastAPI) -> None:
         app.add_middleware(GatewayRateLimitMiddleware)
 
 
+def _default_provider_models() -> dict[str, str]:
+    """The model menu implied by whichever provider credentials are present.
+
+    An explicit ``models=`` argument overrides this entirely; the test model is
+    the floor so the dashboard always has something selectable.
+    """
+
+    default_models: dict[str, str] = {}
+    if os.getenv('ANTHROPIC_API_KEY'):
+        default_models['Claude Sonnet 3.5'] = 'anthropic:claude-3-5-sonnet-latest'
+    if os.getenv('OPENAI_API_KEY'):
+        default_models['GPT 4o'] = 'openai:gpt-4o'
+    if os.getenv('GOOGLE_API_KEY'):
+        default_models['Gemini 2.0 Pro'] = 'google:gemini-2.0-pro'
+    # Support for local induction via Ollama/OpenWebUI patterns
+    if os.getenv('OLLAMA_BASE_URL') or os.getenv('OLLAMA_HOST'):
+        default_models['Qwen 3 Coder'] = 'ollama:qwen3-coder'
+    if not default_models:
+        default_models['Test Model (Markdown Only)'] = 'test'
+    return default_models
+
+
+def _register_canonical_graph_routes(app: FastAPI) -> None:
+    """Mount the canonical KG REST surface, or refuse to build the app.
+
+    NOT optional and NOT allowed to fail soft: this is the entire canonical KG
+    REST surface (`/api/graph/*`, `/api/registry/*`, `/api/ontology/*`,
+    `/api/research/*`, `/api/dashboard/*`'s route-table twin, plus the fleet
+    supervisory plane). A gateway that cannot register this surface is not a
+    degraded gateway, it is a headless one -- refuse to build the app instead of
+    quietly serving one. `generate_openapi.py` also enforces a minimum
+    mounted-path floor (see its `--write` sanity check) so a partial spec can
+    never be committed as documentation, but the first and loudest guard belongs
+    here, at the source.
+    """
+
+    try:
+        from agent_utilities.gateway.graph_api import register_graph_routes
+    except ImportError as exc:
+        raise RuntimeError(
+            'Canonical KG REST surface unavailable: could not import '
+            'agent_utilities.gateway.graph_api.register_graph_routes. '
+            'Refusing to serve a headless webui gateway missing '
+            '/api/graph, /api/registry, /api/ontology, and /api/research.'
+        ) from exc
+
+    try:
+        register_graph_routes(app, prefix='/api')
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            'Canonical KG REST surface failed to register '
+            f'({type(exc).__name__}: {exc}). Refusing to serve a headless '
+            'webui gateway missing /api/graph, /api/registry, '
+            '/api/ontology, and /api/research.'
+        ) from exc
+
+    logger.info(
+        'Canonical KG REST surface + fleet supervisory plane mounted under /api'
+    )
+
+
+def _parsed_widget_subscription(raw: str) -> set[str] | None:
+    """The widget ids a ``/ws/dashboard`` subscribe message names.
+
+    ``None`` for anything that is not a well-formed subscription -- unparseable
+    JSON, a non-object, a different message type, or a non-list ``widget_ids``.
+    Every such message leaves the existing subscription untouched, exactly as
+    the inline ``continue`` branches did.
+    """
+
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, dict) or parsed.get('type') != 'subscribe':
+        return None
+    widget_ids = parsed.get('widget_ids')
+    if not isinstance(widget_ids, list):
+        return None
+    return {
+        widget_id
+        for widget_id in widget_ids[:_MAX_DASHBOARD_SUBSCRIBE_WIDGET_IDS]
+        if isinstance(widget_id, str)
+    }
+
+
+def _bridged_route_path(prefix: str, route_path: str) -> str:
+    """The dashboard path a pydantic-ai route is bridged to.
+
+    ``POST /api/chat`` is remapped to ``_CHAT_MESSAGES_PATH`` so the chat
+    transport lives under the same ``/api/chats`` resource as the chat-history
+    CRUD; every other path is passed through normalized.
+    """
+
+    full_path = '/' + (prefix + route_path).strip('/')
+    if full_path == '/api/chat':
+        return _CHAT_MESSAGES_PATH
+    return full_path
+
+
+def _route_is_in_dashboard_scope(full_path: str, *, serve_root: bool) -> bool:
+    """Whether a bridged pydantic-ai route belongs on the dashboard surface."""
+
+    if full_path.startswith(('/api', '/chat', '/configure')):
+        return True
+    return serve_root and full_path in {'/', '/{id}'}
+
+
+def _dashboard_build_is_servable(dist_path: Path) -> bool:
+    """Whether to mount ``dist_path``, logging precisely why when it is thin.
+
+    A directory check alone is NOT enough. `index.html` is the LAST file the
+    frontend build writes, so an interrupted or partial build leaves a dist
+    directory full of hashed assets with no entrypoint. That state used to mount
+    silently: assets and favicons served 200, while `/` and every client-side
+    route fell through SPAStaticFiles' index.html fallback to a bare 404 that
+    `_privacy_safe_http_error` then masked as `{"detail": "Request failed"}` --
+    exactly what a signed-in user saw on the production deployment (which
+    live-mounts this directory rather than using the packaged wheel, so a broken
+    build on the mount source breaks the dashboard immediately). Serving the
+    assets is still better than serving nothing, but the missing entrypoint must
+    be reported loudly rather than inferred from a masked 404.
+    """
+
+    if not dist_path.is_dir():
+        logger.warning(
+            'Static assets were not found at the configured location. '
+            'Dashboard UI will not be served.'
+        )
+        return False
+    if not (dist_path / 'index.html').is_file():
+        logger.error(
+            'The built dashboard entrypoint index.html is missing from '
+            'the static asset directory. Asset requests will still be '
+            'served, but "/" and every client-side route will return '
+            '404. Re-run the frontend build to regenerate it.'
+        )
+    return True
+
+
+def _ensure_request_observability_middleware(app: FastAPI) -> None:
+    """Install the outermost access-logging boundary exactly once.
+
+    ``add_middleware`` prepends, so this must be the LAST install: it has to sit
+    outside every other middleware to observe and log EVERY request, including
+    ones the rate limiter, the authorization gate, or the identity boundary
+    reject before a route is ever reached -- those are exactly the requests the
+    motivating gap (no HTTP access logging at all) hid.
+    """
+
+    if not any(
+        getattr(middleware, 'cls', None) is RequestObservabilityMiddleware
+        for middleware in app.user_middleware
+    ):
+        app.add_middleware(RequestObservabilityMiddleware)
+
+
 def create_agent_web_app(
     agent: Agent,
     workspace_helpers: dict[str, Any],
@@ -2076,21 +2233,7 @@ def create_agent_web_app(
     )
     set_workspace_helpers(workspace_helpers)
 
-    # Detect available providers based on environment variables
-    default_models = {}
-    if os.getenv('ANTHROPIC_API_KEY'):
-        default_models['Claude Sonnet 3.5'] = 'anthropic:claude-3-5-sonnet-latest'
-    if os.getenv('OPENAI_API_KEY'):
-        default_models['GPT 4o'] = 'openai:gpt-4o'
-    if os.getenv('GOOGLE_API_KEY'):
-        default_models['Gemini 2.0 Pro'] = 'google:gemini-2.0-pro'
-
-    # Support for local induction via Ollama/OpenWebUI patterns
-    if os.getenv('OLLAMA_BASE_URL') or os.getenv('OLLAMA_HOST'):
-        default_models['Qwen 3 Coder'] = 'ollama:qwen3-coder'
-
-    if not default_models:
-        default_models['Test Model (Markdown Only)'] = 'test'
+    default_models = _default_provider_models()
 
     app = FastAPI(title='Agent Web Dashboard')
     app.state.agent = agent
@@ -2312,21 +2455,19 @@ def create_agent_web_app(
             try:
                 while True:
                     if subscribed_widget_ids is None:
-                        full = await get_full_dashboard()
-                        widgets = full.data
+                        widgets = (await get_full_dashboard()).data
                     else:
                         widgets = await fetch_dashboard_subset(subscribed_widget_ids)
                     sequence += 1
-                    payload_data = {
-                        widget_id: widget.model_dump(mode='json')
-                        for widget_id, widget in widgets.items()
-                    }
                     await websocket.send_json(
                         {
                             'type': message_type,
                             'stream_id': stream_id,
                             'sequence': sequence,
-                            'data': payload_data,
+                            'data': {
+                                widget_id: widget.model_dump(mode='json')
+                                for widget_id, widget in widgets.items()
+                            },
                         }
                     )
                     message_type = 'update'
@@ -2337,23 +2478,9 @@ def create_agent_web_app(
                         )
                     except TimeoutError:
                         continue
-                    try:
-                        parsed = json.loads(raw)
-                    except (TypeError, ValueError):
-                        continue
-                    if (
-                        not isinstance(parsed, dict)
-                        or parsed.get('type') != 'subscribe'
-                    ):
-                        continue
-                    widget_ids = parsed.get('widget_ids')
-                    if not isinstance(widget_ids, list):
-                        continue
-                    subscribed_widget_ids = {
-                        wid
-                        for wid in widget_ids[:_MAX_DASHBOARD_SUBSCRIBE_WIDGET_IDS]
-                        if isinstance(wid, str)
-                    }
+                    subscription = _parsed_widget_subscription(raw)
+                    if subscription is not None:
+                        subscribed_widget_ids = subscription
             except WebSocketDisconnect:
                 pass
             except Exception as exc:  # noqa: BLE001
@@ -2368,40 +2495,7 @@ def create_agent_web_app(
     # supervisory plane (CONCEPT:AU-OS.safety.ontological-guardrail) and the /cypher fast path — via
     # the single canonical registrar. WebUI clients and gateway clients are
     # served by one route implementation, so the two surfaces cannot drift.
-    #
-    # NOT optional and NOT allowed to fail soft: this is the entire
-    # canonical KG REST surface (`/api/graph/*`, `/api/registry/*`,
-    # `/api/ontology/*`, `/api/research/*`, `/api/dashboard/*`'s
-    # route-table twin, plus the fleet supervisory plane). A gateway that
-    # cannot register this surface is not a degraded gateway, it is a
-    # headless one -- refuse to build the app instead of quietly serving
-    # one. `generate_openapi.py` also enforces a minimum mounted-path floor
-    # (see its `--write` sanity check) so a partial spec can never be
-    # committed as documentation, but the first and loudest guard belongs
-    # here, at the source.
-    try:
-        from agent_utilities.gateway.graph_api import register_graph_routes
-    except ImportError as exc:
-        raise RuntimeError(
-            'Canonical KG REST surface unavailable: could not import '
-            'agent_utilities.gateway.graph_api.register_graph_routes. '
-            'Refusing to serve a headless webui gateway missing '
-            '/api/graph, /api/registry, /api/ontology, and /api/research.'
-        ) from exc
-
-    try:
-        register_graph_routes(app, prefix='/api')
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(
-            'Canonical KG REST surface failed to register '
-            f'({type(exc).__name__}: {exc}). Refusing to serve a headless '
-            'webui gateway missing /api/graph, /api/registry, '
-            '/api/ontology, and /api/research.'
-        ) from exc
-
-    logger.info(
-        'Canonical KG REST surface + fleet supervisory plane mounted under /api'
-    )
+    _register_canonical_graph_routes(app)
 
     # This process is the KG daemon HOST by default: it runs the single
     # consolidated background daemon (queue drain + graph writer + task
@@ -2478,17 +2572,10 @@ def create_agent_web_app(
             if isinstance(route, Mount):
                 add_pydantic_routes(route.app.routes, prefix + route.path)
             elif isinstance(route, StarletteRoute):
-                full_path = prefix + route.path
-                full_path = '/' + full_path.strip('/')
-                if full_path == '/api/chat':
-                    full_path = _CHAT_MESSAGES_PATH
-
+                full_path = _bridged_route_path(prefix, route.path)
                 # Only bridge routes that match the dashboard's functional scope
-                if (
-                    full_path.startswith('/api')
-                    or full_path.startswith('/chat')
-                    or full_path.startswith('/configure')
-                    or (html_source and (full_path == '/' or full_path == '/{id}'))
+                if _route_is_in_dashboard_scope(
+                    full_path, serve_root=bool(html_source)
                 ):
                     app.add_route(full_path, route.endpoint, methods=route.methods)
 
@@ -2550,39 +2637,12 @@ def create_agent_web_app(
                 raise ex
 
     # Fallback to serving the built React dashboard if no custom source provided
-    if not html_source:
-        if not dist_path.is_dir():
-            logger.warning(
-                'Static assets were not found at the configured location. '
-                'Dashboard UI will not be served.'
-            )
-        else:
-            # A directory check alone is NOT enough. `index.html` is the LAST
-            # file the frontend build writes, so an interrupted or partial
-            # build leaves a dist directory full of hashed assets with no
-            # entrypoint. That state used to mount silently: assets and
-            # favicons served 200, while `/` and every client-side route fell
-            # through SPAStaticFiles' index.html fallback to a bare 404 that
-            # `_privacy_safe_http_error` then masked as
-            # `{"detail": "Request failed"}` -- exactly what a signed-in user
-            # saw on the production deployment (which live-mounts this
-            # directory rather than using the packaged wheel, so a broken
-            # build on the mount source breaks the dashboard immediately).
-            # Serving the assets is still better than serving nothing, but the
-            # missing entrypoint must be reported loudly rather than inferred
-            # from a masked 404.
-            if not (dist_path / 'index.html').is_file():
-                logger.error(
-                    'The built dashboard entrypoint index.html is missing from '
-                    'the static asset directory. Asset requests will still be '
-                    'served, but "/" and every client-side route will return '
-                    '404. Re-run the frontend build to regenerate it.'
-                )
-            app.mount(
-                '/',
-                SPAStaticFiles(directory=str(dist_path), html=True),
-                name='dashboard',
-            )
+    if not html_source and _dashboard_build_is_servable(dist_path):
+        app.mount(
+            '/',
+            SPAStaticFiles(directory=str(dist_path), html=True),
+            name='dashboard',
+        )
 
     if _LOGFIRE_ENABLED:
         logfire.instrument_starlette(app)
@@ -2603,16 +2663,8 @@ def create_agent_web_app(
         content_security_policy=content_security_policy,
     )
     # LANE F: mounted LAST (add_middleware prepends, so this is the OUTERMOST
-    # layer — see RequestObservabilityMiddleware's own docstring). It must sit
-    # outside every other middleware so it observes and logs EVERY request,
-    # including ones the rate limiter, the authorization gate, or the identity
-    # boundary reject before a route is ever reached — those are exactly the
-    # requests the motivating gap (no HTTP access logging at all) hid.
-    if not any(
-        getattr(middleware, 'cls', None) is RequestObservabilityMiddleware
-        for middleware in app.user_middleware
-    ):
-        app.add_middleware(RequestObservabilityMiddleware)
+    # layer — see RequestObservabilityMiddleware's own docstring).
+    _ensure_request_observability_middleware(app)
     return app
 
 
