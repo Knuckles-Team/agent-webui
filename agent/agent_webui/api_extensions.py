@@ -8748,8 +8748,16 @@ def _read_local_session_detail(
     return sess_dict
 
 
+# Sentinel for "the gateway did not answer", distinct from a `null` body.
+_GATEWAY_NO_ANSWER = object()
+
+
 async def _proxied_session_detail(session_id: str, is_admin: bool) -> Any:
-    """One session from the gateway, or ``None`` if it did not answer.
+    """One session from the gateway, or `_GATEWAY_NO_ANSWER` if it did not.
+
+    The sentinel (rather than `None`) keeps a genuine `null` gateway body
+    returning `null`, exactly as the inline version this replaced did --
+    only a real failure falls through to the local store.
 
     See `_proxied_sessions`: the gateway store carries no ownership field to
     verify against, so a non-admin caller cannot be proven to own this
@@ -8764,7 +8772,7 @@ async def _proxied_session_detail(session_id: str, is_admin: bool) -> Any:
         raise
     except Exception as e:
         _log_failure('proxy_get_session_details', e, level=logging.WARNING)
-        return None
+        return _GATEWAY_NO_ANSWER
 
 
 @router.get('/sessions/{session_id}')
@@ -8780,7 +8788,7 @@ async def get_session_details(session_id: str) -> dict[str, Any]:
     is_admin = _current_webui_is_admin()
     if _is_gateway_active():
         proxied = await _proxied_session_detail(session_id, is_admin)
-        if proxied is not None:
+        if proxied is not _GATEWAY_NO_ANSWER:
             return proxied
 
     db_path = _get_db_path()
