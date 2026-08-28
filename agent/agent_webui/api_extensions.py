@@ -7354,6 +7354,10 @@ def _library_agent_spec(data: dict[str, Any]) -> _LibraryAgentSpec:
     instructions = str(data.get('instructions') or '').strip()
     bind_server = str(data.get('bind_server') or '').strip()
     model_preference = str(data.get('model_preference') or '').strip()
+    # `tool_ids` is bounded BEFORE the field checks, preserving the original
+    # order: a request with both a bad tool_ids list and a bad name still
+    # reports the tool_ids rejection first.
+    tool_ids = _bounded_identifier_list(data.get('tool_ids'))
     _validate_library_agent_fields(name, instructions, bind_server, model_preference)
     return _LibraryAgentSpec(
         name=name,
@@ -7361,7 +7365,7 @@ def _library_agent_spec(data: dict[str, Any]) -> _LibraryAgentSpec:
         instructions=instructions,
         bind_server=bind_server,
         model_preference=model_preference,
-        tool_ids=_bounded_identifier_list(data.get('tool_ids')),
+        tool_ids=tool_ids,
     )
 
 
@@ -13271,6 +13275,8 @@ class _PivotSpec:
 
 def _pivot_spec(data: dict[str, Any]) -> _PivotSpec:
     """Validate ``{ids, link_type, group_by, direction}`` into a `_PivotSpec`."""
+    # `ids` is bounded BEFORE the other checks, preserving the original order.
+    ids = _bounded_identifier_list(data.get('ids'))
     link_type = data.get('link_type')
     group_by = str(data.get('group_by', '') or '')
     direction = str(data.get('direction', 'out') or 'out')
@@ -13283,7 +13289,7 @@ def _pivot_spec(data: dict[str, Any]) -> _PivotSpec:
     ):
         raise HTTPException(status_code=400, detail='Invalid link type')
     return _PivotSpec(
-        ids=_bounded_identifier_list(data.get('ids')),
+        ids=ids,
         link_type=link_type,
         group_by=group_by,
         direction=direction,
@@ -13395,6 +13401,10 @@ class _AggregateSpec:
 
 def _aggregate_spec(data: dict[str, Any]) -> _AggregateSpec:
     """Validate ``{ids, group_by, metric, field}`` into an `_AggregateSpec`."""
+    # `ids` is bounded BEFORE the metric checks, preserving the original
+    # order: a request with both a bad id list and a bad metric still reports
+    # the id rejection first.
+    ids = _bounded_identifier_list(data.get('ids'))
     metric = str(data.get('metric', 'count') or 'count')
     if metric not in {'count', 'sum', 'avg', 'min', 'max'}:
         raise HTTPException(status_code=422, detail=f'unsupported metric {metric!r}')
@@ -13404,7 +13414,7 @@ def _aggregate_spec(data: dict[str, Any]) -> _AggregateSpec:
             status_code=422, detail=f'metric {metric!r} requires a numeric field'
         )
     return _AggregateSpec(
-        ids=_bounded_identifier_list(data.get('ids')),
+        ids=ids,
         metric=metric,
         field=field,
         group_by=data.get('group_by'),
