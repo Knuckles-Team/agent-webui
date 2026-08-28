@@ -547,6 +547,46 @@ class OIDCBrowserSessionMiddleware:
             ],
         )
 
+    def _verified_callback_code_and_flow(
+        self, scope: Any, params: dict[str, list[str]]
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Validate the callback's ``code``/``state`` against the sealed flow
+        cookie's CSRF state. Returns ``(code, flow)`` on success, ``None`` if
+        any of the shape/CSRF checks fail."""
+        codes = params.get('code') or []
+        states = params.get('state') or []
+        flow = self._unseal(_cookies(scope).get(FLOW_COOKIE, ''), max_age=_FLOW_TTL_S)
+        if (
+            len(codes) != 1
+            or len(states) != 1
+            or flow is None
+            or not secrets.compare_digest(str(flow.get('state') or ''), states[0])
+        ):
+            return None
+        return codes[0], flow
+
+    async def _exchange_callback_code(
+        self, scope: Any, code: str, flow: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        return await self._token_request(
+            {
+                'grant_type': 'authorization_code',
+                'code': code,
+                # Must byte-match the redirect_uri sent in _handle_login's
+                # authorize request (OAuth2 requirement) — deriving it the
+                # same way from *this* request's own scheme is correct
+                # because Keycloak redirects back to the exact URI it was
+                # given, preserving the scheme unchanged.
+                'redirect_uri': _request_scheme_redirect_uri(
+                    self.settings.redirect_uri, scope
+                ),
+                'code_verifier': str(flow.get('verifier') or ''),
+            }
+        )
+
+    async def _reject_callback(self, send: Any, clear_flow: Any, detail: bytes) -> None:
+        await self._respond(send, 401, body=detail, headers=[clear_flow])
+
     async def _handle_callback(self, scope: Any, send: Any) -> None:
         from urllib.parse import parse_qs
 
@@ -560,52 +600,23 @@ class OIDCBrowserSessionMiddleware:
 
         if 'error' in params:
             logger.warning('OIDC provider returned an authorization error')
-            await self._respond(
-                send,
-                401,
-                body=b'{"detail":"Sign-in was not completed"}',
-                headers=[clear_flow],
+            await self._reject_callback(
+                send, clear_flow, b'{"detail":"Sign-in was not completed"}'
             )
             return
 
-        codes = params.get('code') or []
-        states = params.get('state') or []
-        flow = self._unseal(_cookies(scope).get(FLOW_COOKIE, ''), max_age=_FLOW_TTL_S)
-        if (
-            len(codes) != 1
-            or len(states) != 1
-            or flow is None
-            or not secrets.compare_digest(str(flow.get('state') or ''), states[0])
-        ):
-            await self._respond(
-                send,
-                401,
-                body=b'{"detail":"Sign-in could not be verified"}',
-                headers=[clear_flow],
+        verified = self._verified_callback_code_and_flow(scope, params)
+        if verified is None:
+            await self._reject_callback(
+                send, clear_flow, b'{"detail":"Sign-in could not be verified"}'
             )
             return
+        code, flow = verified
 
-        tokens = await self._token_request(
-            {
-                'grant_type': 'authorization_code',
-                'code': codes[0],
-                # Must byte-match the redirect_uri sent in _handle_login's
-                # authorize request (OAuth2 requirement) — deriving it the
-                # same way from *this* request's own scheme is correct
-                # because Keycloak redirects back to the exact URI it was
-                # given, preserving the scheme unchanged.
-                'redirect_uri': _request_scheme_redirect_uri(
-                    self.settings.redirect_uri, scope
-                ),
-                'code_verifier': str(flow.get('verifier') or ''),
-            }
-        )
+        tokens = await self._exchange_callback_code(scope, code, flow)
         if tokens is None:
-            await self._respond(
-                send,
-                401,
-                body=b'{"detail":"Sign-in could not be completed"}',
-                headers=[clear_flow],
+            await self._reject_callback(
+                send, clear_flow, b'{"detail":"Sign-in could not be completed"}'
             )
             return
 
