@@ -929,6 +929,16 @@ def _log_denial(
 _SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
 
 
+def _request_route(scope: Any) -> tuple[str, str]:
+    """The path and upper-cased method every middleware decision keys on.
+
+    Both are normalized here so a missing key, a ``None``, and a lower-cased
+    verb cannot be handled three slightly different ways in three middlewares.
+    """
+
+    return str(scope.get('path') or ''), str(scope.get('method') or '').upper()
+
+
 def _origin_check_headers(scope: Any) -> tuple[list[str], list[str], list[str]]:
     """Collect the Origin / Host / Sec-Fetch-Site headers a CSRF check reads.
 
@@ -1104,6 +1114,17 @@ class WebUIAuthorizationMiddleware:
 
         return scope_type == 'websocket' or required != 'kg:read'
 
+    @staticmethod
+    def _authorization_exempt(path: str) -> bool:
+        """Whether this route bypasses scope enforcement altogether.
+
+        Either identity is not enforced at all on this deployment, or the path
+        is one of the public liveness probes that must answer without a
+        credential.
+        """
+
+        return not _identity_enforced() or path in _PUBLIC_LIVENESS_PATHS
+
     def _role_shortfall(
         self,
         session: Any,
@@ -1199,8 +1220,7 @@ class WebUIAuthorizationMiddleware:
 
         from agent_utilities.knowledge_graph.core.session import current_session
 
-        path = str(scope.get('path') or '')
-        method = str(scope.get('method') or '').upper()
+        path, method = _request_route(scope)
         required = self._required_scope(scope_type=scope_type, path=path, method=method)
 
         if self._origin_sensitive(scope_type, required) and not self._origin_allowed(
@@ -1215,7 +1235,7 @@ class WebUIAuthorizationMiddleware:
                 ws_denial={'reason': 'origin-rejected', 'required': required},
             )
             return
-        if not _identity_enforced() or path in _PUBLIC_LIVENESS_PATHS:
+        if self._authorization_exempt(path):
             await self._call_with_transport_bounds(scope, receive, send)
             return
 
@@ -1265,6 +1285,50 @@ class WebUIAuthorizationMiddleware:
         )
 
 
+def _inbound_header_value(scope: Any, header_name: str) -> str | None:
+    """The first value of ``header_name``, stripped, or ``None`` if absent."""
+
+    for key, value in scope.get('headers') or []:
+        if key.decode('latin-1').lower() == header_name:
+            return value.decode('latin-1').strip()
+    return None
+
+
+def _correlated_send(
+    send: Any,
+    *,
+    correlation_id: str,
+    status_box: dict[str, Any],
+) -> Any:
+    """Wrap ``send`` to echo the correlation id and record the outcome.
+
+    ``status_box`` is the caller's mutable one-slot record: the access-log line
+    is emitted after the app returns, by which point the response start (or the
+    websocket close/accept) has already gone out.
+    """
+
+    async def observed_send(message: dict[str, Any]) -> None:
+        if message.get('type') == 'http.response.start':
+            status_box['status'] = int(message.get('status', 0))
+            message = {
+                **message,
+                'headers': [
+                    *(message.get('headers') or []),
+                    (
+                        CORRELATION_RESPONSE_HEADER.encode('ascii'),
+                        correlation_id.encode('ascii'),
+                    ),
+                ],
+            }
+        elif message.get('type') == 'websocket.close':
+            status_box['status'] = int(message.get('code', 1000))
+        elif message.get('type') == 'websocket.accept' and status_box['status'] is None:
+            status_box['status'] = 'accepted'
+        await send(message)
+
+    return observed_send
+
+
 class RequestObservabilityMiddleware:
     """HTTP access logging + correlation-id binding for every request.
 
@@ -1304,83 +1368,75 @@ class RequestObservabilityMiddleware:
             bind_carrier,
         )
 
-        inbound_correlation_id = None
-        for key, value in scope.get('headers') or []:
-            if key.decode('latin-1').lower() == CORRELATION_HEADER:
-                inbound_correlation_id = value.decode('latin-1').strip()
-                break
-
-        method = str(scope.get('method') or '') if scope_type == 'http' else 'WS'
-        path = str(scope.get('path') or '')
-        is_liveness = path in _PUBLIC_LIVENESS_PATHS
+        inbound_correlation_id = _inbound_header_value(scope, CORRELATION_HEADER)
+        path, http_method = _request_route(scope)
+        method = http_method if scope_type == 'http' else 'WS'
         status_box: dict[str, Any] = {'status': None}
+        log_fields: dict[str, Any] = {
+            'event': 'http_request' if scope_type == 'http' else 'websocket_connection',
+            'method': method,
+            'path': path,
+        }
 
         with bind_carrier(
             {CORRELATION_HEADER: inbound_correlation_id}
             if inbound_correlation_id
             else None
         ) as correlation_id:
+            log_fields['correlation_id'] = correlation_id
+            await self._serve_observed(
+                scope,
+                receive,
+                _correlated_send(
+                    send, correlation_id=correlation_id, status_box=status_box
+                ),
+                log_fields=log_fields,
+                status_box=status_box,
+            )
 
-            async def observed_send(message: dict[str, Any]) -> None:
-                if message.get('type') == 'http.response.start':
-                    status_box['status'] = int(message.get('status', 0))
-                    headers = [*(message.get('headers') or [])]
-                    headers.append(
-                        (
-                            CORRELATION_RESPONSE_HEADER.encode('ascii'),
-                            correlation_id.encode('ascii'),
-                        )
-                    )
-                    message = {**message, 'headers': headers}
-                elif message.get('type') == 'websocket.close':
-                    status_box['status'] = int(message.get('code', 1000))
-                elif (
-                    message.get('type') == 'websocket.accept'
-                    and status_box['status'] is None
-                ):
-                    status_box['status'] = 'accepted'
-                await send(message)
+    async def _serve_observed(
+        self,
+        scope: Any,
+        receive: Any,
+        send: Any,
+        *,
+        log_fields: dict[str, Any],
+        status_box: dict[str, Any],
+    ) -> None:
+        """Serve the request and emit exactly one access-log line either way."""
 
-            start = time.perf_counter()
-            log_fields = {
-                'event': 'http_request'
-                if scope_type == 'http'
-                else 'websocket_connection',
-                'method': method,
-                'path': path,
-                'correlation_id': correlation_id,
-            }
-            try:
-                await self.app(scope, receive, observed_send)
-            except Exception:
-                log_fields['status'] = 'error'
-                log_fields['duration_ms'] = round(
-                    (time.perf_counter() - start) * 1000, 2
-                )
-                logger.error(
-                    '%s %s -> error (%sms)',
-                    method,
-                    path,
-                    log_fields['duration_ms'],
-                    exc_info=True,
-                    extra=log_fields,
-                )
-                raise
-            log_fields['status'] = status_box['status']
+        start = time.perf_counter()
+        method = log_fields['method']
+        path = log_fields['path']
+        try:
+            await self.app(scope, receive, send)
+        except Exception:
+            log_fields['status'] = 'error'
             log_fields['duration_ms'] = round((time.perf_counter() - start) * 1000, 2)
-            # Liveness probes fire every few seconds and are not diagnostically
-            # interesting in steady state; keep them out of INFO to avoid
-            # drowning real request logs, but never drop them outright.
-            level = logging.DEBUG if is_liveness else logging.INFO
-            logger.log(
-                level,
-                '%s %s -> %s (%sms)',
+            logger.error(
+                '%s %s -> error (%sms)',
                 method,
                 path,
-                log_fields['status'],
                 log_fields['duration_ms'],
+                exc_info=True,
                 extra=log_fields,
             )
+            raise
+        log_fields['status'] = status_box['status']
+        log_fields['duration_ms'] = round((time.perf_counter() - start) * 1000, 2)
+        # Liveness probes fire every few seconds and are not diagnostically
+        # interesting in steady state; keep them out of INFO to avoid
+        # drowning real request logs, but never drop them outright.
+        level = logging.DEBUG if path in _PUBLIC_LIVENESS_PATHS else logging.INFO
+        logger.log(
+            level,
+            '%s %s -> %s (%sms)',
+            method,
+            path,
+            log_fields['status'],
+            log_fields['duration_ms'],
+            extra=log_fields,
+        )
 
 
 def _is_loopback_listener(host: str) -> bool:
@@ -1397,6 +1453,40 @@ def _is_loopback_listener(host: str) -> bool:
         return False
 
 
+def _jwt_verifier_fields() -> tuple[Any, Any, Any]:
+    """The three ``AgentConfig`` fields that together make a usable verifier.
+
+    A verifier is only meaningful when all three are present, so they are read
+    as one tuple everywhere rather than being re-listed at each call site.
+    """
+
+    from agent_utilities.core.config import config
+
+    return (
+        config.auth_jwt_jwks_uri,
+        config.auth_jwt_issuer,
+        config.auth_jwt_audience,
+    )
+
+
+def _require_complete_jwt_verifier(
+    jwt_fields: tuple[Any, ...],
+    *,
+    host: str,
+) -> None:
+    """Fail closed on a half-configured verifier or an unauthenticated listener."""
+
+    if any(jwt_fields) and not all(jwt_fields):
+        raise RuntimeError(
+            'Agent WebUI JWT authentication requires JWKS URI, issuer, and audience'
+        )
+    if not _is_loopback_listener(host) and not all(jwt_fields):
+        raise RuntimeError(
+            'Refusing a non-loopback Agent WebUI listener without complete JWT '
+            'authentication in AgentConfig'
+        )
+
+
 def _configure_served_boundary(listener_host: str | None) -> str:
     """Resolve the bind host and fail closed for incomplete served identity.
 
@@ -1408,24 +1498,10 @@ def _configure_served_boundary(listener_host: str | None) -> str:
 
     from agent_utilities.core.config import config
 
-    host = (listener_host or config.host or '127.0.0.1').strip()
-    if not host:
-        host = '127.0.0.1'
+    host = (listener_host or config.host or '127.0.0.1').strip() or '127.0.0.1'
 
-    jwt_fields = (
-        config.auth_jwt_jwks_uri,
-        config.auth_jwt_issuer,
-        config.auth_jwt_audience,
-    )
-    if any(jwt_fields) and not all(jwt_fields):
-        raise RuntimeError(
-            'Agent WebUI JWT authentication requires JWKS URI, issuer, and audience'
-        )
-    if not _is_loopback_listener(host) and not all(jwt_fields):
-        raise RuntimeError(
-            'Refusing a non-loopback Agent WebUI listener without complete JWT '
-            'authentication in AgentConfig'
-        )
+    jwt_fields = _jwt_verifier_fields()
+    _require_complete_jwt_verifier(jwt_fields, host=host)
 
     if not _is_loopback_listener(host) and float(config.gateway_rate_limit or 0) <= 0:
         config.gateway_rate_limit = _REMOTE_DEFAULT_RATE
@@ -1454,11 +1530,7 @@ def _identity_enforced() -> bool:
     the fail-closed answer whenever a verifier is configured.
     """
 
-    from agent_utilities.core.config import config
-
-    return bool(
-        config.auth_jwt_jwks_uri and config.auth_jwt_issuer and config.auth_jwt_audience
-    )
+    return all(_jwt_verifier_fields())
 
 
 def _ensure_actor_identity_middleware(
@@ -1807,37 +1879,40 @@ def _ensure_security_headers_middleware(
         )
 
 
+def _configured_csv_entries(raw: Any) -> list[str]:
+    """Split a comma-separated ``AgentConfig`` value into non-empty entries."""
+
+    return [value.strip() for value in str(raw or '').split(',') if value.strip()]
+
+
+def _require_exact_allowed_origins(origins: list[str]) -> None:
+    """Every ``ALLOWED_ORIGINS`` entry must be an exact, wildcard-free origin.
+
+    The scheme is matched verbatim here (not case-folded): a configured origin
+    is operator-authored, and accepting ``HTTPS://`` would silently diverge from
+    what the browser sends and compares against.
+    """
+
+    if '*' in origins:
+        raise RuntimeError('Agent WebUI does not permit wildcard browser origins')
+    for origin in origins:
+        parsed = urlsplit(origin)
+        if parsed.scheme not in {
+            'http',
+            'https',
+        } or not _origin_parts_are_exact(parsed):
+            raise RuntimeError('Agent WebUI ALLOWED_ORIGINS contains an invalid origin')
+
+
 def _install_host_boundary(app: FastAPI, listener_host: str) -> None:
     """Reject Host-header confusion and require an allowlist when remote."""
 
     from agent_utilities.core.config import config
 
-    configured = [
-        value.strip()
-        for value in str(config.allowed_hosts or '').split(',')
-        if value.strip()
-    ]
+    configured = _configured_csv_entries(config.allowed_hosts)
     if '*' in configured:
         raise RuntimeError('Agent WebUI does not permit wildcard Host headers')
-    allowed_origins = {
-        value.strip()
-        for value in str(config.allowed_origins or '').split(',')
-        if value.strip()
-    }
-    if '*' in allowed_origins:
-        raise RuntimeError('Agent WebUI does not permit wildcard browser origins')
-    for origin in allowed_origins:
-        parsed = urlsplit(origin)
-        if (
-            parsed.scheme not in {'http', 'https'}
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.path not in {'', '/'}
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise RuntimeError('Agent WebUI ALLOWED_ORIGINS contains an invalid origin')
+    _require_exact_allowed_origins(_configured_csv_entries(config.allowed_origins))
     if not configured:
         if not _is_loopback_listener(listener_host):
             raise RuntimeError(
