@@ -43,6 +43,7 @@ import {
   Shapes,
   SlidersHorizontal,
   ShieldCheck,
+  Table2,
   Terminal,
   Users,
   Waypoints,
@@ -502,6 +503,22 @@ export const ROUTES: readonly RouteDef[] = [
     minRole: 'user',
     mobile: 'adapted',
     element: lazy(() => import('@/components/views/DataAnalystView')),
+  },
+  {
+    id: 'knowledge.table-explorer',
+    path: '/table-explorer',
+    label: 'Table Explorer',
+    section: 'knowledge',
+    blurb: 'Browse the SQL catalog, inspect column statistics, and manage per-column vector search.',
+    icon: Table2,
+    // Raw SQL execution surface (`POST /graph/table {action:'query'}`, engine-side
+    // guarded only by a client-side SELECT/WITH/EXPLAIN prefix check, not a parse --
+    // see the WD10-A-SQL lane report). Matches `knowledge.cypher`'s precedent for a
+    // comparably raw execution surface; not `reader`/`user` per the wave brief
+    // ("this is a raw-SQL surface; do not give it to reader").
+    minRole: 'admin',
+    mobile: 'unsupported',
+    element: lazy(() => import('@/components/views/TableExplorerView')),
   },
   {
     id: 'knowledge.base',
