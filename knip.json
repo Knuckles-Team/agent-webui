@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "e2e/auth.setup.ts"
+  ],
+  "ignore": [
+    ".dependency-cruiser.cjs"
+  ]
+}

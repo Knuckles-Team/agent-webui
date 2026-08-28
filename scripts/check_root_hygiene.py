@@ -94,6 +94,13 @@ ALLOWED_DOTFILES: frozenset[str] = frozenset(
         ".repo-layout.toml",
         ".bumpversion.cfg",  # release version bump config (bump2version)
         ".codespellignore",  # codespell false-positive word list
+        # WD4-TOOL-02: dependency-cruiser's own conventional config filename
+        # (run via `pnpm dlx dependency-cruiser`, never installed into
+        # package.json -- see .dependency-cruiser.cjs's own header). Same
+        # class as eslint.config.ts/vite.config.ts's toolchain-config
+        # convention, just a dotfile because dependency-cruiser's own
+        # defaults look for the leading dot.
+        ".dependency-cruiser.cjs",
         ".dockerignore",  # Docker build-context exclusions
         ".env.example",  # non-secret catalog of explicit process-env keys
         ".gitattributes",  # git attributes (line endings, diff drivers, ...)
