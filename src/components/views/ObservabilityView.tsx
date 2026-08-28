@@ -21,7 +21,7 @@
  * genuinely empty result set — never collapsed into the same blank panel.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Activity, AlertTriangle, ChevronRight, GitBranch, Loader2, Play, Search, Workflow } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -194,6 +194,42 @@ function adaptRunRows(raw: unknown): RunRow[] {
   }))
 }
 
+function strOrUndefined(v: unknown): string | undefined {
+  return typeof v === 'string' ? v : undefined
+}
+
+function numOrUndefined(v: unknown): number | undefined {
+  return typeof v === 'number' ? v : undefined
+}
+
+function adaptWaterfallTrace(t: Record<string, unknown>, fallbackId: string): RunWaterfall['trace'] {
+  return {
+    id: asStr(t.id, fallbackId),
+    name: strOrUndefined(t.name),
+    status: strOrUndefined(t.status),
+    latencyMs: typeof t.latencyMs === 'number' ? t.latencyMs : null,
+    costUsd: numOrUndefined(t.costUsd),
+    inputTokens: numOrUndefined(t.inputTokens),
+    outputTokens: numOrUndefined(t.outputTokens),
+    toolCalls: numOrUndefined(t.toolCalls),
+  }
+}
+
+function adaptWaterfallNode(n: Record<string, unknown>): DagNode {
+  return {
+    id: asStr(n.id),
+    parentId: strOrUndefined(n.parentId) ?? null,
+    kind: asStr(n.kind, 'span'),
+    name: asStr(n.name, 'unnamed'),
+    latencyMs: asNumber(n.latencyMs),
+    error: typeof n.error === 'string' ? n.error : null,
+    model: strOrUndefined(n.model),
+    costUsd: numOrUndefined(n.costUsd),
+    inputTokens: numOrUndefined(n.inputTokens),
+    outputTokens: numOrUndefined(n.outputTokens),
+  }
+}
+
 function adaptWaterfall(raw: unknown, fallbackId: string): RunWaterfall | null {
   const result = surfaceResult(raw)
   if (!result || typeof result !== 'object') return null
@@ -201,29 +237,42 @@ function adaptWaterfall(raw: unknown, fallbackId: string): RunWaterfall | null {
   const t = (obj.trace ?? {}) as Record<string, unknown>
   const nodesRaw = Array.isArray(obj.nodes) ? (obj.nodes as Record<string, unknown>[]) : []
   return {
-    trace: {
-      id: asStr(t.id, fallbackId),
-      name: typeof t.name === 'string' ? t.name : undefined,
-      status: typeof t.status === 'string' ? t.status : undefined,
-      latencyMs: typeof t.latencyMs === 'number' ? t.latencyMs : null,
-      costUsd: typeof t.costUsd === 'number' ? t.costUsd : undefined,
-      inputTokens: typeof t.inputTokens === 'number' ? t.inputTokens : undefined,
-      outputTokens: typeof t.outputTokens === 'number' ? t.outputTokens : undefined,
-      toolCalls: typeof t.toolCalls === 'number' ? t.toolCalls : undefined,
-    },
-    nodes: nodesRaw.map((n) => ({
-      id: asStr(n.id),
-      parentId: typeof n.parentId === 'string' ? n.parentId : null,
-      kind: asStr(n.kind, 'span'),
-      name: asStr(n.name, 'unnamed'),
-      latencyMs: asNumber(n.latencyMs),
-      error: typeof n.error === 'string' ? n.error : null,
-      model: typeof n.model === 'string' ? n.model : undefined,
-      costUsd: typeof n.costUsd === 'number' ? n.costUsd : undefined,
-      inputTokens: typeof n.inputTokens === 'number' ? n.inputTokens : undefined,
-      outputTokens: typeof n.outputTokens === 'number' ? n.outputTokens : undefined,
-    })),
+    trace: adaptWaterfallTrace(t, fallbackId),
+    nodes: nodesRaw.map(adaptWaterfallNode),
   }
+}
+
+function dagRowChevronClassName(open: boolean): string {
+  return open ? 'size-3 rotate-90 transition-transform' : 'size-3 transition-transform'
+}
+
+/** The expand/collapse control for a DAG row, or a same-width filler when the
+ * row has no children to toggle. */
+function dagRowExpandToggle(hasKids: boolean, open: boolean, onToggle: () => void): ReactNode {
+  if (!hasKids) return <span className="inline-block size-3 shrink-0" />
+  return (
+    <button
+      type="button"
+      aria-label={open ? 'Collapse' : 'Expand'}
+      onClick={onToggle}
+      className="shrink-0 text-muted-foreground"
+    >
+      <ChevronRight className={dagRowChevronClassName(open)} />
+    </button>
+  )
+}
+
+/** The cost/model/latency trailer on a DAG row's main line. */
+function dagRowMeta(node: DagNode): ReactNode {
+  return (
+    <>
+      {node.model && <span className="shrink-0 text-muted-foreground">({node.model})</span>}
+      <span className="ml-auto shrink-0 font-mono text-muted-foreground">{node.latencyMs}ms</span>
+      {typeof node.costUsd === 'number' && (
+        <span className="shrink-0 font-mono text-muted-foreground">${node.costUsd.toFixed(4)}</span>
+      )}
+    </>
+  )
 }
 
 /** One node in the rendered DAG, recursively rendering its own children (looked
@@ -247,31 +296,16 @@ function DagNodeRow({
         className="flex items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/40"
         style={{ paddingLeft: `${String(depth * 16)}px` }}
       >
-        {kids.length > 0 ? (
-          <button
-            type="button"
-            aria-label={open ? 'Collapse' : 'Expand'}
-            onClick={() => {
-              setOpen((v) => !v)
-            }}
-            className="shrink-0 text-muted-foreground"
-          >
-            <ChevronRight className={open ? 'size-3 rotate-90 transition-transform' : 'size-3 transition-transform'} />
-          </button>
-        ) : (
-          <span className="inline-block size-3 shrink-0" />
-        )}
+        {dagRowExpandToggle(kids.length > 0, open, () => {
+          setOpen((v) => !v)
+        })}
         <Badge variant={failed ? 'destructive' : 'outline'} className="shrink-0 font-mono text-[10px]">
           {node.kind}
         </Badge>
         <span className="truncate font-mono" title={node.name}>
           {node.name}
         </span>
-        {node.model && <span className="shrink-0 text-muted-foreground">({node.model})</span>}
-        <span className="ml-auto shrink-0 font-mono text-muted-foreground">{node.latencyMs}ms</span>
-        {typeof node.costUsd === 'number' && (
-          <span className="shrink-0 font-mono text-muted-foreground">${node.costUsd.toFixed(4)}</span>
-        )}
+        {dagRowMeta(node)}
       </div>
       {failed && (
         <div
@@ -298,16 +332,19 @@ function DagNodeRow({
  * any node whose parent isn't itself in the node set is rendered at depth 0 too,
  * so a malformed/partial graph still shows every node rather than silently
  * dropping some. */
-function RunDag({ waterfall }: { waterfall: RunWaterfall }) {
-  const { trace, nodes } = waterfall
-  if (nodes.length === 0) return <p className="text-muted-foreground text-sm">No spans recorded for this run.</p>
-
+/** Splits a run's flat node list into a parent->children lookup plus the set of
+ * roots (any node whose parent isn't itself present in the node set counts as
+ * a root too, so a malformed/partial graph still shows every node). */
+function partitionDagNodes(
+  nodes: DagNode[],
+  traceId: string,
+): { childrenByParent: Map<string, DagNode[]>; roots: DagNode[] } {
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const childrenByParent = new Map<string, DagNode[]>()
   const roots: DagNode[] = []
   for (const node of nodes) {
     const parent = node.parentId
-    if (parent && parent !== trace.id && byId.has(parent)) {
+    if (parent && parent !== traceId && byId.has(parent)) {
       const list = childrenByParent.get(parent) ?? []
       list.push(node)
       childrenByParent.set(parent, list)
@@ -315,6 +352,18 @@ function RunDag({ waterfall }: { waterfall: RunWaterfall }) {
       roots.push(node)
     }
   }
+  return { childrenByParent, roots }
+}
+
+function formatDagCost(costUsd: number | undefined): string {
+  return costUsd ? `$${costUsd.toFixed(4)}` : '—'
+}
+
+function RunDag({ waterfall }: { waterfall: RunWaterfall }) {
+  const { trace, nodes } = waterfall
+  if (nodes.length === 0) return <p className="text-muted-foreground text-sm">No spans recorded for this run.</p>
+
+  const { childrenByParent, roots } = partitionDagNodes(nodes, trace.id)
 
   return (
     <div className="space-y-3">
@@ -333,7 +382,7 @@ function RunDag({ waterfall }: { waterfall: RunWaterfall }) {
         </div>
         <div className="rounded-md bg-muted/40 p-2">
           <div className="text-muted-foreground">Cost</div>
-          <div className="font-semibold">{trace.costUsd ? `$${trace.costUsd.toFixed(4)}` : '—'}</div>
+          <div className="font-semibold">{formatDagCost(trace.costUsd)}</div>
         </div>
       </div>
       <ul className="max-h-96 space-y-0.5 overflow-auto rounded-md border p-2" aria-label="Run execution DAG">
@@ -353,6 +402,171 @@ function CapabilityNotice({ label }: { label: string }) {
         The <span className="font-mono">{label}</span> gateway route is not activated on this backend yet. Wire it in
         <span className="font-mono"> agent_utilities.gateway.graph_api</span> to see live data here.
       </p>
+    </div>
+  )
+}
+
+/** The PromQL tab's body below the query input: an unavailable-route notice,
+ * a query error, or the chart + raw series table. */
+function metricsTabContent({
+  metricUnavailable,
+  metricError,
+  series,
+}: {
+  metricUnavailable: boolean
+  metricError: string | null
+  series: MetricSeries[]
+}): ReactNode {
+  if (metricUnavailable) return <CapabilityNotice label="/graph/promql" />
+  if (metricError) {
+    return (
+      <pre className="rounded border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive whitespace-pre-wrap break-words">
+        {metricError}
+      </pre>
+    )
+  }
+  return (
+    <>
+      <LineChart series={series} />
+      {series.length > 0 && (
+        <div className="rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="text-left p-2 font-medium">Series</th>
+                <th className="text-left p-2 font-medium">Points</th>
+                <th className="text-left p-2 font-medium">Last value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {series.map((s) => (
+                <tr key={s.label} className="border-t">
+                  <td className="p-2 font-mono text-xs">{s.label}</td>
+                  <td className="p-2">{s.points.length}</td>
+                  <td className="p-2 font-mono">{s.points.at(-1)?.v ?? '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  )
+}
+
+/** The clickable run list column of the Runs tab. */
+function runListPanel({
+  runs,
+  selectedRun,
+  onSelectRun,
+}: {
+  runs: RunRow[]
+  selectedRun: string | null
+  onSelectRun: (traceId: string) => void
+}): ReactNode {
+  return (
+    <div className="space-y-1" aria-label="Run list">
+      {runs.map((run) => (
+        <button
+          type="button"
+          key={run.trace_id}
+          onClick={() => {
+            onSelectRun(run.trace_id)
+          }}
+          className={
+            'w-full text-left rounded border p-2 hover:bg-muted/50 transition-colors ' +
+            (run.trace_id === selectedRun ? 'bg-accent' : '')
+          }
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate font-mono text-xs">{run.name ?? run.trace_id}</span>
+            {run.status && (
+              <Badge variant={run.status.toLowerCase().includes('err') ? 'destructive' : 'outline'}>
+                {run.status}
+              </Badge>
+            )}
+          </div>
+          {run.duration !== undefined && <span className="text-xs text-muted-foreground">{run.duration} total</span>}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** The selected run's DAG panel body: loading/unavailable/error/DAG/empty. */
+function runDagPanelContent({
+  dagLoading,
+  dagUnavailable,
+  dagError,
+  dag,
+}: {
+  dagLoading: boolean
+  dagUnavailable: boolean
+  dagError: string | null
+  dag: RunWaterfall | null
+}): ReactNode {
+  if (dagLoading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" /> Loading run DAG…
+      </div>
+    )
+  }
+  if (dagUnavailable) return <CapabilityNotice label="/graph/traces (waterfall)" />
+  if (dagError) {
+    return (
+      <pre className="rounded border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive whitespace-pre-wrap break-words">
+        {dagError}
+      </pre>
+    )
+  }
+  if (dag) return <RunDag waterfall={dag} />
+  return <p className="text-muted-foreground text-sm">Select a run to see its execution DAG.</p>
+}
+
+/** The Runs tab's body below the search input: an unavailable-route notice,
+ * an empty state, or the run-list + DAG-panel grid. */
+function runsTabContent({
+  runsUnavailable,
+  runsLoading,
+  runs,
+  selectedRun,
+  onSelectRun,
+  dag,
+  dagLoading,
+  dagUnavailable,
+  dagError,
+}: {
+  runsUnavailable: boolean
+  runsLoading: boolean
+  runs: RunRow[]
+  selectedRun: string | null
+  onSelectRun: (traceId: string) => void
+  dag: RunWaterfall | null
+  dagLoading: boolean
+  dagUnavailable: boolean
+  dagError: string | null
+}): ReactNode {
+  if (runsUnavailable) return <CapabilityNotice label="/graph/traces" />
+  if (runs.length === 0) {
+    return (
+      <p className="text-muted-foreground text-sm" data-testid="observability-runs-empty">
+        {runsLoading ? 'Loading runs…' : 'No runs found.'}
+      </p>
+    )
+  }
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[16rem_1fr] gap-4">
+      {runListPanel({ runs, selectedRun, onSelectRun })}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Workflow className="size-4" />
+            {dag?.trace.name ?? selectedRun ?? 'Run DAG'}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>{runDagPanelContent({ dagLoading, dagUnavailable, dagError, dag })}</CardContent>
+      </Card>
     </div>
   )
 }
@@ -495,39 +709,7 @@ export default function ObservabilityView() {
                   if (e.key === 'Enter') void runPromql()
                 }}
               />
-              {metricUnavailable ? (
-                <CapabilityNotice label="/graph/promql" />
-              ) : metricError ? (
-                <pre className="rounded border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive whitespace-pre-wrap break-words">
-                  {metricError}
-                </pre>
-              ) : (
-                <>
-                  <LineChart series={series} />
-                  {series.length > 0 && (
-                    <div className="rounded-md border">
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted/50">
-                          <tr>
-                            <th className="text-left p-2 font-medium">Series</th>
-                            <th className="text-left p-2 font-medium">Points</th>
-                            <th className="text-left p-2 font-medium">Last value</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {series.map((s) => (
-                            <tr key={s.label} className="border-t">
-                              <td className="p-2 font-mono text-xs">{s.label}</td>
-                              <td className="p-2">{s.points.length}</td>
-                              <td className="p-2 font-mono">{s.points.at(-1)?.v ?? '-'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </>
-              )}
+              {metricsTabContent({ metricUnavailable, metricError, series })}
             </CardContent>
           </Card>
         </TabsContent>
@@ -563,68 +745,17 @@ export default function ObservabilityView() {
                   if (e.key === 'Enter') void loadRuns()
                 }}
               />
-              {runsUnavailable ? (
-                <CapabilityNotice label="/graph/traces" />
-              ) : runs.length === 0 ? (
-                <p className="text-muted-foreground text-sm" data-testid="observability-runs-empty">
-                  {runsLoading ? 'Loading runs…' : 'No runs found.'}
-                </p>
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-[16rem_1fr] gap-4">
-                  <div className="space-y-1" aria-label="Run list">
-                    {runs.map((run) => (
-                      <button
-                        type="button"
-                        key={run.trace_id}
-                        onClick={() => {
-                          setSelectedRun(run.trace_id)
-                        }}
-                        className={
-                          'w-full text-left rounded border p-2 hover:bg-muted/50 transition-colors ' +
-                          (run.trace_id === selectedRun ? 'bg-accent' : '')
-                        }
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate font-mono text-xs">{run.name ?? run.trace_id}</span>
-                          {run.status && (
-                            <Badge variant={run.status.toLowerCase().includes('err') ? 'destructive' : 'outline'}>
-                              {run.status}
-                            </Badge>
-                          )}
-                        </div>
-                        {run.duration !== undefined && (
-                          <span className="text-xs text-muted-foreground">{run.duration} total</span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Workflow className="size-4" />
-                        {dag?.trace.name ?? selectedRun ?? 'Run DAG'}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {dagLoading ? (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Loader2 className="size-4 animate-spin" /> Loading run DAG…
-                        </div>
-                      ) : dagUnavailable ? (
-                        <CapabilityNotice label="/graph/traces (waterfall)" />
-                      ) : dagError ? (
-                        <pre className="rounded border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive whitespace-pre-wrap break-words">
-                          {dagError}
-                        </pre>
-                      ) : dag ? (
-                        <RunDag waterfall={dag} />
-                      ) : (
-                        <p className="text-muted-foreground text-sm">Select a run to see its execution DAG.</p>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
+              {runsTabContent({
+                runsUnavailable,
+                runsLoading,
+                runs,
+                selectedRun,
+                onSelectRun: setSelectedRun,
+                dag,
+                dagLoading,
+                dagUnavailable,
+                dagError,
+              })}
             </CardContent>
           </Card>
         </TabsContent>
