@@ -185,10 +185,10 @@ function renderValueField(
   type: string | undefined,
   ctx: FieldRenderContext,
 ) {
-  const { formId, state, issues, required, update } = ctx
+  const { formId, state, issues, required } = ctx
   const id = `${formId}-${name}`
   const issue = issues.find((item) => item.field === name)
-  const isSensitive = field.format === 'password' || field.writeOnly || field['x-sensitive']
+  const isSensitive = Boolean(field.format === 'password' || field.writeOnly || field['x-sensitive'])
   const common: ValueWidgetCommon = {
     id,
     name,

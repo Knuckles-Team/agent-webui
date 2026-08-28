@@ -456,7 +456,7 @@ function renderAdminTenantNotice({
 }: {
   isAdmin: boolean
   tenantFilter: string | undefined
-  defaultTenant: string | undefined
+  defaultTenant: string | null | undefined
 }) {
   if (!isAdmin) return null
   return (
