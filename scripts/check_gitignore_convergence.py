@@ -135,23 +135,25 @@ def _gitignore_tokens() -> set[str]:
     return tokens
 
 
-def main() -> int:
+def _missing_required_entries(gitignore_tokens: set[str]) -> list[str]:
+    return sorted(req for req in REQUIRED if _normalize(req) not in gitignore_tokens)
+
+
+def _tracked_build_output_paths(tracked: list[str]) -> list[str]:
+    return sorted(p for p in tracked if _TRACKED_BUILD_OUTPUT_RE.match(p))
+
+
+def _collect_convergence_problems() -> list[str]:
     problems: list[str] = []
 
-    gitignore_tokens = _gitignore_tokens()
-    missing = sorted(
-        req for req in REQUIRED if _normalize(req) not in gitignore_tokens
-    )
+    missing = _missing_required_entries(_gitignore_tokens())
     if missing:
         problems.append(
             "Missing from .gitignore (fleet-shared REQUIRED set):\n"
             + "\n".join(f"    {m}" for m in missing)
         )
 
-    tracked = _tracked_paths()
-    tracked_build_output = sorted(
-        p for p in tracked if _TRACKED_BUILD_OUTPUT_RE.match(p)
-    )
+    tracked_build_output = _tracked_build_output_paths(_tracked_paths())
     if tracked_build_output:
         problems.append(
             "Build-output paths are TRACKED (a .gitignore rule cannot "
@@ -159,6 +161,12 @@ def main() -> int:
             "the .gitignore rule do its job going forward):\n"
             + "\n".join(f"    {p}" for p in tracked_build_output)
         )
+
+    return problems
+
+
+def main() -> int:
+    problems = _collect_convergence_problems()
 
     if not problems:
         print(

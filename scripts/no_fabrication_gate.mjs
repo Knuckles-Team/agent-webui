@@ -117,6 +117,29 @@ const RULE_TIMEOUT_TOAST = {
 
 const RULES = [RULE_MATH_RANDOM, RULE_METRIC_FALLBACK, RULE_TIMEOUT_TOAST]
 
+/** Index of the `}` that closes the `{` at `braceStart` (bracket-depth walk), or -1. */
+function findMatchingBrace(text, braceStart) {
+  let depth = 0
+  for (let i = braceStart; i < text.length; i++) {
+    if (text[i] === '{') {
+      depth++
+    } else if (text[i] === '}') {
+      depth--
+      if (depth === 0) return i
+    }
+  }
+  return -1
+}
+
+/** Whether a setTimeout callback body fires a fake-completion signal with no fetch/await. */
+function isFakeCompletionWithoutAwait(body) {
+  const hasFetchOrAwait = /\bawait\b|\bfetch\s*\(/.test(body)
+  const hasFakeCompletion =
+    /toast\.(success|info)\s*\(/.test(body) ||
+    /status\s*:\s*['"](completed|success|downloading|done)['"]/.test(body)
+  return hasFakeCompletion && !hasFetchOrAwait
+}
+
 /** Scan a setTimeout(...) callback body (bracket-depth) for a fake-completion signature. */
 function scanTimeoutBlocks(text, lines) {
   const violations = []
@@ -128,25 +151,10 @@ function scanTimeoutBlocks(text, lines) {
     // bracket depth to its matching `}`.
     const braceStart = text.indexOf('{', start)
     if (braceStart === -1) continue
-    let depth = 0
-    let end = -1
-    for (let i = braceStart; i < text.length; i++) {
-      if (text[i] === '{') depth++
-      else if (text[i] === '}') {
-        depth--
-        if (depth === 0) {
-          end = i
-          break
-        }
-      }
-    }
+    const end = findMatchingBrace(text, braceStart)
     if (end === -1) continue
     const body = text.slice(braceStart, end)
-    const hasFetchOrAwait = /\bawait\b|\bfetch\s*\(/.test(body)
-    const hasFakeCompletion =
-      /toast\.(success|info)\s*\(/.test(body) ||
-      /status\s*:\s*['"](completed|success|downloading|done)['"]/.test(body)
-    if (hasFakeCompletion && !hasFetchOrAwait) {
+    if (isFakeCompletionWithoutAwait(body)) {
       const lineNo = text.slice(0, braceStart).split('\n').length
       violations.push({ rule: RULE_TIMEOUT_TOAST, line: lineNo })
     }

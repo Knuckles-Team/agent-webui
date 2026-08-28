@@ -356,50 +356,58 @@ def _ensure_fleet_scope(token: str, dry_run: bool) -> str:
     return next(s['id'] for s in scopes if s['name'] == FLEET_SCOPE)
 
 
-def _reconcile_client(
-    token: str, desired: dict[str, Any], dry_run: bool
-) -> dict[str, Any] | None:
-    client_id = desired['clientId']
-    existing = _find_client(token, client_id)
-    if existing is None:
-        if dry_run:
-            log(f'  client {client_id}: WOULD CREATE')
-            return None
-        _kc('POST', f'/admin/realms/{REALM}/clients', token, desired)
-        existing = _find_client(token, client_id)
-        if existing is None:
-            raise ProvisioningError(f'Keycloak client {client_id} was not created')
-        log(f'  client {client_id}: created')
-        return existing
+def _create_client(token: str, client_id: str, desired: dict[str, Any], dry_run: bool) -> dict[str, Any] | None:
+    """Create a Keycloak client that does not exist yet. Returns ``None`` for
+    a dry run (nothing was actually created to return)."""
+    if dry_run:
+        log(f'  client {client_id}: WOULD CREATE')
+        return None
+    _kc('POST', f'/admin/realms/{REALM}/clients', token, desired)
+    created = _find_client(token, client_id)
+    if created is None:
+        raise ProvisioningError(f'Keycloak client {client_id} was not created')
+    log(f'  client {client_id}: created')
+    return created
 
-    # Keycloak normalizes and reorders list-valued fields, so an order-sensitive
-    # comparison reports drift on every run and the script stops being
-    # idempotent.  Redirect URIs and web origins are *replaced* with exactly the
-    # desired set — an unexpected callback target is a security defect, so
-    # reconciliation must be able to remove one.  Every other list is treated
-    # additively, so an operator's deliberate extra scope survives a re-run.
-    exact = {'redirectUris', 'webOrigins'}
 
-    def _resolve(key: str, wanted: Any) -> tuple[bool, Any]:
-        current = existing.get(key)
-        if not isinstance(wanted, list):
-            return current != wanted, wanted
-        have = set(map(str, current or []))
-        want = set(map(str, wanted))
-        if key in exact:
-            return have != want, sorted(want)
-        return not have >= want, sorted(have | want)
+def _resolve_client_field(existing: dict[str, Any], key: str, wanted: Any) -> tuple[bool, Any]:
+    """Decide whether one client field has drifted, and what it should become.
 
+    Keycloak normalizes and reorders list-valued fields, so an order-sensitive
+    comparison reports drift on every run and the script stops being
+    idempotent.  Redirect URIs and web origins are *replaced* with exactly the
+    desired set — an unexpected callback target is a security defect, so
+    reconciliation must be able to remove one.  Every other list is treated
+    additively, so an operator's deliberate extra scope survives a re-run.
+    """
+    exact_replace_fields = {'redirectUris', 'webOrigins'}
+    current = existing.get(key)
+    if not isinstance(wanted, list):
+        return current != wanted, wanted
+    have = set(map(str, current or []))
+    want = set(map(str, wanted))
+    if key in exact_replace_fields:
+        return have != want, sorted(want)
+    return not have >= want, sorted(have | want)
+
+
+def _compute_client_drift(existing: dict[str, Any], desired: dict[str, Any]) -> dict[str, Any]:
     drift: dict[str, Any] = {}
     for key, value in desired.items():
         if key in {'clientId', 'attributes'}:
             continue
-        changed, resolved = _resolve(key, value)
+        changed, resolved = _resolve_client_field(existing, key, value)
         if changed:
             drift[key] = resolved
     merged_attributes = {**(existing.get('attributes') or {}), **desired['attributes']}
     if merged_attributes != (existing.get('attributes') or {}):
         drift['attributes'] = merged_attributes
+    return drift
+
+
+def _apply_client_drift(
+    token: str, client_id: str, existing: dict[str, Any], drift: dict[str, Any], dry_run: bool
+) -> dict[str, Any] | None:
     if not drift:
         log(f'  client {client_id}: present, in sync')
         return existing
@@ -414,6 +422,17 @@ def _reconcile_client(
     )
     log(f'  client {client_id}: reconciled {sorted(drift)}')
     return _find_client(token, client_id)
+
+
+def _reconcile_client(
+    token: str, desired: dict[str, Any], dry_run: bool
+) -> dict[str, Any] | None:
+    client_id = desired['clientId']
+    existing = _find_client(token, client_id)
+    if existing is None:
+        return _create_client(token, client_id, desired, dry_run)
+    drift = _compute_client_drift(existing, desired)
+    return _apply_client_drift(token, client_id, existing, drift, dry_run)
 
 
 def _client_secret(token: str, uuid: str) -> str:
@@ -521,65 +540,84 @@ def _ensure_service_account_roles(
     log(f'  {client_id} service account: granted {wanted}')
 
 
-def _ensure_user_group(token: str, grant_users: list[str], dry_run: bool) -> None:
+def _ensure_user_group_exists(token: str, dry_run: bool) -> dict[str, Any] | None:
+    """Create the shared user group if it is missing; return it (or ``None``
+    if a dry run would have created it and there is nothing to return yet)."""
     _status, groups = _kc('GET', f'/admin/realms/{REALM}/groups', token)
     group = next((g for g in groups or [] if g['name'] == USER_GROUP), None)
-    if group is None:
-        if dry_run:
-            log(f'  group {USER_GROUP}: WOULD CREATE')
-            return
-        _kc('POST', f'/admin/realms/{REALM}/groups', token, {'name': USER_GROUP})
-        _status, groups = _kc('GET', f'/admin/realms/{REALM}/groups', token)
-        group = next(g for g in groups if g['name'] == USER_GROUP)
-        log(f'  group {USER_GROUP}: created')
-    else:
+    if group is not None:
         log(f'  group {USER_GROUP}: present')
+        return group
+    if dry_run:
+        log(f'  group {USER_GROUP}: WOULD CREATE')
+        return None
+    _kc('POST', f'/admin/realms/{REALM}/groups', token, {'name': USER_GROUP})
+    _status, groups = _kc('GET', f'/admin/realms/{REALM}/groups', token)
+    group = next(g for g in groups if g['name'] == USER_GROUP)
+    log(f'  group {USER_GROUP}: created')
+    return group
 
+
+def _ensure_user_group_roles(token: str, group: dict[str, Any], dry_run: bool) -> None:
     _status, held = _kc(
         'GET', f'/admin/realms/{REALM}/groups/{group["id"]}/role-mappings/realm', token
     )
     have = {role['name'] for role in held or []}
     wanted = [name for name in USER_ROLES if name not in have]
-    if wanted and not dry_run:
-        _kc(
-            'POST',
-            f'/admin/realms/{REALM}/groups/{group["id"]}/role-mappings/realm',
-            token,
-            _realm_role_objects(token, tuple(wanted)),
-        )
-        log(f'  group {USER_GROUP}: granted {wanted}')
-    elif wanted:
-        log(f'  group {USER_GROUP}: WOULD GRANT {wanted}')
-    else:
+    if not wanted:
         log(f'  group {USER_GROUP}: roles {list(USER_ROLES)} present')
+        return
+    if dry_run:
+        log(f'  group {USER_GROUP}: WOULD GRANT {wanted}')
+        return
+    _kc(
+        'POST',
+        f'/admin/realms/{REALM}/groups/{group["id"]}/role-mappings/realm',
+        token,
+        _realm_role_objects(token, tuple(wanted)),
+    )
+    log(f'  group {USER_GROUP}: granted {wanted}')
 
+
+def _grant_one_user_to_group(
+    token: str, username: str, group: dict[str, Any], dry_run: bool
+) -> None:
+    query = urllib.parse.quote(username)
+    _status, users = _kc(
+        'GET', f'/admin/realms/{REALM}/users?username={query}&exact=true', token
+    )
+    user = (users or [None])[0]
+    if user is None:
+        log(
+            f'  user {username}: NOT FOUND — a realm admin must create the '
+            'account before it can sign in'
+        )
+        return
+    _status, memberships = _kc(
+        'GET', f'/admin/realms/{REALM}/users/{user["id"]}/groups', token
+    )
+    if any(m['name'] == USER_GROUP for m in memberships or []):
+        log(f'  user {username}: already in {USER_GROUP}')
+        return
+    if dry_run:
+        log(f'  user {username}: WOULD ADD to {USER_GROUP}')
+        return
+    _kc(
+        'PUT',
+        f'/admin/realms/{REALM}/users/{user["id"]}/groups/{group["id"]}',
+        token,
+    )
+    log(f'  user {username}: added to {USER_GROUP}')
+
+
+def _ensure_user_group(token: str, grant_users: list[str], dry_run: bool) -> None:
+    group = _ensure_user_group_exists(token, dry_run)
+    if group is None:
+        # dry run, group would not exist yet -- nothing further to reconcile
+        return
+    _ensure_user_group_roles(token, group, dry_run)
     for username in grant_users:
-        query = urllib.parse.quote(username)
-        _status, users = _kc(
-            'GET', f'/admin/realms/{REALM}/users?username={query}&exact=true', token
-        )
-        user = (users or [None])[0]
-        if user is None:
-            log(
-                f'  user {username}: NOT FOUND — a realm admin must create the '
-                'account before it can sign in'
-            )
-            continue
-        _status, memberships = _kc(
-            'GET', f'/admin/realms/{REALM}/users/{user["id"]}/groups', token
-        )
-        if any(m['name'] == USER_GROUP for m in memberships or []):
-            log(f'  user {username}: already in {USER_GROUP}')
-            continue
-        if dry_run:
-            log(f'  user {username}: WOULD ADD to {USER_GROUP}')
-            continue
-        _kc(
-            'PUT',
-            f'/admin/realms/{REALM}/users/{user["id"]}/groups/{group["id"]}',
-            token,
-        )
-        log(f'  user {username}: added to {USER_GROUP}')
+        _grant_one_user_to_group(token, username, group, dry_run)
 
 
 def stage_tier2_admission(dry_run: bool) -> None:

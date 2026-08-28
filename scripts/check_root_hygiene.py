@@ -59,6 +59,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import tomllib
+from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -200,90 +201,153 @@ def load_manifest() -> tuple[dict[str, str], dict[str, str]]:
     return dict(dirs), dict(files)
 
 
-def main() -> int:
-    try:
-        declared_dirs, declared_files = load_manifest()
-    except ManifestError as exc:
-        print(f"FAIL: {exc}")
-        return 1
+@dataclass
+class RootHygieneViolations:
+    """Every category of root-hygiene violation this gate distinguishes.
 
-    paths = _tracked_paths()
-    root_files, root_dirs = tracked_root_entries(paths)
+    Kept as one typed object (rather than seven loose locals or a wide
+    function signature) so the classification and reporting halves of the
+    gate can be tested and read independently.
+    """
 
+    forbidden_hits: list[str] = field(default_factory=list)
+    undeclared_dirs: list[str] = field(default_factory=list)
+    stale_dirs: list[str] = field(default_factory=list)
+    undeclared_dotfiles: list[str] = field(default_factory=list)
+    undeclared_files: list[str] = field(default_factory=list)
+    misfiled_dotfiles: list[str] = field(default_factory=list)
+    stale_files: list[str] = field(default_factory=list)
+
+    def is_clean(self) -> bool:
+        return not (
+            self.forbidden_hits
+            or self.undeclared_dirs
+            or self.stale_dirs
+            or self.undeclared_dotfiles
+            or self.undeclared_files
+            or self.misfiled_dotfiles
+            or self.stale_files
+        )
+
+
+def _forbidden_ratchet_hits(paths: list[str]) -> list[str]:
     # FORBIDDEN_ANYWHERE: scan the WHOLE tracked tree, not just the root --
     # these ratchets install themselves wherever the tool that writes them is
     # run, and being nested somewhere plausible-looking is not a defense.
-    forbidden_hits = sorted(
-        p for p in paths if Path(p).name in FORBIDDEN_ANYWHERE
-    )
+    return sorted(p for p in paths if Path(p).name in FORBIDDEN_ANYWHERE)
 
+
+def _classify_root_dirs(
+    root_dirs: set[str], declared_dirs: dict[str, str]
+) -> tuple[list[str], list[str]]:
+    """Return ``(undeclared_dirs, stale_dirs)``."""
     undeclared_dirs = sorted(d for d in root_dirs if d not in declared_dirs)
     stale_dirs = sorted(d for d in declared_dirs if d not in root_dirs)
+    return undeclared_dirs, stale_dirs
 
-    undeclared_dotfiles = sorted(
+
+def _classify_root_dotfiles(
+    root_files: set[str], declared_files: dict[str, str]
+) -> list[str]:
+    return sorted(
         f
         for f in root_files
         if f.startswith(".") and f not in ALLOWED_DOTFILES and f not in declared_files
     )
-    undeclared_files = sorted(
-        f for f in root_files if not f.startswith(".") and f not in declared_files
-    )
-    # A manifest [files] entry only ever justifies a NON-dot file (dot-files
-    # go through ALLOWED_DOTFILES instead) -- a dot-file accidentally declared
-    # in the manifest would be silently ignored by the check above, which
-    # would hide a class mismatch rather than report it.
+
+
+def _classify_root_non_dotfiles(
+    root_files: set[str], declared_files: dict[str, str]
+) -> list[str]:
+    return sorted(f for f in root_files if not f.startswith(".") and f not in declared_files)
+
+
+def _classify_declared_files(
+    root_files: set[str], declared_files: dict[str, str]
+) -> tuple[list[str], list[str]]:
+    """Return ``(misfiled_dotfiles, stale_files)`` among manifest [files] entries.
+
+    A manifest [files] entry only ever justifies a NON-dot file (dot-files
+    go through ALLOWED_DOTFILES instead) -- a dot-file accidentally declared
+    in the manifest would be silently ignored by the check above, which
+    would hide a class mismatch rather than report it.
+    """
     misfiled_dotfiles = sorted(f for f in declared_files if f.startswith("."))
     stale_files = sorted(
-        f
-        for f in declared_files
-        if f not in root_files and f not in misfiled_dotfiles
+        f for f in declared_files if f not in root_files and f not in misfiled_dotfiles
+    )
+    return misfiled_dotfiles, stale_files
+
+
+def _classify_root_files(
+    root_files: set[str], declared_files: dict[str, str]
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Return ``(undeclared_dotfiles, undeclared_files, misfiled_dotfiles, stale_files)``."""
+    undeclared_dotfiles = _classify_root_dotfiles(root_files, declared_files)
+    undeclared_files = _classify_root_non_dotfiles(root_files, declared_files)
+    misfiled_dotfiles, stale_files = _classify_declared_files(root_files, declared_files)
+    return undeclared_dotfiles, undeclared_files, misfiled_dotfiles, stale_files
+
+
+def _classify_root_hygiene_violations(
+    paths: list[str],
+    root_files: set[str],
+    root_dirs: set[str],
+    declared_dirs: dict[str, str],
+    declared_files: dict[str, str],
+) -> RootHygieneViolations:
+    """Sort every tracked path into the violation category it belongs to.
+
+    Pure classification -- no printing -- so ``main()`` can decide what to do
+    with the result and a test can assert on it directly.
+    """
+    undeclared_dirs, stale_dirs = _classify_root_dirs(root_dirs, declared_dirs)
+    undeclared_dotfiles, undeclared_files, misfiled_dotfiles, stale_files = (
+        _classify_root_files(root_files, declared_files)
     )
 
-    ok = not (
-        forbidden_hits
-        or undeclared_dirs
-        or stale_dirs
-        or undeclared_dotfiles
-        or undeclared_files
-        or misfiled_dotfiles
-        or stale_files
+    return RootHygieneViolations(
+        forbidden_hits=_forbidden_ratchet_hits(paths),
+        undeclared_dirs=undeclared_dirs,
+        stale_dirs=stale_dirs,
+        undeclared_dotfiles=undeclared_dotfiles,
+        undeclared_files=undeclared_files,
+        misfiled_dotfiles=misfiled_dotfiles,
+        stale_files=stale_files,
     )
 
-    if ok:
-        print(
-            f"root hygiene: clean ({len(root_files)} root files, "
-            f"{len(root_dirs)} root dirs, {len(declared_dirs)} declared dirs, "
-            f"{len(declared_files)} declared files)"
-        )
-        return 0
 
-    print("FAIL: repository-root hygiene violations.\n")
+def _print_forbidden_ratchets(forbidden_hits: list[str]) -> None:
+    if not forbidden_hits:
+        return
+    print("  Self-installing ratchet config tracked anywhere in the tree:")
+    for p in forbidden_hits:
+        print(f"    FORBIDDEN  {p}")
+    print(
+        "    -> delete it and stop tracking it; add its name to .gitignore\n"
+        "       if it is not already there (check_gitignore_convergence.py\n"
+        "       enforces that for the shared REQUIRED set).\n"
+    )
 
-    if forbidden_hits:
-        print("  Self-installing ratchet config tracked anywhere in the tree:")
-        for p in forbidden_hits:
-            print(f"    FORBIDDEN  {p}")
-        print(
-            "    -> delete it and stop tracking it; add its name to .gitignore\n"
-            "       if it is not already there (check_gitignore_convergence.py\n"
-            "       enforces that for the shared REQUIRED set).\n"
-        )
 
-    for d in undeclared_dirs:
+def _print_violation_entries(v: RootHygieneViolations) -> None:
+    for d in v.undeclared_dirs:
         print(f"  DIR   {d}/  (undeclared)")
-    for f in undeclared_files:
+    for f in v.undeclared_files:
         print(f"  FILE  {f}  (undeclared)")
-    for f in undeclared_dotfiles:
+    for f in v.undeclared_dotfiles:
         print(f"  DOTFILE  {f}  (not in ALLOWED_DOTFILES or the manifest)")
-    for f in misfiled_dotfiles:
+    for f in v.misfiled_dotfiles:
         print(f"  FILE  {f}  (a dot-file was declared in [files]; add it to")
         print("           ALLOWED_DOTFILES in check_root_hygiene.py instead)")
-    for d in stale_dirs:
+    for d in v.stale_dirs:
         print(f"  DIR   {d}/  (declared in {MANIFEST_PATH.name} but no longer tracked)")
-    for f in stale_files:
+    for f in v.stale_files:
         print(f"  FILE  {f}  (declared in {MANIFEST_PATH.name} but no longer tracked)")
 
-    if undeclared_dirs or undeclared_files or undeclared_dotfiles:
+
+def _print_remediation_hints(v: RootHygieneViolations) -> None:
+    if v.undeclared_dirs or v.undeclared_files or v.undeclared_dotfiles:
         print(
             "\nPick the one that is true for each undeclared entry:\n"
             "  * it is scratch/proof output   -> delete it (it should never have been committed)\n"
@@ -293,14 +357,44 @@ def main() -> int:
             "    (dirs/files) or, for a conventional self-describing dot-file, to\n"
             "    ALLOWED_DOTFILES in scripts/check_root_hygiene.py\n"
         )
-    if stale_dirs or stale_files:
+    if v.stale_dirs or v.stale_files:
         print(
             "\nA declared .repo-layout.toml entry no longer exists in the tracked tree.\n"
             "Remove it from the manifest -- a stale entry is exactly the fiction this\n"
             "manifest exists to prevent (see its own header).\n"
         )
 
+
+def _report_violations(v: RootHygieneViolations) -> int:
+    print("FAIL: repository-root hygiene violations.\n")
+    _print_forbidden_ratchets(v.forbidden_hits)
+    _print_violation_entries(v)
+    _print_remediation_hints(v)
     return 1
+
+
+def main() -> int:
+    try:
+        declared_dirs, declared_files = load_manifest()
+    except ManifestError as exc:
+        print(f"FAIL: {exc}")
+        return 1
+
+    paths = _tracked_paths()
+    root_files, root_dirs = tracked_root_entries(paths)
+    violations = _classify_root_hygiene_violations(
+        paths, root_files, root_dirs, declared_dirs, declared_files
+    )
+
+    if violations.is_clean():
+        print(
+            f"root hygiene: clean ({len(root_files)} root files, "
+            f"{len(root_dirs)} root dirs, {len(declared_dirs)} declared dirs, "
+            f"{len(declared_files)} declared files)"
+        )
+        return 0
+
+    return _report_violations(violations)
 
 
 if __name__ == "__main__":

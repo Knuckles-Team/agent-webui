@@ -64,6 +64,8 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import tomllib
@@ -124,6 +126,43 @@ def _self_ref_extras(item: str, package_name: str) -> list[str] | None:
     return [e.strip() for e in m.group('extras').split(',') if e.strip()]
 
 
+def _extra_dependency_items(
+    pyproject: Path, opt_deps: dict[str, list[str]], extra: str
+) -> list[str]:
+    """Return the raw dependency-string items declared under `extra`,
+    refusing (fail-closed) if `extra` names no optional-dependencies entry."""
+    if extra not in opt_deps:
+        raise SystemExit(
+            f"::error::check_eg_pypi_resolvable: --extras named '{extra}', "
+            f'which is not an entry in [project.optional-dependencies] of '
+            f'{pyproject}. Available extras: {", ".join(sorted(opt_deps))}.'
+        )
+    return opt_deps[extra]
+
+
+@dataclass
+class _ClosureState:
+    """The three collections `_closure_dependency_strings`' worklist walk
+    threads through -- one typed object instead of three loose mutable
+    parameters passed down to the per-extra step."""
+
+    collected: list[str]
+    visited: set[str]
+    worklist: list[str]
+
+
+def _absorb_extra(
+    pyproject: Path, package_name: str, opt_deps: dict[str, list[str]], extra: str, state: _ClosureState
+) -> None:
+    """Append `extra`'s own dependency strings to `state.collected`, and
+    queue any self-referencing sub-extra it pulls in onto `state.worklist`."""
+    for item in _extra_dependency_items(pyproject, opt_deps, extra):
+        state.collected.append(item)
+        sub_extras = _self_ref_extras(item, package_name)
+        if sub_extras:
+            state.worklist.extend(e for e in sub_extras if e not in state.visited)
+
+
 def _closure_dependency_strings(pyproject: Path, extras: list[str]) -> list[str]:
     """Return base dependencies plus the transitive closure of `extras`'
     dependency strings, resolving self-referencing `<package>[...]` entries
@@ -132,29 +171,20 @@ def _closure_dependency_strings(pyproject: Path, extras: list[str]) -> list[str]
         data = tomllib.load(fh)
     project = data.get('project', {})
     package_name = project.get('name', '')
-    base_deps: list[str] = list(project.get('dependencies', []))
     opt_deps: dict[str, list[str]] = project.get('optional-dependencies', {})
 
-    collected: list[str] = list(base_deps)
-    visited: set[str] = set()
-    worklist: list[str] = list(extras)
-    while worklist:
-        extra = worklist.pop()
-        if extra in visited:
+    state = _ClosureState(
+        collected=list(project.get('dependencies', [])),
+        visited=set(),
+        worklist=list(extras),
+    )
+    while state.worklist:
+        extra = state.worklist.pop()
+        if extra in state.visited:
             continue
-        visited.add(extra)
-        if extra not in opt_deps:
-            raise SystemExit(
-                f"::error::check_eg_pypi_resolvable: --extras named '{extra}', "
-                f'which is not an entry in [project.optional-dependencies] of '
-                f'{pyproject}. Available extras: {", ".join(sorted(opt_deps))}.'
-            )
-        for item in opt_deps[extra]:
-            collected.append(item)
-            sub_extras = _self_ref_extras(item, package_name)
-            if sub_extras:
-                worklist.extend(e for e in sub_extras if e not in visited)
-    return collected
+        state.visited.add(extra)
+        _absorb_extra(pyproject, package_name, opt_deps, extra, state)
+    return state.collected
 
 
 def _find_constraint_scoped(
@@ -170,6 +200,28 @@ def _find_constraint_scoped(
     return None
 
 
+_OP_SATISFIED: dict[str, Callable[[int], bool]] = {
+    '>=': lambda c: c >= 0,
+    '<=': lambda c: c <= 0,
+    '==': lambda c: c == 0,
+    '<': lambda c: c < 0,
+    '>': lambda c: c > 0,
+    '!=': lambda c: c != 0,
+}
+
+
+def _clause_satisfied(op: str, c: int) -> bool:
+    """Whether a three-way compare result `c` satisfies operator `op`.
+
+    `_CLAUSE_RE` only ever captures one of `_OP_SATISFIED`'s keys, so an
+    unrecognized `op` cannot occur; treated as trivially satisfied rather
+    than raising, so a future new operator degrades to "not checked" instead
+    of crashing this release gate.
+    """
+    check = _OP_SATISFIED.get(op)
+    return check(c) if check is not None else True
+
+
 def _satisfies(version: str, spec: str) -> bool:
     try:
         v = _version_tuple(version)
@@ -180,18 +232,7 @@ def _satisfies(version: str, spec: str) -> bool:
             bound = _version_tuple(bound_raw)
         except ValueError:
             continue
-        c = _cmp(v, bound)
-        if op == '>=' and not (c >= 0):
-            return False
-        if op == '<=' and not (c <= 0):
-            return False
-        if op == '==' and not (c == 0):
-            return False
-        if op == '<' and not (c < 0):
-            return False
-        if op == '>' and not (c > 0):
-            return False
-        if op == '!=' and not (c != 0):
+        if not _clause_satisfied(op, _cmp(v, bound)):
             return False
     return True
 
@@ -253,39 +294,25 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv[1:])
 
 
-def main(argv: list[str]) -> int:
-    args = _parse_args(argv)
-
-    pyproject = Path(args.pyproject)
-    if not pyproject.is_file():
+def _resolve_epistemic_graph_constraint(
+    pyproject: Path, extras: list[str] | None
+) -> tuple[str, str] | None:
+    """Return `(name, spec)` for the declared epistemic-graph constraint, or
+    `None` if there is nothing to verify (already printed why)."""
+    if extras is None:
+        return _find_constraint(pyproject)
+    found = _find_constraint_scoped(pyproject, extras)
+    if found is None:
         print(
-            f'::error::check_eg_pypi_resolvable: no such file: {pyproject}',
-            file=sys.stderr,
+            'check_eg_pypi_resolvable: OK -- none of the requested extras '
+            f"({', '.join(extras)}) pull in 'epistemic-graph'; nothing to "
+            'verify.'
         )
-        return 66
+        return None
+    return found
 
-    if args.extras is not None:
-        extras = [e.strip() for e in args.extras.split(',') if e.strip()]
-        found = _find_constraint_scoped(pyproject, extras)
-        if found is None:
-            print(
-                'check_eg_pypi_resolvable: OK -- none of the requested extras '
-                f"({', '.join(extras)}) pull in 'epistemic-graph'; nothing to "
-                'verify.'
-            )
-            return 0
-        name, spec = found
-    else:
-        name, spec = _find_constraint(pyproject)
 
-    if not spec:
-        print(
-            f"check_eg_pypi_resolvable: OK -- '{name}' has no version constraint; "
-            'nothing to verify.'
-        )
-        return 0
-
-    versions_raw = _fetch_versions(name)
+def _valid_published_versions(versions_raw: list[str]) -> list[str]:
     valid_versions = []
     for v in versions_raw:
         try:
@@ -293,18 +320,10 @@ def main(argv: list[str]) -> int:
         except ValueError:
             continue
         valid_versions.append(v)
+    return valid_versions
 
-    matching = sorted(
-        (v for v in valid_versions if _satisfies(v, spec)),
-        key=_version_tuple,
-    )
-    if matching:
-        print(
-            f'check_eg_pypi_resolvable: OK -- {name}=={matching[-1]} on PyPI '
-            f"satisfies the declared constraint '{spec}'."
-        )
-        return 0
 
+def _report_unsatisfied_constraint(name: str, spec: str, valid_versions: list[str]) -> None:
     newest = max(valid_versions, key=_version_tuple) if valid_versions else None
     print(
         f'::error::check_eg_pypi_resolvable: agent-utilities requires '
@@ -317,7 +336,54 @@ def main(argv: list[str]) -> int:
         'it, then re-run this workflow.',
         file=sys.stderr,
     )
+
+
+def _verify_constraint_against_pypi(name: str, spec: str) -> int:
+    versions_raw = _fetch_versions(name)
+    valid_versions = _valid_published_versions(versions_raw)
+    matching = sorted(
+        (v for v in valid_versions if _satisfies(v, spec)),
+        key=_version_tuple,
+    )
+    if matching:
+        print(
+            f'check_eg_pypi_resolvable: OK -- {name}=={matching[-1]} on PyPI '
+            f"satisfies the declared constraint '{spec}'."
+        )
+        return 0
+    _report_unsatisfied_constraint(name, spec, valid_versions)
     return 1
+
+
+def main(argv: list[str]) -> int:
+    args = _parse_args(argv)
+
+    pyproject = Path(args.pyproject)
+    if not pyproject.is_file():
+        print(
+            f'::error::check_eg_pypi_resolvable: no such file: {pyproject}',
+            file=sys.stderr,
+        )
+        return 66
+
+    extras = (
+        [e.strip() for e in args.extras.split(',') if e.strip()]
+        if args.extras is not None
+        else None
+    )
+    constraint = _resolve_epistemic_graph_constraint(pyproject, extras)
+    if constraint is None:
+        return 0
+    name, spec = constraint
+
+    if not spec:
+        print(
+            f"check_eg_pypi_resolvable: OK -- '{name}' has no version constraint; "
+            'nothing to verify.'
+        )
+        return 0
+
+    return _verify_constraint_against_pypi(name, spec)
 
 
 if __name__ == '__main__':
