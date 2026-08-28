@@ -48,7 +48,6 @@ import { getDefaultPageActions, PageContextProvider, type PageContextSelection }
 // Lazy: only reachable behind `isObjectDetail`. A static import here pinned it
 // into the entry chunk and defeated nav-registry's dynamic import of the same
 // module (vite: "dynamically imported ... but also statically imported").
-const ObjectView = lazy(() => import('./components/views/ObjectView'))
 
 /**
  * Global React Query client instance for managing server state.
