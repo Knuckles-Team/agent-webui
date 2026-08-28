@@ -170,34 +170,52 @@ class StructuredLogFormatter(logging.Formatter):
         super().__init__()
         self._json_mode = json_mode
 
-    def format(self, record: logging.LogRecord) -> str:
-        message = record.getMessage()
-        correlation_id = current_correlation_id()
-        extras = {
+    @staticmethod
+    def _record_extras(record: logging.LogRecord) -> dict[str, Any]:
+        return {
             key: value
             for key, value in record.__dict__.items()
             if key not in _RESERVED_RECORD_ATTRS and not key.startswith('_')
         }
-        exception_text = None
-        if record.exc_info:
-            exception_text = sanitize_text(
-                ''.join(traceback.format_exception(*record.exc_info))
-            )
-        timestamp = self.formatTime(record, '%Y-%m-%dT%H:%M:%S')
 
-        if self._json_mode:
-            payload: dict[str, Any] = {
-                'timestamp': timestamp,
-                'level': record.levelname,
-                'logger': record.name,
-                'message': message,
-                'correlation_id': correlation_id,
-            }
-            payload.update(extras)
-            if exception_text:
-                payload['exception'] = exception_text
-            return json.dumps(payload, default=str)
+    @staticmethod
+    def _record_exception_text(record: logging.LogRecord) -> str | None:
+        if not record.exc_info:
+            return None
+        return sanitize_text(''.join(traceback.format_exception(*record.exc_info)))
 
+    @staticmethod
+    def _format_json(
+        *,
+        timestamp: str,
+        record: logging.LogRecord,
+        message: str,
+        correlation_id: str | None,
+        extras: dict[str, Any],
+        exception_text: str | None,
+    ) -> str:
+        payload: dict[str, Any] = {
+            'timestamp': timestamp,
+            'level': record.levelname,
+            'logger': record.name,
+            'message': message,
+            'correlation_id': correlation_id,
+        }
+        payload.update(extras)
+        if exception_text:
+            payload['exception'] = exception_text
+        return json.dumps(payload, default=str)
+
+    @staticmethod
+    def _format_text(
+        *,
+        timestamp: str,
+        record: logging.LogRecord,
+        message: str,
+        correlation_id: str | None,
+        extras: dict[str, Any],
+        exception_text: str | None,
+    ) -> str:
         line = (
             f'{timestamp} {record.levelname:<8} {record.name} '
             f'correlation_id={correlation_id or "-"} {message}'
@@ -207,6 +225,23 @@ class StructuredLogFormatter(logging.Formatter):
         if exception_text:
             line += '\n' + exception_text
         return line
+
+    def format(self, record: logging.LogRecord) -> str:
+        message = record.getMessage()
+        correlation_id = current_correlation_id()
+        extras = self._record_extras(record)
+        exception_text = self._record_exception_text(record)
+        timestamp = self.formatTime(record, '%Y-%m-%dT%H:%M:%S')
+
+        render = self._format_json if self._json_mode else self._format_text
+        return render(
+            timestamp=timestamp,
+            record=record,
+            message=message,
+            correlation_id=correlation_id,
+            extras=extras,
+            exception_text=exception_text,
+        )
 
 
 def configure_logging() -> None:
