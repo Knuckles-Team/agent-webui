@@ -145,22 +145,11 @@ function isValidToolDescriptor(value: unknown): value is McpToolDescriptor {
   )
 }
 
-/**
- * Fetch and bound-validate one server's governed tool catalog.
- *
- * Never throws on a malformed *entry* — an individual null/wrong-typed/
- * duplicate-named item is dropped rather than failing the whole catalog, so
- * one bad tool descriptor cannot blank the list. Throws {@link McpClientError}
- * only when the backend itself refuses the request (missing delegation,
- * policy denial, transport failure) or the top-level response is not a JSON
- * array, so a caller can distinguish "no catalog" from "empty catalog".
- * Caps the result at {@link MAX_CATALOG_TOOLS}, matching the lane's bounded
- * per-page budget — this is a page guard, not pagination.
- */
-export async function fetchMcpServerTools(
+/** Issue the tool-catalog GET and validate the HTTP-level response, wrapping both failure modes. */
+async function fetchToolCatalogResponse(
   server: string,
-  options: { signal?: AbortSignal; offset?: number; limit?: number } = {},
-): Promise<McpToolDescriptor[]> {
+  options: { signal?: AbortSignal; offset?: number; limit?: number },
+): Promise<Response> {
   let res: Response
   try {
     // Ask for this module's whole documented budget in ONE page. Without an
@@ -182,6 +171,11 @@ export async function fetchMcpServerTools(
       { status: res.status },
     )
   }
+  return res
+}
+
+/** Parse the tool-catalog response body into raw (unvalidated) tool entries. */
+async function parseToolCatalogPayload(server: string, res: Response): Promise<unknown[]> {
   let payload: unknown
   try {
     payload = await res.json()
@@ -192,6 +186,11 @@ export async function fetchMcpServerTools(
   if (total === null && !Array.isArray(payload)) {
     throw new McpClientError(`MCP tool catalog response for "${server}" was not a tool page`)
   }
+  return entries
+}
+
+/** Drop invalid/duplicate-named entries and cap the result at the catalog budget. */
+function dedupeValidTools(entries: unknown[]): McpToolDescriptor[] {
   const seen = new Set<string>()
   const validated: McpToolDescriptor[] = []
   for (const entry of entries) {
@@ -202,6 +201,27 @@ export async function fetchMcpServerTools(
     if (validated.length >= MAX_CATALOG_TOOLS) break
   }
   return validated
+}
+
+/**
+ * Fetch and bound-validate one server's governed tool catalog.
+ *
+ * Never throws on a malformed *entry* — an individual null/wrong-typed/
+ * duplicate-named item is dropped rather than failing the whole catalog, so
+ * one bad tool descriptor cannot blank the list. Throws {@link McpClientError}
+ * only when the backend itself refuses the request (missing delegation,
+ * policy denial, transport failure) or the top-level response is not a JSON
+ * array, so a caller can distinguish "no catalog" from "empty catalog".
+ * Caps the result at {@link MAX_CATALOG_TOOLS}, matching the lane's bounded
+ * per-page budget — this is a page guard, not pagination.
+ */
+export async function fetchMcpServerTools(
+  server: string,
+  options: { signal?: AbortSignal; offset?: number; limit?: number } = {},
+): Promise<McpToolDescriptor[]> {
+  const res = await fetchToolCatalogResponse(server, options)
+  const entries = await parseToolCatalogPayload(server, res)
+  return dedupeValidTools(entries)
 }
 
 /** Unwrap the canonical `{status, result}` action-twin envelope when present. */

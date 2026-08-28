@@ -40,7 +40,13 @@
  *    rolling one-second window.
  */
 
-import type { McpAppInboundMessage, McpAppOutboundMessage, McpAppToolCaller, McpAppToolPolicy } from './types'
+import type {
+  McpAppInboundMessage,
+  McpAppOutboundMessage,
+  McpAppToolCallMessage,
+  McpAppToolCaller,
+  McpAppToolPolicy,
+} from './types'
 
 /** Bound: the maximum number of `mcpapp/tool-call` requests this bridge will
  * have outstanding to the real MCP client at once (lane budget: <=8). A call
@@ -114,50 +120,21 @@ export function attachMcpAppBridge(options: McpAppBridgeOptions): () => void {
     post(message)
   }
 
-  const handleMessage = (event: MessageEvent<unknown>): void => {
-    if (event.source !== frameWindow) return
-
-    if (!withinRateLimit()) {
-      const message = parseOutboundMessage(event.data)
-      if (message?.type === 'mcpapp/tool-call') {
-        post({
-          type: 'mcpapp/tool-error',
-          id: message.id,
-          error: { message: 'This app is sending requests too quickly and was throttled.' },
-        })
-      }
-      onRefused?.('rate limited: too many messages per second')
-      return
-    }
-
+  /** Refuse a message that arrived over the rate limit -- a typed error for a tool-call, a bare refusal otherwise. */
+  const handleRateLimited = (event: MessageEvent<unknown>): void => {
     const message = parseOutboundMessage(event.data)
-    if (!message) {
-      onRefused?.('malformed message')
-      return
-    }
-    if (message.type === 'mcpapp/ready') {
-      post({ type: 'mcpapp/init', props: initProps })
-      return
-    }
-    if (!policy(message.name)) {
+    if (message?.type === 'mcpapp/tool-call') {
       post({
         type: 'mcpapp/tool-error',
         id: message.id,
-        error: { message: `Tool "${message.name}" is not permitted for this app.` },
+        error: { message: 'This app is sending requests too quickly and was throttled.' },
       })
-      onRefused?.(`denied by policy: ${message.name}`)
-      return
     }
-    if (inFlight.size >= MAX_INFLIGHT_CALLS) {
-      post({
-        type: 'mcpapp/tool-error',
-        id: message.id,
-        error: { message: `Too many tool calls in flight (max ${String(MAX_INFLIGHT_CALLS)}); try again shortly.` },
-      })
-      onRefused?.(`too many in-flight calls: ${message.name}`)
-      return
-    }
+    onRefused?.('rate limited: too many messages per second')
+  }
 
+  /** Actually run the call: register its timeout slot, invoke the real MCP client, and settle on whichever lands first. */
+  const runToolCall = (message: McpAppToolCallMessage): void => {
     const { id, name, arguments: args } = message
     const timer = setTimeout(() => {
       settleCall(id, {
@@ -179,6 +156,49 @@ export function attachMcpAppBridge(options: McpAppBridgeOptions): () => void {
           error: { message: error instanceof Error ? error.message : String(error) },
         })
       })
+  }
+
+  /** Gate a `mcpapp/tool-call` message on policy + the in-flight ceiling, then run it. */
+  const handleToolCallMessage = (message: McpAppToolCallMessage): void => {
+    if (!policy(message.name)) {
+      post({
+        type: 'mcpapp/tool-error',
+        id: message.id,
+        error: { message: `Tool "${message.name}" is not permitted for this app.` },
+      })
+      onRefused?.(`denied by policy: ${message.name}`)
+      return
+    }
+    if (inFlight.size >= MAX_INFLIGHT_CALLS) {
+      post({
+        type: 'mcpapp/tool-error',
+        id: message.id,
+        error: { message: `Too many tool calls in flight (max ${String(MAX_INFLIGHT_CALLS)}); try again shortly.` },
+      })
+      onRefused?.(`too many in-flight calls: ${message.name}`)
+      return
+    }
+    runToolCall(message)
+  }
+
+  const handleMessage = (event: MessageEvent<unknown>): void => {
+    if (event.source !== frameWindow) return
+
+    if (!withinRateLimit()) {
+      handleRateLimited(event)
+      return
+    }
+
+    const message = parseOutboundMessage(event.data)
+    if (!message) {
+      onRefused?.('malformed message')
+      return
+    }
+    if (message.type === 'mcpapp/ready') {
+      post({ type: 'mcpapp/init', props: initProps })
+      return
+    }
+    handleToolCallMessage(message)
   }
 
   window.addEventListener('message', handleMessage)

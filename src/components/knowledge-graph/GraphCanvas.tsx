@@ -152,54 +152,33 @@ export function compositeSigmaCanvasesToPngDataUrl(
   return out.toDataURL('image/png')
 }
 
-export const GraphCanvas: React.FC<GraphCanvasProps> = ({
-  nodes,
-  relationships,
-  onUpdateNode,
-  onDeleteNode,
-  onAddNode,
-  selectedNodeExternally,
-  onSelectNode,
-  expiredEdges,
-  expiredEdgeColor = '#4b5563',
-}) => {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const sigmaRef = useRef<Sigma<SigmaNodeAttributes, SigmaEdgeAttributes> | null>(null)
-  const [graph, setGraph] = useState<Graph<SigmaNodeAttributes, SigmaEdgeAttributes> | null>(null)
-  const [isLayoutRunning, setIsLayoutRunning] = useState(false)
-  // Live theme: drives node/edge/label colors below and re-renders the
-  // canvas the instant the user (or the system) toggles dark/light — see
-  // theme-colors.ts's module doc for why sigma needs this pushed to it
-  // explicitly (it draws on raw <canvas>, which can't see CSS variables).
-  const isDark = useIsDarkMode()
+// ── Renderer mode seam (D-VZ-1/GOC-88 KG-view adoption) ────────────────────
+// Below GRAPH_ENGINE_RENDER_NODE_THRESHOLD, sigma's client-side force layout
+// stays the default (full interactivity: hover/click/drag/select). Above it,
+// the client-side layout degrades the same way the engine's own layout
+// switches strategy, so the engine's at-scale render is RECOMMENDED — but
+// never silently substituted: today the engine can only render caller-
+// supplied graph nodes WITHOUT edges (see engineGraphRender.ts's module doc
+// for the confirmed wire-contract reason), so switching modes is an
+// explicit, visibly-labeled user action, never automatic. This is the seam
+// the interactive WebGPU render path (owned by another lane) plugs into.
+type RenderMode = 'interactive' | 'engine-preview'
 
-  // ── Renderer mode seam (D-VZ-1/GOC-88 KG-view adoption) ──────────────────
-  // Below GRAPH_ENGINE_RENDER_NODE_THRESHOLD, sigma's client-side force layout
-  // stays the default (full interactivity: hover/click/drag/select). Above
-  // it, the client-side layout degrades the same way the engine's own layout
-  // switches strategy, so the engine's at-scale render is RECOMMENDED — but
-  // never silently substituted: today the engine can only render caller-
-  // supplied graph nodes WITHOUT edges (see engineGraphRender.ts's module
-  // doc for the confirmed wire-contract reason), so switching modes is an
-  // explicit, visibly-labeled user action, never automatic. This is the seam
-  // the interactive WebGPU render path (owned by another lane) plugs into.
-  type RenderMode = 'interactive' | 'engine-preview'
-  const recommendedMode: RenderMode =
-    nodes.length > GRAPH_ENGINE_RENDER_NODE_THRESHOLD ? 'engine-preview' : 'interactive'
-  const [modeOverride, setModeOverride] = useState<'auto' | RenderMode>('auto')
-  const effectiveMode: RenderMode = modeOverride === 'auto' ? recommendedMode : modeOverride
-  type EnginePreviewState =
-    | { status: 'idle' }
-    | { status: 'loading' }
-    | { status: 'unavailable'; detail: string }
-    | { status: 'no-data' }
-    | { status: 'error'; message: string }
-    | { status: 'ready'; dataUrl: string; rowCount: number }
+type EnginePreviewState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'unavailable'; detail: string }
+  | { status: 'no-data' }
+  | { status: 'error'; message: string }
+  | { status: 'ready'; dataUrl: string; rowCount: number }
+
+/** Own the engine-preview render's async lifecycle: trigger it, and reset it whenever it would go stale. */
+function useEnginePreview(nodeCount: number, effectiveMode: RenderMode) {
   const [enginePreview, setEnginePreview] = useState<EnginePreviewState>({ status: 'idle' })
 
   const runEnginePreview = async () => {
     setEnginePreview({ status: 'loading' })
-    const r = await renderGraphNodesOnlyViaEngine(nodes.length, { title: 'Knowledge graph — node overview' })
+    const r = await renderGraphNodesOnlyViaEngine(nodeCount, { title: 'Knowledge graph — node overview' })
     if (r.unavailable) {
       setEnginePreview({ status: 'unavailable', detail: r.error ?? '/graph/viz is not activated on this backend' })
       return
@@ -225,7 +204,41 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
   // previous graph must never linger under a "ready" caption.
   useEffect(() => {
     setEnginePreview({ status: 'idle' })
-  }, [nodes.length, effectiveMode])
+  }, [nodeCount, effectiveMode])
+
+  return { enginePreview, runEnginePreview }
+}
+
+interface UseSigmaGraphParams {
+  nodes: GraphNode[]
+  relationships: GraphRelationship[]
+  effectiveMode: RenderMode
+  isDark: boolean
+  onSelectNode: (node: GraphNode | null) => void
+  expiredEdges?: ReadonlySet<string>
+  expiredEdgeColor: string
+}
+
+/**
+ * Own the Sigma instance's full lifecycle: graph construction, sigma
+ * construction/update, the edge-reducer/theme/expiry refs it reads live, and
+ * the force-atlas2 layout pass. Same refs, same effects, same dependency
+ * arrays as before this was a hook -- only where the state lives moved.
+ */
+function useSigmaGraph({
+  nodes,
+  relationships,
+  effectiveMode,
+  isDark,
+  onSelectNode,
+  expiredEdges,
+  expiredEdgeColor,
+}: UseSigmaGraphParams) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const sigmaRef = useRef<Sigma<SigmaNodeAttributes, SigmaEdgeAttributes> | null>(null)
+  const [graph, setGraph] = useState<Graph<SigmaNodeAttributes, SigmaEdgeAttributes> | null>(null)
+  const [isLayoutRunning, setIsLayoutRunning] = useState(false)
+
   // Keep the expired-edge set in a ref so the Sigma edge reducer (registered
   // once at construction) always reads the latest scrubber position without
   // re-creating the renderer.
@@ -374,6 +387,121 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
     }
   }, [graph, isLayoutRunning])
 
+  return { containerRef, sigmaRef, setIsLayoutRunning }
+}
+
+interface EnginePreviewPaneProps {
+  nodeCount: number
+  enginePreview: EnginePreviewState
+  onRunPreview: () => void
+}
+
+/** The engine at-scale render mode's overlay: warning, trigger, and one state-typed result pane. */
+function EnginePreviewPane({ nodeCount, enginePreview, onRunPreview }: EnginePreviewPaneProps): React.ReactElement {
+  return (
+    <div className="absolute inset-0 z-10 flex items-center justify-center p-6 bg-card">
+      <div className="max-w-lg w-full space-y-3 text-sm">
+        <div className="rounded-md border border-amber-500/50 bg-amber-50/10 p-3 flex items-start gap-2">
+          <span aria-hidden className="mt-0.5">
+            ⚠
+          </span>
+          <p className="text-foreground">
+            {String(nodeCount)} nodes exceeds the interactive layout's recommended size. The engine's graph-native
+            render surface can preview node positions at scale, but{' '}
+            <strong>cannot yet accept the graph&apos;s edges</strong> — a real, currently-open engine wire-contract
+            limitation (only one dataset per render request; see{' '}
+            <span className="font-mono">engineGraphRender.ts</span>), not a bug in this view. A preview never looks
+            like a complete graph: it renders nodes only, and says so.
+          </p>
+        </div>
+
+        {enginePreview.status === 'idle' ? (
+          <div className="flex gap-2">
+            <button
+              data-testid="graph-engine-preview-run"
+              onClick={onRunPreview}
+              className="bg-slate-800 text-white px-3 py-2 rounded shadow hover:bg-slate-700 text-sm"
+            >
+              Preview node positions (engine, no edges)
+            </button>
+          </div>
+        ) : enginePreview.status === 'loading' ? (
+          <p className="text-muted-foreground">Rendering…</p>
+        ) : enginePreview.status === 'unavailable' ? (
+          <div
+            data-testid="graph-engine-preview-unavailable"
+            className="rounded-md border border-amber-500/50 bg-amber-50/10 p-3 text-foreground"
+          >
+            The <span className="font-mono">/graph/viz</span> route is not activated on this backend yet.{' '}
+            {enginePreview.detail}
+          </div>
+        ) : enginePreview.status === 'no-data' ? (
+          <div
+            data-testid="graph-engine-preview-no-data"
+            className="rounded-md border border-amber-500/50 bg-amber-50/10 p-3 text-foreground"
+          >
+            The engine returned zero rendered nodes for this dataset — not a fabricated empty image.
+          </div>
+        ) : enginePreview.status === 'error' ? (
+          <pre
+            data-testid="graph-engine-preview-error"
+            className="rounded border border-destructive/50 bg-destructive/10 p-3 text-xs text-red-200 whitespace-pre-wrap break-words"
+          >
+            {enginePreview.message}
+          </pre>
+        ) : (
+          <div className="space-y-2">
+            <img
+              src={enginePreview.dataUrl}
+              alt={`Engine node-position preview of ${String(enginePreview.rowCount)} nodes (no edges)`}
+              className="max-w-full rounded-md border border-border"
+              data-testid="graph-engine-preview-image"
+            />
+            <p className="text-slate-400 text-xs">
+              Engine preview — {enginePreview.rowCount.toLocaleString()} node positions only, edges omitted (engine
+              limitation, not this graph's real topology).
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export const GraphCanvas: React.FC<GraphCanvasProps> = ({
+  nodes,
+  relationships,
+  onUpdateNode,
+  onDeleteNode,
+  onAddNode,
+  selectedNodeExternally,
+  onSelectNode,
+  expiredEdges,
+  expiredEdgeColor = '#4b5563',
+}) => {
+  // Live theme: drives node/edge/label colors below and re-renders the
+  // canvas the instant the user (or the system) toggles dark/light — see
+  // theme-colors.ts's module doc for why sigma needs this pushed to it
+  // explicitly (it draws on raw <canvas>, which can't see CSS variables).
+  const isDark = useIsDarkMode()
+
+  const recommendedMode: RenderMode =
+    nodes.length > GRAPH_ENGINE_RENDER_NODE_THRESHOLD ? 'engine-preview' : 'interactive'
+  const [modeOverride, setModeOverride] = useState<'auto' | RenderMode>('auto')
+  const effectiveMode: RenderMode = modeOverride === 'auto' ? recommendedMode : modeOverride
+
+  const { enginePreview, runEnginePreview } = useEnginePreview(nodes.length, effectiveMode)
+
+  const { containerRef, sigmaRef, setIsLayoutRunning } = useSigmaGraph({
+    nodes,
+    relationships,
+    effectiveMode,
+    isDark,
+    onSelectNode,
+    expiredEdges,
+    expiredEdgeColor,
+  })
+
   const downloadPng = () => {
     if (!sigmaRef.current) return
     // Match the exported PNG's background to whatever the canvas is
@@ -484,74 +612,13 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
           />
         </>
       ) : (
-        <div className="absolute inset-0 z-10 flex items-center justify-center p-6 bg-card">
-          <div className="max-w-lg w-full space-y-3 text-sm">
-            <div className="rounded-md border border-amber-500/50 bg-amber-50/10 p-3 flex items-start gap-2">
-              <span aria-hidden className="mt-0.5">
-                ⚠
-              </span>
-              <p className="text-foreground">
-                {String(nodes.length)} nodes exceeds the interactive layout's recommended size. The engine's
-                graph-native render surface can preview node positions at scale, but{' '}
-                <strong>cannot yet accept the graph&apos;s edges</strong> — a real, currently-open engine wire-
-                contract limitation (only one dataset per render request; see{' '}
-                <span className="font-mono">engineGraphRender.ts</span>), not a bug in this view. A preview never looks
-                like a complete graph: it renders nodes only, and says so.
-              </p>
-            </div>
-
-            {enginePreview.status === 'idle' ? (
-              <div className="flex gap-2">
-                <button
-                  data-testid="graph-engine-preview-run"
-                  onClick={() => {
-                    void runEnginePreview()
-                  }}
-                  className="bg-slate-800 text-white px-3 py-2 rounded shadow hover:bg-slate-700 text-sm"
-                >
-                  Preview node positions (engine, no edges)
-                </button>
-              </div>
-            ) : enginePreview.status === 'loading' ? (
-              <p className="text-muted-foreground">Rendering…</p>
-            ) : enginePreview.status === 'unavailable' ? (
-              <div
-                data-testid="graph-engine-preview-unavailable"
-                className="rounded-md border border-amber-500/50 bg-amber-50/10 p-3 text-foreground"
-              >
-                The <span className="font-mono">/graph/viz</span> route is not activated on this backend yet.{' '}
-                {enginePreview.detail}
-              </div>
-            ) : enginePreview.status === 'no-data' ? (
-              <div
-                data-testid="graph-engine-preview-no-data"
-                className="rounded-md border border-amber-500/50 bg-amber-50/10 p-3 text-foreground"
-              >
-                The engine returned zero rendered nodes for this dataset — not a fabricated empty image.
-              </div>
-            ) : enginePreview.status === 'error' ? (
-              <pre
-                data-testid="graph-engine-preview-error"
-                className="rounded border border-destructive/50 bg-destructive/10 p-3 text-xs text-red-200 whitespace-pre-wrap break-words"
-              >
-                {enginePreview.message}
-              </pre>
-            ) : (
-              <div className="space-y-2">
-                <img
-                  src={enginePreview.dataUrl}
-                  alt={`Engine node-position preview of ${String(enginePreview.rowCount)} nodes (no edges)`}
-                  className="max-w-full rounded-md border border-border"
-                  data-testid="graph-engine-preview-image"
-                />
-                <p className="text-slate-400 text-xs">
-                  Engine preview — {enginePreview.rowCount.toLocaleString()} node positions only, edges omitted (engine
-                  limitation, not this graph's real topology).
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
+        <EnginePreviewPane
+          nodeCount={nodes.length}
+          enginePreview={enginePreview}
+          onRunPreview={() => {
+            void runEnginePreview()
+          }}
+        />
       )}
     </div>
   )

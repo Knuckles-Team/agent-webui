@@ -128,14 +128,15 @@ const EMPTY_MODEL: Graph3DModel = {
   indexById: new Map(),
 }
 
-/** Build the derived model. Malformed edges are dropped, never thrown on. */
-export function buildModel(payload: Graph3DPayload): Graph3DModel {
-  const nodeCount = payload.nodes.length
-  if (nodeCount === 0) return EMPTY_MODEL
+interface CsrAdjacency {
+  degree: Uint32Array
+  adjOffset: Uint32Array
+  adjTarget: Uint32Array
+  adjEdge: Uint32Array
+}
 
-  const edges = payload.edges.filter((e) => e.s >= 0 && e.s < nodeCount && e.t >= 0 && e.t < nodeCount && e.s !== e.t)
-
-  // ── degree + CSR adjacency (two passes, no per-node arrays) ────────────
+/** Two-pass CSR (compressed sparse row) adjacency build -- no per-node arrays. */
+function buildCsrAdjacency(nodeCount: number, edges: Graph3DEdge[]): CsrAdjacency {
   const degree = new Uint32Array(nodeCount)
   for (const e of edges) {
     degree[e.s] += 1
@@ -155,20 +156,51 @@ export function buildModel(payload: Graph3DPayload): Graph3DModel {
     adjEdge[cursor[e.t]] = k
     cursor[e.t] += 1
   }
+  return { degree, adjOffset, adjTarget, adjEdge }
+}
 
-  // ── type vocabularies, ordered by frequency so the legend reads well ───
+interface TypeVocabulary {
+  types: string[]
+  typeCount: number[]
+  typeIndex: Uint16Array
+}
+
+/** Distinct node types, most frequent first (so the legend reads well), plus each node's index into that list. */
+function buildTypeVocabulary(nodes: Graph3DNode[]): TypeVocabulary {
+  const nodeCount = nodes.length
   const typeTally = new Map<string, number>()
-  for (const n of payload.nodes) typeTally.set(n.type, (typeTally.get(n.type) ?? 0) + 1)
+  for (const n of nodes) typeTally.set(n.type, (typeTally.get(n.type) ?? 0) + 1)
   const typeEntries = [...typeTally.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
   const types = typeEntries.map(([t]) => t)
   const typeCount = typeEntries.map(([, c]) => c)
   const typeSlot = new Map(types.map((t, i) => [t, i]))
   const typeIndex = new Uint16Array(nodeCount)
-  for (let i = 0; i < nodeCount; i += 1) typeIndex[i] = typeSlot.get(payload.nodes[i].type) ?? 0
+  for (let i = 0; i < nodeCount; i += 1) typeIndex[i] = typeSlot.get(nodes[i].type) ?? 0
+  return { types, typeCount, typeIndex }
+}
 
+interface RelTypeVocabulary {
+  relTypes: string[]
+  relTypeCount: number[]
+}
+
+/** Distinct relationship types, most frequent first. */
+function buildRelTypeVocabulary(edges: Graph3DEdge[]): RelTypeVocabulary {
   const relTally = new Map<string, number>()
   for (const e of edges) relTally.set(e.r, (relTally.get(e.r) ?? 0) + 1)
   const relEntries = [...relTally.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  return { relTypes: relEntries.map(([t]) => t), relTypeCount: relEntries.map(([, c]) => c) }
+}
+
+/** Build the derived model. Malformed edges are dropped, never thrown on. */
+export function buildModel(payload: Graph3DPayload): Graph3DModel {
+  const nodeCount = payload.nodes.length
+  if (nodeCount === 0) return EMPTY_MODEL
+
+  const edges = payload.edges.filter((e) => e.s >= 0 && e.s < nodeCount && e.t >= 0 && e.t < nodeCount && e.s !== e.t)
+  const { degree, adjOffset, adjTarget, adjEdge } = buildCsrAdjacency(nodeCount, edges)
+  const { types, typeCount, typeIndex } = buildTypeVocabulary(payload.nodes)
+  const { relTypes, relTypeCount } = buildRelTypeVocabulary(edges)
 
   const indexById = new Map<string, number>()
   for (let i = 0; i < nodeCount; i += 1) indexById.set(payload.nodes[i].id, i)
@@ -183,8 +215,8 @@ export function buildModel(payload: Graph3DPayload): Graph3DModel {
     types,
     typeIndex,
     typeCount,
-    relTypes: relEntries.map(([t]) => t),
-    relTypeCount: relEntries.map(([, c]) => c),
+    relTypes,
+    relTypeCount,
     indexById,
   }
 }

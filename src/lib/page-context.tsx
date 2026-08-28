@@ -101,6 +101,36 @@ export function getDefaultPageActions(view: string): PageContextAction[] {
   return [...COMMON_ACTIONS, ...(VIEW_ACTIONS[view] ?? [])]
 }
 
+/** Classify one URL search param into either the time-range bucket or the filters bag (mutates both in place). */
+function applySearchParam(
+  key: string,
+  value: string,
+  filters: Record<string, PageContextFilterValue>,
+  timeRange: PageContextTimeRange,
+): void {
+  if (key === 'from' || key === 'start') {
+    timeRange.start = value
+    return
+  }
+  if (key === 'to' || key === 'end') {
+    timeRange.end = value
+    return
+  }
+  if (key === 'asOf' || key === 'as_of') {
+    timeRange.asOf = value
+    return
+  }
+  // Presence, not `=== undefined`: `Record<string, T>` indexing is typed as
+  // always-present, so comparing the lookup against `undefined` reads as a
+  // dead branch even though a not-yet-seen key really is absent.
+  if (!(key in filters)) {
+    filters[key] = value
+    return
+  }
+  const existing = filters[key]
+  filters[key] = Array.isArray(existing) ? [...existing, value] : [existing, value]
+}
+
 function routeContext(route: string): {
   filters: Record<string, PageContextFilterValue>
   timeRange?: PageContextTimeRange
@@ -111,20 +141,7 @@ function routeContext(route: string): {
 
   for (const [key, value] of url.searchParams.entries()) {
     if (key === 'conversation') continue
-    if (key === 'from' || key === 'start') timeRange.start = value
-    else if (key === 'to' || key === 'end') timeRange.end = value
-    else if (key === 'asOf' || key === 'as_of') timeRange.asOf = value
-    else {
-      // Presence, not `=== undefined`: `Record<string, T>` indexing is typed as
-      // always-present, so comparing the lookup against `undefined` reads as a
-      // dead branch even though a not-yet-seen key really is absent.
-      if (!(key in filters)) {
-        filters[key] = value
-      } else {
-        const existing = filters[key]
-        filters[key] = Array.isArray(existing) ? [...existing, value] : [existing, value]
-      }
-    }
+    applySearchParam(key, value, filters, timeRange)
   }
 
   if (timeRange.start || timeRange.end || timeRange.asOf) {

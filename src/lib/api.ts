@@ -233,18 +233,29 @@ const EDIT_KIND_LABEL: Record<string, string> = {
   link_remove: 'remove_link',
 }
 
+/** The edit's target field: the link label, or the first changed property key (after, then before). */
+function editTarget(
+  raw: Record<string, unknown>,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): string | undefined {
+  if (typeof raw.link_label === 'string' && raw.link_label) return raw.link_label
+  return Object.keys(after)[0] || Object.keys(before)[0] || undefined
+}
+
+/** The edit's timestamp, normalized to an ISO string (epoch seconds, an ISO string already, or "now" as a fallback). */
+function editTimestamp(ts: unknown): string {
+  if (typeof ts === 'number') return new Date(ts * 1000).toISOString()
+  if (typeof ts === 'string') return ts
+  return new Date().toISOString()
+}
+
 /** Adapt an EditLedger history entry into the timeline DTO. */
 function toEdit(raw: Record<string, unknown>): OntologyEditDto {
   const before = (raw.before ?? {}) as Record<string, unknown>
   const after = (raw.after ?? {}) as Record<string, unknown>
-  const target =
-    (typeof raw.link_label === 'string' && raw.link_label) ||
-    Object.keys(after)[0] ||
-    Object.keys(before)[0] ||
-    undefined
-  const ts = raw.timestamp
-  const timestamp =
-    typeof ts === 'number' ? new Date(ts * 1000).toISOString() : typeof ts === 'string' ? ts : new Date().toISOString()
+  const target = editTarget(raw, before, after)
+  const timestamp = editTimestamp(raw.timestamp)
   const editType = asString(raw.edit_type, 'edit')
   return {
     edit_id: asString(raw.id),
@@ -257,30 +268,36 @@ function toEdit(raw: Record<string, unknown>): OntologyEditDto {
   }
 }
 
+/** The object's display title: `properties.title`, then `properties.name`. */
+function adaptObjectTitle(props: Record<string, unknown>): string | undefined {
+  return (
+    (typeof props.title === 'string' && props.title) || (typeof props.name === 'string' && props.name) || undefined
+  )
+}
+
+/** The resolved layout composition, when the raw payload's `view` carries one. */
+function adaptObjectLayout(view: RawObject['view']): OntologyObjectDto['layout'] {
+  if (!view || !(view.property_order || view.link_order || typeof view.title === 'string')) return undefined
+  return {
+    property_order: Array.isArray(view.property_order) ? view.property_order : undefined,
+    link_order: Array.isArray(view.link_order) ? view.link_order : undefined,
+    title: typeof view.title === 'string' ? view.title : undefined,
+  }
+}
+
 /** Adapt the full raw object payload into the ObjectView DTO. */
 function adaptObject(raw: RawObject): OntologyObjectDto {
   const props = raw.properties ?? {}
-  const title =
-    (typeof props.title === 'string' && props.title) || (typeof props.name === 'string' && props.name) || undefined
-  const view = raw.view
-  const layout =
-    view && (view.property_order || view.link_order || typeof view.title === 'string')
-      ? {
-          property_order: Array.isArray(view.property_order) ? view.property_order : undefined,
-          link_order: Array.isArray(view.link_order) ? view.link_order : undefined,
-          title: typeof view.title === 'string' ? view.title : undefined,
-        }
-      : undefined
   return {
     id: raw.id,
     object_type: asString(raw.object_type ?? props.type, 'Object'),
-    title,
+    title: adaptObjectTitle(props),
     properties: toPropertyValues(raw.properties),
     derived: toPropertyValues(raw.derived),
     links: toLinks(raw.links),
     markings: raw.markings ?? [],
     history: (raw.history ?? []).map(toEdit),
-    layout,
+    layout: adaptObjectLayout(raw.view),
   }
 }
 
