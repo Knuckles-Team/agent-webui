@@ -108,6 +108,12 @@ repos:
     args: ["."]
     pass_filenames: false
     always_run: true
+  - id: complexity-staged
+    name: Complexity (cccc) - no NEW function over cyclomatic 10 / cognitive 15, none regressed
+    entry: python3 scripts/check_complexity_staged.py
+    language: system
+    pass_filenames: false
+    always_run: true
   - id: no-fabrication-gate
     name: no-fabrication gate — Ecosystem view (BUG-008 / GOC-28)
     # Static scan rejecting fabricated operational state in production paths
