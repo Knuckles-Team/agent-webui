@@ -272,25 +272,50 @@ export interface VizRenderInfo {
   wallTimeMs?: number
 }
 
+/** Decode the base64 image payload out of a `graph_viz` `result.bytes`
+ * envelope, or `undefined` for any shape that isn't one. */
+function extractVizBase64(result: Record<string, unknown>): string | undefined {
+  const bytesField = result.bytes as Record<string, unknown> | undefined
+  return bytesField && typeof bytesField.__bytes_b64__ === 'string' ? bytesField.__bytes_b64__ : undefined
+}
+
+/** LOD/exactness/row-count fields decoded from `result.view_result`. */
+function extractVizViewFields(viewResult: Record<string, unknown>): {
+  exact: boolean
+  lodTier: string
+  rowCount: number
+  wallTimeMs?: number
+} {
+  return {
+    exact: viewResult.exact === true,
+    lodTier: typeof viewResult.lod_tier === 'string' ? viewResult.lod_tier : 'unknown',
+    rowCount: typeof viewResult.row_count === 'number' ? viewResult.row_count : 0,
+    wallTimeMs: typeof viewResult.wall_time_ms === 'number' ? viewResult.wall_time_ms : undefined,
+  }
+}
+
+/** Top-level row-count telemetry the tool reports alongside `result`. */
+function extractVizRowCounts(rec: Record<string, unknown>): { rowsReturned?: number; rowsRendered?: number } {
+  return {
+    rowsReturned: typeof rec.rows_returned === 'number' ? rec.rows_returned : undefined,
+    rowsRendered: typeof rec.rows_rendered === 'number' ? rec.rows_rendered : undefined,
+  }
+}
+
 export function adaptVizResult(body: unknown): VizRenderInfo | null {
   if (!body || typeof body !== 'object') return null
   const rec = body as Record<string, unknown>
   const result = rec.result as Record<string, unknown> | undefined
   if (!result || typeof result !== 'object') return null
-  const bytesField = result.bytes as Record<string, unknown> | undefined
-  const b64 = bytesField && typeof bytesField.__bytes_b64__ === 'string' ? bytesField.__bytes_b64__ : undefined
+  const b64 = extractVizBase64(result)
   if (!b64) return null
   const contentType = typeof result.content_type === 'string' ? result.content_type : 'application/octet-stream'
   const viewResult = (result.view_result ?? {}) as Record<string, unknown>
   return {
     dataUrl: `data:${contentType};base64,${b64}`,
     format: typeof result.format === 'string' ? result.format : 'png',
-    exact: viewResult.exact === true,
-    lodTier: typeof viewResult.lod_tier === 'string' ? viewResult.lod_tier : 'unknown',
-    rowCount: typeof viewResult.row_count === 'number' ? viewResult.row_count : 0,
-    rowsReturned: typeof rec.rows_returned === 'number' ? rec.rows_returned : undefined,
-    rowsRendered: typeof rec.rows_rendered === 'number' ? rec.rows_rendered : undefined,
-    wallTimeMs: typeof viewResult.wall_time_ms === 'number' ? viewResult.wall_time_ms : undefined,
+    ...extractVizViewFields(viewResult),
+    ...extractVizRowCounts(rec),
   }
 }
 
