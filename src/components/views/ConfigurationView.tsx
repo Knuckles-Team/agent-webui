@@ -181,36 +181,39 @@ function stringifyValue(value: unknown): string {
  *  hand-maintained field list. Shapes this form cannot render richly (a
  *  nested Pydantic model, `dict[str, Any]`, `list[dict]`, …) fall through to
  *  `'json'` — still editable, just as raw JSON rather than a typed control. */
+function classifyArrayField(node: JsonSchemaNode): FieldKind {
+  const items = node.items
+  if (items && enumValues(items)) return 'enum-array'
+  const itemType = items ? primitiveNode(items).type : undefined
+  if (itemType === 'string' || itemType === 'integer' || itemType === 'number') return 'string-array'
+  return 'json'
+}
+
+function classifyObjectField(node: JsonSchemaNode): FieldKind {
+  const additional = node.additionalProperties
+  if (additional && typeof additional === 'object') {
+    const addType = primitiveNode(additional).type
+    if (addType === 'string') return 'kv-string'
+    if (addType === 'integer' || addType === 'number') return 'kv-number'
+  }
+  return 'json'
+}
+
 function classifyField(prop: JsonSchemaNode): FieldKind {
   const node = primitiveNode(prop)
-  const values = enumValues(prop)
+  if (node.type === 'boolean') return 'boolean'
+  if (node.type === 'array') return classifyArrayField(node)
+  if (node.type === 'object') return classifyObjectField(node)
+  if (enumValues(prop)) return 'enum'
   switch (node.type) {
-    case 'boolean':
-      return 'boolean'
     case 'integer':
-      return values ? 'enum' : 'integer'
+      return 'integer'
     case 'number':
-      return values ? 'enum' : 'number'
+      return 'number'
     case 'string':
-      return values ? 'enum' : 'string'
-    case 'array': {
-      const items = node.items
-      if (items && enumValues(items)) return 'enum-array'
-      const itemType = items ? primitiveNode(items).type : undefined
-      if (itemType === 'string' || itemType === 'integer' || itemType === 'number') return 'string-array'
-      return 'json'
-    }
-    case 'object': {
-      const additional = node.additionalProperties
-      if (additional && typeof additional === 'object') {
-        const addType = primitiveNode(additional).type
-        if (addType === 'string') return 'kv-string'
-        if (addType === 'integer' || addType === 'number') return 'kv-number'
-      }
-      return 'json'
-    }
+      return 'string'
     default:
-      return values ? 'enum' : 'json'
+      return 'json'
   }
 }
 
@@ -245,6 +248,134 @@ interface FieldDescriptor {
 }
 
 // ── Reusable field controls ─────────────────────────────────────────────
+
+type FieldInputRenderer = (field: FieldDescriptor, value: unknown, onChange: (v: unknown) => void) => ReactNode
+
+function numberFieldInput(field: FieldDescriptor, value: unknown, onChange: (v: unknown) => void): ReactNode {
+  return (
+    <Input
+      type="number"
+      value={typeof value === 'number' ? value : ''}
+      min={field.prop.minimum}
+      max={field.prop.maximum}
+      onChange={(e) => {
+        const raw = e.target.value
+        if (raw === '') {
+          onChange(null)
+          return
+        }
+        const next = field.kind === 'integer' ? Number.parseInt(raw, 10) : Number.parseFloat(raw)
+        if (Number.isFinite(next)) onChange(next)
+      }}
+      className="font-mono text-xs"
+    />
+  )
+}
+
+function enumFieldInput(field: FieldDescriptor, value: unknown, onChange: (v: unknown) => void): ReactNode {
+  return (
+    <select
+      value={value == null ? '' : stringifyValue(value)}
+      onChange={(e) => {
+        const raw = e.target.value
+        if (raw === '') {
+          onChange(null)
+          return
+        }
+        const options = enumValues(field.prop) ?? []
+        const match = options.find((o) => stringifyValue(o) === raw)
+        onChange(match ?? raw)
+      }}
+      className="w-full h-9 px-3 rounded-md border border-input bg-muted/20 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+    >
+      <option value="">— unset —</option>
+      {(enumValues(field.prop) ?? []).map((opt) => (
+        <option key={stringifyValue(opt)} value={stringifyValue(opt)}>
+          {stringifyValue(opt)}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+function stringArrayFieldInput(_field: FieldDescriptor, value: unknown, onChange: (v: unknown) => void): ReactNode {
+  return <StringArrayEditor value={value} onChange={onChange} />
+}
+
+function enumArrayFieldInput(field: FieldDescriptor, value: unknown, onChange: (v: unknown) => void): ReactNode {
+  return (
+    <EnumArrayEditor
+      options={(field.prop.items && enumValues(field.prop.items)) ?? []}
+      value={value}
+      onChange={onChange}
+    />
+  )
+}
+
+function kvStringFieldInput(_field: FieldDescriptor, value: unknown, onChange: (v: unknown) => void): ReactNode {
+  return <KVEditor value={value} numeric={false} onChange={onChange} />
+}
+
+function kvNumberFieldInput(_field: FieldDescriptor, value: unknown, onChange: (v: unknown) => void): ReactNode {
+  return <KVEditor value={value} numeric onChange={onChange} />
+}
+
+function jsonFieldInput(_field: FieldDescriptor, value: unknown, onChange: (v: unknown) => void): ReactNode {
+  return <JsonFallbackEditor value={value} onChange={onChange} />
+}
+
+function stringFieldInput(field: FieldDescriptor, value: unknown, onChange: (v: unknown) => void): ReactNode {
+  return (
+    <Input
+      id={`cfg-${field.name}`}
+      value={typeof value === 'string' ? value : ''}
+      onChange={(e) => {
+        onChange(e.target.value)
+      }}
+      className="bg-muted/20 font-mono text-xs"
+    />
+  )
+}
+
+const FIELD_INPUT_RENDERERS: Partial<Record<FieldKind, FieldInputRenderer>> = {
+  integer: numberFieldInput,
+  number: numberFieldInput,
+  enum: enumFieldInput,
+  'string-array': stringArrayFieldInput,
+  'enum-array': enumArrayFieldInput,
+  'kv-string': kvStringFieldInput,
+  'kv-number': kvNumberFieldInput,
+  json: jsonFieldInput,
+}
+
+/** Dispatches a non-boolean field to its input control by `FieldKind` — a
+ * component-map instead of a long discriminated-union ternary chain (both
+ * score far better and it reads better). `string` (and any unmatched kind)
+ * falls back to a plain text input, same as the original chain's default. */
+function fieldInputControl(field: FieldDescriptor, value: unknown, onChange: (v: unknown) => void): ReactNode {
+  const renderer = FIELD_INPUT_RENDERERS[field.kind] ?? stringFieldInput
+  return renderer(field, value, onChange)
+}
+
+/** One field's full control, including the boolean special case (a bare
+ * switch row, no `FieldShell` label/description wrapper). */
+function fieldControl(field: FieldDescriptor, value: unknown, onChange: (v: unknown) => void): ReactNode {
+  if (field.kind === 'boolean') {
+    return (
+      <div key={field.name} className="flex items-center justify-between rounded-md border border-border/40 p-2.5">
+        <label htmlFor={`cfg-${field.name}`} className="text-xs font-medium">
+          {fieldLabel(field.name, field.prop)}
+        </label>
+        <Switch id={`cfg-${field.name}`} checked={Boolean(value)} onCheckedChange={onChange} />
+      </div>
+    )
+  }
+  return (
+    <FieldShell key={field.name} name={field.name} prop={field.prop} required={field.required}>
+      {fieldInputControl(field, value, onChange)}
+    </FieldShell>
+  )
+}
 
 function FieldShell({
   name,
@@ -525,6 +656,269 @@ function SecretFieldRow({
 
 // ── Main view ────────────────────────────────────────────────────────────
 
+/** The "these fields live on the Models page instead" notice card, or
+ * nothing when the schema hasn't excluded any. */
+function excludedFieldsNotice(schemaResp: AgentConfigSchemaResponse | null, onOpenModels: () => void): ReactNode {
+  if (!schemaResp || schemaResp.excluded_fields.length === 0) return null
+  return (
+    <Card className="border-border/40 bg-card/40">
+      <CardContent className="py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          <span className="font-mono">{schemaResp.excluded_fields.join(', ')}</span>{' '}
+          {schemaResp.excluded_fields.length === 1 ? 'has' : 'have'} a dedicated schema-derived editor — the Models
+          page — instead of a second copy here.
+        </p>
+        <Button variant="outline" size="sm" onClick={onOpenModels} className="shrink-0">
+          <ExternalLink className="size-3.5 mr-1.5" /> Open Models
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+/** The Secrets card (presence-only rows), or nothing when there are no
+ * secret-shaped fields to show. */
+function secretsCard({
+  secretFields,
+  secretStatus,
+  schemaResp,
+  valueFor,
+  setValue,
+  upperPropertyNames,
+}: {
+  secretFields: FieldDescriptor[]
+  secretStatus: Record<string, boolean> | null
+  schemaResp: AgentConfigSchemaResponse | null
+  valueFor: (field: FieldDescriptor) => unknown
+  setValue: (name: string, value: unknown) => void
+  upperPropertyNames: Set<string>
+}): ReactNode {
+  if (secretFields.length === 0) return null
+  return (
+    <Card className="border-border/40 bg-card/60 backdrop-blur-md">
+      <CardHeader className="pb-3 flex flex-row items-center gap-3">
+        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+          <ShieldCheck className="size-5" />
+        </div>
+        <div>
+          <CardTitle className="text-base font-bold">Secrets</CardTitle>
+          <CardDescription>
+            Literal-secret-shaped fields. Never rendered as a value — presence only, from{' '}
+            {secretStatus === null ? 'an unavailable status check' : 'the live document'}.
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {secretFields.map((field) => (
+            <SecretFieldRow
+              key={field.name}
+              name={field.name}
+              prop={field.prop}
+              state={secretStatus ? secretStatus[field.name] : undefined}
+              cleared={valueFor(field) === schemaResp?.secret_clear_sentinel}
+              onClear={() => {
+                if (schemaResp) setValue(field.name, schemaResp.secret_clear_sentinel)
+              }}
+              hasRefSibling={upperPropertyNames.has(`${field.name.toUpperCase()}_REF`)}
+            />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/** One collapsible group section within the Settings card. */
+function settingsGroupSection({
+  group,
+  groupedFields,
+  open,
+  onToggle,
+  valueFor,
+  setValue,
+}: {
+  group: string
+  groupedFields: Record<string, FieldDescriptor[]>
+  open: boolean
+  onToggle: () => void
+  valueFor: (field: FieldDescriptor) => unknown
+  setValue: (name: string, value: unknown) => void
+}): ReactNode {
+  return (
+    <Collapsible key={group} open={open} onOpenChange={onToggle} className="rounded-md border border-border/40">
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-muted/20"
+        >
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <FolderCog className="size-4 text-muted-foreground" />
+            {group}
+            <Badge variant="outline" className="text-[10px]">
+              {groupedFields[group].length}
+            </Badge>
+          </span>
+          <ChevronRight className={`size-4 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="border-t border-border/40 p-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {groupedFields[group].map((field) =>
+            fieldControl(field, valueFor(field), (v) => {
+              setValue(field.name, v)
+            }),
+          )}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+/** The Settings card (every grouped, non-excluded, non-secret field), or
+ * nothing when there are no groups to show. */
+function settingsGroupsCard({
+  sortedGroupNames,
+  groupedFields,
+  openGroups,
+  toggleGroup,
+  valueFor,
+  setValue,
+}: {
+  sortedGroupNames: string[]
+  groupedFields: Record<string, FieldDescriptor[]>
+  openGroups: Record<string, boolean>
+  toggleGroup: (group: string) => void
+  valueFor: (field: FieldDescriptor) => unknown
+  setValue: (name: string, value: unknown) => void
+}): ReactNode {
+  if (sortedGroupNames.length === 0) return null
+  return (
+    <Card className="border-border/40 bg-card/60 backdrop-blur-md">
+      <CardHeader className="pb-3 flex flex-row items-center gap-3">
+        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+          <FolderCog className="size-5" />
+        </div>
+        <div>
+          <CardTitle className="text-base font-bold">Settings</CardTitle>
+          <CardDescription>
+            Every other AgentConfig field, grouped the same way `agent_utilities/core/config.py` organizes itself.
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {sortedGroupNames.map((group) =>
+          settingsGroupSection({
+            group,
+            groupedFields,
+            open: openGroups[group] ?? false,
+            onToggle: () => {
+              toggleGroup(group)
+            },
+            valueFor,
+            setValue,
+          }),
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** The scroll-area body once loading/error/empty are all ruled out: the
+ * excluded-fields notice, the search box, the Secrets card, and the
+ * Settings card. */
+function configurationFieldsContent(props: {
+  schemaResp: AgentConfigSchemaResponse | null
+  fields: FieldDescriptor[]
+  search: string
+  setSearch: (value: string) => void
+  secretFields: FieldDescriptor[]
+  secretStatus: Record<string, boolean> | null
+  groupsUnavailable: boolean
+  sortedGroupNames: string[]
+  groupedFields: Record<string, FieldDescriptor[]>
+  openGroups: Record<string, boolean>
+  toggleGroup: (group: string) => void
+  valueFor: (field: FieldDescriptor) => unknown
+  setValue: (name: string, value: unknown) => void
+  upperPropertyNames: Set<string>
+  onOpenModels: () => void
+}): ReactNode {
+  return (
+    <div className="space-y-6 pb-12">
+      {excludedFieldsNotice(props.schemaResp, props.onOpenModels)}
+
+      <div className="relative shrink-0">
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder={`Search ${props.fields.length.toString()} fields...`}
+          value={props.search}
+          onChange={(e) => {
+            props.setSearch(e.target.value)
+          }}
+          className="pl-8 h-9"
+        />
+      </div>
+
+      {secretsCard({
+        secretFields: props.secretFields,
+        secretStatus: props.secretStatus,
+        schemaResp: props.schemaResp,
+        valueFor: props.valueFor,
+        setValue: props.setValue,
+        upperPropertyNames: props.upperPropertyNames,
+      })}
+
+      {props.groupsUnavailable && <UnavailableNotice what="Field section grouping" className="px-1" />}
+
+      {settingsGroupsCard({
+        sortedGroupNames: props.sortedGroupNames,
+        groupedFields: props.groupedFields,
+        openGroups: props.openGroups,
+        toggleGroup: props.toggleGroup,
+        valueFor: props.valueFor,
+        setValue: props.setValue,
+      })}
+    </div>
+  )
+}
+
+function configurationScrollAreaBody(props: {
+  loading: boolean
+  loadError: string | null
+  onRetry: () => void
+  fields: FieldDescriptor[]
+  fieldsContentProps: Parameters<typeof configurationFieldsContent>[0]
+}): ReactNode {
+  if (props.loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <RefreshCw className="size-8 text-emerald-500 animate-spin" />
+        <span className="text-sm text-muted-foreground">Reading AgentConfig schema and values...</span>
+      </div>
+    )
+  }
+  if (props.loadError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+        <UnavailableNotice what="The AgentConfig schema or the active configuration" />
+        <p className="text-xs text-muted-foreground max-w-md">{props.loadError}</p>
+        <Button variant="outline" size="sm" onClick={props.onRetry}>
+          <RefreshCw className="size-4 mr-1.5" /> Retry
+        </Button>
+      </div>
+    )
+  }
+  if (props.fields.length === 0) {
+    return (
+      <div className="py-20 text-center text-sm text-muted-foreground">
+        The schema was fetched successfully but declared zero editable fields.
+      </div>
+    )
+  }
+  return configurationFieldsContent(props.fieldsContentProps)
+}
+
 export default function ConfigurationView() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -737,242 +1131,31 @@ export default function ConfigurationView() {
       </div>
 
       <ScrollArea className="flex-1 pr-4">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-3">
-            <RefreshCw className="size-8 text-emerald-500 animate-spin" />
-            <span className="text-sm text-muted-foreground">Reading AgentConfig schema and values...</span>
-          </div>
-        ) : loadError ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
-            <UnavailableNotice what="The AgentConfig schema or the active configuration" />
-            <p className="text-xs text-muted-foreground max-w-md">{loadError}</p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                void fetchAll()
-              }}
-            >
-              <RefreshCw className="size-4 mr-1.5" /> Retry
-            </Button>
-          </div>
-        ) : fields.length === 0 ? (
-          <div className="py-20 text-center text-sm text-muted-foreground">
-            The schema was fetched successfully but declared zero editable fields.
-          </div>
-        ) : (
-          <div className="space-y-6 pb-12">
-            {schemaResp && schemaResp.excluded_fields.length > 0 && (
-              <Card className="border-border/40 bg-card/40">
-                <CardContent className="py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <p className="text-xs text-muted-foreground">
-                    <span className="font-mono">{schemaResp.excluded_fields.join(', ')}</span>{' '}
-                    {schemaResp.excluded_fields.length === 1 ? 'has' : 'have'} a dedicated schema-derived editor — the
-                    Models page — instead of a second copy here.
-                  </p>
-                  <Button variant="outline" size="sm" onClick={goToLlmEndpoints} className="shrink-0">
-                    <ExternalLink className="size-3.5 mr-1.5" /> Open Models
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-
-            <div className="relative shrink-0">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder={`Search ${fields.length.toString()} fields...`}
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value)
-                }}
-                className="pl-8 h-9"
-              />
-            </div>
-
-            {secretFields.length > 0 && (
-              <Card className="border-border/40 bg-card/60 backdrop-blur-md">
-                <CardHeader className="pb-3 flex flex-row items-center gap-3">
-                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-                    <ShieldCheck className="size-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base font-bold">Secrets</CardTitle>
-                    <CardDescription>
-                      Literal-secret-shaped fields. Never rendered as a value — presence only, from{' '}
-                      {secretStatus === null ? 'an unavailable status check' : 'the live document'}.
-                    </CardDescription>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {secretFields.map((field) => (
-                      <SecretFieldRow
-                        key={field.name}
-                        name={field.name}
-                        prop={field.prop}
-                        state={secretStatus ? secretStatus[field.name] : undefined}
-                        cleared={valueFor(field) === schemaResp?.secret_clear_sentinel}
-                        onClear={() => {
-                          if (schemaResp) setValue(field.name, schemaResp.secret_clear_sentinel)
-                        }}
-                        hasRefSibling={upperPropertyNames.has(`${field.name.toUpperCase()}_REF`)}
-                      />
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {groupsUnavailable && <UnavailableNotice what="Field section grouping" className="px-1" />}
-
-            {sortedGroupNames.length > 0 && (
-              <Card className="border-border/40 bg-card/60 backdrop-blur-md">
-                <CardHeader className="pb-3 flex flex-row items-center gap-3">
-                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-                    <FolderCog className="size-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base font-bold">Settings</CardTitle>
-                    <CardDescription>
-                      Every other AgentConfig field, grouped the same way `agent_utilities/core/config.py` organizes
-                      itself.
-                    </CardDescription>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {sortedGroupNames.map((group) => (
-                    <Collapsible
-                      key={group}
-                      open={openGroups[group] ?? false}
-                      onOpenChange={() => {
-                        toggleGroup(group)
-                      }}
-                      className="rounded-md border border-border/40"
-                    >
-                      <CollapsibleTrigger asChild>
-                        <button
-                          type="button"
-                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-muted/20"
-                        >
-                          <span className="flex items-center gap-2 text-sm font-medium">
-                            <FolderCog className="size-4 text-muted-foreground" />
-                            {group}
-                            <Badge variant="outline" className="text-[10px]">
-                              {groupedFields[group].length}
-                            </Badge>
-                          </span>
-                          <ChevronRight
-                            className={`size-4 text-muted-foreground transition-transform ${openGroups[group] ? 'rotate-90' : ''}`}
-                          />
-                        </button>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent className="border-t border-border/40 p-3">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {groupedFields[group].map((field) => {
-                            const value = valueFor(field)
-                            const onChange = (v: unknown) => {
-                              setValue(field.name, v)
-                            }
-                            if (field.kind === 'boolean') {
-                              return (
-                                <div
-                                  key={field.name}
-                                  className="flex items-center justify-between rounded-md border border-border/40 p-2.5"
-                                >
-                                  <label htmlFor={`cfg-${field.name}`} className="text-xs font-medium">
-                                    {fieldLabel(field.name, field.prop)}
-                                  </label>
-                                  <Switch
-                                    id={`cfg-${field.name}`}
-                                    checked={Boolean(value)}
-                                    onCheckedChange={onChange}
-                                  />
-                                </div>
-                              )
-                            }
-                            return (
-                              <FieldShell
-                                key={field.name}
-                                name={field.name}
-                                prop={field.prop}
-                                required={field.required}
-                              >
-                                {field.kind === 'integer' || field.kind === 'number' ? (
-                                  <Input
-                                    type="number"
-                                    value={typeof value === 'number' ? value : ''}
-                                    min={field.prop.minimum}
-                                    max={field.prop.maximum}
-                                    onChange={(e) => {
-                                      const raw = e.target.value
-                                      if (raw === '') {
-                                        onChange(null)
-                                        return
-                                      }
-                                      const next =
-                                        field.kind === 'integer' ? Number.parseInt(raw, 10) : Number.parseFloat(raw)
-                                      if (Number.isFinite(next)) onChange(next)
-                                    }}
-                                    className="font-mono text-xs"
-                                  />
-                                ) : field.kind === 'enum' ? (
-                                  <select
-                                    value={value == null ? '' : stringifyValue(value)}
-                                    onChange={(e) => {
-                                      const raw = e.target.value
-                                      if (raw === '') {
-                                        onChange(null)
-                                        return
-                                      }
-                                      const options = enumValues(field.prop) ?? []
-                                      const match = options.find((o) => stringifyValue(o) === raw)
-                                      onChange(match ?? raw)
-                                    }}
-                                    className="w-full h-9 px-3 rounded-md border border-input bg-muted/20 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                  >
-                                    <option value="">— unset —</option>
-                                    {(enumValues(field.prop) ?? []).map((opt) => (
-                                      <option key={stringifyValue(opt)} value={stringifyValue(opt)}>
-                                        {stringifyValue(opt)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : field.kind === 'string-array' ? (
-                                  <StringArrayEditor value={value} onChange={onChange} />
-                                ) : field.kind === 'enum-array' ? (
-                                  <EnumArrayEditor
-                                    options={(field.prop.items && enumValues(field.prop.items)) ?? []}
-                                    value={value}
-                                    onChange={onChange}
-                                  />
-                                ) : field.kind === 'kv-string' ? (
-                                  <KVEditor value={value} numeric={false} onChange={onChange} />
-                                ) : field.kind === 'kv-number' ? (
-                                  <KVEditor value={value} numeric onChange={onChange} />
-                                ) : field.kind === 'json' ? (
-                                  <JsonFallbackEditor value={value} onChange={onChange} />
-                                ) : (
-                                  <Input
-                                    id={`cfg-${field.name}`}
-                                    value={typeof value === 'string' ? value : ''}
-                                    onChange={(e) => {
-                                      onChange(e.target.value)
-                                    }}
-                                    className="bg-muted/20 font-mono text-xs"
-                                  />
-                                )}
-                              </FieldShell>
-                            )
-                          })}
-                        </div>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
+        {configurationScrollAreaBody({
+          loading,
+          loadError,
+          onRetry: () => {
+            void fetchAll()
+          },
+          fields,
+          fieldsContentProps: {
+            schemaResp,
+            fields,
+            search,
+            setSearch,
+            secretFields,
+            secretStatus,
+            groupsUnavailable,
+            sortedGroupNames,
+            groupedFields,
+            openGroups,
+            toggleGroup,
+            valueFor,
+            setValue,
+            upperPropertyNames,
+            onOpenModels: goToLlmEndpoints,
+          },
+        })}
       </ScrollArea>
     </div>
   )
