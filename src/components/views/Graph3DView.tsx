@@ -98,6 +98,630 @@ function backgroundHex(isDark: boolean): string {
   return cssColorToHex(token, isDark ? '#0a0d14' : '#f6f7fb')
 }
 
+/** A route that is not deployed yet is a DIFFERENT thing from a route that
+ * failed, and the operator needs to be able to tell which. Resolves a
+ * graph3d-fetch failure into the next `LoadState` (the caller decides whether
+ * to also toast — it does, for a genuine "error", not a not-yet-deployed
+ * "unavailable"). */
+function resolveLoadError(error: unknown): LoadState {
+  if (error instanceof ApiError && (error.status === 404 || error.status === 501)) {
+    return {
+      kind: 'unavailable',
+      reason:
+        'This backend does not serve GET /api/enhanced/graph/graph3d yet. The route ships with this view; the agent-webui process has to be restarted to pick it up.',
+    }
+  }
+  const reason = error instanceof Error ? error.message : 'Unknown failure'
+  return { kind: 'error', reason }
+}
+
+interface ViewControlsProps {
+  includeIsolated: boolean
+  onIncludeIsolatedChange: (value: boolean) => void
+  autoRotate: boolean
+  onAutoRotateChange: (value: boolean) => void
+  bloom: boolean
+  onBloomChange: (value: boolean) => void
+  depthOfField: boolean
+  onDepthOfFieldChange: (value: boolean) => void
+  onReload: () => void
+}
+
+function ViewControls({
+  includeIsolated,
+  onIncludeIsolatedChange,
+  autoRotate,
+  onAutoRotateChange,
+  bloom,
+  onBloomChange,
+  depthOfField,
+  onDepthOfFieldChange,
+  onReload,
+}: ViewControlsProps) {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Switch
+          checked={includeIsolated}
+          onCheckedChange={onIncludeIsolatedChange}
+          aria-label="Include unconnected nodes"
+        />
+        Include unconnected
+      </label>
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Switch checked={autoRotate} onCheckedChange={onAutoRotateChange} aria-label="Auto-rotate" />
+        <Orbit className="h-3.5 w-3.5" /> Drift
+      </label>
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Switch checked={bloom} onCheckedChange={onBloomChange} aria-label="Bloom" />
+        <Sparkles className="h-3.5 w-3.5" /> Bloom
+      </label>
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Switch checked={depthOfField} onCheckedChange={onDepthOfFieldChange} aria-label="Depth of field" />
+        Depth of field
+      </label>
+      <Button variant="outline" size="sm" onClick={onReload}>
+        <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Reload
+      </Button>
+    </div>
+  )
+}
+
+/** The loading / unavailable / error / empty status card. Renders nothing
+ * (null) for `state.kind === 'ready'` — the caller renders the graph itself
+ * in that case. */
+function StatusCard({ state }: { state: LoadState }) {
+  if (state.kind === 'loading') {
+    return (
+      <Card className="flex-1">
+        <CardContent className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Reading the graph…
+        </CardContent>
+      </Card>
+    )
+  }
+  if (state.kind === 'unavailable' || state.kind === 'error') {
+    return (
+      <Card className="flex-1">
+        <CardHeader>
+          <CardTitle className="text-base">
+            {state.kind === 'unavailable' ? 'Not available yet' : 'Could not load the graph'}
+          </CardTitle>
+          <CardDescription>{state.reason}</CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+  if (state.kind === 'empty') {
+    return (
+      <Card className="flex-1">
+        <CardHeader>
+          <CardTitle className="text-base">No connected nodes</CardTitle>
+          <CardDescription>The graph answered successfully and holds no relationships to draw.</CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+  return null
+}
+
+function CanvasBadges({
+  model,
+  payload,
+  revealed,
+  highlightType,
+  degraded,
+}: {
+  model: Graph3DModel
+  payload: Graph3DPayload
+  revealed: Set<number> | null
+  highlightType: string | null
+  degraded: string[] | null
+}) {
+  const overReported =
+    payload.engine_total_relationships != null && payload.engine_total_relationships > model.edges.length
+  return (
+    <div className="absolute left-3 top-3 flex flex-wrap items-center gap-1.5">
+      <Badge variant="secondary" className="font-mono text-[10px]">
+        {numberFormat.format(model.nodes.length)} nodes
+      </Badge>
+      <Badge variant="secondary" className="font-mono text-[10px]">
+        {numberFormat.format(model.edges.length)} edges
+      </Badge>
+      {revealed && (
+        <Badge variant="outline" className="font-mono text-[10px]">
+          showing {numberFormat.format(revealed.size)}
+        </Badge>
+      )}
+      {highlightType && (
+        <Badge variant="outline" className="text-[10px]">
+          type: {highlightType}
+        </Badge>
+      )}
+      {overReported && payload.engine_total_relationships != null && (
+        <Badge variant="destructive" className="text-[10px]">
+          <AlertTriangle className="mr-1 h-3 w-3" /> the engine reports{' '}
+          {numberFormat.format(payload.engine_total_nodes ?? 0)} nodes /{' '}
+          {numberFormat.format(payload.engine_total_relationships)} edges in these graphs — the read surface returned{' '}
+          {((100 * model.edges.length) / payload.engine_total_relationships).toFixed(1)}% of the edges
+        </Badge>
+      )}
+      {payload.truncated && (
+        <Badge variant="destructive" className="text-[10px]">
+          truncated at the payload bound
+        </Badge>
+      )}
+      {degraded && (
+        <Badge variant="destructive" className="text-[10px]">
+          <AlertTriangle className="mr-1 h-3 w-3" /> {degraded.length} graph
+          {degraded.length === 1 ? '' : 's'} unreadable: {degraded.join(', ')}
+        </Badge>
+      )}
+    </div>
+  )
+}
+
+function HopChoiceButtons({
+  hops,
+  onSelect,
+}: {
+  hops: number
+  onSelect: (hops: (typeof HOP_CHOICES)[number]) => void
+}) {
+  return (
+    <div className="flex overflow-hidden rounded-md border bg-background/80 backdrop-blur">
+      {HOP_CHOICES.map((choice) => (
+        <button
+          key={choice}
+          type="button"
+          onClick={() => {
+            onSelect(choice)
+          }}
+          title="How many hops of context a selection reveals"
+          className={`px-2 py-1 text-[11px] transition-colors ${
+            hops === choice ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+          }`}
+        >
+          {choice} hop{choice > 1 ? 's' : ''}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function CanvasControls({
+  selected,
+  onIsolate,
+  hops,
+  onSelectHops,
+  onShowAll,
+  showAllDisabled,
+  onReframe,
+}: {
+  selected: number | null
+  onIsolate: () => void
+  hops: number
+  onSelectHops: (hops: (typeof HOP_CHOICES)[number]) => void
+  onShowAll: () => void
+  showAllDisabled: boolean
+  onReframe: () => void
+}) {
+  return (
+    <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-1.5">
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={onIsolate}
+        disabled={selected == null}
+        title="Show only this node's neighbourhood"
+      >
+        <ScanSearch className="mr-1.5 h-3.5 w-3.5" /> Isolate
+      </Button>
+      <HopChoiceButtons hops={hops} onSelect={onSelectHops} />
+      <Button size="sm" variant="secondary" onClick={onShowAll} disabled={showAllDisabled}>
+        <Eye className="mr-1.5 h-3.5 w-3.5" /> Show all
+      </Button>
+      <Button size="sm" variant="secondary" onClick={onReframe}>
+        <Crosshair className="mr-1.5 h-3.5 w-3.5" /> Re-frame
+      </Button>
+    </div>
+  )
+}
+
+interface GraphCanvasPanelProps {
+  model: Graph3DModel
+  payload: Graph3DPayload
+  isDark: boolean
+  background: string
+  selected: number | null
+  onSelect: (index: number | null) => void
+  onExpand: (index: number) => void
+  visibleMask: Uint8Array | null
+  autoRotate: boolean
+  frameToken: number
+  effects: EffectSettings
+  hops: (typeof HOP_CHOICES)[number]
+  onSelectHops: (hops: (typeof HOP_CHOICES)[number]) => void
+  relationshipFilter: Set<string> | null
+  revealed: Set<number> | null
+  highlightType: string | null
+  degraded: string[] | null
+  onIsolate: () => void
+  onShowAll: () => void
+  onReframe: () => void
+}
+
+function GraphCanvasPanel({
+  model,
+  payload,
+  isDark,
+  background,
+  selected,
+  onSelect,
+  onExpand,
+  visibleMask,
+  autoRotate,
+  frameToken,
+  effects,
+  hops,
+  onSelectHops,
+  relationshipFilter,
+  revealed,
+  highlightType,
+  degraded,
+  onIsolate,
+  onShowAll,
+  onReframe,
+}: GraphCanvasPanelProps) {
+  return (
+    <Card className="relative h-[70vh] min-h-[440px] overflow-hidden p-0">
+      <Graph3DCanvas
+        model={model}
+        isDark={isDark}
+        background={background}
+        selected={selected}
+        onSelect={onSelect}
+        onExpand={onExpand}
+        visibleMask={visibleMask}
+        autoRotate={autoRotate}
+        frameToken={frameToken}
+        effects={effects}
+        contextHops={hops}
+        relationshipFilter={relationshipFilter}
+      />
+      <CanvasBadges
+        model={model}
+        payload={payload}
+        revealed={revealed}
+        highlightType={highlightType}
+        degraded={degraded}
+      />
+      <CanvasControls
+        selected={selected}
+        onIsolate={onIsolate}
+        hops={hops}
+        onSelectHops={onSelectHops}
+        onShowAll={onShowAll}
+        showAllDisabled={!revealed && !highlightType}
+        onReframe={onReframe}
+      />
+    </Card>
+  )
+}
+
+function SelectedNodeCard({
+  isDark,
+  selectedNode,
+  selected,
+  selectedNeighbours,
+  hiddenNeighbourCount,
+  onExpand,
+  onSelect,
+}: {
+  isDark: boolean
+  selectedNode: Graph3DModel['nodes'][number]
+  selected: number
+  selectedNeighbours: { index: number; node: Graph3DModel['nodes'][number]; degree: number }[]
+  hiddenNeighbourCount: number
+  onExpand: (index: number) => void
+  onSelect: (index: number | null) => void
+}) {
+  return (
+    <Card className="min-h-0 flex-1">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Layers className="h-4 w-4" /> Selected
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="min-h-0 p-0">
+        <ScrollArea className="h-[300px] px-4 pb-4">
+          <div className="space-y-3">
+            <div>
+              <div className="text-sm font-medium leading-tight">{selectedNode.name}</div>
+              <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{ background: nodeTypeColor(selectedNode.type, isDark) }}
+                />
+                {selectedNode.type}
+              </div>
+              <div className="mt-1 break-all font-mono text-[10px] text-muted-foreground/80">{selectedNode.id}</div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="text-[10px]">
+                {selectedNeighbours.length} neighbours
+              </Badge>
+              {hiddenNeighbourCount > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    onExpand(selected)
+                  }}
+                >
+                  <Rows3 className="mr-1.5 h-3.5 w-3.5" /> Expand {hiddenNeighbourCount}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  onSelect(null)
+                }}
+              >
+                Unpin
+              </Button>
+            </div>
+            <div className="space-y-1">
+              {selectedNeighbours.map(({ index, node, degree }) => (
+                <button
+                  key={node.id}
+                  type="button"
+                  onClick={() => {
+                    onSelect(index)
+                  }}
+                  className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
+                >
+                  <span
+                    className="inline-block h-2 w-2 shrink-0 rounded-full"
+                    style={{ background: nodeTypeColor(node.type, isDark) }}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{node.name}</span>
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{degree}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </ScrollArea>
+      </CardContent>
+    </Card>
+  )
+}
+
+function NodeTypesTabContent({
+  payload,
+  breakdown,
+  breakdownLoading,
+  breakdownError,
+  highlightType,
+  onSelectType,
+}: {
+  payload: Graph3DPayload
+  breakdown: NodeTypeBreakdownData | null
+  breakdownLoading: boolean
+  breakdownError: string | null
+  highlightType: string | null
+  onSelectType: (type: string | null) => void
+}) {
+  return (
+    <TabsContent value="types" className="min-h-0 flex-1">
+      <Card className="h-full">
+        <CardHeader className="pb-2">
+          <CardDescription className="text-xs">
+            {numberFormat.format(payload.connected_nodes)} of the graph&apos;s nodes carry at least one edge and are
+            drawn here. The distribution below is the whole graph, from the engine&apos;s own aggregate — click a type
+            to keep only those nodes on the canvas.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="min-h-0 p-0">
+          <ScrollArea className="h-[300px] px-4 pb-4">
+            <NodeTypeBreakdown
+              data={breakdown}
+              loading={breakdownLoading}
+              error={breakdownError}
+              selectedType={highlightType}
+              onSelectType={onSelectType}
+            />
+          </ScrollArea>
+        </CardContent>
+      </Card>
+    </TabsContent>
+  )
+}
+
+function RelationshipToggleRow({
+  type,
+  count,
+  hidden,
+  onToggle,
+}: {
+  type: string
+  count: number
+  hidden: boolean
+  onToggle: (type: string) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onToggle(type)
+      }}
+      className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted ${
+        hidden ? 'opacity-40' : ''
+      }`}
+    >
+      <span
+        className={`inline-block h-2 w-2 shrink-0 rounded-sm border ${
+          hidden ? 'border-muted-foreground' : 'border-primary bg-primary'
+        }`}
+      />
+      <span className="min-w-0 flex-1 truncate font-mono">{type}</span>
+      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{numberFormat.format(count)}</span>
+    </button>
+  )
+}
+
+function RelationshipsTabContent({
+  model,
+  hiddenRelTypes,
+  onToggle,
+}: {
+  model: Graph3DModel
+  hiddenRelTypes: Set<string>
+  onToggle: (type: string) => void
+}) {
+  return (
+    <TabsContent value="rels" className="min-h-0 flex-1">
+      <Card className="h-full">
+        <CardHeader className="pb-2">
+          <CardDescription className="text-xs">
+            {model.relTypes.length} relationship types in view. Untick one to drop its edges — the four largest are
+            most of the graph, so hiding them is the fastest way to see what else is there.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="min-h-0 p-0">
+          <ScrollArea className="h-[290px] px-4 pb-4">
+            <div className="space-y-0.5">
+              {model.relTypes.map((type, index) => (
+                <RelationshipToggleRow
+                  key={type}
+                  type={type}
+                  count={model.relTypeCount[index]}
+                  hidden={hiddenRelTypes.has(type)}
+                  onToggle={onToggle}
+                />
+              ))}
+            </div>
+          </ScrollArea>
+        </CardContent>
+      </Card>
+    </TabsContent>
+  )
+}
+
+function GraphSidePanel({
+  isDark,
+  payload,
+  model,
+  selectedNode,
+  selected,
+  selectedNeighbours,
+  hiddenNeighbourCount,
+  onExpand,
+  onSelect,
+  breakdown,
+  breakdownLoading,
+  breakdownError,
+  highlightType,
+  onSelectType,
+  hiddenRelTypes,
+  onToggleRelType,
+}: {
+  isDark: boolean
+  payload: Graph3DPayload
+  model: Graph3DModel
+  selectedNode: Graph3DModel['nodes'][number] | null
+  selected: number | null
+  selectedNeighbours: { index: number; node: Graph3DModel['nodes'][number]; degree: number }[]
+  hiddenNeighbourCount: number
+  onExpand: (index: number) => void
+  onSelect: (index: number | null) => void
+  breakdown: NodeTypeBreakdownData | null
+  breakdownLoading: boolean
+  breakdownError: string | null
+  highlightType: string | null
+  onSelectType: (type: string | null) => void
+  hiddenRelTypes: Set<string>
+  onToggleRelType: (type: string) => void
+}) {
+  if (selectedNode && selected != null) {
+    return (
+      <SelectedNodeCard
+        isDark={isDark}
+        selectedNode={selectedNode}
+        selected={selected}
+        selectedNeighbours={selectedNeighbours}
+        hiddenNeighbourCount={hiddenNeighbourCount}
+        onExpand={onExpand}
+        onSelect={onSelect}
+      />
+    )
+  }
+  return (
+    <Tabs defaultValue="types" className="flex min-h-0 flex-1 flex-col">
+      <TabsList className="w-full">
+        <TabsTrigger value="types" className="flex-1 text-xs">
+          Node types
+        </TabsTrigger>
+        <TabsTrigger value="rels" className="flex-1 text-xs">
+          <Filter className="mr-1 h-3 w-3" /> Relationships
+        </TabsTrigger>
+      </TabsList>
+      <NodeTypesTabContent
+        payload={payload}
+        breakdown={breakdown}
+        breakdownLoading={breakdownLoading}
+        breakdownError={breakdownError}
+        highlightType={highlightType}
+        onSelectType={onSelectType}
+      />
+      <RelationshipsTabContent model={model} hiddenRelTypes={hiddenRelTypes} onToggle={onToggleRelType} />
+    </Tabs>
+  )
+}
+
+interface ReadyGraphSectionProps extends GraphCanvasPanelProps {
+  selectedNode: Graph3DModel['nodes'][number] | null
+  selectedNeighbours: { index: number; node: Graph3DModel['nodes'][number]; degree: number }[]
+  hiddenNeighbourCount: number
+  breakdown: NodeTypeBreakdownData | null
+  breakdownLoading: boolean
+  breakdownError: string | null
+  onSelectType: (type: string | null) => void
+  hiddenRelTypes: Set<string>
+  onToggleRelType: (type: string) => void
+}
+
+/** The fully-loaded graph: canvas + badges/controls on the left, the
+ * selected-node card or the node-types/relationships tabs on the right. */
+function ReadyGraphSection(props: ReadyGraphSectionProps) {
+  return (
+    <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">
+      <GraphCanvasPanel {...props} />
+      <div className="flex min-h-0 flex-col gap-4">
+        <GraphSidePanel
+          isDark={props.isDark}
+          payload={props.payload}
+          model={props.model}
+          selectedNode={props.selectedNode}
+          selected={props.selected}
+          selectedNeighbours={props.selectedNeighbours}
+          hiddenNeighbourCount={props.hiddenNeighbourCount}
+          onExpand={props.onExpand}
+          onSelect={props.onSelect}
+          breakdown={props.breakdown}
+          breakdownLoading={props.breakdownLoading}
+          breakdownError={props.breakdownError}
+          highlightType={props.highlightType}
+          onSelectType={props.onSelectType}
+          hiddenRelTypes={props.hiddenRelTypes}
+          onToggleRelType={props.onToggleRelType}
+        />
+      </div>
+    </div>
+  )
+}
+
 export default function Graph3DView() {
   const isDark = useIsDarkMode()
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
@@ -140,19 +764,11 @@ export default function Graph3DView() {
       setRevealed(null)
     } catch (error) {
       if (requestId.current !== id) return
-      // A route that is not deployed yet is a DIFFERENT thing from a route
-      // that failed, and the operator needs to be able to tell which.
-      if (error instanceof ApiError && (error.status === 404 || error.status === 501)) {
-        setState({
-          kind: 'unavailable',
-          reason:
-            'This backend does not serve GET /api/enhanced/graph/graph3d yet. The route ships with this view; the agent-webui process has to be restarted to pick it up.',
-        })
-        return
+      const nextState = resolveLoadError(error)
+      setState(nextState)
+      if (nextState.kind === 'error') {
+        toast.error('Could not load the 3D knowledge graph', { description: nextState.reason })
       }
-      const reason = error instanceof Error ? error.message : 'Unknown failure'
-      setState({ kind: 'error', reason })
-      toast.error('Could not load the 3D knowledge graph', { description: reason })
     }
   }, [])
 
@@ -260,6 +876,10 @@ export default function Graph3DView() {
     })
   }, [])
 
+  const reframe = useCallback(() => {
+    setFrameToken((token) => token + 1)
+  }, [])
+
   const selectedNode = model && selected != null ? model.nodes[selected] : null
   const selectedNeighbours = useMemo(() => {
     if (!model || selected == null) return []
@@ -287,307 +907,53 @@ export default function Graph3DView() {
             node and its neighbours, click to pin it, double-click to pull its neighbours into view.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Switch
-              checked={includeIsolated}
-              onCheckedChange={setIncludeIsolated}
-              aria-label="Include unconnected nodes"
-            />
-            Include unconnected
-          </label>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Switch checked={autoRotate} onCheckedChange={setAutoRotate} aria-label="Auto-rotate" />
-            <Orbit className="h-3.5 w-3.5" /> Drift
-          </label>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Switch checked={bloom} onCheckedChange={setBloom} aria-label="Bloom" />
-            <Sparkles className="h-3.5 w-3.5" /> Bloom
-          </label>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Switch checked={depthOfField} onCheckedChange={setDepthOfField} aria-label="Depth of field" />
-            Depth of field
-          </label>
-          <Button variant="outline" size="sm" onClick={reload}>
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Reload
-          </Button>
-        </div>
+        <ViewControls
+          includeIsolated={includeIsolated}
+          onIncludeIsolatedChange={setIncludeIsolated}
+          autoRotate={autoRotate}
+          onAutoRotateChange={setAutoRotate}
+          bloom={bloom}
+          onBloomChange={setBloom}
+          depthOfField={depthOfField}
+          onDepthOfFieldChange={setDepthOfField}
+          onReload={reload}
+        />
       </div>
 
-      {state.kind === 'loading' ? (
-        <Card className="flex-1">
-          <CardContent className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Reading the graph…
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {state.kind === 'unavailable' || state.kind === 'error' ? (
-        <Card className="flex-1">
-          <CardHeader>
-            <CardTitle className="text-base">
-              {state.kind === 'unavailable' ? 'Not available yet' : 'Could not load the graph'}
-            </CardTitle>
-            <CardDescription>{state.reason}</CardDescription>
-          </CardHeader>
-        </Card>
-      ) : null}
-
-      {state.kind === 'empty' ? (
-        <Card className="flex-1">
-          <CardHeader>
-            <CardTitle className="text-base">No connected nodes</CardTitle>
-            <CardDescription>The graph answered successfully and holds no relationships to draw.</CardDescription>
-          </CardHeader>
-        </Card>
-      ) : null}
+      <StatusCard state={state} />
 
       {state.kind === 'ready' && model && payload ? (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">
-          <Card className="relative h-[70vh] min-h-[440px] overflow-hidden p-0">
-            <Graph3DCanvas
-              model={model}
-              isDark={isDark}
-              background={background}
-              selected={selected}
-              onSelect={setSelected}
-              onExpand={expand}
-              visibleMask={visibleMask}
-              autoRotate={autoRotate}
-              frameToken={frameToken}
-              effects={effects}
-              contextHops={hops}
-              relationshipFilter={relationshipFilter}
-            />
-            <div className="absolute left-3 top-3 flex flex-wrap items-center gap-1.5">
-              <Badge variant="secondary" className="font-mono text-[10px]">
-                {numberFormat.format(model.nodes.length)} nodes
-              </Badge>
-              <Badge variant="secondary" className="font-mono text-[10px]">
-                {numberFormat.format(model.edges.length)} edges
-              </Badge>
-              {revealed ? (
-                <Badge variant="outline" className="font-mono text-[10px]">
-                  showing {numberFormat.format(revealed.size)}
-                </Badge>
-              ) : null}
-              {highlightType ? (
-                <Badge variant="outline" className="text-[10px]">
-                  type: {highlightType}
-                </Badge>
-              ) : null}
-              {payload.engine_total_relationships != null &&
-              payload.engine_total_relationships > model.edges.length ? (
-                <Badge variant="destructive" className="text-[10px]">
-                  <AlertTriangle className="mr-1 h-3 w-3" /> the engine reports{' '}
-                  {numberFormat.format(payload.engine_total_nodes ?? 0)} nodes /{' '}
-                  {numberFormat.format(payload.engine_total_relationships)} edges in these graphs — the read surface
-                  returned {((100 * model.edges.length) / payload.engine_total_relationships).toFixed(1)}% of the edges
-                </Badge>
-              ) : null}
-              {payload.truncated ? (
-                <Badge variant="destructive" className="text-[10px]">
-                  truncated at the payload bound
-                </Badge>
-              ) : null}
-              {degraded ? (
-                <Badge variant="destructive" className="text-[10px]">
-                  <AlertTriangle className="mr-1 h-3 w-3" /> {degraded.length} graph
-                  {degraded.length === 1 ? '' : 's'} unreadable: {degraded.join(', ')}
-                </Badge>
-              ) : null}
-            </div>
-            <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-1.5">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={isolate}
-                disabled={selected == null}
-                title="Show only this node's neighbourhood"
-              >
-                <ScanSearch className="mr-1.5 h-3.5 w-3.5" /> Isolate
-              </Button>
-              <div className="flex overflow-hidden rounded-md border bg-background/80 backdrop-blur">
-                {HOP_CHOICES.map((choice) => (
-                  <button
-                    key={choice}
-                    type="button"
-                    onClick={() => {
-                      setHops(choice)
-                    }}
-                    title="How many hops of context a selection reveals"
-                    className={`px-2 py-1 text-[11px] transition-colors ${
-                      hops === choice ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
-                    }`}
-                  >
-                    {choice} hop{choice > 1 ? 's' : ''}
-                  </button>
-                ))}
-              </div>
-              <Button size="sm" variant="secondary" onClick={showAll} disabled={!revealed && !highlightType}>
-                <Eye className="mr-1.5 h-3.5 w-3.5" /> Show all
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  setFrameToken((token) => token + 1)
-                }}
-              >
-                <Crosshair className="mr-1.5 h-3.5 w-3.5" /> Re-frame
-              </Button>
-            </div>
-          </Card>
-
-          <div className="flex min-h-0 flex-col gap-4">
-            {selectedNode && selected != null ? (
-              <Card className="min-h-0 flex-1">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-sm">
-                    <Layers className="h-4 w-4" /> Selected
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="min-h-0 p-0">
-                  <ScrollArea className="h-[300px] px-4 pb-4">
-                    <div className="space-y-3">
-                      <div>
-                        <div className="text-sm font-medium leading-tight">{selectedNode.name}</div>
-                        <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <span
-                            className="inline-block h-2 w-2 rounded-full"
-                            style={{ background: nodeTypeColor(selectedNode.type, isDark) }}
-                          />
-                          {selectedNode.type}
-                        </div>
-                        <div className="mt-1 break-all font-mono text-[10px] text-muted-foreground/80">
-                          {selectedNode.id}
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline" className="text-[10px]">
-                          {selectedNeighbours.length} neighbours
-                        </Badge>
-                        {hiddenNeighbourCount > 0 ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              expand(selected)
-                            }}
-                          >
-                            <Rows3 className="mr-1.5 h-3.5 w-3.5" /> Expand {hiddenNeighbourCount}
-                          </Button>
-                        ) : null}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setSelected(null)
-                          }}
-                        >
-                          Unpin
-                        </Button>
-                      </div>
-                      <div className="space-y-1">
-                        {selectedNeighbours.map(({ index, node, degree }) => (
-                          <button
-                            key={node.id}
-                            type="button"
-                            onClick={() => {
-                              setSelected(index)
-                            }}
-                            className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
-                          >
-                            <span
-                              className="inline-block h-2 w-2 shrink-0 rounded-full"
-                              style={{ background: nodeTypeColor(node.type, isDark) }}
-                            />
-                            <span className="min-w-0 flex-1 truncate">{node.name}</span>
-                            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{degree}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            ) : (
-              <Tabs defaultValue="types" className="flex min-h-0 flex-1 flex-col">
-                <TabsList className="w-full">
-                  <TabsTrigger value="types" className="flex-1 text-xs">
-                    Node types
-                  </TabsTrigger>
-                  <TabsTrigger value="rels" className="flex-1 text-xs">
-                    <Filter className="mr-1 h-3 w-3" /> Relationships
-                  </TabsTrigger>
-                </TabsList>
-                <TabsContent value="types" className="min-h-0 flex-1">
-                  <Card className="h-full">
-                    <CardHeader className="pb-2">
-                      <CardDescription className="text-xs">
-                        {numberFormat.format(payload.connected_nodes)} of the graph&apos;s nodes carry at least one
-                        edge and are drawn here. The distribution below is the whole graph, from the engine&apos;s own
-                        aggregate — click a type to keep only those nodes on the canvas.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="min-h-0 p-0">
-                      <ScrollArea className="h-[300px] px-4 pb-4">
-                        <NodeTypeBreakdown
-                          data={breakdown}
-                          loading={breakdownLoading}
-                          error={breakdownError}
-                          selectedType={highlightType}
-                          onSelectType={setHighlightType}
-                        />
-                      </ScrollArea>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-                <TabsContent value="rels" className="min-h-0 flex-1">
-                  <Card className="h-full">
-                    <CardHeader className="pb-2">
-                      <CardDescription className="text-xs">
-                        {model.relTypes.length} relationship types in view. Untick one to drop its edges — the four
-                        largest are most of the graph, so hiding them is the fastest way to see what else is there.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="min-h-0 p-0">
-                      <ScrollArea className="h-[290px] px-4 pb-4">
-                        <div className="space-y-0.5">
-                          {model.relTypes.map((type, index) => {
-                            const hidden = hiddenRelTypes.has(type)
-                            return (
-                              <button
-                                key={type}
-                                type="button"
-                                onClick={() => {
-                                  toggleRelType(type)
-                                }}
-                                className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted ${
-                                  hidden ? 'opacity-40' : ''
-                                }`}
-                              >
-                                <span
-                                  className={`inline-block h-2 w-2 shrink-0 rounded-sm border ${
-                                    hidden ? 'border-muted-foreground' : 'border-primary bg-primary'
-                                  }`}
-                                />
-                                <span className="min-w-0 flex-1 truncate font-mono">{type}</span>
-                                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                                  {numberFormat.format(model.relTypeCount[index])}
-                                </span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </ScrollArea>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              </Tabs>
-            )}
-          </div>
-        </div>
+        <ReadyGraphSection
+          model={model}
+          payload={payload}
+          isDark={isDark}
+          background={background}
+          selected={selected}
+          onSelect={setSelected}
+          onExpand={expand}
+          visibleMask={visibleMask}
+          autoRotate={autoRotate}
+          frameToken={frameToken}
+          effects={effects}
+          hops={hops}
+          onSelectHops={setHops}
+          relationshipFilter={relationshipFilter}
+          revealed={revealed}
+          highlightType={highlightType}
+          degraded={degraded}
+          onIsolate={isolate}
+          onShowAll={showAll}
+          onReframe={reframe}
+          selectedNode={selectedNode}
+          selectedNeighbours={selectedNeighbours}
+          hiddenNeighbourCount={hiddenNeighbourCount}
+          breakdown={breakdown}
+          breakdownLoading={breakdownLoading}
+          breakdownError={breakdownError}
+          onSelectType={setHighlightType}
+          hiddenRelTypes={hiddenRelTypes}
+          onToggleRelType={toggleRelType}
+        />
       ) : null}
     </div>
   )
