@@ -106,17 +106,17 @@ async def test_command_name_is_case_insensitive() -> None:
 
 
 @pytest.mark.asyncio
-async def test_quit_is_aliased_to_exit_which_has_no_handler_bug() -> None:
-    """BUG (pinned, not fixed -- see lane report): ``cmd_name`` is rewritten
-    ``quit`` -> ``exit`` before dispatch, but no branch ever matches
-    ``'exit'``, so ``/quit`` (and literal ``/exit``) ALWAYS falls through to
-    the "Unknown slash command" branch rather than doing anything quit-like."""
+async def test_quit_is_aliased_to_exit_which_now_has_a_handler() -> None:
+    """BUG-CX-020 (fixed): ``cmd_name`` is rewritten ``quit`` -> ``exit``
+    before dispatch, and ``_SLASH_COMMAND_HANDLERS`` now has an ``'exit'``
+    key, so both ``/quit`` and literal ``/exit`` dispatch to the real
+    handler instead of falling through to "Unknown slash command"."""
     result = await api_extensions.execute_slash_command(
         {'command': '/quit'}, make_request()
     )
-    assert result['response_markdown'] == (
-        'Unknown slash command: `/exit`. Type `/help` for a list of available commands.'
-    )
+    assert result['client_actions'] == [{'action': 'clear_chat'}]
+    assert 'Unknown slash command' not in result['response_markdown']
+
     result2 = await api_extensions.execute_slash_command(
         {'command': '/exit'}, make_request()
     )
