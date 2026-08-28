@@ -34,7 +34,7 @@
  * it only composes model + parameters + system prompt into the prompt file
  * format the Prompts Registry already reads and writes.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { z } from 'zod'
 import { Cpu, Eye, Layers, Plus, RefreshCw, Save, Search, Sparkles, Trash2, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -212,8 +212,202 @@ function fieldLabel(name: string, prop: JsonSchemaProperty): string {
   return prop.title ?? name
 }
 
-/** One schema-derived input for a single AgentConfig model field. Which
- *  fields exist, their order, types, and required-ness all come from
+type ModelFieldRenderer = (
+  name: string,
+  prop: JsonSchemaProperty,
+  kind: FieldKind,
+  value: unknown,
+  isRequired: boolean,
+  onChange: (field: string, value: unknown) => void,
+) => ReactNode
+
+function booleanModelField(
+  name: string,
+  prop: JsonSchemaProperty,
+  _kind: FieldKind,
+  value: unknown,
+  _isRequired: boolean,
+  onChange: (field: string, value: unknown) => void,
+): ReactNode {
+  return (
+    <div key={name} className="flex items-center justify-between rounded-md border border-border/40 p-2.5">
+      <label htmlFor={`model-field-${name}`} className="text-xs font-medium">
+        {fieldLabel(name, prop)}
+      </label>
+      <Switch
+        id={`model-field-${name}`}
+        checked={Boolean(value)}
+        onCheckedChange={(checked) => {
+          onChange(name, checked)
+        }}
+      />
+    </div>
+  )
+}
+
+function numberModelField(
+  name: string,
+  prop: JsonSchemaProperty,
+  kind: FieldKind,
+  value: unknown,
+  isRequired: boolean,
+  onChange: (field: string, value: unknown) => void,
+): ReactNode {
+  return (
+    <div key={name} className="space-y-1.5">
+      <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
+        {fieldLabel(name, prop)}
+        {isRequired && ' *'}
+      </label>
+      <Input
+        id={`model-field-${name}`}
+        type="number"
+        value={typeof value === 'number' ? value : ''}
+        onChange={(e) => {
+          const raw = e.target.value
+          if (raw === '') {
+            onChange(name, null)
+            return
+          }
+          const next = kind === 'integer' ? Number.parseInt(raw, 10) : Number.parseFloat(raw)
+          if (Number.isFinite(next)) onChange(name, next)
+        }}
+        className="font-mono text-xs"
+      />
+    </div>
+  )
+}
+
+function enumModelField(
+  name: string,
+  prop: JsonSchemaProperty,
+  _kind: FieldKind,
+  value: unknown,
+  isRequired: boolean,
+  onChange: (field: string, value: unknown) => void,
+): ReactNode {
+  const options = fieldEnumValues(prop) ?? []
+  return (
+    <div key={name} className="space-y-1.5">
+      <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
+        {fieldLabel(name, prop)}
+        {isRequired && ' *'}
+      </label>
+      <select
+        id={`model-field-${name}`}
+        value={value == null ? '' : stringifyValue(value)}
+        onChange={(e) => {
+          const raw = e.target.value
+          if (raw === '') {
+            onChange(name, null)
+            return
+          }
+          const match = options.find((opt) => stringifyValue(opt) === raw)
+          onChange(name, match ?? raw)
+        }}
+        className="w-full h-9 px-3 rounded-md border border-input bg-muted/20 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+      >
+        {!isRequired && <option value="">— unset —</option>}
+        {options.map((opt) => (
+          <option key={stringifyValue(opt)} value={stringifyValue(opt)}>
+            {stringifyValue(opt)}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+function jsonModelField(
+  name: string,
+  prop: JsonSchemaProperty,
+  _kind: FieldKind,
+  value: unknown,
+  _isRequired: boolean,
+  onChange: (field: string, value: unknown) => void,
+): ReactNode {
+  return (
+    <div key={name} className="space-y-1.5 md:col-span-2">
+      <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
+        {fieldLabel(name, prop)} (JSON)
+      </label>
+      <Textarea
+        id={`model-field-${name}`}
+        value={value == null ? '' : JSON.stringify(value, null, 2)}
+        onChange={(e) => {
+          const raw = e.target.value
+          if (raw.trim() === '') {
+            onChange(name, null)
+            return
+          }
+          try {
+            onChange(name, JSON.parse(raw))
+          } catch {
+            // Leave the last-valid value in place until the JSON parses;
+            // the field keeps the operator's raw text on screen via
+            // `defaultValue`-less controlled input re-render is skipped
+            // by React only re-rendering from `values`, so nothing here
+            // needs to track invalid intermediate text separately.
+          }
+        }}
+        rows={3}
+        className="font-mono text-xs"
+        placeholder="null"
+      />
+    </div>
+  )
+}
+
+function stringModelField(
+  name: string,
+  prop: JsonSchemaProperty,
+  _kind: FieldKind,
+  value: unknown,
+  isRequired: boolean,
+  onChange: (field: string, value: unknown) => void,
+): ReactNode {
+  return (
+    <div key={name} className="space-y-1.5">
+      <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
+        {fieldLabel(name, prop)}
+        {isRequired && ' *'}
+      </label>
+      <Input
+        id={`model-field-${name}`}
+        value={typeof value === 'string' ? value : ''}
+        onChange={(e) => {
+          onChange(name, e.target.value)
+        }}
+        className="font-mono text-xs"
+      />
+    </div>
+  )
+}
+
+const MODEL_FIELD_RENDERERS: Record<FieldKind, ModelFieldRenderer> = {
+  boolean: booleanModelField,
+  integer: numberModelField,
+  number: numberModelField,
+  enum: enumModelField,
+  json: jsonModelField,
+  string: stringModelField,
+}
+
+/** One schema-derived input for a single AgentConfig model field, dispatched
+ *  by `FieldKind` — a component-map instead of a long discriminated-union
+ *  chain (both score far better and it reads better). */
+function modelFieldControl(
+  name: string,
+  prop: JsonSchemaProperty,
+  value: unknown,
+  isRequired: boolean,
+  onChange: (field: string, value: unknown) => void,
+): ReactNode {
+  const kind = fieldKind(prop)
+  return MODEL_FIELD_RENDERERS[kind](name, prop, kind, value, isRequired, onChange)
+}
+
+/** Which fields exist, their order, types, and required-ness all come from
  *  `schema` (BUG-260) — nothing here hand-lists a field name. */
 function ModelSettingsForm({
   schema,
@@ -229,138 +423,7 @@ function ModelSettingsForm({
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {entries.map(([name, prop]) => {
-        const kind = fieldKind(prop)
-        const label = fieldLabel(name, prop)
-        const value = values[name]
-        const isRequired = required.has(name)
-
-        if (kind === 'boolean') {
-          return (
-            <div key={name} className="flex items-center justify-between rounded-md border border-border/40 p-2.5">
-              <label htmlFor={`model-field-${name}`} className="text-xs font-medium">
-                {label}
-              </label>
-              <Switch
-                id={`model-field-${name}`}
-                checked={Boolean(value)}
-                onCheckedChange={(checked) => {
-                  onChange(name, checked)
-                }}
-              />
-            </div>
-          )
-        }
-
-        if (kind === 'integer' || kind === 'number') {
-          return (
-            <div key={name} className="space-y-1.5">
-              <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
-                {label}
-                {isRequired && ' *'}
-              </label>
-              <Input
-                id={`model-field-${name}`}
-                type="number"
-                value={typeof value === 'number' ? value : ''}
-                onChange={(e) => {
-                  const raw = e.target.value
-                  if (raw === '') {
-                    onChange(name, null)
-                    return
-                  }
-                  const next = kind === 'integer' ? Number.parseInt(raw, 10) : Number.parseFloat(raw)
-                  if (Number.isFinite(next)) onChange(name, next)
-                }}
-                className="font-mono text-xs"
-              />
-            </div>
-          )
-        }
-
-        if (kind === 'enum') {
-          const options = fieldEnumValues(prop) ?? []
-          return (
-            <div key={name} className="space-y-1.5">
-              <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
-                {label}
-                {isRequired && ' *'}
-              </label>
-              <select
-                id={`model-field-${name}`}
-                value={value == null ? '' : stringifyValue(value)}
-                onChange={(e) => {
-                  const raw = e.target.value
-                  if (raw === '') {
-                    onChange(name, null)
-                    return
-                  }
-                  const match = options.find((opt) => stringifyValue(opt) === raw)
-                  onChange(name, match ?? raw)
-                }}
-                className="w-full h-9 px-3 rounded-md border border-input bg-muted/20 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                {!isRequired && <option value="">— unset —</option>}
-                {options.map((opt) => (
-                  <option key={stringifyValue(opt)} value={stringifyValue(opt)}>
-                    {stringifyValue(opt)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )
-        }
-
-        if (kind === 'json') {
-          return (
-            <div key={name} className="space-y-1.5 md:col-span-2">
-              <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
-                {label} (JSON)
-              </label>
-              <Textarea
-                id={`model-field-${name}`}
-                value={value == null ? '' : JSON.stringify(value, null, 2)}
-                onChange={(e) => {
-                  const raw = e.target.value
-                  if (raw.trim() === '') {
-                    onChange(name, null)
-                    return
-                  }
-                  try {
-                    onChange(name, JSON.parse(raw))
-                  } catch {
-                    // Leave the last-valid value in place until the JSON parses;
-                    // the field keeps the operator's raw text on screen via
-                    // `defaultValue`-less controlled input re-render is skipped
-                    // by React only re-rendering from `values`, so nothing here
-                    // needs to track invalid intermediate text separately.
-                  }
-                }}
-                rows={3}
-                className="font-mono text-xs"
-                placeholder="null"
-              />
-            </div>
-          )
-        }
-
-        return (
-          <div key={name} className="space-y-1.5">
-            <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
-              {label}
-              {isRequired && ' *'}
-            </label>
-            <Input
-              id={`model-field-${name}`}
-              value={typeof value === 'string' ? value : ''}
-              onChange={(e) => {
-                onChange(name, e.target.value)
-              }}
-              className="font-mono text-xs"
-            />
-          </div>
-        )
-      })}
+      {entries.map(([name, prop]) => modelFieldControl(name, prop, values[name], required.has(name), onChange))}
     </div>
   )
 }
@@ -403,6 +466,430 @@ function ModelBadges({ model }: { model: LLMModel }) {
       )}
     </div>
   )
+}
+
+/** Resolves and validates the id/provider a model save should target,
+ *  toasting and returning `null` on the first missing piece. */
+function resolveModelSaveTarget({
+  isNewModelEntry,
+  newModelId,
+  modelId,
+  newModelProvider,
+  modelSettings,
+}: {
+  isNewModelEntry: boolean
+  newModelId: string
+  modelId: string
+  newModelProvider: string
+  modelSettings: Record<string, unknown>
+}): { targetId: string; provider: string } | null {
+  const targetId = isNewModelEntry ? newModelId.trim() : modelId
+  if (!targetId) {
+    toast.error('Give the model an id first')
+    return null
+  }
+  const provider = isNewModelEntry ? newModelProvider.trim() : ((modelSettings.provider as string | undefined) ?? '')
+  if (!provider) {
+    toast.error('A provider is required')
+    return null
+  }
+  return { targetId, provider }
+}
+
+/** Full-registry-replace upsert: fetches every OTHER model's full settings
+ *  so the write doesn't drop them back to their schema defaults, then PUTs
+ *  the whole registry back with `payload` included. */
+async function upsertModelRegistry(
+  kind: ModelKind,
+  payload: Record<string, unknown>,
+  otherModels: LLMModel[],
+): Promise<Response> {
+  const detailUrl = `/api/enhanced/llm/${kind === 'chat' ? 'models' : 'embedding-models'}`
+  const otherDetails = await Promise.all(
+    otherModels.map((m) =>
+      fetchValidated(
+        `/api/enhanced/llm/model-detail?kind=${kind}&model_id=${encodeURIComponent(m.id)}`,
+        z.record(z.string(), z.unknown()),
+      ),
+    ),
+  )
+  return fetch(detailUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ models: [...otherDetails, payload] }),
+  })
+}
+
+/** The sidebar's model list body: loading/unavailable/empty, or the list. */
+function modelListPanel({
+  loading,
+  loadError,
+  filteredModels,
+  kind,
+  modelId,
+  isNewModelEntry,
+  onSelectModel,
+}: {
+  loading: boolean
+  loadError: string | null
+  filteredModels: LLMModel[]
+  kind: ModelKind
+  modelId: string
+  isNewModelEntry: boolean
+  onSelectModel: (m: LLMModel) => void
+}): ReactNode {
+  if (loading) {
+    return <div className="py-8 text-center text-sm text-muted-foreground">Loading models…</div>
+  }
+  if (loadError) {
+    return (
+      <div className="py-8 px-2">
+        <UnavailableNotice what="The LLM model registry" />
+      </div>
+    )
+  }
+  if (filteredModels.length === 0) {
+    return (
+      <div className="py-8 text-center text-sm text-muted-foreground">
+        No {kind} models are configured in AgentConfig yet.
+      </div>
+    )
+  }
+  return filteredModels.map((m) => (
+    <button
+      key={m.id}
+      type="button"
+      onClick={() => {
+        onSelectModel(m)
+      }}
+      className={`w-full text-left rounded-md p-2 text-sm hover:bg-muted/40 ${
+        modelId === m.id && !isNewModelEntry ? 'bg-muted/60' : ''
+      }`}
+    >
+      <div className="font-medium truncate">{m.id}</div>
+      <div className="text-xs text-muted-foreground truncate">{m.provider}</div>
+      <div className="mt-1">
+        <ModelBadges model={m} />
+      </div>
+    </button>
+  ))
+}
+
+/** The composer card's title: the in-progress new-model label, the selected
+ *  model's id, or the not-yet-selected placeholder. */
+function composerTitle(isNewModelEntry: boolean, kind: ModelKind, selectedModel: LLMModel | undefined): string {
+  if (isNewModelEntry) return `New ${kind} model`
+  if (selectedModel) return selectedModel.id
+  return 'Select a model'
+}
+
+/** The Remove/Save action buttons in the model-configuration panel header. */
+function modelConfigActions({
+  isNewModelEntry,
+  selectedModel,
+  deletingModel,
+  savingModel,
+  onDeleteModel,
+  onSaveModelSettings,
+}: {
+  isNewModelEntry: boolean
+  selectedModel: LLMModel | undefined
+  deletingModel: boolean
+  savingModel: boolean
+  onDeleteModel: () => void
+  onSaveModelSettings: () => void
+}): ReactNode {
+  return (
+    <div className="flex items-center gap-2">
+      {!isNewModelEntry && selectedModel && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="text-rose-400 hover:text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
+          onClick={onDeleteModel}
+          disabled={deletingModel || savingModel}
+        >
+          <Trash2 className="size-3.5 mr-1.5" />
+          {deletingModel ? 'Removing...' : 'Remove model'}
+        </Button>
+      )}
+      <Button size="sm" variant="outline" onClick={onSaveModelSettings} disabled={savingModel || deletingModel}>
+        <Save className="size-3.5 mr-1.5" />
+        {savingModel ? 'Saving...' : 'Save model settings'}
+      </Button>
+    </div>
+  )
+}
+
+/** The model-id/provider inputs (a brand-new model entry) or the read-only
+ *  id line (an existing selection). */
+function modelIdentityFields({
+  isNewModelEntry,
+  selectedModel,
+  newModelId,
+  newModelProvider,
+  setNewModelId,
+  setNewModelProvider,
+}: {
+  isNewModelEntry: boolean
+  selectedModel: LLMModel | undefined
+  newModelId: string
+  newModelProvider: string
+  setNewModelId: (value: string) => void
+  setNewModelProvider: (value: string) => void
+}): ReactNode {
+  if (!isNewModelEntry) {
+    return <div className="text-xs font-mono text-muted-foreground">{selectedModel?.id}</div>
+  }
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-muted-foreground">Model id *</label>
+        <Input
+          value={newModelId}
+          onChange={(e) => {
+            setNewModelId(e.target.value)
+          }}
+          placeholder="e.g. qwen/qwen3.6-27b"
+          className="font-mono text-xs"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-muted-foreground">Provider *</label>
+        <Input
+          value={newModelProvider}
+          onChange={(e) => {
+            setNewModelProvider(e.target.value)
+          }}
+          placeholder="openai"
+          className="font-mono text-xs"
+        />
+      </div>
+    </div>
+  )
+}
+
+/** The "Model configuration" panel (BUG-260): shown once a model is
+ *  selected or being newly created, with a schema and settings to edit.
+ *  Renders nothing otherwise. */
+function modelConfigurationPanel(props: {
+  kind: ModelKind
+  isNewModelEntry: boolean
+  selectedModel: LLMModel | undefined
+  activeSchema: ModelJsonSchema | null
+  modelSettings: Record<string, unknown> | null
+  deletingModel: boolean
+  savingModel: boolean
+  newModelId: string
+  newModelProvider: string
+  setNewModelId: (value: string) => void
+  setNewModelProvider: (value: string) => void
+  setModelSettings: (updater: (prev: Record<string, unknown> | null) => Record<string, unknown> | null) => void
+  onDeleteModel: () => void
+  onSaveModelSettings: () => void
+}): ReactNode {
+  const {
+    kind,
+    isNewModelEntry,
+    selectedModel,
+    activeSchema,
+    modelSettings,
+    deletingModel,
+    savingModel,
+    newModelId,
+    newModelProvider,
+    setNewModelId,
+    setNewModelProvider,
+    setModelSettings,
+    onDeleteModel,
+    onSaveModelSettings,
+  } = props
+  if (!activeSchema || !modelSettings || !(selectedModel ?? isNewModelEntry)) return null
+  return (
+    <div className="space-y-3 rounded-md border border-border/40 p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Layers className="h-4 w-4 text-muted-foreground" />
+          Model configuration ({kind})
+        </div>
+        {modelConfigActions({
+          isNewModelEntry,
+          selectedModel,
+          deletingModel,
+          savingModel,
+          onDeleteModel,
+          onSaveModelSettings,
+        })}
+      </div>
+
+      {modelIdentityFields({
+        isNewModelEntry,
+        selectedModel,
+        newModelId,
+        newModelProvider,
+        setNewModelId,
+        setNewModelProvider,
+      })}
+
+      <ModelSettingsForm
+        schema={activeSchema}
+        values={modelSettings}
+        onChange={(field, value) => {
+          setModelSettings((prev) => ({ ...(prev ?? {}), [field]: value }))
+        }}
+      />
+    </div>
+  )
+}
+
+/** "Load an existing template" picker, or nothing when there are none. */
+function existingTemplatePicker({
+  templates,
+  selectedName,
+  onLoadTemplate,
+}: {
+  templates: TemplateSummary[]
+  selectedName: string | null
+  onLoadTemplate: (name: string) => void
+}): ReactNode {
+  if (templates.length === 0) return null
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-semibold text-muted-foreground">Load an existing template</label>
+      <Select
+        value={selectedName ?? ''}
+        onValueChange={(name) => {
+          onLoadTemplate(name)
+        }}
+      >
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder="Pick a saved template…" />
+        </SelectTrigger>
+        <SelectContent>
+          {templates.map((t) => (
+            <SelectItem key={t.name} value={t.name}>
+              {t.title || t.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
+/** The new-template name field, or nothing once a template is selected. */
+function newTemplateNameField({
+  isNew,
+  newName,
+  setNewName,
+}: {
+  isNew: boolean
+  newName: string
+  setNewName: (value: string) => void
+}): ReactNode {
+  if (!isNew) return null
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-semibold text-muted-foreground">Template name (id)</label>
+      <Input
+        value={newName}
+        onChange={(e) => {
+          setNewName(e.target.value)
+        }}
+        placeholder="e.g. release-notes-writer"
+        className="font-mono text-xs"
+      />
+    </div>
+  )
+}
+
+/** The generation-parameters panel (temperature/top_p/max_tokens/reasoning
+ *  effort) at the bottom of the composer. */
+function templateParametersPanel({
+  parameters,
+  setParameters,
+}: {
+  parameters: TemplateParameters
+  setParameters: (updater: (p: TemplateParameters) => TemplateParameters) => void
+}): ReactNode {
+  return (
+    <div className="space-y-4 rounded-md border border-border/40 p-4">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <Wrench className="h-4 w-4 text-muted-foreground" />
+        Parameters
+      </div>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>Temperature</span>
+          <span className="tabular-nums">{parameters.temperature.toFixed(2)}</span>
+        </div>
+        <Slider
+          value={parameters.temperature}
+          onValueChange={(v) => {
+            setParameters((p) => ({ ...p, temperature: v }))
+          }}
+          min={0}
+          max={2}
+          step={0.05}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>Top P</span>
+          <span className="tabular-nums">{parameters.top_p.toFixed(2)}</span>
+        </div>
+        <Slider
+          value={parameters.top_p}
+          onValueChange={(v) => {
+            setParameters((p) => ({ ...p, top_p: v }))
+          }}
+          min={0}
+          max={1}
+          step={0.05}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground">Max tokens</label>
+          <Input
+            type="number"
+            value={parameters.max_tokens}
+            onChange={(e) => {
+              const next = Number(e.target.value)
+              setParameters((p) => ({ ...p, max_tokens: Number.isFinite(next) ? next : p.max_tokens }))
+            }}
+            className="font-mono text-xs"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground">Reasoning effort</label>
+          <Select
+            value={parameters.reasoning_effort}
+            onValueChange={(v) => {
+              setParameters((p) => ({ ...p, reasoning_effort: v }))
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {REASONING_EFFORTS.map((r) => (
+                <SelectItem key={r} value={r}>
+                  {r}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Save-template button is disabled while saving, or when there is no
+ *  target name yet (a new, unnamed template with nothing typed). */
+function isSaveTemplateDisabled(saving: boolean, isNew: boolean, selectedName: string | null): boolean {
+  return saving || (!isNew && !selectedName)
 }
 
 export default function LLMTemplatesView() {
@@ -549,38 +1036,18 @@ export default function LLMTemplatesView() {
   const handleSaveModelSettings = async () => {
     const schema = schemas?.[kind]
     if (!schema || !modelSettings) return
-    const targetId = isNewModelEntry ? newModelId.trim() : modelId
-    if (!targetId) {
-      toast.error('Give the model an id first')
-      return
-    }
-    const provider = isNewModelEntry ? newModelProvider.trim() : ((modelSettings.provider as string | undefined) ?? '')
-    if (!provider) {
-      toast.error('A provider is required')
-      return
-    }
+    const target = resolveModelSaveTarget({ isNewModelEntry, newModelId, modelId, newModelProvider, modelSettings })
+    if (!target) return
+    const { targetId, provider } = target
     setSavingModel(true)
     try {
       const payload = { ...modelSettings, id: targetId, provider }
       const existing = kind === 'chat' ? chatModels : embeddingModels
       const others = existing.filter((m) => m.id !== targetId)
-      const detailUrl = `/api/enhanced/llm/${kind === 'chat' ? 'models' : 'embedding-models'}`
       // Upsert: fetch every OTHER model's full settings so the write is a
       // faithful full-registry replace, not a partial that would drop them
       // back to their schema defaults.
-      const otherDetails = await Promise.all(
-        others.map((m) =>
-          fetchValidated(
-            `/api/enhanced/llm/model-detail?kind=${kind}&model_id=${encodeURIComponent(m.id)}`,
-            z.record(z.string(), z.unknown()),
-          ),
-        ),
-      )
-      const res = await fetch(detailUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ models: [...otherDetails, payload] }),
-      })
+      const res = await upsertModelRegistry(kind, payload, others)
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { detail?: string } | null
         toast.error(body?.detail ?? 'Failed to save model settings')
@@ -758,41 +1225,20 @@ export default function LLMTemplatesView() {
           </div>
           <Button variant="outline" size="sm" className="mt-2 w-full" onClick={startNewModel}>
             <Plus className="h-3.5 w-3.5 mr-1.5" />
-            New {kind === 'chat' ? 'chat' : 'embedding'} model
+            New {kind} model
           </Button>
         </CardHeader>
         <ScrollArea className="flex-1">
           <CardContent className="space-y-1 pt-0">
-            {loading ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">Loading models…</div>
-            ) : loadError ? (
-              <div className="py-8 px-2">
-                <UnavailableNotice what="The LLM model registry" />
-              </div>
-            ) : filteredModels.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                No {kind} models are configured in AgentConfig yet.
-              </div>
-            ) : (
-              filteredModels.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => {
-                    selectModel(m)
-                  }}
-                  className={`w-full text-left rounded-md p-2 text-sm hover:bg-muted/40 ${
-                    modelId === m.id && !isNewModelEntry ? 'bg-muted/60' : ''
-                  }`}
-                >
-                  <div className="font-medium truncate">{m.id}</div>
-                  <div className="text-xs text-muted-foreground truncate">{m.provider}</div>
-                  <div className="mt-1">
-                    <ModelBadges model={m} />
-                  </div>
-                </button>
-              ))
-            )}
+            {modelListPanel({
+              loading,
+              loadError,
+              filteredModels,
+              kind,
+              modelId,
+              isNewModelEntry,
+              onSelectModel: selectModel,
+            })}
           </CardContent>
         </ScrollArea>
       </Card>
@@ -803,7 +1249,7 @@ export default function LLMTemplatesView() {
           <div>
             <CardTitle className="text-base font-bold flex items-center gap-2">
               <Sparkles className="size-4 text-emerald-400" />
-              {isNewModelEntry ? `New ${kind} model` : selectedModel ? selectedModel.id : 'Select a model'}
+              {composerTitle(isNewModelEntry, kind, selectedModel)}
             </CardTitle>
             <CardDescription>
               Model configuration from AgentConfig (editable, BUG-260), plus an optional saved template (generation
@@ -815,7 +1261,7 @@ export default function LLMTemplatesView() {
             onClick={() => {
               void handleSave()
             }}
-            disabled={saving || (!isNew && !selectedName)}
+            disabled={isSaveTemplateDisabled(saving, isNew, selectedName)}
             className="bg-emerald-600 hover:bg-emerald-700"
           >
             <Save className="size-4 mr-1.5" />
@@ -824,117 +1270,36 @@ export default function LLMTemplatesView() {
         </CardHeader>
         <ScrollArea className="flex-1">
           <CardContent className="space-y-5 pb-8">
-            {(selectedModel ?? isNewModelEntry) && activeSchema && modelSettings && (
-              <div className="space-y-3 rounded-md border border-border/40 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    <Layers className="h-4 w-4 text-muted-foreground" />
-                    Model configuration ({kind})
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {!isNewModelEntry && selectedModel && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-rose-400 hover:text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
-                        onClick={() => {
-                          void handleDeleteModel()
-                        }}
-                        disabled={deletingModel || savingModel}
-                      >
-                        <Trash2 className="size-3.5 mr-1.5" />
-                        {deletingModel ? 'Removing...' : 'Remove model'}
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        void handleSaveModelSettings()
-                      }}
-                      disabled={savingModel || deletingModel}
-                    >
-                      <Save className="size-3.5 mr-1.5" />
-                      {savingModel ? 'Saving...' : 'Save model settings'}
-                    </Button>
-                  </div>
-                </div>
+            {modelConfigurationPanel({
+              kind,
+              isNewModelEntry,
+              selectedModel,
+              activeSchema,
+              modelSettings,
+              deletingModel,
+              savingModel,
+              newModelId,
+              newModelProvider,
+              setNewModelId,
+              setNewModelProvider,
+              setModelSettings,
+              onDeleteModel: () => {
+                void handleDeleteModel()
+              },
+              onSaveModelSettings: () => {
+                void handleSaveModelSettings()
+              },
+            })}
 
-                {isNewModelEntry ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Model id *</label>
-                      <Input
-                        value={newModelId}
-                        onChange={(e) => {
-                          setNewModelId(e.target.value)
-                        }}
-                        placeholder="e.g. qwen/qwen3.6-27b"
-                        className="font-mono text-xs"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Provider *</label>
-                      <Input
-                        value={newModelProvider}
-                        onChange={(e) => {
-                          setNewModelProvider(e.target.value)
-                        }}
-                        placeholder="openai"
-                        className="font-mono text-xs"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-xs font-mono text-muted-foreground">{selectedModel?.id}</div>
-                )}
+            {existingTemplatePicker({
+              templates,
+              selectedName,
+              onLoadTemplate: (name) => {
+                void loadTemplate(name)
+              },
+            })}
 
-                <ModelSettingsForm
-                  schema={activeSchema}
-                  values={modelSettings}
-                  onChange={(field, value) => {
-                    setModelSettings((prev) => ({ ...(prev ?? {}), [field]: value }))
-                  }}
-                />
-              </div>
-            )}
-
-            {templates.length > 0 && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground">Load an existing template</label>
-                <Select
-                  value={selectedName ?? ''}
-                  onValueChange={(name) => {
-                    void loadTemplate(name)
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Pick a saved template…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {templates.map((t) => (
-                      <SelectItem key={t.name} value={t.name}>
-                        {t.title || t.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {isNew && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground">Template name (id)</label>
-                <Input
-                  value={newName}
-                  onChange={(e) => {
-                    setNewName(e.target.value)
-                  }}
-                  placeholder="e.g. release-notes-writer"
-                  className="font-mono text-xs"
-                />
-              </div>
-            )}
+            {newTemplateNameField({ isNew, newName, setNewName })}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
@@ -973,76 +1338,7 @@ export default function LLMTemplatesView() {
               />
             </div>
 
-            <div className="space-y-4 rounded-md border border-border/40 p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <Wrench className="h-4 w-4 text-muted-foreground" />
-                Parameters
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Temperature</span>
-                  <span className="tabular-nums">{parameters.temperature.toFixed(2)}</span>
-                </div>
-                <Slider
-                  value={parameters.temperature}
-                  onValueChange={(v) => {
-                    setParameters((p) => ({ ...p, temperature: v }))
-                  }}
-                  min={0}
-                  max={2}
-                  step={0.05}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Top P</span>
-                  <span className="tabular-nums">{parameters.top_p.toFixed(2)}</span>
-                </div>
-                <Slider
-                  value={parameters.top_p}
-                  onValueChange={(v) => {
-                    setParameters((p) => ({ ...p, top_p: v }))
-                  }}
-                  min={0}
-                  max={1}
-                  step={0.05}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Max tokens</label>
-                  <Input
-                    type="number"
-                    value={parameters.max_tokens}
-                    onChange={(e) => {
-                      const next = Number(e.target.value)
-                      setParameters((p) => ({ ...p, max_tokens: Number.isFinite(next) ? next : p.max_tokens }))
-                    }}
-                    className="font-mono text-xs"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Reasoning effort</label>
-                  <Select
-                    value={parameters.reasoning_effort}
-                    onValueChange={(v) => {
-                      setParameters((p) => ({ ...p, reasoning_effort: v }))
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {REASONING_EFFORTS.map((r) => (
-                        <SelectItem key={r} value={r}>
-                          {r}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
+            {templateParametersPanel({ parameters, setParameters })}
           </CardContent>
         </ScrollArea>
       </Card>

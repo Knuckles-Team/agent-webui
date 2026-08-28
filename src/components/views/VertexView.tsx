@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   Waypoints,
   RefreshCw,
@@ -141,6 +141,48 @@ async function fetchObjectLinks(objectId: string): Promise<{ out: GraphRelations
   return { out, in: inbound }
 }
 
+/** Flattens each object's out+in links into a single edge list. */
+function collectLinkEdges(
+  linkResults: ({ out: GraphRelationship[]; in: GraphRelationship[] } | null)[],
+): GraphRelationship[] {
+  const edges: GraphRelationship[] = []
+  for (const res of linkResults) {
+    edges.push(...(res?.out ?? []), ...(res?.in ?? []))
+  }
+  return edges
+}
+
+/** Drops duplicate `source->type->target` edges, keeping the first occurrence. */
+function dedupeEdges(edges: GraphRelationship[]): GraphRelationship[] {
+  const seen = new Set<string>()
+  const deduped: GraphRelationship[] = []
+  for (const e of edges) {
+    const key = `${e.source}->${e.type}->${e.target}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(e)
+  }
+  return deduped
+}
+
+/** Keeps only edges that fall entirely within `idSet` (bounded fan-out). */
+function edgesWithinSet(edges: GraphRelationship[], idSet: Set<string>): GraphRelationship[] {
+  return edges.filter((e) => idSet.has(e.source) && idSet.has(e.target))
+}
+
+/** Keeps edges that touch a discovered neighbor AND a seed id. */
+function edgesTouchingNeighborAndSeed(
+  edges: GraphRelationship[],
+  neighborIds: Set<string>,
+  seedIds: string[],
+): GraphRelationship[] {
+  return edges.filter((e) => {
+    const touchesNeighbor = neighborIds.has(e.source) || neighborIds.has(e.target)
+    const touchesSeed = seedIds.includes(e.source) || seedIds.includes(e.target)
+    return touchesNeighbor && touchesSeed
+  })
+}
+
 /**
  * Seed the graph from an object type / interface. Backed by the real
  * POST /ontology/object-set/search route (`{kind}` → `{ids, rows, count}`),
@@ -150,19 +192,8 @@ export async function fetchObjectSet(type: string): Promise<ObjectSetResponse> {
   const raw = await postJson<RawObjectSet>('/api/enhanced/ontology/object-set/search', { kind: type, query: '' })
   const objects = (raw.rows ?? []).map(rowToObject)
   const idSet = new Set(objects.map((o) => o.id))
-  const links: GraphRelationship[] = []
-  const seen = new Set<string>()
-  // Build edges that fall entirely within the seed set (bounded fan-out).
   const linkResults = await Promise.all(objects.map((o) => fetchObjectLinks(o.id).catch(() => null)))
-  for (const res of linkResults) {
-    for (const e of [...(res?.out ?? []), ...(res?.in ?? [])]) {
-      if (!idSet.has(e.source) || !idSet.has(e.target)) continue
-      const key = `${e.source}->${e.type}->${e.target}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      links.push(e)
-    }
-  }
+  const links = dedupeEdges(edgesWithinSet(collectLinkEdges(linkResults), idSet))
   return { objects, links }
 }
 
@@ -180,21 +211,8 @@ export async function fetchSearchAround(req: SearchAroundRequest): Promise<Objec
   })
   const objects = (raw.rows ?? []).map(rowToObject)
   const neighborIds = new Set(objects.map((o) => o.id))
-  const links: GraphRelationship[] = []
-  const seen = new Set<string>()
   const seedLinks = await Promise.all(req.ids.map((id) => fetchObjectLinks(id).catch(() => null)))
-  for (const res of seedLinks) {
-    for (const e of [...(res?.out ?? []), ...(res?.in ?? [])]) {
-      // Keep edges that touch a discovered neighbor or a seed id.
-      const touchesNeighbor = neighborIds.has(e.source) || neighborIds.has(e.target)
-      const touchesSeed = req.ids.includes(e.source) || req.ids.includes(e.target)
-      if (!touchesNeighbor || !touchesSeed) continue
-      const key = `${e.source}->${e.type}->${e.target}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      links.push(e)
-    }
-  }
+  const links = dedupeEdges(edgesTouchingNeighborAndSeed(collectLinkEdges(seedLinks), neighborIds, req.ids))
   return { objects, links }
 }
 
@@ -248,6 +266,331 @@ export function toGraphNode(obj: OntologyObject): GraphNode {
     labels: [obj.type],
     properties: obj.properties,
   }
+}
+
+/** The graph canvas panel, or an empty-state placeholder when nothing is loaded. */
+function graphCanvasPanel({
+  graphNodes,
+  graphLinks,
+  selectedNode,
+  onToggleRemoved,
+  onSelectNode,
+}: {
+  graphNodes: GraphNode[]
+  graphLinks: GraphRelationship[]
+  selectedNode: GraphNode | null
+  onToggleRemoved: (id: string) => void
+  onSelectNode: (n: GraphNode | null) => void
+}): ReactNode {
+  return (
+    <Card className="lg:col-span-2 border-border/40 bg-card/60 flex flex-col overflow-hidden">
+      <CardContent className="flex-1 p-0 relative overflow-hidden min-h-[450px]">
+        {graphNodes.length > 0 ? (
+          <GraphCanvas
+            nodes={graphNodes}
+            relationships={graphLinks}
+            onUpdateNode={() => undefined}
+            onDeleteNode={(id) => {
+              onToggleRemoved(id)
+            }}
+            onAddNode={() => undefined}
+            selectedNodeExternally={selectedNode}
+            onSelectNode={onSelectNode}
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
+            <Waypoints className="size-12 text-muted-foreground/30 mb-3" />
+            <p className="text-sm">No objects loaded. Enter an object type above and load a seed set.</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** The "Expand Node" (search-around) card. */
+function expandNodePanel({
+  expandLinkType,
+  setExpandLinkType,
+  expanding,
+  selectedNode,
+  onExpand,
+}: {
+  expandLinkType: string
+  setExpandLinkType: (value: string) => void
+  expanding: boolean
+  selectedNode: GraphNode | null
+  onExpand: () => void
+}): ReactNode {
+  return (
+    <Card className="border-border/40 bg-card/60 shrink-0">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-bold flex items-center gap-2">
+          <GitBranch className="size-4 text-emerald-400" />
+          Expand Node
+        </CardTitle>
+        <CardDescription className="text-xs">Search-around the selected node along a typed link.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <Input
+          aria-label="Link type"
+          placeholder="Link type (blank = any)"
+          value={expandLinkType}
+          onChange={(e) => {
+            setExpandLinkType(e.target.value)
+          }}
+          className="text-xs"
+        />
+        <Button onClick={onExpand} disabled={expanding || !selectedNode} size="sm" className="w-full">
+          {expanding ? <Loader2 className="size-4 mr-2 animate-spin" /> : <GitBranch className="size-4 mr-2" />}
+          Search Around
+        </Button>
+        {selectedNode && (
+          <p className="text-[11px] text-muted-foreground truncate">
+            Selected: {(selectedNode.properties.name as string) || selectedNode.id}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** The "Object Types" legend card, or nothing when there is nothing loaded. */
+function objectTypesLegend(typeCounts: Record<string, number>): ReactNode {
+  if (Object.keys(typeCounts).length === 0) return null
+  return (
+    <Card className="border-border/40 bg-card/60 shrink-0">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-bold">Object Types</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-wrap gap-1.5">
+        {Object.entries(typeCounts).map(([type, count]) => (
+          <Badge key={type} variant="secondary" className="text-[11px]">
+            {type}: {count}
+          </Badge>
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** The derived-properties body: loading, the values list, or the empty note. */
+function derivedPropertiesBody(
+  derivingId: string | null,
+  selectedNodeId: string,
+  derived: Record<string, unknown> | null,
+): ReactNode {
+  if (derivingId === selectedNodeId) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground py-4">
+        <Loader2 className="size-4 animate-spin" />
+        Deriving...
+      </div>
+    )
+  }
+  if (derived && Object.keys(derived).length > 0) {
+    return (
+      <dl className="space-y-1.5 text-xs">
+        {Object.entries(derived).map(([k, v]) => (
+          <div key={k} className="flex justify-between gap-2 border-b border-border/20 pb-1">
+            <dt className="font-medium text-muted-foreground">{k}</dt>
+            <dd className="font-mono text-right break-all">{String(v)}</dd>
+          </div>
+        ))}
+      </dl>
+    )
+  }
+  return <p className="text-xs text-muted-foreground py-4">No derived properties for this object.</p>
+}
+
+/** The "Derived Properties" card for the selected node, or nothing when
+ *  nothing is selected. */
+function derivedPropertiesPanel({
+  selectedNode,
+  scenarioEnabled,
+  derivingId,
+  derived,
+  onToggleRemoved,
+  onClearSelection,
+}: {
+  selectedNode: GraphNode | null
+  scenarioEnabled: boolean
+  derivingId: string | null
+  derived: Record<string, unknown> | null
+  onToggleRemoved: (id: string) => void
+  onClearSelection: () => void
+}): ReactNode {
+  if (!selectedNode) return null
+  return (
+    <Card className="border-border/40 bg-card/60 flex-1 overflow-hidden flex flex-col">
+      <CardHeader className="pb-2 flex flex-row items-center justify-between">
+        <CardTitle className="text-sm font-bold flex items-center gap-2">
+          <Sparkles className="size-4 text-emerald-400" />
+          Derived Properties
+        </CardTitle>
+        <div className="flex items-center gap-1">
+          {scenarioEnabled && (
+            <Button
+              variant="ghost"
+              size="sm"
+              title="Mark removed in scenario"
+              onClick={() => {
+                onToggleRemoved(selectedNode.id)
+              }}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" title="Clear selection" onClick={onClearSelection}>
+            <X className="size-3.5" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1 overflow-hidden p-0">
+        <ScrollArea className="h-full px-4 pb-4">
+          {derivedPropertiesBody(derivingId, selectedNode.id, derived)}
+        </ScrollArea>
+      </CardContent>
+    </Card>
+  )
+}
+
+/** The removed-nodes summary + reset row, or nothing when scenario mode is
+ *  off or nothing has been removed. */
+function removedNodesSummary(scenarioEnabled: boolean, removedCount: number, onReset: () => void): ReactNode {
+  if (!scenarioEnabled || removedCount === 0) return null
+  return (
+    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+      <span>{removedCount} node(s) marked removed</span>
+      <Button variant="ghost" size="sm" className="h-6 px-2" onClick={onReset}>
+        <RotateCcw className="size-3 mr-1" />
+        Reset
+      </Button>
+    </div>
+  )
+}
+
+/** The baseline/scenario/delta metric row, or nothing before a recompute. */
+function scenarioMetricRow(baseline: number | null, scenarioValue: number | null): ReactNode {
+  if (baseline === null || scenarioValue === null) return null
+  const delta = scenarioValue - baseline
+  return (
+    <div className="grid grid-cols-3 gap-2 text-center pt-1">
+      <div>
+        <p className="text-[10px] text-muted-foreground uppercase">Baseline</p>
+        <p className="text-sm font-bold font-mono">{baseline}</p>
+      </div>
+      <div>
+        <p className="text-[10px] text-muted-foreground uppercase">Scenario</p>
+        <p className="text-sm font-bold font-mono">{scenarioValue}</p>
+      </div>
+      <div>
+        <p className="text-[10px] text-muted-foreground uppercase">Delta</p>
+        <p className={`text-sm font-bold font-mono ${delta < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+          {delta > 0 ? '+' : ''}
+          {delta}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** The "What-If Scenario" card: mode toggle, aggregate controls, removed-node
+ *  summary, recompute button, and the baseline/scenario/delta row. */
+function scenarioControlsPanel(props: {
+  scenarioEnabled: boolean
+  setScenarioEnabled: (value: boolean) => void
+  aggProperty: string
+  setAggProperty: (value: string) => void
+  aggFn: 'sum' | 'avg' | 'min' | 'max' | 'count'
+  setAggFn: (value: 'sum' | 'avg' | 'min' | 'max' | 'count') => void
+  removedCount: number
+  onResetRemoved: () => void
+  recomputing: boolean
+  canRecompute: boolean
+  onRecompute: () => void
+  baseline: number | null
+  scenarioValue: number | null
+}): ReactNode {
+  const {
+    scenarioEnabled,
+    setScenarioEnabled,
+    aggProperty,
+    setAggProperty,
+    aggFn,
+    setAggFn,
+    removedCount,
+    onResetRemoved,
+    recomputing,
+    canRecompute,
+    onRecompute,
+    baseline,
+    scenarioValue,
+  } = props
+  return (
+    <Card className="border-border/40 bg-card/60 shrink-0">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-bold flex items-center gap-2">
+          <FlaskConical className="size-4 text-amber-400" />
+          What-If Scenario
+        </CardTitle>
+        <CardDescription className="text-xs">
+          Toggle scenario mode, remove nodes, and recompute a derived metric.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <label htmlFor="scenario-toggle" className="text-xs font-medium">
+            Scenario mode
+          </label>
+          <Switch id="scenario-toggle" checked={scenarioEnabled} onCheckedChange={setScenarioEnabled} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Input
+            aria-label="Aggregate property"
+            placeholder="property"
+            value={aggProperty}
+            onChange={(e) => {
+              setAggProperty(e.target.value)
+            }}
+            className="text-xs"
+          />
+          <Select
+            value={aggFn}
+            onValueChange={(v) => {
+              setAggFn(v as typeof aggFn)
+            }}
+          >
+            <SelectTrigger className="text-xs" aria-label="Aggregate function">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="sum">sum</SelectItem>
+              <SelectItem value="avg">avg</SelectItem>
+              <SelectItem value="min">min</SelectItem>
+              <SelectItem value="max">max</SelectItem>
+              <SelectItem value="count">count</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {removedNodesSummary(scenarioEnabled, removedCount, onResetRemoved)}
+
+        <Button
+          onClick={onRecompute}
+          disabled={recomputing || !canRecompute}
+          size="sm"
+          className="w-full bg-amber-600 hover:bg-amber-700"
+        >
+          {recomputing ? <Loader2 className="size-4 mr-2 animate-spin" /> : <FlaskConical className="size-4 mr-2" />}
+          Recompute Metric
+        </Button>
+
+        {scenarioMetricRow(baseline, scenarioValue)}
+      </CardContent>
+    </Card>
+  )
 }
 
 export default function VertexView() {
@@ -403,8 +746,6 @@ export default function VertexView() {
     return acc
   }, {})
 
-  const delta = baseline !== null && scenarioValue !== null ? scenarioValue - baseline : null
-
   return (
     <div className="space-y-6 h-[calc(100vh-12rem)] flex flex-col">
       {/* Header */}
@@ -459,252 +800,60 @@ export default function VertexView() {
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
         {/* Graph canvas */}
-        <Card className="lg:col-span-2 border-border/40 bg-card/60 flex flex-col overflow-hidden">
-          <CardContent className="flex-1 p-0 relative overflow-hidden min-h-[450px]">
-            {graphNodes.length > 0 ? (
-              <GraphCanvas
-                nodes={graphNodes}
-                relationships={graphLinks}
-                onUpdateNode={() => undefined}
-                onDeleteNode={(id) => {
-                  toggleRemoved(id)
-                }}
-                onAddNode={() => undefined}
-                selectedNodeExternally={selectedNode}
-                onSelectNode={(n) => {
-                  void handleSelectNode(n)
-                }}
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
-                <Waypoints className="size-12 text-muted-foreground/30 mb-3" />
-                <p className="text-sm">No objects loaded. Enter an object type above and load a seed set.</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {graphCanvasPanel({
+          graphNodes,
+          graphLinks,
+          selectedNode,
+          onToggleRemoved: toggleRemoved,
+          onSelectNode: (n) => {
+            void handleSelectNode(n)
+          },
+        })}
 
         {/* Inspector + scenario panel */}
         <div className="flex flex-col gap-4 overflow-hidden">
-          {/* Expand / search-around */}
-          <Card className="border-border/40 bg-card/60 shrink-0">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <GitBranch className="size-4 text-emerald-400" />
-                Expand Node
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Search-around the selected node along a typed link.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Input
-                aria-label="Link type"
-                placeholder="Link type (blank = any)"
-                value={expandLinkType}
-                onChange={(e) => {
-                  setExpandLinkType(e.target.value)
-                }}
-                className="text-xs"
-              />
-              <Button
-                onClick={() => {
-                  void expandSelected()
-                }}
-                disabled={expanding || !selectedNode}
-                size="sm"
-                className="w-full"
-              >
-                {expanding ? <Loader2 className="size-4 mr-2 animate-spin" /> : <GitBranch className="size-4 mr-2" />}
-                Search Around
-              </Button>
-              {selectedNode && (
-                <p className="text-[11px] text-muted-foreground truncate">
-                  Selected: {(selectedNode.properties.name as string) || selectedNode.id}
-                </p>
-              )}
-            </CardContent>
-          </Card>
+          {expandNodePanel({
+            expandLinkType,
+            setExpandLinkType,
+            expanding,
+            selectedNode,
+            onExpand: () => {
+              void expandSelected()
+            },
+          })}
 
-          {/* Type legend */}
-          {Object.keys(typeCounts).length > 0 && (
-            <Card className="border-border/40 bg-card/60 shrink-0">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold">Object Types</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-1.5">
-                {Object.entries(typeCounts).map(([type, count]) => (
-                  <Badge key={type} variant="secondary" className="text-[11px]">
-                    {type}: {count}
-                  </Badge>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          {objectTypesLegend(typeCounts)}
 
-          {/* Derived properties for selected node */}
-          {selectedNode && (
-            <Card className="border-border/40 bg-card/60 flex-1 overflow-hidden flex flex-col">
-              <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm font-bold flex items-center gap-2">
-                  <Sparkles className="size-4 text-emerald-400" />
-                  Derived Properties
-                </CardTitle>
-                <div className="flex items-center gap-1">
-                  {scenarioEnabled && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      title="Mark removed in scenario"
-                      onClick={() => {
-                        toggleRemoved(selectedNode.id)
-                      }}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    title="Clear selection"
-                    onClick={() => {
-                      void handleSelectNode(null)
-                    }}
-                  >
-                    <X className="size-3.5" />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="flex-1 overflow-hidden p-0">
-                <ScrollArea className="h-full px-4 pb-4">
-                  {derivingId === selectedNode.id ? (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground py-4">
-                      <Loader2 className="size-4 animate-spin" />
-                      Deriving...
-                    </div>
-                  ) : derived && Object.keys(derived).length > 0 ? (
-                    <dl className="space-y-1.5 text-xs">
-                      {Object.entries(derived).map(([k, v]) => (
-                        <div key={k} className="flex justify-between gap-2 border-b border-border/20 pb-1">
-                          <dt className="font-medium text-muted-foreground">{k}</dt>
-                          <dd className="font-mono text-right break-all">{String(v)}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  ) : (
-                    <p className="text-xs text-muted-foreground py-4">No derived properties for this object.</p>
-                  )}
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          )}
+          {derivedPropertiesPanel({
+            selectedNode,
+            scenarioEnabled,
+            derivingId,
+            derived,
+            onToggleRemoved: toggleRemoved,
+            onClearSelection: () => {
+              void handleSelectNode(null)
+            },
+          })}
 
-          {/* Scenario controls */}
-          <Card className="border-border/40 bg-card/60 shrink-0">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <FlaskConical className="size-4 text-amber-400" />
-                What-If Scenario
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Toggle scenario mode, remove nodes, and recompute a derived metric.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label htmlFor="scenario-toggle" className="text-xs font-medium">
-                  Scenario mode
-                </label>
-                <Switch id="scenario-toggle" checked={scenarioEnabled} onCheckedChange={setScenarioEnabled} />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  aria-label="Aggregate property"
-                  placeholder="property"
-                  value={aggProperty}
-                  onChange={(e) => {
-                    setAggProperty(e.target.value)
-                  }}
-                  className="text-xs"
-                />
-                <Select
-                  value={aggFn}
-                  onValueChange={(v) => {
-                    setAggFn(v as typeof aggFn)
-                  }}
-                >
-                  <SelectTrigger className="text-xs" aria-label="Aggregate function">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="sum">sum</SelectItem>
-                    <SelectItem value="avg">avg</SelectItem>
-                    <SelectItem value="min">min</SelectItem>
-                    <SelectItem value="max">max</SelectItem>
-                    <SelectItem value="count">count</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {scenarioEnabled && removedIds.size > 0 && (
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>{removedIds.size} node(s) marked removed</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2"
-                    onClick={() => {
-                      setRemovedIds(new Set())
-                    }}
-                  >
-                    <RotateCcw className="size-3 mr-1" />
-                    Reset
-                  </Button>
-                </div>
-              )}
-
-              <Button
-                onClick={() => {
-                  void recomputeScenario()
-                }}
-                disabled={recomputing || objects.length === 0}
-                size="sm"
-                className="w-full bg-amber-600 hover:bg-amber-700"
-              >
-                {recomputing ? (
-                  <Loader2 className="size-4 mr-2 animate-spin" />
-                ) : (
-                  <FlaskConical className="size-4 mr-2" />
-                )}
-                Recompute Metric
-              </Button>
-
-              {baseline !== null && scenarioValue !== null && (
-                <div className="grid grid-cols-3 gap-2 text-center pt-1">
-                  <div>
-                    <p className="text-[10px] text-muted-foreground uppercase">Baseline</p>
-                    <p className="text-sm font-bold font-mono">{baseline}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-muted-foreground uppercase">Scenario</p>
-                    <p className="text-sm font-bold font-mono">{scenarioValue}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-muted-foreground uppercase">Delta</p>
-                    <p
-                      className={`text-sm font-bold font-mono ${
-                        delta && delta < 0 ? 'text-rose-400' : 'text-emerald-400'
-                      }`}
-                    >
-                      {delta !== null && delta > 0 ? '+' : ''}
-                      {delta}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {scenarioControlsPanel({
+            scenarioEnabled,
+            setScenarioEnabled,
+            aggProperty,
+            setAggProperty,
+            aggFn,
+            setAggFn,
+            removedCount: removedIds.size,
+            onResetRemoved: () => {
+              setRemovedIds(new Set())
+            },
+            recomputing,
+            canRecompute: objects.length > 0,
+            onRecompute: () => {
+              void recomputeScenario()
+            },
+            baseline,
+            scenarioValue,
+          })}
         </div>
       </div>
     </div>
