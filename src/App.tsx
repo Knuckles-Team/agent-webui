@@ -22,7 +22,7 @@
  * still hits this guard.
  */
 
-import { useEffect, useMemo, useState, Suspense, lazy } from 'react'
+import { useEffect, useMemo, useState, Suspense, lazy, type ReactNode } from 'react'
 import { AppSidebar } from './components/app-sidebar.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
@@ -30,8 +30,17 @@ import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
 import { cn } from './lib/utils.ts'
 import ChatPanel from './components/ChatPanel'
-import { ROUTES, matchRoute, roleAtLeast } from './lib/nav-registry.ts'
-import { useIdentity } from './lib/auth.ts'
+import { ROUTES, matchRoute, roleAtLeast, type RouteDef } from './lib/nav-registry.ts'
+import { useIdentity, type Identity } from './lib/auth.ts'
+
+// Lazy: only reachable behind `isObjectDetail`. A static import here pinned it
+// into the entry chunk and defeated nav-registry's dynamic import of the same
+// module (vite: "dynamically imported ... but also statically imported").
+//
+// Declared BELOW every import, not among them: WD4-WEB-03 placed it mid-import
+// block, which is exactly what raised the five `import-x/first` errors that
+// WD4-WEB-00 cleared on main. Both changes are kept; only the placement moves.
+const ObjectView = lazy(() => import('./components/views/ObjectView'))
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MCPProvider } from './lib/mcp-context.tsx'
@@ -77,13 +86,32 @@ function RouteLoadingFallback() {
   return <div className="py-16 text-center text-sm text-muted-foreground">Loading…</div>
 }
 
-/**
- * Root Application Component
- *
- * Manages view state based on URL path and provides the necessary context
- * providers for theme, sidebar, MCP tools, and data fetching.
+/** Maps a matched route to the legacy `view` id (falling back to the route's own id). */
+function legacyViewId(route: RouteDef): string {
+  return LEGACY_VIEW_IDS[route.id] ?? route.id
+}
+
+/** The bespoke-view flags App needs (chat/dashboard/object-detail) plus the legacy
+ * `view` id, derived once from a `matchRoute` result. Pure — no hooks — so it is
+ * free to live outside `useRouteState` and keep that hook's own branch count down. */
+function deriveRouteFlags(match: ReturnType<typeof matchRoute>) {
+  const activeRoute = match?.route ?? null
+  /** Unregistered paths fall back to Chat, matching the pre-registry behavior. */
+  const isChat = !activeRoute || activeRoute.id === 'chat.console'
+  const isDashboard = activeRoute?.id === 'observability.dashboard'
+  const isObjectDetail = activeRoute?.id === 'knowledge.object-detail'
+  const objectId = isObjectDetail ? (match?.params.id ?? '') : ''
+  const currentView = activeRoute ? legacyViewId(activeRoute) : 'chat'
+  return { activeRoute, isChat, isDashboard, isObjectDetail, objectId, currentView }
+}
+
+/** All URL-routing state derived for the current render: which `RouteDef` (if any)
+ * matched, the bespoke-view flags App needs (chat/dashboard/object-detail), the
+ * legacy `view` id, and the R9 role-gate verdict. Pulled out of `App` itself so the
+ * component body reads as layout, not route arithmetic — this is pure derivation
+ * plus two small effects/hooks, nothing stateful enough to need splitting further.
  */
-export default function App() {
+function useRouteState() {
   /** Exact route included in the assistant's typed page-context envelope. */
   const [currentRoute, setCurrentRoute] = useState(currentPathAndSearch)
 
@@ -107,13 +135,7 @@ export default function App() {
 
   const pathname = useMemo(() => new URL(currentRoute, window.location.origin).pathname, [currentRoute])
   const match = useMemo(() => matchRoute(pathname), [pathname])
-  const activeRoute = match?.route ?? null
-  /** Unregistered paths fall back to Chat, matching the pre-registry behavior. */
-  const isChat = !activeRoute || activeRoute.id === 'chat.console'
-  const isDashboard = activeRoute?.id === 'observability.dashboard'
-  const isObjectDetail = activeRoute?.id === 'knowledge.object-detail'
-  const objectId = isObjectDetail ? (match?.params.id ?? '') : ''
-  const currentView = activeRoute ? (LEGACY_VIEW_IDS[activeRoute.id] ?? activeRoute.id) : 'chat'
+  const { activeRoute, isChat, isDashboard, isObjectDetail, objectId, currentView } = deriveRouteFlags(match)
 
   const { identity, loading: identityLoading } = useIdentity()
   /** The route-guard half of R9: the sidebar already hides what `identity.role` cannot
@@ -123,6 +145,86 @@ export default function App() {
    * content that then gets pulled back. */
   const routeAccessDenied =
     !identityLoading && Boolean(activeRoute) && !roleAtLeast(identity.role, activeRoute!.minRole)
+
+  return {
+    currentRoute,
+    activeRoute,
+    isChat,
+    isDashboard,
+    isObjectDetail,
+    objectId,
+    currentView,
+    identity,
+    routeAccessDenied,
+  }
+}
+
+/** The "Insufficient role" R9 denial panel. `route` is guaranteed non-null by the
+ * caller: it only renders once `routeAccessDenied` is true, which itself requires
+ * a matched route (see `useRouteState`). */
+function renderRouteAccessDenied(route: RouteDef, identity: Identity): ReactNode {
+  return (
+    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6">
+      <h1 className="text-xl font-bold mb-1">Insufficient role</h1>
+      <p className="text-sm text-muted-foreground">
+        {route.label} requires the <strong>{route.minRole}</strong> role or higher.{' '}
+        {identity.needsSignIn
+          ? 'Sign in with an account that has it.'
+          : 'Your current role does not have access to this page.'}
+      </p>
+      {identity.needsSignIn && (
+        <a href="/auth/login" className="text-sm text-primary underline mt-2 inline-block">
+          Sign in
+        </a>
+      )}
+    </div>
+  )
+}
+
+function navigateToObjectId(id: string): void {
+  window.history.pushState({}, '', `/object/${encodeURIComponent(id)}`)
+  window.dispatchEvent(new Event('history-state-changed'))
+}
+
+/** The generic "other route" body: either the Object-detail view or the route's own
+ * `RouteDef.element`. `route` is guaranteed non-null by the caller (see above). */
+function renderRouteBody(route: RouteDef, isObjectDetail: boolean, objectId: string): ReactNode {
+  if (isObjectDetail) {
+    return (
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <ObjectView objectId={objectId} onNavigate={navigateToObjectId} />
+      </Suspense>
+    )
+  }
+  return (
+    <>
+      <h1 className="text-2xl font-bold mb-1">{route.label}</h1>
+      <p className="text-sm text-muted-foreground mb-4">{route.blurb}</p>
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <route.element />
+      </Suspense>
+    </>
+  )
+}
+
+/**
+ * Root Application Component
+ *
+ * Manages view state based on URL path and provides the necessary context
+ * providers for theme, sidebar, MCP tools, and data fetching.
+ */
+export default function App() {
+  const {
+    currentRoute,
+    activeRoute,
+    isChat,
+    isDashboard,
+    isObjectDetail,
+    objectId,
+    currentView,
+    identity,
+    routeAccessDenied,
+  } = useRouteState()
 
   const baseSelection = useMemo<PageContextSelection[]>(
     () => (isObjectDetail && objectId ? [{ kind: 'ontology-object', id: objectId, label: objectId }] : []),
@@ -165,40 +267,9 @@ export default function App() {
                   {!isChat && !isDashboard && (
                     <div className="flex flex-col flex-1 h-screen overflow-auto p-8">
                       <div className="mx-auto w-full">
-                        {routeAccessDenied ? (
-                          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6">
-                            <h1 className="text-xl font-bold mb-1">Insufficient role</h1>
-                            <p className="text-sm text-muted-foreground">
-                              {activeRoute.label} requires the <strong>{activeRoute.minRole}</strong> role or higher.{' '}
-                              {identity.needsSignIn
-                                ? 'Sign in with an account that has it.'
-                                : 'Your current role does not have access to this page.'}
-                            </p>
-                            {identity.needsSignIn && (
-                              <a href="/auth/login" className="text-sm text-primary underline mt-2 inline-block">
-                                Sign in
-                              </a>
-                            )}
-                          </div>
-                        ) : isObjectDetail ? (
-                          <Suspense fallback={<RouteLoadingFallback />}>
-                            <ObjectView
-                              objectId={objectId}
-                              onNavigate={(id) => {
-                                window.history.pushState({}, '', `/object/${encodeURIComponent(id)}`)
-                                window.dispatchEvent(new Event('history-state-changed'))
-                              }}
-                            />
-                          </Suspense>
-                        ) : (
-                          <>
-                            <h1 className="text-2xl font-bold mb-1">{activeRoute.label}</h1>
-                            <p className="text-sm text-muted-foreground mb-4">{activeRoute.blurb}</p>
-                            <Suspense fallback={<RouteLoadingFallback />}>
-                              <activeRoute.element />
-                            </Suspense>
-                          </>
-                        )}
+                        {routeAccessDenied
+                          ? renderRouteAccessDenied(activeRoute!, identity)
+                          : renderRouteBody(activeRoute!, isObjectDetail, objectId)}
                       </div>
                     </div>
                   )}
