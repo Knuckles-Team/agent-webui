@@ -724,6 +724,61 @@ class StrictHostHeaderMiddleware:
         )
 
 
+class _RequestHeaderRejected(Exception):
+    """A framing header that must be answered 400 before the body is read."""
+
+
+def _body_framing_headers(scope: Any) -> tuple[list[int], list[str], list[str]]:
+    """Collect the content-length / transfer-encoding / content-type headers.
+
+    Raises :class:`_RequestHeaderRejected` on the first content-length that is
+    not a decodable integer, which is exactly where the inline loop returned
+    400 -- later headers were never inspected then either.
+    """
+
+    lengths: list[int] = []
+    transfer_encodings: list[str] = []
+    content_types: list[str] = []
+    for key, value in scope.get('headers') or []:
+        header_name = key.decode('latin-1').lower()
+        if header_name == 'content-type':
+            content_types.append(value.decode('latin-1').strip().lower())
+        elif header_name == 'transfer-encoding':
+            transfer_encodings.append(value.decode('latin-1').strip().lower())
+        elif header_name == 'content-length':
+            try:
+                lengths.append(int(value.decode('ascii')))
+            except (UnicodeDecodeError, ValueError) as exc:
+                raise _RequestHeaderRejected from exc
+    return lengths, transfer_encodings, content_types
+
+
+def _body_framing_is_unambiguous(
+    lengths: list[int],
+    transfer_encodings: list[str],
+    content_types: list[str],
+) -> bool:
+    """Whether the framing headers describe exactly one, non-smuggled body."""
+
+    return not (
+        len(lengths) > 1
+        or any(length < 0 for length in lengths)
+        or (lengths and transfer_encodings)
+        or len(transfer_encodings) > 1
+        or len(content_types) > 1
+        or any(value != 'chunked' for value in transfer_encodings)
+    )
+
+
+def _effective_body_limit(max_bytes: int, content_types: list[str]) -> int:
+    """Multipart uploads keep the configured cap; structured bodies get less."""
+
+    media_type = content_types[0].split(';', 1)[0] if content_types else ''
+    if media_type == 'multipart/form-data':
+        return max_bytes
+    return min(max_bytes, _MAX_STRUCTURED_REQUEST_BYTES)
+
+
 class RequestBodyLimitMiddleware:
     """Reject oversized fixed-length and chunked HTTP bodies before routing."""
 
@@ -736,43 +791,34 @@ class RequestBodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        lengths: list[int] = []
-        transfer_encodings: list[str] = []
-        content_types: list[str] = []
-        for key, value in scope.get('headers') or []:
-            header_name = key.decode('latin-1').lower()
-            if header_name == 'content-type':
-                content_types.append(value.decode('latin-1').strip().lower())
-                continue
-            if header_name == 'transfer-encoding':
-                transfer_encodings.append(value.decode('latin-1').strip().lower())
-                continue
-            if header_name != 'content-length':
-                continue
-            try:
-                lengths.append(int(value.decode('ascii')))
-            except (UnicodeDecodeError, ValueError):
-                await self._reject(send, status=400)
-                return
-        if (
-            len(lengths) > 1
-            or any(length < 0 for length in lengths)
-            or (lengths and transfer_encodings)
-            or len(transfer_encodings) > 1
-            or len(content_types) > 1
-            or any(value != 'chunked' for value in transfer_encodings)
-        ):
+        try:
+            lengths, transfer_encodings, content_types = _body_framing_headers(scope)
+        except _RequestHeaderRejected:
             await self._reject(send, status=400)
             return
-        media_type = content_types[0].split(';', 1)[0] if content_types else ''
-        effective_limit = (
-            self.max_bytes
-            if media_type == 'multipart/form-data'
-            else min(self.max_bytes, _MAX_STRUCTURED_REQUEST_BYTES)
-        )
+        if not _body_framing_is_unambiguous(lengths, transfer_encodings, content_types):
+            await self._reject(send, status=400)
+            return
+        effective_limit = _effective_body_limit(self.max_bytes, content_types)
         if lengths and lengths[0] > effective_limit:
             await self._reject(send, status=413)
             return
+        await self._serve_within_limit(scope, receive, send, limit=effective_limit)
+
+    async def _serve_within_limit(
+        self,
+        scope: Any,
+        receive: Any,
+        send: Any,
+        *,
+        limit: int,
+    ) -> None:
+        """Stream the request, rejecting a body that outgrows ``limit``.
+
+        A declared content-length was already checked above; this is the
+        chunked/understated-length case, which can only be caught while the
+        body is being consumed.
+        """
 
         consumed = 0
         response_started = False
@@ -782,7 +828,7 @@ class RequestBodyLimitMiddleware:
             message = await receive()
             if message.get('type') == 'http.request':
                 consumed += len(message.get('body', b''))
-                if consumed > effective_limit:
+                if consumed > limit:
                     raise _RequestBodyLimitExceeded
             return message
 
@@ -880,6 +926,106 @@ def _log_denial(
     )
 
 
+_SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
+
+
+def _origin_check_headers(scope: Any) -> tuple[list[str], list[str], list[str]]:
+    """Collect the Origin / Host / Sec-Fetch-Site headers a CSRF check reads.
+
+    Every header is collected as a LIST, not a single value: a duplicated
+    Origin or Host is itself the attack signal the caller rejects on.
+    """
+
+    origins: list[str] = []
+    hosts: list[str] = []
+    fetch_sites: list[str] = []
+    for key, value in scope.get('headers') or []:
+        name = key.decode('latin-1').lower()
+        if name == 'origin':
+            origins.append(value.decode('latin-1').strip())
+        elif name == 'host':
+            hosts.append(value.decode('latin-1').strip().lower())
+        elif name == 'sec-fetch-site':
+            fetch_sites.append(value.decode('latin-1').strip().lower())
+    return origins, hosts, fetch_sites
+
+
+def _origin_headers_are_singular(
+    origins: list[str],
+    hosts: list[str],
+    fetch_sites: list[str],
+) -> bool:
+    """Exactly one Origin and Host, at most one Sec-Fetch-Site, none opaque."""
+
+    return (
+        len(origins) == 1
+        and len(hosts) == 1
+        and len(fetch_sites) <= 1
+        and origins[0].lower() != 'null'
+    )
+
+
+def _configured_allowed_origins() -> set[str]:
+    """The normalized ``ALLOWED_ORIGINS`` allowlist from ``AgentConfig``."""
+
+    from agent_utilities.core.config import config
+
+    return {
+        value.strip().rstrip('/').lower()
+        for value in str(config.allowed_origins or '').split(',')
+        if value.strip()
+    }
+
+
+def _origin_matches_request_host(parsed: Any, scope: Any, host: str) -> bool:
+    """Whether the Origin names this very listener (same scheme + authority)."""
+
+    request_scheme = str(scope.get('scheme') or '').lower()
+    expected_scheme = 'https' if request_scheme in {'https', 'wss'} else 'http'
+    return parsed.scheme.lower() == expected_scheme and parsed.netloc.lower() == host
+
+
+def _scope_summary(scopes: Any) -> str:
+    """A stable, non-secret rendering of a session's KG scopes for a log line."""
+
+    return ','.join(sorted(scopes)) or '<none>'
+
+
+async def _deny_authorization(
+    scope: Any,
+    send: Any,
+    *,
+    reason: str,
+    session: Any,
+    required: str,
+    ws_denial: dict[str, Any],
+    denial_fields: dict[str, Any] | None = None,
+) -> None:
+    """Log an authorization denial on both channels, then answer 403.
+
+    ``ws_denial`` carries the websocket-only diagnostic fields; its own
+    ``reason`` key uses the hyphenated websocket vocabulary
+    (:func:`_log_ws_denial`), deliberately distinct from the structured
+    ``reason`` above, and both were already distinct before this was factored
+    out of the three inline deny branches. ``denial_fields`` carries the extra
+    structured fields one branch adds to the shared ``_log_denial`` payload.
+    """
+
+    _log_denial(
+        scope,
+        event='authorization',
+        reason=reason,
+        session=session,
+        required_scope=required,
+        **(denial_fields or {}),
+    )
+    if scope.get('type') == 'websocket':
+        _log_ws_denial(scope, **ws_denial)
+        await send({'type': 'websocket.close', 'code': 4403})
+        return
+    await _send_json_response(send, status=403, body=_FORBIDDEN_BODY)
+
+
 class WebUIAuthorizationMiddleware:
     """Require graph scopes for every authenticated HTTP/websocket route."""
 
@@ -922,64 +1068,93 @@ class WebUIAuthorizationMiddleware:
 
         if required_scope == 'kg:admin':
             return 'admin'
-        if method not in {
-            'GET',
-            'HEAD',
-            'OPTIONS',
-        } and WebUIAuthorizationMiddleware._is_admin_mutation_route(path):
+        if method not in _SAFE_METHODS and (
+            WebUIAuthorizationMiddleware._is_admin_mutation_route(path)
+        ):
             return 'maintainer'
         return None
 
     @staticmethod
+    def _required_scope(*, scope_type: str, path: str, method: str) -> str:
+        """The KG scope this transport, route, and method together demand.
+
+        Websockets have no method to reason about, so an admin route is the
+        only admin signal there; HTTP additionally promotes a MUTATION of an
+        admin-mutation route to ``kg:admin`` while leaving its reads alone.
+        """
+
+        if scope_type == 'websocket':
+            if WebUIAuthorizationMiddleware._is_admin_route(path):
+                return 'kg:admin'
+            if path in _WEBSOCKET_READ_ONLY_PATHS:
+                return 'kg:read'
+            return 'kg:write'
+        if WebUIAuthorizationMiddleware._is_admin_route(path) or (
+            method not in _SAFE_METHODS
+            and WebUIAuthorizationMiddleware._is_admin_mutation_route(path)
+        ):
+            return 'kg:admin'
+        if method in _SAFE_METHODS:
+            return 'kg:read'
+        return 'kg:write'
+
+    @staticmethod
+    def _origin_sensitive(scope_type: str, required: str) -> bool:
+        """Whether CSRF origin checking applies: every websocket, every write."""
+
+        return scope_type == 'websocket' or required != 'kg:read'
+
+    def _role_shortfall(
+        self,
+        session: Any,
+        *,
+        required_scope: str,
+        method: str,
+        path: str,
+    ) -> tuple[str, str] | None:
+        """``(required_role, resolved_role)`` when the caller's WebUI role is
+        below what this route demands, otherwise ``None``."""
+
+        role_requirement = self._role_requirement(
+            required_scope=required_scope, method=method, path=path
+        )
+        if role_requirement is None:
+            return None
+
+        from .rbac import resolve_webui_role, role_at_least
+
+        actor = getattr(session, 'actor', None)
+        webui_role = resolve_webui_role(
+            tuple(getattr(actor, 'roles', ()) or ()),
+            authenticated=bool(getattr(actor, 'authenticated', False)),
+        )
+        if role_at_least(webui_role, role_requirement):
+            return None
+        return role_requirement, webui_role
+
+    @staticmethod
     def _origin_allowed(scope: Any) -> bool:
-        origins: list[str] = []
-        hosts: list[str] = []
-        fetch_sites: list[str] = []
-        for key, value in scope.get('headers') or []:
-            name = key.decode('latin-1').lower()
-            if name == 'origin':
-                origins.append(value.decode('latin-1').strip())
-            elif name == 'host':
-                hosts.append(value.decode('latin-1').strip().lower())
-            elif name == 'sec-fetch-site':
-                fetch_sites.append(value.decode('latin-1').strip().lower())
+        """Whether this request's Origin may drive a state-changing call.
+
+        No Origin at all is the non-browser case (a service client, or a
+        same-origin navigation that predates Fetch Metadata): it is allowed
+        unless Sec-Fetch-Site positively says ``cross-site``.
+        """
+
+        origins, hosts, fetch_sites = _origin_check_headers(scope)
         if not origins:
             return len(fetch_sites) <= 1 and fetch_sites != ['cross-site']
-        if (
-            len(origins) != 1
-            or len(hosts) != 1
-            or len(fetch_sites) > 1
-            or origins[0].lower() == 'null'
-        ):
+        if not _origin_headers_are_singular(origins, hosts, fetch_sites):
             return False
-
-        from agent_utilities.core.config import config
-
-        allowed = {
-            value.strip().rstrip('/').lower()
-            for value in str(config.allowed_origins or '').split(',')
-            if value.strip()
-        }
         parsed = urlsplit(origins[0])
-        if (
-            parsed.scheme.lower() not in {'http', 'https'}
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.path not in {'', '/'}
-            or parsed.query
-            or parsed.fragment
-        ):
+        if parsed.scheme.lower() not in {
+            'http',
+            'https',
+        } or not _origin_parts_are_exact(parsed):
             return False
         origin = f'{parsed.scheme.lower()}://{parsed.netloc.lower()}'
-        if origin in allowed:
-            return True
-
-        request_scheme = str(scope.get('scheme') or '').lower()
-        expected_scheme = 'https' if request_scheme in {'https', 'wss'} else 'http'
-        return (
-            parsed.scheme.lower() == expected_scheme
-            and parsed.netloc.lower() == hosts[0]
+        return origin in _configured_allowed_origins() or _origin_matches_request_host(
+            parsed, scope, hosts[0]
         )
 
     async def _call_with_transport_bounds(
@@ -1026,48 +1201,19 @@ class WebUIAuthorizationMiddleware:
 
         path = str(scope.get('path') or '')
         method = str(scope.get('method') or '').upper()
-        if scope_type == 'websocket':
-            if self._is_admin_route(path):
-                required = 'kg:admin'
-            elif path in _WEBSOCKET_READ_ONLY_PATHS:
-                required = 'kg:read'
-            else:
-                required = 'kg:write'
-        else:
-            if self._is_admin_route(path) or (
-                method not in {'GET', 'HEAD', 'OPTIONS'}
-                and self._is_admin_mutation_route(path)
-            ):
-                required = 'kg:admin'
-            elif method in {'GET', 'HEAD', 'OPTIONS'}:
-                required = 'kg:read'
-            else:
-                required = 'kg:write'
-        origin_sensitive = scope_type == 'websocket' or required != 'kg:read'
-        if origin_sensitive and not self._origin_allowed(scope):
-            _log_denial(
+        required = self._required_scope(scope_type=scope_type, path=path, method=method)
+
+        if self._origin_sensitive(scope_type, required) and not self._origin_allowed(
+            scope
+        ):
+            await _deny_authorization(
                 scope,
-                event='authorization',
+                send,
                 reason='origin_not_allowed',
                 session=current_session(),
-                required_scope=required,
+                required=required,
+                ws_denial={'reason': 'origin-rejected', 'required': required},
             )
-            if scope_type == 'websocket':
-                _log_ws_denial(scope, reason='origin-rejected', required=required)
-                await send({'type': 'websocket.close', 'code': 4403})
-            else:
-                body = b'{"detail":"Request forbidden"}'
-                await send(
-                    {
-                        'type': 'http.response.start',
-                        'status': 403,
-                        'headers': [
-                            (b'content-type', b'application/json'),
-                            (b'content-length', str(len(body)).encode('ascii')),
-                        ],
-                    }
-                )
-                await send({'type': 'http.response.body', 'body': body})
             return
         if not _identity_enforced() or path in _PUBLIC_LIVENESS_PATHS:
             await self._call_with_transport_bounds(scope, receive, send)
@@ -1075,84 +1221,48 @@ class WebUIAuthorizationMiddleware:
 
         session = current_session()
         scopes = session.scopes if session is not None else frozenset()
-        if required in scopes:
-            role_requirement = self._role_requirement(
-                required_scope=required, method=method, path=path
+        if required not in scopes:
+            await _deny_authorization(
+                scope,
+                send,
+                reason='kg_scope_missing',
+                session=session,
+                required=required,
+                ws_denial={
+                    'reason': 'scope-missing',
+                    'required': required,
+                    'session_resolved': session is not None,
+                    'scopes': _scope_summary(scopes),
+                },
             )
-            if role_requirement is not None:
-                from .rbac import resolve_webui_role, role_at_least
+            return
 
-                actor = getattr(session, 'actor', None)
-                webui_role = resolve_webui_role(
-                    tuple(getattr(actor, 'roles', ()) or ()),
-                    authenticated=bool(getattr(actor, 'authenticated', False)),
-                )
-                if not role_at_least(webui_role, role_requirement):
-                    _log_denial(
-                        scope,
-                        event='authorization',
-                        reason='webui_role_insufficient',
-                        session=session,
-                        required_scope=required,
-                        webui_role_required=role_requirement,
-                        webui_role_resolved=webui_role,
-                    )
-                    if scope_type == 'websocket':
-                        _log_ws_denial(
-                            scope,
-                            reason='webui-role-insufficient',
-                            required_scope=required,
-                            required_role=role_requirement,
-                            resolved_role=webui_role,
-                            scopes=','.join(sorted(scopes)) or '<none>',
-                        )
-                        await send({'type': 'websocket.close', 'code': 4403})
-                        return
-                    body = b'{"detail":"Request forbidden"}'
-                    await send(
-                        {
-                            'type': 'http.response.start',
-                            'status': 403,
-                            'headers': [
-                                (b'content-type', b'application/json'),
-                                (b'content-length', str(len(body)).encode('ascii')),
-                            ],
-                        }
-                    )
-                    await send({'type': 'http.response.body', 'body': body})
-                    return
+        shortfall = self._role_shortfall(
+            session, required_scope=required, method=method, path=path
+        )
+        if shortfall is None:
             await self._call_with_transport_bounds(scope, receive, send)
             return
 
-        _log_denial(
+        required_role, resolved_role = shortfall
+        await _deny_authorization(
             scope,
-            event='authorization',
-            reason='kg_scope_missing',
+            send,
+            reason='webui_role_insufficient',
             session=session,
-            required_scope=required,
+            required=required,
+            denial_fields={
+                'webui_role_required': required_role,
+                'webui_role_resolved': resolved_role,
+            },
+            ws_denial={
+                'reason': 'webui-role-insufficient',
+                'required_scope': required,
+                'required_role': required_role,
+                'resolved_role': resolved_role,
+                'scopes': _scope_summary(scopes),
+            },
         )
-        if scope_type == 'websocket':
-            _log_ws_denial(
-                scope,
-                reason='scope-missing',
-                required=required,
-                session_resolved=session is not None,
-                scopes=','.join(sorted(scopes)) or '<none>',
-            )
-            await send({'type': 'websocket.close', 'code': 4403})
-            return
-        body = b'{"detail":"Request forbidden"}'
-        await send(
-            {
-                'type': 'http.response.start',
-                'status': 403,
-                'headers': [
-                    (b'content-type', b'application/json'),
-                    (b'content-length', str(len(body)).encode('ascii')),
-                ],
-            }
-        )
-        await send({'type': 'http.response.body', 'body': body})
 
 
 class RequestObservabilityMiddleware:
