@@ -262,11 +262,64 @@ _CSP_HASH_SOURCE = re.compile(r"^'(?:sha256|sha384|sha512)-[A-Za-z0-9+/]+={0,2}'
 _CSP_UNSAFE_SOURCES = frozenset(
     {"'unsafe-inline'", "'unsafe-eval'", "'wasm-unsafe-eval'"}
 )
+# The only directives that may carry a hash or an acknowledged unsafe keyword.
+# Named once so the hash branch and the unsafe branch of
+# ``_validated_csp_source`` cannot drift apart.
+_CSP_INLINE_CAPABLE_DIRECTIVES = frozenset(
+    {'script-src', 'style-src', 'style-src-elem'}
+)
 _ACCESS_LOG_POLICY_ENV = 'AGENT_WEBUI_ACCESS_LOG_POLICY'
 
 
 def _environment_flag(name: str) -> bool:
     return os.getenv(name, '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _origin_parts_are_exact(parsed: Any) -> bool:
+    """Whether a parsed URL carries nothing beyond ``scheme://host[:port]``.
+
+    Deliberately says nothing about the SCHEME: the three callers disagree on
+    which schemes they accept and on whether the scheme is case-folded first
+    (``_install_host_boundary`` matches it verbatim; the CSP and browser-origin
+    checks lower it), so each keeps its own scheme test and shares only this
+    "nothing else is present" half.
+    """
+
+    return (
+        bool(parsed.hostname)
+        and not parsed.username
+        and not parsed.password
+        and parsed.path in {'', '/'}
+        and not parsed.query
+        and not parsed.fragment
+    )
+
+
+def _csp_source_is_opaque(source: str) -> bool:
+    """Whether a source carries a delimiter or a non-printable-ASCII byte."""
+
+    return any(character in source for character in (';', '\r', '\n', '*')) or any(
+        ord(character) < 0x21 or ord(character) > 0x7E for character in source
+    )
+
+
+def _acknowledged_unsafe_csp_source(
+    source: str,
+    *,
+    directive: str,
+    custom_rendering_acknowledged: bool,
+) -> str:
+    """Return an unsafe keyword only where it is acknowledged AND meaningful."""
+
+    if (
+        not custom_rendering_acknowledged
+        or directive not in _CSP_INLINE_CAPABLE_DIRECTIVES
+        or (source != "'unsafe-inline'" and directive != 'script-src')
+    ):
+        raise RuntimeError(
+            'Unsafe CSP sources require the custom-rendering acknowledgement'
+        )
+    return source
 
 
 def _validated_csp_source(
@@ -278,22 +331,16 @@ def _validated_csp_source(
     """Accept only exact origins, hashes, or acknowledged unsafe keywords."""
 
     if source in _CSP_UNSAFE_SOURCES:
-        if (
-            not custom_rendering_acknowledged
-            or directive not in {'script-src', 'style-src', 'style-src-elem'}
-            or (source != "'unsafe-inline'" and directive != 'script-src')
-        ):
-            raise RuntimeError(
-                'Unsafe CSP sources require the custom-rendering acknowledgement'
-            )
-        return source
+        return _acknowledged_unsafe_csp_source(
+            source,
+            directive=directive,
+            custom_rendering_acknowledged=custom_rendering_acknowledged,
+        )
     if _CSP_HASH_SOURCE.fullmatch(source):
-        if directive not in {'script-src', 'style-src', 'style-src-elem'}:
+        if directive not in _CSP_INLINE_CAPABLE_DIRECTIVES:
             raise RuntimeError('CSP hashes are only valid for script or style sources')
         return source
-    if any(character in source for character in (';', '\r', '\n', '*')) or any(
-        ord(character) < 0x21 or ord(character) > 0x7E for character in source
-    ):
+    if _csp_source_is_opaque(source):
         raise RuntimeError('Agent WebUI CSP sources must be exact origins')
     parsed = urlsplit(source)
     try:
@@ -303,41 +350,45 @@ def _validated_csp_source(
     schemes = {'http', 'https'}
     if directive == 'connect-src':
         schemes.update({'ws', 'wss'})
-    if (
-        parsed.scheme.lower() not in schemes
-        or not parsed.hostname
-        or parsed.username
-        or parsed.password
-        or parsed.path not in {'', '/'}
-        or parsed.query
-        or parsed.fragment
-    ):
+    if parsed.scheme.lower() not in schemes or not _origin_parts_are_exact(parsed):
         raise RuntimeError('Agent WebUI CSP sources must be exact origins')
     return f'{parsed.scheme.lower()}://{parsed.netloc.lower()}'
 
 
-def _content_security_policy(*, custom_rendering: bool) -> tuple[str, dict[str, Any]]:
-    """Build the immutable response policy and a non-secret doctor summary."""
-
-    acknowledged = _environment_flag('AGENT_WEBUI_CSP_CUSTOM_RENDERING')
-    if custom_rendering and not acknowledged:
-        raise RuntimeError(
-            'Custom Agent WebUI HTML requires AGENT_WEBUI_CSP_CUSTOM_RENDERING=1'
-        )
+def _default_csp_directives() -> dict[str, list[str]]:
+    """The shipped strict policy, parsed into a mutable directive -> sources map."""
 
     directives: dict[str, list[str]] = {}
     for raw_directive in _DEFAULT_CONTENT_SECURITY_POLICY.split(';'):
         parts = raw_directive.strip().split()
         directives[parts[0]] = parts[1:]
+    return directives
+
+
+def _configured_csp_sources(environment_name: str) -> list[str]:
+    """The individual sources named by one ``AGENT_WEBUI_CSP_*`` variable."""
+
+    raw_sources = os.getenv(environment_name, '').strip()
+    if not raw_sources:
+        return []
+    return [source for source in re.split(r'[\s,]+', raw_sources) if source]
+
+
+def _apply_csp_relaxations(
+    directives: dict[str, list[str]],
+    *,
+    acknowledged: bool,
+) -> list[dict[str, str]]:
+    """Fold every configured source into ``directives`` in place.
+
+    Returns the doctor summary of what was actually added -- a source already
+    present in the shipped policy is not reported as a relaxation, matching the
+    pre-split behaviour exactly.
+    """
 
     configured_relaxations: list[dict[str, str]] = []
     for directive, environment_name in _CSP_SOURCE_ENV.items():
-        raw_sources = os.getenv(environment_name, '').strip()
-        if not raw_sources:
-            continue
-        for raw_source in re.split(r'[\s,]+', raw_sources):
-            if not raw_source:
-                continue
+        for raw_source in _configured_csp_sources(environment_name):
             source = _validated_csp_source(
                 raw_source,
                 directive=directive,
@@ -350,6 +401,22 @@ def _content_security_policy(*, custom_rendering: bool) -> tuple[str, dict[str, 
                 configured_relaxations.append(
                     {'directive': directive, 'source': source}
                 )
+    return configured_relaxations
+
+
+def _content_security_policy(*, custom_rendering: bool) -> tuple[str, dict[str, Any]]:
+    """Build the immutable response policy and a non-secret doctor summary."""
+
+    acknowledged = _environment_flag('AGENT_WEBUI_CSP_CUSTOM_RENDERING')
+    if custom_rendering and not acknowledged:
+        raise RuntimeError(
+            'Custom Agent WebUI HTML requires AGENT_WEBUI_CSP_CUSTOM_RENDERING=1'
+        )
+
+    directives = _default_csp_directives()
+    configured_relaxations = _apply_csp_relaxations(
+        directives, acknowledged=acknowledged
+    )
 
     policy = '; '.join(
         f'{directive} {" ".join(sources)}' for directive, sources in directives.items()
@@ -515,12 +582,64 @@ def _log_ws_denial(scope: Any, *, reason: str, **fields: Any) -> None:
     )
 
 
+_FORBIDDEN_BODY = b'{"detail":"Request forbidden"}'
+
+
+async def _send_json_response(send: Any, *, status: int, body: bytes) -> None:
+    """Emit a complete ASGI JSON response.
+
+    The five deny branches that used to inline this block byte-for-byte
+    (invalid host, malformed credential, and the three authorization refusals)
+    now share one shape, so a header can no longer be added to one of them and
+    silently missed by the rest.
+    """
+
+    await send(
+        {
+            'type': 'http.response.start',
+            'status': status,
+            'headers': [
+                (b'content-type', b'application/json'),
+                (b'content-length', str(len(body)).encode('ascii')),
+            ],
+        }
+    )
+    await send({'type': 'http.response.body', 'body': body})
+
+
 class _RequestBodyLimitExceeded(Exception):
     """Internal signal used by the streaming ASGI receive boundary."""
 
 
 class _WebSocketMessageLimitExceeded(Exception):
     """Internal signal used by the websocket receive boundary."""
+
+
+def _hardened_response_headers(
+    headers: list[tuple[bytes, bytes]],
+    *,
+    content_security_policy: bytes,
+    no_store: bool,
+) -> list[tuple[bytes, bytes]]:
+    """Overlay the application-owned response hardening on a route's headers.
+
+    The application-owned policy always wins over an upstream route's weaker
+    header; route composition cannot silently relax the browser boundary.
+    """
+
+    hardened = [
+        (name, value)
+        for name, value in headers
+        if name.lower() != b'content-security-policy'
+    ]
+    present = {name.lower() for name, _value in hardened}
+    for name, value in _SECURITY_RESPONSE_HEADERS:
+        if name not in present:
+            hardened.append((name, value))
+    hardened.append((b'content-security-policy', content_security_policy))
+    if no_store and b'cache-control' not in present:
+        hardened.append((b'cache-control', b'no-store'))
+    return hardened
 
 
 class SecurityHeadersMiddleware:
@@ -546,28 +665,28 @@ class SecurityHeadersMiddleware:
 
         async def hardened_send(message: Any) -> None:
             if message.get('type') == 'http.response.start':
-                # The application-owned policy always wins over an upstream
-                # route's weaker header; route composition cannot silently
-                # relax the browser boundary.
-                headers = [
-                    (name, value)
-                    for name, value in (message.get('headers') or [])
-                    if name.lower() != b'content-security-policy'
-                ]
-                present = {name.lower() for name, _value in headers}
-                for name, value in _SECURITY_RESPONSE_HEADERS:
-                    if name not in present:
-                        headers.append((name, value))
-                headers.append(
-                    (b'content-security-policy', self.content_security_policy)
-                )
-                if path.startswith(('/api', '/chat', '/configure')):
-                    if b'cache-control' not in present:
-                        headers.append((b'cache-control', b'no-store'))
-                message = {**message, 'headers': headers}
+                message = {
+                    **message,
+                    'headers': _hardened_response_headers(
+                        list(message.get('headers') or []),
+                        content_security_policy=self.content_security_policy,
+                        no_store=path.startswith(('/api', '/chat', '/configure')),
+                    ),
+                }
             await send(message)
 
         await self.app(scope, receive, hardened_send)
+
+
+def _host_header_is_unambiguous(hosts: list[bytes]) -> bool:
+    """Whether exactly one non-empty, single-valued, printable Host arrived."""
+
+    return (
+        len(hosts) == 1
+        and bool(hosts[0])
+        and b',' not in hosts[0]
+        and all(byte >= 0x20 and byte != 0x7F for byte in hosts[0])
+    )
 
 
 class StrictHostHeaderMiddleware:
@@ -586,37 +705,23 @@ class StrictHostHeaderMiddleware:
             for key, value in scope.get('headers') or []
             if key.decode('latin-1').lower() == 'host'
         ]
-        if (
-            len(hosts) != 1
-            or not hosts[0]
-            or b',' in hosts[0]
-            or any(byte < 0x20 or byte == 0x7F for byte in hosts[0])
-        ):
-            if scope_type == 'websocket':
-                # W-18: this 4400 sits UPSTREAM of every other websocket denial
-                # and was the one site the first instrumentation pass missed, so
-                # a rejection here still looked like an unexplained bare 403.
-                _log_ws_denial(
-                    scope,
-                    reason='invalid-host-header',
-                    host_header_count=len(hosts),
-                )
-                await send({'type': 'websocket.close', 'code': 4400})
-            else:
-                body = b'{"detail":"Invalid host header"}'
-                await send(
-                    {
-                        'type': 'http.response.start',
-                        'status': 400,
-                        'headers': [
-                            (b'content-type', b'application/json'),
-                            (b'content-length', str(len(body)).encode('ascii')),
-                        ],
-                    }
-                )
-                await send({'type': 'http.response.body', 'body': body})
+        if _host_header_is_unambiguous(hosts):
+            await self.app(scope, receive, send)
             return
-        await self.app(scope, receive, send)
+        if scope_type == 'websocket':
+            # W-18: this 4400 sits UPSTREAM of every other websocket denial
+            # and was the one site the first instrumentation pass missed, so
+            # a rejection here still looked like an unexplained bare 403.
+            _log_ws_denial(
+                scope,
+                reason='invalid-host-header',
+                host_header_count=len(hosts),
+            )
+            await send({'type': 'websocket.close', 'code': 4400})
+            return
+        await _send_json_response(
+            send, status=400, body=b'{"detail":"Invalid host header"}'
+        )
 
 
 class RequestBodyLimitMiddleware:
