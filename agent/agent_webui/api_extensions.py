@@ -1287,6 +1287,17 @@ def resolve_prompt_file(name: str) -> Path:
     return target
 
 
+def _refuse_symlinked_components(base: Path, supplied: Path) -> None:
+    """Reject a path whose every component is not a real directory entry."""
+    cursor = base
+    for part in supplied.parts:
+        cursor /= part
+        if cursor.is_symlink():
+            raise HTTPException(
+                status_code=400, detail='Symbolic links are not allowed'
+            )
+
+
 def resolve_workspace_file(
     relative_path: str, *, allow_workspace_root: bool = False
 ) -> Path:
@@ -1305,15 +1316,8 @@ def resolve_workspace_file(
         raise HTTPException(status_code=400, detail='Path traversal not allowed')
 
     base = get_workspace_dir().resolve()
-    lexical_target = base / supplied
-    cursor = base
-    for part in supplied.parts:
-        cursor /= part
-        if cursor.is_symlink():
-            raise HTTPException(
-                status_code=400, detail='Symbolic links are not allowed'
-            )
-    target = lexical_target.resolve()
+    _refuse_symlinked_components(base, supplied)
+    target = (base / supplied).resolve()
     try:
         target.relative_to(base)
     except ValueError as exc:
@@ -3395,12 +3399,7 @@ async def read_mcp_app_resource_route(data: dict[str, Any]) -> dict[str, Any]:
     deliberately returns it as JSON rather than as an HTML response so it can
     never be navigated to directly and inherit this origin.
     """
-    server_name = str(data.get('server') or '')
-    uri = str(data.get('uri') or '')
-    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
-        raise HTTPException(status_code=400, detail='Invalid MCP server name')
-    if not _SAFE_MCP_APP_URI.fullmatch(uri):
-        raise HTTPException(status_code=400, detail='Invalid MCP app resource URI')
+    server_name, uri = _mcp_app_resource_request(data)
 
     delegated_read = get_helper('read_mcp_resource')
     if delegated_read is None:
@@ -3422,6 +3421,22 @@ async def read_mcp_app_resource_route(data: dict[str, Any]) -> dict[str, Any]:
         _log_failure('mcp_resource_delegation', e)
         raise HTTPException(status_code=502, detail='MCP resource read failed') from e
 
+    return {'status': 'success', 'result': _mcp_app_resource_result(resource, uri)}
+
+
+def _mcp_app_resource_request(data: dict[str, Any]) -> tuple[str, str]:
+    """Validate the ``{server, uri}`` of an MCP App resource read."""
+    server_name = str(data.get('server') or '')
+    uri = str(data.get('uri') or '')
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
+        raise HTTPException(status_code=400, detail='Invalid MCP server name')
+    if not _SAFE_MCP_APP_URI.fullmatch(uri):
+        raise HTTPException(status_code=400, detail='Invalid MCP app resource URI')
+    return server_name, uri
+
+
+def _mcp_app_resource_result(resource: Any, uri: str) -> dict[str, Any]:
+    """Shape a delegated ``ui://`` resource into the route's result body."""
     if not isinstance(resource, dict):
         raise HTTPException(status_code=502, detail='MCP resource read failed')
     html = resource.get('text', resource.get('html'))
@@ -3429,12 +3444,9 @@ async def read_mcp_app_resource_route(data: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail='MCP resource carried no text')
     mime_type = resource.get('mimeType') or resource.get('mime_type') or 'text/html'
     return {
-        'status': 'success',
-        'result': {
-            'uri': uri,
-            'html': html,
-            'mimeType': str(mime_type),
-        },
+        'uri': uri,
+        'html': html,
+        'mimeType': str(mime_type),
     }
 
 
@@ -5998,6 +6010,32 @@ async def link_nodes(data: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _reject_fully_degraded_search(results: Any, degraded: Any) -> None:
+    """Zero results plus an unread graph is a failure, not an empty answer.
+
+    ROOT CAUSE of the observed live non-determinism (item C/F: identical
+    successive `/graph/search` calls returning 5 results, then 0):
+    `_union_engine_call` -> `_rows_per_accessible_graph` fan-out is fail-SOFT
+    per graph by design (a per-graph exception is logged and the graph is
+    added to `degraded`, never raised -- see that function's own docstring).
+    This route used to discard `degraded` entirely (`_degraded`), so when
+    EVERY accessible graph's `search_hybrid` call happened to fail on a given
+    request (contention/timeout), the union quietly degraded to a
+    legitimate-looking `results=[]` -- a 200 indistinguishable from
+    "reachable, genuinely zero matches". The very next identical request, with
+    no failure this time, returned the real hits. Distinguish the two: zero
+    results with at least one graph that could not even be read is a failure
+    (503, same D-W6-10 class as
+    get_graph_nodes/get_graph_relationships/list_workflows). Zero results with
+    `degraded` empty (every accessible graph was actually read) stays a
+    genuine 200 [].
+    """
+    if results or not degraded:
+        return
+    _log_failure('search_graph', RuntimeError(f'degraded graphs: {degraded}'))
+    raise HTTPException(status_code=503, detail='Knowledge Graph search failed')
+
+
 @router.get('/graph/search')
 async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
     """Perform hybrid search across the Knowledge Graph.
@@ -6037,31 +6075,8 @@ async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
         results, _source_graphs, degraded = await _invoke_governed_helper(
             _union_engine_call, engine, actor, _call, deadline=15.0
         )
-        if not results and degraded:
-            # ROOT CAUSE of the observed live non-determinism (item C/F:
-            # identical successive `/graph/search` calls returning 5 results,
-            # then 0): `_union_engine_call` -> `_rows_per_accessible_graph`
-            # fan-out is fail-SOFT per graph by design (a per-graph exception
-            # is logged and the graph is added to `degraded`, never raised --
-            # see that function's own docstring). This route used to discard
-            # `degraded` entirely (`_degraded`), so when EVERY accessible
-            # graph's `search_hybrid` call happened to fail on a given
-            # request (contention/timeout), the union quietly degraded to a
-            # legitimate-looking `results=[]` -- a 200 indistinguishable from
-            # "reachable, genuinely zero matches". The very next identical
-            # request, with no failure this time, returned the real hits.
-            # Distinguish the two: zero results with at least one graph that
-            # could not even be read is a failure (503, same D-W6-10 class as
-            # get_graph_nodes/get_graph_relationships/list_workflows), not an
-            # honest empty answer. Zero results with `degraded` empty (every
-            # accessible graph was actually read) stays a genuine 200 [].
-            _log_failure('search_graph', RuntimeError(f'degraded graphs: {degraded}'))
-            raise HTTPException(
-                status_code=503,
-                detail='Knowledge Graph search failed',
-            )
-        bounded = _public_external_result(list(results or [])[:top_k])
-        return bounded if isinstance(bounded, list) else []
+        _reject_fully_degraded_search(results, degraded)
+        return _bounded_list_result(list(results or [])[:top_k])
     except HTTPException as exc:
         # "No engine" (501) degrades to an honest empty list -- same as
         # get_graph_nodes/relationships/workflows treat it (D-W6-10); a
@@ -6213,6 +6228,48 @@ async def get_viz_capabilities() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+_VIZ_CONTENT_TYPES = {
+    'png': 'image/png',
+    'svg': 'image/svg+xml',
+    'pdf': 'application/pdf',
+}
+
+
+def _viz_render_options(data: dict[str, Any]) -> dict[str, Any]:
+    """The bounded render options passed through to ``client.viz.render``."""
+    fmt = str(data.get('format', 'png')).lower()
+    if fmt not in _VIZ_CONTENT_TYPES:
+        raise HTTPException(status_code=422, detail='format must be png|svg|pdf')
+    return {
+        'width_px': max(16, min(int(data.get('width_px', 900)), 8192)),
+        'height_px': max(16, min(int(data.get('height_px', 600)), 8192)),
+        'format': fmt,
+        'max_primitives': max(
+            1, min(int(data.get('max_primitives', 200_000)), 2_000_000)
+        ),
+        'max_bytes': max(1, min(int(data.get('max_bytes', 50_000_000)), 200_000_000)),
+        'dataset_ref': str(data.get('dataset_ref', 'webui-viz-render'))[:200],
+    }
+
+
+def _viz_render_response(result: Any, fmt: str) -> dict[str, Any]:
+    """The bounded image payload plus its ready-to-render ``data:`` URL."""
+    image_bytes = result.get('bytes') or b''
+    if not isinstance(image_bytes, (bytes, bytearray)):
+        raise HTTPException(status_code=502, detail='Engine returned no image bytes')
+    if len(image_bytes) > _MAX_VIZ_RESPONSE_BYTES:
+        raise HTTPException(status_code=422, detail='Rendered image is too large')
+    content_type = _VIZ_CONTENT_TYPES[fmt]
+    b64 = base64.b64encode(bytes(image_bytes)).decode('ascii')
+    return {
+        'view_result': _bounded_external_value(result.get('view_result', {})),
+        'format': fmt,
+        'content_type': content_type,
+        'byte_len': len(image_bytes),
+        'data_url': f'data:{content_type};base64,{b64}',
+    }
+
+
 @router.post('/graph/viz/render')
 async def render_viz(data: dict[str, Any]) -> dict[str, Any]:
     """Render a chart or graph through the eg-viz LOD pipeline.
@@ -6235,54 +6292,20 @@ async def render_viz(data: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(
                 status_code=422, detail="'spec' and 'dataset' must be objects"
             )
-        width_px = max(16, min(int(data.get('width_px', 900)), 8192))
-        height_px = max(16, min(int(data.get('height_px', 600)), 8192))
-        fmt = str(data.get('format', 'png')).lower()
-        if fmt not in ('png', 'svg', 'pdf'):
-            raise HTTPException(status_code=422, detail='format must be png|svg|pdf')
-        max_primitives = max(
-            1, min(int(data.get('max_primitives', 200_000)), 2_000_000)
-        )
-        max_bytes = max(1, min(int(data.get('max_bytes', 50_000_000)), 200_000_000))
-        dataset_ref = str(data.get('dataset_ref', 'webui-viz-render'))[:200]
+        options = _viz_render_options(data)
 
         engine = await _get_engine_bounded()
         if not engine or not engine.backend:
             raise HTTPException(status_code=503, detail='Graph engine not available')
-        client = engine.backend._graph.client
 
         result = await _invoke_governed_helper(
-            client.viz.render,
+            engine.backend._graph.client.viz.render,
             spec,
             dataset,
             deadline=30.0,
-            width_px=width_px,
-            height_px=height_px,
-            format=fmt,
-            max_primitives=max_primitives,
-            max_bytes=max_bytes,
-            dataset_ref=dataset_ref,
+            **options,
         )
-        image_bytes = result.get('bytes') or b''
-        if not isinstance(image_bytes, (bytes, bytearray)):
-            raise HTTPException(
-                status_code=502, detail='Engine returned no image bytes'
-            )
-        if len(image_bytes) > _MAX_VIZ_RESPONSE_BYTES:
-            raise HTTPException(status_code=422, detail='Rendered image is too large')
-        content_type = {
-            'png': 'image/png',
-            'svg': 'image/svg+xml',
-            'pdf': 'application/pdf',
-        }[fmt]
-        b64 = base64.b64encode(bytes(image_bytes)).decode('ascii')
-        return {
-            'view_result': _bounded_external_value(result.get('view_result', {})),
-            'format': fmt,
-            'content_type': content_type,
-            'byte_len': len(image_bytes),
-            'data_url': f'data:{content_type};base64,{b64}',
-        }
+        return _viz_render_response(result, options['format'])
     except HTTPException:
         raise
     except Exception as e:
@@ -7601,6 +7624,22 @@ async def archive_library_agent(agent_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _validated_a2a_url(raw_url: Any) -> str:
+    """The bounded http(s) URL an external A2A agent card is published at."""
+    url = str(raw_url or '').strip()
+    parsed = urlsplit(url) if url else None
+    if (
+        not url
+        or not parsed
+        or parsed.scheme not in {'http', 'https'}
+        or not parsed.netloc
+    ):
+        raise HTTPException(status_code=422, detail='A valid http(s) URL is required')
+    if len(url.encode('utf-8')) > 2048:
+        raise HTTPException(status_code=400, detail='URL exceeds its safety bound')
+    return url
+
+
 @router.post('/agent-library/a2a')
 async def register_a2a_agent(data: dict[str, Any]) -> dict[str, Any]:
     """Register an external A2A agent alongside local ones.
@@ -7612,18 +7651,8 @@ async def register_a2a_agent(data: dict[str, Any]) -> dict[str, Any]:
     mechanism an offline A2A config sync uses, so an agent registered here is
     indistinguishable from one wired at deploy time.
     """
-    url = str(data.get('url') or '').strip()
+    url = _validated_a2a_url(data.get('url'))
     card = data.get('agent_card')
-    parsed = urlsplit(url) if url else None
-    if (
-        not url
-        or not parsed
-        or parsed.scheme not in {'http', 'https'}
-        or not parsed.netloc
-    ):
-        raise HTTPException(status_code=422, detail='A valid http(s) URL is required')
-    if len(url.encode('utf-8')) > 2048:
-        raise HTTPException(status_code=400, detail='URL exceeds its safety bound')
 
     try:
         engine = await _get_engine_bounded()
@@ -7640,8 +7669,7 @@ async def register_a2a_agent(data: dict[str, Any]) -> dict[str, Any]:
         summary = await _invoke_governed_helper(
             engine.ingest_agent_toolkit, [url], deadline=25.0
         )
-        registered = bool(isinstance(summary, dict) and summary.get('a2a_agents'))
-        if not registered:
+        if not (isinstance(summary, dict) and summary.get('a2a_agents')):
             raise HTTPException(
                 status_code=502,
                 detail=(
@@ -7649,11 +7677,10 @@ async def register_a2a_agent(data: dict[str, Any]) -> dict[str, Any]:
                     'Paste the agent-card JSON manually instead.'
                 ),
             )
-        bounded_summary = _public_external_result(summary)
         return {
             'status': 'success',
             'endpoint_configured': True,
-            'summary': bounded_summary,
+            'summary': _public_external_result(summary),
         }
     except HTTPException:
         raise
@@ -9818,41 +9845,45 @@ def _write_model_registry(kind: str, models: list[dict[str, Any]]) -> None:
     existing whole-document write, scoped to just the touched key so an
     editor for one registry can never clobber the rest of AgentConfig).
     """
-    import json
-
-    from agent_utilities.core.config import (
-        AgentConfig,
-        ChatModelConfig,
-        EmbeddingModelConfig,
-    )
+    from agent_utilities.core.config import AgentConfig
 
     if kind not in _EDITABLE_MODEL_KINDS:
         raise HTTPException(status_code=400, detail='Unknown model kind')
-    registry_key = 'chat_models' if kind == 'chat' else 'embedding_models'
-    model_type = ChatModelConfig if kind == 'chat' else EmbeddingModelConfig
-
     if not isinstance(models, list) or len(models) > _MAX_EXTERNAL_COLLECTION_ITEMS:
         raise HTTPException(status_code=400, detail='Invalid model list')
-    try:
-        validated = [
-            model_type.model_validate(m).model_dump(mode='json') for m in models
-        ]
-    except Exception as e:
-        _log_failure(f'validate_{kind}_model', e)
-        raise HTTPException(
-            status_code=422, detail=f'Invalid {kind} model configuration'
-        ) from e
 
     document = _load_config_document()
-    document[registry_key] = validated
+    document[_model_registry_key(kind)] = _validated_models(kind, models)
     try:
         AgentConfig.model_validate(document)
     except Exception as e:
         _log_failure('validate_agent_config', e)
         raise HTTPException(status_code=422, detail='Invalid AgentConfig') from e
 
-    target_dir = _private_directory(config_dir())
-    config_path = target_dir / 'config.json'
+    _write_config_document(kind, document)
+
+
+def _model_registry_key(kind: str) -> str:
+    return 'chat_models' if kind == 'chat' else 'embedding_models'
+
+
+def _validated_models(kind: str, models: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Validate each entry against the AgentConfig model type for `kind`."""
+    from agent_utilities.core.config import ChatModelConfig, EmbeddingModelConfig
+
+    model_type = ChatModelConfig if kind == 'chat' else EmbeddingModelConfig
+    try:
+        return [model_type.model_validate(m).model_dump(mode='json') for m in models]
+    except Exception as e:
+        _log_failure(f'validate_{kind}_model', e)
+        raise HTTPException(
+            status_code=422, detail=f'Invalid {kind} model configuration'
+        ) from e
+
+
+def _write_config_document(kind: str, document: dict[str, Any]) -> None:
+    """Atomically persist the whole AgentConfig document under its size bound."""
+    config_path = _private_directory(config_dir()) / 'config.json'
     try:
         payload = json.dumps(document, indent=2, sort_keys=True).encode('utf-8')
         if len(payload) > _MAX_EXTERNAL_RESULT_BYTES:
@@ -9900,33 +9931,32 @@ async def list_prompts() -> list[dict[str, Any]]:
     if prompts_dir.exists() and prompts_dir.is_dir():
         for f in list(prompts_dir.glob('*.json'))[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
             try:
-                data = _read_bounded_json(f)
-                title = (
-                    data.get('identity', {}).get('role')
-                    or data.get('title')
-                    or f.stem.replace('_', ' ').title()
-                )
-                goal = (
-                    data.get('identity', {}).get('goal')
-                    or data.get('metadata', {}).get('description')
-                    or data.get('goal', '')
-                )
-                core_directive = data.get('instructions', {}).get(
-                    'core_directive'
-                ) or data.get('core_directive', '')
-                results.append(
-                    {
-                        'name': f.stem,
-                        'title': title,
-                        'goal': goal,
-                        'core_directive': core_directive,
-                        'file_path': f'prompt://{f.stem}',
-                    }
-                )
+                results.append(_prompt_summary(f))
             except Exception as e:
                 _log_failure('parse_prompt', e)
     public_results = _public_external_result(results)
     return public_results if isinstance(public_results, list) else []
+
+
+def _prompt_summary(f: Path) -> dict[str, Any]:
+    """One prompt JSON file's flat listing entry."""
+    data = _read_bounded_json(f)
+    return {
+        'name': f.stem,
+        'title': (
+            data.get('identity', {}).get('role')
+            or data.get('title')
+            or f.stem.replace('_', ' ').title()
+        ),
+        'goal': (
+            data.get('identity', {}).get('goal')
+            or data.get('metadata', {}).get('description')
+            or data.get('goal', '')
+        ),
+        'core_directive': data.get('instructions', {}).get('core_directive')
+        or data.get('core_directive', ''),
+        'file_path': f'prompt://{f.stem}',
+    }
 
 
 @router.get('/prompts/{name}')
@@ -10275,6 +10305,21 @@ async def list_system_processes() -> list[dict[str, Any]]:
         ) from e
 
 
+def _container_view(index: int, container: dict[str, Any]) -> dict[str, Any]:
+    """One container as an opaque reference plus a short state."""
+    identity = str(
+        container.get('reference')
+        or container.get('id')
+        or container.get('Id')
+        or index
+    )
+    state = str(container.get('state') or container.get('State') or 'unknown')
+    return {
+        'reference': _opaque_reference('container', identity),
+        'state': state[:64],
+    }
+
+
 @router.get('/container-manager/containers')
 async def list_docker_containers() -> list[dict[str, Any]]:
     """Return bounded container inventory through a governed host adapter.
@@ -10307,24 +10352,11 @@ async def list_docker_containers() -> list[dict[str, Any]]:
         raw_containers = _public_external_result(
             raw_containers[:_MAX_CONTAINER_RECORDS]
         )
-        results = []
-        for index, container in enumerate(raw_containers, start=1):
-            if not isinstance(container, dict):
-                continue
-            identity = str(
-                container.get('reference')
-                or container.get('id')
-                or container.get('Id')
-                or index
-            )
-            state = str(container.get('state') or container.get('State') or 'unknown')
-            results.append(
-                {
-                    'reference': _opaque_reference('container', identity),
-                    'state': state[:64],
-                }
-            )
-        return results
+        return [
+            _container_view(index, container)
+            for index, container in enumerate(raw_containers, start=1)
+            if isinstance(container, dict)
+        ]
     except HTTPException:
         raise
     except Exception as e:
@@ -14548,6 +14580,20 @@ async def invoke_ontology_function(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _derive_request_fields(data: dict[str, Any]) -> tuple[str, str]:
+    """Validate ``{object_id, derived_name}`` for a derived-property compute."""
+    object_id = data.get('object_id')
+    derived_name = data.get('derived_name')
+    if not isinstance(object_id, str) or not isinstance(derived_name, str):
+        raise HTTPException(
+            status_code=422, detail='object_id and derived_name are required'
+        )
+    object_id = _validate_runtime_id(object_id)
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(derived_name):
+        raise HTTPException(status_code=400, detail='Invalid derived property')
+    return object_id, derived_name
+
+
 @router.post('/ontology/derive')
 async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
     """Compute a single derived property for an object.
@@ -14573,18 +14619,8 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
     (``ont.derive(obj, name, object_type=otype)``), just bound to the
     correct graph.
     """
-    import json
-
     try:
-        object_id = data.get('object_id')
-        derived_name = data.get('derived_name')
-        if not isinstance(object_id, str) or not isinstance(derived_name, str):
-            raise HTTPException(
-                status_code=422, detail='object_id and derived_name are required'
-            )
-        object_id = _validate_runtime_id(object_id)
-        if not _SAFE_DELEGATION_TOKEN.fullmatch(derived_name):
-            raise HTTPException(status_code=400, detail='Invalid derived property')
+        object_id, derived_name = _derive_request_fields(data)
 
         from agent_utilities.knowledge_graph.core.session import current_session
 
@@ -14601,12 +14637,7 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
         _scoped_kg, ontology = facade
 
         props.setdefault('id', str(object_id))
-        object_type = (
-            data.get('object_type')
-            or props.get('type')
-            or props.get('_type')
-            or props.get('object_type')
-        )
+        object_type = data.get('object_type') or _object_type_of(props)
         bounded_props = _bounded_query_params(props)
         session = current_session()
         with _session_scoped_to(session, graph_name):
