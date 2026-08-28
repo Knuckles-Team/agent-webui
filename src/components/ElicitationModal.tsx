@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { SyntheticEvent } from 'react'
+import type { ReactElement, SyntheticEvent } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -27,71 +27,99 @@ interface Props {
   onDecline: () => void
 }
 
+interface FieldProps {
+  id: string
+  prop: JSONSchema
+  value: unknown
+  onChange: (value: unknown) => void
+}
+
+function StringField({ id, prop, value, onChange }: FieldProps) {
+  return (
+    <div key={id} className="grid w-full items-center gap-1.5 mb-4">
+      <label htmlFor={id} className="text-sm font-medium leading-none">
+        {prop.title ?? id}
+      </label>
+      <Input
+        type="text"
+        id={id}
+        placeholder={prop.description ?? prop.title ?? id}
+        value={(value as string | undefined) ?? ''}
+        onChange={(e) => {
+          onChange(e.target.value)
+        }}
+      />
+    </div>
+  )
+}
+
+function BooleanField({ id, prop, value, onChange }: FieldProps) {
+  return (
+    <div key={id} className="flex items-center space-x-2 mb-4">
+      <Checkbox
+        id={id}
+        checked={(value as boolean | undefined) ?? false}
+        onCheckedChange={(checked) => {
+          onChange(!!checked)
+        }}
+      />
+      <label
+        htmlFor={id}
+        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+      >
+        {prop.title ?? id}
+      </label>
+    </div>
+  )
+}
+
+function NumberField({ id, prop, value, onChange }: FieldProps) {
+  return (
+    <div key={id} className="grid w-full items-center gap-1.5 mb-4">
+      <label htmlFor={id} className="text-sm font-medium leading-none">
+        {prop.title ?? id}
+      </label>
+      <Input
+        type="number"
+        id={id}
+        placeholder={prop.description ?? prop.title ?? id}
+        value={(value as number | undefined) ?? ''}
+        onChange={(e) => {
+          onChange(parseFloat(e.target.value))
+        }}
+      />
+    </div>
+  )
+}
+
+/** Dispatch table: JSON Schema `type` -> the field component that renders it.
+ * `renderField` below falls back to an "unsupported" message for any type
+ * not listed here (matches the original if-chain's default branch). */
+const FIELD_COMPONENTS: Partial<Record<string, (props: FieldProps) => ReactElement>> = {
+  string: StringField,
+  boolean: BooleanField,
+  number: NumberField,
+  integer: NumberField,
+}
+
 export function ElicitationModal({ message, schema, onSubmit, onCancel, onDecline }: Props) {
   const [formData, setFormData] = useState<Record<string, unknown>>({})
 
   const renderField = (key: string, prop: JSONSchema) => {
     const type = prop.type ?? 'string'
-
-    if (type === 'string') {
-      return (
-        <div key={key} className="grid w-full items-center gap-1.5 mb-4">
-          <label htmlFor={key} className="text-sm font-medium leading-none">
-            {prop.title ?? key}
-          </label>
-          <Input
-            type="text"
-            id={key}
-            placeholder={prop.description ?? prop.title ?? key}
-            value={(formData[key] as string | undefined) ?? ''}
-            onChange={(e) => {
-              setFormData({ ...formData, [key]: e.target.value })
-            }}
-          />
-        </div>
-      )
-    }
-
-    if (type === 'boolean') {
-      return (
-        <div key={key} className="flex items-center space-x-2 mb-4">
-          <Checkbox
-            id={key}
-            checked={(formData[key] as boolean | undefined) ?? false}
-            onCheckedChange={(checked) => {
-              setFormData({ ...formData, [key]: !!checked })
-            }}
-          />
-          <label
-            htmlFor={key}
-            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-          >
-            {prop.title ?? key}
-          </label>
-        </div>
-      )
-    }
-
-    if (type === 'number' || type === 'integer') {
-      return (
-        <div key={key} className="grid w-full items-center gap-1.5 mb-4">
-          <label htmlFor={key} className="text-sm font-medium leading-none">
-            {prop.title ?? key}
-          </label>
-          <Input
-            type="number"
-            id={key}
-            placeholder={prop.description ?? prop.title ?? key}
-            value={(formData[key] as number | undefined) ?? ''}
-            onChange={(e) => {
-              setFormData({ ...formData, [key]: parseFloat(e.target.value) })
-            }}
-          />
-        </div>
-      )
-    }
-
-    return <div key={key}>Unsupported field type: {type}</div>
+    const Field = FIELD_COMPONENTS[type]
+    if (!Field) return <div key={key}>Unsupported field type: {type}</div>
+    return (
+      <Field
+        key={key}
+        id={key}
+        prop={prop}
+        value={formData[key]}
+        onChange={(value) => {
+          setFormData({ ...formData, [key]: value })
+        }}
+      />
+    )
   }
 
   const handleSubmit = (e: SyntheticEvent<HTMLFormElement>) => {

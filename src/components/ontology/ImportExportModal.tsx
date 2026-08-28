@@ -50,10 +50,8 @@ function downloadTurtle(iri: string, version: string, turtle: string) {
   URL.revokeObjectURL(url)
 }
 
-export function ImportExportModal({ open, onOpenChange, onImported }: ImportExportModalProps) {
-  const [mode, setMode] = useState<Mode>('import')
-
-  // Import state
+/** All import-tab state + handlers, kept out of the modal's own render body. */
+function useImportForm(onImported?: () => void) {
   const [source, setSource] = useState('')
   const [category, setCategory] = useState('')
   const [tagsInput, setTagsInput] = useState('')
@@ -62,25 +60,6 @@ export function ImportExportModal({ open, onOpenChange, onImported }: ImportExpo
   const [importError, setImportError] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<OntologyLoadResult | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  // Export state
-  const [catalogue, setCatalogue] = useState<OntologyCatalogueEntry[]>([])
-  const [exportIri, setExportIri] = useState('')
-  const [exportVersion, setExportVersion] = useState('')
-  const [exporting, setExporting] = useState(false)
-  const [exportError, setExportError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!open || mode !== 'export') return
-    api
-      .getOntologyCatalogue()
-      .then((res) => {
-        setCatalogue(res.ontologies)
-      })
-      .catch(() => {
-        setCatalogue([])
-      })
-  }, [open, mode])
 
   const readFileText = (file: File) => {
     const reader = new FileReader()
@@ -129,6 +108,47 @@ export function ImportExportModal({ open, onOpenChange, onImported }: ImportExpo
     }
   }
 
+  return {
+    source,
+    setSource,
+    category,
+    setCategory,
+    tagsInput,
+    setTagsInput,
+    dragOver,
+    setDragOver,
+    importing,
+    importError,
+    importResult,
+    fileInputRef,
+    onDrop,
+    onBrowse,
+    runImport,
+  }
+}
+
+type ImportFormState = ReturnType<typeof useImportForm>
+
+/** All export-tab state + handlers, kept out of the modal's own render body. */
+function useExportForm(open: boolean, mode: Mode) {
+  const [catalogue, setCatalogue] = useState<OntologyCatalogueEntry[]>([])
+  const [exportIri, setExportIri] = useState('')
+  const [exportVersion, setExportVersion] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open || mode !== 'export') return
+    api
+      .getOntologyCatalogue()
+      .then((res) => {
+        setCatalogue(res.ontologies)
+      })
+      .catch(() => {
+        setCatalogue([])
+      })
+  }, [open, mode])
+
   const runExport = async () => {
     const iri = exportIri.trim()
     if (!iri) return
@@ -143,6 +163,211 @@ export function ImportExportModal({ open, onOpenChange, onImported }: ImportExpo
       setExporting(false)
     }
   }
+
+  return {
+    catalogue,
+    exportIri,
+    setExportIri,
+    exportVersion,
+    setExportVersion,
+    exporting,
+    exportError,
+    runExport,
+  }
+}
+
+type ExportFormState = ReturnType<typeof useExportForm>
+
+function DropZone({ form }: { form: ImportFormState }) {
+  return (
+    <>
+      <input
+        ref={form.fileInputRef}
+        type="file"
+        accept=".ttl,.owl,.rdf,.n3,.nt,text/turtle"
+        className="hidden"
+        onChange={form.onBrowse}
+      />
+      <div
+        role="button"
+        tabIndex={0}
+        data-testid="drop-zone"
+        onClick={() => form.fileInputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') form.fileInputRef.current?.click()
+        }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          form.setDragOver(true)
+        }}
+        onDragLeave={() => {
+          form.setDragOver(false)
+        }}
+        onDrop={form.onDrop}
+        className={`flex flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed p-4 text-center text-xs cursor-pointer transition-colors ${
+          form.dragOver ? 'border-primary bg-primary/5' : 'border-border/50 hover:border-border'
+        }`}
+      >
+        <Upload className="size-5 text-muted-foreground" />
+        <span>Drop a .ttl/RDF file here, or click to browse</span>
+      </div>
+    </>
+  )
+}
+
+function ImportSuccessMessage({ result }: { result: OntologyLoadResult }) {
+  return (
+    <p className="text-xs text-emerald-500 flex items-center gap-1">
+      <CheckCircle2 className="size-3.5" />
+      Loaded {result.ontology?.iri} (v{result.ontology?.version}) — {result.ontology?.n_classes ?? 0} classes,{' '}
+      {result.ontology?.n_properties ?? 0} properties.
+    </p>
+  )
+}
+
+function ImportRejectedList({ errors }: { errors: string[] }) {
+  return (
+    <div className="text-xs text-destructive space-y-0.5">
+      <p className="flex items-center gap-1">
+        <XCircle className="size-3.5" /> Rejected:
+      </p>
+      <ul className="list-disc list-inside">
+        {errors.map((e, i) => (
+          <li key={`err-${String(i)}`}>{e}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function ImportFeedback({ error, result }: { error: string | null; result: OntologyLoadResult | null }) {
+  return (
+    <>
+      {error && (
+        <p className="text-xs text-destructive flex items-center gap-1">
+          <XCircle className="size-3.5" /> {error}
+        </p>
+      )}
+      {result?.status === 'ok' && <ImportSuccessMessage result={result} />}
+      {result && result.status !== 'ok' && <ImportRejectedList errors={result.errors ?? []} />}
+    </>
+  )
+}
+
+function ImportPanel({ form }: { form: ImportFormState }) {
+  return (
+    <div className="space-y-3" data-testid="import-panel">
+      <DropZone form={form} />
+      <Textarea
+        aria-label="Ontology turtle/RDF text"
+        value={form.source}
+        onChange={(e) => {
+          form.setSource(e.target.value)
+        }}
+        placeholder="...or paste raw turtle/RDF text directly"
+        rows={6}
+        className="font-mono text-xs"
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <Input
+          aria-label="Category"
+          placeholder="Category (optional)"
+          value={form.category}
+          onChange={(e) => {
+            form.setCategory(e.target.value)
+          }}
+        />
+        <Input
+          aria-label="Tags"
+          placeholder="Tags, comma-separated (optional)"
+          value={form.tagsInput}
+          onChange={(e) => {
+            form.setTagsInput(e.target.value)
+          }}
+        />
+      </div>
+      <ImportFeedback error={form.importError} result={form.importResult} />
+      <DialogFooter>
+        <Button
+          onClick={() => {
+            void form.runImport()
+          }}
+          disabled={form.importing || !form.source.trim()}
+        >
+          {form.importing ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Upload className="size-4 mr-2" />}
+          Load
+        </Button>
+      </DialogFooter>
+    </div>
+  )
+}
+
+function ExportPanel({ form }: { form: ExportFormState }) {
+  return (
+    <div className="space-y-3" data-testid="export-panel">
+      {form.catalogue.length > 0 ? (
+        <Select
+          value={form.exportIri}
+          onValueChange={(v) => {
+            form.setExportIri(v)
+            const entry = form.catalogue.find((c) => c.iri === v)
+            if (entry) form.setExportVersion(entry.version)
+          }}
+        >
+          <SelectTrigger className="w-full text-xs" aria-label="Hosted ontology">
+            <SelectValue placeholder="Pick a hosted ontology..." />
+          </SelectTrigger>
+          <SelectContent>
+            {form.catalogue.map((c) => (
+              <SelectItem key={`${c.iri}@${c.version}`} value={c.iri}>
+                {c.iri} (v{c.version})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <p className="text-xs text-muted-foreground">No hosted ontologies found — enter an IRI directly.</p>
+      )}
+      <Input
+        aria-label="Ontology IRI"
+        placeholder="Ontology IRI"
+        value={form.exportIri}
+        onChange={(e) => {
+          form.setExportIri(e.target.value)
+        }}
+      />
+      <Input
+        aria-label="Version (optional)"
+        placeholder="Version (optional — newest if omitted)"
+        value={form.exportVersion}
+        onChange={(e) => {
+          form.setExportVersion(e.target.value)
+        }}
+      />
+      {form.exportError && (
+        <p className="text-xs text-destructive flex items-center gap-1">
+          <XCircle className="size-3.5" /> {form.exportError}
+        </p>
+      )}
+      <DialogFooter>
+        <Button
+          onClick={() => {
+            void form.runExport()
+          }}
+          disabled={form.exporting || !form.exportIri.trim()}
+        >
+          {form.exporting ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Download className="size-4 mr-2" />}
+          Export
+        </Button>
+      </DialogFooter>
+    </div>
+  )
+}
+
+export function ImportExportModal({ open, onOpenChange, onImported }: ImportExportModalProps) {
+  const [mode, setMode] = useState<Mode>('import')
+  const importForm = useImportForm(onImported)
+  const exportForm = useExportForm(open, mode)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -172,161 +397,7 @@ export function ImportExportModal({ open, onOpenChange, onImported }: ImportExpo
           </TabsList>
         </Tabs>
 
-        {mode === 'import' ? (
-          <div className="space-y-3" data-testid="import-panel">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".ttl,.owl,.rdf,.n3,.nt,text/turtle"
-              className="hidden"
-              onChange={onBrowse}
-            />
-            <div
-              role="button"
-              tabIndex={0}
-              data-testid="drop-zone"
-              onClick={() => fileInputRef.current?.click()}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click()
-              }}
-              onDragOver={(e) => {
-                e.preventDefault()
-                setDragOver(true)
-              }}
-              onDragLeave={() => {
-                setDragOver(false)
-              }}
-              onDrop={onDrop}
-              className={`flex flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed p-4 text-center text-xs cursor-pointer transition-colors ${
-                dragOver ? 'border-primary bg-primary/5' : 'border-border/50 hover:border-border'
-              }`}
-            >
-              <Upload className="size-5 text-muted-foreground" />
-              <span>Drop a .ttl/RDF file here, or click to browse</span>
-            </div>
-            <Textarea
-              aria-label="Ontology turtle/RDF text"
-              value={source}
-              onChange={(e) => {
-                setSource(e.target.value)
-              }}
-              placeholder="...or paste raw turtle/RDF text directly"
-              rows={6}
-              className="font-mono text-xs"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                aria-label="Category"
-                placeholder="Category (optional)"
-                value={category}
-                onChange={(e) => {
-                  setCategory(e.target.value)
-                }}
-              />
-              <Input
-                aria-label="Tags"
-                placeholder="Tags, comma-separated (optional)"
-                value={tagsInput}
-                onChange={(e) => {
-                  setTagsInput(e.target.value)
-                }}
-              />
-            </div>
-            {importError && (
-              <p className="text-xs text-destructive flex items-center gap-1">
-                <XCircle className="size-3.5" /> {importError}
-              </p>
-            )}
-            {importResult?.status === 'ok' && (
-              <p className="text-xs text-emerald-500 flex items-center gap-1">
-                <CheckCircle2 className="size-3.5" />
-                Loaded {importResult.ontology?.iri} (v{importResult.ontology?.version}) —{' '}
-                {importResult.ontology?.n_classes ?? 0} classes, {importResult.ontology?.n_properties ?? 0} properties.
-              </p>
-            )}
-            {importResult && importResult.status !== 'ok' && (
-              <div className="text-xs text-destructive space-y-0.5">
-                <p className="flex items-center gap-1">
-                  <XCircle className="size-3.5" /> Rejected:
-                </p>
-                <ul className="list-disc list-inside">
-                  {(importResult.errors ?? []).map((e, i) => (
-                    <li key={`err-${String(i)}`}>{e}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <DialogFooter>
-              <Button
-                onClick={() => {
-                  void runImport()
-                }}
-                disabled={importing || !source.trim()}
-              >
-                {importing ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Upload className="size-4 mr-2" />}
-                Load
-              </Button>
-            </DialogFooter>
-          </div>
-        ) : (
-          <div className="space-y-3" data-testid="export-panel">
-            {catalogue.length > 0 ? (
-              <Select
-                value={exportIri}
-                onValueChange={(v) => {
-                  setExportIri(v)
-                  const entry = catalogue.find((c) => c.iri === v)
-                  if (entry) setExportVersion(entry.version)
-                }}
-              >
-                <SelectTrigger className="w-full text-xs" aria-label="Hosted ontology">
-                  <SelectValue placeholder="Pick a hosted ontology..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {catalogue.map((c) => (
-                    <SelectItem key={`${c.iri}@${c.version}`} value={c.iri}>
-                      {c.iri} (v{c.version})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <p className="text-xs text-muted-foreground">No hosted ontologies found — enter an IRI directly.</p>
-            )}
-            <Input
-              aria-label="Ontology IRI"
-              placeholder="Ontology IRI"
-              value={exportIri}
-              onChange={(e) => {
-                setExportIri(e.target.value)
-              }}
-            />
-            <Input
-              aria-label="Version (optional)"
-              placeholder="Version (optional — newest if omitted)"
-              value={exportVersion}
-              onChange={(e) => {
-                setExportVersion(e.target.value)
-              }}
-            />
-            {exportError && (
-              <p className="text-xs text-destructive flex items-center gap-1">
-                <XCircle className="size-3.5" /> {exportError}
-              </p>
-            )}
-            <DialogFooter>
-              <Button
-                onClick={() => {
-                  void runExport()
-                }}
-                disabled={exporting || !exportIri.trim()}
-              >
-                {exporting ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Download className="size-4 mr-2" />}
-                Export
-              </Button>
-            </DialogFooter>
-          </div>
-        )}
+        {mode === 'import' ? <ImportPanel form={importForm} /> : <ExportPanel form={exportForm} />}
       </DialogContent>
     </Dialog>
   )

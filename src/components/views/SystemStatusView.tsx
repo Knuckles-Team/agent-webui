@@ -9,7 +9,7 @@
  * live availability board so operators can see what is activated on the backend.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactElement } from 'react'
 import { CheckCircle2, Database, Gauge, HardDrive, Loader2, RefreshCw, XCircle } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -82,6 +82,76 @@ function Kpi({ label, value, icon: Icon }: { label: string; value: string; icon:
   )
 }
 
+/** Dispatch table: probe `state` -> the badge that represents it. */
+const PROBE_STATE_BADGE: Record<Probe['state'], ReactElement> = {
+  checking: <Loader2 className="size-4 animate-spin text-muted-foreground" />,
+  live: (
+    <Badge variant="default" className="gap-1">
+      <CheckCircle2 className="size-3" />
+      live
+    </Badge>
+  ),
+  unavailable: (
+    <Badge variant="outline" className="gap-1">
+      <XCircle className="size-3" />
+      not wired
+    </Badge>
+  ),
+  error: (
+    <Badge variant="destructive" className="gap-1">
+      <XCircle className="size-3" />
+      error
+    </Badge>
+  ),
+}
+
+function ProbeRow({ probe }: { probe: Probe }) {
+  return (
+    <div className="flex items-center justify-between rounded border p-2 text-sm">
+      <div className="flex flex-col">
+        <span className="font-medium">{probe.label}</span>
+        <span className="font-mono text-xs text-muted-foreground">/graph{probe.route}</span>
+      </div>
+      {PROBE_STATE_BADGE[probe.state]}
+    </div>
+  )
+}
+
+function deriveHitRate(stats: KvStats | null): number | undefined {
+  if (stats?.hit_rate !== undefined) return stats.hit_rate
+  if (stats?.hits === undefined || stats.misses === undefined) return undefined
+  return stats.hits / Math.max(stats.hits + stats.misses, 1)
+}
+
+function KvCacheSection({ stats, kvUnavailable }: { stats: KvStats | null; kvUnavailable: boolean }) {
+  const hitRate = deriveHitRate(stats)
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+        <HardDrive className="size-5" />
+        KV-Cache
+        {stats?.backend && (
+          <Badge variant="secondary" className="font-mono text-xs">
+            {stats.backend}
+          </Badge>
+        )}
+      </h2>
+      {kvUnavailable ? (
+        <p className="text-muted-foreground text-sm">
+          The `/graph/kvcache` route is not activated on this backend yet.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Kpi label="Hit rate" value={hitRate !== undefined ? `${(hitRate * 100).toFixed(1)}%` : '-'} icon={Gauge} />
+          <Kpi label="Entries" value={fmt(stats?.entries)} icon={Database} />
+          <Kpi label="Size" value={fmtBytes(stats?.bytes)} icon={HardDrive} />
+          <Kpi label="Offloads" value={fmt(stats?.offloads)} icon={HardDrive} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function SystemStatusView() {
   const [stats, setStats] = useState<KvStats | null>(null)
   const [kvUnavailable, setKvUnavailable] = useState(false)
@@ -111,12 +181,6 @@ export default function SystemStatusView() {
     void refresh()
   }, [])
 
-  const hitRate =
-    stats?.hit_rate ??
-    (stats?.hits !== undefined && stats.misses !== undefined
-      ? stats.hits / Math.max(stats.hits + stats.misses, 1)
-      : undefined)
-
   return (
     <div className="space-y-6" data-testid="system-status-view">
       <div className="flex items-center justify-between">
@@ -140,33 +204,7 @@ export default function SystemStatusView() {
         </Button>
       </div>
 
-      <div>
-        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-          <HardDrive className="size-5" />
-          KV-Cache
-          {stats?.backend && (
-            <Badge variant="secondary" className="font-mono text-xs">
-              {stats.backend}
-            </Badge>
-          )}
-        </h2>
-        {kvUnavailable ? (
-          <p className="text-muted-foreground text-sm">
-            The `/graph/kvcache` route is not activated on this backend yet.
-          </p>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Kpi
-              label="Hit rate"
-              value={hitRate !== undefined ? `${(hitRate * 100).toFixed(1)}%` : '-'}
-              icon={Gauge}
-            />
-            <Kpi label="Entries" value={fmt(stats?.entries)} icon={Database} />
-            <Kpi label="Size" value={fmtBytes(stats?.bytes)} icon={HardDrive} />
-            <Kpi label="Offloads" value={fmt(stats?.offloads)} icon={HardDrive} />
-          </div>
-        )}
-      </div>
+      <KvCacheSection stats={stats} kvUnavailable={kvUnavailable} />
 
       <Card>
         <CardHeader>
@@ -176,30 +214,7 @@ export default function SystemStatusView() {
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {probes.map((p) => (
-              <div key={p.route} className="flex items-center justify-between rounded border p-2 text-sm">
-                <div className="flex flex-col">
-                  <span className="font-medium">{p.label}</span>
-                  <span className="font-mono text-xs text-muted-foreground">/graph{p.route}</span>
-                </div>
-                {p.state === 'checking' ? (
-                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                ) : p.state === 'live' ? (
-                  <Badge variant="default" className="gap-1">
-                    <CheckCircle2 className="size-3" />
-                    live
-                  </Badge>
-                ) : p.state === 'unavailable' ? (
-                  <Badge variant="outline" className="gap-1">
-                    <XCircle className="size-3" />
-                    not wired
-                  </Badge>
-                ) : (
-                  <Badge variant="destructive" className="gap-1">
-                    <XCircle className="size-3" />
-                    error
-                  </Badge>
-                )}
-              </div>
+              <ProbeRow key={p.route} probe={p} />
             ))}
           </div>
         </CardContent>

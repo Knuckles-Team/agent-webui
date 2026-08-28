@@ -26,7 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
-import { useIdentity } from '@/lib/auth'
+import { useIdentity, type Identity } from '@/lib/auth'
 import { useProfileOverride } from '@/lib/profile-store'
 import { ProfileDialog } from './ProfileDialog'
 
@@ -37,17 +37,73 @@ function initialsOf(label: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-export function UserMenu() {
-  const { identity } = useIdentity()
-  const override = useProfileOverride(identity.userKey)
-  const [profileOpen, setProfileOpen] = useState(false)
+function deriveDisplayName(identity: Identity, accountName: string | null, nickname: string | null): string {
+  if (nickname) return nickname
+  if (accountName) return accountName
+  return identity.ssoConfigured ? identity.userKey : 'Local operator'
+}
 
+function useAccountDisplay(identity: Identity) {
+  const override = useProfileOverride(identity.userKey)
   const claims = identity.raw
   const accountName = claims?.name ?? claims?.username ?? null
-  const displayName =
-    override.nickname ?? accountName ?? (identity.ssoConfigured ? identity.userKey : 'Local operator')
-  const email = claims?.email ?? null
-  const avatarSrc = override.avatarDataUrl ?? claims?.picture ?? undefined
+  return {
+    displayName: deriveDisplayName(identity, accountName, override.nickname),
+    email: claims?.email ?? null,
+    avatarSrc: override.avatarDataUrl ?? claims?.picture ?? undefined,
+  }
+}
+
+function UserAvatar({
+  avatarSrc,
+  displayName,
+  size,
+}: {
+  avatarSrc: string | undefined
+  displayName: string
+  size: 'sm' | 'md'
+}) {
+  return (
+    <Avatar className={size === 'sm' ? 'size-7 rounded-md' : 'size-8 rounded-md'}>
+      <AvatarImage src={avatarSrc} alt="" />
+      <AvatarFallback className="rounded-md text-xs">{initialsOf(displayName)}</AvatarFallback>
+    </Avatar>
+  )
+}
+
+function AuthMenuItem({ identity }: { identity: Identity }) {
+  if (!identity.ssoConfigured) {
+    return (
+      <DropdownMenuItem disabled title="Single sign-on is not configured for this deployment">
+        <LogOut />
+        Log out (SSO not configured)
+      </DropdownMenuItem>
+    )
+  }
+  if (identity.needsSignIn) {
+    return (
+      <DropdownMenuItem asChild>
+        <a href="/auth/login">
+          <LogIn />
+          Sign in
+        </a>
+      </DropdownMenuItem>
+    )
+  }
+  return (
+    <DropdownMenuItem asChild variant="destructive">
+      <a href="/auth/logout">
+        <LogOut />
+        Log out
+      </a>
+    </DropdownMenuItem>
+  )
+}
+
+export function UserMenu() {
+  const { identity } = useIdentity()
+  const { displayName, email, avatarSrc } = useAccountDisplay(identity)
+  const [profileOpen, setProfileOpen] = useState(false)
 
   return (
     <>
@@ -56,10 +112,7 @@ export function UserMenu() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent">
-                <Avatar className="size-7 rounded-md">
-                  <AvatarImage src={avatarSrc} alt="" />
-                  <AvatarFallback className="rounded-md text-xs">{initialsOf(displayName)}</AvatarFallback>
-                </Avatar>
+                <UserAvatar avatarSrc={avatarSrc} displayName={displayName} size="sm" />
                 <span className="flex flex-col items-start min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
                   <span className="truncate text-sm font-medium w-full">{displayName}</span>
                   <span className="truncate text-xs text-muted-foreground w-full">
@@ -72,10 +125,7 @@ export function UserMenu() {
             <DropdownMenuContent align="end" side="top" className="w-64">
               <DropdownMenuLabel className="font-normal">
                 <div className="flex items-center gap-2">
-                  <Avatar className="size-8 rounded-md">
-                    <AvatarImage src={avatarSrc} alt="" />
-                    <AvatarFallback className="rounded-md text-xs">{initialsOf(displayName)}</AvatarFallback>
-                  </Avatar>
+                  <UserAvatar avatarSrc={avatarSrc} displayName={displayName} size="md" />
                   <div className="flex flex-col min-w-0">
                     <span className="truncate text-sm font-medium">{displayName}</span>
                     <span className="truncate text-xs text-muted-foreground">
@@ -94,26 +144,7 @@ export function UserMenu() {
                 Profile
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              {!identity.ssoConfigured ? (
-                <DropdownMenuItem disabled title="Single sign-on is not configured for this deployment">
-                  <LogOut />
-                  Log out (SSO not configured)
-                </DropdownMenuItem>
-              ) : identity.needsSignIn ? (
-                <DropdownMenuItem asChild>
-                  <a href="/auth/login">
-                    <LogIn />
-                    Sign in
-                  </a>
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem asChild variant="destructive">
-                  <a href="/auth/logout">
-                    <LogOut />
-                    Log out
-                  </a>
-                </DropdownMenuItem>
-              )}
+              <AuthMenuItem identity={identity} />
             </DropdownMenuContent>
           </DropdownMenu>
         </SidebarMenuItem>

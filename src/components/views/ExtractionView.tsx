@@ -8,7 +8,16 @@
  * GPU-slot job queue, and export JSONL. Backed by the shared
  * /api/enhanced/extract/* gateway contract (KG-2.64 extractor + KG-2.65 scheduler).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+} from 'react'
 import Graph from 'graphology'
 import Sigma from 'sigma'
 import forceAtlas2 from 'graphology-layout-forceatlas2'
@@ -112,52 +121,10 @@ function longestPathEdges(facts: Fact[]): Set<number> {
   return new Set(best)
 }
 
-export default function ExtractionView() {
-  const [text, setText] = useState('')
-  const [url, setUrl] = useState('')
-  const [rounds, setRounds] = useState(1)
-  const [dedup, setDedup] = useState(true)
-  const [jobId, setJobId] = useState<string | null>(null)
-  const [facts, setFacts] = useState<Fact[]>([])
-  const [status, setStatus] = useState('idle')
+/** Polls `/api/enhanced/extract/jobs` every 2.5s for the GPU-slot job queue. */
+function useJobQueuePolling(): ExtractionJob[] {
   const [jobs, setJobs] = useState<ExtractionJob[]>([])
-  const [hover, setHover] = useState<{ fact: Fact; x: number; y: number } | null>(null)
-  const [showPath, setShowPath] = useState(false)
 
-  const containerRef = useRef<HTMLDivElement>(null)
-  const sigmaRef = useRef<Sigma<NodeAttrs, EdgeAttrs> | null>(null)
-  const graphRef = useRef<FactGraph | null>(null)
-  const esRef = useRef<EventSource | null>(null)
-  // D-WUI-21: the graph container can still be 0x0 the first time this effect
-  // runs (e.g. this view mounts inside a hidden tab before its layout
-  // settles) — constructing Sigma against a zero-size container throws
-  // "Sigma: Container has no width." One-shot ResizeObserver: flips true the
-  // first time the container actually has a size, so the effect below can
-  // defer construction until then instead of crashing.
-  const [containerReady, setContainerReady] = useState(false)
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    if (el.clientWidth > 0 && el.clientHeight > 0) {
-      setContainerReady(true)
-      return
-    }
-    const observer = new ResizeObserver(() => {
-      if (el.clientWidth > 0 && el.clientHeight > 0) {
-        setContainerReady(true)
-        observer.disconnect()
-      }
-    })
-    observer.observe(el)
-    return () => {
-      observer.disconnect()
-    }
-  }, [])
-
-  const pathEdges = useMemo(() => (showPath ? longestPathEdges(facts) : new Set<number>()), [facts, showPath])
-
-  // ---- live job queue polling --------------------------------------------
   useEffect(() => {
     let alive = true
     const tick = async () => {
@@ -178,7 +145,92 @@ export default function ExtractionView() {
     }
   }, [])
 
-  // ---- (re)build the Sigma graph whenever facts change --------------------
+  return jobs
+}
+
+/** Owns the SSE connection to `/api/enhanced/extract/stream` and dispatches
+ * its event taxonomy into the facts/status state the caller owns. */
+function useExtractionStream(setFacts: Dispatch<SetStateAction<Fact[]>>, setStatus: Dispatch<SetStateAction<string>>) {
+  const esRef = useRef<EventSource | null>(null)
+
+  useEffect(() => {
+    return () => {
+      esRef.current?.close()
+    }
+  }, [])
+
+  const startStream = useCallback(
+    (id: string) => {
+      esRef.current?.close()
+      const es = new EventSource(api.extractionStreamUrl(id))
+      esRef.current = es
+      es.onmessage = (e: MessageEvent<string>) => {
+        let ev: ExtractionEvent
+        try {
+          ev = JSON.parse(e.data) as ExtractionEvent
+        } catch {
+          return
+        }
+        if (ev.type === 'fact') {
+          const fact = ev.fact
+          setFacts((prev) => [...prev, fact])
+        } else if (ev.type === 'round_start') {
+          setStatus(`round ${ev.round}…`)
+        } else if (ev.type === 'job_done') {
+          setStatus(ev.state === 'failed' ? 'failed' : 'done')
+          es.close()
+        }
+      }
+      es.onerror = () => {
+        es.close()
+      }
+    },
+    [setFacts, setStatus],
+  )
+
+  return { startStream }
+}
+
+/** Waits for the Sigma container to have a real size before the renderer
+ * effect constructs against it. D-WUI-21: this view can mount inside a
+ * hidden tab before its layout settles, and constructing Sigma against a
+ * zero-size container throws "Sigma: Container has no width." */
+function useContainerReady(containerRef: RefObject<HTMLDivElement | null>): boolean {
+  const [containerReady, setContainerReady] = useState(false)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    if (el.clientWidth > 0 && el.clientHeight > 0) {
+      setContainerReady(true)
+      return
+    }
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth > 0 && el.clientHeight > 0) {
+        setContainerReady(true)
+        observer.disconnect()
+      }
+    })
+    observer.observe(el)
+    return () => {
+      observer.disconnect()
+    }
+  }, [containerRef])
+
+  return containerReady
+}
+
+/** (Re)builds the Sigma force-graph from `facts` whenever they (or the
+ * longest-path highlight) change, and owns the sigma/graph refs + edge
+ * hover state. Kept out of the view's own render body — see the file-level
+ * hooks above for the same reasoning. */
+function useFactGraphRenderer(facts: Fact[], pathEdges: Set<number>) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const sigmaRef = useRef<Sigma<NodeAttrs, EdgeAttrs> | null>(null)
+  const graphRef = useRef<FactGraph | null>(null)
+  const [hover, setHover] = useState<{ fact: Fact; x: number; y: number } | null>(null)
+  const containerReady = useContainerReady(containerRef)
+
   useEffect(() => {
     if (!containerRef.current) return
     graphRef.current ??= new Graph<NodeAttrs, EdgeAttrs>({ multi: true, type: 'directed' })
@@ -259,7 +311,6 @@ export default function ExtractionView() {
     return () => {
       sigmaRef.current?.kill()
       sigmaRef.current = null
-      esRef.current?.close()
     }
   }, [])
 
@@ -267,35 +318,230 @@ export default function ExtractionView() {
     sigmaRef.current?.kill()
     sigmaRef.current = null
     graphRef.current = null
-    setFacts([])
     setHover(null)
   }, [])
 
-  const startStream = useCallback((id: string) => {
-    esRef.current?.close()
-    const es = new EventSource(api.extractionStreamUrl(id))
-    esRef.current = es
-    es.onmessage = (e: MessageEvent<string>) => {
-      let ev: ExtractionEvent
-      try {
-        ev = JSON.parse(e.data) as ExtractionEvent
-      } catch {
-        return
-      }
-      if (ev.type === 'fact') {
-        const fact = ev.fact
-        setFacts((prev) => [...prev, fact])
-      } else if (ev.type === 'round_start') {
-        setStatus(`round ${ev.round}…`)
-      } else if (ev.type === 'job_done') {
-        setStatus(ev.state === 'failed' ? 'failed' : 'done')
-        es.close()
-      }
-    }
-    es.onerror = () => {
-      es.close()
-    }
-  }, [])
+  return { containerRef, hover, resetGraph }
+}
+
+function IngestForm({
+  text,
+  setText,
+  url,
+  setUrl,
+  rounds,
+  setRounds,
+  dedup,
+  setDedup,
+  onSubmit,
+  jobId,
+  status,
+  uniqueCount,
+  dupCount,
+  showPath,
+  setShowPath,
+}: {
+  text: string
+  setText: (v: string) => void
+  url: string
+  setUrl: (v: string) => void
+  rounds: number
+  setRounds: (v: number) => void
+  dedup: boolean
+  setDedup: (v: boolean) => void
+  onSubmit: () => void
+  jobId: string | null
+  status: string
+  uniqueCount: number
+  dupCount: number
+  showPath: boolean
+  setShowPath: (v: boolean) => void
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Extract Knowledge Graph</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Textarea
+          placeholder="Paste document text…"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value)
+          }}
+          rows={6}
+        />
+        <Input
+          placeholder="…or a URL (readability)"
+          value={url}
+          onChange={(e) => {
+            setUrl(e.target.value)
+          }}
+        />
+        <div className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-1">
+            rounds
+            <Input
+              type="number"
+              min={1}
+              max={10}
+              value={rounds}
+              onChange={(e) => {
+                const n = Number(e.target.value)
+                setRounds(Number.isFinite(n) && n >= 1 ? n : 1)
+              }}
+              className="w-16"
+            />
+          </label>
+          <label className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={dedup}
+              onChange={(e) => {
+                setDedup(e.target.checked)
+              }}
+            />
+            dedup
+          </label>
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={onSubmit} className="flex-1">
+            Extract
+          </Button>
+          <Button
+            variant="outline"
+            disabled={!jobId}
+            onClick={() => {
+              if (jobId) window.open(api.extractionJsonlUrl(jobId), '_blank', 'noopener,noreferrer')
+            }}
+          >
+            JSONL
+          </Button>
+        </div>
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>{status}</span>
+          <span>
+            {uniqueCount} facts{dupCount > 0 ? ` (+${dupCount} dup)` : ''}
+          </span>
+        </div>
+        <label className="flex items-center gap-1 text-xs">
+          <input
+            type="checkbox"
+            checked={showPath}
+            onChange={(e) => {
+              setShowPath(e.target.checked)
+            }}
+          />
+          highlight longest chain
+        </label>
+      </CardContent>
+    </Card>
+  )
+}
+
+function JobRow({ job }: { job: ExtractionJob }) {
+  return (
+    <div className="flex items-center justify-between rounded border p-2 text-xs">
+      <div className="truncate">
+        <Badge variant={job.state === 'running' ? 'default' : 'outline'}>{job.state}</Badge>{' '}
+        <span className="font-mono">{job.job_id}</span>
+        <div className="text-muted-foreground">{job.total_facts ?? 0} facts</div>
+      </div>
+      {job.state === 'held' || job.state === 'paused' ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            void api.resumeExtraction(job.job_id)
+          }}
+        >
+          ▶
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            void api.pauseExtraction(job.job_id)
+          }}
+        >
+          ⏸
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function JobQueueCard({ jobs }: { jobs: ExtractionJob[] }) {
+  return (
+    <Card className="flex-1 overflow-hidden">
+      <CardHeader>
+        <CardTitle className="text-sm">GPU-slot job queue</CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <ScrollArea className="h-64">
+          <div className="space-y-1 p-2">
+            {jobs.length === 0 && <div className="p-2 text-xs text-muted-foreground">no jobs</div>}
+            {jobs.map((j) => (
+              <JobRow key={j.job_id} job={j} />
+            ))}
+          </div>
+        </ScrollArea>
+      </CardContent>
+    </Card>
+  )
+}
+
+function FactHoverCard({ hover }: { hover: { fact: Fact; x: number; y: number } }) {
+  return (
+    <div
+      className="pointer-events-none absolute z-10 max-w-sm rounded border bg-white p-2 text-xs shadow-lg"
+      style={{ left: Math.min(hover.x + 12, 600), top: hover.y + 12 }}
+    >
+      <div className="font-semibold">
+        {hover.fact.title ?? `${hover.fact.subject} ${hover.fact.predicate} ${hover.fact.object}`}
+      </div>
+      <div className="my-1 font-mono text-[11px]">
+        <span className="text-blue-700">{hover.fact.subject}</span> →{' '}
+        <span className="text-purple-700">{hover.fact.predicate}</span> →{' '}
+        <span className="text-green-700">{hover.fact.object}</span>
+      </div>
+      {hover.fact.description && <div className="text-muted-foreground">{hover.fact.description}</div>}
+      <div className="mt-1 flex items-center gap-2">
+        <span>conf {hover.fact.confidence ?? '–'}%</span>
+        {hover.fact.is_duplicate && <Badge variant="destructive">duplicate</Badge>}
+      </div>
+      {hover.fact.tags && hover.fact.tags.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {hover.fact.tags.map((t) => (
+            <Badge key={t} variant="secondary">
+              {t}
+            </Badge>
+          ))}
+        </div>
+      )}
+      {hover.fact.evidence_span && (
+        <div className="mt-1 border-l-2 pl-2 italic text-muted-foreground">“{hover.fact.evidence_span}”</div>
+      )}
+      {hover.fact.source_file && <div className="mt-1 text-muted-foreground">📄 {hover.fact.source_file}</div>}
+    </div>
+  )
+}
+
+export default function ExtractionView() {
+  const [text, setText] = useState('')
+  const [url, setUrl] = useState('')
+  const [rounds, setRounds] = useState(1)
+  const [dedup, setDedup] = useState(true)
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [facts, setFacts] = useState<Fact[]>([])
+  const [status, setStatus] = useState('idle')
+  const [showPath, setShowPath] = useState(false)
+
+  const jobs = useJobQueuePolling()
+  const pathEdges = useMemo(() => (showPath ? longestPathEdges(facts) : new Set<number>()), [facts, showPath])
+  const { containerRef, hover, resetGraph } = useFactGraphRenderer(facts, pathEdges)
+  const { startStream } = useExtractionStream(setFacts, setStatus)
 
   const onSubmit = useCallback(async () => {
     if (!text.trim() && !url.trim()) {
@@ -303,6 +549,7 @@ export default function ExtractionView() {
       return
     }
     resetGraph()
+    setFacts([])
     setStatus('submitting…')
     try {
       const res = await api.submitExtraction({ text, url, rounds, dedup })
@@ -327,170 +574,32 @@ export default function ExtractionView() {
     <div className="flex h-full gap-4 p-4">
       {/* left: ingestion + jobs */}
       <div className="flex w-80 flex-col gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Extract Knowledge Graph</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Textarea
-              placeholder="Paste document text…"
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value)
-              }}
-              rows={6}
-            />
-            <Input
-              placeholder="…or a URL (readability)"
-              value={url}
-              onChange={(e) => {
-                setUrl(e.target.value)
-              }}
-            />
-            <div className="flex items-center gap-2 text-sm">
-              <label className="flex items-center gap-1">
-                rounds
-                <Input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={rounds}
-                  onChange={(e) => {
-                    const n = Number(e.target.value)
-                    setRounds(Number.isFinite(n) && n >= 1 ? n : 1)
-                  }}
-                  className="w-16"
-                />
-              </label>
-              <label className="flex items-center gap-1">
-                <input
-                  type="checkbox"
-                  checked={dedup}
-                  onChange={(e) => {
-                    setDedup(e.target.checked)
-                  }}
-                />
-                dedup
-              </label>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={() => {
-                  void onSubmit()
-                }}
-                className="flex-1"
-              >
-                Extract
-              </Button>
-              <Button
-                variant="outline"
-                disabled={!jobId}
-                onClick={() => {
-                  if (jobId) window.open(api.extractionJsonlUrl(jobId), '_blank', 'noopener,noreferrer')
-                }}
-              >
-                JSONL
-              </Button>
-            </div>
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{status}</span>
-              <span>
-                {uniqueCount} facts{dupCount > 0 ? ` (+${dupCount} dup)` : ''}
-              </span>
-            </div>
-            <label className="flex items-center gap-1 text-xs">
-              <input
-                type="checkbox"
-                checked={showPath}
-                onChange={(e) => {
-                  setShowPath(e.target.checked)
-                }}
-              />
-              highlight longest chain
-            </label>
-          </CardContent>
-        </Card>
-
-        <Card className="flex-1 overflow-hidden">
-          <CardHeader>
-            <CardTitle className="text-sm">GPU-slot job queue</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ScrollArea className="h-64">
-              <div className="space-y-1 p-2">
-                {jobs.length === 0 && <div className="p-2 text-xs text-muted-foreground">no jobs</div>}
-                {jobs.map((j) => (
-                  <div key={j.job_id} className="flex items-center justify-between rounded border p-2 text-xs">
-                    <div className="truncate">
-                      <Badge variant={j.state === 'running' ? 'default' : 'outline'}>{j.state}</Badge>{' '}
-                      <span className="font-mono">{j.job_id}</span>
-                      <div className="text-muted-foreground">{j.total_facts ?? 0} facts</div>
-                    </div>
-                    {j.state === 'held' || j.state === 'paused' ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          void api.resumeExtraction(j.job_id)
-                        }}
-                      >
-                        ▶
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          void api.pauseExtraction(j.job_id)
-                        }}
-                      >
-                        ⏸
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
+        <IngestForm
+          text={text}
+          setText={setText}
+          url={url}
+          setUrl={setUrl}
+          rounds={rounds}
+          setRounds={setRounds}
+          dedup={dedup}
+          setDedup={setDedup}
+          onSubmit={() => {
+            void onSubmit()
+          }}
+          jobId={jobId}
+          status={status}
+          uniqueCount={uniqueCount}
+          dupCount={dupCount}
+          showPath={showPath}
+          setShowPath={setShowPath}
+        />
+        <JobQueueCard jobs={jobs} />
       </div>
 
       {/* right: live force graph + edge-fact card */}
       <div className="relative flex-1 rounded border bg-white">
         <div ref={containerRef} className="h-full w-full" />
-        {hover && (
-          <div
-            className="pointer-events-none absolute z-10 max-w-sm rounded border bg-white p-2 text-xs shadow-lg"
-            style={{ left: Math.min(hover.x + 12, 600), top: hover.y + 12 }}
-          >
-            <div className="font-semibold">
-              {hover.fact.title ?? `${hover.fact.subject} ${hover.fact.predicate} ${hover.fact.object}`}
-            </div>
-            <div className="my-1 font-mono text-[11px]">
-              <span className="text-blue-700">{hover.fact.subject}</span> →{' '}
-              <span className="text-purple-700">{hover.fact.predicate}</span> →{' '}
-              <span className="text-green-700">{hover.fact.object}</span>
-            </div>
-            {hover.fact.description && <div className="text-muted-foreground">{hover.fact.description}</div>}
-            <div className="mt-1 flex items-center gap-2">
-              <span>conf {hover.fact.confidence ?? '–'}%</span>
-              {hover.fact.is_duplicate && <Badge variant="destructive">duplicate</Badge>}
-            </div>
-            {hover.fact.tags && hover.fact.tags.length > 0 && (
-              <div className="mt-1 flex flex-wrap gap-1">
-                {hover.fact.tags.map((t) => (
-                  <Badge key={t} variant="secondary">
-                    {t}
-                  </Badge>
-                ))}
-              </div>
-            )}
-            {hover.fact.evidence_span && (
-              <div className="mt-1 border-l-2 pl-2 italic text-muted-foreground">“{hover.fact.evidence_span}”</div>
-            )}
-            {hover.fact.source_file && <div className="mt-1 text-muted-foreground">📄 {hover.fact.source_file}</div>}
-          </div>
-        )}
+        {hover && <FactHoverCard hover={hover} />}
       </div>
     </div>
   )

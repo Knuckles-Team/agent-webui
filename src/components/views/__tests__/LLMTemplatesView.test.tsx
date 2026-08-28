@@ -57,6 +57,21 @@ const EXISTING_CHAT_MODEL_DETAIL = {
   context_window: 131072,
 }
 
+/** GET routes the mock answers, checked in this order — same as the original
+ * if-chain — via URL substring match. Each entry's `key` looks up an optional
+ * per-test `overrides` responder before falling back to its default body. */
+const GET_ROUTES: { match: string; key: string; fallback: () => Response }[] = [
+  {
+    match: '/llm/model-schema',
+    key: 'schema',
+    fallback: () => jsonResponse({ chat: CHAT_SCHEMA, embedding: EMBEDDING_SCHEMA }),
+  },
+  { match: '/llm/embedding-models', key: 'embeddingModels', fallback: () => jsonResponse([]) },
+  { match: '/llm/model-detail', key: 'modelDetail', fallback: () => jsonResponse(EXISTING_CHAT_MODEL_DETAIL) },
+  { match: '/llm/models', key: 'models', fallback: () => jsonResponse([EXISTING_CHAT_MODEL]) },
+  { match: '/api/enhanced/prompts', key: 'prompts', fallback: () => jsonResponse([]) },
+]
+
 function mockFetch(overrides: Partial<Record<string, () => Response>> = {}) {
   const putCalls: { url: string; body: unknown }[] = []
   global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -65,24 +80,10 @@ function mockFetch(overrides: Partial<Record<string, () => Response>> = {}) {
       putCalls.push({ url, body: init.body ? JSON.parse(init.body as string) : null })
       return Promise.resolve(overrides.put ? overrides.put() : jsonResponse({ status: 'success' }))
     }
-    if (url.includes('/llm/model-schema')) {
-      return Promise.resolve(
-        overrides.schema ? overrides.schema() : jsonResponse({ chat: CHAT_SCHEMA, embedding: EMBEDDING_SCHEMA }),
-      )
-    }
-    if (url.includes('/llm/embedding-models')) {
-      return Promise.resolve(overrides.embeddingModels ? overrides.embeddingModels() : jsonResponse([]))
-    }
-    if (url.includes('/llm/model-detail')) {
-      return Promise.resolve(
-        overrides.modelDetail ? overrides.modelDetail() : jsonResponse(EXISTING_CHAT_MODEL_DETAIL),
-      )
-    }
-    if (url.includes('/llm/models')) {
-      return Promise.resolve(overrides.models ? overrides.models() : jsonResponse([EXISTING_CHAT_MODEL]))
-    }
-    if (url.includes('/api/enhanced/prompts')) {
-      return Promise.resolve(overrides.prompts ? overrides.prompts() : jsonResponse([]))
+    const route = GET_ROUTES.find((r) => url.includes(r.match))
+    if (route) {
+      const override = overrides[route.key]
+      return Promise.resolve(override ? override() : route.fallback())
     }
     return Promise.reject(new Error(`unexpected fetch: ${url}`))
   }) as unknown as typeof fetch

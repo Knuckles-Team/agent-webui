@@ -35,6 +35,40 @@ const IDE_URL = `${IDE_ORIGIN}/?folder=/home/app`
 
 const EDITOR_CONTEXT_POLL_MS = 2000
 
+const EDITOR_ALLOWED_ACTIONS: PageContextContribution['allowedActions'] = [
+  { id: 'read-open-file', label: 'Read the file currently open in the IDE', kind: 'read' },
+  { id: 'read-selection', label: 'Read the current editor selection', kind: 'read' },
+]
+
+function deriveEditorSelection(ctx: EditorContext | null): PageContextContribution['selection'] {
+  const filePath = ctx?.filePath ?? null
+  return filePath ? [{ kind: 'editor-file', id: filePath, label: filePath }] : []
+}
+
+function deriveSelectionText(ctx: EditorContext | null): string | null {
+  return ctx?.selection?.isEmpty === false ? ctx.selection.text : null
+}
+
+function deriveCursorAndDiagnostics(ctx: EditorContext | null): {
+  cursorLine: number | null
+  diagnosticsCount: number
+} {
+  return {
+    cursorLine: ctx?.cursor?.line ?? null,
+    diagnosticsCount: ctx?.diagnostics?.length ?? 0,
+  }
+}
+
+function deriveEditorFilters(ctx: EditorContext | null): PageContextContribution['filters'] {
+  return {
+    workspaceRoot: ctx?.workspaceRoot ?? null,
+    languageId: ctx?.languageId ?? null,
+    dirty: ctx?.dirty ?? false,
+    selectionText: deriveSelectionText(ctx),
+    ...deriveCursorAndDiagnostics(ctx),
+  }
+}
+
 export default function WorkspaceIDEView() {
   const [editorContext, setEditorContext] = useState<EditorContext | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
@@ -61,24 +95,14 @@ export default function WorkspaceIDEView() {
     }
   }, [])
 
-  const pageContext = useMemo<PageContextContribution>(() => {
-    const filePath = editorContext?.filePath ?? null
-    return {
-      selection: filePath ? [{ kind: 'editor-file', id: filePath, label: filePath }] : [],
-      filters: {
-        workspaceRoot: editorContext?.workspaceRoot ?? null,
-        languageId: editorContext?.languageId ?? null,
-        dirty: editorContext?.dirty ?? false,
-        cursorLine: editorContext?.cursor?.line ?? null,
-        selectionText: editorContext?.selection?.isEmpty === false ? editorContext.selection.text : null,
-        diagnosticsCount: editorContext?.diagnostics?.length ?? 0,
-      },
-      allowedActions: [
-        { id: 'read-open-file', label: 'Read the file currently open in the IDE', kind: 'read' },
-        { id: 'read-selection', label: 'Read the current editor selection', kind: 'read' },
-      ],
-    }
-  }, [editorContext])
+  const pageContext = useMemo<PageContextContribution>(
+    () => ({
+      selection: deriveEditorSelection(editorContext),
+      filters: deriveEditorFilters(editorContext),
+      allowedActions: EDITOR_ALLOWED_ACTIONS,
+    }),
+    [editorContext],
+  )
   usePageContextPublisher(pageContext)
 
   return (

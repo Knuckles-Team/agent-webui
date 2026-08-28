@@ -64,27 +64,16 @@ const kbHealthResultSchema: z.ZodType<KbHealthResult> = z.object({
   recommendations: z.array(z.string()).optional(),
 })
 
-export default function KnowledgeBaseView() {
+/** Knowledge-base + article + health-check state, kept out of the view's own
+ * render body. */
+function useKnowledgeBaseData() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
   const [selectedKB, setSelectedKB] = useState<KnowledgeBase | null>(null)
   const [articles, setArticles] = useState<Article[]>([])
-  const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('browse')
-  const [isIngestDialogOpen, setIsIngestDialogOpen] = useState(false)
-  const [ingestForm, setIngestForm] = useState({ kb_id: '', source: '', name: '' })
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null)
   const [healthResults, setHealthResults] = useState<KbHealthResult | null>(null)
-
-  useEffect(() => {
-    void fetchKnowledgeBases()
-  }, [])
-
-  useEffect(() => {
-    if (selectedKB) {
-      void fetchArticles(selectedKB.id)
-    }
-  }, [selectedKB])
 
   const fetchKnowledgeBases = async () => {
     try {
@@ -110,26 +99,6 @@ export default function KnowledgeBaseView() {
     }
   }
 
-  const handleIngest = async () => {
-    try {
-      const res = await fetch('/api/enhanced/kb/ingest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ingestForm),
-      })
-      if (res.ok) {
-        toast.success('Knowledge base ingestion started')
-        setIsIngestDialogOpen(false)
-        setIngestForm({ kb_id: '', source: '', name: '' })
-        void fetchKnowledgeBases()
-      } else {
-        toast.error('Failed to start ingestion')
-      }
-    } catch {
-      toast.error('Failed to ingest knowledge base')
-    }
-  }
-
   const handleHealthCheck = async (kbId: string) => {
     try {
       const data = await fetchValidated('/api/enhanced/kb/health', kbHealthResultSchema, {
@@ -144,14 +113,479 @@ export default function KnowledgeBaseView() {
     }
   }
 
-  const filteredKBs = knowledgeBases.filter(
-    (kb) =>
-      kb.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      kb.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      kb.topics.some((topic) => topic.toLowerCase().includes(searchQuery.toLowerCase())),
+  useEffect(() => {
+    void fetchKnowledgeBases()
+  }, [])
+
+  useEffect(() => {
+    if (selectedKB) {
+      void fetchArticles(selectedKB.id)
+    }
+  }, [selectedKB])
+
+  return {
+    knowledgeBases,
+    selectedKB,
+    setSelectedKB,
+    articles,
+    loading,
+    activeTab,
+    setActiveTab,
+    selectedArticle,
+    setSelectedArticle,
+    healthResults,
+    fetchKnowledgeBases,
+    handleHealthCheck,
+  }
+}
+
+interface IngestForm {
+  kb_id: string
+  source: string
+  name: string
+}
+
+/** Ingest-dialog state + submit, kept out of the view's own render body. */
+function useIngestForm(onIngested: () => void) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [form, setForm] = useState<IngestForm>({ kb_id: '', source: '', name: '' })
+
+  const submit = async () => {
+    try {
+      const res = await fetch('/api/enhanced/kb/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      if (res.ok) {
+        toast.success('Knowledge base ingestion started')
+        setIsOpen(false)
+        setForm({ kb_id: '', source: '', name: '' })
+        onIngested()
+      } else {
+        toast.error('Failed to start ingestion')
+      }
+    } catch {
+      toast.error('Failed to ingest knowledge base')
+    }
+  }
+
+  return { isOpen, setIsOpen, form, setForm, submit }
+}
+
+function kbHealthClasses(status: KnowledgeBase['health_status']): string {
+  if (status === 'healthy') return 'bg-green-500/10 text-green-500'
+  if (status === 'warning') return 'bg-yellow-500/10 text-yellow-500'
+  return 'bg-red-500/10 text-red-500'
+}
+
+function KBCard({
+  kb,
+  selected,
+  onSelect,
+  onHealthCheck,
+}: {
+  kb: KnowledgeBase
+  selected: boolean
+  onSelect: (kb: KnowledgeBase) => void
+  onHealthCheck: (kbId: string) => void
+}) {
+  return (
+    <Card
+      className={cn('cursor-pointer transition-all hover:shadow-md', selected ? 'ring-2 ring-primary' : '')}
+      onClick={() => {
+        onSelect(kb)
+      }}
+    >
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-2">
+            <div className={cn('p-2 rounded-lg', kbHealthClasses(kb.health_status))}>
+              {kb.health_status === 'healthy' ? (
+                <CheckCircle className="size-4" />
+              ) : (
+                <AlertCircle className="size-4" />
+              )}
+            </div>
+            <div>
+              <CardTitle className="text-lg">{kb.name}</CardTitle>
+              <CardDescription>{kb.id}</CardDescription>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              onHealthCheck(kb.id)
+            }}
+          >
+            <Settings className="size-4" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Articles</span>
+            <span className="font-medium">{kb.article_count}</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {kb.topics.slice(0, 3).map((topic) => (
+              <Badge key={topic} variant="secondary" className="text-xs">
+                {topic}
+              </Badge>
+            ))}
+            {kb.topics.length > 3 && (
+              <Badge variant="secondary" className="text-xs">
+                +{kb.topics.length - 3}
+              </Badge>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Last updated: {new Date(kb.last_updated).toLocaleDateString()}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function BrowseTab({
+  loading,
+  filteredKBs,
+  selectedKB,
+  onSelect,
+  onHealthCheck,
+  searchQuery,
+  onSearchChange,
+}: {
+  loading: boolean
+  filteredKBs: KnowledgeBase[]
+  selectedKB: KnowledgeBase | null
+  onSelect: (kb: KnowledgeBase) => void
+  onHealthCheck: (kbId: string) => void
+  searchQuery: string
+  onSearchChange: (v: string) => void
+}) {
+  return (
+    <TabsContent value="browse" className="space-y-4">
+      <div className="flex gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            placeholder="Search knowledge bases..."
+            className="pl-9"
+            value={searchQuery}
+            onChange={(e) => {
+              onSearchChange(e.target.value)
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {loading ? (
+          <p className="text-center text-muted-foreground col-span-3">Loading...</p>
+        ) : filteredKBs.length === 0 ? (
+          <p className="text-center text-muted-foreground col-span-3">No knowledge bases found</p>
+        ) : (
+          filteredKBs.map((kb) => (
+            <KBCard
+              key={kb.id}
+              kb={kb}
+              selected={selectedKB?.id === kb.id}
+              onSelect={onSelect}
+              onHealthCheck={onHealthCheck}
+            />
+          ))
+        )}
+      </div>
+    </TabsContent>
+  )
+}
+
+function ArticleCard({ article, onSelect }: { article: Article; onSelect: (article: Article) => void }) {
+  return (
+    <Card
+      className="cursor-pointer hover:shadow-md transition-all"
+      onClick={() => {
+        onSelect(article)
+      }}
+    >
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-2">
+            <FileText className="size-5 text-muted-foreground" />
+            <div>
+              <CardTitle className="text-base">{article.title}</CardTitle>
+              <CardDescription className="text-xs">
+                {new Date(article.created_at).toLocaleDateString()}
+              </CardDescription>
+            </div>
+          </div>
+          <Badge variant="outline" className="text-xs">
+            {article.concepts.length} concepts
+          </Badge>
+        </div>
+      </CardHeader>
+    </Card>
+  )
+}
+
+function ArticlesTab({
+  selectedKB,
+  loading,
+  filteredArticles,
+  onSelectArticle,
+  searchQuery,
+  onSearchChange,
+}: {
+  selectedKB: KnowledgeBase | null
+  loading: boolean
+  filteredArticles: Article[]
+  onSelectArticle: (article: Article) => void
+  searchQuery: string
+  onSearchChange: (v: string) => void
+}) {
+  if (!selectedKB) {
+    return (
+      <TabsContent value="articles" className="space-y-4">
+        <div className="text-center text-muted-foreground py-20">
+          <Book className="size-16 mx-auto mb-4" />
+          <p>Select a knowledge base to view articles</p>
+        </div>
+      </TabsContent>
+    )
+  }
+  return (
+    <TabsContent value="articles" className="space-y-4">
+      <div className="flex gap-4 items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            placeholder="Search articles..."
+            className="pl-9"
+            value={searchQuery}
+            onChange={(e) => {
+              onSearchChange(e.target.value)
+            }}
+          />
+        </div>
+        <Badge variant="outline">{selectedKB.name}</Badge>
+      </div>
+
+      <div className="space-y-2">
+        {loading ? (
+          <p className="text-center text-muted-foreground py-8">Loading articles...</p>
+        ) : filteredArticles.length === 0 ? (
+          <p className="text-center text-muted-foreground py-8">No articles found</p>
+        ) : (
+          filteredArticles.map((article) => (
+            <ArticleCard key={article.id} article={article} onSelect={onSelectArticle} />
+          ))
+        )}
+      </div>
+    </TabsContent>
+  )
+}
+
+function ConceptsTab({ selectedKB, articles }: { selectedKB: KnowledgeBase | null; articles: Article[] }) {
+  if (!selectedKB) {
+    return (
+      <TabsContent value="concepts" className="space-y-4">
+        <div className="text-center text-muted-foreground py-20">
+          <Brain className="size-16 mx-auto mb-4" />
+          <p>Select a knowledge base to view concepts</p>
+        </div>
+      </TabsContent>
+    )
+  }
+  return (
+    <TabsContent value="concepts" className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {Array.from(new Set(articles.flatMap((a) => a.concepts))).map((concept) => (
+          <Card key={concept} className="p-4 hover:shadow-md transition-all cursor-pointer">
+            <div className="flex items-center gap-2">
+              <Brain className="size-4 text-primary" />
+              <span className="font-medium text-sm">{concept}</span>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </TabsContent>
+  )
+}
+
+function HealthResultsList({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) return null
+  return (
+    <div>
+      <h4 className="font-medium mb-2">{title}</h4>
+      <ul className="space-y-1">
+        {items.map((item, index) => (
+          <li key={index} className="text-sm text-muted-foreground">
+            • {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function HealthTab({
+  selectedKB,
+  healthResults,
+  onRunHealthCheck,
+}: {
+  selectedKB: KnowledgeBase | null
+  healthResults: KbHealthResult | null
+  onRunHealthCheck: (kbId: string) => void
+}) {
+  if (!selectedKB) {
+    return (
+      <TabsContent value="health" className="space-y-4">
+        <div className="text-center text-muted-foreground py-20">
+          <CheckCircle className="size-16 mx-auto mb-4" />
+          <p>Select a knowledge base to view health status</p>
+        </div>
+      </TabsContent>
+    )
+  }
+  if (!healthResults) {
+    return (
+      <TabsContent value="health" className="space-y-4">
+        <div className="text-center">
+          <Button
+            onClick={() => {
+              onRunHealthCheck(selectedKB.id)
+            }}
+          >
+            Run Health Check
+          </Button>
+        </div>
+      </TabsContent>
+    )
+  }
+  return (
+    <TabsContent value="health" className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Health Check Results</CardTitle>
+          <CardDescription>{selectedKB.name}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Badge variant={healthResults.health_status === 'healthy' ? 'default' : 'destructive'}>
+                {healthResults.health_status}
+              </Badge>
+            </div>
+            <HealthResultsList title="Issues Found" items={healthResults.issues ?? []} />
+            <HealthResultsList title="Recommendations" items={healthResults.recommendations ?? []} />
+          </div>
+        </CardContent>
+      </Card>
+    </TabsContent>
+  )
+}
+
+function IngestDialog({
+  open,
+  onOpenChange,
+  form,
+  setForm,
+  onSubmit,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  form: IngestForm
+  setForm: (f: IngestForm) => void
+  onSubmit: () => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button>
+          <Plus className="size-4 mr-2" />
+          Ingest Knowledge Base
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Ingest Knowledge Base</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium">Knowledge Base ID</label>
+            <Input
+              value={form.kb_id}
+              onChange={(e) => {
+                setForm({ ...form, kb_id: e.target.value })
+              }}
+              placeholder="e.g., pydantic-ai-docs"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Name</label>
+            <Input
+              value={form.name}
+              onChange={(e) => {
+                setForm({ ...form, name: e.target.value })
+              }}
+              placeholder="Knowledge Base Name"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Source Path</label>
+            <Input
+              value={form.source}
+              onChange={(e) => {
+                setForm({ ...form, source: e.target.value })
+              }}
+              placeholder="/path/to/docs"
+            />
+          </div>
+          <Button onClick={onSubmit} className="w-full">
+            Start Ingestion
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ArticleDetailDialog({ article, onClose }: { article: Article | null; onClose: () => void }) {
+  if (!article) return null
+  return (
+    <Dialog open={!!article} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[80vh]">
+        <DialogHeader>
+          <DialogTitle>{article.title}</DialogTitle>
+        </DialogHeader>
+        <ScrollArea className="h-full max-h-[60vh]">
+          <div className="prose prose-sm dark:prose-invert p-4">{article.content}</div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export default function KnowledgeBaseView() {
+  const kb = useKnowledgeBaseData()
+  const ingest = useIngestForm(() => {
+    void kb.fetchKnowledgeBases()
+  })
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const filteredKBs = kb.knowledgeBases.filter(
+    (b) =>
+      b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      b.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      b.topics.some((topic) => topic.toLowerCase().includes(searchQuery.toLowerCase())),
   )
 
-  const filteredArticles = articles.filter(
+  const filteredArticles = kb.articles.filter(
     (article) =>
       article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       article.content.toLowerCase().includes(searchQuery.toLowerCase()),
@@ -159,7 +593,6 @@ export default function KnowledgeBaseView() {
 
   return (
     <div className="space-y-6 h-[calc(100vh-12rem)]">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -172,68 +605,24 @@ export default function KnowledgeBaseView() {
           <Button
             variant="outline"
             onClick={() => {
-              void fetchKnowledgeBases()
+              void kb.fetchKnowledgeBases()
             }}
           >
             <RefreshCw className="size-4" />
           </Button>
-          <Dialog open={isIngestDialogOpen} onOpenChange={setIsIngestDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="size-4 mr-2" />
-                Ingest Knowledge Base
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Ingest Knowledge Base</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium">Knowledge Base ID</label>
-                  <Input
-                    value={ingestForm.kb_id}
-                    onChange={(e) => {
-                      setIngestForm({ ...ingestForm, kb_id: e.target.value })
-                    }}
-                    placeholder="e.g., pydantic-ai-docs"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Name</label>
-                  <Input
-                    value={ingestForm.name}
-                    onChange={(e) => {
-                      setIngestForm({ ...ingestForm, name: e.target.value })
-                    }}
-                    placeholder="Knowledge Base Name"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Source Path</label>
-                  <Input
-                    value={ingestForm.source}
-                    onChange={(e) => {
-                      setIngestForm({ ...ingestForm, source: e.target.value })
-                    }}
-                    placeholder="/path/to/docs"
-                  />
-                </div>
-                <Button
-                  onClick={() => {
-                    void handleIngest()
-                  }}
-                  className="w-full"
-                >
-                  Start Ingestion
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <IngestDialog
+            open={ingest.isOpen}
+            onOpenChange={ingest.setIsOpen}
+            form={ingest.form}
+            setForm={ingest.setForm}
+            onSubmit={() => {
+              void ingest.submit()
+            }}
+          />
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={kb.activeTab} onValueChange={kb.setActiveTab}>
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="browse">Browse</TabsTrigger>
           <TabsTrigger value="articles">Articles</TabsTrigger>
@@ -241,268 +630,41 @@ export default function KnowledgeBaseView() {
           <TabsTrigger value="health">Health</TabsTrigger>
         </TabsList>
 
-        {/* Browse Tab */}
-        <TabsContent value="browse" className="space-y-4">
-          <div className="flex gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-              <Input
-                placeholder="Search knowledge bases..."
-                className="pl-9"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value)
-                }}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {loading ? (
-              <p className="text-center text-muted-foreground col-span-3">Loading...</p>
-            ) : filteredKBs.length === 0 ? (
-              <p className="text-center text-muted-foreground col-span-3">No knowledge bases found</p>
-            ) : (
-              filteredKBs.map((kb) => (
-                <Card
-                  key={kb.id}
-                  className={cn(
-                    'cursor-pointer transition-all hover:shadow-md',
-                    selectedKB?.id === kb.id ? 'ring-2 ring-primary' : '',
-                  )}
-                  onClick={() => {
-                    setSelectedKB(kb)
-                  }}
-                >
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={cn(
-                            'p-2 rounded-lg',
-                            kb.health_status === 'healthy'
-                              ? 'bg-green-500/10 text-green-500'
-                              : kb.health_status === 'warning'
-                                ? 'bg-yellow-500/10 text-yellow-500'
-                                : 'bg-red-500/10 text-red-500',
-                          )}
-                        >
-                          {kb.health_status === 'healthy' ? (
-                            <CheckCircle className="size-4" />
-                          ) : kb.health_status === 'warning' ? (
-                            <AlertCircle className="size-4" />
-                          ) : (
-                            <AlertCircle className="size-4" />
-                          )}
-                        </div>
-                        <div>
-                          <CardTitle className="text-lg">{kb.name}</CardTitle>
-                          <CardDescription>{kb.id}</CardDescription>
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void handleHealthCheck(kb.id)
-                        }}
-                      >
-                        <Settings className="size-4" />
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Articles</span>
-                        <span className="font-medium">{kb.article_count}</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {kb.topics.slice(0, 3).map((topic) => (
-                          <Badge key={topic} variant="secondary" className="text-xs">
-                            {topic}
-                          </Badge>
-                        ))}
-                        {kb.topics.length > 3 && (
-                          <Badge variant="secondary" className="text-xs">
-                            +{kb.topics.length - 3}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Last updated: {new Date(kb.last_updated).toLocaleDateString()}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-        </TabsContent>
-
-        {/* Articles Tab */}
-        <TabsContent value="articles" className="space-y-4">
-          {!selectedKB ? (
-            <div className="text-center text-muted-foreground py-20">
-              <Book className="size-16 mx-auto mb-4" />
-              <p>Select a knowledge base to view articles</p>
-            </div>
-          ) : (
-            <>
-              <div className="flex gap-4 items-center">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search articles..."
-                    className="pl-9"
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value)
-                    }}
-                  />
-                </div>
-                <Badge variant="outline">{selectedKB.name}</Badge>
-              </div>
-
-              <div className="space-y-2">
-                {loading ? (
-                  <p className="text-center text-muted-foreground py-8">Loading articles...</p>
-                ) : filteredArticles.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">No articles found</p>
-                ) : (
-                  filteredArticles.map((article) => (
-                    <Card
-                      key={article.id}
-                      className="cursor-pointer hover:shadow-md transition-all"
-                      onClick={() => {
-                        setSelectedArticle(article)
-                      }}
-                    >
-                      <CardHeader>
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-2">
-                            <FileText className="size-5 text-muted-foreground" />
-                            <div>
-                              <CardTitle className="text-base">{article.title}</CardTitle>
-                              <CardDescription className="text-xs">
-                                {new Date(article.created_at).toLocaleDateString()}
-                              </CardDescription>
-                            </div>
-                          </div>
-                          <Badge variant="outline" className="text-xs">
-                            {article.concepts.length} concepts
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                    </Card>
-                  ))
-                )}
-              </div>
-            </>
-          )}
-        </TabsContent>
-
-        {/* Concepts Tab */}
-        <TabsContent value="concepts" className="space-y-4">
-          {!selectedKB ? (
-            <div className="text-center text-muted-foreground py-20">
-              <Brain className="size-16 mx-auto mb-4" />
-              <p>Select a knowledge base to view concepts</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {Array.from(new Set(articles.flatMap((a) => a.concepts))).map((concept) => (
-                <Card key={concept} className="p-4 hover:shadow-md transition-all cursor-pointer">
-                  <div className="flex items-center gap-2">
-                    <Brain className="size-4 text-primary" />
-                    <span className="font-medium text-sm">{concept}</span>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-
-        {/* Health Tab */}
-        <TabsContent value="health" className="space-y-4">
-          {!selectedKB ? (
-            <div className="text-center text-muted-foreground py-20">
-              <CheckCircle className="size-16 mx-auto mb-4" />
-              <p>Select a knowledge base to view health status</p>
-            </div>
-          ) : healthResults ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Health Check Results</CardTitle>
-                <CardDescription>{selectedKB.name}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Badge variant={healthResults.health_status === 'healthy' ? 'default' : 'destructive'}>
-                      {healthResults.health_status}
-                    </Badge>
-                  </div>
-                  {healthResults.issues && healthResults.issues.length > 0 && (
-                    <div>
-                      <h4 className="font-medium mb-2">Issues Found</h4>
-                      <ul className="space-y-1">
-                        {healthResults.issues.map((issue: string, index: number) => (
-                          <li key={index} className="text-sm text-muted-foreground">
-                            • {issue}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {healthResults.recommendations && healthResults.recommendations.length > 0 && (
-                    <div>
-                      <h4 className="font-medium mb-2">Recommendations</h4>
-                      <ul className="space-y-1">
-                        {healthResults.recommendations.map((rec: string, index: number) => (
-                          <li key={index} className="text-sm text-muted-foreground">
-                            • {rec}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="text-center">
-              <Button
-                onClick={() => {
-                  void handleHealthCheck(selectedKB.id)
-                }}
-              >
-                Run Health Check
-              </Button>
-            </div>
-          )}
-        </TabsContent>
+        <BrowseTab
+          loading={kb.loading}
+          filteredKBs={filteredKBs}
+          selectedKB={kb.selectedKB}
+          onSelect={kb.setSelectedKB}
+          onHealthCheck={(kbId) => {
+            void kb.handleHealthCheck(kbId)
+          }}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
+        <ArticlesTab
+          selectedKB={kb.selectedKB}
+          loading={kb.loading}
+          filteredArticles={filteredArticles}
+          onSelectArticle={kb.setSelectedArticle}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
+        <ConceptsTab selectedKB={kb.selectedKB} articles={kb.articles} />
+        <HealthTab
+          selectedKB={kb.selectedKB}
+          healthResults={kb.healthResults}
+          onRunHealthCheck={(kbId) => {
+            void kb.handleHealthCheck(kbId)
+          }}
+        />
       </Tabs>
 
-      {/* Article Detail Dialog */}
-      {selectedArticle && (
-        <Dialog
-          open={!!selectedArticle}
-          onOpenChange={() => {
-            setSelectedArticle(null)
-          }}
-        >
-          <DialogContent className="max-w-2xl max-h-[80vh]">
-            <DialogHeader>
-              <DialogTitle>{selectedArticle.title}</DialogTitle>
-            </DialogHeader>
-            <ScrollArea className="h-full max-h-[60vh]">
-              <div className="prose prose-sm dark:prose-invert p-4">{selectedArticle.content}</div>
-            </ScrollArea>
-          </DialogContent>
-        </Dialog>
-      )}
+      <ArticleDetailDialog
+        article={kb.selectedArticle}
+        onClose={() => {
+          kb.setSelectedArticle(null)
+        }}
+      />
     </div>
   )
 }

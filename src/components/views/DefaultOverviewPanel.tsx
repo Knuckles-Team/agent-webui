@@ -20,7 +20,7 @@ import { useEffect, useState, type ComponentType } from 'react'
 import { FileText, Wrench, Layers, Cpu, Share2, HeartPulse, RefreshCw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { apiGet } from '@/lib/gateway'
+import { apiGet, type GatewayResult } from '@/lib/gateway'
 import { looseArray } from '@/lib/api-validation'
 import { z } from 'zod'
 
@@ -119,6 +119,20 @@ function StatTile({
   )
 }
 
+/** Derive the Fleet Health tile's state from the `/dashboard/health` result —
+ * split out of the fetch closure so that closure stays a single guard clause. */
+function deriveHealthTileState(r: GatewayResult<z.infer<typeof healthSchema>>): TileState {
+  const status = r.ok && r.data ? (r.data.status ?? 'unknown') : null
+  if (!status) return { loading: false, value: null, detail: r.error ?? null, unavailable: true }
+  const checkCount = r.data?.checks ? r.data.checks.length : 0
+  return {
+    loading: false,
+    value: status,
+    detail: checkCount > 0 ? `${String(checkCount)} checks reporting` : null,
+    unavailable: false,
+  }
+}
+
 export default function DefaultOverviewPanel() {
   const [prompts, setPrompts] = useState<TileState>(INITIAL_TILE)
   const [tools, setTools] = useState<TileState>(INITIAL_TILE)
@@ -202,18 +216,7 @@ export default function DefaultOverviewPanel() {
     void (async () => {
       const r = await apiGet('/dashboard/health', healthSchema)
       if (flag.cancelled) return
-      const status = r.ok && r.data ? (r.data.status ?? 'unknown') : null
-      const checkCount = r.ok && r.data?.checks ? r.data.checks.length : 0
-      setHealth(
-        status
-          ? {
-              loading: false,
-              value: status,
-              detail: checkCount > 0 ? `${String(checkCount)} checks reporting` : null,
-              unavailable: false,
-            }
-          : { loading: false, value: null, detail: r.error ?? null, unavailable: true },
-      )
+      setHealth(deriveHealthTileState(r))
     })()
 
     return () => {
