@@ -262,11 +262,64 @@ _CSP_HASH_SOURCE = re.compile(r"^'(?:sha256|sha384|sha512)-[A-Za-z0-9+/]+={0,2}'
 _CSP_UNSAFE_SOURCES = frozenset(
     {"'unsafe-inline'", "'unsafe-eval'", "'wasm-unsafe-eval'"}
 )
+# The only directives that may carry a hash or an acknowledged unsafe keyword.
+# Named once so the hash branch and the unsafe branch of
+# ``_validated_csp_source`` cannot drift apart.
+_CSP_INLINE_CAPABLE_DIRECTIVES = frozenset(
+    {'script-src', 'style-src', 'style-src-elem'}
+)
 _ACCESS_LOG_POLICY_ENV = 'AGENT_WEBUI_ACCESS_LOG_POLICY'
 
 
 def _environment_flag(name: str) -> bool:
     return os.getenv(name, '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _origin_parts_are_exact(parsed: Any) -> bool:
+    """Whether a parsed URL carries nothing beyond ``scheme://host[:port]``.
+
+    Deliberately says nothing about the SCHEME: the three callers disagree on
+    which schemes they accept and on whether the scheme is case-folded first
+    (``_install_host_boundary`` matches it verbatim; the CSP and browser-origin
+    checks lower it), so each keeps its own scheme test and shares only this
+    "nothing else is present" half.
+    """
+
+    return (
+        bool(parsed.hostname)
+        and not parsed.username
+        and not parsed.password
+        and parsed.path in {'', '/'}
+        and not parsed.query
+        and not parsed.fragment
+    )
+
+
+def _csp_source_is_opaque(source: str) -> bool:
+    """Whether a source carries a delimiter or a non-printable-ASCII byte."""
+
+    return any(character in source for character in (';', '\r', '\n', '*')) or any(
+        ord(character) < 0x21 or ord(character) > 0x7E for character in source
+    )
+
+
+def _acknowledged_unsafe_csp_source(
+    source: str,
+    *,
+    directive: str,
+    custom_rendering_acknowledged: bool,
+) -> str:
+    """Return an unsafe keyword only where it is acknowledged AND meaningful."""
+
+    if (
+        not custom_rendering_acknowledged
+        or directive not in _CSP_INLINE_CAPABLE_DIRECTIVES
+        or (source != "'unsafe-inline'" and directive != 'script-src')
+    ):
+        raise RuntimeError(
+            'Unsafe CSP sources require the custom-rendering acknowledgement'
+        )
+    return source
 
 
 def _validated_csp_source(
@@ -278,22 +331,16 @@ def _validated_csp_source(
     """Accept only exact origins, hashes, or acknowledged unsafe keywords."""
 
     if source in _CSP_UNSAFE_SOURCES:
-        if (
-            not custom_rendering_acknowledged
-            or directive not in {'script-src', 'style-src', 'style-src-elem'}
-            or (source != "'unsafe-inline'" and directive != 'script-src')
-        ):
-            raise RuntimeError(
-                'Unsafe CSP sources require the custom-rendering acknowledgement'
-            )
-        return source
+        return _acknowledged_unsafe_csp_source(
+            source,
+            directive=directive,
+            custom_rendering_acknowledged=custom_rendering_acknowledged,
+        )
     if _CSP_HASH_SOURCE.fullmatch(source):
-        if directive not in {'script-src', 'style-src', 'style-src-elem'}:
+        if directive not in _CSP_INLINE_CAPABLE_DIRECTIVES:
             raise RuntimeError('CSP hashes are only valid for script or style sources')
         return source
-    if any(character in source for character in (';', '\r', '\n', '*')) or any(
-        ord(character) < 0x21 or ord(character) > 0x7E for character in source
-    ):
+    if _csp_source_is_opaque(source):
         raise RuntimeError('Agent WebUI CSP sources must be exact origins')
     parsed = urlsplit(source)
     try:
@@ -303,41 +350,45 @@ def _validated_csp_source(
     schemes = {'http', 'https'}
     if directive == 'connect-src':
         schemes.update({'ws', 'wss'})
-    if (
-        parsed.scheme.lower() not in schemes
-        or not parsed.hostname
-        or parsed.username
-        or parsed.password
-        or parsed.path not in {'', '/'}
-        or parsed.query
-        or parsed.fragment
-    ):
+    if parsed.scheme.lower() not in schemes or not _origin_parts_are_exact(parsed):
         raise RuntimeError('Agent WebUI CSP sources must be exact origins')
     return f'{parsed.scheme.lower()}://{parsed.netloc.lower()}'
 
 
-def _content_security_policy(*, custom_rendering: bool) -> tuple[str, dict[str, Any]]:
-    """Build the immutable response policy and a non-secret doctor summary."""
-
-    acknowledged = _environment_flag('AGENT_WEBUI_CSP_CUSTOM_RENDERING')
-    if custom_rendering and not acknowledged:
-        raise RuntimeError(
-            'Custom Agent WebUI HTML requires AGENT_WEBUI_CSP_CUSTOM_RENDERING=1'
-        )
+def _default_csp_directives() -> dict[str, list[str]]:
+    """The shipped strict policy, parsed into a mutable directive -> sources map."""
 
     directives: dict[str, list[str]] = {}
     for raw_directive in _DEFAULT_CONTENT_SECURITY_POLICY.split(';'):
         parts = raw_directive.strip().split()
         directives[parts[0]] = parts[1:]
+    return directives
+
+
+def _configured_csp_sources(environment_name: str) -> list[str]:
+    """The individual sources named by one ``AGENT_WEBUI_CSP_*`` variable."""
+
+    raw_sources = os.getenv(environment_name, '').strip()
+    if not raw_sources:
+        return []
+    return [source for source in re.split(r'[\s,]+', raw_sources) if source]
+
+
+def _apply_csp_relaxations(
+    directives: dict[str, list[str]],
+    *,
+    acknowledged: bool,
+) -> list[dict[str, str]]:
+    """Fold every configured source into ``directives`` in place.
+
+    Returns the doctor summary of what was actually added -- a source already
+    present in the shipped policy is not reported as a relaxation, matching the
+    pre-split behaviour exactly.
+    """
 
     configured_relaxations: list[dict[str, str]] = []
     for directive, environment_name in _CSP_SOURCE_ENV.items():
-        raw_sources = os.getenv(environment_name, '').strip()
-        if not raw_sources:
-            continue
-        for raw_source in re.split(r'[\s,]+', raw_sources):
-            if not raw_source:
-                continue
+        for raw_source in _configured_csp_sources(environment_name):
             source = _validated_csp_source(
                 raw_source,
                 directive=directive,
@@ -350,6 +401,22 @@ def _content_security_policy(*, custom_rendering: bool) -> tuple[str, dict[str, 
                 configured_relaxations.append(
                     {'directive': directive, 'source': source}
                 )
+    return configured_relaxations
+
+
+def _content_security_policy(*, custom_rendering: bool) -> tuple[str, dict[str, Any]]:
+    """Build the immutable response policy and a non-secret doctor summary."""
+
+    acknowledged = _environment_flag('AGENT_WEBUI_CSP_CUSTOM_RENDERING')
+    if custom_rendering and not acknowledged:
+        raise RuntimeError(
+            'Custom Agent WebUI HTML requires AGENT_WEBUI_CSP_CUSTOM_RENDERING=1'
+        )
+
+    directives = _default_csp_directives()
+    configured_relaxations = _apply_csp_relaxations(
+        directives, acknowledged=acknowledged
+    )
 
     policy = '; '.join(
         f'{directive} {" ".join(sources)}' for directive, sources in directives.items()
@@ -515,12 +582,64 @@ def _log_ws_denial(scope: Any, *, reason: str, **fields: Any) -> None:
     )
 
 
+_FORBIDDEN_BODY = b'{"detail":"Request forbidden"}'
+
+
+async def _send_json_response(send: Any, *, status: int, body: bytes) -> None:
+    """Emit a complete ASGI JSON response.
+
+    The five deny branches that used to inline this block byte-for-byte
+    (invalid host, malformed credential, and the three authorization refusals)
+    now share one shape, so a header can no longer be added to one of them and
+    silently missed by the rest.
+    """
+
+    await send(
+        {
+            'type': 'http.response.start',
+            'status': status,
+            'headers': [
+                (b'content-type', b'application/json'),
+                (b'content-length', str(len(body)).encode('ascii')),
+            ],
+        }
+    )
+    await send({'type': 'http.response.body', 'body': body})
+
+
 class _RequestBodyLimitExceeded(Exception):
     """Internal signal used by the streaming ASGI receive boundary."""
 
 
 class _WebSocketMessageLimitExceeded(Exception):
     """Internal signal used by the websocket receive boundary."""
+
+
+def _hardened_response_headers(
+    headers: list[tuple[bytes, bytes]],
+    *,
+    content_security_policy: bytes,
+    no_store: bool,
+) -> list[tuple[bytes, bytes]]:
+    """Overlay the application-owned response hardening on a route's headers.
+
+    The application-owned policy always wins over an upstream route's weaker
+    header; route composition cannot silently relax the browser boundary.
+    """
+
+    hardened = [
+        (name, value)
+        for name, value in headers
+        if name.lower() != b'content-security-policy'
+    ]
+    present = {name.lower() for name, _value in hardened}
+    for name, value in _SECURITY_RESPONSE_HEADERS:
+        if name not in present:
+            hardened.append((name, value))
+    hardened.append((b'content-security-policy', content_security_policy))
+    if no_store and b'cache-control' not in present:
+        hardened.append((b'cache-control', b'no-store'))
+    return hardened
 
 
 class SecurityHeadersMiddleware:
@@ -546,28 +665,28 @@ class SecurityHeadersMiddleware:
 
         async def hardened_send(message: Any) -> None:
             if message.get('type') == 'http.response.start':
-                # The application-owned policy always wins over an upstream
-                # route's weaker header; route composition cannot silently
-                # relax the browser boundary.
-                headers = [
-                    (name, value)
-                    for name, value in (message.get('headers') or [])
-                    if name.lower() != b'content-security-policy'
-                ]
-                present = {name.lower() for name, _value in headers}
-                for name, value in _SECURITY_RESPONSE_HEADERS:
-                    if name not in present:
-                        headers.append((name, value))
-                headers.append(
-                    (b'content-security-policy', self.content_security_policy)
-                )
-                if path.startswith(('/api', '/chat', '/configure')):
-                    if b'cache-control' not in present:
-                        headers.append((b'cache-control', b'no-store'))
-                message = {**message, 'headers': headers}
+                message = {
+                    **message,
+                    'headers': _hardened_response_headers(
+                        list(message.get('headers') or []),
+                        content_security_policy=self.content_security_policy,
+                        no_store=path.startswith(('/api', '/chat', '/configure')),
+                    ),
+                }
             await send(message)
 
         await self.app(scope, receive, hardened_send)
+
+
+def _host_header_is_unambiguous(hosts: list[bytes]) -> bool:
+    """Whether exactly one non-empty, single-valued, printable Host arrived."""
+
+    return (
+        len(hosts) == 1
+        and bool(hosts[0])
+        and b',' not in hosts[0]
+        and all(byte >= 0x20 and byte != 0x7F for byte in hosts[0])
+    )
 
 
 class StrictHostHeaderMiddleware:
@@ -586,37 +705,78 @@ class StrictHostHeaderMiddleware:
             for key, value in scope.get('headers') or []
             if key.decode('latin-1').lower() == 'host'
         ]
-        if (
-            len(hosts) != 1
-            or not hosts[0]
-            or b',' in hosts[0]
-            or any(byte < 0x20 or byte == 0x7F for byte in hosts[0])
-        ):
-            if scope_type == 'websocket':
-                # W-18: this 4400 sits UPSTREAM of every other websocket denial
-                # and was the one site the first instrumentation pass missed, so
-                # a rejection here still looked like an unexplained bare 403.
-                _log_ws_denial(
-                    scope,
-                    reason='invalid-host-header',
-                    host_header_count=len(hosts),
-                )
-                await send({'type': 'websocket.close', 'code': 4400})
-            else:
-                body = b'{"detail":"Invalid host header"}'
-                await send(
-                    {
-                        'type': 'http.response.start',
-                        'status': 400,
-                        'headers': [
-                            (b'content-type', b'application/json'),
-                            (b'content-length', str(len(body)).encode('ascii')),
-                        ],
-                    }
-                )
-                await send({'type': 'http.response.body', 'body': body})
+        if _host_header_is_unambiguous(hosts):
+            await self.app(scope, receive, send)
             return
-        await self.app(scope, receive, send)
+        if scope_type == 'websocket':
+            # W-18: this 4400 sits UPSTREAM of every other websocket denial
+            # and was the one site the first instrumentation pass missed, so
+            # a rejection here still looked like an unexplained bare 403.
+            _log_ws_denial(
+                scope,
+                reason='invalid-host-header',
+                host_header_count=len(hosts),
+            )
+            await send({'type': 'websocket.close', 'code': 4400})
+            return
+        await _send_json_response(
+            send, status=400, body=b'{"detail":"Invalid host header"}'
+        )
+
+
+class _RequestHeaderRejected(Exception):
+    """A framing header that must be answered 400 before the body is read."""
+
+
+def _body_framing_headers(scope: Any) -> tuple[list[int], list[str], list[str]]:
+    """Collect the content-length / transfer-encoding / content-type headers.
+
+    Raises :class:`_RequestHeaderRejected` on the first content-length that is
+    not a decodable integer, which is exactly where the inline loop returned
+    400 -- later headers were never inspected then either.
+    """
+
+    lengths: list[int] = []
+    transfer_encodings: list[str] = []
+    content_types: list[str] = []
+    for key, value in scope.get('headers') or []:
+        header_name = key.decode('latin-1').lower()
+        if header_name == 'content-type':
+            content_types.append(value.decode('latin-1').strip().lower())
+        elif header_name == 'transfer-encoding':
+            transfer_encodings.append(value.decode('latin-1').strip().lower())
+        elif header_name == 'content-length':
+            try:
+                lengths.append(int(value.decode('ascii')))
+            except (UnicodeDecodeError, ValueError) as exc:
+                raise _RequestHeaderRejected from exc
+    return lengths, transfer_encodings, content_types
+
+
+def _body_framing_is_unambiguous(
+    lengths: list[int],
+    transfer_encodings: list[str],
+    content_types: list[str],
+) -> bool:
+    """Whether the framing headers describe exactly one, non-smuggled body."""
+
+    return not (
+        len(lengths) > 1
+        or any(length < 0 for length in lengths)
+        or (lengths and transfer_encodings)
+        or len(transfer_encodings) > 1
+        or len(content_types) > 1
+        or any(value != 'chunked' for value in transfer_encodings)
+    )
+
+
+def _effective_body_limit(max_bytes: int, content_types: list[str]) -> int:
+    """Multipart uploads keep the configured cap; structured bodies get less."""
+
+    media_type = content_types[0].split(';', 1)[0] if content_types else ''
+    if media_type == 'multipart/form-data':
+        return max_bytes
+    return min(max_bytes, _MAX_STRUCTURED_REQUEST_BYTES)
 
 
 class RequestBodyLimitMiddleware:
@@ -631,43 +791,34 @@ class RequestBodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        lengths: list[int] = []
-        transfer_encodings: list[str] = []
-        content_types: list[str] = []
-        for key, value in scope.get('headers') or []:
-            header_name = key.decode('latin-1').lower()
-            if header_name == 'content-type':
-                content_types.append(value.decode('latin-1').strip().lower())
-                continue
-            if header_name == 'transfer-encoding':
-                transfer_encodings.append(value.decode('latin-1').strip().lower())
-                continue
-            if header_name != 'content-length':
-                continue
-            try:
-                lengths.append(int(value.decode('ascii')))
-            except (UnicodeDecodeError, ValueError):
-                await self._reject(send, status=400)
-                return
-        if (
-            len(lengths) > 1
-            or any(length < 0 for length in lengths)
-            or (lengths and transfer_encodings)
-            or len(transfer_encodings) > 1
-            or len(content_types) > 1
-            or any(value != 'chunked' for value in transfer_encodings)
-        ):
+        try:
+            lengths, transfer_encodings, content_types = _body_framing_headers(scope)
+        except _RequestHeaderRejected:
             await self._reject(send, status=400)
             return
-        media_type = content_types[0].split(';', 1)[0] if content_types else ''
-        effective_limit = (
-            self.max_bytes
-            if media_type == 'multipart/form-data'
-            else min(self.max_bytes, _MAX_STRUCTURED_REQUEST_BYTES)
-        )
+        if not _body_framing_is_unambiguous(lengths, transfer_encodings, content_types):
+            await self._reject(send, status=400)
+            return
+        effective_limit = _effective_body_limit(self.max_bytes, content_types)
         if lengths and lengths[0] > effective_limit:
             await self._reject(send, status=413)
             return
+        await self._serve_within_limit(scope, receive, send, limit=effective_limit)
+
+    async def _serve_within_limit(
+        self,
+        scope: Any,
+        receive: Any,
+        send: Any,
+        *,
+        limit: int,
+    ) -> None:
+        """Stream the request, rejecting a body that outgrows ``limit``.
+
+        A declared content-length was already checked above; this is the
+        chunked/understated-length case, which can only be caught while the
+        body is being consumed.
+        """
 
         consumed = 0
         response_started = False
@@ -677,7 +828,7 @@ class RequestBodyLimitMiddleware:
             message = await receive()
             if message.get('type') == 'http.request':
                 consumed += len(message.get('body', b''))
-                if consumed > effective_limit:
+                if consumed > limit:
                     raise _RequestBodyLimitExceeded
             return message
 
@@ -775,6 +926,116 @@ def _log_denial(
     )
 
 
+_SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
+
+
+def _request_route(scope: Any) -> tuple[str, str]:
+    """The path and upper-cased method every middleware decision keys on.
+
+    Both are normalized here so a missing key, a ``None``, and a lower-cased
+    verb cannot be handled three slightly different ways in three middlewares.
+    """
+
+    return str(scope.get('path') or ''), str(scope.get('method') or '').upper()
+
+
+def _origin_check_headers(scope: Any) -> tuple[list[str], list[str], list[str]]:
+    """Collect the Origin / Host / Sec-Fetch-Site headers a CSRF check reads.
+
+    Every header is collected as a LIST, not a single value: a duplicated
+    Origin or Host is itself the attack signal the caller rejects on.
+    """
+
+    origins: list[str] = []
+    hosts: list[str] = []
+    fetch_sites: list[str] = []
+    for key, value in scope.get('headers') or []:
+        name = key.decode('latin-1').lower()
+        if name == 'origin':
+            origins.append(value.decode('latin-1').strip())
+        elif name == 'host':
+            hosts.append(value.decode('latin-1').strip().lower())
+        elif name == 'sec-fetch-site':
+            fetch_sites.append(value.decode('latin-1').strip().lower())
+    return origins, hosts, fetch_sites
+
+
+def _origin_headers_are_singular(
+    origins: list[str],
+    hosts: list[str],
+    fetch_sites: list[str],
+) -> bool:
+    """Exactly one Origin and Host, at most one Sec-Fetch-Site, none opaque."""
+
+    return (
+        len(origins) == 1
+        and len(hosts) == 1
+        and len(fetch_sites) <= 1
+        and origins[0].lower() != 'null'
+    )
+
+
+def _configured_allowed_origins() -> set[str]:
+    """The normalized ``ALLOWED_ORIGINS`` allowlist from ``AgentConfig``."""
+
+    from agent_utilities.core.config import config
+
+    return {
+        value.strip().rstrip('/').lower()
+        for value in str(config.allowed_origins or '').split(',')
+        if value.strip()
+    }
+
+
+def _origin_matches_request_host(parsed: Any, scope: Any, host: str) -> bool:
+    """Whether the Origin names this very listener (same scheme + authority)."""
+
+    request_scheme = str(scope.get('scheme') or '').lower()
+    expected_scheme = 'https' if request_scheme in {'https', 'wss'} else 'http'
+    return parsed.scheme.lower() == expected_scheme and parsed.netloc.lower() == host
+
+
+def _scope_summary(scopes: Any) -> str:
+    """A stable, non-secret rendering of a session's KG scopes for a log line."""
+
+    return ','.join(sorted(scopes)) or '<none>'
+
+
+async def _deny_authorization(
+    scope: Any,
+    send: Any,
+    *,
+    reason: str,
+    session: Any,
+    required: str,
+    ws_denial: dict[str, Any],
+    denial_fields: dict[str, Any] | None = None,
+) -> None:
+    """Log an authorization denial on both channels, then answer 403.
+
+    ``ws_denial`` carries the websocket-only diagnostic fields; its own
+    ``reason`` key uses the hyphenated websocket vocabulary
+    (:func:`_log_ws_denial`), deliberately distinct from the structured
+    ``reason`` above, and both were already distinct before this was factored
+    out of the three inline deny branches. ``denial_fields`` carries the extra
+    structured fields one branch adds to the shared ``_log_denial`` payload.
+    """
+
+    _log_denial(
+        scope,
+        event='authorization',
+        reason=reason,
+        session=session,
+        required_scope=required,
+        **(denial_fields or {}),
+    )
+    if scope.get('type') == 'websocket':
+        _log_ws_denial(scope, **ws_denial)
+        await send({'type': 'websocket.close', 'code': 4403})
+        return
+    await _send_json_response(send, status=403, body=_FORBIDDEN_BODY)
+
+
 class WebUIAuthorizationMiddleware:
     """Require graph scopes for every authenticated HTTP/websocket route."""
 
@@ -817,64 +1078,104 @@ class WebUIAuthorizationMiddleware:
 
         if required_scope == 'kg:admin':
             return 'admin'
-        if method not in {
-            'GET',
-            'HEAD',
-            'OPTIONS',
-        } and WebUIAuthorizationMiddleware._is_admin_mutation_route(path):
+        if method not in _SAFE_METHODS and (
+            WebUIAuthorizationMiddleware._is_admin_mutation_route(path)
+        ):
             return 'maintainer'
         return None
 
     @staticmethod
+    def _required_scope(*, scope_type: str, path: str, method: str) -> str:
+        """The KG scope this transport, route, and method together demand.
+
+        Websockets have no method to reason about, so an admin route is the
+        only admin signal there; HTTP additionally promotes a MUTATION of an
+        admin-mutation route to ``kg:admin`` while leaving its reads alone.
+        """
+
+        if scope_type == 'websocket':
+            if WebUIAuthorizationMiddleware._is_admin_route(path):
+                return 'kg:admin'
+            if path in _WEBSOCKET_READ_ONLY_PATHS:
+                return 'kg:read'
+            return 'kg:write'
+        if WebUIAuthorizationMiddleware._is_admin_route(path) or (
+            method not in _SAFE_METHODS
+            and WebUIAuthorizationMiddleware._is_admin_mutation_route(path)
+        ):
+            return 'kg:admin'
+        if method in _SAFE_METHODS:
+            return 'kg:read'
+        return 'kg:write'
+
+    @staticmethod
+    def _origin_sensitive(scope_type: str, required: str) -> bool:
+        """Whether CSRF origin checking applies: every websocket, every write."""
+
+        return scope_type == 'websocket' or required != 'kg:read'
+
+    @staticmethod
+    def _authorization_exempt(path: str) -> bool:
+        """Whether this route bypasses scope enforcement altogether.
+
+        Either identity is not enforced at all on this deployment, or the path
+        is one of the public liveness probes that must answer without a
+        credential.
+        """
+
+        return not _identity_enforced() or path in _PUBLIC_LIVENESS_PATHS
+
+    def _role_shortfall(
+        self,
+        session: Any,
+        *,
+        required_scope: str,
+        method: str,
+        path: str,
+    ) -> tuple[str, str] | None:
+        """``(required_role, resolved_role)`` when the caller's WebUI role is
+        below what this route demands, otherwise ``None``."""
+
+        role_requirement = self._role_requirement(
+            required_scope=required_scope, method=method, path=path
+        )
+        if role_requirement is None:
+            return None
+
+        from .rbac import resolve_webui_role, role_at_least
+
+        actor = getattr(session, 'actor', None)
+        webui_role = resolve_webui_role(
+            tuple(getattr(actor, 'roles', ()) or ()),
+            authenticated=bool(getattr(actor, 'authenticated', False)),
+        )
+        if role_at_least(webui_role, role_requirement):
+            return None
+        return role_requirement, webui_role
+
+    @staticmethod
     def _origin_allowed(scope: Any) -> bool:
-        origins: list[str] = []
-        hosts: list[str] = []
-        fetch_sites: list[str] = []
-        for key, value in scope.get('headers') or []:
-            name = key.decode('latin-1').lower()
-            if name == 'origin':
-                origins.append(value.decode('latin-1').strip())
-            elif name == 'host':
-                hosts.append(value.decode('latin-1').strip().lower())
-            elif name == 'sec-fetch-site':
-                fetch_sites.append(value.decode('latin-1').strip().lower())
+        """Whether this request's Origin may drive a state-changing call.
+
+        No Origin at all is the non-browser case (a service client, or a
+        same-origin navigation that predates Fetch Metadata): it is allowed
+        unless Sec-Fetch-Site positively says ``cross-site``.
+        """
+
+        origins, hosts, fetch_sites = _origin_check_headers(scope)
         if not origins:
             return len(fetch_sites) <= 1 and fetch_sites != ['cross-site']
-        if (
-            len(origins) != 1
-            or len(hosts) != 1
-            or len(fetch_sites) > 1
-            or origins[0].lower() == 'null'
-        ):
+        if not _origin_headers_are_singular(origins, hosts, fetch_sites):
             return False
-
-        from agent_utilities.core.config import config
-
-        allowed = {
-            value.strip().rstrip('/').lower()
-            for value in str(config.allowed_origins or '').split(',')
-            if value.strip()
-        }
         parsed = urlsplit(origins[0])
-        if (
-            parsed.scheme.lower() not in {'http', 'https'}
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.path not in {'', '/'}
-            or parsed.query
-            or parsed.fragment
-        ):
+        if parsed.scheme.lower() not in {
+            'http',
+            'https',
+        } or not _origin_parts_are_exact(parsed):
             return False
         origin = f'{parsed.scheme.lower()}://{parsed.netloc.lower()}'
-        if origin in allowed:
-            return True
-
-        request_scheme = str(scope.get('scheme') or '').lower()
-        expected_scheme = 'https' if request_scheme in {'https', 'wss'} else 'http'
-        return (
-            parsed.scheme.lower() == expected_scheme
-            and parsed.netloc.lower() == hosts[0]
+        return origin in _configured_allowed_origins() or _origin_matches_request_host(
+            parsed, scope, hosts[0]
         )
 
     async def _call_with_transport_bounds(
@@ -919,135 +1220,113 @@ class WebUIAuthorizationMiddleware:
 
         from agent_utilities.knowledge_graph.core.session import current_session
 
-        path = str(scope.get('path') or '')
-        method = str(scope.get('method') or '').upper()
-        if scope_type == 'websocket':
-            if self._is_admin_route(path):
-                required = 'kg:admin'
-            elif path in _WEBSOCKET_READ_ONLY_PATHS:
-                required = 'kg:read'
-            else:
-                required = 'kg:write'
-        else:
-            if self._is_admin_route(path) or (
-                method not in {'GET', 'HEAD', 'OPTIONS'}
-                and self._is_admin_mutation_route(path)
-            ):
-                required = 'kg:admin'
-            elif method in {'GET', 'HEAD', 'OPTIONS'}:
-                required = 'kg:read'
-            else:
-                required = 'kg:write'
-        origin_sensitive = scope_type == 'websocket' or required != 'kg:read'
-        if origin_sensitive and not self._origin_allowed(scope):
-            _log_denial(
+        path, method = _request_route(scope)
+        required = self._required_scope(scope_type=scope_type, path=path, method=method)
+
+        if self._origin_sensitive(scope_type, required) and not self._origin_allowed(
+            scope
+        ):
+            await _deny_authorization(
                 scope,
-                event='authorization',
+                send,
                 reason='origin_not_allowed',
                 session=current_session(),
-                required_scope=required,
+                required=required,
+                ws_denial={'reason': 'origin-rejected', 'required': required},
             )
-            if scope_type == 'websocket':
-                _log_ws_denial(scope, reason='origin-rejected', required=required)
-                await send({'type': 'websocket.close', 'code': 4403})
-            else:
-                body = b'{"detail":"Request forbidden"}'
-                await send(
-                    {
-                        'type': 'http.response.start',
-                        'status': 403,
-                        'headers': [
-                            (b'content-type', b'application/json'),
-                            (b'content-length', str(len(body)).encode('ascii')),
-                        ],
-                    }
-                )
-                await send({'type': 'http.response.body', 'body': body})
             return
-        if not _identity_enforced() or path in _PUBLIC_LIVENESS_PATHS:
+        if self._authorization_exempt(path):
             await self._call_with_transport_bounds(scope, receive, send)
             return
 
         session = current_session()
         scopes = session.scopes if session is not None else frozenset()
-        if required in scopes:
-            role_requirement = self._role_requirement(
-                required_scope=required, method=method, path=path
+        if required not in scopes:
+            await _deny_authorization(
+                scope,
+                send,
+                reason='kg_scope_missing',
+                session=session,
+                required=required,
+                ws_denial={
+                    'reason': 'scope-missing',
+                    'required': required,
+                    'session_resolved': session is not None,
+                    'scopes': _scope_summary(scopes),
+                },
             )
-            if role_requirement is not None:
-                from .rbac import resolve_webui_role, role_at_least
+            return
 
-                actor = getattr(session, 'actor', None)
-                webui_role = resolve_webui_role(
-                    tuple(getattr(actor, 'roles', ()) or ()),
-                    authenticated=bool(getattr(actor, 'authenticated', False)),
-                )
-                if not role_at_least(webui_role, role_requirement):
-                    _log_denial(
-                        scope,
-                        event='authorization',
-                        reason='webui_role_insufficient',
-                        session=session,
-                        required_scope=required,
-                        webui_role_required=role_requirement,
-                        webui_role_resolved=webui_role,
-                    )
-                    if scope_type == 'websocket':
-                        _log_ws_denial(
-                            scope,
-                            reason='webui-role-insufficient',
-                            required_scope=required,
-                            required_role=role_requirement,
-                            resolved_role=webui_role,
-                            scopes=','.join(sorted(scopes)) or '<none>',
-                        )
-                        await send({'type': 'websocket.close', 'code': 4403})
-                        return
-                    body = b'{"detail":"Request forbidden"}'
-                    await send(
-                        {
-                            'type': 'http.response.start',
-                            'status': 403,
-                            'headers': [
-                                (b'content-type', b'application/json'),
-                                (b'content-length', str(len(body)).encode('ascii')),
-                            ],
-                        }
-                    )
-                    await send({'type': 'http.response.body', 'body': body})
-                    return
+        shortfall = self._role_shortfall(
+            session, required_scope=required, method=method, path=path
+        )
+        if shortfall is None:
             await self._call_with_transport_bounds(scope, receive, send)
             return
 
-        _log_denial(
+        required_role, resolved_role = shortfall
+        await _deny_authorization(
             scope,
-            event='authorization',
-            reason='kg_scope_missing',
+            send,
+            reason='webui_role_insufficient',
             session=session,
-            required_scope=required,
+            required=required,
+            denial_fields={
+                'webui_role_required': required_role,
+                'webui_role_resolved': resolved_role,
+            },
+            ws_denial={
+                'reason': 'webui-role-insufficient',
+                'required_scope': required,
+                'required_role': required_role,
+                'resolved_role': resolved_role,
+                'scopes': _scope_summary(scopes),
+            },
         )
-        if scope_type == 'websocket':
-            _log_ws_denial(
-                scope,
-                reason='scope-missing',
-                required=required,
-                session_resolved=session is not None,
-                scopes=','.join(sorted(scopes)) or '<none>',
-            )
-            await send({'type': 'websocket.close', 'code': 4403})
-            return
-        body = b'{"detail":"Request forbidden"}'
-        await send(
-            {
-                'type': 'http.response.start',
-                'status': 403,
+
+
+def _inbound_header_value(scope: Any, header_name: str) -> str | None:
+    """The first value of ``header_name``, stripped, or ``None`` if absent."""
+
+    for key, value in scope.get('headers') or []:
+        if key.decode('latin-1').lower() == header_name:
+            return value.decode('latin-1').strip()
+    return None
+
+
+def _correlated_send(
+    send: Any,
+    *,
+    correlation_id: str,
+    status_box: dict[str, Any],
+) -> Any:
+    """Wrap ``send`` to echo the correlation id and record the outcome.
+
+    ``status_box`` is the caller's mutable one-slot record: the access-log line
+    is emitted after the app returns, by which point the response start (or the
+    websocket close/accept) has already gone out.
+    """
+
+    async def observed_send(message: dict[str, Any]) -> None:
+        if message.get('type') == 'http.response.start':
+            status_box['status'] = int(message.get('status', 0))
+            message = {
+                **message,
                 'headers': [
-                    (b'content-type', b'application/json'),
-                    (b'content-length', str(len(body)).encode('ascii')),
+                    *(message.get('headers') or []),
+                    (
+                        CORRELATION_RESPONSE_HEADER.encode('ascii'),
+                        correlation_id.encode('ascii'),
+                    ),
                 ],
             }
-        )
-        await send({'type': 'http.response.body', 'body': body})
+        elif message.get('type') == 'websocket.close':
+            status_box['status'] = int(message.get('code', 1000))
+        elif message.get('type') == 'websocket.accept' and status_box['status'] is None:
+            status_box['status'] = 'accepted'
+        await send(message)
+
+    return observed_send
 
 
 class RequestObservabilityMiddleware:
@@ -1089,83 +1368,75 @@ class RequestObservabilityMiddleware:
             bind_carrier,
         )
 
-        inbound_correlation_id = None
-        for key, value in scope.get('headers') or []:
-            if key.decode('latin-1').lower() == CORRELATION_HEADER:
-                inbound_correlation_id = value.decode('latin-1').strip()
-                break
-
-        method = str(scope.get('method') or '') if scope_type == 'http' else 'WS'
-        path = str(scope.get('path') or '')
-        is_liveness = path in _PUBLIC_LIVENESS_PATHS
+        inbound_correlation_id = _inbound_header_value(scope, CORRELATION_HEADER)
+        path, http_method = _request_route(scope)
+        method = http_method if scope_type == 'http' else 'WS'
         status_box: dict[str, Any] = {'status': None}
+        log_fields: dict[str, Any] = {
+            'event': 'http_request' if scope_type == 'http' else 'websocket_connection',
+            'method': method,
+            'path': path,
+        }
 
         with bind_carrier(
             {CORRELATION_HEADER: inbound_correlation_id}
             if inbound_correlation_id
             else None
         ) as correlation_id:
+            log_fields['correlation_id'] = correlation_id
+            await self._serve_observed(
+                scope,
+                receive,
+                _correlated_send(
+                    send, correlation_id=correlation_id, status_box=status_box
+                ),
+                log_fields=log_fields,
+                status_box=status_box,
+            )
 
-            async def observed_send(message: dict[str, Any]) -> None:
-                if message.get('type') == 'http.response.start':
-                    status_box['status'] = int(message.get('status', 0))
-                    headers = [*(message.get('headers') or [])]
-                    headers.append(
-                        (
-                            CORRELATION_RESPONSE_HEADER.encode('ascii'),
-                            correlation_id.encode('ascii'),
-                        )
-                    )
-                    message = {**message, 'headers': headers}
-                elif message.get('type') == 'websocket.close':
-                    status_box['status'] = int(message.get('code', 1000))
-                elif (
-                    message.get('type') == 'websocket.accept'
-                    and status_box['status'] is None
-                ):
-                    status_box['status'] = 'accepted'
-                await send(message)
+    async def _serve_observed(
+        self,
+        scope: Any,
+        receive: Any,
+        send: Any,
+        *,
+        log_fields: dict[str, Any],
+        status_box: dict[str, Any],
+    ) -> None:
+        """Serve the request and emit exactly one access-log line either way."""
 
-            start = time.perf_counter()
-            log_fields = {
-                'event': 'http_request'
-                if scope_type == 'http'
-                else 'websocket_connection',
-                'method': method,
-                'path': path,
-                'correlation_id': correlation_id,
-            }
-            try:
-                await self.app(scope, receive, observed_send)
-            except Exception:
-                log_fields['status'] = 'error'
-                log_fields['duration_ms'] = round(
-                    (time.perf_counter() - start) * 1000, 2
-                )
-                logger.error(
-                    '%s %s -> error (%sms)',
-                    method,
-                    path,
-                    log_fields['duration_ms'],
-                    exc_info=True,
-                    extra=log_fields,
-                )
-                raise
-            log_fields['status'] = status_box['status']
+        start = time.perf_counter()
+        method = log_fields['method']
+        path = log_fields['path']
+        try:
+            await self.app(scope, receive, send)
+        except Exception:
+            log_fields['status'] = 'error'
             log_fields['duration_ms'] = round((time.perf_counter() - start) * 1000, 2)
-            # Liveness probes fire every few seconds and are not diagnostically
-            # interesting in steady state; keep them out of INFO to avoid
-            # drowning real request logs, but never drop them outright.
-            level = logging.DEBUG if is_liveness else logging.INFO
-            logger.log(
-                level,
-                '%s %s -> %s (%sms)',
+            logger.error(
+                '%s %s -> error (%sms)',
                 method,
                 path,
-                log_fields['status'],
                 log_fields['duration_ms'],
+                exc_info=True,
                 extra=log_fields,
             )
+            raise
+        log_fields['status'] = status_box['status']
+        log_fields['duration_ms'] = round((time.perf_counter() - start) * 1000, 2)
+        # Liveness probes fire every few seconds and are not diagnostically
+        # interesting in steady state; keep them out of INFO to avoid
+        # drowning real request logs, but never drop them outright.
+        level = logging.DEBUG if path in _PUBLIC_LIVENESS_PATHS else logging.INFO
+        logger.log(
+            level,
+            '%s %s -> %s (%sms)',
+            method,
+            path,
+            log_fields['status'],
+            log_fields['duration_ms'],
+            extra=log_fields,
+        )
 
 
 def _is_loopback_listener(host: str) -> bool:
@@ -1182,6 +1453,40 @@ def _is_loopback_listener(host: str) -> bool:
         return False
 
 
+def _jwt_verifier_fields() -> tuple[Any, Any, Any]:
+    """The three ``AgentConfig`` fields that together make a usable verifier.
+
+    A verifier is only meaningful when all three are present, so they are read
+    as one tuple everywhere rather than being re-listed at each call site.
+    """
+
+    from agent_utilities.core.config import config
+
+    return (
+        config.auth_jwt_jwks_uri,
+        config.auth_jwt_issuer,
+        config.auth_jwt_audience,
+    )
+
+
+def _require_complete_jwt_verifier(
+    jwt_fields: tuple[Any, ...],
+    *,
+    host: str,
+) -> None:
+    """Fail closed on a half-configured verifier or an unauthenticated listener."""
+
+    if any(jwt_fields) and not all(jwt_fields):
+        raise RuntimeError(
+            'Agent WebUI JWT authentication requires JWKS URI, issuer, and audience'
+        )
+    if not _is_loopback_listener(host) and not all(jwt_fields):
+        raise RuntimeError(
+            'Refusing a non-loopback Agent WebUI listener without complete JWT '
+            'authentication in AgentConfig'
+        )
+
+
 def _configure_served_boundary(listener_host: str | None) -> str:
     """Resolve the bind host and fail closed for incomplete served identity.
 
@@ -1193,24 +1498,10 @@ def _configure_served_boundary(listener_host: str | None) -> str:
 
     from agent_utilities.core.config import config
 
-    host = (listener_host or config.host or '127.0.0.1').strip()
-    if not host:
-        host = '127.0.0.1'
+    host = (listener_host or config.host or '127.0.0.1').strip() or '127.0.0.1'
 
-    jwt_fields = (
-        config.auth_jwt_jwks_uri,
-        config.auth_jwt_issuer,
-        config.auth_jwt_audience,
-    )
-    if any(jwt_fields) and not all(jwt_fields):
-        raise RuntimeError(
-            'Agent WebUI JWT authentication requires JWKS URI, issuer, and audience'
-        )
-    if not _is_loopback_listener(host) and not all(jwt_fields):
-        raise RuntimeError(
-            'Refusing a non-loopback Agent WebUI listener without complete JWT '
-            'authentication in AgentConfig'
-        )
+    jwt_fields = _jwt_verifier_fields()
+    _require_complete_jwt_verifier(jwt_fields, host=host)
 
     if not _is_loopback_listener(host) and float(config.gateway_rate_limit or 0) <= 0:
         config.gateway_rate_limit = _REMOTE_DEFAULT_RATE
@@ -1239,11 +1530,63 @@ def _identity_enforced() -> bool:
     the fail-closed answer whenever a verifier is configured.
     """
 
-    from agent_utilities.core.config import config
+    return all(_jwt_verifier_fields())
 
-    return bool(
-        config.auth_jwt_jwks_uri and config.auth_jwt_issuer and config.auth_jwt_audience
+
+def _authorization_header_values(scope: Any) -> list[bytes]:
+    """Every raw ``Authorization`` header value on this scope, in order.
+
+    Kept as a list because "more than one" is itself a rejection condition; see
+    :func:`_validated_bearer_header`.
+    """
+
+    return [
+        value
+        for key, value in scope.get('headers') or []
+        if isinstance(key, bytes) and key.lower() == b'authorization'
+    ]
+
+
+def _prevalidated_jwt_claims(scope: Any) -> dict[str, Any] | None:
+    """Claims an outer HTTP authentication boundary already verified, if any."""
+
+    state = scope.get('state') or {}
+    prevalidated = state.get('user_claims') if isinstance(state, dict) else None
+    if isinstance(prevalidated, dict) and prevalidated.get('auth_type') == 'jwt':
+        return prevalidated
+    return None
+
+
+async def _admit_websocket_tenant(
+    scope: Any,
+    send: Any,
+    *,
+    actor: Any,
+    session: Any,
+) -> bool:
+    """Whether tenant admission permits this websocket; closes it if not.
+
+    ``False`` always means the socket has ALREADY been closed with the code
+    that matches the reason, so the caller must simply return.
+    """
+
+    from .graph_admission import (
+        EngineAdmissionUnavailableError,
+        TenantNotProvisionedError,
+        ensure_tenant_admission,
     )
+
+    try:
+        await ensure_tenant_admission(actor, session)
+    except TenantNotProvisionedError:
+        _log_ws_denial(scope, reason='tenant-not-provisioned')
+        await send({'type': 'websocket.close', 'code': 4403})
+        return False
+    except EngineAdmissionUnavailableError:
+        _log_ws_denial(scope, reason='engine-admission-unavailable')
+        await send({'type': 'websocket.close', 'code': 4503})
+        return False
+    return True
 
 
 def _ensure_actor_identity_middleware(
@@ -1286,19 +1629,13 @@ def _ensure_actor_identity_middleware(
         from agent_utilities.core.config import config
         from agent_utilities.security.auth import parse_bearer_authorization
 
-        state = scope.get('state') or {}
-        prevalidated = state.get('user_claims') if isinstance(state, dict) else None
-        authorization = [
-            value
-            for key, value in scope.get('headers') or []
-            if isinstance(key, bytes) and key.lower() == b'authorization'
-        ]
         try:
-            token = parse_bearer_authorization(authorization)
+            token = parse_bearer_authorization(_authorization_header_values(scope))
         except PermissionError:
             return None
 
-        if isinstance(prevalidated, dict) and prevalidated.get('auth_type') == 'jwt':
+        prevalidated = _prevalidated_jwt_claims(scope)
+        if prevalidated is not None:
             # An outer HTTP authentication boundary already verified this
             # credential; reuse its claims rather than re-verifying.
             try:
@@ -1321,37 +1658,67 @@ def _ensure_actor_identity_middleware(
             scope_type = scope.get('type')
             token, valid_credential = _validated_bearer_header(scope)
             if scope_type == 'http':
-                if not valid_credential:
-                    _log_denial(
-                        scope,
-                        event='authentication',
-                        reason='malformed_or_multiple_authorization_header',
-                    )
-                    body = b'{"detail":"Authentication required"}'
-                    await send(
-                        {
-                            'type': 'http.response.start',
-                            'status': 401,
-                            'headers': [
-                                (b'content-type', b'application/json'),
-                                (b'content-length', str(len(body)).encode('ascii')),
-                            ],
-                        }
-                    )
-                    await send({'type': 'http.response.body', 'body': body})
-                    return
-                actor = await _authenticated_http_actor(scope)
-                if actor is None:
-                    # Unauthenticated, unverifiable, or invalid: the shared
-                    # boundary owns that decision end to end, including which
-                    # paths may proceed without a credential.
-                    await super().__call__(scope, receive, send)
-                    return
-                await self._serve_authenticated_http(actor, scope, receive, send)
+                await self._serve_http(
+                    scope, receive, send, valid_credential=valid_credential
+                )
                 return
             if scope_type != 'websocket':
                 await self.app(scope, receive, send)
                 return
+            await self._serve_websocket(
+                scope,
+                receive,
+                send,
+                token=token,
+                valid_credential=valid_credential,
+            )
+
+        async def _serve_http(
+            self,
+            scope: Any,
+            receive: Any,
+            send: Any,
+            *,
+            valid_credential: bool,
+        ) -> None:
+            """The HTTP leg: reject a malformed header, else mint or delegate."""
+
+            if not valid_credential:
+                _log_denial(
+                    scope,
+                    event='authentication',
+                    reason='malformed_or_multiple_authorization_header',
+                )
+                await _send_json_response(
+                    send,
+                    status=401,
+                    body=b'{"detail":"Authentication required"}',
+                )
+                return
+            actor = await _authenticated_http_actor(scope)
+            if actor is None:
+                # Unauthenticated, unverifiable, or invalid: the shared
+                # boundary owns that decision end to end, including which
+                # paths may proceed without a credential.
+                await super().__call__(scope, receive, send)
+                return
+            await self._serve_authenticated_http(actor, scope, receive, send)
+
+        async def _serve_websocket(
+            self,
+            scope: Any,
+            receive: Any,
+            send: Any,
+            *,
+            token: str | None,
+            valid_credential: bool,
+        ) -> None:
+            """The websocket leg the shared middleware leaves to its callers.
+
+            Every refusal closes with a distinct 44xx/45xx code and a logged
+            reason, because a bare close is indistinguishable from a network
+            failure in a browser (W-18).
+            """
 
             from agent_utilities.core.config import config
 
@@ -1397,22 +1764,25 @@ def _ensure_actor_identity_middleware(
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
 
-            from .graph_admission import (
-                EngineAdmissionUnavailableError,
-                TenantNotProvisionedError,
-                ensure_tenant_admission,
+            if not await _admit_websocket_tenant(
+                scope, send, actor=actor, session=session
+            ):
+                return
+
+            await self._serve_bound_websocket(
+                scope, receive, send, actor=actor, session=session
             )
 
-            try:
-                await ensure_tenant_admission(actor, session)
-            except TenantNotProvisionedError:
-                _log_ws_denial(scope, reason='tenant-not-provisioned')
-                await send({'type': 'websocket.close', 'code': 4403})
-                return
-            except EngineAdmissionUnavailableError:
-                _log_ws_denial(scope, reason='engine-admission-unavailable')
-                await send({'type': 'websocket.close', 'code': 4503})
-                return
+        async def _serve_bound_websocket(
+            self,
+            scope: Any,
+            receive: Any,
+            send: Any,
+            *,
+            actor: Any,
+            session: Any,
+        ) -> None:
+            """Serve the socket with ``actor``/``session`` bound for its lifetime."""
 
             from agent_utilities.knowledge_graph.core.session import (
                 reset_session,
@@ -1592,37 +1962,40 @@ def _ensure_security_headers_middleware(
         )
 
 
+def _configured_csv_entries(raw: Any) -> list[str]:
+    """Split a comma-separated ``AgentConfig`` value into non-empty entries."""
+
+    return [value.strip() for value in str(raw or '').split(',') if value.strip()]
+
+
+def _require_exact_allowed_origins(origins: list[str]) -> None:
+    """Every ``ALLOWED_ORIGINS`` entry must be an exact, wildcard-free origin.
+
+    The scheme is matched verbatim here (not case-folded): a configured origin
+    is operator-authored, and accepting ``HTTPS://`` would silently diverge from
+    what the browser sends and compares against.
+    """
+
+    if '*' in origins:
+        raise RuntimeError('Agent WebUI does not permit wildcard browser origins')
+    for origin in origins:
+        parsed = urlsplit(origin)
+        if parsed.scheme not in {
+            'http',
+            'https',
+        } or not _origin_parts_are_exact(parsed):
+            raise RuntimeError('Agent WebUI ALLOWED_ORIGINS contains an invalid origin')
+
+
 def _install_host_boundary(app: FastAPI, listener_host: str) -> None:
     """Reject Host-header confusion and require an allowlist when remote."""
 
     from agent_utilities.core.config import config
 
-    configured = [
-        value.strip()
-        for value in str(config.allowed_hosts or '').split(',')
-        if value.strip()
-    ]
+    configured = _configured_csv_entries(config.allowed_hosts)
     if '*' in configured:
         raise RuntimeError('Agent WebUI does not permit wildcard Host headers')
-    allowed_origins = {
-        value.strip()
-        for value in str(config.allowed_origins or '').split(',')
-        if value.strip()
-    }
-    if '*' in allowed_origins:
-        raise RuntimeError('Agent WebUI does not permit wildcard browser origins')
-    for origin in allowed_origins:
-        parsed = urlsplit(origin)
-        if (
-            parsed.scheme not in {'http', 'https'}
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.path not in {'', '/'}
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise RuntimeError('Agent WebUI ALLOWED_ORIGINS contains an invalid origin')
+    _require_exact_allowed_origins(_configured_csv_entries(config.allowed_origins))
     if not configured:
         if not _is_loopback_listener(listener_host):
             raise RuntimeError(
@@ -1665,6 +2038,163 @@ def _ensure_rate_limit_middleware(app: FastAPI) -> None:
         app.add_middleware(GatewayRateLimitMiddleware)
 
 
+def _default_provider_models() -> dict[str, str]:
+    """The model menu implied by whichever provider credentials are present.
+
+    An explicit ``models=`` argument overrides this entirely; the test model is
+    the floor so the dashboard always has something selectable.
+    """
+
+    default_models: dict[str, str] = {}
+    if os.getenv('ANTHROPIC_API_KEY'):
+        default_models['Claude Sonnet 3.5'] = 'anthropic:claude-3-5-sonnet-latest'
+    if os.getenv('OPENAI_API_KEY'):
+        default_models['GPT 4o'] = 'openai:gpt-4o'
+    if os.getenv('GOOGLE_API_KEY'):
+        default_models['Gemini 2.0 Pro'] = 'google:gemini-2.0-pro'
+    # Support for local induction via Ollama/OpenWebUI patterns
+    if os.getenv('OLLAMA_BASE_URL') or os.getenv('OLLAMA_HOST'):
+        default_models['Qwen 3 Coder'] = 'ollama:qwen3-coder'
+    if not default_models:
+        default_models['Test Model (Markdown Only)'] = 'test'
+    return default_models
+
+
+def _register_canonical_graph_routes(app: FastAPI) -> None:
+    """Mount the canonical KG REST surface, or refuse to build the app.
+
+    NOT optional and NOT allowed to fail soft: this is the entire canonical KG
+    REST surface (`/api/graph/*`, `/api/registry/*`, `/api/ontology/*`,
+    `/api/research/*`, `/api/dashboard/*`'s route-table twin, plus the fleet
+    supervisory plane). A gateway that cannot register this surface is not a
+    degraded gateway, it is a headless one -- refuse to build the app instead of
+    quietly serving one. `generate_openapi.py` also enforces a minimum
+    mounted-path floor (see its `--write` sanity check) so a partial spec can
+    never be committed as documentation, but the first and loudest guard belongs
+    here, at the source.
+    """
+
+    try:
+        from agent_utilities.gateway.graph_api import register_graph_routes
+    except ImportError as exc:
+        raise RuntimeError(
+            'Canonical KG REST surface unavailable: could not import '
+            'agent_utilities.gateway.graph_api.register_graph_routes. '
+            'Refusing to serve a headless webui gateway missing '
+            '/api/graph, /api/registry, /api/ontology, and /api/research.'
+        ) from exc
+
+    try:
+        register_graph_routes(app, prefix='/api')
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            'Canonical KG REST surface failed to register '
+            f'({type(exc).__name__}: {exc}). Refusing to serve a headless '
+            'webui gateway missing /api/graph, /api/registry, '
+            '/api/ontology, and /api/research.'
+        ) from exc
+
+    logger.info(
+        'Canonical KG REST surface + fleet supervisory plane mounted under /api'
+    )
+
+
+def _parsed_widget_subscription(raw: str) -> set[str] | None:
+    """The widget ids a ``/ws/dashboard`` subscribe message names.
+
+    ``None`` for anything that is not a well-formed subscription -- unparseable
+    JSON, a non-object, a different message type, or a non-list ``widget_ids``.
+    Every such message leaves the existing subscription untouched, exactly as
+    the inline ``continue`` branches did.
+    """
+
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, dict) or parsed.get('type') != 'subscribe':
+        return None
+    widget_ids = parsed.get('widget_ids')
+    if not isinstance(widget_ids, list):
+        return None
+    return {
+        widget_id
+        for widget_id in widget_ids[:_MAX_DASHBOARD_SUBSCRIBE_WIDGET_IDS]
+        if isinstance(widget_id, str)
+    }
+
+
+def _bridged_route_path(prefix: str, route_path: str) -> str:
+    """The dashboard path a pydantic-ai route is bridged to.
+
+    ``POST /api/chat`` is remapped to ``_CHAT_MESSAGES_PATH`` so the chat
+    transport lives under the same ``/api/chats`` resource as the chat-history
+    CRUD; every other path is passed through normalized.
+    """
+
+    full_path = '/' + (prefix + route_path).strip('/')
+    if full_path == '/api/chat':
+        return _CHAT_MESSAGES_PATH
+    return full_path
+
+
+def _route_is_in_dashboard_scope(full_path: str, *, serve_root: bool) -> bool:
+    """Whether a bridged pydantic-ai route belongs on the dashboard surface."""
+
+    if full_path.startswith(('/api', '/chat', '/configure')):
+        return True
+    return serve_root and full_path in {'/', '/{id}'}
+
+
+def _dashboard_build_is_servable(dist_path: Path) -> bool:
+    """Whether to mount ``dist_path``, logging precisely why when it is thin.
+
+    A directory check alone is NOT enough. `index.html` is the LAST file the
+    frontend build writes, so an interrupted or partial build leaves a dist
+    directory full of hashed assets with no entrypoint. That state used to mount
+    silently: assets and favicons served 200, while `/` and every client-side
+    route fell through SPAStaticFiles' index.html fallback to a bare 404 that
+    `_privacy_safe_http_error` then masked as `{"detail": "Request failed"}` --
+    exactly what a signed-in user saw on the production deployment (which
+    live-mounts this directory rather than using the packaged wheel, so a broken
+    build on the mount source breaks the dashboard immediately). Serving the
+    assets is still better than serving nothing, but the missing entrypoint must
+    be reported loudly rather than inferred from a masked 404.
+    """
+
+    if not dist_path.is_dir():
+        logger.warning(
+            'Static assets were not found at the configured location. '
+            'Dashboard UI will not be served.'
+        )
+        return False
+    if not (dist_path / 'index.html').is_file():
+        logger.error(
+            'The built dashboard entrypoint index.html is missing from '
+            'the static asset directory. Asset requests will still be '
+            'served, but "/" and every client-side route will return '
+            '404. Re-run the frontend build to regenerate it.'
+        )
+    return True
+
+
+def _ensure_request_observability_middleware(app: FastAPI) -> None:
+    """Install the outermost access-logging boundary exactly once.
+
+    ``add_middleware`` prepends, so this must be the LAST install: it has to sit
+    outside every other middleware to observe and log EVERY request, including
+    ones the rate limiter, the authorization gate, or the identity boundary
+    reject before a route is ever reached -- those are exactly the requests the
+    motivating gap (no HTTP access logging at all) hid.
+    """
+
+    if not any(
+        getattr(middleware, 'cls', None) is RequestObservabilityMiddleware
+        for middleware in app.user_middleware
+    ):
+        app.add_middleware(RequestObservabilityMiddleware)
+
+
 def create_agent_web_app(
     agent: Agent,
     workspace_helpers: dict[str, Any],
@@ -1703,21 +2233,7 @@ def create_agent_web_app(
     )
     set_workspace_helpers(workspace_helpers)
 
-    # Detect available providers based on environment variables
-    default_models = {}
-    if os.getenv('ANTHROPIC_API_KEY'):
-        default_models['Claude Sonnet 3.5'] = 'anthropic:claude-3-5-sonnet-latest'
-    if os.getenv('OPENAI_API_KEY'):
-        default_models['GPT 4o'] = 'openai:gpt-4o'
-    if os.getenv('GOOGLE_API_KEY'):
-        default_models['Gemini 2.0 Pro'] = 'google:gemini-2.0-pro'
-
-    # Support for local induction via Ollama/OpenWebUI patterns
-    if os.getenv('OLLAMA_BASE_URL') or os.getenv('OLLAMA_HOST'):
-        default_models['Qwen 3 Coder'] = 'ollama:qwen3-coder'
-
-    if not default_models:
-        default_models['Test Model (Markdown Only)'] = 'test'
+    default_models = _default_provider_models()
 
     app = FastAPI(title='Agent Web Dashboard')
     app.state.agent = agent
@@ -1939,21 +2455,19 @@ def create_agent_web_app(
             try:
                 while True:
                     if subscribed_widget_ids is None:
-                        full = await get_full_dashboard()
-                        widgets = full.data
+                        widgets = (await get_full_dashboard()).data
                     else:
                         widgets = await fetch_dashboard_subset(subscribed_widget_ids)
                     sequence += 1
-                    payload_data = {
-                        widget_id: widget.model_dump(mode='json')
-                        for widget_id, widget in widgets.items()
-                    }
                     await websocket.send_json(
                         {
                             'type': message_type,
                             'stream_id': stream_id,
                             'sequence': sequence,
-                            'data': payload_data,
+                            'data': {
+                                widget_id: widget.model_dump(mode='json')
+                                for widget_id, widget in widgets.items()
+                            },
                         }
                     )
                     message_type = 'update'
@@ -1964,23 +2478,9 @@ def create_agent_web_app(
                         )
                     except TimeoutError:
                         continue
-                    try:
-                        parsed = json.loads(raw)
-                    except (TypeError, ValueError):
-                        continue
-                    if (
-                        not isinstance(parsed, dict)
-                        or parsed.get('type') != 'subscribe'
-                    ):
-                        continue
-                    widget_ids = parsed.get('widget_ids')
-                    if not isinstance(widget_ids, list):
-                        continue
-                    subscribed_widget_ids = {
-                        wid
-                        for wid in widget_ids[:_MAX_DASHBOARD_SUBSCRIBE_WIDGET_IDS]
-                        if isinstance(wid, str)
-                    }
+                    subscription = _parsed_widget_subscription(raw)
+                    if subscription is not None:
+                        subscribed_widget_ids = subscription
             except WebSocketDisconnect:
                 pass
             except Exception as exc:  # noqa: BLE001
@@ -1995,40 +2495,7 @@ def create_agent_web_app(
     # supervisory plane (CONCEPT:AU-OS.safety.ontological-guardrail) and the /cypher fast path — via
     # the single canonical registrar. WebUI clients and gateway clients are
     # served by one route implementation, so the two surfaces cannot drift.
-    #
-    # NOT optional and NOT allowed to fail soft: this is the entire
-    # canonical KG REST surface (`/api/graph/*`, `/api/registry/*`,
-    # `/api/ontology/*`, `/api/research/*`, `/api/dashboard/*`'s
-    # route-table twin, plus the fleet supervisory plane). A gateway that
-    # cannot register this surface is not a degraded gateway, it is a
-    # headless one -- refuse to build the app instead of quietly serving
-    # one. `generate_openapi.py` also enforces a minimum mounted-path floor
-    # (see its `--write` sanity check) so a partial spec can never be
-    # committed as documentation, but the first and loudest guard belongs
-    # here, at the source.
-    try:
-        from agent_utilities.gateway.graph_api import register_graph_routes
-    except ImportError as exc:
-        raise RuntimeError(
-            'Canonical KG REST surface unavailable: could not import '
-            'agent_utilities.gateway.graph_api.register_graph_routes. '
-            'Refusing to serve a headless webui gateway missing '
-            '/api/graph, /api/registry, /api/ontology, and /api/research.'
-        ) from exc
-
-    try:
-        register_graph_routes(app, prefix='/api')
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(
-            'Canonical KG REST surface failed to register '
-            f'({type(exc).__name__}: {exc}). Refusing to serve a headless '
-            'webui gateway missing /api/graph, /api/registry, '
-            '/api/ontology, and /api/research.'
-        ) from exc
-
-    logger.info(
-        'Canonical KG REST surface + fleet supervisory plane mounted under /api'
-    )
+    _register_canonical_graph_routes(app)
 
     # This process is the KG daemon HOST by default: it runs the single
     # consolidated background daemon (queue drain + graph writer + task
@@ -2105,17 +2572,10 @@ def create_agent_web_app(
             if isinstance(route, Mount):
                 add_pydantic_routes(route.app.routes, prefix + route.path)
             elif isinstance(route, StarletteRoute):
-                full_path = prefix + route.path
-                full_path = '/' + full_path.strip('/')
-                if full_path == '/api/chat':
-                    full_path = _CHAT_MESSAGES_PATH
-
+                full_path = _bridged_route_path(prefix, route.path)
                 # Only bridge routes that match the dashboard's functional scope
-                if (
-                    full_path.startswith('/api')
-                    or full_path.startswith('/chat')
-                    or full_path.startswith('/configure')
-                    or (html_source and (full_path == '/' or full_path == '/{id}'))
+                if _route_is_in_dashboard_scope(
+                    full_path, serve_root=bool(html_source)
                 ):
                     app.add_route(full_path, route.endpoint, methods=route.methods)
 
@@ -2177,39 +2637,12 @@ def create_agent_web_app(
                 raise ex
 
     # Fallback to serving the built React dashboard if no custom source provided
-    if not html_source:
-        if not dist_path.is_dir():
-            logger.warning(
-                'Static assets were not found at the configured location. '
-                'Dashboard UI will not be served.'
-            )
-        else:
-            # A directory check alone is NOT enough. `index.html` is the LAST
-            # file the frontend build writes, so an interrupted or partial
-            # build leaves a dist directory full of hashed assets with no
-            # entrypoint. That state used to mount silently: assets and
-            # favicons served 200, while `/` and every client-side route fell
-            # through SPAStaticFiles' index.html fallback to a bare 404 that
-            # `_privacy_safe_http_error` then masked as
-            # `{"detail": "Request failed"}` -- exactly what a signed-in user
-            # saw on the production deployment (which live-mounts this
-            # directory rather than using the packaged wheel, so a broken
-            # build on the mount source breaks the dashboard immediately).
-            # Serving the assets is still better than serving nothing, but the
-            # missing entrypoint must be reported loudly rather than inferred
-            # from a masked 404.
-            if not (dist_path / 'index.html').is_file():
-                logger.error(
-                    'The built dashboard entrypoint index.html is missing from '
-                    'the static asset directory. Asset requests will still be '
-                    'served, but "/" and every client-side route will return '
-                    '404. Re-run the frontend build to regenerate it.'
-                )
-            app.mount(
-                '/',
-                SPAStaticFiles(directory=str(dist_path), html=True),
-                name='dashboard',
-            )
+    if not html_source and _dashboard_build_is_servable(dist_path):
+        app.mount(
+            '/',
+            SPAStaticFiles(directory=str(dist_path), html=True),
+            name='dashboard',
+        )
 
     if _LOGFIRE_ENABLED:
         logfire.instrument_starlette(app)
@@ -2230,16 +2663,8 @@ def create_agent_web_app(
         content_security_policy=content_security_policy,
     )
     # LANE F: mounted LAST (add_middleware prepends, so this is the OUTERMOST
-    # layer — see RequestObservabilityMiddleware's own docstring). It must sit
-    # outside every other middleware so it observes and logs EVERY request,
-    # including ones the rate limiter, the authorization gate, or the identity
-    # boundary reject before a route is ever reached — those are exactly the
-    # requests the motivating gap (no HTTP access logging at all) hid.
-    if not any(
-        getattr(middleware, 'cls', None) is RequestObservabilityMiddleware
-        for middleware in app.user_middleware
-    ):
-        app.add_middleware(RequestObservabilityMiddleware)
+    # layer — see RequestObservabilityMiddleware's own docstring).
+    _ensure_request_observability_middleware(app)
     return app
 
 
