@@ -37,10 +37,7 @@ export default defineConfig(
     rules: Object.fromEntries(
       Object.entries(jsxA11y.flatConfigs.recommended.rules ?? {})
         .filter(([, config]) => (Array.isArray(config) ? config[0] : config) !== 'off')
-        .map(([rule, config]) => [
-          rule,
-          Array.isArray(config) ? ['warn', ...config.slice(1)] : 'warn',
-        ]),
+        .map(([rule, config]) => [rule, Array.isArray(config) ? ['warn', ...config.slice(1)] : 'warn']),
     ),
   },
   eslintPluginPrettierRecommended,
