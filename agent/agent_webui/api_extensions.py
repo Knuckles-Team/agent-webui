@@ -4761,9 +4761,7 @@ async def _collect_labeled_node_rows(
         # of them because one failed is not. The label is named in the log so
         # the cause stays findable.
         try:
-            page, sources, degraded = await _union_label_page(
-                engine, label, remaining
-            )
+            page, sources, degraded = await _union_label_page(engine, label, remaining)
         except Exception as label_error:
             _log_failure(
                 f'get_graph_nodes.label.{label}',
@@ -8313,7 +8311,9 @@ async def diff_graph_prompt_versions(
 
 def _bounded_list_result(items: Any) -> list[dict[str, Any]]:
     """Bound a list-shaped API result, degrading a non-list to []."""
-    bounded = _public_external_result(list(items or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS])
+    bounded = _public_external_result(
+        list(items or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+    )
     return bounded if isinstance(bounded, list) else []
 
 
@@ -12146,9 +12146,7 @@ async def _workflow_canvas(engine: Any, workflow_id: str) -> Any:
     return _decode_workflow_canvas(crows)
 
 
-async def _workflow_record(
-    engine: Any, wdata: dict[str, Any]
-) -> dict[str, Any] | None:
+async def _workflow_record(engine: Any, wdata: dict[str, Any]) -> dict[str, Any] | None:
     """One `:Workflow` node as an API record, or ``None`` if its id is oversized."""
     workflow_id = str(wdata.get('id') or f'workflow:{wdata.get("name", "")}')
     if len(workflow_id.encode('utf-8')) > _MAX_WORKFLOW_ID_BYTES:
@@ -12296,11 +12294,7 @@ def _bounded_workflow_tokens(items: Any, max_bytes: int) -> bool:
 
 def _validated_workflow_name(body: dict[str, Any]) -> str:
     name = body.get('name') or 'Untitled Workflow'
-    if (
-        not isinstance(name, str)
-        or not name.strip()
-        or len(name.encode('utf-8')) > 512
-    ):
+    if not isinstance(name, str) or not name.strip() or len(name.encode('utf-8')) > 512:
         raise HTTPException(status_code=400, detail='Invalid workflow name')
     return name
 
@@ -12347,9 +12341,7 @@ def _workflow_save_request(body: Any) -> _WorkflowSaveRequest:
         orchestrates, _MAX_WORKFLOW_ID_BYTES
     ):
         raise HTTPException(status_code=400, detail='Invalid workflow steps')
-    canvas, canvas_payload = _encoded_workflow_canvas(
-        _workflow_canvas_from_body(body)
-    )
+    canvas, canvas_payload = _encoded_workflow_canvas(_workflow_canvas_from_body(body))
     return _WorkflowSaveRequest(
         name=name,
         steps=steps,
@@ -12359,7 +12351,9 @@ def _workflow_save_request(body: Any) -> _WorkflowSaveRequest:
     )
 
 
-async def _persist_workflow_spec(engine: Any, spec: Any, workflow_to_batch: Any) -> None:
+async def _persist_workflow_spec(
+    engine: Any, spec: Any, workflow_to_batch: Any
+) -> None:
     """Build the canonical batch, then persist via the engine's node/edge API
     (the engine exposes add_node/link_nodes rather than a raw write_batch)."""
 
@@ -13455,9 +13449,7 @@ _AGGREGATE_GROUP_MERGE: dict[str, Any] = {
 }
 
 
-def _merge_simple_metric(
-    groups: dict[Any, float], agg: Any, metric: str
-) -> None:
+def _merge_simple_metric(groups: dict[Any, float], agg: Any, metric: str) -> None:
     """Fold one graph's `AggregationResult` groups into `groups`."""
     combine = _AGGREGATE_GROUP_MERGE[metric]
     for key, value in agg.groups.items():
@@ -13497,9 +13489,7 @@ def _merge_aggregate_results(
             _merge_simple_metric(groups, agg_map[metric], metric)
     if metric == 'avg':
         groups = {
-            key: total / counts[key]
-            for key, total in sums.items()
-            if counts.get(key)
+            key: total / counts[key] for key, total in sums.items() if counts.get(key)
         }
     return groups, total_objects
 
@@ -13579,7 +13569,9 @@ def _object_set_property_filters(data: dict[str, Any]) -> list[Any]:
         _bounded_external_value(raw_filters)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail='Invalid object filters') from exc
-    return [_property_filter_from(f) for f in raw_filters if _is_property_filter_spec(f)]
+    return [
+        _property_filter_from(f) for f in raw_filters if _is_property_filter_spec(f)
+    ]
 
 
 def _object_set_base(
@@ -13625,9 +13617,7 @@ def _resolve_object_set_ids(
     if explicit is not None:
         return _bounded_identifier_list(explicit)[:limit], kind
 
-    base, filters = _object_set_base(
-        ontology, kind, _object_set_property_filters(data)
-    )
+    base, filters = _object_set_base(ontology, kind, _object_set_property_filters(data))
     query = _object_set_query(data)
     if query or filters:
         base = base.search(query, filters=filters or None, limit=limit)
@@ -14008,9 +13998,7 @@ def _bulk_action_record(invocation: Any, target_id: str) -> dict[str, Any]:
     }
 
 
-async def _apply_bulk_action(
-    plan: _BulkActionPlan, ids: list[str]
-) -> dict[str, Any]:
+async def _apply_bulk_action(plan: _BulkActionPlan, ids: list[str]) -> dict[str, Any]:
     """Run the planned action over every target through the governed executor."""
     from agent_utilities.knowledge_graph.actions import ActionStatus
 
