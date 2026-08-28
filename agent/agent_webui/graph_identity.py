@@ -247,6 +247,112 @@ def _configured_admin_principal_ids() -> frozenset[str]:
     return frozenset(item.strip() for item in raw.split(',') if item.strip())
 
 
+def _require_authenticated_actor_id(actor: Any) -> str:
+    """The first two of the shared minter's four ``PermissionError``
+    preconditions: the actor must be authenticated AND carry a subject."""
+    if not getattr(actor, 'authenticated', False):
+        raise PermissionError(
+            'A GraphSession can only be minted from authenticated identity'
+        )
+    actor_id = str(getattr(actor, 'actor_id', '') or '').strip()
+    if not actor_id:
+        raise PermissionError('Verified identity is missing its subject')
+    return actor_id
+
+
+def _require_tenant(actor: Any) -> str:
+    """The shared minter's third precondition: a verified tenant claim."""
+    tenant = str(getattr(actor, 'tenant_id', '') or '').strip()
+    if not tenant:
+        raise PermissionError(
+            'Authenticated graph requests require a verified tenant claim'
+        )
+    return tenant
+
+
+def _require_audience_and_policy(config: Any) -> tuple[str, str]:
+    """The shared minter's fourth precondition: server-side audience and
+    policy-revision configuration must both be present."""
+    audience = str(config.auth_jwt_audience or config.mcp_jwt_audience or '').strip()
+    policy_version = str(config.kg_policy_version or '').strip()
+    if not audience or not policy_version:
+        raise PermissionError(
+            'Verified graph authority is missing audience or policy revision'
+        )
+    return audience, policy_version
+
+
+def _elevate_actor_for_admin(actor: Any, actor_id: str, token_scopes: frozenset[str]) -> Any:
+    """AUTHZ LANE B — admin elevation, re-derived on EVERY mint (never stored;
+    see the module docstring, "Admin elevation is DERIVED, never stored")."""
+    if 'kg:admin' in token_scopes:
+        # (a) The intended long-term mechanism: an IdP `kg:admin` realm role
+        # already flows into `actor.roles` with no code here.
+        return actor
+    if actor_id in _configured_admin_principal_ids():
+        # (b) The configured bootstrap escape hatch. Augment the ROLES this
+        # session's actor carries (not the verified token) so that both this
+        # function's scope hierarchy below AND `rbac.resolve_webui_role`
+        # (which reads `session.actor.roles` directly, independent of
+        # `session.scopes`) agree the principal is admin — see the module
+        # docstring for why both must see it, and why this augmentation
+        # cannot widen ENGINE-side data access.
+        elevated = replace(actor, roles=tuple({*actor.roles, 'kg:admin'}))
+        logger.info(
+            'admin elevation applied via configured allowlist: actor_id=%s',
+            actor_id,
+        )
+        return elevated
+    return actor
+
+
+def _expand_graph_scopes(effective_actor: Any, graph_auth_scopes: frozenset[str]) -> frozenset[str]:
+    """Coarse KG scopes are hierarchical: an administrator implies write+read
+    and a writer implies the authorization-safe precondition reads it must
+    make. Expanded here exactly as the shared minter expands it."""
+    scopes = frozenset(str(role) for role in effective_actor.roles) & graph_auth_scopes
+    if 'kg:admin' in scopes:
+        return scopes | frozenset({'kg:read', 'kg:write'})
+    if 'kg:write' in scopes:
+        return scopes | frozenset({'kg:read'})
+    if not scopes:
+        # Default for a verified human with no `kg:*` claim at all: READ, not
+        # nothing (AUTHZ LANE B requirement 1) — see the module docstring,
+        # "Default scope + durable admin elevation".
+        return frozenset({'kg:read'})
+    return scopes
+
+
+def _log_session_minted(session: GraphSession, tenant: str, graph: str, commons_graph: str) -> None:
+    """Observability (D-TGS-1): a session confined to one physical shard must
+    never be silently indistinguishable from one that sees everything. Log
+    the resolved graph and, explicitly, whether it is the shared commons or
+    a narrower per-tenant shard, on every mint — so a divergence like the
+    one this module was fixed for (WebUI reads scoped to
+    ``tenant__homelab____commons__`` while the commons catalog holding the
+    fleet's :Tool/:CallableResource nodes went unread) shows up in logs
+    keyed by trace/tenant instead of requiring a fleet-wide count diff to
+    notice. This module never executes a query itself, so a log line is the
+    strongest signal it can emit on its own; a query executor that also
+    surfaces ``graph``/``accessible_graphs`` in its response payload (see
+    :func:`frontend_accessible_graphs`) is the complementary, response-side
+    half of this requirement, owned by whichever lane executes the query."""
+    logger.info(
+        'frontend graph session minted: tenant=%s graph=%s is_commons=%s trace=%s',
+        tenant,
+        graph,
+        graph == commons_graph,
+        session.trace_context,
+        extra={
+            'tenant': tenant,
+            'graph': graph,
+            'commons_graph': commons_graph,
+            'is_commons_graph': graph == commons_graph,
+            'trace_context': session.trace_context,
+        },
+    )
+
+
 def mint_frontend_graph_session(actor: Any) -> GraphSession:
     """Project one already-verified actor into an unrouted graph session.
 
@@ -278,65 +384,14 @@ def mint_frontend_graph_session(actor: Any) -> GraphSession:
     # be the shared one.
     from agent_utilities.security.request_identity import _GRAPH_AUTH_SCOPES
 
-    if not getattr(actor, 'authenticated', False):
-        raise PermissionError(
-            'A GraphSession can only be minted from authenticated identity'
-        )
-    actor_id = str(getattr(actor, 'actor_id', '') or '').strip()
-    if not actor_id:
-        raise PermissionError('Verified identity is missing its subject')
+    actor_id = _require_authenticated_actor_id(actor)
 
     token_scopes = frozenset(str(role) for role in actor.roles) & _GRAPH_AUTH_SCOPES
-
-    # AUTHZ LANE B — admin elevation, re-derived on EVERY mint (never stored;
-    # see the module docstring, "Admin elevation is DERIVED, never stored").
-    if 'kg:admin' in token_scopes:
-        # (a) The intended long-term mechanism: an IdP `kg:admin` realm role
-        # already flows into `actor.roles` with no code here.
-        effective_actor = actor
-    elif actor_id in _configured_admin_principal_ids():
-        # (b) The configured bootstrap escape hatch. Augment the ROLES this
-        # session's actor carries (not the verified token) so that both this
-        # function's scope hierarchy below AND `rbac.resolve_webui_role`
-        # (which reads `session.actor.roles` directly, independent of
-        # `session.scopes`) agree the principal is admin — see the module
-        # docstring for why both must see it, and why this augmentation
-        # cannot widen ENGINE-side data access.
-        effective_actor = replace(actor, roles=tuple({*actor.roles, 'kg:admin'}))
-        logger.info(
-            'admin elevation applied via configured allowlist: actor_id=%s',
-            actor_id,
-        )
-    else:
-        effective_actor = actor
-
-    scopes = frozenset(str(role) for role in effective_actor.roles) & _GRAPH_AUTH_SCOPES
-    # Coarse KG scopes are hierarchical: an administrator implies write+read and
-    # a writer implies the authorization-safe precondition reads it must make.
-    # Expanded here exactly as the shared minter expands it.
-    if 'kg:admin' in scopes:
-        scopes |= frozenset({'kg:read', 'kg:write'})
-    elif 'kg:write' in scopes:
-        scopes |= frozenset({'kg:read'})
-    elif not scopes:
-        # Default for a verified human with no `kg:*` claim at all: READ, not
-        # nothing (AUTHZ LANE B requirement 1) — see the module docstring,
-        # "Default scope + durable admin elevation".
-        scopes = frozenset({'kg:read'})
-
+    effective_actor = _elevate_actor_for_admin(actor, actor_id, token_scopes)
+    scopes = _expand_graph_scopes(effective_actor, _GRAPH_AUTH_SCOPES)
     actor = effective_actor
-    tenant = str(getattr(actor, 'tenant_id', '') or '').strip()
-    if not tenant:
-        raise PermissionError(
-            'Authenticated graph requests require a verified tenant claim'
-        )
-
-    audience = str(config.auth_jwt_audience or config.mcp_jwt_audience or '').strip()
-    policy_version = str(config.kg_policy_version or '').strip()
-    if not audience or not policy_version:
-        raise PermissionError(
-            'Verified graph authority is missing audience or policy revision'
-        )
+    tenant = _require_tenant(actor)
+    audience, policy_version = _require_audience_and_policy(config)
 
     commons_graph = default_graph_name()
     graph = tenant_graph_name(tenant, base=commons_graph)
@@ -350,33 +405,7 @@ def mint_frontend_graph_session(actor: Any) -> GraphSession:
         audience=audience,
     )
 
-    # Observability (D-TGS-1): a session confined to one physical shard must
-    # never be silently indistinguishable from one that sees everything. Log
-    # the resolved graph and, explicitly, whether it is the shared commons or
-    # a narrower per-tenant shard, on every mint — so a divergence like the
-    # one this module was fixed for (WebUI reads scoped to
-    # ``tenant__homelab____commons__`` while the commons catalog holding the
-    # fleet's :Tool/:CallableResource nodes went unread) shows up in logs
-    # keyed by trace/tenant instead of requiring a fleet-wide count diff to
-    # notice. This module never executes a query itself, so a log line is the
-    # strongest signal it can emit on its own; a query executor that also
-    # surfaces ``graph``/``accessible_graphs`` in its response payload (see
-    # :func:`frontend_accessible_graphs`) is the complementary, response-side
-    # half of this requirement, owned by whichever lane executes the query.
-    logger.info(
-        'frontend graph session minted: tenant=%s graph=%s is_commons=%s trace=%s',
-        tenant,
-        graph,
-        graph == commons_graph,
-        session.trace_context,
-        extra={
-            'tenant': tenant,
-            'graph': graph,
-            'commons_graph': commons_graph,
-            'is_commons_graph': graph == commons_graph,
-            'trace_context': session.trace_context,
-        },
-    )
+    _log_session_minted(session, tenant, graph, commons_graph)
     return session
 
 

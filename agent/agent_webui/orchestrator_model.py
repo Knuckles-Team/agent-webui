@@ -104,6 +104,40 @@ logger = logging.getLogger(__name__)
 DEFAULT_WEBUI_AGENT_NAME = 'webui-assistant'
 
 
+def _user_prompt_item_text(item: object) -> str | None:
+    """Resolve one ``UserPromptPart.content`` list item to its text, or ``None``.
+
+    Prefers a ``.content`` attribute over ``.text`` (matching multimodal content
+    parts where ``.content`` is the canonical field); an empty/falsy ``.content``
+    falls through to ``.text`` rather than being treated as present-but-empty.
+    """
+    if isinstance(item, str):
+        return item
+    text = getattr(item, 'content', None) or getattr(item, 'text', None)
+    return text if isinstance(text, str) else None
+
+
+def _user_prompt_chunks(content: str | list[object]) -> list[str]:
+    """Flatten one ``UserPromptPart.content`` (str or list of parts) to text chunks."""
+    if isinstance(content, str):
+        return [content]
+    chunks: list[str] = []
+    for item in content:
+        text = _user_prompt_item_text(item)
+        if text is not None:
+            chunks.append(text)
+    return chunks
+
+
+def _request_user_chunks(message: ModelRequest) -> list[str]:
+    """Collect every ``UserPromptPart`` text chunk from one ``ModelRequest``."""
+    chunks: list[str] = []
+    for part in message.parts:
+        if isinstance(part, UserPromptPart):
+            chunks.extend(_user_prompt_chunks(part.content))
+    return chunks
+
+
 def _latest_user_text(messages: list[ModelMessage]) -> str:
     """Extract the newest user message text from the AG-UI conversation history.
 
@@ -114,23 +148,7 @@ def _latest_user_text(messages: list[ModelMessage]) -> str:
     for message in reversed(messages):
         if not isinstance(message, ModelRequest):
             continue
-        chunks: list[str] = []
-        for part in message.parts:
-            if not isinstance(part, UserPromptPart):
-                continue
-            content = part.content
-            if isinstance(content, str):
-                chunks.append(content)
-            else:
-                for item in content:
-                    if isinstance(item, str):
-                        chunks.append(item)
-                    else:
-                        text = getattr(item, 'content', None) or getattr(
-                            item, 'text', None
-                        )
-                        if isinstance(text, str):
-                            chunks.append(text)
+        chunks = _request_user_chunks(message)
         if chunks:
             return '\n'.join(chunks)
         # Newest ModelRequest carried no user text (e.g. a tool-return-only

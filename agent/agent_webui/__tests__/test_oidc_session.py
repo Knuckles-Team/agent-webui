@@ -17,6 +17,7 @@ from agent_webui.oidc_session import (
     CALLBACK_PATH,
     FLOW_COOKIE,
     LOGIN_PATH,
+    SESSION_COOKIE,
     SESSION_PATH,
     OIDCBrowserSessionMiddleware,
     OIDCConfigurationError,
@@ -331,6 +332,74 @@ async def test_callback_without_a_matching_state_is_refused(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_callback_with_a_provider_error_param_is_refused_before_any_exchange():
+    """The IdP redirecting back with ``?error=...`` (e.g. the user denied
+    consent) must be refused immediately, WITHOUT ever attempting a code/state
+    check or a token exchange (WD10-C-MISC characterization, pre-refactor of
+    _handle_callback)."""
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=_settings())
+
+    async def _fail(_form):  # pragma: no cover - must never be reached
+        raise AssertionError('the code must not be exchanged after a provider error')
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(middleware, '_token_request', _fail)
+    try:
+        send = _Recorder()
+        await middleware(
+            _scope(CALLBACK_PATH, query=b'error=access_denied'), None, send
+        )
+        assert send.status == 401
+        assert b'was not completed' in send.body
+    finally:
+        monkeypatch.undo()
+
+
+@pytest.mark.anyio
+async def test_callback_with_a_verified_state_and_real_tokens_sets_the_session_cookie():
+    """The success path: a verified state + a token exchange that actually
+    returns tokens must seal a session cookie and redirect to the flow's
+    ``next`` target (WD10-C-MISC characterization, pre-refactor of
+    _handle_callback -- every other existing callback test short-circuits with
+    ``tokens is None``, so this is the only test exercising the full
+    happy path end-to-end)."""
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=_settings())
+
+    async def _issue_tokens(_form):
+        return {'access_token': 'AT', 'refresh_token': 'RT', 'expires_in': 300}
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(middleware, '_token_request', _issue_tokens)
+    try:
+        flow = middleware._seal(
+            {'state': 's', 'verifier': 'v', 'nonce': 'n', 'next': '/graph'}
+        )
+        send = _Recorder()
+        await middleware(
+            _scope(
+                CALLBACK_PATH,
+                query=b'code=abc&state=s',
+                headers=[(b'cookie', f'{FLOW_COOKIE}={flow}'.encode())],
+            ),
+            None,
+            send,
+        )
+        assert send.status == 302
+        assert send.header(b'location') == b'/graph'
+        session_cookies = send.headers(b'set-cookie')
+        assert any(
+            cookie.decode('latin-1').startswith(f'{FLOW_COOKIE}=;')
+            for cookie in session_cookies
+        ), 'the flow cookie must be cleared on success'
+        assert any(
+            cookie.decode('latin-1').startswith(f'{SESSION_COOKIE}0=')
+            for cookie in session_cookies
+        ), 'a session cookie must be set on a successful callback'
+    finally:
+        monkeypatch.undo()
+
+
+@pytest.mark.anyio
 async def test_session_endpoint_never_returns_the_token():
     settings = _settings()
     middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=settings)
@@ -558,6 +627,63 @@ async def test_an_expired_session_without_a_refresh_token_is_discarded():
     )
     assert send.status == 302
     assert send.header(b'location') == b'/auth/login?next=/'
+
+
+@pytest.mark.anyio
+async def test_an_expired_session_with_a_refresh_token_is_silently_renewed():
+    """The refresh-token branch of __call__: an expired access token WITH a
+    refresh token must transparently mint a new session (forwarded with the
+    NEW access token, and a fresh session cookie set), not fall through to a
+    login redirect (WD10-C-MISC characterization, pre-refactor of __call__ --
+    no existing test drove this specific branch)."""
+    seen: dict = {}
+
+    async def app(scope, _receive, send):
+        seen['headers'] = scope['headers']
+        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
+        await send({'type': 'http.response.body', 'body': b'{}'})
+
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=_settings())
+    middleware.app = app
+
+    async def _refresh(form):
+        assert form['grant_type'] == 'refresh_token'
+        assert form['refresh_token'] == 'stale-refresh'
+        return {'access_token': 'fresh-token', 'refresh_token': 'new-refresh', 'expires_in': 300}
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(middleware, '_token_request', _refresh)
+    try:
+        sealed = middleware._seal(
+            {
+                'access_token': 'stale',
+                'refresh_token': 'stale-refresh',
+                'expires_at': time.time() - 1,
+            }
+        )
+        cookie = '; '.join(
+            raw.decode('latin-1').split(';', 1)[0]
+            for _n, raw in _session_cookie_headers(sealed, secure=False)
+        )
+        send = _Recorder()
+        await middleware(
+            _scope('/api/graph/stats', headers=[(b'cookie', cookie.encode())]),
+            None,
+            send,
+        )
+        authorization = [v for k, v in seen['headers'] if k.lower() == b'authorization']
+        assert authorization == [b'Bearer fresh-token'], (
+            'the refreshed access token must be forwarded, not the stale one'
+        )
+        # _forward injects the refreshed session cookie into the response.
+        set_cookie_names = {
+            raw.decode('latin-1').split('=', 1)[0] for raw in send.headers(b'set-cookie')
+        }
+        assert any(name.startswith(SESSION_COOKIE) for name in set_cookie_names), (
+            'a refreshed session cookie must be set on the forwarded response'
+        )
+    finally:
+        monkeypatch.undo()
 
 
 @pytest.fixture
