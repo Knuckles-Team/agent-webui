@@ -16,7 +16,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable
 from concurrent import futures as _futures
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from ipaddress import ip_address
 from pathlib import Path
@@ -241,112 +241,132 @@ def _log_failure(
     )
 
 
-def _atomic_private_write(target: Path, payload: bytes) -> None:
-    """Atomically write through a pinned directory without following links."""
+def _dir_fd_capable() -> bool:
+    """True when this platform offers openat-style directory descriptors."""
 
-    dir_fd_capable = all(
+    return all(
         function in os.supports_dir_fd for function in (os.open, os.stat, os.unlink)
     )
-    if not dir_fd_capable:
-        # Native Windows lacks openat-style directory descriptors. Preserve an
-        # atomic, no-follow final-component boundary with the platform APIs.
-        if target.is_symlink() or target.parent.is_symlink():
-            raise OSError('Refusing symbolic-link write target')
-        temp_path = target.parent / f'.{target.name}.{secrets.token_hex(8)}.tmp'
-        write_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        if hasattr(os, 'O_NOFOLLOW'):
-            write_flags |= os.O_NOFOLLOW
-        fd = -1
-        try:
-            fd = os.open(temp_path, write_flags, 0o600)
-            remaining = memoryview(payload)
-            while remaining:
-                written = os.write(fd, remaining)
-                if written <= 0:
-                    raise OSError('Unable to complete private write')
-                remaining = remaining[written:]
-            os.fsync(fd)
-            os.close(fd)
-            fd = -1
-            if target.is_symlink() or target.parent.is_symlink():
-                raise OSError('Write target changed during persistence')
-            os.replace(temp_path, target)
-            try:
-                os.chmod(target, 0o600)
-            except OSError:
-                pass
-            return
-        finally:
-            if fd >= 0:
-                os.close(fd)
-            temp_path.unlink(missing_ok=True)
 
-    parent_flags = os.O_RDONLY
-    if hasattr(os, 'O_DIRECTORY'):
-        parent_flags |= os.O_DIRECTORY
-    if hasattr(os, 'O_NOFOLLOW'):
-        parent_flags |= os.O_NOFOLLOW
-    parent_fd = os.open(target.parent, parent_flags)
-    parent_stat = os.fstat(parent_fd)
-    if not stat.S_ISDIR(parent_stat.st_mode):
-        os.close(parent_fd)
-        raise OSError('Write parent is not a directory')
 
-    temp_name = f'.{target.name}.{secrets.token_hex(8)}.tmp'
-    write_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, 'O_NOFOLLOW'):
-        write_flags |= os.O_NOFOLLOW
+def _optional_open_flags(base: int, *names: str) -> int:
+    """`base` OR-ed with whichever of `names` this platform's `os` defines."""
+
+    flags = base
+    for name in names:
+        if hasattr(os, name):
+            flags |= getattr(os, name)
+    return flags
+
+
+def _write_all(fd: int, payload: bytes) -> None:
+    """Write every byte of `payload` to `fd`, refusing a short/stalled write."""
+
+    remaining = memoryview(payload)
+    while remaining:
+        written = os.write(fd, remaining)
+        if written <= 0:
+            raise OSError('Unable to complete private write')
+        remaining = remaining[written:]
+
+
+def _atomic_private_write_pathwise(target: Path, payload: bytes) -> None:
+    """Path-API fallback for platforms without directory descriptors.
+
+    Native Windows lacks openat-style directory descriptors. Preserve an
+    atomic, no-follow final-component boundary with the platform APIs.
+    """
+
+    if target.is_symlink() or target.parent.is_symlink():
+        raise OSError('Refusing symbolic-link write target')
+    temp_path = target.parent / f'.{target.name}.{secrets.token_hex(8)}.tmp'
+    write_flags = _optional_open_flags(
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL, 'O_NOFOLLOW'
+    )
     fd = -1
     try:
-        try:
-            destination_stat = os.stat(
-                target.name,
-                dir_fd=parent_fd,
-                follow_symlinks=False,
-            )
-        except FileNotFoundError:
-            destination_stat = None
-        if destination_stat is not None and not stat.S_ISREG(destination_stat.st_mode):
-            raise OSError('Refusing non-regular write target')
+        fd = os.open(temp_path, write_flags, 0o600)
+        _write_all(fd, payload)
+        os.fsync(fd)
+        os.close(fd)
+        fd = -1
+        if target.is_symlink() or target.parent.is_symlink():
+            raise OSError('Write target changed during persistence')
+        os.replace(temp_path, target)
+        with contextlib.suppress(OSError):
+            os.chmod(target, 0o600)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        temp_path.unlink(missing_ok=True)
 
+
+def _open_pinned_write_parent(target: Path) -> int:
+    """Open `target`'s parent as a no-follow directory descriptor."""
+
+    parent_flags = _optional_open_flags(os.O_RDONLY, 'O_DIRECTORY', 'O_NOFOLLOW')
+    parent_fd = os.open(target.parent, parent_flags)
+    if not stat.S_ISDIR(os.fstat(parent_fd).st_mode):
+        os.close(parent_fd)
+        raise OSError('Write parent is not a directory')
+    return parent_fd
+
+
+def _refuse_non_regular_target(parent_fd: int, name: str) -> None:
+    """Reject a pre-existing `name` that is not a regular file."""
+
+    try:
+        destination_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(destination_stat.st_mode):
+        raise OSError('Refusing non-regular write target')
+
+
+def _atomic_private_write_at(parent_fd: int, name: str, payload: bytes) -> None:
+    """Write `payload` to `name` atomically, relative to a pinned parent fd."""
+
+    temp_name = f'.{name}.{secrets.token_hex(8)}.tmp'
+    write_flags = _optional_open_flags(
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL, 'O_NOFOLLOW'
+    )
+    fd = -1
+    try:
+        _refuse_non_regular_target(parent_fd, name)
         fd = os.open(temp_name, write_flags, 0o600, dir_fd=parent_fd)
-        remaining = memoryview(payload)
-        while remaining:
-            written = os.write(fd, remaining)
-            if written <= 0:
-                raise OSError('Unable to complete private write')
-            remaining = remaining[written:]
+        _write_all(fd, payload)
         os.fsync(fd)
         os.close(fd)
         fd = -1
         os.replace(
             temp_name,
-            target.name,
+            name,
             src_dir_fd=parent_fd,
             dst_dir_fd=parent_fd,
         )
-        try:
-            os.chmod(
-                target.name,
-                0o600,
-                dir_fd=parent_fd,
-                follow_symlinks=False,
-            )
-        except (NotImplementedError, OSError, ValueError):
-            # The temporary file was already created private. Some mounted or
-            # non-POSIX filesystems do not implement descriptor-relative chmod.
-            pass
-        try:
+        # The temporary file was already created private. Some mounted or
+        # non-POSIX filesystems do not implement descriptor-relative chmod.
+        with contextlib.suppress(NotImplementedError, OSError, ValueError):
+            os.chmod(name, 0o600, dir_fd=parent_fd, follow_symlinks=False)
+        with contextlib.suppress(OSError):
             os.fsync(parent_fd)
-        except OSError:
-            pass
     finally:
         if fd >= 0:
             os.close(fd)
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(temp_name, dir_fd=parent_fd)
-        except OSError:
-            pass
+
+
+def _atomic_private_write(target: Path, payload: bytes) -> None:
+    """Atomically write through a pinned directory without following links."""
+
+    if not _dir_fd_capable():
+        _atomic_private_write_pathwise(target, payload)
+        return
+    parent_fd = _open_pinned_write_parent(target)
+    try:
+        _atomic_private_write_at(parent_fd, target.name, payload)
+    finally:
         os.close(parent_fd)
 
 
@@ -505,6 +525,80 @@ def _redact_inline_secrets(value: Any, key: str = '') -> Any:
     return value
 
 
+def _bounded_external_scalar(value: Any, **_context: Any) -> Any:
+    """None/bool/int carry no shape to bound; they pass through unchanged."""
+
+    return value
+
+
+def _bounded_external_float(value: float, **_context: Any) -> float:
+    if not math.isfinite(value):
+        raise ValueError('Delegated result contains a non-finite number')
+    return value
+
+
+def _bounded_external_str(value: str, **_context: Any) -> str:
+    if len(value.encode('utf-8')) > _MAX_EXTERNAL_STRING_BYTES:
+        raise ValueError('Delegated result contains an oversized string')
+    return value
+
+
+def _bounded_external_mapping(
+    value: dict[Any, Any],
+    *,
+    depth: int,
+    budget: list[int],
+    truncate_lists: bool,
+) -> dict[str, Any]:
+    if len(value) > _MAX_EXTERNAL_COLLECTION_ITEMS:
+        raise ValueError('Delegated result contains an oversized mapping')
+    clean: dict[str, Any] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or len(key.encode('utf-8')) > 128:
+            raise ValueError('Delegated result contains an invalid mapping key')
+        clean[key] = _bounded_external_value(
+            item,
+            depth=depth + 1,
+            budget=budget,
+            truncate_lists=truncate_lists,
+        )
+    return clean
+
+
+def _bounded_external_sequence(
+    value: Any,
+    *,
+    depth: int,
+    budget: list[int],
+    truncate_lists: bool,
+) -> list[Any]:
+    items = list(value)
+    if len(items) > _MAX_EXTERNAL_COLLECTION_ITEMS:
+        if not truncate_lists:
+            raise ValueError('Delegated result contains an oversized collection')
+        items = items[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+    return [
+        _bounded_external_value(
+            item, depth=depth + 1, budget=budget, truncate_lists=truncate_lists
+        )
+        for item in items
+    ]
+
+
+# Ordered type dispatch for `_bounded_external_value`. `bool` precedes `int`
+# only for readability (both pass straight through), and `float`/`str` are
+# disjoint from both, so the order encodes no hidden precedence beyond
+# "containers last".
+_BOUNDED_EXTERNAL_HANDLERS: tuple[tuple[Any, Any], ...] = (
+    (bool, _bounded_external_scalar),
+    (int, _bounded_external_scalar),
+    (float, _bounded_external_float),
+    (str, _bounded_external_str),
+    (dict, _bounded_external_mapping),
+    ((list, tuple, set, frozenset), _bounded_external_sequence),
+)
+
+
 def _bounded_external_value(
     value: Any,
     *,
@@ -538,43 +632,16 @@ def _bounded_external_value(
     if budget[0] > _MAX_EXTERNAL_NODES or depth > _MAX_EXTERNAL_DEPTH:
         raise ValueError('Delegated result exceeds its structural safety bound')
 
-    if value is None or isinstance(value, (bool, int)):
+    if value is None:
         return value
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError('Delegated result contains a non-finite number')
-        return value
-    if isinstance(value, str):
-        encoded = value.encode('utf-8')
-        if len(encoded) > _MAX_EXTERNAL_STRING_BYTES:
-            raise ValueError('Delegated result contains an oversized string')
-        return value
-    if isinstance(value, dict):
-        if len(value) > _MAX_EXTERNAL_COLLECTION_ITEMS:
-            raise ValueError('Delegated result contains an oversized mapping')
-        clean: dict[str, Any] = {}
-        for key, item in value.items():
-            if not isinstance(key, str) or len(key.encode('utf-8')) > 128:
-                raise ValueError('Delegated result contains an invalid mapping key')
-            clean[key] = _bounded_external_value(
-                item,
-                depth=depth + 1,
+    for types, handler in _BOUNDED_EXTERNAL_HANDLERS:
+        if isinstance(value, types):
+            return handler(
+                value,
+                depth=depth,
                 budget=budget,
                 truncate_lists=truncate_lists,
             )
-        return clean
-    if isinstance(value, (list, tuple, set, frozenset)):
-        items = list(value)
-        if len(items) > _MAX_EXTERNAL_COLLECTION_ITEMS:
-            if not truncate_lists:
-                raise ValueError('Delegated result contains an oversized collection')
-            items = items[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        return [
-            _bounded_external_value(
-                item, depth=depth + 1, budget=budget, truncate_lists=truncate_lists
-            )
-            for item in items
-        ]
     raise ValueError('Delegated result contains an unsupported value')
 
 
@@ -606,6 +673,57 @@ _MCP_UI_CSP_DOMAIN_FIELDS = (
 _MCP_UI_PERMISSION_FIELDS = ('camera', 'microphone', 'geolocation', 'clipboardWrite')
 
 
+def _ui_meta_visibility(ui: dict[str, Any]) -> Any:
+    visibility = ui.get('visibility')
+    if not isinstance(visibility, list):
+        return None
+    return [v for v in visibility if v in ('app', 'model')] or None
+
+
+def _ui_meta_csp(ui: dict[str, Any]) -> Any:
+    csp = ui.get('csp')
+    if not isinstance(csp, dict):
+        return None
+    return {
+        field: [domain for domain in csp[field] if isinstance(domain, str)]
+        for field in _MCP_UI_CSP_DOMAIN_FIELDS
+        if isinstance(csp.get(field), list)
+    } or None
+
+
+def _ui_meta_permissions(ui: dict[str, Any]) -> Any:
+    permissions = ui.get('permissions')
+    if not isinstance(permissions, dict):
+        return None
+    return {
+        field: {}
+        for field in _MCP_UI_PERMISSION_FIELDS
+        if isinstance(permissions.get(field), dict)
+    } or None
+
+
+def _ui_meta_domain(ui: dict[str, Any]) -> Any:
+    domain = ui.get('domain')
+    return domain if isinstance(domain, str) and domain else None
+
+
+def _ui_meta_prefers_border(ui: dict[str, Any]) -> Any:
+    prefers_border = ui.get('prefersBorder')
+    return prefers_border if isinstance(prefers_border, bool) else None
+
+
+# Dispatch table for the OPTIONAL half of `McpUiMeta`. Each extractor returns
+# the validated value for its field or `None` for "the server did not declare
+# a usable one", so only the known fields can ever reach the API response.
+_MCP_UI_OPTIONAL_FIELDS: tuple[tuple[str, Callable[[dict[str, Any]], Any]], ...] = (
+    ('visibility', _ui_meta_visibility),
+    ('csp', _ui_meta_csp),
+    ('permissions', _ui_meta_permissions),
+    ('domain', _ui_meta_domain),
+    ('prefersBorder', _ui_meta_prefers_border),
+)
+
+
 def _public_tool_ui_meta(meta: Any) -> dict[str, Any] | None:
     """Shape-validate one tool's declared MCP Apps UI binding (``meta['ui']``).
 
@@ -624,8 +742,9 @@ def _public_tool_ui_meta(meta: Any) -> dict[str, Any] | None:
     Everything else here is untrusted server metadata (the docstrings in
     ``mcp-apps/policy.ts`` and ``McpAppFrame.tsx`` already treat it that way
     on the client): only the known ``McpUiMeta`` fields are passed through,
-    each individually type-checked, so a malformed or hostile ``meta['ui']``
-    cannot smuggle arbitrary extra keys into the API response.
+    each individually type-checked by its ``_MCP_UI_OPTIONAL_FIELDS``
+    extractor, so a malformed or hostile ``meta['ui']`` cannot smuggle
+    arbitrary extra keys into the API response.
     """
     if not isinstance(meta, dict):
         return None
@@ -637,41 +756,10 @@ def _public_tool_ui_meta(meta: Any) -> dict[str, Any] | None:
         return None
 
     result: dict[str, Any] = {'resourceUri': resource_uri}
-
-    visibility = ui.get('visibility')
-    if isinstance(visibility, list):
-        allowed_visibility = [v for v in visibility if v in ('app', 'model')]
-        if allowed_visibility:
-            result['visibility'] = allowed_visibility
-
-    csp = ui.get('csp')
-    if isinstance(csp, dict):
-        clean_csp = {
-            field: [domain for domain in csp[field] if isinstance(domain, str)]
-            for field in _MCP_UI_CSP_DOMAIN_FIELDS
-            if isinstance(csp.get(field), list)
-        }
-        if clean_csp:
-            result['csp'] = clean_csp
-
-    permissions = ui.get('permissions')
-    if isinstance(permissions, dict):
-        clean_permissions: dict[str, dict[str, str]] = {
-            field: {}
-            for field in _MCP_UI_PERMISSION_FIELDS
-            if isinstance(permissions.get(field), dict)
-        }
-        if clean_permissions:
-            result['permissions'] = clean_permissions
-
-    domain = ui.get('domain')
-    if isinstance(domain, str) and domain:
-        result['domain'] = domain
-
-    prefers_border = ui.get('prefersBorder')
-    if isinstance(prefers_border, bool):
-        result['prefersBorder'] = prefers_border
-
+    for field_name, extract in _MCP_UI_OPTIONAL_FIELDS:
+        field_value = extract(ui)
+        if field_value is not None:
+            result[field_name] = field_value
     return {'ui': result}
 
 
@@ -800,15 +888,14 @@ def _bounded_query_params(value: Any) -> dict[str, Any]:
     return bounded
 
 
-def _workspace_ingestion_source(source: Any) -> str:
-    """Confine direct KB ingestion to a relative path in the workspace.
+def _require_local_kb_source(source: Any) -> str:
+    """Validate that a KB source is a bounded, relative, in-workspace path.
 
     Network sources need a separately governed fetch connector so redirects,
     DNS changes, address ranges, response size, and credentials can be checked
     at the transport boundary. This WebUI route deliberately does not fetch
     caller-selected URLs itself.
     """
-
     if not isinstance(source, str) or not source.strip():
         raise HTTPException(status_code=400, detail='KB source is required')
     candidate = source.strip()
@@ -820,23 +907,36 @@ def _workspace_ingestion_source(source: Any) -> str:
             status_code=400,
             detail='Remote KB sources require a governed ingestion connector',
         )
-    target = resolve_workspace_file(candidate)
-    if target.exists() and target.is_dir():
-        entries_seen = 0
-        for root, dirs, files in os.walk(target, followlinks=False):
-            for name in [*dirs, *files]:
-                entries_seen += 1
-                if entries_seen > _MAX_LIST_FILES:
-                    raise HTTPException(
-                        status_code=400,
-                        detail='KB source tree exceeds its file limit',
-                    )
-                if (Path(root) / name).is_symlink():
-                    raise HTTPException(
-                        status_code=400,
-                        detail='KB source tree cannot contain symbolic links',
-                    )
-    elif target.exists() and not target.is_file():
+    return candidate
+
+
+def _assert_ingestible_tree(target: Path) -> None:
+    """Refuse a KB source tree that is too large or contains a symbolic link."""
+    entries_seen = 0
+    for root, dirs, files in os.walk(target, followlinks=False):
+        for name in (*dirs, *files):
+            entries_seen += 1
+            if entries_seen > _MAX_LIST_FILES:
+                raise HTTPException(
+                    status_code=400,
+                    detail='KB source tree exceeds its file limit',
+                )
+            if (Path(root) / name).is_symlink():
+                raise HTTPException(
+                    status_code=400,
+                    detail='KB source tree cannot contain symbolic links',
+                )
+
+
+def _workspace_ingestion_source(source: Any) -> str:
+    """Confine direct KB ingestion to a relative path in the workspace."""
+
+    target = resolve_workspace_file(_require_local_kb_source(source))
+    if not target.exists():
+        return str(target)
+    if target.is_dir():
+        _assert_ingestible_tree(target)
+    elif not target.is_file():
         raise HTTPException(status_code=400, detail='KB source type is unsupported')
     return str(target)
 
@@ -1187,6 +1287,17 @@ def resolve_prompt_file(name: str) -> Path:
     return target
 
 
+def _refuse_symlinked_components(base: Path, supplied: Path) -> None:
+    """Reject a path whose every component is not a real directory entry."""
+    cursor = base
+    for part in supplied.parts:
+        cursor /= part
+        if cursor.is_symlink():
+            raise HTTPException(
+                status_code=400, detail='Symbolic links are not allowed'
+            )
+
+
 def resolve_workspace_file(
     relative_path: str, *, allow_workspace_root: bool = False
 ) -> Path:
@@ -1205,15 +1316,8 @@ def resolve_workspace_file(
         raise HTTPException(status_code=400, detail='Path traversal not allowed')
 
     base = get_workspace_dir().resolve()
-    lexical_target = base / supplied
-    cursor = base
-    for part in supplied.parts:
-        cursor /= part
-        if cursor.is_symlink():
-            raise HTTPException(
-                status_code=400, detail='Symbolic links are not allowed'
-            )
-    target = lexical_target.resolve()
+    _refuse_symlinked_components(base, supplied)
+    target = (base / supplied).resolve()
     try:
         target.relative_to(base)
     except ValueError as exc:
@@ -1833,18 +1937,22 @@ async def _batch_toggle_states(
     except Exception as e:
         _log_toggle_batch_failure(item_type, e)
         return {}, False
+    return _toggle_states_from_rows(res, pref_to_item), True
+
+
+def _toggle_states_from_rows(
+    rows: Any, pref_to_item: dict[str, str]
+) -> dict[str, bool]:
+    """Map `:Preference` rows back onto the item ids the caller asked about."""
     states: dict[str, bool] = {}
-    for row in res or []:
+    for row in rows or []:
         if not isinstance(row, dict):
             continue
-        row_id = row.get('id')
-        if not isinstance(row_id, str):
-            continue
-        item_id = pref_to_item.get(row_id)
+        item_id = pref_to_item.get(row.get('id'))
         if item_id is None:
             continue
         states[item_id] = row.get('value') == 'enabled'
-    return states, True
+    return states
 
 
 async def _batch_toggle_states_many(
@@ -1934,6 +2042,147 @@ _FLEET_CATALOG_TOTAL_DEADLINE_SECONDS = 30.0
 # round trips for nothing (measured: 21s for /api/enhanced/tools).
 
 
+@dataclass(frozen=True)
+class _FleetCatalogRead:
+    """Authority + timing context shared by every kind of ONE catalog read."""
+
+    tenant: Any
+    principal: Any
+    grant_digests: Any
+    engine: Any
+    loop: Any
+    started: float
+
+    def remaining(self) -> float:
+        """Seconds left in the whole multi-kind budget."""
+        return _FLEET_CATALOG_TOTAL_DEADLINE_SECONDS - (self.loop.time() - self.started)
+
+    def call_kwargs(self, remaining_total: float) -> dict[str, Any]:
+        """The authority/deadline kwargs every registry_api read call takes."""
+        return {
+            'tenant': self.tenant,
+            'principal': self.principal,
+            'grant_digests': self.grant_digests,
+            'query': '',
+            'engine': self.engine,
+            'deadline': min(_FLEET_CATALOG_DEADLINE_SECONDS, remaining_total),
+        }
+
+
+async def _fleet_catalog_authority() -> _FleetCatalogRead | None:
+    """Resolve the catalog authority + engine, or ``None`` if unreachable."""
+    from agent_utilities.gateway.registry_api import (
+        _get_catalog_engine,
+        _require_catalog_authority,
+    )
+
+    try:
+        tenant, principal, grant_digests = _require_catalog_authority(
+            require_discovery_binding=True
+        )
+        engine = _get_catalog_engine()
+    except Exception as exc:
+        _log_failure('fleet_catalog_authority', exc)
+        return None
+    loop = asyncio.get_running_loop()
+    return _FleetCatalogRead(
+        tenant=tenant,
+        principal=principal,
+        grant_digests=grant_digests,
+        engine=engine,
+        loop=loop,
+        started=loop.time(),
+    )
+
+
+async def _fleet_catalog_record_total(
+    ctx: _FleetCatalogRead, kind: str, remaining_total: float
+) -> None:
+    """Record the real row total for a kind that stopped at the render bound.
+
+    ONE pushed-down ``COUNT(*)`` (`_authorized_count`, the same
+    authority/filter predicate the page read used) gives the caller the real
+    total so it can say "showing 256 of 841" instead of presenting a truncated
+    list as the whole catalog. The rows are already read and good, so a failed
+    COUNT must degrade to "total unknown", never discard the kind -- which is
+    what the caller's `except` would do if this were allowed to propagate.
+    """
+    from agent_utilities.gateway.registry_api import _authorized_count
+
+    try:
+        _set_fleet_catalog_total(
+            kind,
+            await _invoke_governed_helper(
+                _authorized_count, kind, **ctx.call_kwargs(remaining_total)
+            ),
+        )
+    except Exception as exc:
+        _log_failure(f'fleet_catalog_{kind}_total', exc)
+
+
+async def _fleet_catalog_rows(
+    ctx: _FleetCatalogRead, kind: str, spec: Any
+) -> list[dict[str, Any]]:
+    """Walk one kind's keyset pages until drained, bounded, or out of budget.
+
+    registry_api pushes LIMIT/keyset/filter/authz into SQL, so a page
+    transfers only its own rows. Walk the keyset until the catalog is
+    exhausted rather than asking for the whole table.
+    """
+    from agent_utilities.gateway.registry_api import (
+        _MAX_LIMIT,
+        _authorized_page,
+        _row_key,
+    )
+
+    rows: list[dict[str, Any]] = []
+    after: tuple[str, str] | None = None
+    while True:
+        remaining_total = ctx.remaining()
+        if remaining_total <= 0:
+            raise TimeoutError('overall fleet catalog deadline exceeded')
+        page = await _invoke_governed_helper(
+            _authorized_page,
+            kind,
+            after=after,
+            limit=_MAX_LIMIT,
+            **ctx.call_kwargs(remaining_total),
+        )
+        if not page:
+            break
+        rows.extend(page)
+        if len(page) < _MAX_LIMIT:
+            # Drained: the row count IS the total, for free.
+            _set_fleet_catalog_total(kind, len(rows))
+            break
+        if len(rows) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            # Stopped at the render bound with rows still unread. Never leave
+            # that silent; only a kind that actually hit the bound pays for it.
+            await _fleet_catalog_record_total(ctx, kind, remaining_total)
+            break
+        after = _row_key(spec, page[-1])
+    return rows
+
+
+async def _fleet_catalog_kind(
+    ctx: _FleetCatalogRead, kind: str
+) -> list[dict[str, Any]] | None:
+    """Read ONE kind. Independent degradation: this kind failing must not
+    discard earlier/later kinds, so any failure returns ``None`` rather than
+    propagating -- including a per-call 503 (capacity exhausted / deadline
+    exceeded from `_invoke_governed_helper`), which used to kill the WHOLE
+    multi-kind read."""
+    from agent_utilities.gateway.registry_api import _KIND_SPECS, _validate_item
+
+    spec = _KIND_SPECS[kind]
+    try:
+        rows = await _fleet_catalog_rows(ctx, kind, spec)
+        return [_validate_item(kind, spec.model, row).model_dump() for row in rows]
+    except Exception as exc:
+        _log_failure(f'fleet_catalog_{kind}', exc)
+        return None
+
+
 async def _read_fleet_catalog(
     *kinds: str,
 ) -> dict[str, list[dict[str, Any]] | None] | None:
@@ -1971,121 +2220,15 @@ async def _read_fleet_catalog(
     is unchanged); the new per-kind ``None`` granularity is additive, for
     the partial-failure case that previously discarded healthy kinds.
     """
-    from agent_utilities.gateway.registry_api import (
-        _KIND_SPECS,
-        _MAX_LIMIT,
-        CatalogUnavailable,
-        _authorized_count,
-        _authorized_page,
-        _get_catalog_engine,
-        _require_catalog_authority,
-        _row_key,
-        _validate_item,
-    )
-
-    try:
-        tenant, principal, grant_digests = _require_catalog_authority(
-            require_discovery_binding=True
-        )
-        engine = _get_catalog_engine()
-    except PermissionError as exc:
-        _log_failure('fleet_catalog_authority', exc)
+    ctx = await _fleet_catalog_authority()
+    if ctx is None:
         return None
-    except Exception as exc:
-        _log_failure('fleet_catalog_authority', exc)
-        return None
-
-    loop = asyncio.get_running_loop()
-    started = loop.time()
-
     result: dict[str, list[dict[str, Any]] | None] = dict.fromkeys(kinds)
     for kind in kinds:
-        remaining_total = _FLEET_CATALOG_TOTAL_DEADLINE_SECONDS - (
-            loop.time() - started
-        )
-        if remaining_total <= 0:
+        if ctx.remaining() <= 0:
             _log_failure(f'fleet_catalog_{kind}_total_budget', TimeoutError(kind))
             continue  # Leaves result[kind] at its `None` default.
-        spec = _KIND_SPECS[kind]
-        try:
-            # registry_api pushes LIMIT/keyset/filter/authz into SQL, so a
-            # page transfers only its own rows. Walk the keyset until the
-            # catalog is exhausted rather than asking for the whole table.
-            rows: list[dict[str, Any]] = []
-            after: tuple[str, str] | None = None
-            while True:
-                remaining_total = _FLEET_CATALOG_TOTAL_DEADLINE_SECONDS - (
-                    loop.time() - started
-                )
-                if remaining_total <= 0:
-                    raise TimeoutError('overall fleet catalog deadline exceeded')
-                page = await _invoke_governed_helper(
-                    _authorized_page,
-                    kind,
-                    tenant=tenant,
-                    principal=principal,
-                    grant_digests=grant_digests,
-                    query='',
-                    after=after,
-                    limit=_MAX_LIMIT,
-                    engine=engine,
-                    deadline=min(_FLEET_CATALOG_DEADLINE_SECONDS, remaining_total),
-                )
-                if not page:
-                    break
-                rows.extend(page)
-                if len(page) < _MAX_LIMIT:
-                    # Drained: the row count IS the total, for free.
-                    _set_fleet_catalog_total(kind, len(rows))
-                    break
-                if len(rows) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                    # Stopped at the render bound with rows still unread.
-                    # Never leave that silent: ONE pushed-down `COUNT(*)`
-                    # (`_authorized_count`, the same authority/filter
-                    # predicate the page read used) gives the caller the real
-                    # total so it can say "showing 256 of 841" instead of
-                    # presenting a truncated list as the whole catalog. Only
-                    # a kind that actually hit the bound pays for it.
-                    try:
-                        _set_fleet_catalog_total(
-                            kind,
-                            await _invoke_governed_helper(
-                                _authorized_count,
-                                kind,
-                                tenant=tenant,
-                                principal=principal,
-                                grant_digests=grant_digests,
-                                query='',
-                                engine=engine,
-                                deadline=min(
-                                    _FLEET_CATALOG_DEADLINE_SECONDS,
-                                    remaining_total,
-                                ),
-                            ),
-                        )
-                    except Exception as exc:
-                        # The rows are already read and good. A failed COUNT
-                        # must degrade to "total unknown", never discard the
-                        # kind -- that is what the enclosing `except` would
-                        # do if this were allowed to propagate.
-                        _log_failure(f'fleet_catalog_{kind}_total', exc)
-                    break
-                after = _row_key(spec, page[-1])
-            result[kind] = [
-                _validate_item(kind, spec.model, row).model_dump() for row in rows
-            ]
-        except CatalogUnavailable as exc:
-            _log_failure(f'fleet_catalog_{kind}', exc)
-            # Independent degradation: this kind failed, but earlier/later
-            # kinds must not be discarded because of it (result[kind] stays
-            # `None`, the rest of the loop continues).
-        except HTTPException as exc:
-            _log_failure(f'fleet_catalog_{kind}', exc)
-            # A per-call 503 (capacity exhausted / deadline exceeded from
-            # `_invoke_governed_helper`) used to propagate and kill the
-            # WHOLE multi-kind read. Degrade just this one kind instead.
-        except Exception as exc:
-            _log_failure(f'fleet_catalog_{kind}', exc)
+        result[kind] = await _fleet_catalog_kind(ctx, kind)
     return result
 
 
@@ -2840,6 +2983,75 @@ def _public_mcp_tool_entry(
     return None
 
 
+def _validate_mcp_tool_page_request(server_name: str, offset: int, limit: int) -> None:
+    """Validate the server name and page window for a tool-page request."""
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
+        raise HTTPException(status_code=400, detail='Invalid MCP server name')
+    if offset < 0:
+        raise HTTPException(status_code=400, detail='offset must not be negative')
+    if not 1 <= limit <= _MCP_TOOL_PAGE_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f'limit must be between 1 and {_MCP_TOOL_PAGE_MAX}',
+        )
+
+
+def _sorted_named_tools(tools: Any) -> list[tuple[str, str, dict[str, Any]]]:
+    """Order the WHOLE delegated list (stable across pages) before paging.
+
+    Nothing here walks a tool's payload -- only its already-validated name --
+    so an oversized fleet list costs a sort, not a bounding walk over ~1,131
+    schemas.
+    """
+    named: list[tuple[str, str, dict[str, Any]]] = []
+    for t in tools:
+        if not isinstance(t, dict):
+            continue
+        tool_name = str(t.get('name') or '')
+        if not _SAFE_DELEGATION_TOKEN.fullmatch(tool_name):
+            continue
+        named.append((tool_name.lower(), tool_name, t))
+    named.sort(key=lambda item: (item[0], item[1]))
+    return named
+
+
+def _enriched_mcp_tool_page(
+    page: list[tuple[str, str, dict[str, Any]]],
+    server_name: str,
+    toggle_states: dict[str, bool],
+) -> tuple[list[dict[str, Any]], int]:
+    """Shape one page of tools, counting the descriptors that had to be dropped."""
+    enriched_tools: list[dict[str, Any]] = []
+    dropped = 0
+    for _key, tool_name, raw in page:
+        entry = _public_mcp_tool_entry(
+            raw,
+            tool_name,
+            enabled=toggle_states.get(f'{server_name}:{tool_name}', True),
+        )
+        if entry is None:
+            dropped += 1
+            continue
+        enriched_tools.append(entry)
+    return enriched_tools, dropped
+
+
+def _toggle_status_envelope(toggles_ok: bool) -> dict[str, Any]:
+    """The toggle-preference provenance block returned with a tool page."""
+    return {
+        'source': 'kg_preferences',
+        'error': (
+            None
+            if toggles_ok
+            else (
+                'The tool toggle-preference read failed; every tool '
+                'below defaults to "enabled" and may not reflect the '
+                'real persisted preference.'
+            )
+        ),
+    }
+
+
 @router.get('/mcp/servers/{server_name}/tools')
 async def list_mcp_server_tools(
     server_name: str,
@@ -2867,15 +3079,7 @@ async def list_mcp_server_tools(
     """
 
     engine = await _get_engine_bounded()
-    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
-        raise HTTPException(status_code=400, detail='Invalid MCP server name')
-    if offset < 0:
-        raise HTTPException(status_code=400, detail='offset must not be negative')
-    if not 1 <= limit <= _MCP_TOOL_PAGE_MAX:
-        raise HTTPException(
-            status_code=400,
-            detail=f'limit must be between 1 and {_MCP_TOOL_PAGE_MAX}',
-        )
+    _validate_mcp_tool_page_request(server_name, offset, limit)
     delegated_inventory = get_helper('list_mcp_server_tools')
     if delegated_inventory is None:
         raise HTTPException(
@@ -2892,19 +3096,7 @@ async def list_mcp_server_tools(
         if not isinstance(tools, list):
             raise ValueError('Governed MCP inventory returned an invalid shape')
 
-        # Order the WHOLE list first (stable across pages), THEN cut the page.
-        # Nothing here walks a tool's payload -- only its already-validated
-        # name -- so an oversized fleet list costs a sort, not a bounding
-        # walk over ~1,131 schemas.
-        named: list[tuple[str, str, dict[str, Any]]] = []
-        for t in tools:
-            if not isinstance(t, dict):
-                continue
-            tool_name = str(t.get('name') or '')
-            if not _SAFE_DELEGATION_TOKEN.fullmatch(tool_name):
-                continue
-            named.append((tool_name.lower(), tool_name, t))
-        named.sort(key=lambda item: (item[0], item[1]))
+        named = _sorted_named_tools(tools)
         total = len(named)
         page = named[offset : offset + limit]
 
@@ -2912,19 +3104,9 @@ async def list_mcp_server_tools(
         toggle_states, toggles_ok = await _batch_toggle_states(
             engine, 'mcp_tool', toggle_ids
         )
-
-        enriched_tools: list[dict[str, Any]] = []
-        dropped = 0
-        for _key, tool_name, raw in page:
-            entry = _public_mcp_tool_entry(
-                raw,
-                tool_name,
-                enabled=toggle_states.get(f'{server_name}:{tool_name}', True),
-            )
-            if entry is None:
-                dropped += 1
-                continue
-            enriched_tools.append(entry)
+        enriched_tools, dropped = _enriched_mcp_tool_page(
+            page, server_name, toggle_states
+        )
         return {
             'server': server_name,
             'tools': enriched_tools,
@@ -2936,18 +3118,7 @@ async def list_mcp_server_tools(
             # counted here rather than just vanishing from `tools`.
             'dropped': dropped,
             'has_more': offset + len(page) < total,
-            'toggle_status': {
-                'source': 'kg_preferences',
-                'error': (
-                    None
-                    if toggles_ok
-                    else (
-                        'The tool toggle-preference read failed; every tool '
-                        'below defaults to "enabled" and may not reflect the '
-                        'real persisted preference.'
-                    )
-                ),
-            },
+            'toggle_status': _toggle_status_envelope(toggles_ok),
         }
 
     except HTTPException:
@@ -3228,12 +3399,7 @@ async def read_mcp_app_resource_route(data: dict[str, Any]) -> dict[str, Any]:
     deliberately returns it as JSON rather than as an HTML response so it can
     never be navigated to directly and inherit this origin.
     """
-    server_name = str(data.get('server') or '')
-    uri = str(data.get('uri') or '')
-    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
-        raise HTTPException(status_code=400, detail='Invalid MCP server name')
-    if not _SAFE_MCP_APP_URI.fullmatch(uri):
-        raise HTTPException(status_code=400, detail='Invalid MCP app resource URI')
+    server_name, uri = _mcp_app_resource_request(data)
 
     delegated_read = get_helper('read_mcp_resource')
     if delegated_read is None:
@@ -3255,6 +3421,22 @@ async def read_mcp_app_resource_route(data: dict[str, Any]) -> dict[str, Any]:
         _log_failure('mcp_resource_delegation', e)
         raise HTTPException(status_code=502, detail='MCP resource read failed') from e
 
+    return {'status': 'success', 'result': _mcp_app_resource_result(resource, uri)}
+
+
+def _mcp_app_resource_request(data: dict[str, Any]) -> tuple[str, str]:
+    """Validate the ``{server, uri}`` of an MCP App resource read."""
+    server_name = str(data.get('server') or '')
+    uri = str(data.get('uri') or '')
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
+        raise HTTPException(status_code=400, detail='Invalid MCP server name')
+    if not _SAFE_MCP_APP_URI.fullmatch(uri):
+        raise HTTPException(status_code=400, detail='Invalid MCP app resource URI')
+    return server_name, uri
+
+
+def _mcp_app_resource_result(resource: Any, uri: str) -> dict[str, Any]:
+    """Shape a delegated ``ui://`` resource into the route's result body."""
     if not isinstance(resource, dict):
         raise HTTPException(status_code=502, detail='MCP resource read failed')
     html = resource.get('text', resource.get('html'))
@@ -3262,12 +3444,9 @@ async def read_mcp_app_resource_route(data: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail='MCP resource carried no text')
     mime_type = resource.get('mimeType') or resource.get('mime_type') or 'text/html'
     return {
-        'status': 'success',
-        'result': {
-            'uri': uri,
-            'html': html,
-            'mimeType': str(mime_type),
-        },
+        'uri': uri,
+        'html': html,
+        'mimeType': str(mime_type),
     }
 
 
@@ -3555,6 +3734,53 @@ async def get_cron_logs() -> list[dict[str, Any]]:
         return []
 
 
+_TEXTUAL_UPLOAD_SUFFIXES = frozenset(
+    {'.csv', '.json', '.md', '.rst', '.txt', '.yaml', '.yml'}
+)
+
+
+def _upload_basename(file: UploadFile) -> str:
+    """The validated basename of a browser upload.
+
+    Browser uploads are single files. Reject path-bearing names instead of
+    silently rewriting them, including Windows separators on POSIX hosts.
+    """
+    if file.filename is None or not file.filename.strip():
+        raise HTTPException(status_code=400, detail='Filename is missing')
+    filename = file.filename.strip()
+    if Path(filename).name != filename or '\\' in filename or filename in {'.', '..'}:
+        raise HTTPException(
+            status_code=400, detail='Upload filename must be a basename'
+        )
+    return filename
+
+
+def _is_textual_upload(media_type: str, file_path: Path) -> bool:
+    """True when the persistence guard applies to this upload.
+
+    Binary formats require a format-aware ingestion connector and remain
+    opaque here.
+    """
+    return (
+        media_type.startswith('text/')
+        or file_path.suffix.lower() in _TEXTUAL_UPLOAD_SUFFIXES
+    )
+
+
+def _assert_upload_privacy_safe(payload: bytes) -> None:
+    """Apply the persistence privacy guard to a textual upload."""
+    try:
+        decoded = payload.decode('utf-8')
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail='Text upload is not UTF-8') from exc
+    _safe_content, privacy_report = sanitize_for_persistence(decoded)
+    if privacy_report.changed:
+        raise HTTPException(
+            status_code=400,
+            detail='Upload violates the persistence privacy boundary',
+        )
+
+
 @router.post('/upload')
 async def upload_file(file: Annotated[UploadFile, File()]) -> dict[str, str]:
     """Store one bounded upload atomically inside the configured workspace.
@@ -3565,15 +3791,7 @@ async def upload_file(file: Annotated[UploadFile, File()]) -> dict[str, str]:
     Returns:
         Confirmation containing the saved filename.
     """
-    if file.filename is None or not file.filename.strip():
-        raise HTTPException(status_code=400, detail='Filename is missing')
-    filename = file.filename.strip()
-    # Browser uploads are single files. Reject path-bearing names instead of
-    # silently rewriting them, including Windows separators on POSIX hosts.
-    if Path(filename).name != filename or '\\' in filename or filename in {'.', '..'}:
-        raise HTTPException(
-            status_code=400, detail='Upload filename must be a basename'
-        )
+    filename = _upload_basename(file)
     file_path = resolve_workspace_file(filename)
     limit = _upload_limit()
     payload = bytearray()
@@ -3585,30 +3803,9 @@ async def upload_file(file: Annotated[UploadFile, File()]) -> dict[str, str]:
     finally:
         await file.close()
 
-    # Apply the persistence guard to textual uploads. Binary formats require a
-    # format-aware ingestion connector and remain opaque here.
     media_type = (file.content_type or '').split(';', 1)[0].strip().lower()
-    if media_type.startswith('text/') or file_path.suffix.lower() in {
-        '.csv',
-        '.json',
-        '.md',
-        '.rst',
-        '.txt',
-        '.yaml',
-        '.yml',
-    }:
-        try:
-            decoded = payload.decode('utf-8')
-        except UnicodeDecodeError as exc:
-            raise HTTPException(
-                status_code=400, detail='Text upload is not UTF-8'
-            ) from exc
-        _safe_content, privacy_report = sanitize_for_persistence(decoded)
-        if privacy_report.changed:
-            raise HTTPException(
-                status_code=400,
-                detail='Upload violates the persistence privacy boundary',
-            )
+    if _is_textual_upload(media_type, file_path):
+        _assert_upload_privacy_safe(bytes(payload))
 
     _atomic_private_write(file_path, bytes(payload))
     return {'filename': filename}
@@ -3991,61 +4188,77 @@ def _graph_union_executor(engine: Any) -> Any:
         use_session,
     )
 
+    def _commons_pushdown(
+        graph_name: str, cypher: str, params: dict[str, Any] | None, session: Any
+    ) -> tuple[str, dict[str, Any]]:
+        """Push the commons READ catalog restriction INTO the query text.
+
+        (2026-08-09 owner ruling; `COMMONS_SHAREABLE_NODE_TYPES`) so the engine
+        filters, not this process -- `read_union`/`filter_commons_catalog` were
+        built for a post-hoc Python filter, but that pulls every commons row
+        over the wire first. `apply_commons_catalog_restriction` is the
+        companion primitive built for exactly this pushdown (its own docstring:
+        "closes the label/type-index half of the existence-leak... injected
+        into the query TEXT"). Best-effort: a query shape it can't inject into
+        (no bound variable, `UnscopableQueryError`, or any other failure)
+        leaves the cypher unchanged and is caught by the row-level fallback --
+        this must never fail OPEN.
+        """
+        from agent_utilities.knowledge_graph.core.tenant_sharing import (
+            apply_commons_catalog_restriction,
+        )
+
+        try:
+            exec_cypher, extra_params = apply_commons_catalog_restriction(
+                cypher, session.actor, graph_name
+            )
+        except Exception as exc:  # noqa: BLE001 — pushdown is best-effort; the row-level fallback is the safety net
+            _log_failure('graph_union.commons_restriction', exc, level=logging.DEBUG)
+            return cypher, dict(params or {})
+        exec_params = dict(params or {})
+        exec_params.update(extra_params)
+        return exec_cypher, exec_params
+
+    def _run_scoped(
+        graph_name: str, session: Any, exec_cypher: str, exec_params: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Read `graph_name`, retargeting BOTH the view and the session together.
+
+        `query=`/`params=` are passed as KEYWORDS, not positionally: the real
+        `QueryMixin.query_cypher(self, query, params=None, ...)` signature
+        (`engine_query.py:137`) binds either way, but this route is pinned to
+        the `query` keyword specifically (see
+        `test_execute_cypher_forwards_the_query_text_under_the_query_keyword`)
+        to distinguish it from the MCP tool surface's `cypher`-named field --
+        a future accidental rename to `cypher=` must fail loudly here, which a
+        positional call would silently paper over.
+        """
+        if session is None or graph_name == session.graph:
+            return list(
+                engine.query_cypher(query=exec_cypher, params=exec_params) or []
+            )
+        scoped_engine = engine.for_graph(graph_name)
+        with use_session(session.with_graph(graph_name)):
+            return list(
+                scoped_engine.query_cypher(query=exec_cypher, params=exec_params) or []
+            )
+
     def _execute(
         graph_name: str, cypher: str, params: dict[str, Any] | None
     ) -> list[dict[str, Any]]:
-        session = current_session()
-        exec_cypher, exec_params = cypher, dict(params or {})
-        is_commons = False
-        if session is not None:
-            from agent_utilities.knowledge_graph.core.tenant_sharing import (
-                apply_commons_catalog_restriction,
-                commons_graph_name,
-            )
+        from agent_utilities.knowledge_graph.core.tenant_sharing import (
+            commons_graph_name,
+        )
 
-            is_commons = graph_name == commons_graph_name()
-            if is_commons:
-                # Push the commons READ catalog restriction (2026-08-09 owner
-                # ruling; `COMMONS_SHAREABLE_NODE_TYPES`) INTO the query text so
-                # the engine filters, not this process -- `read_union`/
-                # `filter_commons_catalog` were built for a post-hoc Python
-                # filter, but that pulls every commons row over the wire first.
-                # `apply_commons_catalog_restriction` is the companion primitive
-                # built for exactly this pushdown (its own docstring: "closes
-                # the label/type-index half of the existence-leak... injected
-                # into the query TEXT"). Best-effort: a query shape it can't
-                # inject into (no bound variable, `UnscopableQueryError`, or any
-                # other failure) leaves `exec_cypher` unchanged and is caught
-                # below by the row-level fallback -- this must never fail OPEN.
-                try:
-                    exec_cypher, extra_params = apply_commons_catalog_restriction(
-                        cypher, session.actor, graph_name
-                    )
-                    exec_params.update(extra_params)
-                except Exception as exc:  # noqa: BLE001 — pushdown is best-effort; the row-level fallback below is the safety net
-                    _log_failure(
-                        'graph_union.commons_restriction', exc, level=logging.DEBUG
-                    )
-                    exec_cypher, exec_params = cypher, dict(params or {})
-        # `query=`/`params=` are passed as KEYWORDS, not positionally: the
-        # real `QueryMixin.query_cypher(self, query, params=None, ...)`
-        # signature (`engine_query.py:137`) binds either way, but this route
-        # is pinned to the `query` keyword specifically (see
-        # `test_execute_cypher_forwards_the_query_text_under_the_query_keyword`)
-        # to distinguish it from the MCP tool surface's `cypher`-named field
-        # -- a future accidental rename to `cypher=` must fail loudly here,
-        # which a positional call would silently paper over.
-        if session is None or graph_name == session.graph:
-            rows = list(
-                engine.query_cypher(query=exec_cypher, params=exec_params) or []
+        session = current_session()
+        is_commons = session is not None and graph_name == commons_graph_name()
+        if is_commons:
+            exec_cypher, exec_params = _commons_pushdown(
+                graph_name, cypher, params, session
             )
         else:
-            scoped_engine = engine.for_graph(graph_name)
-            with use_session(session.with_graph(graph_name)):
-                rows = list(
-                    scoped_engine.query_cypher(query=exec_cypher, params=exec_params)
-                    or []
-                )
+            exec_cypher, exec_params = cypher, dict(params or {})
+        rows = _run_scoped(graph_name, session, exec_cypher, exec_params)
         if is_commons and exec_cypher == cypher:
             # The pushdown above did not change the query text -- either it
             # legitimately doesn't apply (privileged actor, no WHERE/RETURN
@@ -4293,6 +4506,18 @@ async def _read_union_sql_group_counts(
     flagged for that lane, not fixed here.
     """
 
+    def _absorb(merged: dict[str, int], rows: Any) -> None:
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            k = row.get(key)
+            n = row.get(count_field)
+            if not isinstance(k, str) or not k:
+                continue
+            if not isinstance(n, int) or isinstance(n, bool):
+                continue
+            merged[k] = merged.get(k, 0) + n
+
     def _run() -> tuple[dict[str, int], list[str], list[str]]:
         result = _rows_per_accessible_graph(
             engine, lambda scoped: scoped.sql(statement) or []
@@ -4306,19 +4531,79 @@ async def _read_union_sql_group_counts(
             graphs = [graph_name for graph_name, _rows in per_graph]
         merged: dict[str, int] = {}
         for _graph_name, rows in per_graph:
-            for row in rows or []:
-                if not isinstance(row, dict):
-                    continue
-                k = row.get(key)
-                n = row.get(count_field)
-                if not isinstance(k, str) or not k:
-                    continue
-                if not isinstance(n, int) or isinstance(n, bool):
-                    continue
-                merged[k] = merged.get(k, 0) + n
+            _absorb(merged, rows)
         return merged, graphs, degraded
 
     return await _invoke_governed_helper(_run, deadline=deadline)
+
+
+def _node_label_rows(
+    scoped_engine: Any, label: str, limit: int
+) -> list[tuple[str, dict[str, Any]]]:
+    """One graph's `nodes_by_label` page, or [] when the backend lacks it."""
+    fn = getattr(scoped_engine.backend, 'nodes_by_label', None)
+    if not callable(fn):
+        return []
+    return list(fn(label, limit) or [])
+
+
+def _clean_node_label_rows(rows: Any) -> list[tuple[str, dict[str, Any]]]:
+    """Keep only well-formed `(id, properties)` pairs."""
+    return [
+        (row[0], row[1])
+        for row in (rows or [])
+        if isinstance(row, (tuple, list)) and len(row) == 2
+    ]
+
+
+def _restrict_commons_node_rows(
+    clean_rows: list[tuple[str, dict[str, Any]]], actor: Any, graph_name: str
+) -> list[tuple[str, dict[str, Any]]]:
+    """Apply the commons READ catalog allowlist to one graph's node rows.
+
+    `nodes_by_label` has no Cypher form `apply_commons_catalog_restriction`
+    could inject into, so the row-level allowlist function is applied directly
+    here instead (verified: `read_union` itself does not call it, so it is
+    this call site's job).
+    """
+    from agent_utilities.knowledge_graph.core.tenant_sharing import (
+        filter_commons_catalog,
+    )
+
+    props_only = [p if isinstance(p, dict) else {} for _nid, p in clean_rows]
+    allowed = filter_commons_catalog(props_only, actor, graph_name)
+    allowed_ids = {id(p) for p in allowed}
+    return [(nid, p) for nid, p in clean_rows if id(p) in allowed_ids]
+
+
+def _append_unseen_node_rows(
+    merged: list[tuple[str, dict[str, Any]]],
+    seen: set[str],
+    clean_rows: list[tuple[str, dict[str, Any]]],
+) -> None:
+    """Append rows whose string node id has not been merged yet."""
+    for nid, props in clean_rows:
+        if isinstance(nid, str):
+            if nid in seen:
+                continue
+            seen.add(nid)
+        merged.append((nid, props))
+
+
+def _merge_node_label_rows(
+    per_graph: Any, actor: Any, commons: str
+) -> tuple[list[tuple[str, dict[str, Any]]], list[str]]:
+    """Merge per-graph `nodes_by_label` pages, de-duped by node id."""
+    merged: list[tuple[str, dict[str, Any]]] = []
+    seen: set[str] = set()
+    source_graphs: list[str] = []
+    for graph_name, rows in per_graph:
+        source_graphs.append(graph_name)
+        clean_rows = _clean_node_label_rows(rows)
+        if graph_name == commons and actor is not None:
+            clean_rows = _restrict_commons_node_rows(clean_rows, actor, graph_name)
+        _append_unseen_node_rows(merged, seen, clean_rows)
+    return merged, source_graphs
 
 
 def _union_nodes_by_label(
@@ -4334,11 +4619,8 @@ def _union_nodes_by_label(
     lane's own instructions anticipate. Uses `_rows_per_accessible_graph` for
     the per-graph fan-out (same `engine.for_graph`/`use_session` retargeting
     contract as every other union helper here), then applies the commons READ
-    catalog restriction (`tenant_sharing.filter_commons_catalog`) to ONLY the
-    commons graph's rows before merging -- `nodes_by_label` has no Cypher form
-    `apply_commons_catalog_restriction` could inject into, so the row-level
-    allowlist function is applied directly here instead (verified: `read_union`
-    itself does not call it, so it is this call site's job).
+    catalog restriction to ONLY the commons graph's rows before merging (see
+    `_restrict_commons_node_rows`).
 
     Returns `(rows, source_graphs, degraded_graphs)`, the same shape
     `_read_union_scalar_sum` returns, so callers can accumulate source/degraded
@@ -4347,14 +4629,10 @@ def _union_nodes_by_label(
     from agent_utilities.knowledge_graph.core.session import current_session
     from agent_utilities.knowledge_graph.core.tenant_sharing import (
         commons_graph_name,
-        filter_commons_catalog,
     )
 
     def _call(scoped_engine: Any) -> list[tuple[str, dict[str, Any]]]:
-        fn = getattr(scoped_engine.backend, 'nodes_by_label', None)
-        if not callable(fn):
-            return []
-        return list(fn(label, limit) or [])
+        return _node_label_rows(scoped_engine, label, limit)
 
     result = _rows_per_accessible_graph(engine, _call)
     if result is None:
@@ -4362,29 +4640,48 @@ def _union_nodes_by_label(
     per_graph, degraded = result
     session = current_session()
     actor = session.actor if session is not None else None
-    commons = commons_graph_name()
-    merged: list[tuple[str, dict[str, Any]]] = []
-    seen: set[str] = set()
+    merged, source_graphs = _merge_node_label_rows(
+        per_graph, actor, commons_graph_name()
+    )
+    return merged, source_graphs, degraded
+
+
+def _append_unseen_dict_rows(
+    merged: list[dict[str, Any]],
+    seen: set[Any],
+    rows: list[dict[str, Any]],
+    id_key: str,
+) -> None:
+    """Append rows whose `id_key` has not been merged yet (id-less rows pass)."""
+    for row in rows:
+        rid = row.get(id_key)
+        if rid is None:
+            merged.append(row)
+            continue
+        if rid in seen:
+            continue
+        seen.add(rid)
+        merged.append(row)
+
+
+def _merge_union_dict_rows(
+    per_graph: Any, actor: Any, commons: str, id_key: str
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Merge per-graph dict rows, de-duped by `id_key` (tenant graph wins)."""
+    from agent_utilities.knowledge_graph.core.tenant_sharing import (
+        filter_commons_catalog,
+    )
+
+    merged: list[dict[str, Any]] = []
+    seen: set[Any] = set()
     source_graphs: list[str] = []
     for graph_name, rows in per_graph:
         source_graphs.append(graph_name)
-        clean_rows = [
-            (row[0], row[1])
-            for row in (rows or [])
-            if isinstance(row, (tuple, list)) and len(row) == 2
-        ]
+        clean = [r for r in (rows or []) if isinstance(r, dict)]
         if graph_name == commons and actor is not None:
-            props_only = [p if isinstance(p, dict) else {} for _nid, p in clean_rows]
-            allowed = filter_commons_catalog(props_only, actor, graph_name)
-            allowed_ids = {id(p) for p in allowed}
-            clean_rows = [(nid, p) for nid, p in clean_rows if id(p) in allowed_ids]
-        for nid, props in clean_rows:
-            if isinstance(nid, str):
-                if nid in seen:
-                    continue
-                seen.add(nid)
-            merged.append((nid, props))
-    return merged, source_graphs, degraded
+            clean = filter_commons_catalog(clean, actor, graph_name)
+        _append_unseen_dict_rows(merged, seen, clean, id_key)
+    return merged, source_graphs
 
 
 def _union_engine_call(
@@ -4402,32 +4699,207 @@ def _union_engine_call(
     """
     from agent_utilities.knowledge_graph.core.tenant_sharing import (
         commons_graph_name,
-        filter_commons_catalog,
     )
 
     result = _rows_per_accessible_graph(engine, call)
     if result is None:
         return list(call(engine) or []), [], []
     per_graph, degraded = result
-    commons = commons_graph_name()
-    merged: list[dict[str, Any]] = []
-    seen: set[Any] = set()
-    source_graphs: list[str] = []
-    for graph_name, rows in per_graph:
-        source_graphs.append(graph_name)
-        rows = [r for r in (rows or []) if isinstance(r, dict)]
-        if graph_name == commons and actor is not None:
-            rows = filter_commons_catalog(rows, actor, graph_name)
-        for row in rows:
-            rid = row.get(id_key)
-            if rid is None:
-                merged.append(row)
-                continue
-            if rid in seen:
-                continue
-            seen.add(rid)
-            merged.append(row)
+    merged, source_graphs = _merge_union_dict_rows(
+        per_graph, actor, commons_graph_name(), id_key
+    )
     return merged, source_graphs, degraded
+
+
+async def _graph_read_engine() -> Any | None:
+    """Acquire the read engine for a graph view route.
+
+    CONCEPT:AU-ECO.ui.engine-fallback-reachable -- "no engine" (501) is a
+    distinct condition from a query failing AFTER an engine was acquired (the
+    D-W6-10 hardening in each caller, which stays a hard 503 and is NOT
+    touched by this). Only a genuine 503 (bounded deadline/capacity)
+    re-raises; a still-absent engine returns ``None`` so the caller can
+    degrade to an honest empty view -- the graph simply has nothing to show
+    yet, not a backend malfunction.
+    """
+    try:
+        return await _get_engine_bounded()
+    except HTTPException as exc:
+        if exc.status_code != 501:
+            raise
+        return None
+
+
+async def _union_label_page(
+    engine: Any, label: str, remaining: int
+) -> tuple[list[Any], set[str], set[str]]:
+    """One bounded, union-scoped ``nodes_by_label`` page for ``label``.
+
+    `_union_nodes_by_label` is a plain sync callable (mirroring
+    `nodes_by_label`'s own shape), so it goes through
+    `_invoke_governed_helper` exactly like the un-unioned call it replaces.
+    """
+    page, sources, degraded = await _invoke_governed_helper(
+        _union_nodes_by_label, engine, label, remaining, deadline=10.0
+    )
+    return list(page or []), set(sources), set(degraded)
+
+
+async def _collect_labeled_node_rows(
+    engine: Any, budget: int
+) -> tuple[list[Any], set[str], set[str]]:
+    """Fan `nodes_by_label` over every label under ONE shared item budget."""
+    rows: list[Any] = []
+    source_graphs: set[str] = set()
+    degraded_graphs: set[str] = set()
+    for label in await _distinct_graph_labels(engine):
+        remaining = budget - len(rows)
+        if remaining <= 0:
+            break
+        # One label must not be able to blank the whole canvas. Degrading to
+        # "every label that COULD be read" is the honest answer; failing all
+        # of them because one failed is not. The label is named in the log so
+        # the cause stays findable.
+        try:
+            page, sources, degraded = await _union_label_page(engine, label, remaining)
+        except Exception as label_error:
+            _log_failure(
+                f'get_graph_nodes.label.{label}',
+                label_error,
+                level=logging.WARNING,
+            )
+            continue
+        rows.extend(page)
+        source_graphs |= sources
+        degraded_graphs |= degraded
+    return rows, source_graphs, degraded_graphs
+
+
+async def _collect_unlabeled_node_rows(
+    engine: Any, remaining: int
+) -> tuple[list[Any], set[str], set[str]]:
+    """Read the genuinely-unlabeled bucket (``label=''``), best-effort.
+
+    The DEPLOYED engine build rejects an empty label argument outright
+    (ValueError), even though `GraphCore::get_nodes_by_label_page` in source
+    handles it via `collect_unlabeled`. Nodes with no label at all are a
+    rounding error next to the labeled graph, so a build that refuses the
+    query must not fail the whole canvas.
+    """
+    if remaining <= 0:
+        return [], set(), set()
+    try:
+        return await _union_label_page(engine, '', remaining)
+    except Exception:
+        logger.debug('engine rejects empty-label read; skipping unlabeled')
+        return [], set(), set()
+
+
+async def _collect_graph_node_rows(
+    engine: Any, node_type: str | None, budget: int
+) -> tuple[list[Any], set[str], set[str]]:
+    """The `(id, properties)` rows backing `/graph/nodes`, union-scoped.
+
+    A ``node_type``-filtered request is a single round trip. The unfiltered
+    canvas enumerates the labels via the engine's own `db.labels()` procedure
+    (`crates/eg-query/src/cypher/proc.rs`) and fans `nodes_by_label` out per
+    label under one shared budget, stopping as soon as the budget is full.
+    The empty-label bucket is queried last, on purpose and for what it
+    actually means: the genuinely unlabeled nodes.
+    """
+    if node_type:
+        return await _union_label_page(engine, node_type, budget)
+    rows, sources, degraded = await _collect_labeled_node_rows(engine, budget)
+    tail, tail_sources, tail_degraded = await _collect_unlabeled_node_rows(
+        engine, budget - len(rows)
+    )
+    rows.extend(tail)
+    return rows, sources | tail_sources, degraded | tail_degraded
+
+
+def _canvas_node_labels(props: dict[str, Any]) -> list[str]:
+    """The labels Cypher's own ``(n:Label)`` predicate would have matched.
+
+    `nodes_by_label` indexes the BROADER `GraphCore.label_index` contract (a
+    node's `type`/`node_type`/`label` scalar fields plus the multi-valued
+    `labels` array -- `labels_of` in `crates/eg-core/src/graph.rs`). Cypher's
+    own `(n:Label)` predicate is deliberately narrower -- EXACTLY `node_type`
+    plus the explicit `labels` array (`node_has_label`/
+    `build_cypher_label_index` in `crates/eg-query/src/cypher/exec.rs`, whose
+    comment says this set is "deliberately narrower than
+    `GraphCore.label_index`'s `type`/`node_type`/`label`"). Derived from
+    EXACTLY those two narrower fields; both are excluded from `properties` in
+    `_canvas_node_from_row` so a label is never duplicated as an ordinary
+    property.
+    """
+    labels: list[str] = []
+    node_type_prop = props.get('node_type')
+    if isinstance(node_type_prop, str) and node_type_prop:
+        labels.append(node_type_prop)
+    extra_labels = props.get('labels')
+    if isinstance(extra_labels, list):
+        labels.extend(
+            item
+            for item in extra_labels
+            if isinstance(item, str) and item and item not in labels
+        )
+    return labels
+
+
+def _canvas_node_from_row(row: Any, node_type: str | None) -> dict[str, Any] | None:
+    """One `(id, properties)` row as a canvas node, or ``None`` to drop it."""
+    if not isinstance(row, (tuple, list)) or len(row) != 2:
+        return None
+    node_id, props = row
+    if not isinstance(props, dict):
+        props = {}
+    labels = _canvas_node_labels(props)
+    if node_type and node_type not in labels:
+        # A broader-index-only match (e.g. a legacy node carrying a bare
+        # `type` property but no `node_type`/`labels`; writing `type` is
+        # retired going forward -- see `retired_node_type_property_error`).
+        # `MATCH (n:<node_type>)` would not have matched it, so a
+        # node_type-filtered result must not include it either (kept
+        # consistent with the unfiltered list this is filtered from).
+        return None
+    return {
+        'id': node_id if isinstance(node_id, str) else '',
+        'labels': labels,
+        'properties': {
+            k: _canvas_property(v)
+            for k, v in props.items()
+            if k not in ('id', 'node_type', 'labels') and not str(k).startswith('_')
+        },
+    }
+
+
+def _build_canvas_nodes(
+    rows: list[Any], node_type: str | None, budget_bytes: int
+) -> list[dict[str, Any]]:
+    """Shape rows into canvas nodes, stopping at the serialized size budget.
+
+    `_public_external_result` enforces a hard serialized-size bound and raises
+    ValueError past it. That bound is what actually broke this endpoint: a
+    `Skill` node carries its whole SKILL.md body, so 256 of them blow the
+    2 MiB ceiling and the canvas 503'd -- the failure looked like an engine
+    error but was entirely ours. Keep a running estimate and stop at the
+    budget so the canvas renders what fits instead of nothing at all.
+    """
+    nodes: list[dict[str, Any]] = []
+    for row in rows or []:
+        node = _canvas_node_from_row(row, node_type)
+        if node is None:
+            continue
+        node, node_size = _canvas_node(node)
+        budget_bytes -= node_size
+        if budget_bytes <= 0:
+            logger.warning(
+                'graph canvas truncated at %d nodes by the result size bound',
+                len(nodes),
+            )
+            break
+        nodes.append(node)
+    return nodes
 
 
 @router.get('/graph/nodes')
@@ -4440,70 +4912,25 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
 
     Returns:
         List of node dictionaries with properties.
+
+    This does not go through Cypher at all. `properties(n)` asked the engine's
+    Cypher RETURN clause to call a function it does not implement
+    (`eg-query`'s `parse_proj_expr` recognizes only a fixed aggregate set plus
+    the special-cased `type(r)`), and `RETURN n` is the ORIGINAL, still-broken
+    whole-object projection documented at `get_graph_stats`. There is no
+    scalar-column way to ask Cypher for "all of a node's properties" (the
+    grammar has no wildcard/`RETURN n.*`), so this uses `nodes_by_label` --
+    the engine's OWN purpose-built native replacement for exactly this
+    `MATCH (n[:Label]) ... LIMIT k` shape -- fanned out across every
+    accessible graph by `_collect_graph_node_rows`.
     """
     if node_type and not _SAFE_GRAPH_LABEL.fullmatch(node_type):
         raise HTTPException(status_code=400, detail='Invalid graph node type')
     try:
-        try:
-            engine = await _get_engine_bounded()
-        except HTTPException as exc:
-            # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- "no engine"
-            # (501) is a distinct condition from a query failing AFTER an
-            # engine was acquired (the D-W6-10 hardening below, which stays
-            # a hard 503 and is NOT touched by this). Only a genuine 503
-            # (bounded deadline/capacity) re-raises here; a still-absent
-            # engine degrades to an honest empty list -- the graph simply
-            # has nothing to show yet, not a backend malfunction.
-            if exc.status_code != 501:
-                raise
+        engine = await _graph_read_engine()
+        if engine is None:
             return []
-
-        # BUG (this fix): `properties(n)` asked the engine's Cypher RETURN
-        # clause to call a function it does not implement. `eg-query`'s
-        # `parse_proj_expr` (crates/eg-query/src/cypher/parser.rs) only
-        # recognizes a fixed aggregate set (count/collect/sum/avg/min/max)
-        # and the special-cased `type(r)` -- there is no general function-
-        # call grammar at all, so `properties(n)` fell through to being
-        # parsed as a bare `properties` variable followed by a stray `(`,
-        # a parse failure the native authority raises back as
-        # `CypherEngineError` (live log: "get_graph_nodes failed:
-        # error_type=CypherEngineError"). `RETURN n` is not the fix either
-        # (api_extensions.py's own history above: that whole-object
-        # projection is the ORIGINAL, still-broken bug -- parser-fragile,
-        # documented at `get_graph_stats`).
-        #
-        # There is no scalar-column way to ask Cypher for "all of a node's
-        # properties" (the grammar has no wildcard/`RETURN n.*`), so this
-        # does not go through Cypher at all: `nodes_by_label` is the
-        # engine's OWN purpose-built native replacement for exactly this
-        # `MATCH (n[:Label]) ... LIMIT k` shape -- ONE bounded round trip
-        # returning `(id, properties)` per node, already decoded
-        # (`GraphComputeEngine.get_nodes_by_label`'s docstring: "bounding
-        # the wire payload so a MATCH (n:Label) … LIMIT k never
-        # materializes the whole graph").
-        #
-        # BUG (this fix): the previous revision passed `node_type or ''`,
-        # believing an empty label meant "no filter" engine-side. It does
-        # not. `GraphCore::get_nodes_by_label_page`
-        # (`crates/eg-core/src/graph.rs`) opens with
-        # `if label.is_empty() { return self.collect_unlabeled(after, limit) }`
-        # -- an empty label selects ONLY nodes carrying no label at all,
-        # which is the opposite of "everything". So the unfiltered canvas
-        # (the default, `node_type=None`) asked for the one bucket the KG
-        # has almost nothing in, and the deployed engine build rejected the
-        # empty argument outright (live log: "get_graph_nodes failed:
-        # error_type=ValueError") -- a 503 on the graph canvas.
-        #
-        # There is no single "all nodes with properties" engine call, so the
-        # unfiltered case enumerates the labels via the engine's own
-        # `db.labels()` procedure (`crates/eg-query/src/cypher/proc.rs`) and
-        # fans out `nodes_by_label` per label under ONE shared item budget,
-        # stopping as soon as the budget is full. The empty-label bucket is
-        # queried last, on purpose and for what it actually means: the
-        # genuinely unlabeled nodes. A `node_type`-filtered request stays
-        # exactly what it was -- a single round trip.
-        nodes_by_label = getattr(engine.backend, 'nodes_by_label', None)
-        if not callable(nodes_by_label):
+        if not callable(getattr(engine.backend, 'nodes_by_label', None)):
             raise HTTPException(
                 status_code=503,
                 detail='Knowledge Graph node query failed',
@@ -4511,153 +4938,24 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
         budget = _MAX_EXTERNAL_COLLECTION_ITEMS
         # Leave headroom under the serialized ceiling for the JSON envelope.
         budget_bytes = (_MAX_EXTERNAL_RESULT_BYTES * 3) // 4
-        # FIX LANE Priority 1: every `nodes_by_label` call below is fanned out
-        # across `_accessible_graphs` and merged (`_union_nodes_by_label`,
-        # de-duped by node id, tenant wins, commons READ catalog allowlist
-        # applied to commons rows) -- see that helper's docstring for why this
-        # goes through `_rows_per_accessible_graph` rather than
-        # `_read_union_cypher` (no Cypher form for this native call).
-        # `_union_nodes_by_label` itself is a plain sync callable (mirrors
-        # `nodes_by_label`'s own shape), so it goes through
-        # `_invoke_governed_helper` exactly like the un-unioned call it
-        # replaces.
-        if node_type:
-            rows, node_sources, node_degraded = await _invoke_governed_helper(
-                _union_nodes_by_label, engine, node_type, budget, deadline=10.0
-            )
-            source_graphs = set(node_sources)
-            degraded_graphs = set(node_degraded)
-        else:
-            rows = []
-            source_graphs = set()
-            degraded_graphs = set()
-            for label in await _distinct_graph_labels(engine):
-                remaining = budget - len(rows)
-                if remaining <= 0:
-                    break
-                # One label must not be able to blank the whole canvas.
-                # Degrading to "every label that COULD be read" is the honest
-                # answer; failing all of them because one failed is not. The
-                # label is named in the log so the cause stays findable.
-                try:
-                    page, label_sources, label_degraded = await _invoke_governed_helper(
-                        _union_nodes_by_label,
-                        engine,
-                        label,
-                        remaining,
-                        deadline=10.0,
-                    )
-                except Exception as label_error:
-                    _log_failure(
-                        f'get_graph_nodes.label.{label}',
-                        label_error,
-                        level=logging.WARNING,
-                    )
-                    continue
-                rows.extend(page or [])
-                source_graphs.update(label_sources)
-                degraded_graphs.update(label_degraded)
-            # The genuinely-unlabeled bucket (`label=''`) is best-effort: the
-            # DEPLOYED engine build rejects an empty label argument outright
-            # (ValueError), even though `GraphCore::get_nodes_by_label_page`
-            # in source handles it via `collect_unlabeled`. Nodes with no
-            # label at all are a rounding error next to the labeled graph, so
-            # a build that refuses the query must not fail the whole canvas.
-            remaining = budget - len(rows)
-            if remaining > 0:
-                try:
-                    page, empty_sources, empty_degraded = await _invoke_governed_helper(
-                        _union_nodes_by_label,
-                        engine,
-                        '',
-                        remaining,
-                        deadline=10.0,
-                    )
-                except Exception:
-                    logger.debug('engine rejects empty-label read; skipping unlabeled')
-                else:
-                    rows.extend(page or [])
-                    source_graphs.update(empty_sources)
-                    degraded_graphs.update(empty_degraded)
-        # `source_graphs`/`degraded_graphs` are computed above for
-        # observability parity with `get_graph_stats`, but this route's
-        # response is a bare JSON array (`list[dict]`, consumed directly by
-        # GraphView.tsx's node list) -- there is no envelope field to carry
-        # them without breaking that contract. Logged instead so the union's
-        # effect stays visible operationally even though it can't ride the
-        # response body.
+        rows, source_graphs, degraded_graphs = await _collect_graph_node_rows(
+            engine, node_type, budget
+        )
+        # `source_graphs`/`degraded_graphs` are computed for observability
+        # parity with `get_graph_stats`, but this route's response is a bare
+        # JSON array (`list[dict]`, consumed directly by GraphView.tsx's node
+        # list) -- there is no envelope field to carry them without breaking
+        # that contract. Logged instead so the union's effect stays visible
+        # operationally even though it can't ride the response body.
         if degraded_graphs:
             logger.warning(
                 'get_graph_nodes: degraded graphs %s (source graphs: %s)',
                 sorted(degraded_graphs),
                 sorted(source_graphs),
             )
-        nodes: list[dict[str, Any]] = []
-        for row in rows or []:
-            if not isinstance(row, (tuple, list)) or len(row) != 2:
-                continue
-            node_id, props = row
-            if not isinstance(props, dict):
-                props = {}
-            # `nodes_by_label` indexes the BROADER `GraphCore.label_index`
-            # contract (a node's `type`/`node_type`/`label` scalar fields
-            # plus the multi-valued `labels` array -- `labels_of` in
-            # `crates/eg-core/src/graph.rs`). Cypher's own `(n:Label)`
-            # predicate is deliberately narrower -- EXACTLY `node_type` plus
-            # the explicit `labels` array (`node_has_label`/
-            # `build_cypher_label_index` in `crates/eg-query/src/cypher/
-            # exec.rs`, whose comment says this set is "deliberately
-            # narrower than `GraphCore.label_index`'s `type`/`node_type`/
-            # `label`"). Derive `labels` from EXACTLY those two narrower
-            # fields, same as before; both are excluded from `properties`
-            # below so a label is never duplicated as an ordinary property.
-            labels: list[str] = []
-            node_type_prop = props.get('node_type')
-            if isinstance(node_type_prop, str) and node_type_prop:
-                labels.append(node_type_prop)
-            extra_labels = props.get('labels')
-            if isinstance(extra_labels, list):
-                labels.extend(
-                    item
-                    for item in extra_labels
-                    if isinstance(item, str) and item and item not in labels
-                )
-            if node_type and node_type not in labels:
-                # A broader-index-only match (e.g. a legacy node carrying a
-                # bare `type` property but no `node_type`/`labels`; writing
-                # `type` is retired going forward -- see
-                # `retired_node_type_property_error`). `MATCH (n:<node_type>)`
-                # would not have matched it, so a node_type-filtered result
-                # must not include it either (kept consistent with the
-                # unfiltered list this is filtered from).
-                continue
-            node = {
-                'id': node_id if isinstance(node_id, str) else '',
-                'labels': labels,
-                'properties': {
-                    k: _canvas_property(v)
-                    for k, v in props.items()
-                    if k not in ('id', 'node_type', 'labels')
-                    and not str(k).startswith('_')
-                },
-            }
-            # `_public_external_result` enforces a hard serialized-size bound
-            # and raises ValueError past it. That bound is what actually broke
-            # this endpoint: a `Skill` node carries its whole SKILL.md body, so
-            # 256 of them blow the 2 MiB ceiling and the canvas 503'd -- the
-            # failure looked like an engine error but was entirely ours. Keep a
-            # running estimate and stop at the budget so the canvas renders
-            # what fits instead of nothing at all.
-            node, node_size = _canvas_node(node)
-            budget_bytes -= node_size
-            if budget_bytes <= 0:
-                logger.warning(
-                    'graph canvas truncated at %d nodes by the result size bound',
-                    len(nodes),
-                )
-                break
-            nodes.append(node)
-        return _public_external_result(nodes)
+        return _public_external_result(
+            _build_canvas_nodes(rows, node_type, budget_bytes)
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -4897,6 +5195,156 @@ async def _engine_graph_sizes() -> dict[str, dict[str, int]]:
         return {}
 
 
+class _Graph3DAccumulator:
+    """Node/edge accumulation state for one `/graph/3d` payload.
+
+    Holds the node interning table (an edge's ``s``/``t`` are INDICES into
+    ``nodes``) and the edge de-duplication set. `truncated` records that
+    something was left out for ANY reason -- the node cap, the edge cap, or a
+    row whose endpoints could not be interned.
+    """
+
+    def __init__(self) -> None:
+        self.index_of: dict[str, int] = {}
+        self.nodes: list[dict[str, Any]] = []
+        self.edges: list[dict[str, Any]] = []
+        # The 3D Cypher is already a GROUP BY on exactly (source, type,
+        # target), so a repeated triple cannot come from the data -- it can
+        # only come from `_read_union_cypher` running the same query once per
+        # accessible graph. Left in, a repeat draws the same line twice at
+        # double additive brightness. Deduped here rather than in the renderer
+        # so the payload itself is what it claims to be.
+        self.seen_edges: set[tuple[str, str, str]] = set()
+        self.truncated = False
+
+    def intern(self, node_id: Any, node_type: Any, name: Any) -> int | None:
+        """This node's index, adding it if new; ``None`` past the node cap."""
+        if not isinstance(node_id, str) or not node_id:
+            return None
+        existing = self.index_of.get(node_id)
+        if existing is not None:
+            return existing
+        if len(self.nodes) >= _GRAPH3D_MAX_NODES:
+            return None
+        idx = len(self.nodes)
+        self.index_of[node_id] = idx
+        self.nodes.append(
+            {
+                'id': node_id,
+                'type': node_type
+                if isinstance(node_type, str) and node_type
+                else 'Unknown',
+                'name': _graph3d_label(name, node_id),
+            }
+        )
+        return idx
+
+    def add_edge(self, row: dict[str, Any]) -> None:
+        """Intern one edge row's endpoints and record the edge, if it is new."""
+        source = self.intern(row.get('s'), row.get('st'), row.get('sn'))
+        target = self.intern(row.get('t'), row.get('tt'), row.get('tn'))
+        if source is None or target is None:
+            self.truncated = True
+            return
+        key = (str(row.get('s')), str(row.get('rt')), str(row.get('t')))
+        if key in self.seen_edges:
+            return
+        self.seen_edges.add(key)
+        weight = row.get('edge_count')
+        rel_type = row.get('rt')
+        self.edges.append(
+            {
+                's': source,
+                't': target,
+                'r': rel_type if isinstance(rel_type, str) else '',
+                'w': weight if isinstance(weight, int) and weight > 0 else 1,
+            }
+        )
+
+    def absorb_edge_rows(self, edge_rows: Any) -> None:
+        """Absorb edge rows until they run out or the edge cap is reached."""
+        for row in edge_rows or []:
+            if len(self.edges) >= _GRAPH3D_MAX_EDGES:
+                self.truncated = True
+                return
+            self.add_edge(row)
+
+    def absorb_isolated_rows(self, rows: Any) -> None:
+        """Intern nodes that participate in no edge."""
+        for row in rows or []:
+            if self.intern(row.get('id'), row.get('nt'), row.get('nn')) is None:
+                self.truncated = True
+
+
+def _graph3d_empty_payload() -> dict[str, Any]:
+    """The honest "no engine yet" answer, shaped like a real payload."""
+    return {
+        'nodes': [],
+        'edges': [],
+        'total_nodes': 0,
+        'total_relationships': 0,
+        'engine_total_nodes': None,
+        'engine_total_relationships': None,
+        'connected_nodes': 0,
+        'isolated_nodes': 0,
+        'truncated': False,
+        'source_graphs': [],
+        'degraded_graphs': [],
+        'available': False,
+    }
+
+
+def _graph3d_payload(
+    acc: _Graph3DAccumulator,
+    connected_nodes: int,
+    node_sources: list[str],
+    engine_sizes: dict[str, Any],
+) -> dict[str, Any]:
+    """Assemble the response body from the accumulator and the engine gauges.
+
+    ``engine_sizes`` is the engine's own view of the same graphs, so the UI
+    can say how much of the graph it is actually drawing instead of implying
+    it is all of it. See `_engine_graph_sizes` for the measured discrepancy
+    this exists to surface.
+    """
+    engine_nodes = sum(
+        engine_sizes.get(graph, {}).get('nodes', 0) for graph in node_sources
+    )
+    engine_edges = sum(
+        engine_sizes.get(graph, {}).get('edges', 0) for graph in node_sources
+    )
+    return {
+        'nodes': acc.nodes,
+        'edges': acc.edges,
+        # Reported from THIS payload, never from a second stats call: the
+        # numbers a caller reads must describe the bytes it was handed.
+        'total_nodes': len(acc.nodes),
+        'total_relationships': len(acc.edges),
+        # `null` when the gauges could not be read -- distinct from 0.
+        'engine_total_nodes': engine_nodes if engine_sizes else None,
+        'engine_total_relationships': engine_edges if engine_sizes else None,
+        'connected_nodes': connected_nodes,
+        'isolated_nodes': max(0, len(acc.nodes) - connected_nodes),
+        'truncated': acc.truncated,
+        'source_graphs': sorted(node_sources),
+        'degraded_graphs': [],
+        'available': True,
+    }
+
+
+def _graph3d_size_bounded(payload: dict[str, Any]) -> dict[str, Any]:
+    """Reject a payload past the 3D view's serialized size bound."""
+    encoded = len(
+        json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+    )
+    if encoded > _GRAPH3D_MAX_RESULT_BYTES:
+        raise HTTPException(
+            status_code=422,
+            detail='Graph payload exceeds the 3D view size bound',
+        )
+    return payload
+
+
 @router.get('/graph/graph3d')
 async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
     """Return a closed node+edge payload sized for a 3D/WebGL renderer.
@@ -4920,29 +5368,13 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
         can see how much of the graph it was handed.
     """
     try:
-        try:
-            engine = await _get_engine_bounded()
-        except HTTPException as exc:
-            # Same contract as get_graph_nodes/get_graph_relationships above:
-            # "no engine yet" (501) is an honest empty graph, not a failure.
-            if exc.status_code != 501:
-                raise
-            return {
-                'nodes': [],
-                'edges': [],
-                'total_nodes': 0,
-                'total_relationships': 0,
-                'engine_total_nodes': None,
-                'engine_total_relationships': None,
-                'connected_nodes': 0,
-                'isolated_nodes': 0,
-                'truncated': False,
-                'source_graphs': [],
-                'degraded_graphs': [],
-                'available': False,
-            }
+        # Same contract as get_graph_nodes/get_graph_relationships above:
+        # "no engine yet" (501) is an honest empty graph, not a failure.
+        engine = await _graph_read_engine()
+        if engine is None:
+            return _graph3d_empty_payload()
 
-        # See the ★ note above for why `count(*)` is in this RETURN clause.
+        # See the star note above for why `count(*)` is in this RETURN clause.
         edge_rows, edge_sources = await _read_union_cypher(
             engine,
             'MATCH (a)-[r]->(b) RETURN a.id as s, a.node_type as st, '
@@ -4952,67 +5384,9 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
             deadline=_GRAPH3D_DEADLINE_SECONDS,
         )
 
-        index_of: dict[str, int] = {}
-        nodes: list[dict[str, Any]] = []
-        edges: list[dict[str, Any]] = []
-        # The Cypher above is already a GROUP BY on exactly (source, type,
-        # target), so a repeated triple cannot come from the data -- it can
-        # only come from `_read_union_cypher` running the same query once per
-        # accessible graph. Left in, a repeat draws the same line twice at
-        # double additive brightness. Deduped here rather than in the renderer
-        # so the payload itself is what it claims to be.
-        seen_edges: set[tuple[str, str, str]] = set()
-        truncated = False
-
-        def intern(node_id: Any, node_type: Any, name: Any) -> int | None:
-            if not isinstance(node_id, str) or not node_id:
-                return None
-            existing = index_of.get(node_id)
-            if existing is not None:
-                return existing
-            if len(nodes) >= _GRAPH3D_MAX_NODES:
-                return None
-            idx = len(nodes)
-            index_of[node_id] = idx
-            nodes.append(
-                {
-                    'id': node_id,
-                    'type': node_type
-                    if isinstance(node_type, str) and node_type
-                    else 'Unknown',
-                    'name': _graph3d_label(name, node_id),
-                }
-            )
-            return idx
-
-        for row in edge_rows or []:
-            if len(edges) >= _GRAPH3D_MAX_EDGES:
-                truncated = True
-                break
-            source = intern(row.get('s'), row.get('st'), row.get('sn'))
-            target = intern(row.get('t'), row.get('tt'), row.get('tn'))
-            if source is None or target is None:
-                truncated = True
-                continue
-            key = (
-                str(row.get('s')),
-                str(row.get('rt')),
-                str(row.get('t')),
-            )
-            if key in seen_edges:
-                continue
-            seen_edges.add(key)
-            weight = row.get('edge_count')
-            edges.append(
-                {
-                    's': source,
-                    't': target,
-                    'r': row.get('rt') if isinstance(row.get('rt'), str) else '',
-                    'w': weight if isinstance(weight, int) and weight > 0 else 1,
-                }
-            )
-
-        connected_nodes = len(nodes)
+        acc = _Graph3DAccumulator()
+        acc.absorb_edge_rows(edge_rows)
+        connected_nodes = len(acc.nodes)
         node_sources = list(edge_sources or [])
 
         if include_isolated:
@@ -5025,49 +5399,12 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
                 deadline=_GRAPH3D_DEADLINE_SECONDS,
             )
             node_sources = sorted(set(node_sources) | set(all_sources or []))
-            for row in all_rows or []:
-                if intern(row.get('id'), row.get('nt'), row.get('nn')) is None:
-                    truncated = True
+            acc.absorb_isolated_rows(all_rows)
 
-        # The engine's own view of the same graphs, so the UI can say how much
-        # of the graph it is actually drawing instead of implying it is all of
-        # it. See `_engine_graph_sizes` for the measured discrepancy this
-        # exists to surface.
         engine_sizes = await _engine_graph_sizes()
-        engine_nodes = 0
-        engine_edges = 0
-        for graph in node_sources:
-            engine_nodes += engine_sizes.get(graph, {}).get('nodes', 0)
-            engine_edges += engine_sizes.get(graph, {}).get('edges', 0)
-
-        payload: dict[str, Any] = {
-            'nodes': nodes,
-            'edges': edges,
-            # Reported from THIS payload, never from a second stats call: the
-            # numbers a caller reads must describe the bytes it was handed.
-            'total_nodes': len(nodes),
-            'total_relationships': len(edges),
-            # `null` when the gauges could not be read -- distinct from 0.
-            'engine_total_nodes': engine_nodes if engine_sizes else None,
-            'engine_total_relationships': engine_edges if engine_sizes else None,
-            'connected_nodes': connected_nodes,
-            'isolated_nodes': max(0, len(nodes) - connected_nodes),
-            'truncated': truncated,
-            'source_graphs': sorted(node_sources),
-            'degraded_graphs': [],
-            'available': True,
-        }
-        encoded = len(
-            json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode(
-                'utf-8'
-            )
+        return _graph3d_size_bounded(
+            _graph3d_payload(acc, connected_nodes, node_sources, engine_sizes)
         )
-        if encoded > _GRAPH3D_MAX_RESULT_BYTES:
-            raise HTTPException(
-                status_code=422,
-                detail='Graph payload exceeds the 3D view size bound',
-            )
-        return payload
     except HTTPException:
         raise
     except Exception as e:
@@ -5671,6 +6008,32 @@ async def link_nodes(data: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _reject_fully_degraded_search(results: Any, degraded: Any) -> None:
+    """Zero results plus an unread graph is a failure, not an empty answer.
+
+    ROOT CAUSE of the observed live non-determinism (item C/F: identical
+    successive `/graph/search` calls returning 5 results, then 0):
+    `_union_engine_call` -> `_rows_per_accessible_graph` fan-out is fail-SOFT
+    per graph by design (a per-graph exception is logged and the graph is
+    added to `degraded`, never raised -- see that function's own docstring).
+    This route used to discard `degraded` entirely (`_degraded`), so when
+    EVERY accessible graph's `search_hybrid` call happened to fail on a given
+    request (contention/timeout), the union quietly degraded to a
+    legitimate-looking `results=[]` -- a 200 indistinguishable from
+    "reachable, genuinely zero matches". The very next identical request, with
+    no failure this time, returned the real hits. Distinguish the two: zero
+    results with at least one graph that could not even be read is a failure
+    (503, same D-W6-10 class as
+    get_graph_nodes/get_graph_relationships/list_workflows). Zero results with
+    `degraded` empty (every accessible graph was actually read) stays a
+    genuine 200 [].
+    """
+    if results or not degraded:
+        return
+    _log_failure('search_graph', RuntimeError(f'degraded graphs: {degraded}'))
+    raise HTTPException(status_code=503, detail='Knowledge Graph search failed')
+
+
 @router.get('/graph/search')
 async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
     """Perform hybrid search across the Knowledge Graph.
@@ -5710,31 +6073,8 @@ async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
         results, _source_graphs, degraded = await _invoke_governed_helper(
             _union_engine_call, engine, actor, _call, deadline=15.0
         )
-        if not results and degraded:
-            # ROOT CAUSE of the observed live non-determinism (item C/F:
-            # identical successive `/graph/search` calls returning 5 results,
-            # then 0): `_union_engine_call` -> `_rows_per_accessible_graph`
-            # fan-out is fail-SOFT per graph by design (a per-graph exception
-            # is logged and the graph is added to `degraded`, never raised --
-            # see that function's own docstring). This route used to discard
-            # `degraded` entirely (`_degraded`), so when EVERY accessible
-            # graph's `search_hybrid` call happened to fail on a given
-            # request (contention/timeout), the union quietly degraded to a
-            # legitimate-looking `results=[]` -- a 200 indistinguishable from
-            # "reachable, genuinely zero matches". The very next identical
-            # request, with no failure this time, returned the real hits.
-            # Distinguish the two: zero results with at least one graph that
-            # could not even be read is a failure (503, same D-W6-10 class as
-            # get_graph_nodes/get_graph_relationships/list_workflows), not an
-            # honest empty answer. Zero results with `degraded` empty (every
-            # accessible graph was actually read) stays a genuine 200 [].
-            _log_failure('search_graph', RuntimeError(f'degraded graphs: {degraded}'))
-            raise HTTPException(
-                status_code=503,
-                detail='Knowledge Graph search failed',
-            )
-        bounded = _public_external_result(list(results or [])[:top_k])
-        return bounded if isinstance(bounded, list) else []
+        _reject_fully_degraded_search(results, degraded)
+        return _bounded_list_result(list(results or [])[:top_k])
     except HTTPException as exc:
         # "No engine" (501) degrades to an honest empty list -- same as
         # get_graph_nodes/relationships/workflows treat it (D-W6-10); a
@@ -5886,6 +6226,48 @@ async def get_viz_capabilities() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+_VIZ_CONTENT_TYPES = {
+    'png': 'image/png',
+    'svg': 'image/svg+xml',
+    'pdf': 'application/pdf',
+}
+
+
+def _viz_render_options(data: dict[str, Any]) -> dict[str, Any]:
+    """The bounded render options passed through to ``client.viz.render``."""
+    fmt = str(data.get('format', 'png')).lower()
+    if fmt not in _VIZ_CONTENT_TYPES:
+        raise HTTPException(status_code=422, detail='format must be png|svg|pdf')
+    return {
+        'width_px': max(16, min(int(data.get('width_px', 900)), 8192)),
+        'height_px': max(16, min(int(data.get('height_px', 600)), 8192)),
+        'format': fmt,
+        'max_primitives': max(
+            1, min(int(data.get('max_primitives', 200_000)), 2_000_000)
+        ),
+        'max_bytes': max(1, min(int(data.get('max_bytes', 50_000_000)), 200_000_000)),
+        'dataset_ref': str(data.get('dataset_ref', 'webui-viz-render'))[:200],
+    }
+
+
+def _viz_render_response(result: Any, fmt: str) -> dict[str, Any]:
+    """The bounded image payload plus its ready-to-render ``data:`` URL."""
+    image_bytes = result.get('bytes') or b''
+    if not isinstance(image_bytes, (bytes, bytearray)):
+        raise HTTPException(status_code=502, detail='Engine returned no image bytes')
+    if len(image_bytes) > _MAX_VIZ_RESPONSE_BYTES:
+        raise HTTPException(status_code=422, detail='Rendered image is too large')
+    content_type = _VIZ_CONTENT_TYPES[fmt]
+    b64 = base64.b64encode(bytes(image_bytes)).decode('ascii')
+    return {
+        'view_result': _bounded_external_value(result.get('view_result', {})),
+        'format': fmt,
+        'content_type': content_type,
+        'byte_len': len(image_bytes),
+        'data_url': f'data:{content_type};base64,{b64}',
+    }
+
+
 @router.post('/graph/viz/render')
 async def render_viz(data: dict[str, Any]) -> dict[str, Any]:
     """Render a chart or graph through the eg-viz LOD pipeline.
@@ -5908,54 +6290,20 @@ async def render_viz(data: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(
                 status_code=422, detail="'spec' and 'dataset' must be objects"
             )
-        width_px = max(16, min(int(data.get('width_px', 900)), 8192))
-        height_px = max(16, min(int(data.get('height_px', 600)), 8192))
-        fmt = str(data.get('format', 'png')).lower()
-        if fmt not in ('png', 'svg', 'pdf'):
-            raise HTTPException(status_code=422, detail='format must be png|svg|pdf')
-        max_primitives = max(
-            1, min(int(data.get('max_primitives', 200_000)), 2_000_000)
-        )
-        max_bytes = max(1, min(int(data.get('max_bytes', 50_000_000)), 200_000_000))
-        dataset_ref = str(data.get('dataset_ref', 'webui-viz-render'))[:200]
+        options = _viz_render_options(data)
 
         engine = await _get_engine_bounded()
         if not engine or not engine.backend:
             raise HTTPException(status_code=503, detail='Graph engine not available')
-        client = engine.backend._graph.client
 
         result = await _invoke_governed_helper(
-            client.viz.render,
+            engine.backend._graph.client.viz.render,
             spec,
             dataset,
             deadline=30.0,
-            width_px=width_px,
-            height_px=height_px,
-            format=fmt,
-            max_primitives=max_primitives,
-            max_bytes=max_bytes,
-            dataset_ref=dataset_ref,
+            **options,
         )
-        image_bytes = result.get('bytes') or b''
-        if not isinstance(image_bytes, (bytes, bytearray)):
-            raise HTTPException(
-                status_code=502, detail='Engine returned no image bytes'
-            )
-        if len(image_bytes) > _MAX_VIZ_RESPONSE_BYTES:
-            raise HTTPException(status_code=422, detail='Rendered image is too large')
-        content_type = {
-            'png': 'image/png',
-            'svg': 'image/svg+xml',
-            'pdf': 'application/pdf',
-        }[fmt]
-        b64 = base64.b64encode(bytes(image_bytes)).decode('ascii')
-        return {
-            'view_result': _bounded_external_value(result.get('view_result', {})),
-            'format': fmt,
-            'content_type': content_type,
-            'byte_len': len(image_bytes),
-            'data_url': f'data:{content_type};base64,{b64}',
-        }
+        return _viz_render_response(result, options['format'])
     except HTTPException:
         raise
     except Exception as e:
@@ -5969,6 +6317,23 @@ async def render_viz(data: dict[str, Any]) -> dict[str, Any]:
 # the canonical `build_code_nav_query` so the UI and the graph_code_nav MCP tool
 # share one query contract; scoped by source_system (e.g. 'gitlab:gitlab.example').
 # ---------------------------------------------------------------------------
+def _code_nav_bounds(data: dict[str, Any]) -> tuple[int, int]:
+    """The validated ``(depth, limit)`` for a code-graph navigation."""
+    depth = int(data.get('depth', 3) or 3)
+    limit = int(data.get('limit', 200) or 200)
+    if not 1 <= depth <= 10 or not 1 <= limit <= _MAX_EXTERNAL_COLLECTION_ITEMS:
+        raise HTTPException(status_code=400, detail='Invalid code navigation bounds')
+    return depth, limit
+
+
+def _validate_code_nav_inputs(data: dict[str, Any]) -> None:
+    """Reject a non-string or oversized symbol/node_id/source_system."""
+    for field in ('symbol', 'node_id', 'source_system'):
+        value = data.get(field, '')
+        if not isinstance(value, str) or len(value.encode('utf-8')) > 2048:
+            raise HTTPException(status_code=400, detail='Invalid code navigation input')
+
+
 @router.post('/code/nav')
 async def code_nav(data: dict[str, Any]) -> dict[str, Any]:
     """Navigate the resolved code graph.
@@ -5981,18 +6346,8 @@ async def code_nav(data: dict[str, Any]) -> dict[str, Any]:
         from agent_utilities.mcp.tools.query_tools import build_code_nav_query
 
         action = str(data.get('action', 'find_definition'))
-        depth = int(data.get('depth', 3) or 3)
-        limit = int(data.get('limit', 200) or 200)
-        if not 1 <= depth <= 10 or not 1 <= limit <= _MAX_EXTERNAL_COLLECTION_ITEMS:
-            raise HTTPException(
-                status_code=400, detail='Invalid code navigation bounds'
-            )
-        for field in ('symbol', 'node_id', 'source_system'):
-            value = data.get(field, '')
-            if not isinstance(value, str) or len(value.encode('utf-8')) > 2048:
-                raise HTTPException(
-                    status_code=400, detail='Invalid code navigation input'
-                )
+        depth, limit = _code_nav_bounds(data)
+        _validate_code_nav_inputs(data)
         cypher, params = build_code_nav_query(
             action=action,
             symbol=str(data.get('symbol', '')),
@@ -6134,21 +6489,14 @@ async def search_kb(query: str, kb_id: str | None = None) -> list[dict[str, Any]
     if kb_id and not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
         raise HTTPException(status_code=400, detail='Invalid KB identifier')
     try:
-        try:
-            engine = await _get_engine_bounded()
-        except HTTPException as exc:
-            # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- this route
-            # already anticipated a None engine below (`engine.graph if
-            # engine else None`), but `_get_engine_bounded()` raises rather
-            # than returning None, so that ternary was dead code. KB search
-            # is a separate subsystem from the graph engine's own live
-            # backend, so a still-absent engine degrades to None here
-            # (KBIngestionEngine is constructed with graph=None,
-            # backend=None); a genuine 503 still hard-fails.
-            if exc.status_code != 501:
-                raise
-            engine = None
-
+        # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- this route already
+        # anticipated a None engine (`engine.graph if engine else None`), but
+        # `_get_engine_bounded()` raises rather than returning None, so that
+        # ternary was dead code. KB search is a separate subsystem from the
+        # graph engine's own live backend, so a still-absent engine degrades
+        # to None here (KBIngestionEngine is constructed with graph=None,
+        # backend=None); a genuine 503 still hard-fails.
+        engine = await _graph_read_engine()
         kb_engine = await _invoke_governed_helper(
             KBIngestionEngine,
             engine.graph if engine else None,
@@ -6161,10 +6509,7 @@ async def search_kb(query: str, kb_id: str | None = None) -> list[dict[str, Any]
             kb_id=kb_id,
             deadline=30.0,
         )
-        bounded = _public_external_result(
-            list(results or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        )
-        return bounded if isinstance(bounded, list) else []
+        return _bounded_list_result(results)
     except HTTPException:
         raise
     except Exception as e:
@@ -6435,6 +6780,48 @@ async def list_plans() -> list[dict[str, Any]]:
         return []
 
 
+def _dumped(value: Any) -> Any:
+    """A pydantic model as a plain dict; anything else unchanged."""
+    return value.model_dump() if hasattr(value, 'model_dump') else value
+
+
+async def _tasks_for_plan(manager: Any, plan_id: str) -> Any:
+    """One plan's ``Tasks`` document, dumped to plain data."""
+    tasks = await _invoke_governed_helper(manager.get_tasks, plan_id, deadline=10.0)
+    return _dumped(tasks)
+
+
+async def _all_tasks(manager: Any) -> list[Any]:
+    """Every feature's tasks, dumped element-wise and bounded.
+
+    A DIFFERENT instance of the same silent-empty failure family, found
+    auditing this bug: `get_all_tasks()` returns `list[Tasks]` -- a bare LIST
+    of pydantic models, which has no `.model_dump()` of its own (only each
+    ELEMENT does; a bare `list` fails the `hasattr(tasks, 'model_dump')` check
+    that only ever applied to the `plan_id` branch's single `Tasks | None`).
+    The raw list of pydantic objects always reached `_public_external_result`
+    unconverted, which cannot serialize a pydantic instance
+    (`ValueError('...unsupported value')`) -- caught by the broad `except` in
+    the caller and reported as `{}`, indistinguishable from "no tasks in any
+    feature", for ANY non-empty result -- not just an oversized one.
+    """
+    tasks = await _invoke_governed_helper(manager.get_all_tasks, deadline=10.0)
+    return [_dumped(t) for t in (tasks or [])][:_MAX_EXTERNAL_COLLECTION_ITEMS]
+
+
+def _dumped_task_document(raw_tasks: Any) -> Any:
+    """Dump the nested ``tasks`` list of a single-plan document, if present."""
+    if not isinstance(raw_tasks, dict) or not isinstance(raw_tasks.get('tasks'), list):
+        return raw_tasks
+    return {
+        **raw_tasks,
+        'tasks': [
+            _dumped(task)
+            for task in raw_tasks['tasks'][:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        ],
+    }
+
+
 @router.get('/sdd/tasks')
 async def get_tasks(plan_id: str | None = None) -> list[Any] | dict[str, Any]:
     """Retrieve tasks for a plan or all tasks.
@@ -6446,40 +6833,16 @@ async def get_tasks(plan_id: str | None = None) -> list[Any] | dict[str, Any]:
         Tasks data.
     """
     try:
+        # The id is validated BEFORE the manager is constructed, preserving the
+        # original order: a bad plan_id must not reach SDDManager at all.
         if plan_id:
             plan_id = _validate_runtime_id(plan_id)
         manager = SDDManager(DEFAULT_AGENT_DIR)
         if plan_id:
-            tasks = await _invoke_governed_helper(
-                manager.get_tasks, plan_id, deadline=10.0
-            )
-            raw_tasks = tasks.model_dump() if hasattr(tasks, 'model_dump') else tasks
+            raw_tasks = await _tasks_for_plan(manager, plan_id)
         else:
-            tasks = await _invoke_governed_helper(manager.get_all_tasks, deadline=10.0)
-            # A DIFFERENT instance of the same silent-empty failure family,
-            # found auditing this bug: `get_all_tasks()` returns `list[Tasks]`
-            # -- a bare LIST of pydantic models, which has no `.model_dump()`
-            # of its own (only each ELEMENT does; a bare `list` fails the
-            # `hasattr(tasks, 'model_dump')` check below, which only ever
-            # applied to the `plan_id` branch's single `Tasks | None`). The
-            # raw list of pydantic objects always reached
-            # `_public_external_result` unconverted, which cannot serialize a
-            # pydantic instance (`ValueError('...unsupported value')`) --
-            # caught by the broad `except` below and reported as `{}`,
-            # indistinguishable from "no tasks in any feature", for ANY
-            # non-empty result -- not just an oversized one.
-            raw_tasks = [
-                t.model_dump() if hasattr(t, 'model_dump') else t for t in (tasks or [])
-            ][:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        if isinstance(raw_tasks, dict) and isinstance(raw_tasks.get('tasks'), list):
-            raw_tasks = {
-                **raw_tasks,
-                'tasks': [
-                    task.model_dump() if hasattr(task, 'model_dump') else task
-                    for task in raw_tasks['tasks'][:_MAX_EXTERNAL_COLLECTION_ITEMS]
-                ],
-            }
-        return _public_external_result(raw_tasks)
+            raw_tasks = await _all_tasks(manager)
+        return _public_external_result(_dumped_task_document(raw_tasks))
     except HTTPException:
         raise
     except Exception as e:
@@ -6776,46 +7139,92 @@ async def list_library_tools(mcp_server: str | None = None) -> list[dict[str, An
         raise HTTPException(status_code=400, detail='Invalid MCP server filter')
     try:
         engine = await _get_engine_bounded()
-        if mcp_server:
-            query = (
-                'MATCH (t:Tool) WHERE t.mcp_server = $s RETURN t.id AS id, '
-                't.name AS name, t.mcp_server AS mcp_server, t.tags AS tags '
-                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
-            )
-            params = {'s': mcp_server}
-        else:
-            query = (
-                'MATCH (t:Tool) RETURN t.id AS id, t.name AS name, '
-                't.mcp_server AS mcp_server, t.tags AS tags '
-                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
-            )
-            params = {}
+        query, params = _library_tool_query(mcp_server)
         rows = await _invoke_governed_helper(
             engine.backend.execute, query, params, deadline=15.0
         )
-        tools = [
-            {
-                'id': r.get('id'),
-                'name': r.get('name'),
-                'mcp_server': r.get('mcp_server'),
-                'tags': r.get('tags') or [],
-            }
-            for r in (rows or [])
-            if isinstance(r, dict) and r.get('id')
-        ]
-        tools.sort(
-            key=lambda t: (
-                str(t.get('mcp_server') or ''),
-                str(t.get('name') or '').lower(),
-            )
-        )
-        bounded = _public_external_result(tools)
-        return bounded if isinstance(bounded, list) else []
+        return _bounded_list_result(_sorted_library_tools(rows))
     except HTTPException:
         raise
     except Exception as e:
         _log_failure('list_library_tools', e)
         return []
+
+
+def _library_tool_query(mcp_server: str | None) -> tuple[str, dict[str, Any]]:
+    """The `:Tool` listing query, optionally scoped to one owning mcp_server."""
+    projection = (
+        'RETURN t.id AS id, t.name AS name, '
+        't.mcp_server AS mcp_server, t.tags AS tags '
+        f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+    )
+    if mcp_server:
+        return (
+            f'MATCH (t:Tool) WHERE t.mcp_server = $s {projection}',
+            {'s': mcp_server},
+        )
+    return f'MATCH (t:Tool) {projection}', {}
+
+
+def _sorted_library_tools(rows: Any) -> list[dict[str, Any]]:
+    """Tool-picker entries, ordered by owning server then name."""
+    tools = [
+        {
+            'id': r.get('id'),
+            'name': r.get('name'),
+            'mcp_server': r.get('mcp_server'),
+            'tags': r.get('tags') or [],
+        }
+        for r in (rows or [])
+        if isinstance(r, dict) and r.get('id')
+    ]
+    tools.sort(
+        key=lambda t: (
+            str(t.get('mcp_server') or ''),
+            str(t.get('name') or '').lower(),
+        )
+    )
+    return tools
+
+
+def _library_bound_servers(bound_rows: Any) -> set[str]:
+    """The mcp_servers that already have an Agent Library entry bound."""
+    return {
+        str(row.get('server'))
+        for row in (bound_rows or [])
+        if isinstance(row, dict) and row.get('server')
+    }
+
+
+def _tool_names_by_server(tool_rows: Any) -> dict[str, list[str]]:
+    """Group ``:Tool`` rows by owning mcp_server, keeping up to 8 sample names."""
+    by_server: dict[str, list[str]] = {}
+    for row in tool_rows or []:
+        if not isinstance(row, dict):
+            continue
+        server = row.get('server')
+        if not server:
+            continue
+        names = by_server.setdefault(str(server), [])
+        name = row.get('name')
+        if name and len(names) < 8:
+            names.append(str(name))
+    return by_server
+
+
+def _library_agent_suggestion(
+    server: str, names: list[str], tool_rows: Any
+) -> dict[str, Any]:
+    """The proposal for one server that has no Agent Library entry yet."""
+    return {
+        'mcp_server': server,
+        'tool_count': sum(1 for r in tool_rows if r.get('server') == server),
+        'sample_tools': names,
+        'reason': (
+            f"Tools from '{server}' are installed and ingested, "
+            'but no agent in the Library uses them yet.'
+        ),
+    }
 
 
 @router.get('/agent-library/suggestions')
@@ -6845,41 +7254,12 @@ async def suggest_library_agents() -> list[dict[str, Any]]:
             {'skill': 'AGENT_SKILL', 'ref': _AGENT_LIBRARY_PROVIDER_REF},
             deadline=15.0,
         )
-        bound = {
-            str(row.get('server'))
-            for row in (bound_rows or [])
-            if isinstance(row, dict) and row.get('server')
-        }
-        by_server: dict[str, list[str]] = {}
-        for row in tool_rows or []:
-            if not isinstance(row, dict):
-                continue
-            server = row.get('server')
-            if not server:
-                continue
-            server = str(server)
-            names = by_server.setdefault(server, [])
-            name = row.get('name')
-            if name and len(names) < 8:
-                names.append(str(name))
-
-        suggestions: list[dict[str, Any]] = []
-        for server, names in by_server.items():
-            if server in bound:
-                continue
-            suggestions.append(
-                {
-                    'mcp_server': server,
-                    'tool_count': sum(
-                        1 for r in tool_rows if r.get('server') == server
-                    ),
-                    'sample_tools': names,
-                    'reason': (
-                        f"Tools from '{server}' are installed and ingested, "
-                        'but no agent in the Library uses them yet.'
-                    ),
-                }
-            )
+        bound = _library_bound_servers(bound_rows)
+        suggestions = [
+            _library_agent_suggestion(server, names, tool_rows)
+            for server, names in _tool_names_by_server(tool_rows).items()
+            if server not in bound
+        ]
         suggestions.sort(key=lambda s: s.get('tool_count', 0), reverse=True)
         bounded = _public_external_result(suggestions[:_MAX_EXTERNAL_COLLECTION_ITEMS])
         return bounded if isinstance(bounded, list) else []
@@ -6888,6 +7268,25 @@ async def suggest_library_agents() -> list[dict[str, Any]]:
     except Exception as e:
         _log_failure('suggest_library_agents', e)
         return []
+
+
+def _library_agent_tool_refs(tool_rows: Any) -> list[dict[str, Any]]:
+    """The `{id, name}` refs of the tools an Agent Library entry binds."""
+    return [
+        {'id': t.get('id'), 'name': t.get('name')}
+        for t in (tool_rows or [])
+        if isinstance(t, dict) and (t.get('id') or t.get('name'))
+    ]
+
+
+def _library_agent_row(rows: Any) -> dict[str, Any]:
+    """The `CallableResource` row behind an Agent Library entry, or a 404."""
+    if not rows or not isinstance(rows[0].get('r'), dict):
+        raise HTTPException(status_code=404, detail='Agent not found')
+    row = rows[0]['r']
+    if str(row.get('resource_type') or '') not in {'AGENT_SKILL', 'A2A_AGENT'}:
+        raise HTTPException(status_code=404, detail='Agent not found')
+    return row
 
 
 @router.get('/agent-library/agents/{agent_id:path}')
@@ -6903,11 +7302,7 @@ async def get_library_agent(agent_id: str) -> dict[str, Any]:
             {'id': agent_id},
             deadline=10.0,
         )
-        if not rows or not isinstance(rows[0].get('r'), dict):
-            raise HTTPException(status_code=404, detail='Agent not found')
-        row = rows[0]['r']
-        if str(row.get('resource_type') or '') not in {'AGENT_SKILL', 'A2A_AGENT'}:
-            raise HTTPException(status_code=404, detail='Agent not found')
+        row = _library_agent_row(rows)
         view = _library_agent_view(row)
         view['instructions'] = row.get('system_prompt') or ''
         view['endpoint'] = row.get('endpoint')
@@ -6918,11 +7313,7 @@ async def get_library_agent(agent_id: str) -> dict[str, Any]:
             {'id': agent_id},
             deadline=10.0,
         )
-        view['tools'] = [
-            {'id': t.get('id'), 'name': t.get('name')}
-            for t in (tool_rows or [])
-            if isinstance(t, dict) and (t.get('id') or t.get('name'))
-        ]
+        view['tools'] = _library_agent_tool_refs(tool_rows)
         return _public_external_result(view)
     except HTTPException:
         raise
@@ -6931,24 +7322,22 @@ async def get_library_agent(agent_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
-@router.post('/agent-library/agents')
-async def create_library_agent(data: dict[str, Any]) -> dict[str, Any]:
-    """Compose a new locally-delegatable agent from a name, instructions, and tools.
+@dataclass(frozen=True)
+class _LibraryAgentSpec:
+    """One validated Agent Library compose/edit submission."""
 
-    Writes the exact ``CallableResource(resource_type=AGENT_SKILL)`` field
-    contract atomic-skill ingestion produces, so the saved agent is
-    delegatable by name immediately — never a second, UI-only representation.
-    Optionally expands ``bind_server`` into ``USES_TOOL`` edges for every
-    currently-ingested tool of that MCP server, in addition to any explicitly
-    picked ``tool_ids``.
-    """
-    name = str(data.get('name') or '').strip()
-    description = str(data.get('description') or '').strip()
-    instructions = str(data.get('instructions') or '').strip()
-    bind_server = str(data.get('bind_server') or '').strip()
-    model_preference = str(data.get('model_preference') or '').strip()
-    tool_ids = _bounded_identifier_list(data.get('tool_ids'))
+    name: str
+    description: str
+    instructions: str
+    bind_server: str
+    model_preference: str
+    tool_ids: list[str]
 
+
+def _validate_library_agent_fields(
+    name: str, instructions: str, bind_server: str, model_preference: str
+) -> None:
+    """The field contract shared by ``POST`` and ``PUT`` /agent-library/agents."""
     if not name or len(name) > 120:
         raise HTTPException(status_code=422, detail='Agent name is required')
     if not instructions:
@@ -6962,75 +7351,132 @@ async def create_library_agent(data: dict[str, Any]) -> dict[str, Any]:
     if model_preference and not _SAFE_DELEGATION_TOKEN.fullmatch(model_preference):
         raise HTTPException(status_code=400, detail='Invalid model id')
 
+
+def _library_agent_spec(data: dict[str, Any]) -> _LibraryAgentSpec:
+    """Validate an Agent Library submission into a `_LibraryAgentSpec`."""
+    name = str(data.get('name') or '').strip()
+    instructions = str(data.get('instructions') or '').strip()
+    bind_server = str(data.get('bind_server') or '').strip()
+    model_preference = str(data.get('model_preference') or '').strip()
+    # `tool_ids` is bounded BEFORE the field checks, preserving the original
+    # order: a request with both a bad tool_ids list and a bad name still
+    # reports the tool_ids rejection first.
+    tool_ids = _bounded_identifier_list(data.get('tool_ids'))
+    _validate_library_agent_fields(name, instructions, bind_server, model_preference)
+    return _LibraryAgentSpec(
+        name=name,
+        description=str(data.get('description') or '').strip(),
+        instructions=instructions,
+        bind_server=bind_server,
+        model_preference=model_preference,
+        tool_ids=tool_ids,
+    )
+
+
+def _library_tool_bindings(engine: Any, spec: _LibraryAgentSpec) -> list[str]:
+    """The submitted tool ids, plus every ingested tool of a bound MCP server."""
+    resolved_tool_ids = list(spec.tool_ids)
+    if spec.bind_server:
+        server_rows = engine.backend.execute(
+            'MATCH (t:Tool) WHERE t.mcp_server = $s RETURN t.id AS id',
+            {'s': spec.bind_server},
+        )
+        resolved_tool_ids.extend(
+            str(r['id'])
+            for r in (server_rows or [])
+            if isinstance(r, dict) and r.get('id')
+        )
+    return resolved_tool_ids
+
+
+def _bind_agent_tools(
+    engine: Any, resource_id: str, resolved_tool_ids: list[str]
+) -> list[str]:
+    """Link each distinct tool id under ``USES_TOOL``, bounded; returns them sorted."""
+    seen: set[str] = set()
+    for tool_id in resolved_tool_ids:
+        if tool_id in seen or len(seen) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            continue
+        seen.add(tool_id)
+        engine.link_nodes(resource_id, tool_id, 'USES_TOOL')
+    return sorted(seen)
+
+
+def _library_agent_response(
+    agent_id: str, spec: _LibraryAgentSpec, bound_tools: list[str]
+) -> dict[str, Any]:
+    """The response body both the compose and the edit route return."""
+    return {
+        'id': agent_id,
+        'name': spec.name,
+        'description': spec.description or spec.name,
+        'kind': 'local',
+        'mcp_server': spec.bind_server or None,
+        'model_preference': spec.model_preference or None,
+        'tools': bound_tools,
+    }
+
+
+def _persist_library_agent(
+    engine: Any, spec: _LibraryAgentSpec
+) -> tuple[str, list[str]]:
+    """Write the Skill + CallableResource pair and its ``USES_TOOL`` edges."""
+    from agent_utilities.knowledge_graph.ingestion.skill_workflow_ingest import (
+        runnable_skill_digest,
+        skill_reference,
+    )
+
+    source_ref = skill_reference(spec.name)
+    skill_id = f'skill:{source_ref.removeprefix("skill://")}'
+    resource_id = f'resource:{skill_id}'
+    common: dict[str, Any] = {
+        'name': spec.name,
+        'description': spec.description or spec.name,
+        'source_ref': source_ref,
+        'provider_ref': _AGENT_LIBRARY_PROVIDER_REF,
+        'instruction_digest': runnable_skill_digest(spec.instructions),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+    }
+    if spec.bind_server:
+        common['mcp_server'] = spec.bind_server
+    resolved_tool_ids = _library_tool_bindings(engine, spec)
+    engine.add_node(
+        skill_id,
+        'Skill',
+        {**common, 'body': spec.instructions, 'instruction': spec.instructions},
+    )
+    resource_props: dict[str, Any] = {
+        **common,
+        'resource_type': 'AGENT_SKILL',
+        'system_prompt': spec.instructions,
+        'runnable_bound': True,
+    }
+    if spec.model_preference:
+        resource_props['model_preference'] = spec.model_preference
+    engine.add_node(resource_id, 'CallableResource', resource_props)
+    engine.link_nodes(skill_id, resource_id, 'BINDS_RUNNABLE')
+    return resource_id, _bind_agent_tools(engine, resource_id, resolved_tool_ids)
+
+
+@router.post('/agent-library/agents')
+async def create_library_agent(data: dict[str, Any]) -> dict[str, Any]:
+    """Compose a new locally-delegatable agent from a name, instructions, and tools.
+
+    Writes the exact ``CallableResource(resource_type=AGENT_SKILL)`` field
+    contract atomic-skill ingestion produces, so the saved agent is
+    delegatable by name immediately — never a second, UI-only representation.
+    Optionally expands ``bind_server`` into ``USES_TOOL`` edges for every
+    currently-ingested tool of that MCP server, in addition to any explicitly
+    picked ``tool_ids``.
+    """
+    spec = _library_agent_spec(data)
     try:
         engine = await _get_engine_bounded()
-        from agent_utilities.knowledge_graph.ingestion.skill_workflow_ingest import (
-            runnable_skill_digest,
-            skill_reference,
-        )
-
-        def persist_agent() -> tuple[str, list[str]]:
-            source_ref = skill_reference(name)
-            digest = runnable_skill_digest(instructions)
-            skill_id = f'skill:{source_ref.removeprefix("skill://")}'
-            resource_id = f'resource:{skill_id}'
-            ts = datetime.now(timezone.utc).isoformat()
-            common: dict[str, Any] = {
-                'name': name,
-                'description': description or name,
-                'source_ref': source_ref,
-                'provider_ref': _AGENT_LIBRARY_PROVIDER_REF,
-                'instruction_digest': digest,
-                'timestamp': ts,
-            }
-            resolved_tool_ids = list(tool_ids)
-            if bind_server:
-                common['mcp_server'] = bind_server
-                server_rows = engine.backend.execute(
-                    'MATCH (t:Tool) WHERE t.mcp_server = $s RETURN t.id AS id',
-                    {'s': bind_server},
-                )
-                resolved_tool_ids.extend(
-                    str(r['id'])
-                    for r in (server_rows or [])
-                    if isinstance(r, dict) and r.get('id')
-                )
-            engine.add_node(
-                skill_id,
-                'Skill',
-                {**common, 'body': instructions, 'instruction': instructions},
-            )
-            resource_props: dict[str, Any] = {
-                **common,
-                'resource_type': 'AGENT_SKILL',
-                'system_prompt': instructions,
-                'runnable_bound': True,
-            }
-            if model_preference:
-                resource_props['model_preference'] = model_preference
-            engine.add_node(resource_id, 'CallableResource', resource_props)
-            engine.link_nodes(skill_id, resource_id, 'BINDS_RUNNABLE')
-            seen: set[str] = set()
-            for tool_id in resolved_tool_ids:
-                if tool_id in seen or len(seen) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                    continue
-                seen.add(tool_id)
-                engine.link_nodes(resource_id, tool_id, 'USES_TOOL')
-            return resource_id, sorted(seen)
-
         resource_id, bound_tools = await _invoke_governed_helper(
-            persist_agent, deadline=30.0
+            _persist_library_agent, engine, spec, deadline=30.0
         )
         return _public_external_result(
-            {
-                'id': resource_id,
-                'name': name,
-                'description': description or name,
-                'kind': 'local',
-                'mcp_server': bind_server or None,
-                'model_preference': model_preference or None,
-                'tools': bound_tools,
-            }
+            _library_agent_response(resource_id, spec, bound_tools)
         )
     except HTTPException:
         raise
@@ -7039,6 +7485,76 @@ async def create_library_agent(data: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:
         _log_failure('create_library_agent', e)
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+def _load_editable_library_agent(engine: Any, agent_id: str) -> str:
+    """The ``Skill`` id behind an editable, locally-composed Agent Library entry.
+
+    Only an entry this feature itself created
+    (``provider_ref == _AGENT_LIBRARY_PROVIDER_REF``) may be edited; an
+    ingested/external ``A2A_AGENT`` is a 403, matching the restriction
+    ``DELETE`` already enforces for archiving.
+    """
+    rows = engine.backend.execute(
+        'MATCH (r:CallableResource {id: $id}) '
+        'RETURN r.resource_type AS rtype, r.provider_ref AS provider_ref, '
+        'r.source_ref AS source_ref',
+        {'id': agent_id},
+    )
+    if not rows or not isinstance(rows[0], dict):
+        raise HTTPException(status_code=404, detail='Agent not found')
+    rtype = str(rows[0].get('rtype') or '')
+    provider_ref = str(rows[0].get('provider_ref') or '')
+    if rtype != 'AGENT_SKILL' or provider_ref != _AGENT_LIBRARY_PROVIDER_REF:
+        raise HTTPException(
+            status_code=403,
+            detail='Only agents composed in the Agent Library can be edited here',
+        )
+    skill_id = str(rows[0].get('source_ref') or '').removeprefix('skill://')
+    return f'skill:{skill_id}'
+
+
+def _persist_library_agent_update(
+    engine: Any, agent_id: str, spec: _LibraryAgentSpec
+) -> list[str]:
+    """Rewrite an editable entry's Skill + CallableResource and its tool edges."""
+    from agent_utilities.knowledge_graph.ingestion.skill_workflow_ingest import (
+        runnable_skill_digest,
+    )
+
+    skill_id = _load_editable_library_agent(engine, agent_id)
+    common: dict[str, Any] = {
+        'name': spec.name,
+        'description': spec.description or spec.name,
+        'instruction_digest': runnable_skill_digest(spec.instructions),
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+        'mcp_server': spec.bind_server or None,
+        'model_preference': spec.model_preference or None,
+    }
+    engine.backend.execute(
+        'MATCH (s:Skill {id: $id}) '
+        'SET s.name = $name, s.description = $description, '
+        's.instruction_digest = $instruction_digest, s.updated_at = $updated_at, '
+        's.mcp_server = $mcp_server, s.body = $instructions, '
+        's.instruction = $instructions',
+        {'id': skill_id, 'instructions': spec.instructions, **common},
+    )
+    engine.backend.execute(
+        'MATCH (r:CallableResource {id: $id}) '
+        'SET r.name = $name, r.description = $description, '
+        'r.instruction_digest = $instruction_digest, r.updated_at = $updated_at, '
+        'r.mcp_server = $mcp_server, r.model_preference = $model_preference, '
+        'r.system_prompt = $instructions',
+        {'id': agent_id, 'instructions': spec.instructions, **common},
+    )
+    # Full-replace: drop every existing binding then re-add exactly the
+    # submitted set, so the edited agent's tools never accumulate stale
+    # edges from a prior save.
+    engine.backend.execute(
+        'MATCH (r:CallableResource {id: $id})-[e:USES_TOOL]->() DELETE e',
+        {'id': agent_id},
+    )
+    return _bind_agent_tools(engine, agent_id, _library_tool_bindings(engine, spec))
 
 
 @router.put('/agent-library/agents/{agent_id:path}')
@@ -7055,117 +7571,14 @@ async def update_library_agent(agent_id: str, data: dict[str, Any]) -> dict[str,
     so the edited agent's tools always match exactly what was submitted.
     """
     agent_id = _validate_runtime_id(agent_id)
-    name = str(data.get('name') or '').strip()
-    description = str(data.get('description') or '').strip()
-    instructions = str(data.get('instructions') or '').strip()
-    bind_server = str(data.get('bind_server') or '').strip()
-    model_preference = str(data.get('model_preference') or '').strip()
-    tool_ids = _bounded_identifier_list(data.get('tool_ids'))
-
-    if not name or len(name) > 120:
-        raise HTTPException(status_code=422, detail='Agent name is required')
-    if not instructions:
-        raise HTTPException(status_code=422, detail='Agent instructions are required')
-    if len(instructions.encode('utf-8')) > _MAX_INSTRUCTIONS_BYTES:
-        raise HTTPException(
-            status_code=400, detail='Instructions exceed the safety bound'
-        )
-    if bind_server and not _SAFE_DELEGATION_TOKEN.fullmatch(bind_server):
-        raise HTTPException(status_code=400, detail='Invalid MCP server name')
-    if model_preference and not _SAFE_DELEGATION_TOKEN.fullmatch(model_preference):
-        raise HTTPException(status_code=400, detail='Invalid model id')
-
+    spec = _library_agent_spec(data)
     try:
         engine = await _get_engine_bounded()
-        from agent_utilities.knowledge_graph.ingestion.skill_workflow_ingest import (
-            runnable_skill_digest,
+        bound_tools = await _invoke_governed_helper(
+            _persist_library_agent_update, engine, agent_id, spec, deadline=30.0
         )
-
-        def load_existing() -> tuple[str, str]:
-            rows = engine.backend.execute(
-                'MATCH (r:CallableResource {id: $id}) '
-                'RETURN r.resource_type AS rtype, r.provider_ref AS provider_ref, '
-                'r.source_ref AS source_ref',
-                {'id': agent_id},
-            )
-            if not rows or not isinstance(rows[0], dict):
-                raise HTTPException(status_code=404, detail='Agent not found')
-            rtype = str(rows[0].get('rtype') or '')
-            provider_ref = str(rows[0].get('provider_ref') or '')
-            if rtype != 'AGENT_SKILL' or provider_ref != _AGENT_LIBRARY_PROVIDER_REF:
-                raise HTTPException(
-                    status_code=403,
-                    detail='Only agents composed in the Agent Library can be edited here',
-                )
-            skill_id = str(rows[0].get('source_ref') or '').removeprefix('skill://')
-            return f'skill:{skill_id}', str(rows[0].get('source_ref') or '')
-
-        def persist_update() -> list[str]:
-            skill_id, source_ref = load_existing()
-            digest = runnable_skill_digest(instructions)
-            ts = datetime.now(timezone.utc).isoformat()
-            common: dict[str, Any] = {
-                'name': name,
-                'description': description or name,
-                'instruction_digest': digest,
-                'updated_at': ts,
-                'mcp_server': bind_server or None,
-                'model_preference': model_preference or None,
-            }
-            engine.backend.execute(
-                'MATCH (s:Skill {id: $id}) '
-                'SET s.name = $name, s.description = $description, '
-                's.instruction_digest = $instruction_digest, s.updated_at = $updated_at, '
-                's.mcp_server = $mcp_server, s.body = $instructions, '
-                's.instruction = $instructions',
-                {'id': skill_id, 'instructions': instructions, **common},
-            )
-            engine.backend.execute(
-                'MATCH (r:CallableResource {id: $id}) '
-                'SET r.name = $name, r.description = $description, '
-                'r.instruction_digest = $instruction_digest, r.updated_at = $updated_at, '
-                'r.mcp_server = $mcp_server, r.model_preference = $model_preference, '
-                'r.system_prompt = $instructions',
-                {'id': agent_id, 'instructions': instructions, **common},
-            )
-            # Full-replace: drop every existing binding then re-add exactly the
-            # submitted set, so the edited agent's tools never accumulate stale
-            # edges from a prior save.
-            engine.backend.execute(
-                'MATCH (r:CallableResource {id: $id})-[e:USES_TOOL]->() DELETE e',
-                {'id': agent_id},
-            )
-            resolved_tool_ids = list(tool_ids)
-            if bind_server:
-                server_rows = engine.backend.execute(
-                    'MATCH (t:Tool) WHERE t.mcp_server = $s RETURN t.id AS id',
-                    {'s': bind_server},
-                )
-                resolved_tool_ids.extend(
-                    str(r['id'])
-                    for r in (server_rows or [])
-                    if isinstance(r, dict) and r.get('id')
-                )
-            seen: set[str] = set()
-            for tool_id in resolved_tool_ids:
-                if tool_id in seen or len(seen) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                    continue
-                seen.add(tool_id)
-                engine.link_nodes(agent_id, tool_id, 'USES_TOOL')
-            _ = source_ref
-            return sorted(seen)
-
-        bound_tools = await _invoke_governed_helper(persist_update, deadline=30.0)
         return _public_external_result(
-            {
-                'id': agent_id,
-                'name': name,
-                'description': description or name,
-                'kind': 'local',
-                'mcp_server': bind_server or None,
-                'model_preference': model_preference or None,
-                'tools': bound_tools,
-            }
+            _library_agent_response(agent_id, spec, bound_tools)
         )
     except HTTPException:
         raise
@@ -7217,6 +7630,22 @@ async def archive_library_agent(agent_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _validated_a2a_url(raw_url: Any) -> str:
+    """The bounded http(s) URL an external A2A agent card is published at."""
+    url = str(raw_url or '').strip()
+    parsed = urlsplit(url) if url else None
+    if (
+        not url
+        or not parsed
+        or parsed.scheme not in {'http', 'https'}
+        or not parsed.netloc
+    ):
+        raise HTTPException(status_code=422, detail='A valid http(s) URL is required')
+    if len(url.encode('utf-8')) > 2048:
+        raise HTTPException(status_code=400, detail='URL exceeds its safety bound')
+    return url
+
+
 @router.post('/agent-library/a2a')
 async def register_a2a_agent(data: dict[str, Any]) -> dict[str, Any]:
     """Register an external A2A agent alongside local ones.
@@ -7228,18 +7657,8 @@ async def register_a2a_agent(data: dict[str, Any]) -> dict[str, Any]:
     mechanism an offline A2A config sync uses, so an agent registered here is
     indistinguishable from one wired at deploy time.
     """
-    url = str(data.get('url') or '').strip()
+    url = _validated_a2a_url(data.get('url'))
     card = data.get('agent_card')
-    parsed = urlsplit(url) if url else None
-    if (
-        not url
-        or not parsed
-        or parsed.scheme not in {'http', 'https'}
-        or not parsed.netloc
-    ):
-        raise HTTPException(status_code=422, detail='A valid http(s) URL is required')
-    if len(url.encode('utf-8')) > 2048:
-        raise HTTPException(status_code=400, detail='URL exceeds its safety bound')
 
     try:
         engine = await _get_engine_bounded()
@@ -7256,8 +7675,7 @@ async def register_a2a_agent(data: dict[str, Any]) -> dict[str, Any]:
         summary = await _invoke_governed_helper(
             engine.ingest_agent_toolkit, [url], deadline=25.0
         )
-        registered = bool(isinstance(summary, dict) and summary.get('a2a_agents'))
-        if not registered:
+        if not (isinstance(summary, dict) and summary.get('a2a_agents')):
             raise HTTPException(
                 status_code=502,
                 detail=(
@@ -7265,11 +7683,10 @@ async def register_a2a_agent(data: dict[str, Any]) -> dict[str, Any]:
                     'Paste the agent-card JSON manually instead.'
                 ),
             )
-        bounded_summary = _public_external_result(summary)
         return {
             'status': 'success',
             'endpoint_configured': True,
-            'summary': bounded_summary,
+            'summary': _public_external_result(summary),
         }
     except HTTPException:
         raise
@@ -7565,34 +7982,84 @@ async def update_backend_config(data: dict[str, Any]) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def _rendered_prompt_value(entry: Any) -> str:
+    """Render one `_system_prompts` entry (a string or a callable) to text."""
+    if isinstance(entry, str):
+        return entry
+    try:
+        result = entry()
+    except Exception:
+        return f'[Dynamic prompt: {getattr(entry, "__name__", "function")}]'
+    return str(result) if result is not None else ''
+
+
+def _declared_system_prompts(agent: Any) -> list[str]:
+    """The agent's declared `_system_prompts`, each rendered to text."""
+    return [
+        _rendered_prompt_value(entry)
+        for entry in agent._system_prompts
+        if isinstance(entry, str) or callable(entry)
+    ]
+
+
 def _extract_system_prompt(agent: Any) -> str:
     """Helper to safely extract system prompt from a Pydantic AI agent instance."""
     if not agent:
         return ''
     if hasattr(agent, '_system_prompts'):
-        prompts = []
-        for p in agent._system_prompts:
-            if isinstance(p, str):
-                prompts.append(p)
-            elif callable(p):
-                try:
-                    res = p()
-                    prompts.append(str(res) if res is not None else '')
-                except Exception:
-                    prompts.append(
-                        f'[Dynamic prompt: {getattr(p, "__name__", "function")}]'
-                    )
+        prompts = _declared_system_prompts(agent)
         if prompts:
             return '\n\n'.join(prompts)
 
     sys_prompt = getattr(agent, 'system_prompt', '')
-    if callable(sys_prompt):
-        try:
-            res = sys_prompt()
-            return str(res) if res is not None else ''
-        except Exception:
-            return str(sys_prompt)
-    return str(sys_prompt) if sys_prompt is not None else ''
+    if not callable(sys_prompt):
+        return str(sys_prompt) if sys_prompt is not None else ''
+    try:
+        result = sys_prompt()
+    except Exception:
+        return str(sys_prompt)
+    return str(result) if result is not None else ''
+
+
+async def _optional_engine() -> Any | None:
+    """Acquire the engine, degrading to ``None`` on anything but a real 503."""
+    try:
+        return await _get_engine_bounded()
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise
+        return None
+    except Exception:
+        return None
+
+
+def _system_prompt_record(sys_prompt: str) -> dict[str, Any]:
+    """The agent's own system prompt, shaped like a stored prompt record."""
+    return {
+        'id': 'system_prompt',
+        'name': 'System Prompt',
+        'content': sys_prompt,
+        'description': 'The default system prompt configured for this agent.',
+        'author': 'System',
+        'version': 1,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def _graph_prompt_records(engine: Any) -> list[Any] | None:
+    """The KG's prompt records, or ``None`` when the engine could not serve them."""
+    try:
+        prompt_result = await _invoke_governed_helper(
+            engine.get_all_prompts, deadline=10.0
+        )
+        prompts = list(prompt_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+        bounded = _public_external_result(prompts)
+        return bounded if isinstance(bounded, list) else []
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('api_extension', e)
+        return None
 
 
 @router.get('/prompts/graph')
@@ -7604,46 +8071,17 @@ async def list_graph_prompts(request: Request) -> list[dict[str, Any]]:
     Returns:
         A list of prompt dicts with id, name, content, and metadata.
     """
-    try:
-        engine = await _get_engine_bounded()
-    except HTTPException as exc:
-        if exc.status_code == 503:
-            raise
-        engine = None
-    except Exception:
-        engine = None
+    engine = await _optional_engine()
     if engine:
-        try:
-            prompt_result = await _invoke_governed_helper(
-                engine.get_all_prompts, deadline=10.0
-            )
-            prompts = list(prompt_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-            bounded = _public_external_result(prompts)
-            return bounded if isinstance(bounded, list) else []
-        except HTTPException:
-            raise
-        except Exception as e:
-            _log_failure('api_extension', e)
+        records = await _graph_prompt_records(engine)
+        if records is not None:
+            return records
     # Fallback to returning agent's system prompt as a default prompt
-    agent = getattr(request.app.state, 'agent', None)
-    if agent:
-        sys_prompt = _extract_system_prompt(agent)
-        if sys_prompt:
-            bounded = _public_external_result(
-                [
-                    {
-                        'id': 'system_prompt',
-                        'name': 'System Prompt',
-                        'content': sys_prompt,
-                        'description': 'The default system prompt configured for this agent.',
-                        'author': 'System',
-                        'version': 1,
-                        'created_at': datetime.now(timezone.utc).isoformat(),
-                    }
-                ]
-            )
-            return bounded if isinstance(bounded, list) else []
-    return []
+    sys_prompt = _extract_system_prompt(getattr(request.app.state, 'agent', None))
+    if not sys_prompt:
+        return []
+    bounded = _public_external_result([_system_prompt_record(sys_prompt)])
+    return bounded if isinstance(bounded, list) else []
 
 
 @router.get('/prompts/graph/{prompt_id}')
@@ -7659,14 +8097,7 @@ async def get_graph_prompt(prompt_id: str, request: Request) -> dict[str, Any]:
         The prompt dict with full content.
     """
     prompt_id = _validate_runtime_id(prompt_id)
-    try:
-        engine = await _get_engine_bounded()
-    except HTTPException as exc:
-        if exc.status_code == 503:
-            raise
-        engine = None
-    except Exception:
-        engine = None
+    engine = await _optional_engine()
     if engine:
         result = await _invoke_governed_helper(
             engine.get_prompt, prompt_id, deadline=10.0
@@ -7678,22 +8109,12 @@ async def get_graph_prompt(prompt_id: str, request: Request) -> dict[str, Any]:
             raise HTTPException(status_code=422, detail='Invalid prompt record')
         return bounded
 
-    agent = getattr(request.app.state, 'agent', None)
-    if prompt_id == 'system_prompt' and agent:
-        sys_prompt = _extract_system_prompt(agent)
-        if sys_prompt:
-            bounded = _public_external_result(
-                {
-                    'id': 'system_prompt',
-                    'name': 'System Prompt',
-                    'content': sys_prompt,
-                    'description': 'The default system prompt configured for this agent.',
-                    'author': 'System',
-                    'version': 1,
-                    'created_at': datetime.now(timezone.utc).isoformat(),
-                }
-            )
-            return bounded if isinstance(bounded, dict) else {}
+    sys_prompt = ''
+    if prompt_id == 'system_prompt':
+        sys_prompt = _extract_system_prompt(getattr(request.app.state, 'agent', None))
+    if sys_prompt:
+        bounded = _public_external_result(_system_prompt_record(sys_prompt))
+        return bounded if isinstance(bounded, dict) else {}
     raise HTTPException(status_code=404, detail=f'Prompt {prompt_id} not found')
 
 
@@ -7896,6 +8317,32 @@ async def diff_graph_prompt_versions(
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def _bounded_list_result(items: Any) -> list[dict[str, Any]]:
+    """Bound a list-shaped API result, degrading a non-list to []."""
+    bounded = _public_external_result(
+        list(items or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+    )
+    return bounded if isinstance(bounded, list) else []
+
+
+def _agent_function_tools(agent: Any) -> list[dict[str, Any]]:
+    """Fallback tool list extracted from the pydantic-ai agent on app state."""
+    if not agent or not hasattr(agent, '_function_tools'):
+        return []
+    return [
+        {
+            'id': name,
+            'name': name,
+            'description': tool.description or '',
+            'enabled': True,
+            'type': 'builtin',
+        }
+        for name, tool in list(agent._function_tools.items())[
+            :_MAX_EXTERNAL_COLLECTION_ITEMS
+        ]
+    ]
+
+
 @router.get('/tools/graph')
 async def list_graph_tools(request: Request) -> list[dict[str, Any]]:
     """List MCP tools from the Knowledge Graph.
@@ -7905,38 +8352,18 @@ async def list_graph_tools(request: Request) -> list[dict[str, Any]]:
     Returns:
         A list of MCP tool dicts sorted alphabetically.
     """
-    try:
-        engine = await _get_engine_bounded()
-    except HTTPException as exc:
-        if exc.status_code == 503:
-            raise
-        engine = None
-    except Exception:
-        engine = None
+    engine = await _optional_engine()
     if engine:
-        tools_result = await _invoke_governed_helper(engine.get_tools, deadline=10.0)
-        tools = list(tools_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        bounded = _public_external_result(tools)
-        return bounded if isinstance(bounded, list) else []
+        return _bounded_list_result(
+            await _invoke_governed_helper(engine.get_tools, deadline=10.0)
+        )
 
-    # Fallback: extract tools from the pydantic-ai agent instance registered on the app state
-    agent = getattr(request.app.state, 'agent', None)
-    if agent and hasattr(agent, '_function_tools'):
-        tools = [
-            {
-                'id': name,
-                'name': name,
-                'description': tool.description or '',
-                'enabled': True,
-                'type': 'builtin',
-            }
-            for name, tool in list(agent._function_tools.items())[
-                :_MAX_EXTERNAL_COLLECTION_ITEMS
-            ]
-        ]
-        bounded = _public_external_result(tools)
-        return bounded if isinstance(bounded, list) else []
-    return []
+    # Fallback: extract tools from the pydantic-ai agent instance registered on
+    # the app state.
+    tools = _agent_function_tools(getattr(request.app.state, 'agent', None))
+    if not tools:
+        return []
+    return _bounded_list_result(tools)
 
 
 @router.post('/tools/graph/{tool_id}/toggle')
@@ -8053,30 +8480,7 @@ async def _proxy_to_gateway(method: str, path: str, json_data: Any = None) -> An
     return _public_external_result(json.loads(body), truncate_lists=True)
 
 
-def _get_db_path() -> Path:
-    # Use the shared TUI location when available, otherwise the WebUI's XDG data
-    # directory. Never materialize a process-relative database.
-    try:
-        from agent_terminal_ui.session_manager import DEFAULT_DB_PATH
-
-        configured_db_path = Path(DEFAULT_DB_PATH).expanduser()
-        if configured_db_path.is_symlink():
-            raise RuntimeError('Refusing symbolic-link session database')
-        db_path = configured_db_path.resolve()
-    except ImportError:
-        db_path = _WEBUI_DATA_DIR / 'agent_terminal_ui.db'
-
-    if db_path.is_symlink():
-        raise RuntimeError('Refusing symbolic-link session database')
-    _private_directory(db_path.parent)
-
-    # Initialize the SQLite schema and privacy migration fail-closed.
-    conn = None
-    try:
-        import sqlite3
-
-        conn = sqlite3.connect(str(db_path))
-        conn.executescript("""
+_WEBUI_SESSION_SCHEMA = """
             PRAGMA secure_delete = ON;
 
             CREATE TABLE IF NOT EXISTS sessions (
@@ -8114,35 +8518,82 @@ def _get_db_path() -> Path:
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
-        """)
-        # `owner` (CONCEPT:AU-ECO.ui.session-owner-visibility) was added after this table
-        # existed in the wild; CREATE TABLE IF NOT EXISTS does not retrofit a column onto
-        # an already-created table, so migrate it explicitly. Idempotent: sqlite raises
-        # "duplicate column name" on a DB that already has it.
-        try:
-            conn.execute("ALTER TABLE sessions ADD COLUMN owner TEXT DEFAULT ''")
-        except sqlite3.OperationalError as exc:
-            if 'duplicate column name' not in str(exc).lower():
-                raise
-        marker = conn.execute(
-            "SELECT value FROM webui_schema_meta WHERE key = 'privacy_version'"
-        ).fetchone()
-        if marker is None or marker[0] != '1':
-            _scrub_existing_session_rows(conn)
-            conn.execute(
-                "INSERT OR REPLACE INTO webui_schema_meta (key, value) VALUES ('privacy_version', '1')"
-            )
+        """
+
+
+def _resolved_session_db_path() -> Path:
+    """Where the session database lives.
+
+    Use the shared TUI location when available, otherwise the WebUI's XDG data
+    directory. Never materialize a process-relative database.
+    """
+    try:
+        from agent_terminal_ui.session_manager import DEFAULT_DB_PATH
+
+        configured_db_path = Path(DEFAULT_DB_PATH).expanduser()
+        if configured_db_path.is_symlink():
+            raise RuntimeError('Refusing symbolic-link session database')
+        db_path = configured_db_path.resolve()
+    except ImportError:
+        db_path = _WEBUI_DATA_DIR / 'agent_terminal_ui.db'
+
+    if db_path.is_symlink():
+        raise RuntimeError('Refusing symbolic-link session database')
+    return db_path
+
+
+def _migrate_session_owner_column(conn: Any) -> None:
+    """Retrofit the `owner` column onto an already-created sessions table.
+
+    `owner` (CONCEPT:AU-ECO.ui.session-owner-visibility) was added after this
+    table existed in the wild; CREATE TABLE IF NOT EXISTS does not retrofit a
+    column onto an already-created table, so migrate it explicitly.
+    Idempotent: sqlite raises "duplicate column name" on a DB that already
+    has it.
+    """
+    try:
+        conn.execute("ALTER TABLE sessions ADD COLUMN owner TEXT DEFAULT ''")
+    except sqlite3.OperationalError as exc:
+        if 'duplicate column name' not in str(exc).lower():
+            raise
+
+
+def _apply_session_privacy_migration(conn: Any) -> None:
+    """Run the one-time privacy scrub, once, recorded by a schema marker."""
+    marker = conn.execute(
+        "SELECT value FROM webui_schema_meta WHERE key = 'privacy_version'"
+    ).fetchone()
+    if marker is None or marker[0] != '1':
+        _scrub_existing_session_rows(conn)
+        conn.execute(
+            "INSERT OR REPLACE INTO webui_schema_meta (key, value) VALUES ('privacy_version', '1')"
+        )
+
+
+def _initialize_session_database(db_path: Path) -> None:
+    """Initialize the SQLite schema and privacy migration fail-closed."""
+    conn = None
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript(_WEBUI_SESSION_SCHEMA)
+        _migrate_session_owner_column(conn)
+        _apply_session_privacy_migration(conn)
         conn.commit()
         conn.close()
         os.chmod(db_path, 0o600)
     except Exception as e:
         if conn is not None:
-            try:
+            with contextlib.suppress(Exception):
+                # Preserve the primary failure.
                 conn.close()
-            except Exception:  # noqa: BLE001 - preserve the primary failure
-                pass
         _log_failure('session_database_initialization', e)
         raise RuntimeError('Session persistence is unavailable') from e
+
+
+def _get_db_path() -> Path:
+    db_path = _resolved_session_db_path()
+    _private_directory(db_path.parent)
+    _initialize_session_database(db_path)
     return db_path
 
 
@@ -8193,6 +8644,53 @@ def _scrub_existing_session_rows(conn: Any) -> None:
             )
 
 
+async def _proxied_sessions(is_admin: bool) -> list[Any] | None:
+    """Sessions from the epistemic-gateway, or ``None`` if it did not answer.
+
+    The proxied gateway session store carries no per-caller ownership field
+    (unlike the local store), so a non-admin caller's "own sessions" cannot be
+    verified from this data. Fail closed rather than show every session to
+    every user (AU-OS fail-closed rule: a degraded read must never grant
+    permission).
+    """
+    try:
+        proxied = await _proxy_to_gateway('GET', '/sessions')
+    except Exception as e:
+        _log_failure('proxy_get_all_sessions', e, level=logging.WARNING)
+        return None
+    if proxied is None:
+        return None
+    if not is_admin:
+        return []
+    return proxied if isinstance(proxied, list) else []
+
+
+def _read_local_sessions(db_path: Any, is_admin: bool) -> list[dict[str, Any]]:
+    """The durable sqlite sessions this caller may see, newest first."""
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    if is_admin:
+        cursor.execute(
+            'SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?',
+            (_MAX_SESSION_RECORDS,),
+        )
+    else:
+        cursor.execute(
+            'SELECT * FROM sessions WHERE owner = ? ORDER BY updated_at DESC LIMIT ?',
+            (_actor_id_from_request(None), _MAX_SESSION_RECORDS),
+        )
+    rows = cursor.fetchall()
+    res = []
+    for row in rows:
+        d = dict(row)
+        d['background'] = bool(d.get('background', 0))
+        d['needs_input'] = bool(d.get('needs_input', 0))
+        res.append(d)
+    conn.close()
+    return res
+
+
 @router.get('/sessions')
 async def get_all_sessions() -> list[dict[str, Any]]:
     """Retrieve durable sqlite-backed agent sessions (TUI-20).
@@ -8207,51 +8705,78 @@ async def get_all_sessions() -> list[dict[str, Any]]:
     """
     is_admin = _current_webui_is_admin()
     if _is_gateway_active():
-        try:
-            proxied = await _proxy_to_gateway('GET', '/sessions')
-        except Exception as e:
-            _log_failure('proxy_get_all_sessions', e, level=logging.WARNING)
-            proxied = None
+        proxied = await _proxied_sessions(is_admin)
         if proxied is not None:
-            if is_admin:
-                return proxied if isinstance(proxied, list) else []
-            # The proxied epistemic-gateway session store carries no per-caller
-            # ownership field (unlike the local store below), so a non-admin
-            # caller's "own sessions" cannot be verified from this data. Fail
-            # closed rather than show every session to every user (AU-OS
-            # fail-closed rule: a degraded read must never grant permission).
-            return []
+            return proxied
 
     db_path = _get_db_path()
     if not db_path.exists():
         return []
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        if is_admin:
-            cursor.execute(
-                'SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?',
-                (_MAX_SESSION_RECORDS,),
-            )
-        else:
-            cursor.execute(
-                'SELECT * FROM sessions WHERE owner = ? ORDER BY updated_at DESC LIMIT ?',
-                (_actor_id_from_request(None), _MAX_SESSION_RECORDS),
-            )
-        rows = cursor.fetchall()
-        res = []
-        for row in rows:
-            d = dict(row)
-            d['background'] = bool(d.get('background', 0))
-            d['needs_input'] = bool(d.get('needs_input', 0))
-            res.append(d)
-        conn.close()
-        safe_sessions, _privacy_report = sanitize_for_persistence(res)
+        safe_sessions, _privacy_report = sanitize_for_persistence(
+            _read_local_sessions(db_path, is_admin)
+        )
         return safe_sessions if isinstance(safe_sessions, list) else []
     except Exception as e:
         _log_failure('api_extension', e)
         return []
+
+
+def _read_local_session_detail(
+    db_path: Any, session_id: str, is_admin: bool
+) -> dict[str, Any]:
+    """One session plus its turns, owner-scoped; a miss is a 404."""
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT * FROM sessions WHERE id = ?', (session_id,))
+    sess_row = cursor.fetchone()
+    if not sess_row or (
+        not is_admin and sess_row['owner'] != _actor_id_from_request(None)
+    ):
+        conn.close()
+        raise HTTPException(status_code=404, detail='Session not found')
+
+    sess_dict = dict(sess_row)
+    sess_dict['background'] = bool(sess_dict.get('background', 0))
+    sess_dict['needs_input'] = bool(sess_dict.get('needs_input', 0))
+
+    cursor.execute(
+        'SELECT * FROM turns WHERE session_id = ? ORDER BY turn_number ASC LIMIT ?',
+        (session_id, _MAX_SESSION_TURNS),
+    )
+    sess_dict['turns'] = [dict(t) for t in cursor.fetchall()]
+
+    conn.close()
+    return sess_dict
+
+
+# Sentinel for "the gateway did not answer", distinct from a `null` body.
+_GATEWAY_NO_ANSWER = object()
+
+
+async def _proxied_session_detail(session_id: str, is_admin: bool) -> Any:
+    """One session from the gateway, or `_GATEWAY_NO_ANSWER` if it did not.
+
+    The sentinel (rather than `None`) keeps a genuine `null` gateway body
+    returning `null`, exactly as the inline version this replaced did --
+    only a real failure falls through to the local store.
+
+    See `_proxied_sessions`: the gateway store carries no ownership field to
+    verify against, so a non-admin caller cannot be proven to own this
+    session -- fail closed with the same 404 a missing session gets.
+    """
+    try:
+        result = await _proxy_to_gateway('GET', f'/sessions/{session_id}')
+        if not is_admin:
+            raise HTTPException(status_code=404, detail='Session not found')
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('proxy_get_session_details', e, level=logging.WARNING)
+        return _GATEWAY_NO_ANSWER
 
 
 @router.get('/sessions/{session_id}')
@@ -8266,49 +8791,17 @@ async def get_session_details(session_id: str) -> dict[str, Any]:
     session_id = _validate_runtime_id(session_id)
     is_admin = _current_webui_is_admin()
     if _is_gateway_active():
-        try:
-            result = await _proxy_to_gateway('GET', f'/sessions/{session_id}')
-            if not is_admin:
-                # See get_all_sessions: the gateway store carries no ownership
-                # field to verify against, so a non-admin caller cannot be
-                # proven to own this session — fail closed.
-                raise HTTPException(status_code=404, detail='Session not found')
-            return result
-        except HTTPException:
-            raise
-        except Exception as e:
-            _log_failure('proxy_get_session_details', e, level=logging.WARNING)
+        proxied = await _proxied_session_detail(session_id, is_admin)
+        if proxied is not _GATEWAY_NO_ANSWER:
+            return proxied
 
     db_path = _get_db_path()
     if not db_path.exists():
         raise HTTPException(status_code=404, detail='Database not found')
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        cursor.execute('SELECT * FROM sessions WHERE id = ?', (session_id,))
-        sess_row = cursor.fetchone()
-        if not sess_row:
-            conn.close()
-            raise HTTPException(status_code=404, detail='Session not found')
-        if not is_admin and sess_row['owner'] != _actor_id_from_request(None):
-            conn.close()
-            raise HTTPException(status_code=404, detail='Session not found')
-
-        sess_dict = dict(sess_row)
-        sess_dict['background'] = bool(sess_dict.get('background', 0))
-        sess_dict['needs_input'] = bool(sess_dict.get('needs_input', 0))
-
-        cursor.execute(
-            'SELECT * FROM turns WHERE session_id = ? ORDER BY turn_number ASC LIMIT ?',
-            (session_id, _MAX_SESSION_TURNS),
+        safe_session, _privacy_report = sanitize_for_persistence(
+            _read_local_session_detail(db_path, session_id, is_admin)
         )
-        turns = [dict(t) for t in cursor.fetchall()]
-        sess_dict['turns'] = turns
-
-        conn.close()
-        safe_session, _privacy_report = sanitize_for_persistence(sess_dict)
         return safe_session if isinstance(safe_session, dict) else {}
     except HTTPException:
         raise
@@ -8369,15 +8862,7 @@ async def submit_session_reply(
 ) -> dict[str, Any]:
     """Submit an interactive user reply turn to a waiting agent session."""
     session_id = _validate_runtime_id(session_id)
-    raw_content = payload.get('content', '')
-    if not isinstance(raw_content, str):
-        raise HTTPException(status_code=400, detail='Reply content must be text')
-    if len(raw_content.encode('utf-8')) > _MAX_SESSION_REPLY_BYTES:
-        raise HTTPException(status_code=400, detail='Reply content exceeds its limit')
-    safe_content, _privacy_report = sanitize_for_persistence(raw_content)
-    content = str(safe_content).strip()
-    if not content:
-        raise HTTPException(status_code=400, detail='Reply content cannot be empty')
+    content = _session_reply_content(payload)
     if _is_gateway_active():
         try:
             return await _proxy_to_gateway(
@@ -8393,54 +8878,73 @@ async def submit_session_reply(
         raise HTTPException(status_code=404, detail='Database not found')
 
     try:
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-
-        cursor.execute('SELECT turn_count FROM sessions WHERE id = ?', (session_id,))
-        row = cursor.fetchone()
-        if not row:
-            conn.close()
-            raise HTTPException(status_code=404, detail='Session not found')
-
-        turn_num = row[0]
-        turn_id = str(uuid.uuid4())
-
-        cursor.execute(
-            'INSERT INTO turns (id, session_id, turn_number, role, content, created_at, status, usage_json, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (
-                turn_id,
-                session_id,
-                turn_num + 1,
-                'user',
-                content,
-                time.time(),
-                'completed',
-                '{}',
-                0,
-            ),
-        )
-
-        cursor.execute(
-            'UPDATE sessions SET turn_count = turn_count + 1, needs_input = 0, updated_at = ? WHERE id = ?',
-            (time.time(), session_id),
-        )
-
-        conn.commit()
-        conn.close()
-
-        # Wake up background runner if it is paused waiting for input
-        if session_id in background_goal_runs:
-            run = background_goal_runs[session_id]
-            run['user_reply'] = content
-            if run['event']:
-                run['event'].set()
-
+        _append_session_reply_turn(db_path, session_id, content)
+        _wake_waiting_goal_run(session_id, content)
         return {'status': 'success', 'message': 'Reply submitted successfully.'}
     except HTTPException:
         raise
     except Exception as e:
         _log_failure('api_extension', e)
         raise HTTPException(status_code=500, detail=type(e).__name__)
+
+
+def _session_reply_content(payload: dict[str, Any]) -> str:
+    """The bounded, privacy-sanitized text of an interactive reply turn."""
+    raw_content = payload.get('content', '')
+    if not isinstance(raw_content, str):
+        raise HTTPException(status_code=400, detail='Reply content must be text')
+    if len(raw_content.encode('utf-8')) > _MAX_SESSION_REPLY_BYTES:
+        raise HTTPException(status_code=400, detail='Reply content exceeds its limit')
+    safe_content, _privacy_report = sanitize_for_persistence(raw_content)
+    content = str(safe_content).strip()
+    if not content:
+        raise HTTPException(status_code=400, detail='Reply content cannot be empty')
+    return content
+
+
+def _append_session_reply_turn(db_path: Any, session_id: str, content: str) -> None:
+    """Record the reply as the session's next user turn; a miss is a 404."""
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT turn_count FROM sessions WHERE id = ?', (session_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail='Session not found')
+
+    cursor.execute(
+        'INSERT INTO turns (id, session_id, turn_number, role, content, created_at, status, usage_json, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (
+            str(uuid.uuid4()),
+            session_id,
+            row[0] + 1,
+            'user',
+            content,
+            time.time(),
+            'completed',
+            '{}',
+            0,
+        ),
+    )
+
+    cursor.execute(
+        'UPDATE sessions SET turn_count = turn_count + 1, needs_input = 0, updated_at = ? WHERE id = ?',
+        (time.time(), session_id),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def _wake_waiting_goal_run(session_id: str, content: str) -> None:
+    """Wake up the background runner if it is paused waiting for input."""
+    run = background_goal_runs.get(session_id)
+    if run is None:
+        return
+    run['user_reply'] = content
+    if run['event']:
+        run['event'].set()
 
 
 @router.post('/sessions/{session_id}/cancel')
@@ -8479,19 +8983,9 @@ async def cancel_session_run(session_id: str) -> dict[str, Any]:
     return {'status': 'success', 'cancelled': cancelled}
 
 
-async def run_goal_loop(
-    session_id: str,
-    goal_id: str,
-    objective: str,
-    validation_action: str,
-    max_iterations: int,
-    constraints: list[str],
-):
-    """Background asyncio worker loop implementing Concept ORCH-5.0."""
-    db_path = _get_db_path()
-    start_time = time.time()
-
-    active_goals[goal_id] = {
+def _initial_goal_state(goal_id: str, session_id: str) -> dict[str, Any]:
+    """The in-memory record a running goal publishes progress through."""
+    return {
         'goal_id': goal_id,
         'session_id': session_id,
         'status': GoalStatus.RUNNING,
@@ -8503,116 +8997,155 @@ async def run_goal_loop(
         'error': '',
     }
 
-    iterations_run = 0
-    success = False
 
+def _write_goal_session_status(db_path: Any, session_id: str, status: str) -> None:
+    """Best-effort session-status write; a failed write must not stop the loop."""
     try:
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE sessions SET status = 'running', updated_at = ? WHERE id = ?",
-            (time.time(), session_id),
+            'UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?',
+            (status, time.time(), session_id),
         )
         conn.commit()
         conn.close()
     except Exception as e:
         _log_failure('api_extension', e)
+
+
+def _run_goal_validation(
+    validation_action: str, iterations_run: int
+) -> tuple[bool, str]:
+    """Evaluate one iteration's validation predicate.
+
+    Validation actions are bounded filesystem predicates. Arbitrary shell
+    commands are intentionally unsupported at this API trust boundary.
+    """
+    if validation_action == 'none':
+        return iterations_run >= 3, ''
+    cmd_success = False
+    try:
+        workspace = DEFAULT_AGENT_DIR.resolve()
+        if validation_action == 'workspace-present':
+            cmd_success = workspace.is_dir()
+        elif validation_action == 'repository-present':
+            cmd_success = workspace.is_dir() and (workspace / '.git').exists()
+    except Exception as e:
+        return False, f'Validation failed: {type(e).__name__}'
+    return cmd_success, (
+        'Validation action passed.'
+        if cmd_success
+        else 'Validation action did not pass.'
+    )
+
+
+def _build_goal_iteration(validation_action: str, iterations_run: int) -> GoalIteration:
+    """Run one bounded goal step and record it as a `GoalIteration`."""
+    iter_start = time.time()
+    action_desc = f'Executing bounded goal step {iterations_run}.'
+    if validation_action != 'none':
+        action_desc += ' Applying the configured validation action.'
+    tool_calls_count = 2 if validation_action != 'none' else 1
+    cmd_success, validation_output = _run_goal_validation(
+        validation_action, iterations_run
+    )
+    return GoalIteration(
+        iteration=iterations_run,
+        action=action_desc,
+        result=f'Iteration step complete. Command success: {cmd_success}',
+        validation_output=validation_output,
+        is_complete=cmd_success,
+        duration_ms=int((time.time() - iter_start) * 1000),
+        tool_calls=tool_calls_count,
+        timestamp=time.time(),
+    )
+
+
+def _goal_iteration_markdown(iteration: GoalIteration) -> str:
+    """The assistant turn body one iteration writes into the console."""
+    content_md = (
+        f'### Iteration {iteration.iteration}\n'
+        f'**Action:** {iteration.action}\n'
+        f'**Result:** {iteration.result}\n'
+    )
+    if iteration.validation_output:
+        content_md += (
+            f'\n**Validation Output:**\n```\n{iteration.validation_output}\n```'
+        )
+    return content_md
+
+
+def _record_goal_iteration(
+    db_path: Any, session_id: str, iteration: GoalIteration
+) -> None:
+    """Synchronize an iteration back to SQLite so the console shows progress."""
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        cursor.execute('SELECT turn_count FROM sessions WHERE id = ?', (session_id,))
+        tc_row = cursor.fetchone()
+        turn_num = tc_row[0] if tc_row else 0
+        cursor.execute(
+            'INSERT INTO turns (id, session_id, turn_number, role, content, created_at, status, usage_json, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (
+                str(uuid.uuid4()),
+                session_id,
+                turn_num + 1,
+                'assistant',
+                _goal_iteration_markdown(iteration),
+                time.time(),
+                'completed',
+                '{}',
+                iteration.duration_ms,
+            ),
+        )
+        preview = (
+            f'Iteration {iteration.iteration} complete. '
+            f'Success: {iteration.is_complete}'
+        )
+        cursor.execute(
+            'UPDATE sessions SET turn_count = turn_count + 1, last_response_preview = ?, updated_at = ? WHERE id = ?',
+            (preview, time.time(), session_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        _log_failure('api_extension', e)
+
+
+def _absorb_goal_iteration(goal_id: str, iteration: GoalIteration) -> None:
+    """Fold one iteration's totals into the goal's published progress record."""
+    state = active_goals[goal_id]
+    state['iterations'].append(iteration)
+    state['total_iterations'] = iteration.iteration
+    state['total_duration_ms'] += iteration.duration_ms
+    state['total_tool_calls'] += iteration.tool_calls
+
+
+async def run_goal_loop(
+    session_id: str,
+    goal_id: str,
+    objective: str,
+    validation_action: str,
+    max_iterations: int,
+    constraints: list[str],
+):
+    """Background asyncio worker loop implementing Concept ORCH-5.0."""
+    db_path = _get_db_path()
+    active_goals[goal_id] = _initial_goal_state(goal_id, session_id)
+
+    iterations_run = 0
+    success = False
+
+    _write_goal_session_status(db_path, session_id, 'running')
     while iterations_run < max_iterations and not success:
         iterations_run += 1
-        iter_start = time.time()
-
-        # Step action description
-        action_desc = f'Executing bounded goal step {iterations_run}.'
-        if validation_action != 'none':
-            action_desc += ' Applying the configured validation action.'
-
-        tool_calls_count = 2 if validation_action != 'none' else 1
-
-        # Validation actions are bounded filesystem predicates. Arbitrary shell
-        # commands are intentionally unsupported at this API trust boundary.
-        validation_output = ''
-        cmd_success = False
-        if validation_action != 'none':
-            try:
-                workspace = DEFAULT_AGENT_DIR.resolve()
-                if validation_action == 'workspace-present':
-                    cmd_success = workspace.is_dir()
-                elif validation_action == 'repository-present':
-                    cmd_success = workspace.is_dir() and (workspace / '.git').exists()
-                validation_output = (
-                    'Validation action passed.'
-                    if cmd_success
-                    else 'Validation action did not pass.'
-                )
-            except Exception as e:
-                validation_output = f'Validation failed: {type(e).__name__}'
-        else:
-            if iterations_run >= 3:
-                cmd_success = True
-
-        iter_duration = int((time.time() - iter_start) * 1000)
-
-        # Build iteration step record
-        iteration = GoalIteration(
-            iteration=iterations_run,
-            action=action_desc,
-            result=f'Iteration step complete. Command success: {cmd_success}',
-            validation_output=validation_output,
-            is_complete=cmd_success,
-            duration_ms=iter_duration,
-            tool_calls=tool_calls_count,
-            timestamp=time.time(),
-        )
-
-        active_goals[goal_id]['iterations'].append(iteration)
-        active_goals[goal_id]['total_iterations'] = iterations_run
-        active_goals[goal_id]['total_duration_ms'] += iter_duration
-        active_goals[goal_id]['total_tool_calls'] += tool_calls_count
-
-        # Synchronize back to SQLite turns to show dynamic console progress
-        try:
-            conn = sqlite3.connect(str(db_path))
-            cursor = conn.cursor()
-
-            cursor.execute(
-                'SELECT turn_count FROM sessions WHERE id = ?', (session_id,)
-            )
-            tc_row = cursor.fetchone()
-            turn_num = tc_row[0] if tc_row else 0
-
-            turn_id = str(uuid.uuid4())
-            content_md = f'### Iteration {iterations_run}\n**Action:** {iteration.action}\n**Result:** {iteration.result}\n'
-            if validation_output:
-                content_md += f'\n**Validation Output:**\n```\n{validation_output}\n```'
-
-            cursor.execute(
-                'INSERT INTO turns (id, session_id, turn_number, role, content, created_at, status, usage_json, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (
-                    turn_id,
-                    session_id,
-                    turn_num + 1,
-                    'assistant',
-                    content_md,
-                    time.time(),
-                    'completed',
-                    '{}',
-                    iter_duration,
-                ),
-            )
-
-            preview = f'Iteration {iterations_run} complete. Success: {cmd_success}'
-            cursor.execute(
-                'UPDATE sessions SET turn_count = turn_count + 1, last_response_preview = ?, updated_at = ? WHERE id = ?',
-                (preview, time.time(), session_id),
-            )
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            _log_failure('api_extension', e)
-        if cmd_success:
+        iteration = _build_goal_iteration(validation_action, iterations_run)
+        _absorb_goal_iteration(goal_id, iteration)
+        _record_goal_iteration(db_path, session_id, iteration)
+        if iteration.is_complete:
             success = True
             break
-
         await asyncio.sleep(2)
 
     final_status = GoalStatus.COMPLETED if success else GoalStatus.FAILED
@@ -8620,23 +9153,11 @@ async def run_goal_loop(
     active_goals[goal_id]['summary'] = (
         f'Goal finished with status: {final_status.value}. Iterations run: {iterations_run}.'
     )
-
-    try:
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-        cursor.execute(
-            'UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?',
-            (final_status.value, time.time(), session_id),
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        _log_failure('api_extension', e)
+    _write_goal_session_status(db_path, session_id, final_status.value)
 
 
-@router.post('/goals')
-async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, Any]:
-    """Launch a new backgrounded autonomous goal execution loop (ORCH-5.0)."""
+def _sanitized_goal_request(payload: StartGoalPayload) -> tuple[str, list[str]]:
+    """Validate and privacy-sanitize a goal submission's objective/constraints."""
     if payload.validation_cmd:
         raise HTTPException(
             status_code=400,
@@ -8663,25 +9184,17 @@ async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, 
         raise HTTPException(status_code=400, detail='Goal constraints exceed limits')
     if not safe_objective:
         raise HTTPException(status_code=400, detail='Goal objective is required')
+    return safe_objective, safe_constraints
 
-    if _is_gateway_active():
-        try:
-            return await _proxy_to_gateway(
-                'POST',
-                '/goals',
-                {
-                    'objective': safe_objective,
-                    'max_iterations': payload.max_iterations,
-                    'validation_action': payload.validation_action,
-                    'constraints': safe_constraints,
-                },
-            )
-        except Exception as e:
-            _log_failure('proxy_create_goal', e, level=logging.WARNING)
 
-    session_id = str(uuid.uuid4())
-    goal_id = str(uuid.uuid4())
-
+def _goal_spec_for(
+    payload: StartGoalPayload,
+    safe_objective: str,
+    safe_constraints: list[str],
+    goal_id: str,
+    session_id: str,
+) -> Any:
+    """The `GoalSpec` a goal run is launched from."""
     spec = GoalSpec.parse_goal_input(safe_objective)
     spec.id = goal_id
     spec.session_id = session_id
@@ -8690,11 +9203,13 @@ async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, 
     spec.validation_cmd = ''
     if safe_constraints:
         spec.constraints = safe_constraints
+    return spec
 
-    db_path = _get_db_path()
-    owner = _actor_id_from_request(request)
 
-    # Initialize session and initial turn record
+def _initialize_goal_session(
+    db_path: Any, session_id: str, goal_id: str, owner: str, spec: Any
+) -> None:
+    """Initialize the session and its initial turn record."""
     try:
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
@@ -8744,6 +9259,36 @@ async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, 
             status_code=500,
             detail=f'Database initialization failed: {type(e).__name__}',
         )
+
+
+@router.post('/goals')
+async def create_goal(payload: StartGoalPayload, request: Request) -> dict[str, Any]:
+    """Launch a new backgrounded autonomous goal execution loop (ORCH-5.0)."""
+    safe_objective, safe_constraints = _sanitized_goal_request(payload)
+
+    if _is_gateway_active():
+        try:
+            return await _proxy_to_gateway(
+                'POST',
+                '/goals',
+                {
+                    'objective': safe_objective,
+                    'max_iterations': payload.max_iterations,
+                    'validation_action': payload.validation_action,
+                    'constraints': safe_constraints,
+                },
+            )
+        except Exception as e:
+            _log_failure('proxy_create_goal', e, level=logging.WARNING)
+
+    session_id = str(uuid.uuid4())
+    goal_id = str(uuid.uuid4())
+    spec = _goal_spec_for(
+        payload, safe_objective, safe_constraints, goal_id, session_id
+    )
+    _initialize_goal_session(
+        _get_db_path(), session_id, goal_id, _actor_id_from_request(request), spec
+    )
 
     task = asyncio.create_task(
         run_goal_loop(
@@ -8879,6 +9424,52 @@ _CONFIG_FIELD_DECL = re.compile(r'^    (\w+)\s*:\s*[^=\n]+=\s*Field\(')
 _config_field_groups_cache: dict[str, str] | None = None
 
 
+def _config_source_text() -> str:
+    """The installed `AgentConfig` source, read as data and never executed."""
+    from agent_utilities.core.config import AgentConfig
+
+    source_file = inspect.getsourcefile(AgentConfig)
+    if not source_file:
+        return ''
+    path = Path(source_file)
+    if path.is_symlink():
+        raise RuntimeError('refusing symbolic-link source file')
+    text = path.read_text(encoding='utf-8')
+    if len(text) > 4 * 1024 * 1024:
+        raise ValueError('config source exceeds the safety bound')
+    return text
+
+
+def _config_class_body_lines(text: str) -> list[str]:
+    """Just the lines inside `class AgentConfig(...)`'s body."""
+    body: list[str] = []
+    in_class = False
+    for line in text.splitlines():
+        if line.startswith('class AgentConfig('):
+            in_class = True
+            continue
+        if in_class and line.startswith('class '):
+            break  # AgentConfigProxy (or the next class) ends the body
+        if in_class:
+            body.append(line)
+    return body
+
+
+def _parse_config_field_groups(text: str) -> dict[str, str]:
+    """Attribute each field declaration to its nearest preceding section."""
+    groups: dict[str, str] = {}
+    current_section = 'General'
+    for line in _config_class_body_lines(text):
+        marker = _CONFIG_SECTION_MARKER.match(line)
+        if marker:
+            current_section = marker.group(1)
+            continue
+        field = _CONFIG_FIELD_DECL.match(line)
+        if field:
+            groups[field.group(1)] = current_section
+    return groups
+
+
 def _config_field_groups() -> dict[str, str]:
     """Best-effort ``{field_name: section_title}`` map for every `AgentConfig` field.
 
@@ -8900,37 +9491,8 @@ def _config_field_groups() -> dict[str, str]:
     if _config_field_groups_cache is not None:
         return _config_field_groups_cache
 
-    groups: dict[str, str] = {}
     try:
-        import inspect
-
-        from agent_utilities.core.config import AgentConfig
-
-        source_file = inspect.getsourcefile(AgentConfig)
-        if source_file:
-            path = Path(source_file)
-            if path.is_symlink():
-                raise RuntimeError('refusing symbolic-link source file')
-            text = path.read_text(encoding='utf-8')
-            if len(text) > 4 * 1024 * 1024:
-                raise ValueError('config source exceeds the safety bound')
-            current_section = 'General'
-            in_class = False
-            for line in text.splitlines():
-                if line.startswith('class AgentConfig('):
-                    in_class = True
-                    continue
-                if in_class and line.startswith('class '):
-                    break  # AgentConfigProxy (or the next class) ends the body
-                if not in_class:
-                    continue
-                marker = _CONFIG_SECTION_MARKER.match(line)
-                if marker:
-                    current_section = marker.group(1)
-                    continue
-                field = _CONFIG_FIELD_DECL.match(line)
-                if field:
-                    groups[field.group(1)] = current_section
+        groups = _parse_config_field_groups(_config_source_text())
     except Exception as e:  # noqa: BLE001 - best-effort; an empty map degrades to "Other"
         _log_failure('config_field_groups_parse', e, level=logging.WARNING)
         groups = {}
@@ -9299,41 +9861,45 @@ def _write_model_registry(kind: str, models: list[dict[str, Any]]) -> None:
     existing whole-document write, scoped to just the touched key so an
     editor for one registry can never clobber the rest of AgentConfig).
     """
-    import json
-
-    from agent_utilities.core.config import (
-        AgentConfig,
-        ChatModelConfig,
-        EmbeddingModelConfig,
-    )
+    from agent_utilities.core.config import AgentConfig
 
     if kind not in _EDITABLE_MODEL_KINDS:
         raise HTTPException(status_code=400, detail='Unknown model kind')
-    registry_key = 'chat_models' if kind == 'chat' else 'embedding_models'
-    model_type = ChatModelConfig if kind == 'chat' else EmbeddingModelConfig
-
     if not isinstance(models, list) or len(models) > _MAX_EXTERNAL_COLLECTION_ITEMS:
         raise HTTPException(status_code=400, detail='Invalid model list')
-    try:
-        validated = [
-            model_type.model_validate(m).model_dump(mode='json') for m in models
-        ]
-    except Exception as e:
-        _log_failure(f'validate_{kind}_model', e)
-        raise HTTPException(
-            status_code=422, detail=f'Invalid {kind} model configuration'
-        ) from e
 
     document = _load_config_document()
-    document[registry_key] = validated
+    document[_model_registry_key(kind)] = _validated_models(kind, models)
     try:
         AgentConfig.model_validate(document)
     except Exception as e:
         _log_failure('validate_agent_config', e)
         raise HTTPException(status_code=422, detail='Invalid AgentConfig') from e
 
-    target_dir = _private_directory(config_dir())
-    config_path = target_dir / 'config.json'
+    _write_config_document(kind, document)
+
+
+def _model_registry_key(kind: str) -> str:
+    return 'chat_models' if kind == 'chat' else 'embedding_models'
+
+
+def _validated_models(kind: str, models: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Validate each entry against the AgentConfig model type for `kind`."""
+    from agent_utilities.core.config import ChatModelConfig, EmbeddingModelConfig
+
+    model_type = ChatModelConfig if kind == 'chat' else EmbeddingModelConfig
+    try:
+        return [model_type.model_validate(m).model_dump(mode='json') for m in models]
+    except Exception as e:
+        _log_failure(f'validate_{kind}_model', e)
+        raise HTTPException(
+            status_code=422, detail=f'Invalid {kind} model configuration'
+        ) from e
+
+
+def _write_config_document(kind: str, document: dict[str, Any]) -> None:
+    """Atomically persist the whole AgentConfig document under its size bound."""
+    config_path = _private_directory(config_dir()) / 'config.json'
     try:
         payload = json.dumps(document, indent=2, sort_keys=True).encode('utf-8')
         if len(payload) > _MAX_EXTERNAL_RESULT_BYTES:
@@ -9381,33 +9947,32 @@ async def list_prompts() -> list[dict[str, Any]]:
     if prompts_dir.exists() and prompts_dir.is_dir():
         for f in list(prompts_dir.glob('*.json'))[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
             try:
-                data = _read_bounded_json(f)
-                title = (
-                    data.get('identity', {}).get('role')
-                    or data.get('title')
-                    or f.stem.replace('_', ' ').title()
-                )
-                goal = (
-                    data.get('identity', {}).get('goal')
-                    or data.get('metadata', {}).get('description')
-                    or data.get('goal', '')
-                )
-                core_directive = data.get('instructions', {}).get(
-                    'core_directive'
-                ) or data.get('core_directive', '')
-                results.append(
-                    {
-                        'name': f.stem,
-                        'title': title,
-                        'goal': goal,
-                        'core_directive': core_directive,
-                        'file_path': f'prompt://{f.stem}',
-                    }
-                )
+                results.append(_prompt_summary(f))
             except Exception as e:
                 _log_failure('parse_prompt', e)
     public_results = _public_external_result(results)
     return public_results if isinstance(public_results, list) else []
+
+
+def _prompt_summary(f: Path) -> dict[str, Any]:
+    """One prompt JSON file's flat listing entry."""
+    data = _read_bounded_json(f)
+    return {
+        'name': f.stem,
+        'title': (
+            data.get('identity', {}).get('role')
+            or data.get('title')
+            or f.stem.replace('_', ' ').title()
+        ),
+        'goal': (
+            data.get('identity', {}).get('goal')
+            or data.get('metadata', {}).get('description')
+            or data.get('goal', '')
+        ),
+        'core_directive': data.get('instructions', {}).get('core_directive')
+        or data.get('core_directive', ''),
+        'file_path': f'prompt://{f.stem}',
+    }
 
 
 @router.get('/prompts/{name}')
@@ -9440,49 +10005,54 @@ async def get_prompt_by_name(name: str) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__)
 
 
+def _prompt_section(data: dict[str, Any], key: str) -> dict[str, Any]:
+    """The named nested section of a prompt document, created if absent/invalid."""
+    section = data.get(key)
+    if not isinstance(section, dict):
+        section = {}
+        data[key] = section
+    return section
+
+
+def _sync_flat_prompt_properties(data: dict[str, Any]) -> None:
+    """Sync flat properties back to the standard nested structure."""
+    title = data.get('title')
+    if title is not None:
+        _prompt_section(data, 'identity')['role'] = title
+
+    goal = data.get('goal')
+    if goal is not None:
+        _prompt_section(data, 'identity')['goal'] = goal
+        _prompt_section(data, 'metadata')['description'] = goal
+
+    core_directive = data.get('core_directive')
+    if core_directive is not None:
+        _prompt_section(data, 'instructions')['core_directive'] = core_directive
+
+
+def _privacy_safe_prompt_document(data: dict[str, Any]) -> dict[str, Any]:
+    """Bound and privacy-check a caller-submitted prompt document."""
+    bounded_data = _bounded_external_value(data)
+    if not isinstance(bounded_data, dict):
+        raise ValueError('Prompt document has an invalid shape')
+    safe_data, privacy_report = sanitize_for_persistence(bounded_data)
+    if privacy_report.changed or not isinstance(safe_data, dict):
+        raise HTTPException(
+            status_code=400,
+            detail='Prompt violates the persistence privacy boundary',
+        )
+    return safe_data
+
+
 @router.put('/prompts/{name}')
 async def update_prompt_by_name(name: str, data: dict[str, Any]) -> dict[str, Any]:
     """Update details for a single prompt file."""
-    import json
-
     f = resolve_prompt_file(name)
     try:
-        bounded_data = _bounded_external_value(data)
-        if not isinstance(bounded_data, dict):
-            raise ValueError('Prompt document has an invalid shape')
-        safe_data, privacy_report = sanitize_for_persistence(bounded_data)
-        if privacy_report.changed or not isinstance(safe_data, dict):
-            raise HTTPException(
-                status_code=400,
-                detail='Prompt violates the persistence privacy boundary',
-            )
-        data = safe_data
-
-        # Sync flat properties back to standard nested structure
-        title = data.get('title')
-        goal = data.get('goal')
-        core_directive = data.get('core_directive')
-
-        if title is not None:
-            if 'identity' not in data or not isinstance(data['identity'], dict):
-                data['identity'] = {}
-            data['identity']['role'] = title
-
-        if goal is not None:
-            if 'identity' not in data or not isinstance(data['identity'], dict):
-                data['identity'] = {}
-            data['identity']['goal'] = goal
-            if 'metadata' not in data or not isinstance(data['metadata'], dict):
-                data['metadata'] = {}
-            data['metadata']['description'] = goal
-
-        if core_directive is not None:
-            if 'instructions' not in data or not isinstance(data['instructions'], dict):
-                data['instructions'] = {}
-            data['instructions']['core_directive'] = core_directive
-
+        document = _privacy_safe_prompt_document(data)
+        _sync_flat_prompt_properties(document)
         payload = json.dumps(
-            data,
+            document,
             indent=2,
             sort_keys=True,
             allow_nan=False,
@@ -9543,6 +10113,48 @@ async def list_ecosystem_services() -> list[str]:
     return services[:_MAX_EXTERNAL_COLLECTION_ITEMS]
 
 
+def _bounded_tunnel_inventory(raw_hosts: Any) -> list[tuple[Any, Any]]:
+    """The delegated host inventory as `(key, record)` pairs, render-capped.
+
+    Slice to the render cap BEFORE bounding, not after: the same defect as
+    the MCP-tools/skills/CallableResource bug family -- bounding the WHOLE
+    raw inventory first raised ValueError('...oversized collection') for any
+    host list/mapping over 256 entries, caught by the caller's broad
+    `except` and surfaced as a 502 indistinguishable from the adapter being
+    down.
+    """
+    if isinstance(raw_hosts, dict):
+        capped: Any = dict(list(raw_hosts.items())[:_MAX_EXTERNAL_COLLECTION_ITEMS])
+    elif isinstance(raw_hosts, list):
+        capped = raw_hosts[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+    else:
+        raise ValueError('Governed tunnel inventory returned an invalid shape')
+    bounded = _public_external_result(capped)
+    if isinstance(bounded, dict):
+        return list(bounded.items())
+    if isinstance(bounded, list):
+        return list(enumerate(bounded, start=1))
+    raise ValueError('Governed tunnel inventory returned an invalid shape')
+
+
+def _tunnel_host_view(inventory_key: Any, record: Any) -> dict[str, Any]:
+    """One inventory entry as an opaque, secret-free host reference."""
+    public = record if isinstance(record, dict) else {}
+    identity = str(
+        public.get('reference')
+        or public.get('id')
+        or public.get('alias')
+        or inventory_key
+    )
+    return {
+        'reference': _opaque_reference('host', identity),
+        'status': 'configured',
+        'port_configured': bool(public.get('port')),
+        'identity_configured': bool(public.get('identity_file')),
+        'password_configured': bool(public.get('password_configured')),
+    }
+
+
 @router.get('/tunnel-manager/hosts')
 async def get_tunnel_hosts() -> dict[str, Any]:
     """Retrieve opaque SSH inventory through a governed host adapter."""
@@ -9554,49 +10166,15 @@ async def get_tunnel_hosts() -> dict[str, Any]:
             detail='Governed tunnel inventory delegation is not configured',
         )
     try:
-        raw_hosts = await _invoke_governed_helper(
-            delegated_inventory,
-            deadline=10.0,
+        inventory = _bounded_tunnel_inventory(
+            await _invoke_governed_helper(delegated_inventory, deadline=10.0)
         )
-        # Slice to the render cap BEFORE bounding, not after: the same
-        # defect as the MCP-tools/skills/CallableResource bug family --
-        # bounding the WHOLE raw inventory first raised
-        # ValueError('...oversized collection') for any host list/mapping
-        # over 256 entries, caught by the broad `except` below and
-        # surfaced as a 502 indistinguishable from the adapter being down.
-        if isinstance(raw_hosts, dict):
-            raw_hosts = dict(list(raw_hosts.items())[:_MAX_EXTERNAL_COLLECTION_ITEMS])
-        elif isinstance(raw_hosts, list):
-            raw_hosts = raw_hosts[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        else:
-            raise ValueError('Governed tunnel inventory returned an invalid shape')
-        raw_hosts = _public_external_result(raw_hosts)
-        if isinstance(raw_hosts, dict):
-            inventory = list(raw_hosts.items())
-        elif isinstance(raw_hosts, list):
-            inventory = list(enumerate(raw_hosts, start=1))
-        else:
-            raise ValueError('Governed tunnel inventory returned an invalid shape')
-
-        hosts = []
-        for inventory_key, record in inventory:
-            public = record if isinstance(record, dict) else {}
-            identity = str(
-                public.get('reference')
-                or public.get('id')
-                or public.get('alias')
-                or inventory_key
-            )
-            hosts.append(
-                {
-                    'reference': _opaque_reference('host', identity),
-                    'status': 'configured',
-                    'port_configured': bool(public.get('port')),
-                    'identity_configured': bool(public.get('identity_file')),
-                    'password_configured': bool(public.get('password_configured')),
-                }
-            )
-        return {'hosts': hosts}
+        return {
+            'hosts': [
+                _tunnel_host_view(inventory_key, record)
+                for inventory_key, record in inventory
+            ]
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -9605,6 +10183,43 @@ async def get_tunnel_hosts() -> dict[str, Any]:
             status_code=502,
             detail=f'tunnel-manager host inventory unavailable: {type(e).__name__}',
         ) from e
+
+
+def _tunnel_host_port(payload: dict[str, Any]) -> int:
+    """The validated SSH port for a host registration."""
+    try:
+        port = int(payload.get('port', 22))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail='Invalid port') from exc
+    if not 1 <= port <= 65535:
+        raise HTTPException(status_code=400, detail='Invalid port')
+    return port
+
+
+def _tunnel_host_registration(payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate a host registration that must contain no inline secrets."""
+    forbidden = {'password', 'identity_file', 'proxy_command'} & set(payload)
+    if forbidden:
+        raise HTTPException(status_code=400, detail='Unsafe host fields')
+    alias = str(payload['alias']).strip()
+    hostname = str(payload['hostname']).strip()
+    user = str(payload['user']).strip()
+    password_ref = str(payload.get('password_ref') or '').strip() or None
+    if not _SAFE_INVENTORY_TOKEN.fullmatch(alias):
+        raise HTTPException(status_code=400, detail='Invalid host alias')
+    if not _SAFE_HOSTNAME.fullmatch(hostname):
+        raise HTTPException(status_code=400, detail='Invalid hostname')
+    if not _SAFE_INVENTORY_TOKEN.fullmatch(user):
+        raise HTTPException(status_code=400, detail='Invalid account identifier')
+    if password_ref and (len(password_ref) > 512 or '\x00' in password_ref):
+        raise HTTPException(status_code=400, detail='Invalid secret reference')
+    return {
+        'alias': alias,
+        'hostname': hostname,
+        'user': user,
+        'port': _tunnel_host_port(payload),
+        'password_ref': password_ref,
+    }
 
 
 @router.post('/tunnel-manager/hosts')
@@ -9618,42 +10233,17 @@ async def add_tunnel_host(payload: dict[str, Any]) -> dict[str, str]:
             detail='Governed tunnel configuration delegation is not configured',
         )
     try:
-        forbidden = {'password', 'identity_file', 'proxy_command'} & set(payload)
-        if forbidden:
-            raise HTTPException(status_code=400, detail='Unsafe host fields')
-        alias = str(payload['alias']).strip()
-        hostname = str(payload['hostname']).strip()
-        user = str(payload['user']).strip()
-        password_ref = str(payload.get('password_ref') or '').strip() or None
-        if not _SAFE_INVENTORY_TOKEN.fullmatch(alias):
-            raise HTTPException(status_code=400, detail='Invalid host alias')
-        if not _SAFE_HOSTNAME.fullmatch(hostname):
-            raise HTTPException(status_code=400, detail='Invalid hostname')
-        if not _SAFE_INVENTORY_TOKEN.fullmatch(user):
-            raise HTTPException(status_code=400, detail='Invalid account identifier')
-        if password_ref and (len(password_ref) > 512 or '\x00' in password_ref):
-            raise HTTPException(status_code=400, detail='Invalid secret reference')
-        try:
-            port = int(payload.get('port', 22))
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail='Invalid port') from exc
-        if not 1 <= port <= 65535:
-            raise HTTPException(status_code=400, detail='Invalid port')
-
+        registration = _tunnel_host_registration(payload)
         result = await _invoke_governed_helper(
             delegated_registration,
             deadline=15.0,
-            alias=alias,
-            hostname=hostname,
-            user=user,
-            port=port,
-            password_ref=password_ref,
+            **registration,
         )
         _public_external_result(result)
         return {
             'status': 'success',
             'message': 'Host registered',
-            'reference': _opaque_reference('host', alias),
+            'reference': _opaque_reference('host', registration['alias']),
         }
     except HTTPException:
         raise
@@ -9731,6 +10321,21 @@ async def list_system_processes() -> list[dict[str, Any]]:
         ) from e
 
 
+def _container_view(index: int, container: dict[str, Any]) -> dict[str, Any]:
+    """One container as an opaque reference plus a short state."""
+    identity = str(
+        container.get('reference')
+        or container.get('id')
+        or container.get('Id')
+        or index
+    )
+    state = str(container.get('state') or container.get('State') or 'unknown')
+    return {
+        'reference': _opaque_reference('container', identity),
+        'state': state[:64],
+    }
+
+
 @router.get('/container-manager/containers')
 async def list_docker_containers() -> list[dict[str, Any]]:
     """Return bounded container inventory through a governed host adapter.
@@ -9763,24 +10368,11 @@ async def list_docker_containers() -> list[dict[str, Any]]:
         raw_containers = _public_external_result(
             raw_containers[:_MAX_CONTAINER_RECORDS]
         )
-        results = []
-        for index, container in enumerate(raw_containers, start=1):
-            if not isinstance(container, dict):
-                continue
-            identity = str(
-                container.get('reference')
-                or container.get('id')
-                or container.get('Id')
-                or index
-            )
-            state = str(container.get('state') or container.get('State') or 'unknown')
-            results.append(
-                {
-                    'reference': _opaque_reference('container', identity),
-                    'state': state[:64],
-                }
-            )
-        return results
+        return [
+            _container_view(index, container)
+            for index, container in enumerate(raw_containers, start=1)
+            if isinstance(container, dict)
+        ]
     except HTTPException:
         raise
     except Exception as e:
@@ -9791,31 +10383,43 @@ async def list_docker_containers() -> list[dict[str, Any]]:
         ) from e
 
 
+def _repository_child_path(child: Path, workspace: Path) -> Path | None:
+    """One directory entry as a workspace-contained git repo path, or ``None``."""
+    if child.is_symlink() or not child.is_dir():
+        return None
+    resolved = child.resolve()
+    try:
+        resolved.relative_to(workspace)
+    except ValueError:
+        return None
+    return resolved if (resolved / '.git').exists() else None
+
+
+def _collect_repositories_under(
+    root: Path, workspace: Path, discovered: dict[Path, None]
+) -> None:
+    """Add `root` and its immediate git-repository children to `discovered`."""
+    if root.is_symlink() or not root.is_dir():
+        return
+    if (root / '.git').exists():
+        discovered[root] = None
+    try:
+        for child in root.iterdir():
+            if len(discovered) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+                return
+            resolved = _repository_child_path(child, workspace)
+            if resolved is not None:
+                discovered[resolved] = None
+    except OSError as exc:
+        _log_failure('api_extension', exc, level=logging.DEBUG)
+
+
 def discover_workspace_repositories() -> list[Path]:
     """Return real git repositories visible under the configured workspace."""
     workspace = get_workspace_dir().resolve()
-    roots = [workspace / 'agent-packages', workspace]
     discovered: dict[Path, None] = {}
-    for root in roots:
-        if root.is_symlink() or not root.is_dir():
-            continue
-        if (root / '.git').exists():
-            discovered[root] = None
-        try:
-            for child in root.iterdir():
-                if len(discovered) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                    break
-                if child.is_symlink() or not child.is_dir():
-                    continue
-                resolved = child.resolve()
-                try:
-                    resolved.relative_to(workspace)
-                except ValueError:
-                    continue
-                if (resolved / '.git').exists():
-                    discovered[resolved] = None
-        except OSError as exc:
-            _log_failure('api_extension', exc, level=logging.DEBUG)
+    for root in (workspace / 'agent-packages', workspace):
+        _collect_repositories_under(root, workspace, discovered)
     return sorted(discovered, key=lambda path: path.name.lower())[
         :_MAX_EXTERNAL_COLLECTION_ITEMS
     ]
@@ -9887,16 +10491,20 @@ async def list_workspace_repos() -> list[dict[str, Any]]:
     return repos
 
 
-@router.post('/repository-manager/bulk')
-async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, Any]:
-    """Run a bounded read-only status action across referenced workspace repos.
+# Map the high-level bulk action to a concrete command. Only whitelisted,
+# non-destructive commands are dispatched.
+_BULK_ACTION_COMMANDS: dict[str, list[str]] = {
+    'status': ['git', 'diff', '--quiet', '--no-ext-diff'],
+}
 
-    Repository paths, names, commands, and command output never cross the API
-    boundary. Mutating repository operations must use the governed repository
-    manager delegation surface instead.
-    """
-    import subprocess
 
+def _is_repo_reference(value: Any) -> bool:
+    """True for an opaque ``repo:<32 hex>`` reference this API hands out."""
+    return isinstance(value, str) and bool(re.fullmatch(r'repo:[0-9a-f]{32}', value))
+
+
+def _bulk_action_request(payload: dict[str, Any]) -> tuple[str, list[str], list[str]]:
+    """Validate ``{action, targets}`` into ``(action, targets, command)``."""
     action = payload.get('action', '')
     targets = payload.get('targets', [])
     if (
@@ -9905,27 +10513,65 @@ async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, A
         or not action
         or not targets
         or len(targets) > 100
-        or any(
-            not isinstance(value, str) or not re.fullmatch(r'repo:[0-9a-f]{32}', value)
-            for value in targets
-        )
+        or not all(_is_repo_reference(value) for value in targets)
     ):
         raise HTTPException(status_code=400, detail='Missing action or targets list')
-
-    # Map the high-level action to a concrete command. Only whitelisted,
-    # non-destructive commands are dispatched.
-    command_map: dict[str, list[str]] = {
-        'status': ['git', 'diff', '--quiet', '--no-ext-diff'],
-    }
-    cmd = command_map.get(action)
+    cmd = _BULK_ACTION_COMMANDS.get(action)
     if cmd is None:
         raise HTTPException(
             status_code=400,
             detail=(
-                f'Unsupported bulk action {action!r}. Supported: {sorted(command_map)}'
+                f'Unsupported bulk action {action!r}. '
+                f'Supported: {sorted(_BULK_ACTION_COMMANDS)}'
             ),
         )
+    return action, targets, cmd
 
+
+def _repo_bulk_action_result(
+    cmd: list[str], repo_path: Any, reference: str
+) -> dict[str, Any]:
+    """Run the whitelisted probe against one repo; a failure is reported per-repo."""
+    import subprocess
+
+    try:
+        git_env = _git_probe_environment()
+        proc = subprocess.run(
+            cmd,
+            cwd=str(repo_path),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            env=git_env,
+        )
+        staged = subprocess.run(
+            ['git', 'diff', '--cached', '--quiet', '--no-ext-diff'],
+            cwd=str(repo_path),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            env=git_env,
+        )
+        if proc.returncode not in (0, 1) or staged.returncode not in (0, 1):
+            raise RuntimeError('repository state probe failed')
+    except Exception as e:  # noqa: BLE001 - report per-repo failure
+        return {'status': 'error', 'detail': type(e).__name__}
+    return {
+        'reference': reference,
+        'status': 'success',
+        'modified': proc.returncode == 1 or staged.returncode == 1,
+    }
+
+
+@router.post('/repository-manager/bulk')
+async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, Any]:
+    """Run a bounded read-only status action across referenced workspace repos.
+
+    Repository paths, names, commands, and command output never cross the API
+    boundary. Mutating repository operations must use the governed repository
+    manager delegation surface instead.
+    """
+    action, targets, cmd = _bulk_action_request(payload)
     repositories = {
         _opaque_reference('repo', str(path)): path
         for path in discover_workspace_repositories()
@@ -9936,35 +10582,7 @@ async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, A
         if repo_path is None:
             results.append({'status': 'error', 'detail': 'repo not found'})
             continue
-        try:
-            git_env = _git_probe_environment()
-            proc = subprocess.run(
-                cmd,
-                cwd=str(repo_path),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=5,
-                env=git_env,
-            )
-            staged = subprocess.run(
-                ['git', 'diff', '--cached', '--quiet', '--no-ext-diff'],
-                cwd=str(repo_path),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=5,
-                env=git_env,
-            )
-            if proc.returncode not in (0, 1) or staged.returncode not in (0, 1):
-                raise RuntimeError('repository state probe failed')
-            results.append(
-                {
-                    'reference': str(reference),
-                    'status': 'success',
-                    'modified': proc.returncode == 1 or staged.returncode == 1,
-                }
-            )
-        except Exception as e:  # noqa: BLE001 - report per-repo failure
-            results.append({'status': 'error', 'detail': type(e).__name__})
+        results.append(_repo_bulk_action_result(cmd, repo_path, str(reference)))
 
     failures = [r for r in results if r['status'] != 'success']
     logger.info(
@@ -9978,22 +10596,46 @@ async def trigger_workspace_bulk_actions(payload: dict[str, Any]) -> dict[str, A
     }
 
 
+_MAX_VOICE_UPLOAD_BYTES = 25 * 1024 * 1024
+_MAX_VOICE_TRANSCRIPT_BYTES = 2 * 1024 * 1024
+
+
+def _voice_media_type(file: UploadFile) -> str:
+    """The validated media type of an audio upload."""
+    media_type = (file.content_type or '').split(';', 1)[0].strip().lower()
+    if not (media_type.startswith('audio/') or media_type == 'video/webm'):
+        raise HTTPException(status_code=400, detail='Unsupported audio media type')
+    return media_type
+
+
+async def _read_bounded_upload(file: UploadFile) -> bytes:
+    """Read an upload into memory under the voice-upload size bound."""
+    payload = bytearray()
+    while chunk := await file.read(64 * 1024):
+        payload.extend(chunk)
+        if len(payload) > _MAX_VOICE_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail='Upload too large')
+    if not payload:
+        raise HTTPException(status_code=400, detail='Audio upload is empty')
+    return bytes(payload)
+
+
+def _bounded_transcript(result: Any) -> str:
+    """The transcript text from a delegated transcription result."""
+    text = result.get('text', '') if isinstance(result, dict) else result
+    if not isinstance(text, str):
+        raise ValueError('Transcription result has an invalid shape')
+    if len(text.encode('utf-8')) > _MAX_VOICE_TRANSCRIPT_BYTES:
+        raise ValueError('Transcription result exceeds its safety bound')
+    return text
+
+
 @router.post('/voice/transcribe')
 async def transcribe_voice_chunk(file: UploadFile = File(...)) -> dict[str, str]:
     """Delegate one bounded audio upload to a governed transcription sandbox."""
-    max_upload_bytes = 25 * 1024 * 1024
-    max_transcript_bytes = 2 * 1024 * 1024
     try:
-        media_type = (file.content_type or '').split(';', 1)[0].strip().lower()
-        if not (media_type.startswith('audio/') or media_type == 'video/webm'):
-            raise HTTPException(status_code=400, detail='Unsupported audio media type')
-        payload = bytearray()
-        while chunk := await file.read(64 * 1024):
-            payload.extend(chunk)
-            if len(payload) > max_upload_bytes:
-                raise HTTPException(status_code=413, detail='Upload too large')
-        if not payload:
-            raise HTTPException(status_code=400, detail='Audio upload is empty')
+        media_type = _voice_media_type(file)
+        payload = await _read_bounded_upload(file)
 
         transcriber = get_helper('transcribe_voice')
         if transcriber is None:
@@ -10005,15 +10647,12 @@ async def transcribe_voice_chunk(file: UploadFile = File(...)) -> dict[str, str]
         result = await _invoke_governed_helper(
             transcriber,
             deadline=120.0,
-            content=bytes(payload),
+            content=payload,
             content_type=media_type,
         )
-        text = result.get('text', '') if isinstance(result, dict) else result
-        if not isinstance(text, str):
-            raise ValueError('Transcription result has an invalid shape')
-        if len(text.encode('utf-8')) > max_transcript_bytes:
-            raise ValueError('Transcription result exceeds its safety bound')
-        public_result = _public_external_result({'text': text.strip()})
+        public_result = _public_external_result(
+            {'text': _bounded_transcript(result).strip()}
+        )
         return {'text': str(public_result.get('text') or '')}
     except HTTPException:
         raise
@@ -10104,6 +10743,45 @@ async def _call_mcp_tool(
     return _public_external_result(result, truncate_lists=True)
 
 
+def _jira_response_payload(resp: Any) -> Any:
+    """Unwrap the Jira MCP ``{status_code, data}`` envelope.
+
+    The MCP tool returns {status_code, data}. Treat any non-2xx (e.g. the Jira
+    site being unavailable) as an honest backend error, not empty data.
+    """
+    if not isinstance(resp, dict):
+        return resp
+    status_code = resp.get('status_code')
+    if status_code is not None and not 200 <= int(status_code) < 300:
+        raise RuntimeError(f'Jira returned HTTP {status_code}')
+    return resp.get('data', resp)
+
+
+def _jira_issue_card(issue: dict[str, Any], fields: dict[str, Any]) -> dict[str, Any]:
+    """One Jira issue as a Kanban card."""
+    return {
+        'id': issue.get('key'),
+        'title': fields.get('summary', ''),
+        'priority': (fields.get('priority') or {}).get('name'),
+        'assignee': (fields.get('assignee') or {}).get('displayName'),
+    }
+
+
+def _jira_kanban_columns(issues: Any) -> list[dict[str, Any]]:
+    """Bucket issues into Kanban columns by their status name."""
+    columns: dict[str, dict[str, Any]] = {}
+    for issue in issues[:100] if isinstance(issues, list) else []:
+        if not isinstance(issue, dict):
+            continue
+        fields = issue.get('fields', {}) or {}
+        status_name = (fields.get('status') or {}).get('name', 'Unknown')
+        col = columns.setdefault(
+            status_name, {'id': status_name, 'title': status_name, 'issues': []}
+        )
+        col['issues'].append(_jira_issue_card(issue, fields))
+    return list(columns.values())
+
+
 @router.get('/ecosystem/atlassian/kanban')
 async def get_atlassian_kanban(jql: str = 'ORDER BY updated DESC'):
     """Retrieve Jira issues grouped by status (Kanban format) via ``atlassian-mcp``.
@@ -10114,8 +10792,6 @@ async def get_atlassian_kanban(jql: str = 'ORDER BY updated DESC'):
     (defaults to most-recently-updated). Surfaces an honest error if the
     server or Jira is unreachable.
     """
-    import json as _json
-
     if not jql.strip() or len(jql.encode('utf-8')) > 8192:
         raise HTTPException(status_code=400, detail='Invalid JQL query')
 
@@ -10125,48 +10801,119 @@ async def get_atlassian_kanban(jql: str = 'ORDER BY updated DESC'):
             'atlassian_jira_issue',
             {
                 'action': 'search_for_issues_using_jql',
-                'params_json': _json.dumps({'jql': jql, 'max_results': 100}),
+                'params_json': json.dumps({'jql': jql, 'max_results': 100}),
             },
         )
+        payload = _jira_response_payload(resp)
     except Exception as e:  # noqa: BLE001
         return _service_error(e, columns=[])
-    # The MCP tool returns {status_code, data}. Treat any non-2xx (e.g. the
-    # Jira site being unavailable) as an honest backend error, not empty data.
-    if isinstance(resp, dict):
-        status_code = resp.get('status_code')
-        if status_code is not None and not (200 <= int(status_code) < 300):
-            return _service_error(
-                RuntimeError(f'Jira returned HTTP {status_code}'), columns=[]
-            )
-        payload = resp.get('data', resp)
-    else:
-        payload = resp
     issues = payload.get('issues', []) if isinstance(payload, dict) else []
-    columns: dict[str, dict[str, Any]] = {}
-    for issue in issues[:100] if isinstance(issues, list) else []:
-        if not isinstance(issue, dict):
-            continue
-        fields = issue.get('fields', {}) or {}
-        status_name = (fields.get('status') or {}).get('name', 'Unknown')
-        col = columns.setdefault(
-            status_name, {'id': status_name, 'title': status_name, 'issues': []}
-        )
-        col['issues'].append(
-            {
-                'id': issue.get('key'),
-                'title': fields.get('summary', ''),
-                'priority': (fields.get('priority') or {}).get('name'),
-                'assignee': (fields.get('assignee') or {}).get('displayName'),
-            }
-        )
     bounded = _public_external_result(
         {
             'status': 'success',
             'source': 'live',
-            'columns': list(columns.values()),
+            'columns': _jira_kanban_columns(issues),
         }
     )
     return bounded if isinstance(bounded, dict) else {'status': 'error'}
+
+
+def _github_repo_slug(repo: str | None) -> str | None:
+    """The validated ``owner/name`` target repo, or ``None`` when unusable."""
+    target_repo = repo or os.getenv('GITHUB_REPO')
+    if not target_repo or not re.fullmatch(
+        r'[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}', target_repo
+    ):
+        return None
+    return target_repo
+
+
+def _github_needs_repo_response() -> dict[str, Any]:
+    """The honest "tell me which repo" answer; a PR list is per-repository."""
+    return {
+        'status': 'needs_input',
+        'source': 'live',
+        'detail': (
+            "Specify a target repository as 'owner/name' "
+            '(query param ?repo=owner/name) to list its pull requests.'
+        ),
+        'prs': [],
+        'workflows': [],
+    }
+
+
+def _mcp_payload_data(resp: Any) -> Any:
+    """Unwrap an MCP response's ``data`` envelope, if it has one."""
+    if isinstance(resp, dict):
+        return resp.get('data', resp)
+    return resp
+
+
+def _github_pr_record(p: dict[str, Any]) -> dict[str, Any]:
+    """One GitHub pull request in the shape EcosystemView.tsx consumes.
+
+    BUG-012: GitHub never returns a per-check-run summary on the pulls/list
+    payload itself (that requires a separate `/commits/{sha}/check-runs` call
+    this endpoint does not make), so there is no `checks` field here -- the
+    frontend must not render one either. `web_url` mirrors the field GitLab's
+    MR mapping already returns. NOTE: `_public_external_result` runs this
+    whole dict through `sanitize_for_persistence`, whose `_LOCATION_FIELDS`
+    blanket-redacts ANY field named `web_url` (this one included) to
+    `"[REDACTED_LOCATION]"` regardless of content -- resolving that for a
+    genuinely public source link is `GOC-27-W06` (security-review) scope;
+    `EcosystemView.tsx`'s `isRenderableUrl` guard is today's WebUI-side
+    mitigation so this never renders as a broken `<a href>`.
+    """
+    return {
+        'id': p.get('number'),
+        'title': p.get('title'),
+        'author': (p.get('user') or {}).get('login'),
+        'branch': (p.get('head') or {}).get('ref'),
+        'status': p.get('state') or 'open',
+        'web_url': p.get('html_url'),
+    }
+
+
+def _github_workflow_record(r: dict[str, Any]) -> dict[str, Any]:
+    """One Actions run.
+
+    BUG-012: the real GitHub Actions run object carries `run_number` (the
+    per-repository sequential run count the UI has always rendered as
+    `Run #{run_number}`); this mapping used to drop it on the floor, so the
+    field the frontend declared and rendered never had a source --
+    `wf.run_number` always rendered blank.
+    """
+    return {
+        'id': r.get('id'),
+        'run_number': r.get('run_number'),
+        'name': r.get('name'),
+        'status': r.get('status'),
+        'conclusion': r.get('conclusion'),
+    }
+
+
+async def _github_workflow_runs(owner: str, name: str) -> list[dict[str, Any]]:
+    """Latest Actions runs for a repo. PRs already succeeded by the time this
+    is called, so a runs failure must not blank the response."""
+    try:
+        run_resp = await _call_mcp_tool(
+            'github-mcp',
+            'github_actions',
+            {
+                'action': 'list_runs',
+                'params_json': json.dumps({'owner': owner, 'repo': name}),
+            },
+        )
+        runs_data = _mcp_payload_data(run_resp)
+        if isinstance(runs_data, dict):
+            runs_data = runs_data.get('workflow_runs', [])
+    except Exception:  # noqa: BLE001
+        return []
+    return [
+        _github_workflow_record(r)
+        for r in (runs_data[:100] if isinstance(runs_data, list) else [])
+        if isinstance(r, dict)
+    ]
 
 
 @router.get('/ecosystem/github/prs')
@@ -10179,27 +10926,20 @@ async def get_github_prs(repo: str | None = None):
     against the GitHub API with the token configured on that MCP server.
     Surfaces an honest error if the server or GitHub is unreachable.
     """
-    import json as _json
-
-    target_repo = repo or os.getenv('GITHUB_REPO')
-    if not target_repo or not re.fullmatch(
-        r'[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}', target_repo
-    ):
-        return {
-            'status': 'needs_input',
-            'source': 'live',
-            'detail': (
-                "Specify a target repository as 'owner/name' "
-                '(query param ?repo=owner/name) to list its pull requests.'
-            ),
-            'prs': [],
-            'workflows': [],
-        }
+    target_repo = _github_repo_slug(repo)
+    if target_repo is None:
+        return _github_needs_repo_response()
     owner, _, name = target_repo.partition('/')
-    params = _json.dumps({'owner': owner, 'repo': name, 'state': 'open'})
     try:
         pr_resp = await _call_mcp_tool(
-            'github-mcp', 'github_pulls', {'action': 'list', 'params_json': params}
+            'github-mcp',
+            'github_pulls',
+            {
+                'action': 'list',
+                'params_json': json.dumps(
+                    {'owner': owner, 'repo': name, 'state': 'open'}
+                ),
+            },
         )
     except Exception as e:  # noqa: BLE001
         return _service_error(e, prs=[], workflows=[])
@@ -10207,77 +10947,78 @@ async def get_github_prs(repo: str | None = None):
         return _service_error(
             RuntimeError(pr_resp.get('error') or pr_resp), prs=[], workflows=[]
         )
-    prs_raw = pr_resp.get('data', pr_resp) if isinstance(pr_resp, dict) else pr_resp
+    prs_raw = _mcp_payload_data(pr_resp)
     prs = [
-        {
-            'id': p.get('number'),
-            'title': p.get('title'),
-            'author': (p.get('user') or {}).get('login'),
-            'branch': (p.get('head') or {}).get('ref'),
-            'status': p.get('state') or 'open',
-            # BUG-012: GitHub never returns a per-check-run summary on the
-            # pulls/list payload itself (that requires a separate
-            # `/commits/{sha}/check-runs` call this endpoint does not make),
-            # so there is no `checks` field here -- the frontend must not
-            # render one either. `web_url` mirrors the field GitLab's MR
-            # mapping already returns. NOTE: `_public_external_result` below
-            # runs this whole dict through `sanitize_for_persistence`, whose
-            # `_LOCATION_FIELDS` blanket-redacts ANY field named `web_url`
-            # (this one included) to `"[REDACTED_LOCATION]"` regardless of
-            # content -- resolving that for a genuinely public source link
-            # is `GOC-27-W06` (security-review) scope; `EcosystemView.tsx`'s
-            # `isRenderableUrl` guard is today's WebUI-side mitigation so
-            # this never renders as a broken `<a href>`.
-            'web_url': p.get('html_url'),
-        }
+        _github_pr_record(p)
         for p in (prs_raw[:100] if isinstance(prs_raw, list) else [])
         if isinstance(p, dict)
     ]
-    workflows: list[dict[str, Any]] = []
-    try:
-        run_resp = await _call_mcp_tool(
-            'github-mcp',
-            'github_actions',
-            {
-                'action': 'list_runs',
-                'params_json': _json.dumps({'owner': owner, 'repo': name}),
-            },
-        )
-        runs_data = (
-            run_resp.get('data', run_resp) if isinstance(run_resp, dict) else run_resp
-        )
-        if isinstance(runs_data, dict):
-            runs_data = runs_data.get('workflow_runs', [])
-        workflows = [
-            {
-                'id': r.get('id'),
-                # BUG-012: the real GitHub Actions run object carries
-                # `run_number` (the per-repository sequential run count the
-                # UI has always rendered as `Run #{run_number}`); this
-                # mapping used to drop it on the floor, so the field the
-                # frontend declared and rendered never had a source --
-                # `wf.run_number` always rendered blank.
-                'run_number': r.get('run_number'),
-                'name': r.get('name'),
-                'status': r.get('status'),
-                'conclusion': r.get('conclusion'),
-            }
-            for r in (runs_data[:100] if isinstance(runs_data, list) else [])
-            if isinstance(r, dict)
-        ]
-    except Exception:  # noqa: BLE001
-        # PRs already succeeded; a runs failure should not blank the response.
-        workflows = []
     bounded = _public_external_result(
         {
             'status': 'success',
             'source': 'live',
             'repo': target_repo,
             'prs': prs,
-            'workflows': workflows,
+            'workflows': await _github_workflow_runs(owner, name),
         }
     )
     return bounded if isinstance(bounded, dict) else {'status': 'error'}
+
+
+def _gitlab_mr_record(m: dict[str, Any]) -> dict[str, Any]:
+    """One GitLab merge request in the shape EcosystemView.tsx consumes."""
+    return {
+        'id': m.get('iid'),
+        'project_id': m.get('project_id'),
+        'title': m.get('title'),
+        'author': (m.get('author') or {}).get('username'),
+        'target_branch': m.get('target_branch'),
+        'status': m.get('state'),
+        'web_url': m.get('web_url'),
+    }
+
+
+def _gitlab_pipeline_project_ids(mrs: list[dict[str, Any]]) -> list[Any]:
+    """The distinct, well-formed project ids to pull a pipeline for."""
+    project_ids: list[Any] = []
+    seen: set[Any] = set()
+    for m in mrs:
+        pid = m.get('project_id')
+        if pid is None or pid in seen:
+            continue
+        if not str(pid).isdigit() or len(str(pid)) > 20:
+            continue
+        if len(seen) >= _MAX_DELEGATION_FANOUT:
+            break
+        seen.add(pid)
+        project_ids.append(pid)
+    return project_ids
+
+
+async def _gitlab_project_pipelines(pid: Any) -> list[dict[str, Any]]:
+    """The latest pipelines for one project; a failed lookup yields []."""
+    try:
+        pipe_resp = await _call_mcp_tool(
+            'gitlab-mcp',
+            'api_request',
+            {
+                'method': 'GET',
+                'endpoint': f'/projects/{pid}/pipelines?per_page=5',
+            },
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    pipe_rows = _mcp_payload_data(pipe_resp)
+    return [
+        {
+            'id': p.get('id'),
+            'project_id': pid,
+            'ref': p.get('ref'),
+            'status': p.get('status'),
+        }
+        for p in (pipe_rows[:5] if isinstance(pipe_rows, list) else [])
+        if isinstance(p, dict)
+    ]
 
 
 @router.get('/ecosystem/gitlab/mrs')
@@ -10289,12 +11030,6 @@ async def get_gitlab_mrs():
     instance, plus the latest pipeline per affected project. Surfaces an honest
     error if the server or GitLab is unreachable.
     """
-
-    def _unwrap(resp: Any) -> Any:
-        if isinstance(resp, dict):
-            return resp.get('data', resp)
-        return resp
-
     try:
         mr_resp = await _call_mcp_tool(
             'gitlab-mcp',
@@ -10306,55 +11041,16 @@ async def get_gitlab_mrs():
         )
     except Exception as e:  # noqa: BLE001
         return _service_error(e, mrs=[], pipelines=[])
-    mrs_raw = _unwrap(mr_resp)
+    mrs_raw = _mcp_payload_data(mr_resp)
     mrs = [
-        {
-            'id': m.get('iid'),
-            'project_id': m.get('project_id'),
-            'title': m.get('title'),
-            'author': (m.get('author') or {}).get('username'),
-            'target_branch': m.get('target_branch'),
-            'status': m.get('state'),
-            'web_url': m.get('web_url'),
-        }
+        _gitlab_mr_record(m)
         for m in (mrs_raw[:30] if isinstance(mrs_raw, list) else [])
         if isinstance(m, dict)
     ]
     # Pull the latest pipeline for each distinct project referenced by an MR.
     pipelines: list[dict[str, Any]] = []
-    seen_projects: set[Any] = set()
-    for m in mrs:
-        pid = m.get('project_id')
-        if pid is None or pid in seen_projects:
-            continue
-        if not str(pid).isdigit() or len(str(pid)) > 20:
-            continue
-        if len(seen_projects) >= _MAX_DELEGATION_FANOUT:
-            break
-        seen_projects.add(pid)
-        try:
-            pipe_resp = await _call_mcp_tool(
-                'gitlab-mcp',
-                'api_request',
-                {
-                    'method': 'GET',
-                    'endpoint': f'/projects/{pid}/pipelines?per_page=5',
-                },
-            )
-        except Exception:  # noqa: BLE001
-            continue
-        pipe_rows = _unwrap(pipe_resp)
-        for p in pipe_rows[:5] if isinstance(pipe_rows, list) else []:
-            if not isinstance(p, dict):
-                continue
-            pipelines.append(
-                {
-                    'id': p.get('id'),
-                    'project_id': pid,
-                    'ref': p.get('ref'),
-                    'status': p.get('status'),
-                }
-            )
+    for pid in _gitlab_pipeline_project_ids(mrs):
+        pipelines.extend(await _gitlab_project_pipelines(pid))
     bounded = _public_external_result(
         {
             'status': 'success',
@@ -10506,7 +11202,20 @@ async def get_searxng_search(q: str = 'agent-utilities'):
     if isinstance(data, dict) and data.get('error'):
         return _service_error(RuntimeError(data['error']), query=q, results=[])
     raw_results = data.get('results', []) if isinstance(data, dict) else data
-    results = [
+    bounded = _public_external_result(
+        {
+            'status': 'success',
+            'source': 'live',
+            'query': q,
+            'results': _searxng_result_records(raw_results),
+        }
+    )
+    return bounded if isinstance(bounded, dict) else {'status': 'error'}
+
+
+def _searxng_result_records(raw_results: Any) -> list[dict[str, Any]]:
+    """SearXNG hits in the shape EcosystemView.tsx consumes."""
+    return [
         {
             'title': r.get('title'),
             'url': r.get('url'),
@@ -10516,15 +11225,6 @@ async def get_searxng_search(q: str = 'agent-utilities'):
         for r in (raw_results if isinstance(raw_results, list) else [])
         if isinstance(r, dict)
     ]
-    bounded = _public_external_result(
-        {
-            'status': 'success',
-            'source': 'live',
-            'query': q,
-            'results': results,
-        }
-    )
-    return bounded if isinstance(bounded, dict) else {'status': 'error'}
 
 
 @router.get('/ecosystem/homeassistant/devices')
@@ -10558,6 +11258,78 @@ async def get_homeassistant_devices():
     return {'status': 'success', 'source': 'live', 'devices': devices}
 
 
+def _unwrap_mcp_collection(raw: Any, key: str) -> list[Any]:
+    """Unwrap a `{key: [...]}`-or-bare-list MCP result to a list."""
+    value = raw.get(key, raw) if isinstance(raw, dict) else raw
+    return value if isinstance(value, list) else []
+
+
+def _nextcloud_calendar_name(cal: Any) -> str | None:
+    """A calendar's usable, bounded display name, or ``None`` to skip it."""
+    if not isinstance(cal, dict):
+        return None
+    name = cal.get('name') or cal.get('id') or cal.get('display_name')
+    if not isinstance(name, str) or not name.strip():
+        return None
+    if len(name.encode('utf-8')) > 512:
+        return None
+    return name
+
+
+async def _nextcloud_calendar_events(cal_name: str) -> list[Any]:
+    """List one calendar's events. A single calendar failing must not
+    fabricate or drop the rest, so a failed call degrades to []."""
+    try:
+        raw = await _call_mcp_tool(
+            'nextcloud-mcp',
+            'nextcloud_calendar',
+            {
+                'action': 'list_calendar_events',
+                'params_json': json.dumps({'calendar_name': cal_name}),
+            },
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    return _unwrap_mcp_collection(raw, 'events')
+
+
+def _nextcloud_event_record(ev: dict[str, Any], cal_name: str) -> dict[str, Any]:
+    """One Nextcloud event in the shape the calendar view consumes."""
+    return {
+        'id': ev.get('uid') or ev.get('id'),
+        'calendar': cal_name,
+        'title': ev.get('summary') or ev.get('title'),
+        'start': ev.get('start') or ev.get('dtstart'),
+        'end': ev.get('end') or ev.get('dtend'),
+    }
+
+
+def _append_nextcloud_events(
+    events: list[dict[str, Any]], raw_events: list[Any], cal_name: str
+) -> None:
+    """Append one calendar's events until the shared item bound is reached."""
+    for ev in raw_events:
+        if len(events) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            return
+        if isinstance(ev, dict):
+            events.append(_nextcloud_event_record(ev, cal_name))
+
+
+async def _collect_nextcloud_events(calendars: list[Any]) -> list[dict[str, Any]]:
+    """Enumerate every named calendar's events under one shared item bound."""
+    events: list[dict[str, Any]] = []
+    for cal in calendars:
+        if len(events) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
+            break
+        cal_name = _nextcloud_calendar_name(cal)
+        if cal_name is None:
+            continue
+        _append_nextcloud_events(
+            events, await _nextcloud_calendar_events(cal_name), cal_name
+        )
+    return events
+
+
 @router.get('/ecosystem/nextcloud/events')
 async def get_nextcloud_events():
     """Retrieve real Nextcloud calendars and their events via ``nextcloud-mcp``.
@@ -10567,61 +11339,14 @@ async def get_nextcloud_events():
     ``list_calendar_events``. Surfaces an honest error if the server or
     Nextcloud is unreachable.
     """
-    import json as _json
-
     try:
         cals_raw = await _call_mcp_tool(
             'nextcloud-mcp', 'nextcloud_calendar', {'action': 'list_calendars'}
         )
     except Exception as e:  # noqa: BLE001
         return _service_error(e, calendars=[], events=[])
-    calendars = (
-        cals_raw.get('calendars', cals_raw) if isinstance(cals_raw, dict) else cals_raw
-    )
-    calendars = (
-        calendars[:_MAX_DELEGATION_FANOUT] if isinstance(calendars, list) else []
-    )
-
-    events: list[dict[str, Any]] = []
-    for cal in calendars:
-        if len(events) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-            break
-        if not isinstance(cal, dict):
-            continue
-        cal_name = cal.get('name') or cal.get('id') or cal.get('display_name')
-        if (
-            not isinstance(cal_name, str)
-            or not cal_name.strip()
-            or len(cal_name.encode('utf-8')) > 512
-        ):
-            continue
-        try:
-            evs_raw = await _call_mcp_tool(
-                'nextcloud-mcp',
-                'nextcloud_calendar',
-                {
-                    'action': 'list_calendar_events',
-                    'params_json': _json.dumps({'calendar_name': cal_name}),
-                },
-            )
-        except Exception:  # noqa: BLE001
-            # A single calendar failing must not fabricate or drop the rest.
-            continue
-        evs = evs_raw.get('events', evs_raw) if isinstance(evs_raw, dict) else evs_raw
-        for ev in evs if isinstance(evs, list) else []:
-            if len(events) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-                break
-            if not isinstance(ev, dict):
-                continue
-            events.append(
-                {
-                    'id': ev.get('uid') or ev.get('id'),
-                    'calendar': cal_name,
-                    'title': ev.get('summary') or ev.get('title'),
-                    'start': ev.get('start') or ev.get('dtstart'),
-                    'end': ev.get('end') or ev.get('dtend'),
-                }
-            )
+    calendars = _unwrap_mcp_collection(cals_raw, 'calendars')[:_MAX_DELEGATION_FANOUT]
+    events = await _collect_nextcloud_events(calendars)
     bounded = _public_external_result(
         {
             'status': 'success',
@@ -11370,6 +12095,87 @@ def _canvas_node_id(name: str) -> str:
     return f'workflowcanvas:{slug}'
 
 
+def _workflow_steps(steps_raw: Any) -> list[Any]:
+    """A workflow's steps, whether stored as a CSV string or a list."""
+    if isinstance(steps_raw, str):
+        return [s for s in steps_raw.split(',') if s]
+    return list(steps_raw or [])
+
+
+async def _workflow_orchestrates(engine: Any, workflow_id: str) -> list[str]:
+    """Resolve a workflow's ORCHESTRATES targets; a lookup failure yields []."""
+    try:
+        erows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
+            'WHERE w.id = $workflow_id RETURN t '
+            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
+            {'workflow_id': workflow_id},
+            deadline=15.0,
+        )
+    except HTTPException:
+        raise
+    except Exception as edge_err:  # noqa: BLE001
+        _log_failure('resolve_workflow_orchestration', edge_err, level=logging.DEBUG)
+        return []
+    return _orchestrated_target_ids(erows)
+
+
+def _orchestrated_target_ids(erows: Any) -> list[str]:
+    """The ids of the nodes a workflow ORCHESTRATES, skipping malformed rows."""
+    targets: list[str] = []
+    for er in erows:
+        target = er.get('t', {})
+        if isinstance(target, dict) and target.get('id'):
+            targets.append(target['id'])
+    return targets
+
+
+def _decode_workflow_canvas(crows: Any) -> Any:
+    """Decode a `:WorkflowCanvas` sidecar row's bounded canvas JSON."""
+    if not crows:
+        return None
+    cdata = crows[0].get('c', {})
+    raw = cdata.get('canvas') if isinstance(cdata, dict) else None
+    if not raw or not isinstance(raw, str):
+        return None
+    if len(raw.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES:
+        return None
+    return _bounded_external_value(json.loads(raw))
+
+
+async def _workflow_canvas(engine: Any, workflow_id: str) -> Any:
+    """Load the persisted canvas sidecar if present, else ``None``."""
+    try:
+        crows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (c:WorkflowCanvas) '
+            'WHERE c.workflow_id = $workflow_id RETURN c LIMIT 1',
+            {'workflow_id': workflow_id},
+            deadline=15.0,
+        )
+    except HTTPException:
+        raise
+    except Exception as canvas_err:  # noqa: BLE001
+        _log_failure('load_workflow_canvas', canvas_err, level=logging.DEBUG)
+        return None
+    return _decode_workflow_canvas(crows)
+
+
+async def _workflow_record(engine: Any, wdata: dict[str, Any]) -> dict[str, Any] | None:
+    """One `:Workflow` node as an API record, or ``None`` if its id is oversized."""
+    workflow_id = str(wdata.get('id') or f'workflow:{wdata.get("name", "")}')
+    if len(workflow_id.encode('utf-8')) > _MAX_WORKFLOW_ID_BYTES:
+        return None
+    return {
+        'id': workflow_id,
+        'name': wdata.get('name', ''),
+        'steps': _workflow_steps(wdata.get('steps', '')),
+        'orchestrates': await _workflow_orchestrates(engine, workflow_id),
+        'canvas': await _workflow_canvas(engine, workflow_id),
+    }
+
+
 @router.get('/workflows')
 async def list_workflows() -> list[dict[str, Any]]:
     """List saved workflows from the Knowledge Graph.
@@ -11380,8 +12186,6 @@ async def list_workflows() -> list[dict[str, Any]]:
     A genuinely empty graph returns ``[]``; a backend failure (D-W5WR-4)
     raises ``HTTPException(503)`` instead of masquerading as ``[]``.
     """
-    import json
-
     try:
         engine = await _get_engine_bounded()
         rows = await _invoke_governed_helper(
@@ -11394,68 +12198,9 @@ async def list_workflows() -> list[dict[str, Any]]:
             wdata = row.get('w', {})
             if not isinstance(wdata, dict):
                 continue
-            wid = str(wdata.get('id') or f'workflow:{wdata.get("name", "")}')
-            if len(wid.encode('utf-8')) > _MAX_WORKFLOW_ID_BYTES:
-                continue
-            name = wdata.get('name', '')
-            steps_raw = wdata.get('steps', '')
-            steps = (
-                [s for s in steps_raw.split(',') if s]
-                if isinstance(steps_raw, str)
-                else list(steps_raw or [])
-            )
-            # Resolve orchestrates via ORCHESTRATES edges.
-            orchestrates: list[str] = []
-            try:
-                erows = await _invoke_governed_helper(
-                    engine.backend.execute,
-                    'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
-                    'WHERE w.id = $workflow_id RETURN t '
-                    f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
-                    {'workflow_id': wid},
-                    deadline=15.0,
-                )
-                for er in erows:
-                    target = er.get('t', {})
-                    if isinstance(target, dict) and target.get('id'):
-                        orchestrates.append(target['id'])
-            except HTTPException:
-                raise
-            except Exception as edge_err:  # noqa: BLE001
-                _log_failure(
-                    'resolve_workflow_orchestration', edge_err, level=logging.DEBUG
-                )
-
-            # Load persisted canvas sidecar if present.
-            canvas: Any = None
-            try:
-                crows = await _invoke_governed_helper(
-                    engine.backend.execute,
-                    'MATCH (c:WorkflowCanvas) '
-                    'WHERE c.workflow_id = $workflow_id RETURN c LIMIT 1',
-                    {'workflow_id': wid},
-                    deadline=15.0,
-                )
-                if crows:
-                    cdata = crows[0].get('c', {})
-                    raw = cdata.get('canvas') if isinstance(cdata, dict) else None
-                    if raw and isinstance(raw, str):
-                        if len(raw.encode('utf-8')) <= _MAX_EXTERNAL_RESULT_BYTES:
-                            canvas = _bounded_external_value(json.loads(raw))
-            except HTTPException:
-                raise
-            except Exception as canvas_err:  # noqa: BLE001
-                _log_failure('load_workflow_canvas', canvas_err, level=logging.DEBUG)
-
-            workflows.append(
-                {
-                    'id': wid,
-                    'name': name,
-                    'steps': steps,
-                    'orchestrates': orchestrates,
-                    'canvas': canvas,
-                }
-            )
+            record = await _workflow_record(engine, wdata)
+            if record is not None:
+                workflows.append(record)
         return workflows
     except HTTPException:
         raise
@@ -11475,6 +12220,17 @@ async def list_workflows() -> list[dict[str, Any]]:
             status_code=503,
             detail='Knowledge Graph workflow query failed',
         ) from e
+
+
+def _palette_agent_entry(agent_props: dict[str, Any]) -> dict[str, Any]:
+    """One `:Agent` node as a workflow-editor palette entry."""
+    tools = agent_props.get('tools')
+    return {
+        'id': agent_props.get('id') or agent_props.get('name', ''),
+        'name': agent_props.get('name', agent_props.get('id', '')),
+        'system_prompt': agent_props.get('system_prompt'),
+        'tools': tools.split(',') if isinstance(tools, str) and tools else tools,
+    }
 
 
 @router.get('/workflows/capabilities')
@@ -11497,22 +12253,11 @@ async def workflow_capabilities() -> dict[str, list[dict[str, Any]]]:
             f'MATCH (a:Agent) RETURN a LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
             deadline=15.0,
         )
-        for row in rows:
-            a = row.get('a', {})
-            if not isinstance(a, dict):
-                continue
-            agents.append(
-                {
-                    'id': a.get('id') or a.get('name', ''),
-                    'name': a.get('name', a.get('id', '')),
-                    'system_prompt': a.get('system_prompt'),
-                    'tools': (
-                        a.get('tools', '').split(',')
-                        if isinstance(a.get('tools'), str) and a.get('tools')
-                        else a.get('tools')
-                    ),
-                }
-            )
+        agents = [
+            _palette_agent_entry(row.get('a', {}))
+            for row in rows
+            if isinstance(row.get('a', {}), dict)
+        ]
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
@@ -11520,22 +12265,148 @@ async def workflow_capabilities() -> dict[str, list[dict[str, Any]]]:
     # Tools + skills reuse the categorized /tools catalog.
     try:
         catalog = await list_all_tools()
-        for t in catalog.get('mcp_tools', []) + catalog.get('builtin_tools', []):
-            tools.append({'id': t.get('name', ''), 'name': t.get('name', '')})
-        for s in catalog.get('skills', []) + catalog.get('skill_graphs', []):
-            skills.append(
-                {
-                    'id': s.get('id', s.get('name', '')),
-                    'name': s.get('name', ''),
-                    'description': s.get('description', ''),
-                }
-            )
+        tools = [
+            {'id': t.get('name', ''), 'name': t.get('name', '')}
+            for t in catalog.get('mcp_tools', []) + catalog.get('builtin_tools', [])
+        ]
+        skills = [
+            {
+                'id': s.get('id', s.get('name', '')),
+                'name': s.get('name', ''),
+                'description': s.get('description', ''),
+            }
+            for s in catalog.get('skills', []) + catalog.get('skill_graphs', [])
+        ]
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('workflow_capabilities', e)
 
     return {'agents': agents, 'tools': tools, 'skills': skills}
+
+
+@dataclass(frozen=True)
+class _WorkflowSaveRequest:
+    """A validated ``POST /workflows`` body."""
+
+    name: str
+    steps: list[Any]
+    orchestrates: list[Any]
+    canvas: Any
+    canvas_payload: str | None
+
+
+def _bounded_workflow_tokens(items: Any, max_bytes: int) -> bool:
+    """True when `items` is a bounded list of bounded UTF-8 strings."""
+    return (
+        isinstance(items, list)
+        and len(items) <= _MAX_EXTERNAL_COLLECTION_ITEMS
+        and all(
+            isinstance(item, str) and len(item.encode('utf-8')) <= max_bytes
+            for item in items
+        )
+    )
+
+
+def _validated_workflow_name(body: dict[str, Any]) -> str:
+    name = body.get('name') or 'Untitled Workflow'
+    if not isinstance(name, str) or not name.strip() or len(name.encode('utf-8')) > 512:
+        raise HTTPException(status_code=400, detail='Invalid workflow name')
+    return name
+
+
+def _workflow_canvas_from_body(body: dict[str, Any]) -> Any:
+    """The editor canvas, assembled from loose `nodes`/`edges` when needed."""
+    canvas = body.get('canvas')
+    if canvas is None and ('nodes' in body or 'edges' in body):
+        return {
+            'nodes': body.get('nodes', []),
+            'edges': body.get('edges', []),
+            'layout': body.get('layout'),
+        }
+    return canvas
+
+
+def _encoded_workflow_canvas(canvas: Any) -> tuple[Any, str | None]:
+    """Bound and serialize the canvas, or ``(None, None)`` when absent."""
+    if canvas is None:
+        return None, None
+    try:
+        bounded = _bounded_external_value(canvas)
+        payload = json.dumps(
+            bounded,
+            separators=(',', ':'),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail='Invalid workflow canvas') from exc
+    if len(payload.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES:
+        raise HTTPException(status_code=400, detail='Workflow canvas is too large')
+    return bounded, payload
+
+
+def _workflow_save_request(body: Any) -> _WorkflowSaveRequest:
+    """Validate a ``POST /workflows`` body into a `_WorkflowSaveRequest`."""
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail='Workflow body must be an object')
+    steps = body.get('steps') or []
+    orchestrates = body.get('orchestrates') or []
+    name = _validated_workflow_name(body)
+    if not _bounded_workflow_tokens(steps, 2048) or not _bounded_workflow_tokens(
+        orchestrates, _MAX_WORKFLOW_ID_BYTES
+    ):
+        raise HTTPException(status_code=400, detail='Invalid workflow steps')
+    canvas, canvas_payload = _encoded_workflow_canvas(_workflow_canvas_from_body(body))
+    return _WorkflowSaveRequest(
+        name=name,
+        steps=steps,
+        orchestrates=orchestrates,
+        canvas=canvas,
+        canvas_payload=canvas_payload,
+    )
+
+
+async def _persist_workflow_spec(
+    engine: Any, spec: Any, workflow_to_batch: Any
+) -> None:
+    """Build the canonical batch, then persist via the engine's node/edge API
+    (the engine exposes add_node/link_nodes rather than a raw write_batch)."""
+
+    def persist_workflow() -> None:
+        batch = workflow_to_batch(spec)
+        for node in batch.nodes:
+            engine.add_node(node.id, node.type, dict(node.props or {}))
+        for edge in batch.edges:
+            engine.link_nodes(edge.source, edge.target, edge.rel_type)
+
+    await _invoke_governed_helper(persist_workflow, deadline=30.0)
+
+
+async def _persist_workflow_canvas(
+    engine: Any, spec: Any, name: str, canvas_payload: str | None
+) -> None:
+    """Persist the canvas sidecar so the editor restores exactly on reload.
+
+    Non-fatal: the spec is saved even if the canvas sidecar fails.
+    """
+    try:
+        await _invoke_governed_helper(
+            engine.add_node,
+            _canvas_node_id(spec.id),
+            'WorkflowCanvas',
+            {
+                'workflow_id': spec.id,
+                'name': name,
+                'canvas': canvas_payload,
+                'updated_at': datetime.now(timezone.utc).isoformat(),
+            },
+            deadline=15.0,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        _log_failure('api_extension', e, level=logging.WARNING)
 
 
 @router.post('/workflows')
@@ -11548,54 +12419,7 @@ async def save_workflow(request: Request) -> dict[str, Any]:
     on a sibling ``:WorkflowCanvas`` node keyed by the workflow id so the
     canvas round-trips exactly. Returns ``{id, saved}``.
     """
-    import json
-
-    body = await request.json()
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail='Workflow body must be an object')
-    name = body.get('name') or 'Untitled Workflow'
-    steps = body.get('steps') or []
-    orchestrates = body.get('orchestrates') or []
-    canvas = body.get('canvas')
-    if canvas is None and ('nodes' in body or 'edges' in body):
-        canvas = {
-            'nodes': body.get('nodes', []),
-            'edges': body.get('edges', []),
-            'layout': body.get('layout'),
-        }
-    if not isinstance(name, str) or not name.strip() or len(name.encode('utf-8')) > 512:
-        raise HTTPException(status_code=400, detail='Invalid workflow name')
-    if (
-        not isinstance(steps, list)
-        or not isinstance(orchestrates, list)
-        or len(steps) > _MAX_EXTERNAL_COLLECTION_ITEMS
-        or len(orchestrates) > _MAX_EXTERNAL_COLLECTION_ITEMS
-        or not all(
-            isinstance(item, str) and len(item.encode('utf-8')) <= 2048
-            for item in steps
-        )
-        or not all(
-            isinstance(item, str)
-            and len(item.encode('utf-8')) <= _MAX_WORKFLOW_ID_BYTES
-            for item in orchestrates
-        )
-    ):
-        raise HTTPException(status_code=400, detail='Invalid workflow steps')
-    if canvas is not None:
-        try:
-            canvas = _bounded_external_value(canvas)
-            canvas_payload = json.dumps(
-                canvas,
-                separators=(',', ':'),
-                ensure_ascii=False,
-                allow_nan=False,
-            )
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(
-                status_code=400, detail='Invalid workflow canvas'
-            ) from exc
-        if len(canvas_payload.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES:
-            raise HTTPException(status_code=400, detail='Workflow canvas is too large')
+    saved = _workflow_save_request(await request.json())
 
     try:
         from agent_utilities.knowledge_graph.enrichment.orchestration import (
@@ -11609,21 +12433,13 @@ async def save_workflow(request: Request) -> dict[str, Any]:
             detail=f'Workflow orchestration unavailable: {type(e).__name__}',
         ) from e
 
-    spec = WorkflowSpec(name=name, steps=steps, orchestrates=orchestrates)
+    spec = WorkflowSpec(
+        name=saved.name, steps=saved.steps, orchestrates=saved.orchestrates
+    )
 
     try:
         engine = await _get_engine_bounded()
-
-        # Build the canonical batch, then persist via the engine's node/edge API
-        # (the engine exposes add_node/link_nodes rather than a raw write_batch).
-        def persist_workflow() -> None:
-            batch = workflow_to_batch(spec)
-            for node in batch.nodes:
-                engine.add_node(node.id, node.type, dict(node.props or {}))
-            for edge in batch.edges:
-                engine.link_nodes(edge.source, edge.target, edge.rel_type)
-
-        await _invoke_governed_helper(persist_workflow, deadline=30.0)
+        await _persist_workflow_spec(engine, spec, workflow_to_batch)
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
@@ -11632,28 +12448,71 @@ async def save_workflow(request: Request) -> dict[str, Any]:
             status_code=500, detail=f'Failed to persist workflow: {type(e).__name__}'
         ) from e
 
-    # Persist the canvas sidecar so the editor restores exactly on reload.
-    if canvas is not None:
-        try:
-            canvas_id = _canvas_node_id(spec.id)
-            await _invoke_governed_helper(
-                engine.add_node,
-                canvas_id,
-                'WorkflowCanvas',
-                {
-                    'workflow_id': spec.id,
-                    'name': name,
-                    'canvas': canvas_payload,
-                    'updated_at': datetime.now(timezone.utc).isoformat(),
-                },
-                deadline=15.0,
-            )
-        except HTTPException:
-            raise
-        except Exception as e:  # noqa: BLE001
-            # Non-fatal: the spec is saved even if the canvas sidecar fails.
-            _log_failure('api_extension', e, level=logging.WARNING)
+    if saved.canvas is not None:
+        await _persist_workflow_canvas(engine, spec, saved.name, saved.canvas_payload)
     return {'id': spec.id, 'saved': True}
+
+
+def _workflow_name_and_steps(rows: Any, wid: str) -> tuple[str, list[Any]]:
+    """A `:Workflow` row's name and steps, defaulting to the id and []."""
+    if not rows:
+        return wid, []
+    wdata = rows[0].get('w', {})
+    if not isinstance(wdata, dict):
+        return wid, []
+    return wdata.get('name', wid), _workflow_steps(wdata.get('steps', ''))
+
+
+async def _resolve_workflow_record(wid: str) -> tuple[str, list[Any], list[str]]:
+    """Resolve a saved workflow's ``(name, steps, orchestrates)`` from the KG.
+
+    Best-effort: a lookup failure leaves the caller to fall back to whatever
+    the request body supplied.
+    """
+    name = wid
+    steps: list[Any] = []
+    orchestrates: list[str] = []
+    try:
+        engine = await _get_engine_bounded()
+        rows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (w:Workflow) WHERE w.id = $workflow_id RETURN w LIMIT 1',
+            {'workflow_id': wid},
+            deadline=15.0,
+        )
+        name, steps = _workflow_name_and_steps(rows, wid)
+        erows = await _invoke_governed_helper(
+            engine.backend.execute,
+            'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
+            'WHERE w.id = $workflow_id RETURN t '
+            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
+            {'workflow_id': wid},
+            deadline=15.0,
+        )
+        orchestrates = _orchestrated_target_ids(erows)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        _log_failure('api_extension', e, level=logging.WARNING)
+    return name, steps, orchestrates
+
+
+def _require_workflow_identifier(wid: str) -> None:
+    """Reject an empty, NUL-bearing or oversized workflow identifier."""
+    if not wid or '\x00' in wid or len(wid.encode('utf-8')) > _MAX_WORKFLOW_ID_BYTES:
+        raise HTTPException(status_code=400, detail='Invalid workflow identifier')
+
+
+def _workflow_run_response(run_id: str, result: Any) -> dict[str, Any]:
+    """Shape a dispatch result into the run response body."""
+    if isinstance(result, dict):
+        return {
+            'run_id': run_id,
+            'status': result.get('status', 'completed'),
+            'result': result,
+            'summary': result.get('summary'),
+        }
+    return {'run_id': run_id, 'status': 'completed', 'result': result}
 
 
 @router.post('/workflows/{wid:path}/run')
@@ -11665,50 +12524,11 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
     Wraps failures so an error returns ``{status: "error", error}`` instead of
     a 500. Returns ``{run_id, status, result/summary}``.
     """
-    import uuid
-
-    if not wid or '\x00' in wid or len(wid.encode('utf-8')) > _MAX_WORKFLOW_ID_BYTES:
-        raise HTTPException(status_code=400, detail='Invalid workflow identifier')
+    _require_workflow_identifier(wid)
     run_id = uuid.uuid4().hex[:12]
 
     # Resolve the spec — prefer the live KG record, fall back to request body.
-    name = wid
-    steps: list[str] = []
-    orchestrates: list[str] = []
-    try:
-        engine = await _get_engine_bounded()
-        rows = await _invoke_governed_helper(
-            engine.backend.execute,
-            'MATCH (w:Workflow) WHERE w.id = $workflow_id RETURN w LIMIT 1',
-            {'workflow_id': wid},
-            deadline=15.0,
-        )
-        if rows:
-            wdata = rows[0].get('w', {})
-            if isinstance(wdata, dict):
-                name = wdata.get('name', wid)
-                steps_raw = wdata.get('steps', '')
-                steps = (
-                    [s for s in steps_raw.split(',') if s]
-                    if isinstance(steps_raw, str)
-                    else list(steps_raw or [])
-                )
-        erows = await _invoke_governed_helper(
-            engine.backend.execute,
-            'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
-            'WHERE w.id = $workflow_id RETURN t '
-            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
-            {'workflow_id': wid},
-            deadline=15.0,
-        )
-        for er in erows:
-            target = er.get('t', {})
-            if isinstance(target, dict) and target.get('id'):
-                orchestrates.append(target['id'])
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        _log_failure('api_extension', e, level=logging.WARNING)
+    name, steps, orchestrates = await _resolve_workflow_record(wid)
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
@@ -11745,15 +12565,7 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
             mode='workflow',
             deadline=120.0,
         )
-        if isinstance(result, dict):
-            status = result.get('status', 'completed')
-            return {
-                'run_id': run_id,
-                'status': status,
-                'result': result,
-                'summary': result.get('summary'),
-            }
-        return {'run_id': run_id, 'status': 'completed', 'result': result}
+        return _workflow_run_response(run_id, result)
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
@@ -12106,6 +12918,57 @@ def _locate_object_graph(
     return None
 
 
+def _interface_implementers_by_type(ontology: Any) -> dict[str, list[str]]:
+    """Concrete types declared as interface implementers (programmatic targets)."""
+    implementers_by_type: dict[str, list[str]] = {}
+    for iface in ontology.interfaces.list_interfaces():
+        try:
+            implementers = list(ontology.interfaces.find_implementers(iface.name))
+        except Exception:  # noqa: BLE001
+            continue
+        for t in implementers:
+            implementers_by_type.setdefault(t, []).append(iface.name)
+    return implementers_by_type
+
+
+def _absorb_label_counts(live_types: dict[str, int], row: dict[str, Any]) -> None:
+    """Fold one ``labels(n), count(n)`` row into the running label histogram."""
+    labels = row.get('labels') or []
+    if isinstance(labels, str):
+        labels = [labels]
+    count = int(row.get('count', 0) or 0)
+    for label in labels:
+        if label and not str(label).startswith('_'):
+            live_types[label] = live_types.get(label, 0) + count
+
+
+async def _live_object_type_counts() -> dict[str, int]:
+    """Live node labels present in the store, with their counts.
+
+    FIX LANE Priority 1: unioned across every graph this actor may read
+    (`_read_union_cypher`), not `backend.execute`/`kg.store` alone --
+    otherwise the commons-only catalog types (`Tool`, `Skill`, ...) never
+    appear in the Object Explorer's type list at all. The commons READ catalog
+    restriction is pushed into the query text automatically by
+    `_graph_union_executor` (see its docstring) so a foreign tenant's count
+    here is already scoped to `COMMONS_SHAREABLE_NODE_TYPES`.
+    """
+    live_types: dict[str, int] = {}
+    try:
+        engine = await _get_engine_bounded()
+        rows, _source_graphs = await _read_union_cypher(
+            engine,
+            'MATCH (n) RETURN labels(n) as labels, count(n) as count',
+            None,
+            deadline=15.0,
+        )
+        for row in rows or []:
+            _absorb_label_counts(live_types, row)
+    except Exception:  # noqa: BLE001
+        return {}
+    return live_types
+
+
 @router.get('/ontology/object-types')
 async def list_object_types() -> list[dict[str, Any]]:
     """List ontology object/node types (registry types + interface implementers).
@@ -12116,45 +12979,8 @@ async def list_object_types() -> list[dict[str, Any]]:
     """
     try:
         _kg, ontology = await _get_ontology_kg_bounded()
-
-        # Concrete types declared as interface implementers (programmatic targets).
-        implementers_by_type: dict[str, list[str]] = {}
-        for iface in ontology.interfaces.list_interfaces():
-            try:
-                for t in ontology.interfaces.find_implementers(iface.name):
-                    implementers_by_type.setdefault(t, []).append(iface.name)
-            except Exception:  # noqa: BLE001
-                continue
-
-        # Live node labels present in the store. FIX LANE Priority 1: unioned
-        # across every graph this actor may read (`_read_union_cypher`), not
-        # `backend.execute`/`kg.store` alone -- otherwise the commons-only
-        # catalog types (`Tool`, `Skill`, ...) never appear in the Object
-        # Explorer's type list at all. The commons READ catalog restriction is
-        # pushed into the query text automatically by `_graph_union_executor`
-        # (see its docstring) so a foreign tenant's count here is already
-        # scoped to `COMMONS_SHAREABLE_NODE_TYPES`.
-        live_types: dict[str, int] = {}
-        try:
-            engine = await _get_engine_bounded()
-            rows, _source_graphs = await _read_union_cypher(
-                engine,
-                'MATCH (n) RETURN labels(n) as labels, count(n) as count',
-                None,
-                deadline=15.0,
-            )
-            for row in rows or []:
-                labels = row.get('labels') or []
-                if isinstance(labels, str):
-                    labels = [labels]
-                for label in labels:
-                    if label and not str(label).startswith('_'):
-                        live_types[label] = live_types.get(label, 0) + int(
-                            row.get('count', 0) or 0
-                        )
-        except Exception:  # noqa: BLE001
-            live_types = {}
-
+        implementers_by_type = _interface_implementers_by_type(ontology)
+        live_types = await _live_object_type_counts()
         names = set(implementers_by_type) | set(live_types)
         return [
             {
@@ -12250,6 +13076,57 @@ def _object_set_rows(
     return enforce(rows, actor)
 
 
+@dataclass(frozen=True)
+class _ObjectSearchSpec:
+    """One validated ``/object-set/search`` request."""
+
+    query: str
+    kind: Any
+    limit: int
+    filters: list[Any]
+
+
+def _object_search_spec(data: dict[str, Any]) -> _ObjectSearchSpec:
+    """Validate ``{query, filters, kind, limit}`` into an `_ObjectSearchSpec`."""
+    query = str(data.get('query', '') or '')
+    kind = data.get('kind')
+    limit = int(data.get('limit', 50) or 50)
+    if (
+        len(query.encode('utf-8')) > 8192
+        or not 1 <= limit <= _MAX_EXTERNAL_COLLECTION_ITEMS
+    ):
+        raise HTTPException(status_code=400, detail='Invalid object search bounds')
+    if kind is not None and (
+        not isinstance(kind, str) or len(kind.encode('utf-8')) > 128
+    ):
+        raise HTTPException(status_code=400, detail='Invalid object kind')
+    return _ObjectSearchSpec(
+        query=query,
+        kind=kind,
+        limit=limit,
+        filters=_object_set_property_filters({'filter': data.get('filters') or []}),
+    )
+
+
+def _scoped_object_search(
+    engine: Any, spec: _ObjectSearchSpec, actor: Any, scoped_engine: Any
+) -> list[dict[str, Any]]:
+    """Search ONE graph's ontology facade and return its summary rows."""
+    facade = _ontology_facade_for(engine, scoped_engine)
+    if facade is None:
+        return []
+    _scoped_kg, scoped_ontology = facade
+    base, remaining_filters = _object_set_base(
+        scoped_ontology, str(spec.kind) if spec.kind else '', spec.filters
+    )
+    result = base.search(
+        spec.query,
+        filters=remaining_filters or None,
+        limit=spec.limit,
+    )
+    return _object_set_rows(scoped_ontology, result, actor, limit=spec.limit)
+
+
 @router.post('/ontology/object-set/search')
 async def ontology_object_set_search(
     data: dict[str, Any], request: Request
@@ -12259,81 +13136,30 @@ async def ontology_object_set_search(
     Body: ``{query, filters, kind}`` — ``kind`` is an object type / interface to
     scope to (omit for a graph-wide search); ``filters`` is an optional list of
     ``{property, op, value}`` typed predicates; ``query`` is the search string.
+
+    FIX LANE Priority 1: fanned out across every graph this actor may read
+    (`_union_engine_call` -- `_rows_per_accessible_graph` under a per-graph
+    ``(kg, ontology)`` facade, `_ontology_facade_for`) and merged by object id
+    -- the ontology layer has no Cypher seam (`_read_union_cypher` does not
+    apply), so this is the "call the engine once per accessible graph and
+    merge" case. ``limit`` is pushed down to EACH graph's ``.search(...)`` call
+    (not fetched unbounded then sliced); the merge is re-trimmed to ``limit``
+    below since the union of two ``limit``-bounded per-graph results can
+    exceed it.
     """
     try:
-        _kg, ontology = await _get_ontology_kg_bounded()
+        _kg, _ontology = await _get_ontology_kg_bounded()
         actor = _actor_context(request)
-        query = str(data.get('query', '') or '')
-        kind = data.get('kind')
-        limit = int(data.get('limit', 50) or 50)
-        raw_filters = data.get('filters') or []
-        if (
-            len(query.encode('utf-8')) > 8192
-            or not 1 <= limit <= _MAX_EXTERNAL_COLLECTION_ITEMS
-        ):
-            raise HTTPException(status_code=400, detail='Invalid object search bounds')
-        if kind is not None and (
-            not isinstance(kind, str) or len(kind.encode('utf-8')) > 128
-        ):
-            raise HTTPException(status_code=400, detail='Invalid object kind')
-        if not isinstance(raw_filters, list) or len(raw_filters) > 64:
-            raise HTTPException(status_code=400, detail='Invalid object filters')
-        try:
-            _bounded_external_value(raw_filters)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=400, detail='Invalid object filters'
-            ) from exc
-
-        from agent_utilities.knowledge_graph.ontology.object_set import PropertyFilter
-
-        filters = []
-        for f in raw_filters:
-            if isinstance(f, dict) and (f.get('property') or f.get('field')):
-                filters.append(
-                    PropertyFilter(
-                        field=str(f.get('property') or f.get('field')),
-                        op=str(f.get('op', 'eq')),
-                        value=f.get('value'),
-                    )
-                )
-
-        # FIX LANE Priority 1: fanned out across every graph this actor may
-        # read (`_union_engine_call` -- `_rows_per_accessible_graph` under a
-        # per-graph `(kg, ontology)` facade, `_ontology_facade_for`) and
-        # merged by object id -- the ontology layer has no Cypher seam
-        # (`_read_union_cypher` does not apply), so this is the "call the
-        # engine once per accessible graph and merge" case. `limit` is pushed
-        # down to EACH graph's `.search(...)` call (not fetched unbounded then
-        # sliced); the merge is re-trimmed to `limit` below since the union of
-        # two `limit`-bounded per-graph results can exceed it.
+        spec = _object_search_spec(data)
         engine = await _get_engine_bounded()
 
         def execute_search(scoped_engine: Any) -> list[dict[str, Any]]:
-            facade = _ontology_facade_for(engine, scoped_engine)
-            if facade is None:
-                return []
-            _scoped_kg, scoped_ontology = facade
-            remaining_filters = filters
-            if kind:
-                base = scoped_ontology.object_set_of_type(str(kind))
-            elif filters:
-                base = scoped_ontology.dynamic_object_set(filters=filters)
-                remaining_filters = []  # already applied to the base set
-            else:
-                # Graph-wide: a dynamic set over a permissive predicate.
-                base = scoped_ontology.dynamic_object_set(lambda props: True)
-            result = base.search(
-                query,
-                filters=remaining_filters or None,
-                limit=limit,
-            )
-            return _object_set_rows(scoped_ontology, result, actor, limit=limit)
+            return _scoped_object_search(engine, spec, actor, scoped_engine)
 
         rows, _source_graphs, _degraded = await _invoke_governed_helper(
             _union_engine_call, engine, actor, execute_search, deadline=30.0
         )
-        rows = rows[:limit]
+        rows = rows[: spec.limit]
         return _public_external_result(
             {
                 'ids': [r.get('id') for r in rows],
@@ -12348,6 +13174,26 @@ async def ontology_object_set_search(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _search_around_bounds(data: dict[str, Any]) -> tuple[Any, int, int, str]:
+    """Validate ``{link_type, hops, cap, direction}`` for a search-around."""
+    link_type = data.get('link_type')
+    hops = int(data.get('hops', 1) or 1)
+    cap = int(
+        data.get('cap', _MAX_EXTERNAL_COLLECTION_ITEMS)
+        or _MAX_EXTERNAL_COLLECTION_ITEMS
+    )
+    direction = str(data.get('direction', 'out') or 'out')
+    if not 1 <= hops <= 10 or not 1 <= cap <= _MAX_EXTERNAL_COLLECTION_ITEMS:
+        raise HTTPException(status_code=400, detail='Invalid traversal bounds')
+    if direction not in {'in', 'out', 'both'}:
+        raise HTTPException(status_code=400, detail='Invalid traversal direction')
+    if link_type is not None and (
+        not isinstance(link_type, str) or len(link_type.encode('utf-8')) > 128
+    ):
+        raise HTTPException(status_code=400, detail='Invalid link type')
+    return link_type, hops, cap, direction
+
+
 @router.post('/ontology/object-set/search-around')
 async def ontology_object_set_search_around(
     data: dict[str, Any], request: Request
@@ -12359,21 +13205,7 @@ async def ontology_object_set_search_around(
     try:
         actor = _actor_context(request)
         ids = _bounded_identifier_list(data.get('ids'), required=True)
-        link_type = data.get('link_type')
-        hops = int(data.get('hops', 1) or 1)
-        cap = int(
-            data.get('cap', _MAX_EXTERNAL_COLLECTION_ITEMS)
-            or _MAX_EXTERNAL_COLLECTION_ITEMS
-        )
-        direction = str(data.get('direction', 'out') or 'out')
-        if not 1 <= hops <= 10 or not 1 <= cap <= _MAX_EXTERNAL_COLLECTION_ITEMS:
-            raise HTTPException(status_code=400, detail='Invalid traversal bounds')
-        if direction not in {'in', 'out', 'both'}:
-            raise HTTPException(status_code=400, detail='Invalid traversal direction')
-        if link_type is not None and (
-            not isinstance(link_type, str) or len(link_type.encode('utf-8')) > 128
-        ):
-            raise HTTPException(status_code=400, detail='Invalid link type')
+        link_type, hops, cap, direction = _search_around_bounds(data)
 
         # FIX LANE Priority 1: fanned out per accessible graph and merged by
         # object id, same reasoning as `ontology_object_set_search` above. A
@@ -12443,6 +13275,80 @@ def _ids_present_in_graph(backend: Any, ids: list[str]) -> set[str]:
     return present
 
 
+@dataclass(frozen=True)
+class _PivotSpec:
+    """One validated ``/object-set/pivot`` request."""
+
+    ids: list[str]
+    link_type: Any
+    group_by: str
+    direction: str
+
+
+def _pivot_spec(data: dict[str, Any]) -> _PivotSpec:
+    """Validate ``{ids, link_type, group_by, direction}`` into a `_PivotSpec`."""
+    # `ids` is bounded BEFORE the other checks, preserving the original order.
+    ids = _bounded_identifier_list(data.get('ids'))
+    link_type = data.get('link_type')
+    group_by = str(data.get('group_by', '') or '')
+    direction = str(data.get('direction', 'out') or 'out')
+    if not group_by or len(group_by.encode('utf-8')) > 128:
+        raise HTTPException(status_code=422, detail='group_by is required')
+    if direction not in {'in', 'out', 'both'}:
+        raise HTTPException(status_code=400, detail='Invalid pivot direction')
+    if link_type is not None and (
+        not isinstance(link_type, str) or len(link_type.encode('utf-8')) > 128
+    ):
+        raise HTTPException(status_code=400, detail='Invalid link type')
+    return _PivotSpec(
+        ids=ids,
+        link_type=link_type,
+        group_by=group_by,
+        direction=direction,
+    )
+
+
+def _scoped_pivot(engine: Any, spec: _PivotSpec, scoped_engine: Any) -> Any:
+    """Pivot ONE graph's view of the seed ids, or ``None`` if it has no facade."""
+    facade = _ontology_facade_for(engine, scoped_engine)
+    if facade is None:
+        return None
+    _scoped_kg, scoped_ontology = facade
+    return scoped_ontology.object_set(spec.ids).pivot(
+        spec.link_type,
+        spec.group_by,
+        direction=spec.direction,
+    )
+
+
+def _merge_pivot_group(
+    merged_groups: dict[Any, list[str]], seen: set[str], pivot: Any
+) -> None:
+    """Fold one graph's pivot buckets in, deduped by linked-object id."""
+    for key, member_ids in pivot.groups.items():
+        bucket = merged_groups.setdefault(key, [])
+        for member_id in member_ids:
+            if member_id in seen:
+                continue
+            seen.add(member_id)
+            bucket.append(member_id)
+
+
+def _merge_pivot_results(
+    per_graph: list[tuple[str | None, Any]], fallback_link_type: Any
+) -> tuple[Any, dict[Any, list[str]]]:
+    """Merge per-graph pivots into ``(link_type, groups)``, tenant-first."""
+    resolved_link_type = fallback_link_type or '*'
+    merged_groups: dict[Any, list[str]] = {}
+    seen: set[str] = set()
+    for _graph_name, pivot in per_graph:
+        if pivot is None:
+            continue
+        resolved_link_type = pivot.link_type
+        _merge_pivot_group(merged_groups, seen, pivot)
+    return resolved_link_type, merged_groups
+
+
 @router.post('/ontology/object-set/pivot')
 async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
     """Pivot an object set across a link type, grouping the linked set.
@@ -12459,60 +13365,26 @@ async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
     """
     try:
         _kg, _ontology = await _get_ontology_kg_bounded()
-        ids = _bounded_identifier_list(data.get('ids'))
-        link_type = data.get('link_type')
-        group_by = str(data.get('group_by', '') or '')
-        direction = str(data.get('direction', 'out') or 'out')
-        if not group_by or len(group_by.encode('utf-8')) > 128:
-            raise HTTPException(status_code=422, detail='group_by is required')
-        if direction not in {'in', 'out', 'both'}:
-            raise HTTPException(status_code=400, detail='Invalid pivot direction')
-        if link_type is not None and (
-            not isinstance(link_type, str) or len(link_type.encode('utf-8')) > 128
-        ):
-            raise HTTPException(status_code=400, detail='Invalid link type')
-
+        spec = _pivot_spec(data)
         engine = await _get_engine_bounded()
 
         def execute_pivot(scoped_engine: Any) -> Any:
-            facade = _ontology_facade_for(engine, scoped_engine)
-            if facade is None:
-                return None
-            _scoped_kg, scoped_ontology = facade
-            return scoped_ontology.object_set(ids).pivot(
-                link_type,
-                group_by,
-                direction=direction,
-            )
+            return _scoped_pivot(engine, spec, scoped_engine)
 
         def _run() -> list[tuple[str | None, Any]]:
             result = _rows_per_accessible_graph(engine, execute_pivot)
             if result is None:
                 return [(None, execute_pivot(engine))]
             per_graph, _degraded = result
-            return [(graph_name, value) for graph_name, value in per_graph]
+            return list(per_graph)
 
-        per_graph = await _invoke_governed_helper(_run, deadline=30.0)
-
-        resolved_link_type = link_type or '*'
-        merged_groups: dict[Any, list[str]] = {}
-        seen: set[str] = set()
-        for _graph_name, pivot in per_graph:
-            if pivot is None:
-                continue
-            resolved_link_type = pivot.link_type
-            for key, member_ids in pivot.groups.items():
-                bucket = merged_groups.setdefault(key, [])
-                for member_id in member_ids:
-                    if member_id in seen:
-                        continue
-                    seen.add(member_id)
-                    bucket.append(member_id)
-
+        resolved_link_type, merged_groups = _merge_pivot_results(
+            await _invoke_governed_helper(_run, deadline=30.0), spec.link_type
+        )
         return _public_external_result(
             {
                 'link_type': resolved_link_type,
-                'group_by': group_by,
+                'group_by': spec.group_by,
                 'groups': {str(k): v for k, v in merged_groups.items()},
             }
         )
@@ -12521,6 +13393,127 @@ async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         _log_failure('api_extension', e)
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+@dataclass(frozen=True)
+class _AggregateSpec:
+    """One validated ``/object-set/aggregate`` request."""
+
+    ids: list[str]
+    metric: str
+    field: Any
+    group_by: Any
+
+    @property
+    def component_metrics(self) -> tuple[str, ...]:
+        """avg needs its components (sum + count), not the final per-group
+        average, to merge correctly across graphs."""
+        return ('sum', 'count') if self.metric == 'avg' else (self.metric,)
+
+
+def _aggregate_spec(data: dict[str, Any]) -> _AggregateSpec:
+    """Validate ``{ids, group_by, metric, field}`` into an `_AggregateSpec`."""
+    # `ids` is bounded BEFORE the metric checks, preserving the original
+    # order: a request with both a bad id list and a bad metric still reports
+    # the id rejection first.
+    ids = _bounded_identifier_list(data.get('ids'))
+    metric = str(data.get('metric', 'count') or 'count')
+    if metric not in {'count', 'sum', 'avg', 'min', 'max'}:
+        raise HTTPException(status_code=422, detail=f'unsupported metric {metric!r}')
+    field = data.get('field')
+    if metric != 'count' and not field:
+        raise HTTPException(
+            status_code=422, detail=f'metric {metric!r} requires a numeric field'
+        )
+    return _AggregateSpec(
+        ids=ids,
+        metric=metric,
+        field=field,
+        group_by=data.get('group_by'),
+    )
+
+
+def _scoped_aggregate(
+    engine: Any, spec: _AggregateSpec, scoped_engine: Any
+) -> dict[str, Any] | None:
+    """Aggregate ONE graph's share of `spec.ids`, or ``None`` if it holds none.
+
+    A STATIC ObjectSet's ``.aggregate()`` counts every id verbatim whether it
+    exists in that graph or not, so the ids are narrowed to the ones this
+    graph actually holds (`_ids_present_in_graph`) before aggregating -- an
+    unfiltered full-``ids`` fan-out would double-count.
+    """
+    facade = _ontology_facade_for(engine, scoped_engine)
+    if facade is None:
+        return None
+    _scoped_kg, scoped_ontology = facade
+    present = _ids_present_in_graph(scoped_engine.backend, spec.ids)
+    if not present:
+        return None
+    object_set = scoped_ontology.object_set([i for i in spec.ids if i in present])
+    return {
+        m: object_set.aggregate(m, field=spec.field, group_by=spec.group_by)
+        for m in spec.component_metrics
+    }
+
+
+# How a metric's per-group values from independent graph partitions combine.
+# count/sum add (independent partitions of the same set sum by definition);
+# min/max merge directly (min-of-mins / max-of-maxes) -- these ARE
+# reconstructable from independent partitions, unlike avg, so scoping them to
+# only the tenant graph (as a prior pass here did) was over-cautious. avg is
+# absent on purpose: it is merged from its sum/count components instead.
+_AGGREGATE_GROUP_MERGE: dict[str, Any] = {
+    'count': lambda existing, value: existing + value,
+    'sum': lambda existing, value: existing + value,
+    'min': min,
+    'max': max,
+}
+
+
+def _merge_simple_metric(groups: dict[Any, float], agg: Any, metric: str) -> None:
+    """Fold one graph's `AggregationResult` groups into `groups`."""
+    combine = _AGGREGATE_GROUP_MERGE[metric]
+    for key, value in agg.groups.items():
+        groups[key] = value if key not in groups else combine(groups[key], value)
+
+
+def _accumulate_group_totals(target: dict[Any, float], source: Any) -> None:
+    """Sum a per-graph group mapping into a running total mapping."""
+    for key, value in source.items():
+        target[key] = target.get(key, 0.0) + value
+
+
+def _merge_aggregate_results(
+    per_graph: list[tuple[str | None, Any]], metric: str
+) -> tuple[dict[Any, float], int]:
+    """Merge per-graph `AggregationResult`s into ``(groups, total_objects)``.
+
+    ``avg`` is requested as its ``sum``+``count`` components per graph and
+    divided AFTER merging, because ``AggregationResult`` exposes only the
+    final per-group value, not the underlying sum/count a correct avg merge
+    needs (a plain average-of-averages would be wrong whenever the per-graph
+    group sizes differ).
+    """
+    groups: dict[Any, float] = {}
+    sums: dict[Any, float] = {}
+    counts: dict[Any, float] = {}
+    total_objects = 0
+    for _graph_name, agg_map in per_graph:
+        if not agg_map:
+            continue
+        if metric == 'avg':
+            total_objects += agg_map['sum'].total_objects
+            _accumulate_group_totals(sums, agg_map['sum'].groups)
+            _accumulate_group_totals(counts, agg_map['count'].groups)
+        else:
+            total_objects += agg_map[metric].total_objects
+            _merge_simple_metric(groups, agg_map[metric], metric)
+    if metric == 'avg':
+        groups = {
+            key: total / counts[key] for key, total in sums.items() if counts.get(key)
+        }
+    return groups, total_objects
 
 
 @router.post('/ontology/object-set/aggregate')
@@ -12533,107 +13526,34 @@ async def ontology_object_set_aggregate(data: dict[str, Any]) -> dict[str, Any]:
     graph (GOC-61 -- edges never cross a graph boundary), so this fans the
     aggregate out per accessible graph (`_rows_per_accessible_graph`, via a
     per-graph ``(kg, ontology)`` facade, `_ontology_facade_for`) over ONLY
-    the ids that graph actually holds (`_ids_present_in_graph` -- a STATIC
-    ObjectSet's ``.aggregate()`` counts every id verbatim whether it exists
-    in that graph or not, so an unfiltered full-``ids`` fan-out would
-    double-count), then merges the per-graph ``AggregationResult``s:
-
-    * ``count``/``sum`` -- SUM the per-graph group values; independent
-      partitions of the same set sum correctly by definition.
-    * ``min``/``max`` -- merge directly (min-of-mins / max-of-maxes); these
-      ARE reconstructable from independent partitions, unlike avg, so
-      scoping them to only the tenant graph (as a prior pass here did)
-      was over-cautious.
-    * ``avg`` -- requested as its ``sum``+``count`` components per graph and
-      divided AFTER merging, because ``AggregationResult`` exposes only the
-      final per-group value, not the underlying sum/count a correct avg
-      merge needs (a plain average-of-averages would be wrong whenever the
-      per-graph group sizes differ).
+    the ids that graph actually holds (`_scoped_aggregate`), then merges the
+    per-graph ``AggregationResult``s (`_merge_aggregate_results`).
     """
     try:
         _kg, _ontology = await _get_ontology_kg_bounded()
-        ids = _bounded_identifier_list(data.get('ids'))
-        metric = str(data.get('metric', 'count') or 'count')
-        group_by = data.get('group_by')
-        field = data.get('field')
-        if metric not in {'count', 'sum', 'avg', 'min', 'max'}:
-            raise HTTPException(
-                status_code=422, detail=f'unsupported metric {metric!r}'
-            )
-        if metric != 'count' and not field:
-            raise HTTPException(
-                status_code=422, detail=f'metric {metric!r} requires a numeric field'
-            )
-
+        spec = _aggregate_spec(data)
         engine = await _get_engine_bounded()
-        # avg needs its components (sum + count), not the final per-group
-        # average, to merge correctly across graphs.
-        component_metrics = ('sum', 'count') if metric == 'avg' else (metric,)
 
         def execute_aggregate(scoped_engine: Any) -> Any:
-            facade = _ontology_facade_for(engine, scoped_engine)
-            if facade is None:
-                return None
-            _scoped_kg, scoped_ontology = facade
-            present = _ids_present_in_graph(scoped_engine.backend, ids)
-            if not present:
-                return None
-            scoped_ids = [i for i in ids if i in present]
-            object_set = scoped_ontology.object_set(scoped_ids)
-            return {
-                m: object_set.aggregate(m, field=field, group_by=group_by)
-                for m in component_metrics
-            }
+            return _scoped_aggregate(engine, spec, scoped_engine)
 
         def _run() -> list[tuple[str | None, Any]]:
             result = _rows_per_accessible_graph(engine, execute_aggregate)
             if result is None:
                 return [(None, execute_aggregate(engine))]
             per_graph, _degraded = result
-            return [(graph_name, value) for graph_name, value in per_graph]
+            return list(per_graph)
 
-        per_graph = await _invoke_governed_helper(_run, deadline=30.0)
-
-        total_objects = 0
-        groups: dict[Any, float] = {}
-        sums: dict[Any, float] = {}
-        counts: dict[Any, float] = {}
-        for _graph_name, agg_map in per_graph:
-            if not agg_map:
-                continue
-            if metric == 'avg':
-                sum_res = agg_map['sum']
-                count_res = agg_map['count']
-                total_objects += sum_res.total_objects
-                for k, v in sum_res.groups.items():
-                    sums[k] = sums.get(k, 0.0) + v
-                for k, v in count_res.groups.items():
-                    counts[k] = counts.get(k, 0.0) + v
-            else:
-                agg = agg_map[metric]
-                total_objects += agg.total_objects
-                for k, v in agg.groups.items():
-                    if metric in ('count', 'sum'):
-                        groups[k] = groups.get(k, 0.0) + v
-                    elif metric == 'min':
-                        groups[k] = v if k not in groups else min(groups[k], v)
-                    elif metric == 'max':
-                        groups[k] = v if k not in groups else max(groups[k], v)
-
-        if metric == 'avg':
-            for k, s in sums.items():
-                c = counts.get(k, 0.0)
-                if c:
-                    groups[k] = s / c
-
-        value = None if group_by is not None else groups.get(None)
+        groups, total_objects = _merge_aggregate_results(
+            await _invoke_governed_helper(_run, deadline=30.0), spec.metric
+        )
         return _public_external_result(
             {
-                'metric': metric,
-                'field': field,
-                'group_by': group_by,
+                'metric': spec.metric,
+                'field': spec.field,
+                'group_by': spec.group_by,
                 'groups': {str(k): v for k, v in groups.items()},
-                'value': value,
+                'value': None if spec.group_by is not None else groups.get(None),
                 'total_objects': total_objects,
             }
         )
@@ -12644,6 +13564,58 @@ async def ontology_object_set_aggregate(data: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         _log_failure('api_extension', e)
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+def _is_property_filter_spec(spec: Any) -> bool:
+    """True when a raw filter entry names the property it predicates on."""
+    return isinstance(spec, dict) and bool(spec.get('property') or spec.get('field'))
+
+
+def _property_filter_from(spec: dict[str, Any]) -> Any:
+    """One raw filter entry as an ontology `PropertyFilter`."""
+    from agent_utilities.knowledge_graph.ontology.object_set import PropertyFilter
+
+    return PropertyFilter(
+        field=str(spec.get('property') or spec.get('field')),
+        op=str(spec.get('op', 'eq')),
+        value=spec.get('value'),
+    )
+
+
+def _object_set_property_filters(data: dict[str, Any]) -> list[Any]:
+    """Validate and build the `PropertyFilter`s from ``{filter|filters}``."""
+    raw_filters = data.get('filter') or data.get('filters') or []
+    if not isinstance(raw_filters, list) or len(raw_filters) > 64:
+        raise HTTPException(status_code=400, detail='Invalid object filters')
+    try:
+        _bounded_external_value(raw_filters)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail='Invalid object filters') from exc
+    return [
+        _property_filter_from(f) for f in raw_filters if _is_property_filter_spec(f)
+    ]
+
+
+def _object_set_base(
+    ontology: Any, kind: str, filters: list[Any]
+) -> tuple[Any, list[Any]]:
+    """The base ObjectSet plus the filters still to apply at search time.
+
+    A ``kind`` scopes to a type/interface and leaves the filters for `search`;
+    filters alone materialise a dynamic set that has already consumed them.
+    """
+    if kind:
+        return ontology.object_set_of_type(kind), filters
+    if filters:
+        return ontology.dynamic_object_set(filters=filters), []
+    return ontology.dynamic_object_set(lambda props: True), filters
+
+
+def _object_set_query(data: dict[str, Any]) -> str:
+    query = str(data.get('query', '') or '')
+    if len(query.encode('utf-8')) > 8192:
+        raise HTTPException(status_code=400, detail='Invalid object query')
+    return query
 
 
 def _resolve_object_set_ids(
@@ -12659,46 +13631,16 @@ def _resolve_object_set_ids(
     ``query`` string materialise the set through the real OntologySystem. Returns
     ``(ids, kind)`` where ``kind`` echoes the scoping type/interface (or '').
     """
-    from agent_utilities.knowledge_graph.ontology.object_set import PropertyFilter
-
     kind = str(data.get('kind') or '')
     if len(kind.encode('utf-8')) > 128:
         raise HTTPException(status_code=400, detail='Invalid object kind')
     limit = max(1, min(int(limit), _MAX_EXTERNAL_COLLECTION_ITEMS))
     explicit = data.get('ids')
     if explicit is not None:
-        ids = _bounded_identifier_list(explicit)[:limit]
-        return ids, kind
+        return _bounded_identifier_list(explicit)[:limit], kind
 
-    raw_filters = data.get('filter') or data.get('filters') or []
-    if not isinstance(raw_filters, list) or len(raw_filters) > 64:
-        raise HTTPException(status_code=400, detail='Invalid object filters')
-    try:
-        _bounded_external_value(raw_filters)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail='Invalid object filters') from exc
-    filters = []
-    for f in raw_filters:
-        if isinstance(f, dict) and (f.get('property') or f.get('field')):
-            filters.append(
-                PropertyFilter(
-                    field=str(f.get('property') or f.get('field')),
-                    op=str(f.get('op', 'eq')),
-                    value=f.get('value'),
-                )
-            )
-
-    if kind:
-        base = ontology.object_set_of_type(kind)
-    elif filters:
-        base = ontology.dynamic_object_set(filters=filters)
-        filters = []
-    else:
-        base = ontology.dynamic_object_set(lambda props: True)
-
-    query = str(data.get('query', '') or '')
-    if len(query.encode('utf-8')) > 8192:
-        raise HTTPException(status_code=400, detail='Invalid object query')
+    base, filters = _object_set_base(ontology, kind, _object_set_property_filters(data))
+    query = _object_set_query(data)
     if query or filters:
         base = base.search(query, filters=filters or None, limit=limit)
     return [str(i) for i in base.ids()[:limit]], kind
@@ -12849,6 +13791,85 @@ async def ontology_object_set_save(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _object_set_member_ids(raw_ids: Any) -> list[Any]:
+    """Decode a durable node's ``member_ids`` (JSON string or list)."""
+    try:
+        return json.loads(raw_ids) if isinstance(raw_ids, str) else (raw_ids or [])
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _object_set_node_record(node: dict[str, Any]) -> dict[str, Any]:
+    """One durable ``object_set`` node as a saved-set record."""
+    member_ids = _object_set_member_ids(node.get('member_ids'))
+    return {
+        'id': node['id'],
+        'name': node.get('name', ''),
+        'kind': node.get('kind', ''),
+        'shared': bool(node.get('shared', False)),
+        'ids': member_ids,
+        'count': int(node.get('count', len(member_ids))),
+        'created_at': node.get('created_at', 0.0),
+        'actor': _durable_actor_reference(node.get('actor', 'system')),
+    }
+
+
+def _merged_object_sets(rows: Any) -> dict[str, dict[str, Any]]:
+    """Merge the JSON mirror with the durable KG nodes, mirror first.
+
+    A set saved by any worker is visible this way; the mirror wins on id
+    collision because it is the copy this process last wrote.
+    """
+    merged: dict[str, dict[str, Any]] = {}
+    for rec in list(_load_object_sets().values())[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
+        if isinstance(rec, dict) and rec.get('id'):
+            merged[rec['id']] = rec
+    for row in rows or []:
+        node = row.get('n', {}) if isinstance(row, dict) else {}
+        if not isinstance(node, dict) or not node.get('id'):
+            continue
+        merged.setdefault(node['id'], _object_set_node_record(node))
+    return merged
+
+
+def _object_set_summary(record: dict[str, Any]) -> dict[str, Any]:
+    """The listable projection of a saved set (no member ids)."""
+    return {
+        'id': record['id'],
+        'name': record.get('name', ''),
+        'kind': record.get('kind', ''),
+        'shared': bool(record.get('shared', False)),
+        'count': int(record.get('count', len(record.get('ids', []) or []))),
+        'created_at': record.get('created_at', 0.0),
+        'actor': _durable_actor_reference(record.get('actor', 'system')),
+    }
+
+
+def _object_set_is_visible(
+    record: dict[str, Any], actor_id: str, actor_is_admin: bool
+) -> bool:
+    """A non-shared set is only listed for its owner, or an admin/system actor."""
+    return bool(
+        record.get('shared')
+        or _durable_actor_reference(record.get('actor', 'system')) == actor_id
+        or actor_is_admin
+    )
+
+
+async def _durable_object_set_rows(backend: Any) -> Any:
+    """The durable ``object_set`` nodes; a failed read degrades to []."""
+    try:
+        return await _invoke_governed_helper(
+            backend.execute,
+            f"MATCH (n {{type: 'object_set'}}) RETURN n "
+            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
+            {},
+            deadline=15.0,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+
 @router.get('/ontology/object-set/list')
 async def ontology_object_set_list(request: Request) -> dict[str, Any]:
     """List saved ObjectSets for the Explorer 'saved sets' panel.
@@ -12857,71 +13878,19 @@ async def ontology_object_set_list(request: Request) -> dict[str, Any]:
     saved by any worker is visible. A non-shared set is only listed for its
     owning actor (or for an admin/system actor); shared sets are visible to all.
     """
-    import json
-
     try:
         kg, _ontology = await _get_ontology_kg_bounded()
-        backend = kg.store
         actor = _actor_context(request)
         actor_id = _durable_actor_reference(actor.actor_id)
         actor_is_admin = bool(
             set(actor.roles).intersection({'admin', 'system', 'kg:admin'})
         )
 
-        merged: dict[str, dict[str, Any]] = {}
-        for rec in list(_load_object_sets().values())[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-            if isinstance(rec, dict) and rec.get('id'):
-                merged[rec['id']] = rec
-
-        try:
-            rows = await _invoke_governed_helper(
-                backend.execute,
-                f"MATCH (n {{type: 'object_set'}}) RETURN n "
-                f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
-                {},
-                deadline=15.0,
-            )
-        except Exception:  # noqa: BLE001
-            rows = []
-        for row in rows or []:
-            node = row.get('n', {}) if isinstance(row, dict) else {}
-            if not isinstance(node, dict) or not node.get('id'):
-                continue
-            raw_ids = node.get('member_ids')
-            try:
-                member_ids = (
-                    json.loads(raw_ids) if isinstance(raw_ids, str) else (raw_ids or [])
-                )
-            except Exception:  # noqa: BLE001
-                member_ids = []
-            merged.setdefault(
-                node['id'],
-                {
-                    'id': node['id'],
-                    'name': node.get('name', ''),
-                    'kind': node.get('kind', ''),
-                    'shared': bool(node.get('shared', False)),
-                    'ids': member_ids,
-                    'count': int(node.get('count', len(member_ids))),
-                    'created_at': node.get('created_at', 0.0),
-                    'actor': _durable_actor_reference(node.get('actor', 'system')),
-                },
-            )
-
+        merged = _merged_object_sets(await _durable_object_set_rows(kg.store))
         visible = [
-            {
-                'id': r['id'],
-                'name': r.get('name', ''),
-                'kind': r.get('kind', ''),
-                'shared': bool(r.get('shared', False)),
-                'count': int(r.get('count', len(r.get('ids', []) or []))),
-                'created_at': r.get('created_at', 0.0),
-                'actor': _durable_actor_reference(r.get('actor', 'system')),
-            }
-            for r in merged.values()
-            if r.get('shared')
-            or _durable_actor_reference(r.get('actor', 'system')) == actor_id
-            or actor_is_admin
+            _object_set_summary(record)
+            for record in merged.values()
+            if _object_set_is_visible(record, actor_id, actor_is_admin)
         ]
         visible.sort(key=lambda r: r.get('created_at') or 0.0, reverse=True)
         visible = visible[:_MAX_EXTERNAL_COLLECTION_ITEMS]
@@ -12972,6 +13941,122 @@ async def ontology_actions(object_type: str | None = None) -> list[dict[str, Any
         return []
 
 
+@dataclass(frozen=True)
+class _BulkActionPlan:
+    """Everything one bulk-action run needs, resolved once before the loop."""
+
+    executor: Any
+    action_name: str
+    actor: Any
+    params: dict[str, Any]
+    id_param: str
+    decision_provider: Any
+
+
+def _bulk_action_decision_provider(approve: Any, actor: Any, actor_id: str) -> Any:
+    """Wire an explicit operator approval as the HITL gate's decision provider.
+
+    A mutating bulk action is a HIGH-risk verb that the HITL escalation gate
+    (CONCEPT:AU-OS.observability.empty-derive-from-effect) pauses for human
+    approval -- without a decision it auto-denies, never silently writes. When
+    the caller supplies an explicit ``approve`` payload (the operator pressing
+    'approve' in the bulk-action dialog), this returns a provider so the
+    writeback proceeds under a recorded, role-checked approval; otherwise it
+    returns ``None`` and the gate's own default applies.
+    """
+    if not approve:
+        return None
+    if not isinstance(approve, dict):
+        raise HTTPException(status_code=400, detail='Invalid approval payload')
+    if not set(actor.roles).intersection({'admin', 'kg:admin'}):
+        raise HTTPException(status_code=403, detail='Admin approval required')
+    reason = approve.get('reason') or 'bulk action approved by operator'
+    if not isinstance(reason, str) or len(reason.encode('utf-8')) > 2048:
+        raise HTTPException(status_code=400, detail='Invalid approval reason')
+    reason, _privacy_report = sanitize_for_persistence(reason)
+
+    def decision_provider(_request: Any) -> dict[str, Any]:
+        return {
+            'approved': True,
+            'approver': actor_id,
+            'approver_role': 'admin',
+            'reason': reason,
+        }
+
+    return decision_provider
+
+
+def _bulk_action_id_param(action_def: Any, params: dict[str, Any]) -> str:
+    """The action parameter each target id binds to, or '' if there is none.
+
+    The per-target object id must reach the action's templated side-effects
+    (e.g. ``target: "$concept_id"``). Resolved ONCE so each iteration can bind
+    the loop's target id to it when the caller did not pin it explicitly.
+    """
+    if action_def is None:
+        return ''
+    for parameter in action_def.parameters:
+        if (
+            parameter.required
+            and parameter.name.endswith('_id')
+            and parameter.name not in params
+        ):
+            return parameter.name
+    # Only a declared ``target_id`` param may receive the fallback --
+    # validate_params rejects unknown keys.
+    declared = {parameter.name for parameter in action_def.parameters}
+    if 'target_id' in declared and 'target_id' not in params:
+        return 'target_id'
+    return ''
+
+
+def _bulk_action_record(invocation: Any, target_id: str) -> dict[str, Any]:
+    """One target's per-object result row."""
+    edit_ids = list(getattr(invocation, 'edit_ids', []) or [])
+    return {
+        'id': target_id,
+        'status': str(invocation.status),
+        'edit_ids': edit_ids[:_MAX_EXTERNAL_COLLECTION_ITEMS],
+    }
+
+
+async def _apply_bulk_action(plan: _BulkActionPlan, ids: list[str]) -> dict[str, Any]:
+    """Run the planned action over every target through the governed executor."""
+    from agent_utilities.knowledge_graph.actions import ActionStatus
+
+    results: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    applied = 0
+    for target_id in ids:
+        # Bind the loop's target id under the action's declared ``*_id``
+        # parameter so single-target $-templates resolve per object.
+        call_params = dict(plan.params)
+        if plan.id_param:
+            call_params[plan.id_param] = target_id
+        inv = await _invoke_governed_helper(
+            plan.executor.execute,
+            plan.action_name,
+            plan.actor,
+            call_params,
+            target_id=target_id,
+            decision_provider=plan.decision_provider,
+            deadline=120.0,
+        )
+        results.append(_bulk_action_record(inv, target_id))
+        if inv.status == ActionStatus.SUCCESS:
+            applied += 1
+        elif inv.status in (ActionStatus.ERROR, ActionStatus.DENIED):
+            errors.append(
+                {
+                    'id': target_id,
+                    'status': str(inv.status),
+                    'error': getattr(inv, 'error', '')
+                    or getattr(inv, 'result_summary', ''),
+                }
+            )
+    return {'applied': applied, 'results': results, 'errors': errors}
+
+
 @router.post('/ontology/object-set/action')
 async def ontology_object_set_action(
     data: dict[str, Any], request: Request
@@ -12990,7 +14075,6 @@ async def ontology_object_set_action(
         from agent_utilities.knowledge_graph.actions import (
             DEFAULT_REGISTRY,
             ActionExecutor,
-            ActionStatus,
         )
 
         _kg, ontology = await _get_ontology_kg_bounded()
@@ -13004,92 +14088,20 @@ async def ontology_object_set_action(
         actor_id = _durable_actor_reference(ambient_actor.actor_id)
         actor = replace(ambient_actor, actor_id=actor_id)
 
-        # Bind the executor's ledger to the SAME live-store ledger the object
-        # view reads, so bulk writeback edits are durable and surface in history.
-        executor = ActionExecutor(DEFAULT_REGISTRY, ledger=ontology.edits)
-
-        # A mutating bulk action is a HIGH-risk verb that the HITL escalation
-        # gate (CONCEPT:AU-OS.observability.empty-derive-from-effect) pauses for human approval — without a decision
-        # it auto-denies, never silently writes. When the caller supplies an
-        # explicit ``approve`` payload (the operator pressing 'approve' in the
-        # bulk-action dialog), wire it as the gate's decision_provider so the
-        # writeback proceeds under a recorded, role-checked approval.
-        approve = data.get('approve')
-        decision_provider = None
-        if approve:
-            if not isinstance(approve, dict):
-                raise HTTPException(status_code=400, detail='Invalid approval payload')
-            if not set(actor.roles).intersection({'admin', 'kg:admin'}):
-                raise HTTPException(status_code=403, detail='Admin approval required')
-            approver = actor_id
-            approver_role = 'admin'
-            reason = (approve.get('reason')) or 'bulk action approved by operator'
-            if not isinstance(reason, str) or len(reason.encode('utf-8')) > 2048:
-                raise HTTPException(status_code=400, detail='Invalid approval reason')
-            reason, _privacy_report = sanitize_for_persistence(reason)
-
-            def decision_provider(_request: Any) -> dict[str, Any]:
-                return {
-                    'approved': True,
-                    'approver': approver,
-                    'approver_role': approver_role,
-                    'reason': reason,
-                }
-
-        # The per-target object id must reach the action's templated side-effects
-        # (e.g. ``target: "$concept_id"``). Resolve the action's required ``*_id``
-        # parameter once so each iteration binds the loop's target id to it when
-        # the caller did not pin it explicitly.
-        action_def = DEFAULT_REGISTRY.get(action_name)
-        id_param = ''
-        if action_def is not None:
-            declared = {p.name for p in action_def.parameters}
-            for p in action_def.parameters:
-                if p.required and p.name.endswith('_id') and p.name not in params:
-                    id_param = p.name
-                    break
-            # Only a declared ``target_id`` param may receive the fallback —
-            # validate_params rejects unknown keys.
-            if not id_param and 'target_id' in declared and 'target_id' not in params:
-                id_param = 'target_id'
-
-        results: list[dict[str, Any]] = []
-        errors: list[dict[str, Any]] = []
-        applied = 0
-        for target_id in ids:
-            # Bind the loop's target id under the action's declared ``*_id``
-            # parameter so single-target $-templates resolve per object.
-            call_params = dict(params)
-            if id_param:
-                call_params[id_param] = target_id
-            inv = await _invoke_governed_helper(
-                executor.execute,
-                action_name,
-                actor,
-                call_params,
-                target_id=target_id,
-                decision_provider=decision_provider,
-                deadline=120.0,
-            )
-            status = str(inv.status)
-            edit_ids = list(getattr(inv, 'edit_ids', []) or [])
-            edit_ids = edit_ids[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-            results.append({'id': target_id, 'status': status, 'edit_ids': edit_ids})
-            if inv.status == ActionStatus.SUCCESS:
-                applied += 1
-            elif inv.status in (ActionStatus.ERROR, ActionStatus.DENIED):
-                errors.append(
-                    {
-                        'id': target_id,
-                        'status': status,
-                        'error': getattr(inv, 'error', '')
-                        or getattr(inv, 'result_summary', ''),
-                    }
-                )
-
-        return _public_external_result(
-            {'applied': applied, 'results': results, 'errors': errors}
+        plan = _BulkActionPlan(
+            # Bind the executor's ledger to the SAME live-store ledger the
+            # object view reads, so bulk writeback edits are durable and
+            # surface in history.
+            executor=ActionExecutor(DEFAULT_REGISTRY, ledger=ontology.edits),
+            action_name=action_name,
+            actor=actor,
+            params=params,
+            id_param=_bulk_action_id_param(DEFAULT_REGISTRY.get(action_name), params),
+            decision_provider=_bulk_action_decision_provider(
+                data.get('approve'), actor, actor_id
+            ),
         )
+        return _public_external_result(await _apply_bulk_action(plan, ids))
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
@@ -13150,6 +14162,105 @@ def _durable_edit_history(backend: Any, object_id: str) -> list[dict[str, Any]]:
     return edits
 
 
+async def _object_derived_properties(
+    ontology: Any, view_props: dict[str, Any], object_type: Any, actor: Any
+) -> dict[str, Any]:
+    """The object's derived properties; a compute failure degrades to {}."""
+    try:
+        return await _invoke_governed_helper(
+            ontology.derive_all,
+            view_props,
+            object_type=object_type,
+            actor_id=actor.actor_id,
+            deadline=30.0,
+        )
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _object_markings(object_id: str) -> list[Any]:
+    """The object's security markings; an unreadable set degrades to []."""
+    from agent_utilities.knowledge_graph.ontology.permissioning import markings_for
+
+    try:
+        return sorted(markings_for(object_id))
+    except Exception:  # noqa: BLE001
+        return []
+
+
+async def _object_edit_history(
+    ontology: Any, backend: Any, object_id: str
+) -> list[Any]:
+    """The object's edit history.
+
+    Prefer the durable, cross-request audit trail from the store; fall back to
+    the in-process ledger mirror when nothing was persisted.
+    """
+    history = await _invoke_governed_helper(
+        _durable_edit_history, backend, object_id, deadline=15.0
+    )
+    if history:
+        return history
+    try:
+        fallback_history = await _invoke_governed_helper(
+            ontology.history,
+            object_id,
+            deadline=15.0,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    return [e.model_dump(mode='json') for e in fallback_history]
+
+
+def _object_view_payload(
+    ontology: Any, object_type: Any, layout_choice: str
+) -> dict[str, Any]:
+    """Resolve the requested layout into a concrete view payload.
+
+    ``configured`` serves the stored ObjectView widget composition for this
+    type (when one exists); ``standard`` derives the layout from the type's
+    interface schema. The selection genuinely changes the returned ``view``.
+    """
+    if not object_type:
+        return {}
+    configured = (
+        _load_object_views().get(str(object_type))
+        if layout_choice == 'configured'
+        else None
+    )
+    if configured is None:
+        return _standard_object_view(ontology, str(object_type))
+    return {
+        'object_type': object_type,
+        'view_type': 'configured',
+        **configured,
+    }
+
+
+def _enforced_object_properties(
+    props: dict[str, Any], object_id: str, actor: Any
+) -> dict[str, Any]:
+    """Run the object through the fine-grained permissioning gate.
+
+    A fully-redacted/denied object is a 404, not an empty object.
+    """
+    from agent_utilities.knowledge_graph.ontology.permissioning import enforce
+
+    props.setdefault('id', object_id)
+    enforced = enforce([props], actor)
+    if not enforced:
+        raise HTTPException(status_code=404, detail='Object not found or denied')
+    return enforced[0]
+
+
+def _object_type_of(view_props: dict[str, Any]) -> Any:
+    return (
+        view_props.get('type')
+        or view_props.get('_type')
+        or view_props.get('object_type')
+    )
+
+
 @router.get('/ontology/object/{object_id}')
 async def get_ontology_object(
     object_id: str, request: Request, layout: str = 'standard'
@@ -13180,10 +14291,6 @@ async def get_ontology_object(
         raise HTTPException(status_code=400, detail='Invalid object layout')
     try:
         from agent_utilities.knowledge_graph.core.session import current_session
-        from agent_utilities.knowledge_graph.ontology.permissioning import (
-            enforce,
-            markings_for,
-        )
 
         engine = await _get_engine_bounded()
         located = await _invoke_governed_helper(
@@ -13198,75 +14305,17 @@ async def get_ontology_object(
         _scoped_kg, ontology = facade
         backend = scoped_engine.backend
         actor = _actor_context(request)
-        session = current_session()
 
-        with _session_scoped_to(session, graph_name):
-            props.setdefault('id', object_id)
-            enforced = enforce([props], actor)
-            if not enforced:
-                raise HTTPException(
-                    status_code=404, detail='Object not found or denied'
-                )
-            view_props = enforced[0]
-
-            object_type = (
-                view_props.get('type')
-                or view_props.get('_type')
-                or view_props.get('object_type')
+        with _session_scoped_to(current_session(), graph_name):
+            view_props = _enforced_object_properties(props, object_id, actor)
+            object_type = _object_type_of(view_props)
+            derived = await _object_derived_properties(
+                ontology, view_props, object_type, actor
             )
-            try:
-                derived = await _invoke_governed_helper(
-                    ontology.derive_all,
-                    view_props,
-                    object_type=object_type,
-                    actor_id=actor.actor_id,
-                    deadline=30.0,
-                )
-            except Exception:  # noqa: BLE001
-                derived = {}
-            try:
-                markings = sorted(markings_for(object_id))
-            except Exception:  # noqa: BLE001
-                markings = []
-            # Prefer the durable, cross-request audit trail from the store;
-            # fall back to the in-process ledger mirror when nothing was
-            # persisted.
-            history = await _invoke_governed_helper(
-                _durable_edit_history, backend, object_id, deadline=15.0
-            )
-            if not history:
-                try:
-                    fallback_history = await _invoke_governed_helper(
-                        ontology.history,
-                        object_id,
-                        deadline=15.0,
-                    )
-                    history = [e.model_dump(mode='json') for e in fallback_history]
-                except Exception:  # noqa: BLE001
-                    history = []
-
-            # Resolve the requested layout into a concrete view payload.
-            # ``configured`` serves the stored ObjectView widget composition
-            # for this type (when one exists); ``standard`` derives the
-            # layout from the type's interface schema. The selection
-            # genuinely changes the returned ``view``.
+            markings = _object_markings(object_id)
+            history = await _object_edit_history(ontology, backend, object_id)
             layout_choice = (layout or 'standard').strip().lower()
-            view: dict[str, Any] = {}
-            if object_type:
-                configured = (
-                    _load_object_views().get(str(object_type))
-                    if layout_choice == 'configured'
-                    else None
-                )
-                if configured is not None:
-                    view = {
-                        'object_type': object_type,
-                        'view_type': 'configured',
-                        **configured,
-                    }
-                else:
-                    view = _standard_object_view(ontology, str(object_type))
-
+            view = _object_view_payload(ontology, object_type, layout_choice)
             links = await _invoke_governed_helper(
                 _node_links, backend, object_id, deadline=15.0
             )
@@ -13291,6 +14340,77 @@ async def get_ontology_object(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+async def _edit_property_set(
+    ontology: Any, object_id: str, data: dict[str, Any], actor: Any
+) -> Any:
+    """``property_set``: record a bounded property write on the object."""
+    properties = data.get('properties')
+    if not isinstance(properties, dict):
+        prop = data.get('property')
+        if not prop:
+            raise HTTPException(
+                status_code=422,
+                detail='property_set requires properties or property+value',
+            )
+        properties = {str(prop): data.get('value')}
+    return await _invoke_governed_helper(
+        ontology.set_property_edit,
+        object_id,
+        _bounded_query_params(properties),
+        actor=actor,
+        deadline=30.0,
+    )
+
+
+def _link_edit_arguments(data: dict[str, Any], edit_type: str) -> tuple[str, str]:
+    """Validate the ``(target, label)`` a link_add/link_remove edit needs."""
+    target = data.get('target') or data.get('link_target')
+    label = str(data.get('link_type') or data.get('link') or 'related')
+    if not target:
+        raise HTTPException(status_code=422, detail=f'{edit_type} requires target')
+    target = _validate_runtime_id(str(target))
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(label):
+        raise HTTPException(status_code=400, detail='Invalid link type')
+    return target, label
+
+
+async def _edit_link_add(
+    ontology: Any, object_id: str, data: dict[str, Any], actor: Any
+) -> Any:
+    """``link_add``: journal a new labelled edge from the object."""
+    target, label = _link_edit_arguments(data, 'link_add')
+    return await _invoke_governed_helper(
+        ontology.edits.add_link,
+        object_id,
+        target,
+        label,
+        actor=actor,
+        deadline=30.0,
+    )
+
+
+async def _edit_link_remove(
+    ontology: Any, object_id: str, data: dict[str, Any], actor: Any
+) -> Any:
+    """``link_remove``: journal the removal of a labelled edge."""
+    target, label = _link_edit_arguments(data, 'link_remove')
+    return await _invoke_governed_helper(
+        ontology.edits.remove_link,
+        object_id,
+        target,
+        label,
+        actor=actor,
+        deadline=30.0,
+    )
+
+
+_ONTOLOGY_EDIT_HANDLERS: dict[str, Any] = {
+    'property_set': _edit_property_set,
+    'link_add': _edit_link_add,
+    'link_remove': _edit_link_remove,
+}
+
+
 @router.post('/ontology/object/{object_id}/edit')
 async def edit_ontology_object(
     object_id: str, data: dict[str, Any], request: Request
@@ -13306,63 +14426,12 @@ async def edit_ontology_object(
         backend = kg.store
         actor = _actor_id_from_request(request)
         edit_type = str(data.get('edit_type', 'property_set') or 'property_set')
-
-        if edit_type == 'property_set':
-            properties = data.get('properties')
-            if not isinstance(properties, dict):
-                prop = data.get('property')
-                if not prop:
-                    raise HTTPException(
-                        status_code=422,
-                        detail='property_set requires properties or property+value',
-                    )
-                properties = {str(prop): data.get('value')}
-            properties = _bounded_query_params(properties)
-            edit = await _invoke_governed_helper(
-                ontology.set_property_edit,
-                object_id,
-                properties,
-                actor=actor,
-                deadline=30.0,
-            )
-        elif edit_type == 'link_add':
-            target = data.get('target') or data.get('link_target')
-            label = str(data.get('link_type') or data.get('link') or 'related')
-            if not target:
-                raise HTTPException(status_code=422, detail='link_add requires target')
-            target = _validate_runtime_id(str(target))
-            if not _SAFE_DELEGATION_TOKEN.fullmatch(label):
-                raise HTTPException(status_code=400, detail='Invalid link type')
-            edit = await _invoke_governed_helper(
-                ontology.edits.add_link,
-                object_id,
-                target,
-                label,
-                actor=actor,
-                deadline=30.0,
-            )
-        elif edit_type == 'link_remove':
-            target = data.get('target') or data.get('link_target')
-            label = str(data.get('link_type') or data.get('link') or 'related')
-            if not target:
-                raise HTTPException(
-                    status_code=422, detail='link_remove requires target'
-                )
-            target = _validate_runtime_id(str(target))
-            if not _SAFE_DELEGATION_TOKEN.fullmatch(label):
-                raise HTTPException(status_code=400, detail='Invalid link type')
-            edit = await _invoke_governed_helper(
-                ontology.edits.remove_link,
-                object_id,
-                target,
-                label,
-                actor=actor,
-                deadline=30.0,
-            )
-        else:
+        handler = _ONTOLOGY_EDIT_HANDLERS.get(edit_type)
+        if handler is None:
             raise HTTPException(
                 status_code=422, detail=f'unsupported edit_type: {edit_type}'
             )
+        edit = await handler(ontology, object_id, data, actor)
 
         return _public_external_result(
             {
@@ -13385,6 +14454,49 @@ async def edit_ontology_object(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _rehydrated_edit(hist: dict[str, Any], object_id: str) -> Any:
+    """One durable ``object_edit`` record as a ledger `Edit`."""
+    from agent_utilities.knowledge_graph.ontology.edits import Edit, EditType
+
+    return Edit(
+        id=hist['id'],
+        actor=_durable_actor_reference(hist.get('actor', 'system')),
+        edit_type=EditType(hist['edit_type']),
+        object_id=hist.get('object_id', object_id),
+        before=hist.get('before') or {},
+        after=hist.get('after') or {},
+        link_source=hist.get('link_source', ''),
+        link_label=hist.get('link_label', ''),
+        link_target=hist.get('link_target', ''),
+        provenance=hist.get('provenance', ''),
+        invocation_ref=hist.get('invocation_ref', ''),
+        timestamp=hist.get('timestamp', 0.0) or 0.0,
+    )
+
+
+async def _ensure_edit_on_ledger(
+    ontology: Any, backend: Any, object_id: str, edit_id: str
+) -> None:
+    """Register a durable edit on the in-process ledger before reverting it.
+
+    The in-process ledger mirror does not survive across stateless HTTP
+    requests, so rehydrate the original edit from its durable store node.
+    """
+    if ontology.edits.get(edit_id) is not None:
+        return
+    durable_history = await _invoke_governed_helper(
+        _durable_edit_history, backend, object_id, deadline=15.0
+    )
+    for hist in durable_history:
+        if hist.get('id') == edit_id:
+            await _invoke_governed_helper(
+                ontology.edits.rehydrate,
+                _rehydrated_edit(hist, object_id),
+                deadline=15.0,
+            )
+            return
+
+
 @router.post('/ontology/object/{object_id}/revert')
 async def revert_ontology_edit(
     object_id: str, data: dict[str, Any], request: Request
@@ -13395,8 +14507,6 @@ async def revert_ontology_edit(
     """
     object_id = _validate_runtime_id(object_id)
     try:
-        from agent_utilities.knowledge_graph.ontology.edits import Edit, EditType
-
         kg, ontology = await _get_ontology_kg_bounded()
         backend = kg.store
         actor = _actor_id_from_request(request)
@@ -13406,36 +14516,7 @@ async def revert_ontology_edit(
         ):
             raise HTTPException(status_code=422, detail='edit_id is required')
 
-        # The in-process ledger mirror does not survive across stateless HTTP
-        # requests, so rehydrate the original edit from its durable store node
-        # and register it on the ledger before reverting.
-        if ontology.edits.get(str(edit_id)) is None:
-            durable_history = await _invoke_governed_helper(
-                _durable_edit_history, backend, object_id, deadline=15.0
-            )
-            for hist in durable_history:
-                if hist.get('id') == str(edit_id):
-                    rehydrated = Edit(
-                        id=hist['id'],
-                        actor=_durable_actor_reference(hist.get('actor', 'system')),
-                        edit_type=EditType(hist['edit_type']),
-                        object_id=hist.get('object_id', object_id),
-                        before=hist.get('before') or {},
-                        after=hist.get('after') or {},
-                        link_source=hist.get('link_source', ''),
-                        link_label=hist.get('link_label', ''),
-                        link_target=hist.get('link_target', ''),
-                        provenance=hist.get('provenance', ''),
-                        invocation_ref=hist.get('invocation_ref', ''),
-                        timestamp=hist.get('timestamp', 0.0) or 0.0,
-                    )
-                    await _invoke_governed_helper(
-                        ontology.edits.rehydrate,
-                        rehydrated,
-                        deadline=15.0,
-                    )
-                    break
-
+        await _ensure_edit_on_ledger(ontology, backend, object_id, str(edit_id))
         compensating = await _invoke_governed_helper(
             ontology.revert_edit,
             str(edit_id),
@@ -13509,6 +14590,20 @@ async def invoke_ontology_function(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _derive_request_fields(data: dict[str, Any]) -> tuple[str, str]:
+    """Validate ``{object_id, derived_name}`` for a derived-property compute."""
+    object_id = data.get('object_id')
+    derived_name = data.get('derived_name')
+    if not isinstance(object_id, str) or not isinstance(derived_name, str):
+        raise HTTPException(
+            status_code=422, detail='object_id and derived_name are required'
+        )
+    object_id = _validate_runtime_id(object_id)
+    if not _SAFE_DELEGATION_TOKEN.fullmatch(derived_name):
+        raise HTTPException(status_code=400, detail='Invalid derived property')
+    return object_id, derived_name
+
+
 @router.post('/ontology/derive')
 async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
     """Compute a single derived property for an object.
@@ -13534,18 +14629,8 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
     (``ont.derive(obj, name, object_type=otype)``), just bound to the
     correct graph.
     """
-    import json
-
     try:
-        object_id = data.get('object_id')
-        derived_name = data.get('derived_name')
-        if not isinstance(object_id, str) or not isinstance(derived_name, str):
-            raise HTTPException(
-                status_code=422, detail='object_id and derived_name are required'
-            )
-        object_id = _validate_runtime_id(object_id)
-        if not _SAFE_DELEGATION_TOKEN.fullmatch(derived_name):
-            raise HTTPException(status_code=400, detail='Invalid derived property')
+        object_id, derived_name = _derive_request_fields(data)
 
         from agent_utilities.knowledge_graph.core.session import current_session
 
@@ -13562,12 +14647,7 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
         _scoped_kg, ontology = facade
 
         props.setdefault('id', str(object_id))
-        object_type = (
-            data.get('object_type')
-            or props.get('type')
-            or props.get('_type')
-            or props.get('object_type')
-        )
+        object_type = data.get('object_type') or _object_type_of(props)
         bounded_props = _bounded_query_params(props)
         session = current_session()
         with _session_scoped_to(session, graph_name):
@@ -13591,6 +14671,62 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _document_source(data: dict[str, Any]) -> tuple[Any, Any]:
+    """Validate ``{text, path}`` into the pair the ingestion call needs."""
+    text = data.get('text')
+    path = data.get('path')
+    if not text and not path:
+        raise HTTPException(status_code=422, detail='text or path is required')
+    if text is not None and (
+        not isinstance(text, str)
+        or len(text.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES
+    ):
+        raise HTTPException(status_code=400, detail='Document text exceeds its limit')
+    if path is not None:
+        path = _workspace_ingestion_source(path)
+    return text, path
+
+
+def _document_chunking(data: dict[str, Any]) -> tuple[int, int]:
+    """Validate ``{chunk_size, overlap}`` into a bounded chunking plan."""
+    chunk_size = int(data.get('chunk_size', 800) or 800)
+    overlap = int(data.get('overlap', 120) or 120)
+    if not 64 <= chunk_size <= 16_384 or not 0 <= overlap < chunk_size:
+        raise HTTPException(status_code=400, detail='Invalid document chunking bounds')
+    return chunk_size, overlap
+
+
+def _document_metadata_kwargs(data: dict[str, Any]) -> dict[str, Any]:
+    """The bounded, string-only document metadata to pass through."""
+    kwargs: dict[str, Any] = {}
+    for key in ('title', 'doc_type', 'source', 'document_id'):
+        value = data.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str) or len(value.encode('utf-8')) > 2048:
+            raise HTTPException(status_code=400, detail='Invalid document metadata')
+        kwargs[key] = value
+    if data.get('metadata') is not None:
+        kwargs['metadata'] = _bounded_query_params(data['metadata'])
+    return kwargs
+
+
+def _document_ingest_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Bound and shape the ingestion result into the response body."""
+    chunks = list(result.get('chunk_nodes', []) or [])
+    edges = list(result.get('edges', []) or [])
+    if (
+        len(chunks) > _MAX_EXTERNAL_COLLECTION_ITEMS
+        or len(edges) > _MAX_EXTERNAL_COLLECTION_ITEMS
+    ):
+        raise HTTPException(status_code=422, detail='Document result exceeds its limit')
+    return {
+        'document': result.get('document_node'),
+        'chunks': chunks,
+        'edges': edges,
+    }
+
+
 @router.post('/ontology/document/process')
 async def process_ontology_document(data: dict[str, Any]) -> dict[str, Any]:
     """Process a document into Document + Chunk objects (KG-2.48).
@@ -13599,65 +14735,21 @@ async def process_ontology_document(data: dict[str, Any]) -> dict[str, Any]:
     """
     try:
         kg, ontology = await _get_ontology_kg_bounded()
-        text = data.get('text')
-        path = data.get('path')
-        if not text and not path:
-            raise HTTPException(status_code=422, detail='text or path is required')
-        if text is not None:
-            if (
-                not isinstance(text, str)
-                or len(text.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES
-            ):
-                raise HTTPException(
-                    status_code=400, detail='Document text exceeds its limit'
-                )
-        if path is not None:
-            path = _workspace_ingestion_source(path)
-
-        chunk_size = int(data.get('chunk_size', 800) or 800)
-        overlap = int(data.get('overlap', 120) or 120)
-        if not 64 <= chunk_size <= 16_384 or not 0 <= overlap < chunk_size:
-            raise HTTPException(
-                status_code=400, detail='Invalid document chunking bounds'
-            )
-        kwargs: dict[str, Any] = {}
-        for key in ('title', 'doc_type', 'source', 'document_id'):
-            if data.get(key) is not None:
-                value = data[key]
-                if not isinstance(value, str) or len(value.encode('utf-8')) > 2048:
-                    raise HTTPException(
-                        status_code=400, detail='Invalid document metadata'
-                    )
-                kwargs[key] = value
-        if data.get('metadata') is not None:
-            kwargs['metadata'] = _bounded_query_params(data['metadata'])
+        text, path = _document_source(data)
+        chunk_size, overlap = _document_chunking(data)
+        kwargs = _document_metadata_kwargs(data)
         if text and path:
             kwargs.setdefault('text', text)
 
-        document = path if path else text
         result = await _invoke_governed_helper(
             ontology.process_document,
             deadline=30.0,
-            document=document,
+            document=path if path else text,
             chunk_size=chunk_size,
             overlap=overlap,
             **kwargs,
         )
-        chunks = list(result.get('chunk_nodes', []) or [])
-        edges = list(result.get('edges', []) or [])
-        if (
-            len(chunks) > _MAX_EXTERNAL_COLLECTION_ITEMS
-            or len(edges) > _MAX_EXTERNAL_COLLECTION_ITEMS
-        ):
-            raise HTTPException(
-                status_code=422, detail='Document result exceeds its limit'
-            )
-        response = {
-            'document': result.get('document_node'),
-            'chunks': chunks,
-            'edges': edges,
-        }
-        return _public_external_result(response)
+        return _public_external_result(_document_ingest_result(result))
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
