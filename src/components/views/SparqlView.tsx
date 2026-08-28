@@ -63,6 +63,251 @@ function SparqlResultTable({ vars, bindings }: { vars: string[]; bindings: Sparq
   )
 }
 
+interface SparqlTabProps {
+  sparqlQuery: string
+  onSparqlQueryChange: (v: string) => void
+  sparqlRunning: boolean
+  onRunSparql: () => void
+}
+
+function renderSparqlTab({ sparqlQuery, onSparqlQueryChange, sparqlRunning, onRunSparql }: SparqlTabProps) {
+  return (
+    <CardContent className="space-y-3">
+      <Textarea
+        aria-label="SPARQL query"
+        value={sparqlQuery}
+        onChange={(e) => {
+          onSparqlQueryChange(e.target.value)
+        }}
+        placeholder={DEFAULT_SPARQL}
+        rows={5}
+        className="font-mono text-xs"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onRunSparql()
+        }}
+      />
+      <div className="flex justify-end">
+        <Button onClick={onRunSparql} disabled={sparqlRunning || !sparqlQuery.trim()}>
+          {sparqlRunning ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Play className="size-4 mr-2" />}
+          Run Query
+        </Button>
+      </div>
+    </CardContent>
+  )
+}
+
+interface ShaclTabProps {
+  shaclSource: string
+  onShaclSourceChange: (v: string) => void
+  shaclSourceType: 'text' | 'file' | 'url' | 'auto'
+  onShaclSourceTypeChange: (v: 'text' | 'file' | 'url' | 'auto') => void
+  shaclRunning: boolean
+  onRunValidate: () => void
+}
+
+function renderShaclTab({
+  shaclSource,
+  onShaclSourceChange,
+  shaclSourceType,
+  onShaclSourceTypeChange,
+  shaclRunning,
+  onRunValidate,
+}: ShaclTabProps) {
+  return (
+    <CardContent className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-xs font-semibold text-muted-foreground">Source type</label>
+        <Select
+          value={shaclSourceType}
+          onValueChange={(v) => {
+            onShaclSourceTypeChange(v as typeof shaclSourceType)
+          }}
+        >
+          <SelectTrigger className="w-40 text-xs" aria-label="Source type">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="text">Raw turtle text</SelectItem>
+            <SelectItem value="file">File path</SelectItem>
+            <SelectItem value="url">URL</SelectItem>
+            <SelectItem value="auto">Auto-detect</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <Textarea
+        aria-label="Ontology candidate source"
+        value={shaclSource}
+        onChange={(e) => {
+          onShaclSourceChange(e.target.value)
+        }}
+        placeholder="Paste turtle/RDF text, or a file path / URL matching the selected source type..."
+        rows={6}
+        className="font-mono text-xs"
+      />
+      <div className="flex justify-end">
+        <Button onClick={onRunValidate} disabled={shaclRunning || !shaclSource.trim()}>
+          {shaclRunning ? <Loader2 className="size-4 mr-2 animate-spin" /> : <ShieldCheck className="size-4 mr-2" />}
+          Validate
+        </Button>
+      </div>
+    </CardContent>
+  )
+}
+
+function renderErrorBlock(error: string | null) {
+  if (!error) return null
+  return (
+    <pre className="rounded border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive whitespace-pre-wrap break-words">
+      {error}
+    </pre>
+  )
+}
+
+function renderSparqlResultsCard({ vars, bindings }: { vars: string[]; bindings: SparqlBindingRow[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Results</CardTitle>
+        <CardDescription>{bindings.length} row(s)</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <SparqlResultTable vars={vars} bindings={bindings} />
+      </CardContent>
+    </Card>
+  )
+}
+
+type ShaclResult = Awaited<ReturnType<typeof api.validateOntologyCandidate>>
+
+function renderShaclErrorsList(errors: string[]) {
+  if (errors.length === 0) return null
+  return (
+    <div>
+      <p className="font-medium text-destructive flex items-center gap-1.5 mb-1">
+        <XCircle className="size-3.5" /> Errors
+      </p>
+      <ul className="list-disc list-inside text-xs text-muted-foreground space-y-0.5">
+        {errors.map((e, i) => (
+          <li key={`err-${String(i)}`}>{e}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function renderShaclWarningsList(warnings: string[]) {
+  if (warnings.length === 0) return null
+  return (
+    <div>
+      <p className="font-medium text-amber-500 flex items-center gap-1.5 mb-1">
+        <AlertTriangle className="size-3.5" /> Warnings
+      </p>
+      <ul className="list-disc list-inside text-xs text-muted-foreground space-y-0.5">
+        {warnings.map((w, i) => (
+          <li key={`warn-${String(i)}`}>{w}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function renderShaclSummary(summary: Record<string, unknown>) {
+  if (Object.keys(summary).length === 0) return null
+  return (
+    <div>
+      <p className="font-medium flex items-center gap-1.5 mb-1">
+        <CircleDot className="size-3.5" /> Summary
+      </p>
+      <dl className="grid grid-cols-2 gap-1 text-xs">
+        {Object.entries(summary).map(([k, v]) => (
+          <div key={k} className="flex justify-between gap-2 border-b border-border/20 pb-0.5">
+            <dt className="text-muted-foreground">{k}</dt>
+            <dd className="font-mono text-right break-all">{String(v)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+function renderShaclReportRaw(shaclResult: ShaclResult) {
+  if (!shaclResult.shacl_report?.text) return null
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">sh:ValidationReport</CardTitle>
+        <CardDescription>Literal SHACL validation report from pyshacl.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <pre className="rounded bg-muted/40 p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-words">
+          {shaclResult.shacl_report.text}
+        </pre>
+      </CardContent>
+    </Card>
+  )
+}
+
+function renderResultsSection({
+  mode,
+  sparqlError,
+  sparqlVars,
+  sparqlBindings,
+  shaclError,
+  shaclResult,
+}: {
+  mode: Mode
+  sparqlError: string | null
+  sparqlVars: string[]
+  sparqlBindings: SparqlBindingRow[]
+  shaclError: string | null
+  shaclResult: ShaclResult | null
+}) {
+  if (mode === 'sparql') {
+    const hasResults = !sparqlError && sparqlBindings.length + sparqlVars.length > 0
+    return (
+      <>
+        {renderErrorBlock(sparqlError)}
+        {hasResults && renderSparqlResultsCard({ vars: sparqlVars, bindings: sparqlBindings })}
+      </>
+    )
+  }
+  return (
+    <>
+      {renderErrorBlock(shaclError)}
+      {shaclResult && renderShaclReport(shaclResult)}
+    </>
+  )
+}
+
+function renderShaclReport(shaclResult: ShaclResult) {
+  return (
+    <div className="space-y-4" data-testid="shacl-report">
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+          {shaclResult.valid ? (
+            <CheckCircle2 className="size-5 text-emerald-500" />
+          ) : (
+            <XCircle className="size-5 text-destructive" />
+          )}
+          <CardTitle className="text-base">{shaclResult.valid ? 'Valid' : 'Invalid'}</CardTitle>
+          {shaclResult.shacl_report && (
+            <Badge variant={shaclResult.shacl_report.conforms ? 'secondary' : 'destructive'} className="ml-auto">
+              SHACL {shaclResult.shacl_report.conforms ? 'conforms' : 'non-conforming'}
+            </Badge>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {renderShaclErrorsList(shaclResult.errors)}
+          {renderShaclWarningsList(shaclResult.warnings)}
+          {renderShaclSummary(shaclResult.summary)}
+        </CardContent>
+      </Card>
+
+      {renderShaclReportRaw(shaclResult)}
+    </div>
+  )
+}
+
 export default function SparqlView() {
   const [mode, setMode] = useState<Mode>('sparql')
 
@@ -162,179 +407,28 @@ export default function SparqlView() {
           </Tabs>
         </CardHeader>
 
-        {mode === 'sparql' ? (
-          <CardContent className="space-y-3">
-            <Textarea
-              aria-label="SPARQL query"
-              value={sparqlQuery}
-              onChange={(e) => {
-                setSparqlQuery(e.target.value)
-              }}
-              placeholder={DEFAULT_SPARQL}
-              rows={5}
-              className="font-mono text-xs"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void runSparql()
-              }}
-            />
-            <div className="flex justify-end">
-              <Button
-                onClick={() => {
-                  void runSparql()
-                }}
-                disabled={sparqlRunning || !sparqlQuery.trim()}
-              >
-                {sparqlRunning ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Play className="size-4 mr-2" />}
-                Run Query
-              </Button>
-            </div>
-          </CardContent>
-        ) : (
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <label className="text-xs font-semibold text-muted-foreground">Source type</label>
-              <Select
-                value={shaclSourceType}
-                onValueChange={(v) => {
-                  setShaclSourceType(v as typeof shaclSourceType)
-                }}
-              >
-                <SelectTrigger className="w-40 text-xs" aria-label="Source type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="text">Raw turtle text</SelectItem>
-                  <SelectItem value="file">File path</SelectItem>
-                  <SelectItem value="url">URL</SelectItem>
-                  <SelectItem value="auto">Auto-detect</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Textarea
-              aria-label="Ontology candidate source"
-              value={shaclSource}
-              onChange={(e) => {
-                setShaclSource(e.target.value)
-              }}
-              placeholder="Paste turtle/RDF text, or a file path / URL matching the selected source type..."
-              rows={6}
-              className="font-mono text-xs"
-            />
-            <div className="flex justify-end">
-              <Button
-                onClick={() => {
-                  void runValidate()
-                }}
-                disabled={shaclRunning || !shaclSource.trim()}
-              >
-                {shaclRunning ? (
-                  <Loader2 className="size-4 mr-2 animate-spin" />
-                ) : (
-                  <ShieldCheck className="size-4 mr-2" />
-                )}
-                Validate
-              </Button>
-            </div>
-          </CardContent>
-        )}
+        {mode === 'sparql'
+          ? renderSparqlTab({
+              sparqlQuery,
+              onSparqlQueryChange: setSparqlQuery,
+              sparqlRunning,
+              onRunSparql: () => {
+                void runSparql()
+              },
+            })
+          : renderShaclTab({
+              shaclSource,
+              onShaclSourceChange: setShaclSource,
+              shaclSourceType,
+              onShaclSourceTypeChange: setShaclSourceType,
+              shaclRunning,
+              onRunValidate: () => {
+                void runValidate()
+              },
+            })}
       </Card>
 
-      {mode === 'sparql' && sparqlError && (
-        <pre className="rounded border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive whitespace-pre-wrap break-words">
-          {sparqlError}
-        </pre>
-      )}
-      {mode === 'sparql' && !sparqlError && sparqlBindings.length + sparqlVars.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Results</CardTitle>
-            <CardDescription>{sparqlBindings.length} row(s)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <SparqlResultTable vars={sparqlVars} bindings={sparqlBindings} />
-          </CardContent>
-        </Card>
-      )}
-
-      {mode === 'shacl' && shaclError && (
-        <pre className="rounded border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive whitespace-pre-wrap break-words">
-          {shaclError}
-        </pre>
-      )}
-      {mode === 'shacl' && shaclResult && (
-        <div className="space-y-4" data-testid="shacl-report">
-          <Card>
-            <CardHeader className="flex flex-row items-center gap-2 space-y-0">
-              {shaclResult.valid ? (
-                <CheckCircle2 className="size-5 text-emerald-500" />
-              ) : (
-                <XCircle className="size-5 text-destructive" />
-              )}
-              <CardTitle className="text-base">{shaclResult.valid ? 'Valid' : 'Invalid'}</CardTitle>
-              {shaclResult.shacl_report && (
-                <Badge variant={shaclResult.shacl_report.conforms ? 'secondary' : 'destructive'} className="ml-auto">
-                  SHACL {shaclResult.shacl_report.conforms ? 'conforms' : 'non-conforming'}
-                </Badge>
-              )}
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              {shaclResult.errors.length > 0 && (
-                <div>
-                  <p className="font-medium text-destructive flex items-center gap-1.5 mb-1">
-                    <XCircle className="size-3.5" /> Errors
-                  </p>
-                  <ul className="list-disc list-inside text-xs text-muted-foreground space-y-0.5">
-                    {shaclResult.errors.map((e, i) => (
-                      <li key={`err-${String(i)}`}>{e}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {shaclResult.warnings.length > 0 && (
-                <div>
-                  <p className="font-medium text-amber-500 flex items-center gap-1.5 mb-1">
-                    <AlertTriangle className="size-3.5" /> Warnings
-                  </p>
-                  <ul className="list-disc list-inside text-xs text-muted-foreground space-y-0.5">
-                    {shaclResult.warnings.map((w, i) => (
-                      <li key={`warn-${String(i)}`}>{w}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {Object.keys(shaclResult.summary).length > 0 && (
-                <div>
-                  <p className="font-medium flex items-center gap-1.5 mb-1">
-                    <CircleDot className="size-3.5" /> Summary
-                  </p>
-                  <dl className="grid grid-cols-2 gap-1 text-xs">
-                    {Object.entries(shaclResult.summary).map(([k, v]) => (
-                      <div key={k} className="flex justify-between gap-2 border-b border-border/20 pb-0.5">
-                        <dt className="text-muted-foreground">{k}</dt>
-                        <dd className="font-mono text-right break-all">{String(v)}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {shaclResult.shacl_report?.text && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">sh:ValidationReport</CardTitle>
-                <CardDescription>Literal SHACL validation report from pyshacl.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <pre className="rounded bg-muted/40 p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-words">
-                  {shaclResult.shacl_report.text}
-                </pre>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
+      {renderResultsSection({ mode, sparqlError, sparqlVars, sparqlBindings, shaclError, shaclResult })}
     </div>
   )
 }
