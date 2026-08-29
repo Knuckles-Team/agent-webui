@@ -155,7 +155,7 @@ function ErrorNotice({ error }: { error: string }) {
 /** Overall-card body: required failures + degraded reasons are independent —
  * both can render at once — and "all ready" only when neither is present. */
 function OverallStatusBody({ snapshot }: { snapshot: ReadinessSnapshot }) {
-  const allReady = snapshot.required_failures.length === 0 && snapshot.degraded_reasons.length === 0
+  const isFullyReady = snapshot.required_failures.length === 0 && snapshot.degraded_reasons.length === 0
   return (
     <>
       {snapshot.required_failures.length > 0 && (
@@ -174,7 +174,7 @@ function OverallStatusBody({ snapshot }: { snapshot: ReadinessSnapshot }) {
           </ul>
         </div>
       )}
-      {allReady && (
+      {isFullyReady && (
         <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
           <CheckCircle2 className="size-4" />
           Every check reported ready.
