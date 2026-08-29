@@ -649,7 +649,11 @@ async def test_an_expired_session_with_a_refresh_token_is_silently_renewed():
     async def _refresh(form):
         assert form['grant_type'] == 'refresh_token'
         assert form['refresh_token'] == 'stale-refresh'
-        return {'access_token': 'fresh-token', 'refresh_token': 'new-refresh', 'expires_in': 300}
+        return {
+            'access_token': 'fresh-token',
+            'refresh_token': 'new-refresh',
+            'expires_in': 300,
+        }
 
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(middleware, '_token_request', _refresh)
@@ -677,7 +681,8 @@ async def test_an_expired_session_with_a_refresh_token_is_silently_renewed():
         )
         # _forward injects the refreshed session cookie into the response.
         set_cookie_names = {
-            raw.decode('latin-1').split('=', 1)[0] for raw in send.headers(b'set-cookie')
+            raw.decode('latin-1').split('=', 1)[0]
+            for raw in send.headers(b'set-cookie')
         }
         assert any(name.startswith(SESSION_COOKIE) for name in set_cookie_names), (
             'a refreshed session cookie must be set on the forwarded response'
