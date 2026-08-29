@@ -34,7 +34,7 @@
  * it only composes model + parameters + system prompt into the prompt file
  * format the Prompts Registry already reads and writes.
  */
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import { z } from 'zod'
 import { Cpu, Eye, Layers, Plus, RefreshCw, Save, Search, Sparkles, Trash2, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -43,7 +43,6 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
-import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -53,6 +52,7 @@ import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
 import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 
 type ModelKind = 'chat' | 'embedding'
+type TemplateField = 'title' | 'goal' | 'core_directive' | 'model'
 
 interface LLMModel {
   id: string
@@ -102,25 +102,35 @@ const DEFAULT_PARAMETERS: TemplateParameters = {
   max_tokens: 4096,
   reasoning_effort: 'inherit',
 }
-const REASONING_EFFORTS = ['inherit', 'none', 'low', 'medium', 'high', 'xhigh']
+const TEMPLATE_PARAMETER_KEYS: (keyof TemplateParameters)[] = [
+  'temperature',
+  'top_p',
+  'max_tokens',
+  'reasoning_effort',
+]
 
 /** Loosely-shaped (`z.looseObject` keeps unknown keys) so it round-trips
  *  whatever else a prompt document already carries (identity/instructions/
  *  metadata/tools/...) without this view needing to understand every field
  *  PromptsView.tsx manages. */
-const templateDetailSchema = z.looseObject({
-  title: z.string().optional(),
-  goal: z.string().optional(),
-  core_directive: z.string().optional(),
-  model: z.string().optional(),
-  parameters: z
-    .looseObject({
-      temperature: z.number().optional(),
-      top_p: z.number().optional(),
-      max_tokens: z.number().optional(),
-      reasoning_effort: z.string().optional(),
-    })
-    .optional(),
+const templateDetailSchema = z
+  .looseObject({
+    title: z.string().nullable().optional(),
+    goal: z.string().nullable().optional(),
+    core_directive: z.string().nullable().optional(),
+    model: z.string().nullable().optional(),
+    // Parameters are provider-owned hints. Keep their complete JSON value so a
+    // document with a null/array/provider-specific shape can still round-trip
+    // unchanged; the four common fields are normalized only for this editor.
+    parameters: z.unknown().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, 'Template document must not be empty')
+
+type TemplateDetail = z.infer<typeof templateDetailSchema>
+
+const modelDetailSchema = z.looseObject({
+  id: z.string().min(1),
+  provider: z.string().min(1),
 })
 
 // ── BUG-260: schema-derived model-settings form ────────────────────────────
@@ -131,31 +141,57 @@ interface JsonSchemaProperty {
   type?: string
   enum?: unknown[]
   const?: unknown
-  anyOf?: { type?: string; enum?: unknown[]; const?: unknown }[]
+  anyOf?: JsonSchemaBranch[]
   default?: unknown
   title?: string
   description?: string
+  minimum?: number
+  maximum?: number
+  multipleOf?: number
+  exclusiveMinimum?: number | boolean
+  exclusiveMaximum?: number | boolean
+}
+interface JsonSchemaBranch {
+  type?: string
+  enum?: unknown[]
+  const?: unknown
+  anyOf?: JsonSchemaBranch[]
+  minimum?: number
+  maximum?: number
+  multipleOf?: number
+  exclusiveMinimum?: number | boolean
+  exclusiveMaximum?: number | boolean
 }
 interface ModelJsonSchema {
   properties: Record<string, JsonSchemaProperty>
   required?: string[]
 }
+const jsonSchemaBranchSchema: z.ZodType<JsonSchemaBranch> = z.lazy(() =>
+  z.looseObject({
+    type: z.string().optional(),
+    enum: z.array(z.unknown()).optional(),
+    const: z.unknown().optional(),
+    anyOf: z.array(jsonSchemaBranchSchema).optional(),
+    minimum: z.number().optional(),
+    maximum: z.number().optional(),
+    multipleOf: z.number().optional(),
+    exclusiveMinimum: z.union([z.number(), z.boolean()]).optional(),
+    exclusiveMaximum: z.union([z.number(), z.boolean()]).optional(),
+  }),
+)
 const jsonSchemaPropertySchema: z.ZodType<JsonSchemaProperty> = z.looseObject({
   type: z.string().optional(),
   enum: z.array(z.unknown()).optional(),
   const: z.unknown().optional(),
-  anyOf: z
-    .array(
-      z.looseObject({
-        type: z.string().optional(),
-        enum: z.array(z.unknown()).optional(),
-        const: z.unknown().optional(),
-      }),
-    )
-    .optional(),
+  anyOf: z.array(jsonSchemaBranchSchema).optional(),
   default: z.unknown().optional(),
   title: z.string().optional(),
   description: z.string().optional(),
+  minimum: z.number().optional(),
+  maximum: z.number().optional(),
+  multipleOf: z.number().optional(),
+  exclusiveMinimum: z.union([z.number(), z.boolean()]).optional(),
+  exclusiveMaximum: z.union([z.number(), z.boolean()]).optional(),
 })
 const modelJsonSchemaSchema: z.ZodType<ModelJsonSchema> = z.looseObject({
   properties: z.record(z.string(), jsonSchemaPropertySchema),
@@ -175,13 +211,113 @@ type FieldKind = 'boolean' | 'integer' | 'number' | 'enum' | 'string' | 'json'
  *  real dropdown over its base type, so a future enum-typed ChatModelConfig/
  *  EmbeddingModelConfig field (there are none today) renders correctly with
  *  no change to this form. */
-function fieldEnumValues(prop: JsonSchemaProperty): unknown[] | undefined {
-  if (prop.enum) return prop.enum
-  if (prop.const !== undefined) return [prop.const]
-  const branch = prop.anyOf?.find((entry) => entry.enum ?? entry.const !== undefined)
-  if (branch?.enum) return branch.enum
-  if (branch?.const !== undefined) return [branch.const]
+type JsonSchemaNode = JsonSchemaProperty | JsonSchemaBranch
+
+function nestedEnumValues(branches: JsonSchemaBranch[] | undefined): unknown[] | undefined {
+  return (branches ?? []).map(fieldEnumValues).find((values) => values !== undefined)
+}
+
+function fieldEnumValues(prop: JsonSchemaNode): unknown[] | undefined {
+  return prop.enum ?? (prop.const !== undefined ? [prop.const] : nestedEnumValues(prop.anyOf))
+}
+
+const NUMERIC_CONSTRAINT_KEYS: (keyof JsonSchemaBranch)[] = [
+  'minimum',
+  'maximum',
+  'multipleOf',
+  'exclusiveMinimum',
+  'exclusiveMaximum',
+]
+
+function hasNumericConstraint(node: JsonSchemaNode): boolean {
+  return NUMERIC_CONSTRAINT_KEYS.some((key) => node[key] !== undefined)
+}
+
+function typedNumericNode(node: JsonSchemaNode): JsonSchemaBranch[] {
+  return node.type === 'integer' || node.type === 'number' ? [node] : []
+}
+
+function numericConstraintNodes(node: JsonSchemaNode): JsonSchemaBranch[] {
+  // Prefer an actual constrained node over a merely-typed parent. JSON
+  // Schema can wrap a constrained numeric branch in more than one `anyOf`;
+  // returning the parent first would hide the nested bounds.
+  const own = hasNumericConstraint(node) ? [node] : []
+  const nested = (node.anyOf ?? []).flatMap((branch) => numericConstraintNodes(branch))
+  return own.length === 0 ? [...nested, ...typedNumericNode(node)] : [...own, ...nested]
+}
+
+function schemaNodeType(node: JsonSchemaNode): string | undefined {
+  if (node.type && node.type !== 'null') return node.type
+  for (const branch of node.anyOf ?? []) {
+    const type = schemaNodeType(branch)
+    if (type) return type
+  }
   return undefined
+}
+
+function numericConstraints(prop: JsonSchemaNode): JsonSchemaBranch {
+  const [branch = {}] = numericConstraintNodes(prop)
+  return {
+    minimum: prop.minimum ?? branch.minimum,
+    maximum: prop.maximum ?? branch.maximum,
+    multipleOf: prop.multipleOf ?? branch.multipleOf,
+    exclusiveMinimum: prop.exclusiveMinimum ?? branch.exclusiveMinimum,
+    exclusiveMaximum: prop.exclusiveMaximum ?? branch.exclusiveMaximum,
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
+}
+
+function finiteNumberOrDefault(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function stringOrDefault(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function isAborted(controller: AbortController | null): boolean {
+  return controller?.signal.aborted ?? false
+}
+
+function normalizeTemplateParameters(value: unknown): TemplateParameters {
+  const parameters = isRecord(value) ? value : {}
+  return {
+    temperature: finiteNumberOrDefault(parameters.temperature, DEFAULT_PARAMETERS.temperature),
+    top_p: finiteNumberOrDefault(parameters.top_p, DEFAULT_PARAMETERS.top_p),
+    max_tokens: finiteNumberOrDefault(parameters.max_tokens, DEFAULT_PARAMETERS.max_tokens),
+    reasoning_effort: stringOrDefault(parameters.reasoning_effort, DEFAULT_PARAMETERS.reasoning_effort),
+  }
+}
+
+function mergeTemplateParameters(
+  original: unknown,
+  edited: TemplateParameters,
+  editedFields: ReadonlySet<keyof TemplateParameters>,
+  includeDefaults: boolean,
+): unknown {
+  if (shouldPreserveOriginalParameters(original, editedFields, includeDefaults)) return original
+  const originalParameters = isRecord(original) ? original : {}
+  const merged = { ...originalParameters }
+  const keys = includeDefaults
+    ? TEMPLATE_PARAMETER_KEYS
+    : TEMPLATE_PARAMETER_KEYS.filter((key) => editedFields.has(key))
+  for (const key of keys) merged[key] = edited[key]
+  return merged
+}
+
+function shouldPreserveOriginalParameters(
+  original: unknown,
+  editedFields: ReadonlySet<keyof TemplateParameters>,
+  includeDefaults: boolean,
+): boolean {
+  return !includeDefaults && editedFields.size === 0 && original !== undefined
 }
 
 /** A JSON-value-safe `String()` -- an enum entry is typed `unknown` (straight
@@ -199,17 +335,120 @@ function stringifyValue(value: unknown): string {
   }
 }
 
+const FIELD_KINDS_BY_SCHEMA_TYPE: Record<string, Exclude<FieldKind, 'enum' | 'json'>> = {
+  boolean: 'boolean',
+  integer: 'integer',
+  number: 'number',
+  string: 'string',
+}
+
 function fieldKind(prop: JsonSchemaProperty): FieldKind {
-  if (fieldEnumValues(prop)) return 'enum'
-  const declared = prop.type ?? prop.anyOf?.find((entry) => entry.type && entry.type !== 'null')?.type
-  if (declared === 'boolean' || declared === 'integer' || declared === 'number' || declared === 'string') {
-    return declared
-  }
-  return 'json'
+  const declared = schemaNodeType(prop)
+  return fieldEnumValues(prop) !== undefined ? 'enum' : (FIELD_KINDS_BY_SCHEMA_TYPE[declared ?? ''] ?? 'json')
+}
+
+function titledFieldLabel(prop: JsonSchemaProperty): string | undefined {
+  const title = prop.title?.trim() ?? ''
+  return title === '' ? undefined : title
+}
+
+function defaultFieldLabel(name: string): string {
+  return name.replace(/[_-]+/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
 }
 
 function fieldLabel(name: string, prop: JsonSchemaProperty): string {
-  return prop.title ?? name
+  return titledFieldLabel(prop) ?? defaultFieldLabel(name)
+}
+
+function fieldDescription(prop: JsonSchemaProperty, isRequired: boolean): string {
+  const description = prop.description?.trim()
+  if (description) return description
+  return isRequired ? 'Required.' : ''
+}
+
+function modelFieldId(name: string): string {
+  return `model-field-${name}`
+}
+
+function modelFieldHelpId(name: string): string {
+  return `${modelFieldId(name)}-help`
+}
+
+function requiredMarker(isRequired: boolean): string {
+  return isRequired ? ' *' : ''
+}
+
+function modelFieldDescribedBy(name: string, description: string, error?: string): string | undefined {
+  const ids = [
+    description === '' ? null : modelFieldHelpId(name),
+    error ? `${modelFieldId(name)}-error` : null,
+  ].filter(Boolean)
+  return ids.length === 0 ? undefined : ids.join(' ')
+}
+
+function modelFieldError(fieldId: string, error: string | undefined): ReactNode {
+  if (!error) return null
+  return (
+    <p id={`${fieldId}-error`} role="alert" className="text-[11px] leading-normal text-red-400">
+      {error}
+    </p>
+  )
+}
+
+function parseNumberFieldValue(raw: string, kind: FieldKind): number | null | undefined {
+  if (raw === '') return null
+  const next = Number(raw)
+  return Number.isFinite(next) && (kind !== 'integer' || Number.isInteger(next)) ? next : undefined
+}
+
+function handleNumberFieldChange(
+  name: string,
+  raw: string,
+  kind: FieldKind,
+  onChange: (field: string, value: unknown) => void,
+): void {
+  const next = parseNumberFieldValue(raw, kind)
+  if (next !== undefined) onChange(name, next)
+}
+
+function parseEnumFieldValue(raw: string, options: unknown[]): unknown {
+  if (raw === '') return null
+  return options.find((option) => stringifyValue(option) === raw) ?? raw
+}
+
+function optionalEnumOption(isRequired: boolean): ReactNode {
+  return isRequired ? null : <option value="">— unset —</option>
+}
+
+function jsonFieldDisplayValue(draft: string | undefined, value: unknown): string {
+  if (draft !== undefined) return draft
+  return value == null ? '' : JSON.stringify(value, null, 2)
+}
+
+function numberFieldDisplayValue(value: unknown): number | '' {
+  return typeof value === 'number' && Number.isFinite(value) ? value : ''
+}
+
+function numberFieldStep(kind: FieldKind, constraints: JsonSchemaBranch): number | 'any' {
+  return constraints.multipleOf ?? (kind === 'integer' ? 1 : 'any')
+}
+
+function enumFieldDisplayValue(value: unknown): string {
+  return value == null ? '' : stringifyValue(value)
+}
+
+function stringFieldDisplayValue(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function modelFieldDescription(name: string, prop: JsonSchemaProperty, isRequired: boolean): ReactNode {
+  const description = fieldDescription(prop, isRequired)
+  if (!description) return null
+  return (
+    <p id={modelFieldHelpId(name)} className="text-[11px] leading-normal text-muted-foreground">
+      {description}
+    </p>
+  )
 }
 
 type ModelFieldRenderer = (
@@ -219,6 +458,9 @@ type ModelFieldRenderer = (
   value: unknown,
   isRequired: boolean,
   onChange: (field: string, value: unknown) => void,
+  draft: string | undefined,
+  error: string | undefined,
+  onDraftChange: (field: string, raw: string) => void,
 ) => ReactNode
 
 function booleanModelField(
@@ -229,13 +471,20 @@ function booleanModelField(
   _isRequired: boolean,
   onChange: (field: string, value: unknown) => void,
 ): ReactNode {
+  const description = fieldDescription(prop, _isRequired)
   return (
     <div key={name} className="flex items-center justify-between rounded-md border border-border/40 p-2.5">
-      <label htmlFor={`model-field-${name}`} className="text-xs font-medium">
-        {fieldLabel(name, prop)}
-      </label>
+      <div className="space-y-0.5">
+        <label htmlFor={modelFieldId(name)} className="text-xs font-medium">
+          {fieldLabel(name, prop)}
+          {requiredMarker(_isRequired)}
+        </label>
+        {modelFieldDescription(name, prop, _isRequired)}
+      </div>
       <Switch
-        id={`model-field-${name}`}
+        id={modelFieldId(name)}
+        aria-required={_isRequired}
+        aria-describedby={modelFieldDescribedBy(name, description)}
         checked={Boolean(value)}
         onCheckedChange={(checked) => {
           onChange(name, checked)
@@ -253,27 +502,30 @@ function numberModelField(
   isRequired: boolean,
   onChange: (field: string, value: unknown) => void,
 ): ReactNode {
+  const fieldId = modelFieldId(name)
+  const description = fieldDescription(prop, isRequired)
+  const constraints = numericConstraints(prop)
   return (
     <div key={name} className="space-y-1.5">
-      <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
+      <label htmlFor={fieldId} className="text-xs font-semibold text-muted-foreground">
         {fieldLabel(name, prop)}
-        {isRequired && ' *'}
+        {requiredMarker(isRequired)}
       </label>
       <Input
-        id={`model-field-${name}`}
+        id={fieldId}
         type="number"
-        value={typeof value === 'number' ? value : ''}
+        required={isRequired}
+        min={constraints.minimum}
+        max={constraints.maximum}
+        step={numberFieldStep(kind, constraints)}
+        aria-describedby={modelFieldDescribedBy(name, description)}
+        value={numberFieldDisplayValue(value)}
         onChange={(e) => {
-          const raw = e.target.value
-          if (raw === '') {
-            onChange(name, null)
-            return
-          }
-          const next = kind === 'integer' ? Number.parseInt(raw, 10) : Number.parseFloat(raw)
-          if (Number.isFinite(next)) onChange(name, next)
+          handleNumberFieldChange(name, e.target.value, kind, onChange)
         }}
         className="font-mono text-xs"
       />
+      {modelFieldDescription(name, prop, isRequired)}
     </div>
   )
 }
@@ -287,33 +539,32 @@ function enumModelField(
   onChange: (field: string, value: unknown) => void,
 ): ReactNode {
   const options = fieldEnumValues(prop) ?? []
+  const fieldId = modelFieldId(name)
+  const description = fieldDescription(prop, isRequired)
   return (
     <div key={name} className="space-y-1.5">
-      <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
+      <label htmlFor={fieldId} className="text-xs font-semibold text-muted-foreground">
         {fieldLabel(name, prop)}
-        {isRequired && ' *'}
+        {requiredMarker(isRequired)}
       </label>
       <select
-        id={`model-field-${name}`}
-        value={value == null ? '' : stringifyValue(value)}
+        id={fieldId}
+        required={isRequired}
+        aria-describedby={modelFieldDescribedBy(name, description)}
+        value={enumFieldDisplayValue(value)}
         onChange={(e) => {
-          const raw = e.target.value
-          if (raw === '') {
-            onChange(name, null)
-            return
-          }
-          const match = options.find((opt) => stringifyValue(opt) === raw)
-          onChange(name, match ?? raw)
+          onChange(name, parseEnumFieldValue(e.target.value, options))
         }}
         className="w-full h-9 px-3 rounded-md border border-input bg-muted/20 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
       >
-        {!isRequired && <option value="">— unset —</option>}
+        {optionalEnumOption(isRequired)}
         {options.map((opt) => (
           <option key={stringifyValue(opt)} value={stringifyValue(opt)}>
             {stringifyValue(opt)}
           </option>
         ))}
       </select>
+      {modelFieldDescription(name, prop, isRequired)}
     </div>
   )
 }
@@ -324,36 +575,33 @@ function jsonModelField(
   _kind: FieldKind,
   value: unknown,
   _isRequired: boolean,
-  onChange: (field: string, value: unknown) => void,
+  _onChange: (field: string, value: unknown) => void,
+  draft: string | undefined,
+  error: string | undefined,
+  onDraftChange: (field: string, raw: string) => void,
 ): ReactNode {
+  const fieldId = modelFieldId(name)
+  const description = fieldDescription(prop, _isRequired)
   return (
     <div key={name} className="space-y-1.5 md:col-span-2">
-      <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
+      <label htmlFor={fieldId} className="text-xs font-semibold text-muted-foreground">
         {fieldLabel(name, prop)} (JSON)
       </label>
       <Textarea
-        id={`model-field-${name}`}
-        value={value == null ? '' : JSON.stringify(value, null, 2)}
+        id={fieldId}
+        required={_isRequired}
+        aria-describedby={modelFieldDescribedBy(name, description, error)}
+        aria-invalid={Boolean(error)}
+        value={jsonFieldDisplayValue(draft, value)}
         onChange={(e) => {
-          const raw = e.target.value
-          if (raw.trim() === '') {
-            onChange(name, null)
-            return
-          }
-          try {
-            onChange(name, JSON.parse(raw))
-          } catch {
-            // Leave the last-valid value in place until the JSON parses;
-            // the field keeps the operator's raw text on screen via
-            // `defaultValue`-less controlled input re-render is skipped
-            // by React only re-rendering from `values`, so nothing here
-            // needs to track invalid intermediate text separately.
-          }
+          onDraftChange(name, e.target.value)
         }}
         rows={3}
         className="font-mono text-xs"
         placeholder="null"
       />
+      {modelFieldDescription(name, prop, _isRequired)}
+      {modelFieldError(fieldId, error)}
     </div>
   )
 }
@@ -366,20 +614,25 @@ function stringModelField(
   isRequired: boolean,
   onChange: (field: string, value: unknown) => void,
 ): ReactNode {
+  const fieldId = modelFieldId(name)
+  const description = fieldDescription(prop, isRequired)
   return (
     <div key={name} className="space-y-1.5">
-      <label htmlFor={`model-field-${name}`} className="text-xs font-semibold text-muted-foreground">
+      <label htmlFor={fieldId} className="text-xs font-semibold text-muted-foreground">
         {fieldLabel(name, prop)}
-        {isRequired && ' *'}
+        {requiredMarker(isRequired)}
       </label>
       <Input
-        id={`model-field-${name}`}
-        value={typeof value === 'string' ? value : ''}
+        id={fieldId}
+        required={isRequired}
+        aria-describedby={modelFieldDescribedBy(name, description)}
+        value={stringFieldDisplayValue(value)}
         onChange={(e) => {
           onChange(name, e.target.value)
         }}
         className="font-mono text-xs"
       />
+      {modelFieldDescription(name, prop, isRequired)}
     </div>
   )
 }
@@ -389,8 +642,8 @@ const MODEL_FIELD_RENDERERS: Record<FieldKind, ModelFieldRenderer> = {
   integer: numberModelField,
   number: numberModelField,
   enum: enumModelField,
-  json: jsonModelField,
   string: stringModelField,
+  json: jsonModelField,
 }
 
 /** One schema-derived input for a single AgentConfig model field, dispatched
@@ -402,9 +655,16 @@ function modelFieldControl(
   value: unknown,
   isRequired: boolean,
   onChange: (field: string, value: unknown) => void,
+  draft: string | undefined,
+  error: string | undefined,
+  onDraftChange: (field: string, raw: string) => void,
 ): ReactNode {
   const kind = fieldKind(prop)
-  return MODEL_FIELD_RENDERERS[kind](name, prop, kind, value, isRequired, onChange)
+  return MODEL_FIELD_RENDERERS[kind](name, prop, kind, value, isRequired, onChange, draft, error, onDraftChange)
+}
+
+function shouldRenderModelField(name: string, excludeProvider: boolean): boolean {
+  return name !== 'id' && (!excludeProvider || name !== 'provider')
 }
 
 /** Which fields exist, their order, types, and required-ness all come from
@@ -413,17 +673,36 @@ function ModelSettingsForm({
   schema,
   values,
   onChange,
+  jsonDrafts,
+  jsonErrors,
+  onJsonDraftChange,
+  excludeProvider = false,
 }: {
   schema: ModelJsonSchema
   values: Record<string, unknown>
   onChange: (field: string, value: unknown) => void
+  jsonDrafts: Record<string, string>
+  jsonErrors: Record<string, string>
+  onJsonDraftChange: (field: string, raw: string) => void
+  excludeProvider?: boolean
 }) {
   const required = new Set(schema.required ?? [])
-  const entries = Object.entries(schema.properties).filter(([name]) => name !== 'id')
+  const entries = Object.entries(schema.properties).filter(([name]) => shouldRenderModelField(name, excludeProvider))
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {entries.map(([name, prop]) => modelFieldControl(name, prop, values[name], required.has(name), onChange))}
+      {entries.map(([name, prop]) =>
+        modelFieldControl(
+          name,
+          prop,
+          values[name],
+          required.has(name),
+          onChange,
+          jsonDrafts[name],
+          jsonErrors[name],
+          onJsonDraftChange,
+        ),
+      )}
     </div>
   )
 }
@@ -488,12 +767,221 @@ function resolveModelSaveTarget({
     toast.error('Give the model an id first')
     return null
   }
-  const provider = isNewModelEntry ? newModelProvider.trim() : ((modelSettings.provider as string | undefined) ?? '')
+  const rawProvider = isNewModelEntry ? newModelProvider : modelSettings.provider
+  const provider = typeof rawProvider === 'string' ? rawProvider.trim() : ''
   if (!provider) {
     toast.error('A provider is required')
     return null
   }
   return { targetId, provider }
+}
+
+type ModelValueValidator = (name: string, prop: JsonSchemaProperty, value: unknown) => string | null
+
+function exclusiveMinimumError(label: string, value: number, constraints: JsonSchemaBranch): string | null {
+  const bound = constraints.exclusiveMinimum
+  return typeof bound === 'number' && value <= bound ? `${label} must be greater than ${bound}` : null
+}
+
+function exclusiveMaximumError(label: string, value: number, constraints: JsonSchemaBranch): string | null {
+  const bound = constraints.exclusiveMaximum
+  return typeof bound === 'number' && value >= bound ? `${label} must be less than ${bound}` : null
+}
+
+function minimumError(label: string, value: number, constraints: JsonSchemaBranch): string | null {
+  const minimum = constraints.minimum
+  return minimum !== undefined && value < minimum ? `${label} must be at least ${minimum}` : null
+}
+
+function maximumError(label: string, value: number, constraints: JsonSchemaBranch): string | null {
+  const maximum = constraints.maximum
+  return maximum !== undefined && value > maximum ? `${label} must be at most ${maximum}` : null
+}
+
+function exclusiveMinimumBooleanError(label: string, value: number, constraints: JsonSchemaBranch): string | null {
+  const minimum = constraints.minimum
+  return constraints.exclusiveMinimum === true && minimum !== undefined && value <= minimum
+    ? `${label} must be greater than ${minimum}`
+    : null
+}
+
+function exclusiveMaximumBooleanError(label: string, value: number, constraints: JsonSchemaBranch): string | null {
+  const maximum = constraints.maximum
+  return constraints.exclusiveMaximum === true && maximum !== undefined && value >= maximum
+    ? `${label} must be less than ${maximum}`
+    : null
+}
+
+function multipleOfError(label: string, value: number, constraints: JsonSchemaBranch): string | null {
+  const multipleOf = constraints.multipleOf
+  if (multipleOf === undefined || multipleOf <= 0) return null
+  const quotient = value / multipleOf
+  return Math.abs(quotient - Math.round(quotient)) > 1e-9 ? `${label} must use increments of ${multipleOf}` : null
+}
+
+function numericConstraintError(name: string, prop: JsonSchemaProperty, value: number): string | null {
+  const constraints = numericConstraints(prop)
+  const label = fieldLabel(name, prop)
+  return (
+    exclusiveMinimumError(label, value, constraints) ??
+    exclusiveMaximumError(label, value, constraints) ??
+    minimumError(label, value, constraints) ??
+    maximumError(label, value, constraints) ??
+    exclusiveMinimumBooleanError(label, value, constraints) ??
+    exclusiveMaximumBooleanError(label, value, constraints) ??
+    multipleOfError(label, value, constraints)
+  )
+}
+
+function invalidFieldError(name: string, prop: JsonSchemaProperty, message: string): string {
+  return `${fieldLabel(name, prop)} ${message}`
+}
+
+function validateBooleanValue(name: string, prop: JsonSchemaProperty, value: unknown): string | null {
+  return typeof value === 'boolean' ? null : invalidFieldError(name, prop, 'must be true or false')
+}
+
+function validateNumberValue(name: string, prop: JsonSchemaProperty, value: unknown): string | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return invalidFieldError(name, prop, 'must be a valid number')
+  }
+  return numericConstraintError(name, prop, value)
+}
+
+function validateIntegerValue(name: string, prop: JsonSchemaProperty, value: unknown): string | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return invalidFieldError(name, prop, 'must be a valid number')
+  }
+  if (!Number.isInteger(value)) return invalidFieldError(name, prop, 'must be a whole number')
+  return numericConstraintError(name, prop, value)
+}
+
+function validateEnumValue(name: string, prop: JsonSchemaProperty, value: unknown): string | null {
+  const options = fieldEnumValues(prop) ?? []
+  return options.some((option) => stringifyValue(option) === stringifyValue(value))
+    ? null
+    : invalidFieldError(name, prop, 'has an unsupported value')
+}
+
+function validateStringValue(name: string, prop: JsonSchemaProperty, value: unknown): string | null {
+  return typeof value === 'string' ? null : invalidFieldError(name, prop, 'must be text')
+}
+
+const MODEL_VALUE_VALIDATORS: Record<FieldKind, ModelValueValidator> = {
+  boolean: validateBooleanValue,
+  integer: validateIntegerValue,
+  number: validateNumberValue,
+  enum: validateEnumValue,
+  string: validateStringValue,
+  json: () => null,
+}
+
+function validateModelField(
+  name: string,
+  prop: JsonSchemaProperty,
+  value: unknown,
+  isRequired: boolean,
+): string | null {
+  const missing = value == null || (typeof value === 'string' && !value.trim())
+  if (missing) return isRequired ? invalidFieldError(name, prop, 'is required') : null
+  return MODEL_VALUE_VALIDATORS[fieldKind(prop)](name, prop, value)
+}
+
+function isEditableModelField(name: string): boolean {
+  return name !== 'id' && name !== 'provider'
+}
+
+function providerValidationError(required: ReadonlySet<string>, provider: string): string | null {
+  return required.has('provider') && !provider ? 'A provider is required' : null
+}
+
+/** Validate schema-derived values before sending the full registry replace.
+ * The API still performs the authoritative Pydantic validation, but catching
+ * missing/incorrect values here keeps the form understandable when a field
+ * has a required marker or a numeric bound in its JSON Schema. */
+function validateModelSettings(
+  schema: ModelJsonSchema,
+  values: Record<string, unknown>,
+  provider: string,
+): string | null {
+  const required = new Set(schema.required ?? [])
+  const providerError = providerValidationError(required, provider)
+  if (providerError) return providerError
+  for (const [name, prop] of Object.entries(schema.properties)) {
+    if (!isEditableModelField(name)) continue
+    const error = validateModelField(name, prop, values[name], required.has(name))
+    if (error) return error
+  }
+  return null
+}
+
+interface ModelSavePreflightInput {
+  schema: ModelJsonSchema | undefined
+  modelSettings: Record<string, unknown> | null
+  modelJsonInvalid: boolean
+  isNewModelEntry: boolean
+  newModelId: string
+  modelId: string
+  newModelProvider: string
+}
+
+interface PreparedModelSave {
+  modelSettings: Record<string, unknown>
+  targetId: string
+  provider: string
+}
+
+function prepareModelSave({
+  schema,
+  modelSettings,
+  modelJsonInvalid,
+  isNewModelEntry,
+  newModelId,
+  modelId,
+  newModelProvider,
+}: ModelSavePreflightInput): PreparedModelSave | null {
+  if (!schema || !modelSettings) return null
+  if (modelJsonInvalid) {
+    toast.error('Fix the invalid JSON field before saving model settings')
+    return null
+  }
+  const target = resolveModelSaveTarget({ isNewModelEntry, newModelId, modelId, newModelProvider, modelSettings })
+  if (!target) return null
+  const settingsError = validateModelSettings(schema, modelSettings, target.provider)
+  if (settingsError) toast.error(settingsError)
+  return settingsError ? null : { modelSettings, ...target }
+}
+
+function modelRegistryUrl(kind: ModelKind): string {
+  return `/api/enhanced/llm/${kind === 'chat' ? 'models' : 'embedding-models'}`
+}
+
+function activeSchemaForKind(schemas: ModelSchemas | null, kind: ModelKind): ModelJsonSchema | null {
+  return schemas?.[kind] ?? null
+}
+
+function modelDetailRequestInit(signal: AbortSignal | undefined): RequestInit | undefined {
+  return signal ? { signal } : undefined
+}
+
+function throwIfSignalAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw new DOMException('The model save was cancelled', 'AbortError')
+}
+
+function fetchOtherModelDetails(
+  kind: ModelKind,
+  otherModels: LLMModel[],
+  signal: AbortSignal | undefined,
+): Promise<Record<string, unknown>[]> {
+  return Promise.all(
+    otherModels.map((model) =>
+      fetchValidated(
+        `/api/enhanced/llm/model-detail?kind=${kind}&model_id=${encodeURIComponent(model.id)}`,
+        modelDetailSchema,
+        modelDetailRequestInit(signal),
+      ),
+    ),
+  )
 }
 
 /** Full-registry-replace upsert: fetches every OTHER model's full settings
@@ -503,33 +991,355 @@ async function upsertModelRegistry(
   kind: ModelKind,
   payload: Record<string, unknown>,
   otherModels: LLMModel[],
+  signal?: AbortSignal,
 ): Promise<Response> {
-  const detailUrl = `/api/enhanced/llm/${kind === 'chat' ? 'models' : 'embedding-models'}`
-  const otherDetails = await Promise.all(
-    otherModels.map((m) =>
-      fetchValidated(
-        `/api/enhanced/llm/model-detail?kind=${kind}&model_id=${encodeURIComponent(m.id)}`,
-        z.record(z.string(), z.unknown()),
-      ),
-    ),
-  )
-  return fetch(detailUrl, {
+  const otherDetails = await fetchOtherModelDetails(kind, otherModels, signal)
+  throwIfSignalAborted(signal)
+  return fetch(modelRegistryUrl(kind), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ models: [...otherDetails, payload] }),
+    signal,
   })
 }
 
-/** The sidebar's model list body: loading/unavailable/empty, or the list. */
-function modelListPanel({
-  loading,
-  loadError,
-  filteredModels,
+function activeAbortController(controller: AbortController | null): AbortController | null {
+  return controller === null || isAborted(controller) ? null : controller
+}
+
+function currentModelMutation({
+  mutationSequence,
+  mutationId,
+  detailSequence,
+  selectionRequestId,
+  editorRevision,
+  editorRevisionAtStart,
+  mutationController,
+  selectionController,
+}: {
+  mutationSequence: number
+  mutationId: number
+  detailSequence: number
+  selectionRequestId: number
+  editorRevision: number
+  editorRevisionAtStart: number
+  mutationController: AbortController
+  selectionController: AbortController | null
+}): boolean {
+  return (
+    mutationSequence === mutationId &&
+    detailSequence === selectionRequestId &&
+    editorRevision === editorRevisionAtStart &&
+    !isAborted(mutationController) &&
+    !isAborted(selectionController)
+  )
+}
+
+async function responseDetailMessage(response: Response, fallback: string): Promise<string> {
+  const body = (await response.json().catch(() => null)) as { detail?: string } | null
+  return body?.detail ?? fallback
+}
+
+interface ModelSaveWorkflowInput {
+  kind: ModelKind
+  payload: Record<string, unknown>
+  otherModels: LLMModel[]
+  targetId: string
+  mutationSignal: AbortSignal
+  isCurrentMutation: () => boolean
+  loadAll: () => Promise<void>
+  setIsNewModelEntry: (value: boolean) => void
+  setModelId: (value: string) => void
+  setModelSettings: (value: Record<string, unknown>) => void
+  setModelJsonDrafts: (value: Record<string, string>) => void
+  setModelJsonErrors: (value: Record<string, string>) => void
+}
+
+async function runModelSaveWorkflow({
+  kind,
+  payload,
+  otherModels,
+  targetId,
+  mutationSignal,
+  isCurrentMutation,
+  loadAll,
+  setIsNewModelEntry,
+  setModelId,
+  setModelSettings,
+  setModelJsonDrafts,
+  setModelJsonErrors,
+}: ModelSaveWorkflowInput): Promise<void> {
+  const response = await upsertModelRegistry(kind, payload, otherModels, mutationSignal)
+  if (!isCurrentMutation()) return
+  if (!response.ok) {
+    toast.error(await responseDetailMessage(response, 'Failed to save model settings'))
+    return
+  }
+  toast.success(`Model "${targetId}" saved`)
+  setIsNewModelEntry(false)
+  setModelId(targetId)
+  await loadAll()
+  if (!isCurrentMutation()) return
+  const refreshed = await fetchValidated(
+    `/api/enhanced/llm/model-detail?kind=${kind}&model_id=${encodeURIComponent(targetId)}`,
+    modelDetailSchema,
+    { signal: mutationSignal },
+  )
+  if (!isCurrentMutation()) return
+  setModelSettings(refreshed)
+  setModelJsonDrafts({})
+  setModelJsonErrors({})
+}
+
+interface MutableNumberRef {
+  current: number
+}
+
+interface MutableAbortControllerRef {
+  current: AbortController | null
+}
+
+interface ModelSaveExecutionInput {
+  kind: ModelKind
+  payload: Record<string, unknown>
+  otherModels: LLMModel[]
+  targetId: string
+  selectionRequestId: number
+  editorRevisionAtStart: number
+  selectionController: AbortController | null
+  modelDetailSequence: MutableNumberRef
+  modelMutationSequence: MutableNumberRef
+  modelMutationAbort: MutableAbortControllerRef
+  modelEditorRevision: MutableNumberRef
+  setSavingModel: (value: boolean) => void
+  loadAll: () => Promise<void>
+  setIsNewModelEntry: (value: boolean) => void
+  setModelId: (value: string) => void
+  setModelSettings: (value: Record<string, unknown>) => void
+  setModelJsonDrafts: (value: Record<string, string>) => void
+  setModelJsonErrors: (value: Record<string, string>) => void
+}
+
+async function executeModelSave(input: ModelSaveExecutionInput): Promise<void> {
+  const {
+    kind,
+    payload,
+    otherModels,
+    targetId,
+    selectionRequestId,
+    editorRevisionAtStart,
+    selectionController,
+    modelDetailSequence,
+    modelMutationSequence,
+    modelMutationAbort,
+    modelEditorRevision,
+    setSavingModel,
+    loadAll,
+    setIsNewModelEntry,
+    setModelId,
+    setModelSettings,
+    setModelJsonDrafts,
+    setModelJsonErrors,
+  } = input
+  modelMutationAbort.current?.abort()
+  const mutationId = modelMutationSequence.current + 1
+  modelMutationSequence.current = mutationId
+  const mutationController = new AbortController()
+  modelMutationAbort.current = mutationController
+  const isCurrentMutation = () =>
+    currentModelMutation({
+      mutationSequence: modelMutationSequence.current,
+      mutationId,
+      detailSequence: modelDetailSequence.current,
+      selectionRequestId,
+      editorRevision: modelEditorRevision.current,
+      editorRevisionAtStart,
+      mutationController,
+      selectionController,
+    })
+  setSavingModel(true)
+  try {
+    await runModelSaveWorkflow({
+      kind,
+      payload,
+      otherModels,
+      targetId,
+      mutationSignal: mutationController.signal,
+      isCurrentMutation,
+      loadAll,
+      setIsNewModelEntry,
+      setModelId,
+      setModelSettings,
+      setModelJsonDrafts,
+      setModelJsonErrors,
+    })
+  } catch (error) {
+    if (isAbortError(error) || !isCurrentMutation()) return
+    toast.error('Error saving model settings')
+  } finally {
+    if (modelMutationSequence.current === mutationId) {
+      setSavingModel(false)
+      if (modelMutationAbort.current === mutationController) modelMutationAbort.current = null
+    }
+  }
+}
+
+function currentModelSelection(
+  sequence: number,
+  requestId: number,
+  selectionController: AbortController | null,
+): boolean {
+  return sequence === requestId && !isAborted(selectionController)
+}
+
+function currentModelDetail(sequence: number, requestId: number, controller: AbortController): boolean {
+  return sequence === requestId && !controller.signal.aborted
+}
+
+async function loadSelectedModelSettings({
   kind,
   modelId,
-  isNewModelEntry,
-  onSelectModel,
+  requestId,
+  controller,
+  currentSequence,
+  setModelSettings,
 }: {
+  kind: ModelKind
+  modelId: string
+  requestId: number
+  controller: AbortController
+  currentSequence: MutableNumberRef
+  setModelSettings: (value: Record<string, unknown> | null) => void
+}): Promise<void> {
+  try {
+    const detail = await fetchValidated(
+      `/api/enhanced/llm/model-detail?kind=${kind}&model_id=${encodeURIComponent(modelId)}`,
+      modelDetailSchema,
+      { signal: controller.signal },
+    )
+    if (!currentModelDetail(currentSequence.current, requestId, controller)) return
+    setModelSettings(detail)
+  } catch (error) {
+    if (isAbortError(error) || !currentModelDetail(currentSequence.current, requestId, controller)) return
+    toast.error('Failed to load model settings')
+    setModelSettings(null)
+  }
+}
+
+interface ModelDeleteWorkflowInput {
+  kind: ModelKind
+  otherModels: LLMModel[]
+  targetId: string
+  selectionController: AbortController | null
+  isCurrentSelection: () => boolean
+  loadAll: () => Promise<void>
+  setModelSettings: (value: Record<string, unknown> | null) => void
+  setModelJsonDrafts: (value: Record<string, string>) => void
+  setModelJsonErrors: (value: Record<string, string>) => void
+  setModelId: (value: string) => void
+}
+
+async function runModelDeleteWorkflow({
+  kind,
+  otherModels,
+  targetId,
+  selectionController,
+  isCurrentSelection,
+  loadAll,
+  setModelSettings,
+  setModelJsonDrafts,
+  setModelJsonErrors,
+  setModelId,
+}: ModelDeleteWorkflowInput): Promise<void> {
+  const signal = selectionController?.signal
+  const otherDetails = await fetchOtherModelDetails(kind, otherModels, signal)
+  if (!isCurrentSelection()) return
+  const response = await fetch(modelRegistryUrl(kind), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ models: otherDetails }),
+    signal,
+  })
+  if (!isCurrentSelection()) return
+  if (!response.ok) {
+    toast.error(await responseDetailMessage(response, 'Failed to remove model'))
+    return
+  }
+  toast.success(`Model "${targetId}" removed`)
+  setModelSettings(null)
+  setModelJsonDrafts({})
+  setModelJsonErrors({})
+  setModelId('')
+  await loadAll()
+}
+
+function resolveModelDeleteTarget(
+  isNewModelEntry: boolean,
+  selectedModel: LLMModel | undefined,
+  kind: ModelKind,
+): string | null {
+  if (isNewModelEntry || !selectedModel) return null
+  const targetId = selectedModel.id
+  return window.confirm(`Remove ${targetId} from the ${kind} model registry?`) ? targetId : null
+}
+
+interface ModelDeleteExecutionInput {
+  kind: ModelKind
+  models: LLMModel[]
+  targetId: string
+  selectionRequestId: number
+  modelDetailSequence: MutableNumberRef
+  modelDetailAbort: MutableAbortControllerRef
+  setDeletingModel: (value: boolean) => void
+  loadAll: () => Promise<void>
+  setModelSettings: (value: Record<string, unknown> | null) => void
+  setModelJsonDrafts: (value: Record<string, string>) => void
+  setModelJsonErrors: (value: Record<string, string>) => void
+  setModelId: (value: string) => void
+}
+
+async function executeModelDelete(input: ModelDeleteExecutionInput): Promise<void> {
+  const {
+    kind,
+    models,
+    targetId,
+    selectionRequestId,
+    modelDetailSequence,
+    modelDetailAbort,
+    setDeletingModel,
+    loadAll,
+    setModelSettings,
+    setModelJsonDrafts,
+    setModelJsonErrors,
+    setModelId,
+  } = input
+  const selectionController = activeAbortController(modelDetailAbort.current)
+  const otherModels = models.filter((model) => model.id !== targetId)
+  const isCurrentSelection = () =>
+    currentModelSelection(modelDetailSequence.current, selectionRequestId, selectionController)
+  setDeletingModel(true)
+  try {
+    await runModelDeleteWorkflow({
+      kind,
+      otherModels,
+      targetId,
+      selectionController,
+      isCurrentSelection,
+      loadAll,
+      setModelSettings,
+      setModelJsonDrafts,
+      setModelJsonErrors,
+      setModelId,
+    })
+  } catch (error) {
+    if (isAbortError(error) || modelDetailSequence.current !== selectionRequestId) return
+    toast.error('Error removing model')
+  } finally {
+    if (modelDetailSequence.current === selectionRequestId) setDeletingModel(false)
+  }
+}
+
+interface ModelListPanelProps {
   loading: boolean
   loadError: string | null
   filteredModels: LLMModel[]
@@ -537,42 +1347,107 @@ function modelListPanel({
   modelId: string
   isNewModelEntry: boolean
   onSelectModel: (m: LLMModel) => void
-}): ReactNode {
-  if (loading) {
-    return <div className="py-8 text-center text-sm text-muted-foreground">Loading models…</div>
-  }
-  if (loadError) {
-    return (
-      <div className="py-8 px-2">
-        <UnavailableNotice what="The LLM model registry" />
-      </div>
-    )
-  }
-  if (filteredModels.length === 0) {
-    return (
-      <div className="py-8 text-center text-sm text-muted-foreground">
-        No {kind} models are configured in AgentConfig yet.
-      </div>
-    )
-  }
-  return filteredModels.map((m) => (
+}
+
+type ModelListState = 'loading' | 'unavailable' | 'empty' | 'models'
+
+function modelListState({ loading, loadError, filteredModels }: ModelListPanelProps): ModelListState {
+  return loading ? 'loading' : loadError ? 'unavailable' : filteredModels.length === 0 ? 'empty' : 'models'
+}
+
+function modelIsSelected(model: LLMModel, modelId: string, isNewModelEntry: boolean): boolean {
+  return !isNewModelEntry && modelId === model.id
+}
+
+function firstModelId(models: LLMModel[]): string {
+  return models.at(0)?.id ?? ''
+}
+
+function modelListButtonClass(selected: boolean): string {
+  return `w-full text-left rounded-md p-2 text-sm hover:bg-muted/40 ${selected ? 'bg-muted/60' : ''}`
+}
+
+function modelListButton({
+  model,
+  kind,
+  modelId,
+  isNewModelEntry,
+  onSelectModel,
+}: Omit<ModelListPanelProps, 'loading' | 'loadError' | 'filteredModels'> & { model: LLMModel }): ReactNode {
+  const selected = modelIsSelected(model, modelId, isNewModelEntry)
+  return (
     <button
-      key={m.id}
+      key={model.id}
       type="button"
+      aria-pressed={selected}
+      aria-label={`Edit ${kind} model ${model.id} from ${model.provider}`}
       onClick={() => {
-        onSelectModel(m)
+        onSelectModel(model)
       }}
-      className={`w-full text-left rounded-md p-2 text-sm hover:bg-muted/40 ${
-        modelId === m.id && !isNewModelEntry ? 'bg-muted/60' : ''
-      }`}
+      className={modelListButtonClass(selected)}
     >
-      <div className="font-medium truncate">{m.id}</div>
-      <div className="text-xs text-muted-foreground truncate">{m.provider}</div>
+      <div className="font-medium truncate">{model.id}</div>
+      <div className="text-xs text-muted-foreground truncate">{model.provider}</div>
       <div className="mt-1">
-        <ModelBadges model={m} />
+        <ModelBadges model={model} />
       </div>
     </button>
-  ))
+  )
+}
+
+function renderLoadingModelList(): ReactNode {
+  return <div className="py-8 text-center text-sm text-muted-foreground">Loading models…</div>
+}
+
+function renderUnavailableModelList(): ReactNode {
+  return (
+    <div className="py-8 px-2">
+      <UnavailableNotice what="The LLM model registry" />
+    </div>
+  )
+}
+
+function renderEmptyModelList({ kind }: ModelListPanelProps): ReactNode {
+  return (
+    <div className="py-8 text-center text-sm text-muted-foreground">
+      No {kind} models are configured in AgentConfig yet.
+    </div>
+  )
+}
+
+function renderConfiguredModelList({
+  filteredModels,
+  kind,
+  modelId,
+  isNewModelEntry,
+  onSelectModel,
+}: ModelListPanelProps): ReactNode {
+  return filteredModels.map((model) => modelListButton({ model, kind, modelId, isNewModelEntry, onSelectModel }))
+}
+
+const MODEL_LIST_RENDERERS: Record<ModelListState, (props: ModelListPanelProps) => ReactNode> = {
+  loading: renderLoadingModelList,
+  unavailable: renderUnavailableModelList,
+  empty: renderEmptyModelList,
+  models: renderConfiguredModelList,
+}
+
+/** The sidebar's model list body: loading/unavailable/empty, or the list. */
+function modelListPanel(props: ModelListPanelProps): ReactNode {
+  return MODEL_LIST_RENDERERS[modelListState(props)](props)
+}
+
+function modelMatchesSearch(model: LLMModel, query: string): boolean {
+  const normalizedQuery = query.toLowerCase()
+  return (
+    model.id.toLowerCase().includes(normalizedQuery) ||
+    model.provider.toLowerCase().includes(normalizedQuery) ||
+    (model.intelligence_level ?? '').toLowerCase().includes(normalizedQuery)
+  )
+}
+
+function filterModels(models: LLMModel[], query: string): LLMModel[] {
+  return models.filter((model) => modelMatchesSearch(model, query))
 }
 
 /** The composer card's title: the in-progress new-model label, the selected
@@ -583,39 +1458,72 @@ function composerTitle(isNewModelEntry: boolean, kind: ModelKind, selectedModel:
   return 'Select a model'
 }
 
-/** The Remove/Save action buttons in the model-configuration panel header. */
-function modelConfigActions({
+interface ModelConfigActionProps {
+  isNewModelEntry: boolean
+  selectedModel: LLMModel | undefined
+  deletingModel: boolean
+  savingModel: boolean
+  modelJsonInvalid: boolean
+  onDeleteModel: () => void
+  onSaveModelSettings: () => void
+}
+
+function modelRemoveButton({
   isNewModelEntry,
   selectedModel,
   deletingModel,
   savingModel,
   onDeleteModel,
-  onSaveModelSettings,
-}: {
-  isNewModelEntry: boolean
-  selectedModel: LLMModel | undefined
-  deletingModel: boolean
-  savingModel: boolean
-  onDeleteModel: () => void
-  onSaveModelSettings: () => void
-}): ReactNode {
+}: Pick<
+  ModelConfigActionProps,
+  'isNewModelEntry' | 'selectedModel' | 'deletingModel' | 'savingModel' | 'onDeleteModel'
+>): ReactNode {
+  if (isNewModelEntry || selectedModel === undefined) return null
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      type="button"
+      className="text-rose-400 hover:text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
+      onClick={onDeleteModel}
+      disabled={deletingModel || savingModel}
+    >
+      <Trash2 className="size-3.5 mr-1.5" />
+      {modelRemoveButtonLabel(deletingModel)}
+    </Button>
+  )
+}
+
+function modelRemoveButtonLabel(deletingModel: boolean): string {
+  return deletingModel ? 'Removing...' : 'Remove model'
+}
+
+function modelSaveButtonLabel(savingModel: boolean): string {
+  return savingModel ? 'Saving...' : 'Save model settings'
+}
+
+function modelSaveButtonDisabled({
+  savingModel,
+  deletingModel,
+  modelJsonInvalid,
+}: Pick<ModelConfigActionProps, 'savingModel' | 'deletingModel' | 'modelJsonInvalid'>): boolean {
+  return savingModel || deletingModel || modelJsonInvalid
+}
+
+/** The Remove/Save action buttons in the model-configuration panel header. */
+function modelConfigActions(props: ModelConfigActionProps): ReactNode {
   return (
     <div className="flex items-center gap-2">
-      {!isNewModelEntry && selectedModel && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="text-rose-400 hover:text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
-          onClick={onDeleteModel}
-          disabled={deletingModel || savingModel}
-        >
-          <Trash2 className="size-3.5 mr-1.5" />
-          {deletingModel ? 'Removing...' : 'Remove model'}
-        </Button>
-      )}
-      <Button size="sm" variant="outline" onClick={onSaveModelSettings} disabled={savingModel || deletingModel}>
+      {modelRemoveButton(props)}
+      <Button
+        size="sm"
+        variant="outline"
+        type="button"
+        onClick={props.onSaveModelSettings}
+        disabled={modelSaveButtonDisabled(props)}
+      >
         <Save className="size-3.5 mr-1.5" />
-        {savingModel ? 'Saving...' : 'Save model settings'}
+        {modelSaveButtonLabel(props.savingModel)}
       </Button>
     </div>
   )
@@ -644,8 +1552,13 @@ function modelIdentityFields({
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-muted-foreground">Model id *</label>
+        <label htmlFor="new-model-id" className="text-xs font-semibold text-muted-foreground">
+          Model id *
+        </label>
         <Input
+          id="new-model-id"
+          required
+          aria-describedby="new-model-id-help"
           value={newModelId}
           onChange={(e) => {
             setNewModelId(e.target.value)
@@ -653,10 +1566,18 @@ function modelIdentityFields({
           placeholder="e.g. qwen/qwen3.8-27b"
           className="font-mono text-xs"
         />
+        <p id="new-model-id-help" className="text-[11px] leading-normal text-muted-foreground">
+          Required. Use the provider&apos;s model identifier, such as qwen/qwen3.6-27b.
+        </p>
       </div>
       <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-muted-foreground">Provider *</label>
+        <label htmlFor="new-model-provider" className="text-xs font-semibold text-muted-foreground">
+          Provider *
+        </label>
         <Input
+          id="new-model-provider"
+          required
+          aria-describedby="new-model-provider-help"
           value={newModelProvider}
           onChange={(e) => {
             setNewModelProvider(e.target.value)
@@ -664,6 +1585,9 @@ function modelIdentityFields({
           placeholder="openai"
           className="font-mono text-xs"
         />
+        <p id="new-model-provider-help" className="text-[11px] leading-normal text-muted-foreground">
+          Required. Enter the integration name that serves this model, such as openai or ollama.
+        </p>
       </div>
     </div>
   )
@@ -682,9 +1606,13 @@ function modelConfigurationPanel(props: {
   savingModel: boolean
   newModelId: string
   newModelProvider: string
+  jsonDrafts: Record<string, string>
+  jsonErrors: Record<string, string>
   setNewModelId: (value: string) => void
   setNewModelProvider: (value: string) => void
-  setModelSettings: (updater: (prev: Record<string, unknown> | null) => Record<string, unknown> | null) => void
+  onModelSettingsChange: (field: string, value: unknown) => void
+  onJsonDraftChange: (field: string, raw: string) => void
+  modelJsonInvalid: boolean
   onDeleteModel: () => void
   onSaveModelSettings: () => void
 }): ReactNode {
@@ -698,9 +1626,13 @@ function modelConfigurationPanel(props: {
     savingModel,
     newModelId,
     newModelProvider,
+    jsonDrafts,
+    jsonErrors,
     setNewModelId,
     setNewModelProvider,
-    setModelSettings,
+    onModelSettingsChange,
+    onJsonDraftChange,
+    modelJsonInvalid,
     onDeleteModel,
     onSaveModelSettings,
   } = props
@@ -717,6 +1649,7 @@ function modelConfigurationPanel(props: {
           selectedModel,
           deletingModel,
           savingModel,
+          modelJsonInvalid,
           onDeleteModel,
           onSaveModelSettings,
         })}
@@ -734,9 +1667,11 @@ function modelConfigurationPanel(props: {
       <ModelSettingsForm
         schema={activeSchema}
         values={modelSettings}
-        onChange={(field, value) => {
-          setModelSettings((prev) => ({ ...(prev ?? {}), [field]: value }))
-        }}
+        jsonDrafts={jsonDrafts}
+        jsonErrors={jsonErrors}
+        excludeProvider={isNewModelEntry}
+        onJsonDraftChange={onJsonDraftChange}
+        onChange={onModelSettingsChange}
       />
     </div>
   )
@@ -755,24 +1690,38 @@ function existingTemplatePicker({
   if (templates.length === 0) return null
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-semibold text-muted-foreground">Load an existing template</label>
+      <label
+        htmlFor="existing-template"
+        id="existing-template-label"
+        className="text-xs font-semibold text-muted-foreground"
+      >
+        Load an existing template
+      </label>
       <Select
         value={selectedName ?? ''}
         onValueChange={(name) => {
           onLoadTemplate(name)
         }}
       >
-        <SelectTrigger className="w-full">
+        <SelectTrigger
+          id="existing-template"
+          aria-labelledby="existing-template-label"
+          aria-describedby="existing-template-help"
+          className="w-full"
+        >
           <SelectValue placeholder="Pick a saved template…" />
         </SelectTrigger>
         <SelectContent>
           {templates.map((t) => (
             <SelectItem key={t.name} value={t.name}>
-              {t.title || t.name}
+              {t.title === '' ? t.name : t.title}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
+      <p id="existing-template-help" className="text-[11px] leading-normal text-muted-foreground">
+        Optional. Loading a template fills the fields below so you can reuse or adjust it.
+      </p>
     </div>
   )
 }
@@ -790,8 +1739,15 @@ function newTemplateNameField({
   if (!isNew) return null
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-semibold text-muted-foreground">Template name (id)</label>
+      <label htmlFor="template-name" className="text-xs font-semibold text-muted-foreground">
+        Template name (id) *
+      </label>
       <Input
+        id="template-name"
+        required
+        maxLength={128}
+        pattern="[A-Za-z0-9_-]{1,128}"
+        aria-describedby="template-name-help"
         value={newName}
         onChange={(e) => {
           setNewName(e.target.value)
@@ -799,6 +1755,155 @@ function newTemplateNameField({
         placeholder="e.g. release-notes-writer"
         className="font-mono text-xs"
       />
+      <p id="template-name-help" className="text-[11px] leading-normal text-muted-foreground">
+        Required. Use 1–128 letters, numbers, hyphens, or underscores; this becomes the saved file name.
+      </p>
+    </div>
+  )
+}
+
+type TemplateParameterKind = 'number' | 'string'
+
+interface TemplateParameterDescriptor {
+  field: keyof TemplateParameters
+  id: string
+  label: string
+  helpId: string
+  help: string
+  kind: TemplateParameterKind
+  inputType: 'number' | 'text'
+  step?: 'any'
+  inputMode?: 'decimal'
+  labelId?: string
+  placeholder?: string
+}
+
+const TEMPLATE_PARAMETER_GROUPS: { id: string; className: string; fields: TemplateParameterDescriptor[] }[] = [
+  {
+    id: 'temperature',
+    className: 'space-y-1.5',
+    fields: [
+      {
+        field: 'temperature',
+        id: 'template-temperature',
+        label: 'Temperature',
+        helpId: 'template-temperature-help',
+        help: "Optional numeric hint passed to the selected provider; leave the default unless you know the provider's accepted values.",
+        kind: 'number',
+        inputType: 'number',
+        step: 'any',
+      },
+    ],
+  },
+  {
+    id: 'top-p',
+    className: 'space-y-1.5',
+    fields: [
+      {
+        field: 'top_p',
+        id: 'template-top-p',
+        label: 'Top P',
+        helpId: 'template-top-p-help',
+        help: 'Optional numeric hint passed to the selected provider; the endpoint does not define a universal range.',
+        kind: 'number',
+        inputType: 'number',
+        step: 'any',
+      },
+    ],
+  },
+  {
+    id: 'max-tokens-reasoning-effort',
+    className: 'grid grid-cols-2 gap-4',
+    fields: [
+      {
+        field: 'max_tokens',
+        id: 'template-max-tokens',
+        label: 'Max tokens',
+        helpId: 'template-max-tokens-help',
+        help: 'Optional numeric hint for the response budget; accepted values depend on the selected provider.',
+        kind: 'number',
+        inputType: 'number',
+        step: 'any',
+        inputMode: 'decimal',
+      },
+      {
+        field: 'reasoning_effort',
+        id: 'template-reasoning-effort',
+        label: 'Reasoning effort',
+        helpId: 'template-reasoning-effort-help',
+        help: 'Optional provider-specific text hint, such as inherit or a documented effort level.',
+        kind: 'string',
+        inputType: 'text',
+        labelId: 'template-reasoning-effort-label',
+        placeholder: 'inherit',
+      },
+    ],
+  },
+]
+
+function setNumericTemplateParameter(
+  field: keyof TemplateParameters,
+  raw: string,
+  onParameterChange: (field: keyof TemplateParameters, value: number | string) => void,
+): void {
+  const next = Number(raw)
+  if (raw === '') {
+    onParameterChange(field, 0)
+  } else if (Number.isFinite(next)) {
+    onParameterChange(field, next)
+  }
+}
+
+function setStringTemplateParameter(
+  field: keyof TemplateParameters,
+  raw: string,
+  onParameterChange: (field: keyof TemplateParameters, value: number | string) => void,
+): void {
+  onParameterChange(field, raw)
+}
+
+type TemplateParameterChangeHandler = (
+  field: keyof TemplateParameters,
+  raw: string,
+  onParameterChange: (field: keyof TemplateParameters, value: number | string) => void,
+) => void
+
+const TEMPLATE_PARAMETER_INPUT_HANDLERS: Record<TemplateParameterKind, TemplateParameterChangeHandler> = {
+  number: setNumericTemplateParameter,
+  string: setStringTemplateParameter,
+}
+
+function templateParameterField({
+  descriptor,
+  parameters,
+  onParameterChange,
+}: {
+  descriptor: TemplateParameterDescriptor
+  parameters: TemplateParameters
+  onParameterChange: (field: keyof TemplateParameters, value: number | string) => void
+}): ReactNode {
+  return (
+    <div key={descriptor.field} className="space-y-1.5">
+      <label htmlFor={descriptor.id} id={descriptor.labelId} className="text-xs font-semibold text-muted-foreground">
+        {descriptor.label}
+      </label>
+      <Input
+        id={descriptor.id}
+        type={descriptor.inputType}
+        step={descriptor.step}
+        inputMode={descriptor.inputMode}
+        aria-labelledby={descriptor.labelId}
+        aria-describedby={descriptor.helpId}
+        value={parameters[descriptor.field]}
+        onChange={(event) => {
+          TEMPLATE_PARAMETER_INPUT_HANDLERS[descriptor.kind](descriptor.field, event.target.value, onParameterChange)
+        }}
+        className="font-mono text-xs"
+        placeholder={descriptor.placeholder}
+      />
+      <p id={descriptor.helpId} className="text-[11px] text-muted-foreground">
+        {descriptor.help}
+      </p>
     </div>
   )
 }
@@ -807,10 +1912,10 @@ function newTemplateNameField({
  *  effort) at the bottom of the composer. */
 function templateParametersPanel({
   parameters,
-  setParameters,
+  onParameterChange,
 }: {
   parameters: TemplateParameters
-  setParameters: (updater: (p: TemplateParameters) => TemplateParameters) => void
+  onParameterChange: (field: keyof TemplateParameters, value: number | string) => void
 }): ReactNode {
   return (
     <div className="space-y-4 rounded-md border border-border/40 p-4">
@@ -818,78 +1923,472 @@ function templateParametersPanel({
         <Wrench className="h-4 w-4 text-muted-foreground" />
         Parameters
       </div>
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Temperature</span>
-          <span className="tabular-nums">{parameters.temperature.toFixed(2)}</span>
+      <p className="text-[11px] leading-normal text-muted-foreground">
+        These values are stored with the template as optional provider hints. The server keeps them as supplied and
+        does not enforce a shared range here.
+      </p>
+      {TEMPLATE_PARAMETER_GROUPS.map(({ id, className, fields }) => (
+        <div key={id} className={className}>
+          {fields.map((descriptor) => templateParameterField({ descriptor, parameters, onParameterChange }))}
         </div>
-        <Slider
-          value={parameters.temperature}
-          onValueChange={(v) => {
-            setParameters((p) => ({ ...p, temperature: v }))
-          }}
-          min={0}
-          max={2}
-          step={0.05}
-        />
-      </div>
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Top P</span>
-          <span className="tabular-nums">{parameters.top_p.toFixed(2)}</span>
-        </div>
-        <Slider
-          value={parameters.top_p}
-          onValueChange={(v) => {
-            setParameters((p) => ({ ...p, top_p: v }))
-          }}
-          min={0}
-          max={1}
-          step={0.05}
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground">Max tokens</label>
-          <Input
-            type="number"
-            value={parameters.max_tokens}
-            onChange={(e) => {
-              const next = Number(e.target.value)
-              setParameters((p) => ({ ...p, max_tokens: Number.isFinite(next) ? next : p.max_tokens }))
-            }}
-            className="font-mono text-xs"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground">Reasoning effort</label>
-          <Select
-            value={parameters.reasoning_effort}
-            onValueChange={(v) => {
-              setParameters((p) => ({ ...p, reasoning_effort: v }))
-            }}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {REASONING_EFFORTS.map((r) => (
-                <SelectItem key={r} value={r}>
-                  {r}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      ))}
     </div>
   )
 }
 
 /** Save-template button is disabled while saving, or when there is no
- *  target name yet (a new, unnamed template with nothing typed). */
-function isSaveTemplateDisabled(saving: boolean, isNew: boolean, selectedName: string | null): boolean {
-  return saving || (!isNew && !selectedName)
+ * target name yet (a new, unnamed template or an unselected existing one). */
+function isSaveTemplateDisabled(
+  saving: boolean,
+  isNew: boolean,
+  selectedName: string | null,
+  newName: string,
+): boolean {
+  return saving || (isNew ? !newName.trim() : !selectedName)
+}
+
+const TEMPLATE_FIELDS: TemplateField[] = ['title', 'goal', 'core_directive', 'model']
+
+function resolveTemplateSaveTarget(isNew: boolean, newName: string, selectedName: string | null): string | null {
+  const targetName = isNew ? newName.trim() : selectedName
+  if (!targetName) {
+    toast.error('Give the template a name first')
+    return null
+  }
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(targetName)) {
+    toast.error('Template name may only contain letters, numbers, "-", and "_"')
+    return null
+  }
+  return targetName
+}
+
+interface TemplatePayloadInput {
+  templateDocument: Record<string, unknown> | null
+  parameters: TemplateParameters
+  editedParameterFields: ReadonlySet<keyof TemplateParameters>
+  editedTemplateFields: ReadonlySet<TemplateField>
+  targetName: string
+  title: string
+  goal: string
+  coreDirective: string
+  modelId: string
+}
+
+function shouldSaveTemplateParameters(
+  isNewDocument: boolean,
+  document: Record<string, unknown>,
+  editedFields: ReadonlySet<keyof TemplateParameters>,
+): boolean {
+  return isNewDocument || Object.prototype.hasOwnProperty.call(document, 'parameters') || editedFields.size > 0
+}
+
+function templateFieldValues(input: TemplatePayloadInput, isNewDocument: boolean): Record<TemplateField, string> {
+  return {
+    title: isNewDocument && input.title === '' ? input.targetName : input.title,
+    goal: input.goal,
+    core_directive: input.coreDirective,
+    model: input.modelId,
+  }
+}
+
+function applyTemplateFieldValues(
+  payload: Record<string, unknown>,
+  input: TemplatePayloadInput,
+  isNewDocument: boolean,
+): void {
+  const fields = isNewDocument ? TEMPLATE_FIELDS : [...input.editedTemplateFields]
+  const values = templateFieldValues(input, isNewDocument)
+  for (const field of fields) payload[field] = values[field]
+}
+
+function buildTemplatePayload(input: TemplatePayloadInput): Record<string, unknown> {
+  const isNewDocument = input.templateDocument === null
+  const existingDocument = input.templateDocument ?? {}
+  const payload: Record<string, unknown> = { ...existingDocument }
+  if (shouldSaveTemplateParameters(isNewDocument, existingDocument, input.editedParameterFields)) {
+    payload.parameters = mergeTemplateParameters(
+      existingDocument.parameters,
+      input.parameters,
+      input.editedParameterFields,
+      isNewDocument,
+    )
+  }
+  applyTemplateFieldValues(payload, input, isNewDocument)
+  return payload
+}
+
+function isCurrentTemplateMutation({
+  mutationSequence,
+  mutationId,
+  detailSequence,
+  selectionAtStart,
+  editorRevision,
+  editorRevisionAtStart,
+  controller,
+}: {
+  mutationSequence: number
+  mutationId: number
+  detailSequence: number
+  selectionAtStart: number
+  editorRevision: number
+  editorRevisionAtStart: number
+  controller: AbortController
+}): boolean {
+  return (
+    mutationSequence === mutationId &&
+    detailSequence === selectionAtStart &&
+    editorRevision === editorRevisionAtStart &&
+    !controller.signal.aborted
+  )
+}
+
+function templateMutationWasSuperseded(
+  error: unknown,
+  mutationSequence: number,
+  mutationId: number,
+  detailSequence: number,
+  selectionAtStart: number,
+  editorRevision: number,
+  editorRevisionAtStart: number,
+): boolean {
+  return (
+    isAbortError(error) ||
+    mutationSequence !== mutationId ||
+    detailSequence !== selectionAtStart ||
+    editorRevision !== editorRevisionAtStart
+  )
+}
+
+interface TemplateSaveWorkflowInput {
+  targetName: string
+  payload: Record<string, unknown>
+  controller: AbortController
+  selectionAtStart: number
+  editorRevisionAtStart: number
+  templateMutationSequence: MutableNumberRef
+  templateMutationId: number
+  templateDetailSequence: MutableNumberRef
+  templateEditorRevision: MutableNumberRef
+  setIsNew: (value: boolean) => void
+  setSelectedName: (value: string) => void
+  setTemplateDocument: (value: Record<string, unknown>) => void
+  setEditedTemplateFields: (value: Set<TemplateField>) => void
+  setEditedParameterFields: (value: Set<keyof TemplateParameters>) => void
+  loadAll: () => Promise<void>
+}
+
+function currentTemplateSave(input: TemplateSaveWorkflowInput): boolean {
+  return isCurrentTemplateMutation({
+    mutationSequence: input.templateMutationSequence.current,
+    mutationId: input.templateMutationId,
+    detailSequence: input.templateDetailSequence.current,
+    selectionAtStart: input.selectionAtStart,
+    editorRevision: input.templateEditorRevision.current,
+    editorRevisionAtStart: input.editorRevisionAtStart,
+    controller: input.controller,
+  })
+}
+
+async function runTemplateSaveWorkflow(input: TemplateSaveWorkflowInput): Promise<void> {
+  const {
+    targetName,
+    payload,
+    controller,
+    setIsNew,
+    setSelectedName,
+    setTemplateDocument,
+    setEditedTemplateFields,
+    setEditedParameterFields,
+    loadAll,
+  } = input
+  const response = await fetch(`/api/enhanced/prompts/${targetName}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: controller.signal,
+  })
+  if (!currentTemplateSave(input)) return
+  if (!response.ok) {
+    toast.error('Failed to save template')
+    return
+  }
+  toast.success(`Template "${targetName}" saved`)
+  setIsNew(false)
+  setSelectedName(targetName)
+  setTemplateDocument(payload)
+  setEditedTemplateFields(new Set())
+  setEditedParameterFields(new Set())
+  void loadAll()
+}
+
+interface TemplateSaveErrorInput {
+  error: unknown
+  mutationSequence: MutableNumberRef
+  mutationId: number
+  detailSequence: MutableNumberRef
+  selectionAtStart: number
+  editorRevision: MutableNumberRef
+  editorRevisionAtStart: number
+}
+
+function reportTemplateSaveError(input: TemplateSaveErrorInput): void {
+  const {
+    error,
+    mutationSequence,
+    mutationId,
+    detailSequence,
+    selectionAtStart,
+    editorRevision,
+    editorRevisionAtStart,
+  } = input
+  if (
+    templateMutationWasSuperseded(
+      error,
+      mutationSequence.current,
+      mutationId,
+      detailSequence.current,
+      selectionAtStart,
+      editorRevision.current,
+      editorRevisionAtStart,
+    )
+  )
+    return
+  toast.error('Error sending save request')
+}
+
+function finishTemplateSave(
+  mutationSequence: MutableNumberRef,
+  mutationId: number,
+  controller: AbortController,
+  mutationAbort: MutableAbortControllerRef,
+  setSaving: (value: boolean) => void,
+): void {
+  if (mutationSequence.current !== mutationId) return
+  setSaving(false)
+  if (mutationAbort.current === controller) mutationAbort.current = null
+}
+
+function modelJsonErrorUpdate(
+  previous: Record<string, string>,
+  field: string,
+  required: boolean,
+): Record<string, string> {
+  if (required) {
+    return { ...previous, [field]: 'This field is required; enter a JSON value before saving model settings.' }
+  }
+  const { [field]: _removed, ...rest } = previous
+  return rest
+}
+
+function clearModelJsonError(previous: Record<string, string>, field: string): Record<string, string> {
+  const { [field]: _removed, ...rest } = previous
+  return rest
+}
+
+function updateModelSetting(
+  previous: Record<string, unknown> | null,
+  field: string,
+  value: unknown,
+): Record<string, unknown> {
+  return { ...(previous ?? {}), [field]: value }
+}
+
+interface CatalogResponse {
+  chat: LLMModel[]
+  embedding: LLMModel[]
+  templates: TemplateSummary[]
+  schemas: ModelSchemas
+}
+
+interface CatalogStateSetters {
+  setSessionExpired: (value: boolean) => void
+  setChatModels: (value: LLMModel[]) => void
+  setEmbeddingModels: (value: LLMModel[]) => void
+  setTemplates: (value: TemplateSummary[]) => void
+  setSchemas: (value: ModelSchemas | null) => void
+  setLoadError: (value: string | null) => void
+}
+
+function isCurrentCatalogRequest(sequence: MutableNumberRef, requestId: number, controller: AbortController): boolean {
+  return sequence.current === requestId && !controller.signal.aborted
+}
+
+function applyCatalogResponse(response: CatalogResponse, setters: CatalogStateSetters): void {
+  setters.setSessionExpired(false)
+  setters.setChatModels(response.chat)
+  setters.setEmbeddingModels(response.embedding)
+  setters.setTemplates(response.templates)
+  setters.setSchemas(response.schemas)
+}
+
+function clearCatalogState(setters: CatalogStateSetters): void {
+  setters.setChatModels([])
+  setters.setEmbeddingModels([])
+  setters.setTemplates([])
+  setters.setSchemas(null)
+  setters.setLoadError('Could not reach the LLM model registry.')
+  toast.error('Error connecting to the LLM model registry')
+}
+
+function handleCatalogError(
+  error: unknown,
+  sequence: MutableNumberRef,
+  requestId: number,
+  setters: CatalogStateSetters,
+): void {
+  if (isAbortError(error) || sequence.current !== requestId) return
+  if (error instanceof ApiError && error.status === 401) {
+    setters.setSessionExpired(true)
+    return
+  }
+  clearCatalogState(setters)
+}
+
+function finishCatalogLoad(
+  sequence: MutableNumberRef,
+  requestId: number,
+  controller: AbortController,
+  abortRef: MutableAbortControllerRef,
+  setLoading: (value: boolean) => void,
+): void {
+  if (!isCurrentCatalogRequest(sequence, requestId, controller)) return
+  setLoading(false)
+  if (abortRef.current === controller) abortRef.current = null
+}
+
+interface TemplateLoadResetInput {
+  templateMutationSequence: MutableNumberRef
+  templateMutationAbort: MutableAbortControllerRef
+  templateEditorRevision: MutableNumberRef
+  setSaving: (value: boolean) => void
+  templateDetailAbort: MutableAbortControllerRef
+  modelDetailAbort: MutableAbortControllerRef
+  modelDetailSequence: MutableNumberRef
+  modelMutationSequence: MutableNumberRef
+  modelMutationAbort: MutableAbortControllerRef
+  modelEditorRevision: MutableNumberRef
+  setModelSettings: (value: Record<string, unknown> | null) => void
+  setSavingModel: (value: boolean) => void
+  setDeletingModel: (value: boolean) => void
+  setModelJsonDrafts: (value: Record<string, string>) => void
+  setModelJsonErrors: (value: Record<string, string>) => void
+}
+
+function resetStateForTemplateLoad(input: TemplateLoadResetInput): void {
+  input.templateMutationSequence.current += 1
+  input.templateMutationAbort.current?.abort()
+  input.templateMutationAbort.current = null
+  input.templateEditorRevision.current += 1
+  input.setSaving(false)
+  input.templateDetailAbort.current?.abort()
+  input.modelDetailAbort.current?.abort()
+  input.modelDetailSequence.current += 1
+  input.modelMutationSequence.current += 1
+  input.modelMutationAbort.current?.abort()
+  input.modelEditorRevision.current += 1
+  input.setModelSettings(null)
+  input.setSavingModel(false)
+  input.setDeletingModel(false)
+  input.setModelJsonDrafts({})
+  input.setModelJsonErrors({})
+}
+
+interface NewTemplateResetInput extends TemplateLoadResetInput {
+  templateDetailSequence: MutableNumberRef
+  setLoadingTemplateDetail: (value: boolean) => void
+  setTemplateDocument: (value: Record<string, unknown> | null) => void
+  setSelectedName: (value: string | null) => void
+  setIsNew: (value: boolean) => void
+  setIsNewModelEntry: (value: boolean) => void
+  setNewName: (value: string) => void
+  setTitle: (value: string) => void
+  setGoal: (value: string) => void
+  setCoreDirective: (value: string) => void
+  setModelId: (value: string) => void
+  setParameters: (value: TemplateParameters) => void
+  setEditedTemplateFields: (value: Set<TemplateField>) => void
+  setEditedParameterFields: (value: Set<keyof TemplateParameters>) => void
+}
+
+function resetStateForNewTemplate(input: NewTemplateResetInput, firstModelId: string): void {
+  input.templateMutationSequence.current += 1
+  input.templateMutationAbort.current?.abort()
+  input.templateMutationAbort.current = null
+  input.templateEditorRevision.current += 1
+  input.setSaving(false)
+  input.templateDetailAbort.current?.abort()
+  input.templateDetailSequence.current += 1
+  input.modelDetailAbort.current?.abort()
+  input.modelDetailSequence.current += 1
+  input.modelMutationSequence.current += 1
+  input.modelMutationAbort.current?.abort()
+  input.modelEditorRevision.current += 1
+  input.setLoadingTemplateDetail(false)
+  input.setSavingModel(false)
+  input.setDeletingModel(false)
+  input.setTemplateDocument(null)
+  input.setSelectedName(null)
+  input.setIsNew(true)
+  // A new template is a different workflow from creating an AgentConfig
+  // model. Clear the model-entry mode so the composer cannot claim that a
+  // blank template is an unsaved model after the operator clicks "New
+  // template" from the model editor.
+  input.setIsNewModelEntry(false)
+  input.setNewName('')
+  input.setTitle('')
+  input.setGoal('')
+  input.setCoreDirective('')
+  input.setModelId(firstModelId)
+  input.setParameters(DEFAULT_PARAMETERS)
+  input.setEditedTemplateFields(new Set())
+  input.setEditedParameterFields(new Set())
+  input.setModelSettings(null)
+  input.setModelJsonDrafts({})
+  input.setModelJsonErrors({})
+}
+
+interface TemplateDetailSetters {
+  setTemplateDocument: (value: Record<string, unknown>) => void
+  setSelectedName: (value: string) => void
+  setIsNew: (value: boolean) => void
+  setTitle: (value: string) => void
+  setGoal: (value: string) => void
+  setCoreDirective: (value: string) => void
+  setModelId: (value: string) => void
+  setParameters: (value: TemplateParameters) => void
+  setEditedTemplateFields: (value: Set<TemplateField>) => void
+  setEditedParameterFields: (value: Set<keyof TemplateParameters>) => void
+}
+
+function applyTemplateDetail(detail: TemplateDetail, name: string, setters: TemplateDetailSetters): void {
+  const document: Record<string, unknown> = detail
+  setters.setTemplateDocument(document)
+  setters.setSelectedName(name)
+  setters.setIsNew(false)
+  setters.setTitle(detail.title ?? name)
+  setters.setGoal(detail.goal ?? '')
+  setters.setCoreDirective(detail.core_directive ?? '')
+  setters.setModelId(detail.model ?? '')
+  setters.setParameters(normalizeTemplateParameters(detail.parameters))
+  setters.setEditedTemplateFields(new Set())
+  setters.setEditedParameterFields(new Set())
+}
+
+function isCurrentTemplateDetailRequest(
+  sequence: MutableNumberRef,
+  requestId: number,
+  controller: AbortController,
+): boolean {
+  return sequence.current === requestId && !controller.signal.aborted
+}
+
+function finishTemplateDetailLoad(
+  sequence: MutableNumberRef,
+  requestId: number,
+  controller: AbortController,
+  setLoadingTemplateDetail: (value: boolean) => void,
+): void {
+  if (isCurrentTemplateDetailRequest(sequence, requestId, controller)) setLoadingTemplateDetail(false)
 }
 
 export default function LLMTemplatesView() {
@@ -906,7 +2405,10 @@ export default function LLMTemplatesView() {
   const [coreDirective, setCoreDirective] = useState('')
   const [modelId, setModelId] = useState('')
   const [parameters, setParameters] = useState<TemplateParameters>(DEFAULT_PARAMETERS)
+  const [editedTemplateFields, setEditedTemplateFields] = useState<Set<TemplateField>>(new Set())
+  const [editedParameterFields, setEditedParameterFields] = useState<Set<keyof TemplateParameters>>(new Set())
   const [loading, setLoading] = useState(true)
+  const [loadingTemplateDetail, setLoadingTemplateDetail] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [savingModel, setSavingModel] = useState(false)
@@ -919,96 +2421,268 @@ export default function LLMTemplatesView() {
   const [newModelId, setNewModelId] = useState('')
   const [newModelProvider, setNewModelProvider] = useState('')
   const [modelSettings, setModelSettings] = useState<Record<string, unknown> | null>(null)
+  const [modelJsonDrafts, setModelJsonDrafts] = useState<Record<string, string>>({})
+  const [modelJsonErrors, setModelJsonErrors] = useState<Record<string, string>>({})
+  const [templateDocument, setTemplateDocument] = useState<Record<string, unknown> | null>(null)
+  const modelDetailSequence = useRef(0)
+  const modelDetailAbort = useRef<AbortController | null>(null)
+  const modelMutationSequence = useRef(0)
+  const modelMutationAbort = useRef<AbortController | null>(null)
+  const catalogSequence = useRef(0)
+  const catalogAbort = useRef<AbortController | null>(null)
+  const modelEditorRevision = useRef(0)
+  const templateDetailSequence = useRef(0)
+  const templateDetailAbort = useRef<AbortController | null>(null)
+  const templateEditorRevision = useRef(0)
+  const templateMutationSequence = useRef(0)
+  const templateMutationAbort = useRef<AbortController | null>(null)
 
   const models = kind === 'chat' ? chatModels : embeddingModels
+  const modelJsonInvalid = Object.values(modelJsonErrors).some(Boolean)
 
-  const loadAll = useCallback(async () => {
+  const handleModelJsonDraftChange = (field: string, raw: string) => {
+    modelEditorRevision.current += 1
+    setModelJsonDrafts((previous) => ({ ...previous, [field]: raw }))
+    if (raw.trim() === '') {
+      const required = schemas?.[kind].required?.includes(field) ?? false
+      setModelJsonErrors((previous) => modelJsonErrorUpdate(previous, field, required))
+      setModelSettings((previous) => updateModelSetting(previous, field, null))
+      return
+    }
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      setModelJsonErrors((previous) => clearModelJsonError(previous, field))
+      setModelSettings((previous) => updateModelSetting(previous, field, parsed))
+    } catch {
+      setModelJsonErrors((previous) => ({ ...previous, [field]: 'Enter valid JSON before saving model settings.' }))
+    }
+  }
+
+  const handleNewModelIdChange = (value: string) => {
+    modelEditorRevision.current += 1
+    setNewModelId(value)
+  }
+
+  const handleNewModelProviderChange = (value: string) => {
+    modelEditorRevision.current += 1
+    setNewModelProvider(value)
+  }
+
+  function handleTemplateParameterChange(field: keyof TemplateParameters, value: number | string): void {
+    templateEditorRevision.current += 1
+    setParameters((previous) => ({ ...previous, [field]: value }))
+    setEditedParameterFields((previous) => {
+      const next = new Set(previous)
+      next.add(field)
+      return next
+    })
+  }
+
+  function markTemplateFieldEdited(field: TemplateField): void {
+    templateEditorRevision.current += 1
+    setEditedTemplateFields((previous) => {
+      const next = new Set(previous)
+      next.add(field)
+      return next
+    })
+  }
+
+  const loadAll = useCallback(async function loadAll() {
+    catalogAbort.current?.abort()
+    const requestId = catalogSequence.current + 1
+    catalogSequence.current = requestId
+    const controller = new AbortController()
+    catalogAbort.current = controller
     setLoading(true)
     setLoadError(null)
     try {
-      const [chat, embedding, t, s] = await Promise.all([
-        fetchValidated('/api/enhanced/llm/models', looseArray(modelSchema)),
-        fetchValidated('/api/enhanced/llm/embedding-models', looseArray(modelSchema)),
-        fetchValidated('/api/enhanced/prompts', looseArray(templateSummarySchema)),
-        fetchValidated('/api/enhanced/llm/model-schema', modelSchemasResponseSchema),
+      const [chat, embedding, templates, schemas] = await Promise.all([
+        fetchValidated('/api/enhanced/llm/models', looseArray(modelSchema), { signal: controller.signal }),
+        fetchValidated('/api/enhanced/llm/embedding-models', looseArray(modelSchema), { signal: controller.signal }),
+        fetchValidated('/api/enhanced/prompts', looseArray(templateSummarySchema), { signal: controller.signal }),
+        fetchValidated('/api/enhanced/llm/model-schema', modelSchemasResponseSchema, { signal: controller.signal }),
       ])
-      setSessionExpired(false)
-      setChatModels(chat)
-      setEmbeddingModels(embedding)
-      setTemplates(t)
-      setSchemas(s)
+      if (!isCurrentCatalogRequest(catalogSequence, requestId, controller)) return
+      applyCatalogResponse(
+        { chat, embedding, templates, schemas },
+        {
+          setSessionExpired,
+          setChatModels,
+          setEmbeddingModels,
+          setTemplates,
+          setSchemas,
+          setLoadError,
+        },
+      )
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        setSessionExpired(true)
-      } else {
-        // Distinct from "zero models configured": the list below must never
-        // render an unreachable backend identically to a genuine empty
-        // registry (the honest-state requirement this view was flagged for).
-        setLoadError('Could not reach the LLM model registry.')
-        toast.error('Error connecting to the LLM model registry')
-      }
+      handleCatalogError(err, catalogSequence, requestId, {
+        setSessionExpired,
+        setChatModels,
+        setEmbeddingModels,
+        setTemplates,
+        setSchemas,
+        setLoadError,
+      })
     } finally {
-      setLoading(false)
+      finishCatalogLoad(catalogSequence, requestId, controller, catalogAbort, setLoading)
     }
   }, [])
 
-  useEffect(() => {
-    void loadAll()
-  }, [loadAll])
+  useEffect(
+    function loadCatalogOnMount() {
+      void loadAll()
+    },
+    [loadAll],
+  )
 
-  const loadTemplate = useCallback(async (name: string) => {
+  useEffect(function invalidatePendingRequests() {
+    return function cleanupPendingRequests() {
+      templateDetailSequence.current += 1
+      templateDetailAbort.current?.abort()
+      templateMutationSequence.current += 1
+      templateMutationAbort.current?.abort()
+      modelDetailSequence.current += 1
+      modelDetailAbort.current?.abort()
+      modelMutationSequence.current += 1
+      modelMutationAbort.current?.abort()
+      catalogSequence.current += 1
+      catalogAbort.current?.abort()
+      modelMutationAbort.current = null
+    }
+  }, [])
+
+  const loadTemplate = useCallback(async function loadTemplate(name: string) {
+    resetStateForTemplateLoad({
+      templateMutationSequence,
+      templateMutationAbort,
+      templateEditorRevision,
+      setSaving,
+      templateDetailAbort,
+      modelDetailAbort,
+      modelDetailSequence,
+      modelMutationSequence,
+      modelMutationAbort,
+      modelEditorRevision,
+      setModelSettings,
+      setSavingModel,
+      setDeletingModel,
+      setModelJsonDrafts,
+      setModelJsonErrors,
+    })
+    const requestId = templateDetailSequence.current + 1
+    templateDetailSequence.current = requestId
+    const controller = new AbortController()
+    templateDetailAbort.current = controller
+    setLoadingTemplateDetail(true)
     try {
-      const detail = await fetchValidated(`/api/enhanced/prompts/${name}`, templateDetailSchema)
-      setSelectedName(name)
-      setIsNew(false)
-      setTitle(detail.title ?? name)
-      setGoal(detail.goal ?? '')
-      setCoreDirective(detail.core_directive ?? '')
-      setModelId(detail.model ?? '')
-      setParameters({ ...DEFAULT_PARAMETERS, ...detail.parameters })
-    } catch {
+      const detail = await fetchValidated(`/api/enhanced/prompts/${name}`, templateDetailSchema, {
+        signal: controller.signal,
+      })
+      if (!isCurrentTemplateDetailRequest(templateDetailSequence, requestId, controller)) return
+      applyTemplateDetail(detail, name, {
+        setTemplateDocument,
+        setSelectedName,
+        setIsNew,
+        setTitle,
+        setGoal,
+        setCoreDirective,
+        setModelId,
+        setParameters,
+        setEditedTemplateFields,
+        setEditedParameterFields,
+      })
+    } catch (error) {
+      if (isAbortError(error) || templateDetailSequence.current !== requestId) return
       toast.error('Failed to load template')
+    } finally {
+      finishTemplateDetailLoad(templateDetailSequence, requestId, controller, setLoadingTemplateDetail)
     }
   }, [])
 
   const startNewTemplate = () => {
-    setSelectedName(null)
-    setIsNew(true)
-    setNewName('')
-    setTitle('')
-    setGoal('')
-    setCoreDirective('')
-    setModelId(models[0]?.id ?? '')
-    setParameters(DEFAULT_PARAMETERS)
+    resetStateForNewTemplate(
+      {
+        templateMutationSequence,
+        templateMutationAbort,
+        templateEditorRevision,
+        setSaving,
+        templateDetailAbort,
+        modelDetailAbort,
+        modelDetailSequence,
+        modelMutationSequence,
+        modelMutationAbort,
+        modelEditorRevision,
+        setModelSettings,
+        setSavingModel,
+        setDeletingModel,
+        setModelJsonDrafts,
+        setModelJsonErrors,
+        templateDetailSequence,
+        setLoadingTemplateDetail,
+        setTemplateDocument,
+        setSelectedName,
+        setIsNew,
+        setIsNewModelEntry,
+        setNewName,
+        setTitle,
+        setGoal,
+        setCoreDirective,
+        setModelId,
+        setParameters,
+        setEditedTemplateFields,
+        setEditedParameterFields,
+      },
+      firstModelId(models),
+    )
   }
 
   /** Selecting a model from the (now primary) AgentConfig-bound sidebar list
    * — starts a fresh, unsaved template scoped to that model, and loads the
    * model's full editable settings (BUG-260) into the settings form. */
   const selectModel = useCallback(
-    (m: LLMModel) => {
+    function selectModel(m: LLMModel) {
+      templateMutationSequence.current += 1
+      templateMutationAbort.current?.abort()
+      templateMutationAbort.current = null
+      templateEditorRevision.current += 1
+      setSaving(false)
+      templateDetailAbort.current?.abort()
+      templateDetailSequence.current += 1
+      setLoadingTemplateDetail(false)
+      setSavingModel(false)
+      setDeletingModel(false)
+      modelDetailAbort.current?.abort()
+      modelMutationSequence.current += 1
+      modelMutationAbort.current?.abort()
+      modelEditorRevision.current += 1
+      const requestId = modelDetailSequence.current + 1
+      modelDetailSequence.current = requestId
+      const controller = new AbortController()
+      modelDetailAbort.current = controller
       setSelectedName(null)
       setIsNew(true)
+      setTemplateDocument(null)
       setNewName('')
       setTitle('')
       setGoal('')
       setCoreDirective('')
       setModelId(m.id)
       setParameters(DEFAULT_PARAMETERS)
+      setEditedTemplateFields(new Set())
+      setEditedParameterFields(new Set())
       setIsNewModelEntry(false)
+      setModelSettings(null)
+      setModelJsonDrafts({})
+      setModelJsonErrors({})
 
-      void (async () => {
-        try {
-          const detail = await fetchValidated(
-            `/api/enhanced/llm/model-detail?kind=${kind}&model_id=${encodeURIComponent(m.id)}`,
-            z.record(z.string(), z.unknown()),
-          )
-          setModelSettings(detail)
-        } catch {
-          toast.error('Failed to load model settings')
-          setModelSettings(null)
-        }
-      })()
+      void loadSelectedModelSettings({
+        kind,
+        modelId: m.id,
+        requestId,
+        controller,
+        currentSequence: modelDetailSequence,
+        setModelSettings,
+      })
     },
     [kind],
   )
@@ -1016,57 +2690,111 @@ export default function LLMTemplatesView() {
   /** Start defining a brand-new model entry (BUG-260's "creating a model")
    *  rather than editing an existing one — every field defaults per the
    *  schema (`default` on each property, or empty/false for one with none). */
-  const startNewModel = useCallback(() => {
-    setSelectedName(null)
-    setIsNew(false)
-    setIsNewModelEntry(true)
-    setNewModelId('')
-    setNewModelProvider('')
-    const schema = schemas?.[kind]
-    const defaults: Record<string, unknown> = {}
-    if (schema) {
-      for (const [name, prop] of Object.entries(schema.properties)) {
-        if (name === 'id') continue
-        defaults[name] = prop.default ?? null
+  const startNewModel = useCallback(
+    function startNewModel() {
+      templateMutationSequence.current += 1
+      templateMutationAbort.current?.abort()
+      templateMutationAbort.current = null
+      templateEditorRevision.current += 1
+      setSaving(false)
+      templateDetailAbort.current?.abort()
+      templateDetailSequence.current += 1
+      setLoadingTemplateDetail(false)
+      setSavingModel(false)
+      setDeletingModel(false)
+      modelDetailAbort.current?.abort()
+      modelDetailSequence.current += 1
+      modelMutationSequence.current += 1
+      modelMutationAbort.current?.abort()
+      modelMutationAbort.current = null
+      modelEditorRevision.current += 1
+      modelDetailAbort.current = new AbortController()
+      setSelectedName(null)
+      setIsNew(false)
+      setIsNewModelEntry(true)
+      setTemplateDocument(null)
+      setNewModelId('')
+      setNewModelProvider('')
+      const schema = schemas?.[kind]
+      const defaults: Record<string, unknown> = {}
+      if (schema) {
+        for (const [name, prop] of Object.entries(schema.properties)) {
+          if (name === 'id') continue
+          defaults[name] = prop.default ?? null
+        }
       }
-    }
-    setModelSettings(defaults)
-  }, [kind, schemas])
+      setModelSettings(defaults)
+      setModelJsonDrafts({})
+      setModelJsonErrors({})
+      setEditedTemplateFields(new Set())
+      setEditedParameterFields(new Set())
+    },
+    [kind, schemas],
+  )
+
+  const handleKindChange = useCallback(function handleKindChange(value: string) {
+    if (value !== 'chat' && value !== 'embedding') return
+    templateMutationSequence.current += 1
+    templateMutationAbort.current?.abort()
+    templateMutationAbort.current = null
+    templateEditorRevision.current += 1
+    setSaving(false)
+    templateDetailAbort.current?.abort()
+    templateDetailSequence.current += 1
+    setLoadingTemplateDetail(false)
+    modelDetailAbort.current?.abort()
+    modelDetailSequence.current += 1
+    modelMutationSequence.current += 1
+    modelMutationAbort.current?.abort()
+    modelMutationAbort.current = null
+    modelEditorRevision.current += 1
+    setSavingModel(false)
+    setDeletingModel(false)
+    setKind(value)
+    setModelSettings(null)
+    setModelJsonDrafts({})
+    setModelJsonErrors({})
+    setEditedParameterFields(new Set())
+  }, [])
 
   const handleSaveModelSettings = async () => {
     const schema = schemas?.[kind]
-    if (!schema || !modelSettings) return
-    const target = resolveModelSaveTarget({ isNewModelEntry, newModelId, modelId, newModelProvider, modelSettings })
+    const target = prepareModelSave({
+      schema,
+      modelSettings,
+      modelJsonInvalid,
+      isNewModelEntry,
+      newModelId,
+      modelId,
+      newModelProvider,
+    })
     if (!target) return
-    const { targetId, provider } = target
-    setSavingModel(true)
-    try {
-      const payload = { ...modelSettings, id: targetId, provider }
-      const existing = kind === 'chat' ? chatModels : embeddingModels
-      const others = existing.filter((m) => m.id !== targetId)
-      // Upsert: fetch every OTHER model's full settings so the write is a
-      // faithful full-registry replace, not a partial that would drop them
-      // back to their schema defaults.
-      const res = await upsertModelRegistry(kind, payload, others)
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { detail?: string } | null
-        toast.error(body?.detail ?? 'Failed to save model settings')
-        return
-      }
-      toast.success(`Model "${targetId}" saved`)
-      setIsNewModelEntry(false)
-      setModelId(targetId)
-      await loadAll()
-      const refreshed = await fetchValidated(
-        `/api/enhanced/llm/model-detail?kind=${kind}&model_id=${encodeURIComponent(targetId)}`,
-        z.record(z.string(), z.unknown()),
-      )
-      setModelSettings(refreshed)
-    } catch {
-      toast.error('Error saving model settings')
-    } finally {
-      setSavingModel(false)
-    }
+    const { targetId, provider, modelSettings: settings } = target
+    const selectionRequestId = modelDetailSequence.current
+    const selectionController = activeAbortController(modelDetailAbort.current)
+    const editorRevisionAtStart = modelEditorRevision.current
+    const payload = { ...settings, id: targetId, provider }
+    const otherModels = models.filter((model) => model.id !== targetId)
+    await executeModelSave({
+      kind,
+      payload,
+      otherModels,
+      targetId,
+      selectionRequestId,
+      editorRevisionAtStart,
+      selectionController,
+      modelDetailSequence,
+      modelMutationSequence,
+      modelMutationAbort,
+      modelEditorRevision,
+      setSavingModel,
+      loadAll,
+      setIsNewModelEntry,
+      setModelId,
+      setModelSettings,
+      setModelJsonDrafts,
+      setModelJsonErrors,
+    })
   }
 
   /** Remove a model from AgentConfig's `chat_models`/`embedding_models`
@@ -1076,90 +2804,131 @@ export default function LLMTemplatesView() {
    *  "resubmit the list without this entry," the same full-registry-replace
    *  discipline `handleSaveModelSettings` already uses for create/edit. */
   const handleDeleteModel = async () => {
-    if (isNewModelEntry || !selectedModel) return
-    const targetId = selectedModel.id
-    if (!window.confirm(`Remove ${targetId} from the ${kind} model registry?`)) return
-    setDeletingModel(true)
-    try {
-      const existing = kind === 'chat' ? chatModels : embeddingModels
-      const others = existing.filter((m) => m.id !== targetId)
-      const detailUrl = `/api/enhanced/llm/${kind === 'chat' ? 'models' : 'embedding-models'}`
-      const otherDetails = await Promise.all(
-        others.map((m) =>
-          fetchValidated(
-            `/api/enhanced/llm/model-detail?kind=${kind}&model_id=${encodeURIComponent(m.id)}`,
-            z.record(z.string(), z.unknown()),
-          ),
-        ),
-      )
-      const res = await fetch(detailUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ models: otherDetails }),
-      })
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { detail?: string } | null
-        toast.error(body?.detail ?? 'Failed to remove model')
-        return
-      }
-      toast.success(`Model "${targetId}" removed`)
-      setModelSettings(null)
-      setModelId('')
-      await loadAll()
-    } catch {
-      toast.error('Error removing model')
-    } finally {
-      setDeletingModel(false)
-    }
+    const targetId = resolveModelDeleteTarget(isNewModelEntry, selectedModel, kind)
+    if (!targetId) return
+    await executeModelDelete({
+      kind,
+      models,
+      targetId,
+      selectionRequestId: modelDetailSequence.current,
+      modelDetailSequence,
+      modelDetailAbort,
+      setDeletingModel,
+      loadAll,
+      setModelSettings,
+      setModelJsonDrafts,
+      setModelJsonErrors,
+      setModelId,
+    })
   }
 
   const handleSave = async () => {
-    const targetName = isNew ? newName.trim() : selectedName
-    if (!targetName) {
-      toast.error('Give the template a name first')
-      return
-    }
-    if (!/^[A-Za-z0-9_-]{1,128}$/.test(targetName)) {
-      toast.error('Template name may only contain letters, numbers, "-", and "_"')
-      return
-    }
+    const targetName = resolveTemplateSaveTarget(isNew, newName, selectedName)
+    if (!targetName) return
+    const selectionAtStart = templateDetailSequence.current
+    const editorRevisionAtStart = templateEditorRevision.current
+    templateMutationAbort.current?.abort()
+    const mutationId = templateMutationSequence.current + 1
+    templateMutationSequence.current = mutationId
+    const controller = new AbortController()
+    templateMutationAbort.current = controller
     setSaving(true)
     try {
-      const payload: Record<string, unknown> = {
-        title: title || targetName,
-        goal,
-        core_directive: coreDirective,
-        model: modelId,
+      const payload = buildTemplatePayload({
+        templateDocument,
         parameters,
-      }
-      const res = await fetch(`/api/enhanced/prompts/${targetName}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        editedParameterFields,
+        editedTemplateFields,
+        targetName,
+        title,
+        goal,
+        coreDirective,
+        modelId,
       })
-      if (!res.ok) {
-        toast.error('Failed to save template')
-        return
-      }
-      toast.success(`Template "${targetName}" saved`)
-      setIsNew(false)
-      setSelectedName(targetName)
-      void loadAll()
-    } catch {
-      toast.error('Error sending save request')
+      await runTemplateSaveWorkflow({
+        targetName,
+        payload,
+        controller,
+        selectionAtStart,
+        editorRevisionAtStart,
+        templateMutationSequence,
+        templateMutationId: mutationId,
+        templateDetailSequence,
+        templateEditorRevision,
+        setIsNew,
+        setSelectedName,
+        setTemplateDocument,
+        setEditedTemplateFields,
+        setEditedParameterFields,
+        loadAll,
+      })
+    } catch (error) {
+      reportTemplateSaveError({
+        error,
+        mutationSequence: templateMutationSequence,
+        mutationId,
+        detailSequence: templateDetailSequence,
+        selectionAtStart,
+        editorRevision: templateEditorRevision,
+        editorRevisionAtStart,
+      })
     } finally {
-      setSaving(false)
+      finishTemplateSave(templateMutationSequence, mutationId, controller, templateMutationAbort, setSaving)
     }
   }
 
-  const filteredModels = models.filter(
-    (m) =>
-      m.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (m.intelligence_level ?? '').toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  const handleRefreshModels = () => {
+    void loadAll()
+  }
+
+  const handleSearchModels = (event: ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(event.target.value)
+  }
+
+  const handleTemplateSaveClick = () => {
+    void handleSave()
+  }
+
+  const handleModelSettingsChange = (field: string, value: unknown) => {
+    modelEditorRevision.current += 1
+    setModelSettings((previous) => updateModelSetting(previous, field, value))
+  }
+
+  const handleDeleteModelClick = () => {
+    void handleDeleteModel()
+  }
+
+  const handleSaveModelClick = () => {
+    void handleSaveModelSettings()
+  }
+
+  const handleLoadTemplate = (name: string) => {
+    void loadTemplate(name)
+  }
+
+  const handleNewTemplateNameChange = (value: string) => {
+    templateEditorRevision.current += 1
+    setNewName(value)
+  }
+
+  const handleTitleChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setTitle(event.target.value)
+    markTemplateFieldEdited('title')
+  }
+
+  const handleGoalChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setGoal(event.target.value)
+    markTemplateFieldEdited('goal')
+  }
+
+  const handleCoreDirectiveChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setCoreDirective(event.target.value)
+    markTemplateFieldEdited('core_directive')
+  }
+
+  const filteredModels = filterModels(models, searchQuery)
   const selectedModel = models.find((m) => m.id === modelId)
-  const activeSchema = schemas?.[kind] ?? null
+  const activeSchema = activeSchemaForKind(schemas, kind)
 
   if (sessionExpired) {
     return <SessionExpiredNotice />
@@ -1181,32 +2950,30 @@ export default function LLMTemplatesView() {
               <Button
                 variant="outline"
                 size="icon"
+                type="button"
                 className="h-8 w-8"
                 onClick={startNewTemplate}
                 title="New template"
+                aria-label="New template"
               >
                 <Plus className="h-4 w-4" />
               </Button>
               <Button
                 variant="outline"
                 size="icon"
+                type="button"
                 className="h-8 w-8"
-                onClick={() => {
-                  void loadAll()
-                }}
+                onClick={handleRefreshModels}
+                aria-label="Refresh models and templates"
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           </div>
-          <CardDescription>Model/LLM configuration from AgentConfig&apos;s chat/embedding registries.</CardDescription>
-          <Tabs
-            value={kind}
-            onValueChange={(v) => {
-              setKind(v as ModelKind)
-            }}
-            className="mt-1"
-          >
+          <CardDescription>
+            Choose a chat or embedding model from the active AgentConfig registry, then select it to edit its settings.
+          </CardDescription>
+          <Tabs value={kind} onValueChange={handleKindChange} className="mt-1">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="chat">Chat models</TabsTrigger>
               <TabsTrigger value="embedding">Embedding models</TabsTrigger>
@@ -1215,15 +2982,14 @@ export default function LLMTemplatesView() {
           <div className="relative mt-2">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
+              aria-label="Search models"
               placeholder="Search models..."
               value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value)
-              }}
+              onChange={handleSearchModels}
               className="pl-8 h-9"
             />
           </div>
-          <Button variant="outline" size="sm" className="mt-2 w-full" onClick={startNewModel}>
+          <Button variant="outline" size="sm" type="button" className="mt-2 w-full" onClick={startNewModel}>
             <Plus className="h-3.5 w-3.5 mr-1.5" />
             New {kind} model
           </Button>
@@ -1252,16 +3018,14 @@ export default function LLMTemplatesView() {
               {composerTitle(isNewModelEntry, kind, selectedModel)}
             </CardTitle>
             <CardDescription>
-              Model configuration from AgentConfig (editable, BUG-260), plus an optional saved template (generation
-              parameters + system prompt) that pairs with it.
+              Edit the selected model, or create a reusable template with a system instruction and generation settings.
             </CardDescription>
           </div>
           <Button
             size="sm"
-            onClick={() => {
-              void handleSave()
-            }}
-            disabled={isSaveTemplateDisabled(saving, isNew, selectedName)}
+            type="button"
+            onClick={handleTemplateSaveClick}
+            disabled={loadingTemplateDetail || isSaveTemplateDisabled(saving, isNew, selectedName, newName)}
             className="bg-emerald-600 hover:bg-emerald-700"
           >
             <Save className="size-4 mr-1.5" />
@@ -1280,65 +3044,85 @@ export default function LLMTemplatesView() {
               savingModel,
               newModelId,
               newModelProvider,
-              setNewModelId,
-              setNewModelProvider,
-              setModelSettings,
-              onDeleteModel: () => {
-                void handleDeleteModel()
-              },
-              onSaveModelSettings: () => {
-                void handleSaveModelSettings()
-              },
+              jsonDrafts: modelJsonDrafts,
+              jsonErrors: modelJsonErrors,
+              setNewModelId: handleNewModelIdChange,
+              setNewModelProvider: handleNewModelProviderChange,
+              onModelSettingsChange: handleModelSettingsChange,
+              onJsonDraftChange: handleModelJsonDraftChange,
+              modelJsonInvalid,
+              onDeleteModel: handleDeleteModelClick,
+              onSaveModelSettings: handleSaveModelClick,
             })}
 
             {existingTemplatePicker({
               templates,
               selectedName,
-              onLoadTemplate: (name) => {
-                void loadTemplate(name)
-              },
+              onLoadTemplate: handleLoadTemplate,
             })}
 
-            {newTemplateNameField({ isNew, newName, setNewName })}
+            {newTemplateNameField({
+              isNew,
+              newName,
+              setNewName: handleNewTemplateNameChange,
+            })}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground">Display title</label>
+                <label htmlFor="template-display-title" className="text-xs font-semibold text-muted-foreground">
+                  Display title
+                </label>
                 <Input
+                  id="template-display-title"
+                  aria-describedby="template-display-title-help"
                   value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value)
-                  }}
+                  onChange={handleTitleChange}
+                  placeholder="e.g. Release notes writer"
                 />
+                <p id="template-display-title-help" className="text-[11px] text-muted-foreground">
+                  The friendly title people see when they choose this template.
+                </p>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground">Goal (one sentence)</label>
+                <label htmlFor="template-goal" className="text-xs font-semibold text-muted-foreground">
+                  Goal (one sentence)
+                </label>
                 <Input
+                  id="template-goal"
+                  aria-describedby="template-goal-help"
                   value={goal}
-                  onChange={(e) => {
-                    setGoal(e.target.value)
-                  }}
+                  onChange={handleGoalChange}
+                  placeholder="e.g. Turn a code diff into concise release notes"
                 />
+                <p id="template-goal-help" className="text-[11px] text-muted-foreground">
+                  A short description helps others decide when to use this template.
+                </p>
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+              <label
+                htmlFor="template-core-directive"
+                className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"
+              >
                 <Eye className="h-3.5 w-3.5" />
                 System prompt / core directive
               </label>
               <Textarea
+                id="template-core-directive"
+                aria-describedby="template-core-directive-help"
                 value={coreDirective}
-                onChange={(e) => {
-                  setCoreDirective(e.target.value)
-                }}
+                onChange={handleCoreDirectiveChange}
                 rows={6}
                 className="font-mono text-xs"
                 placeholder="You are ..."
               />
+              <p id="template-core-directive-help" className="text-[11px] text-muted-foreground">
+                The system instruction the model receives before the user&apos;s request.
+              </p>
             </div>
 
-            {templateParametersPanel({ parameters, setParameters })}
+            {templateParametersPanel({ parameters, onParameterChange: handleTemplateParameterChange })}
           </CardContent>
         </ScrollArea>
       </Card>
