@@ -23,31 +23,27 @@
  */
 
 import { useEffect, useMemo, useState, Suspense, lazy, type ReactNode } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppSidebar } from './components/app-sidebar.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
 import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
-import { cn } from './lib/utils.ts'
 import ChatPanel from './components/ChatPanel'
-import { ROUTES, matchRoute, roleAtLeast, type RouteDef } from './lib/nav-registry.ts'
 import { useIdentity, type Identity } from './lib/auth.ts'
+import { MCPProvider } from './lib/mcp-context.tsx'
+import { ROUTES, matchRoute, roleAtLeast, type RouteDef } from './lib/nav-registry.ts'
+import { getDefaultPageActions, PageContextProvider, type PageContextSelection } from './lib/page-context.tsx'
+import { cn } from './lib/utils.ts'
+import { WebMcpProvider } from './lib/webmcp/provider.tsx'
 
 // Lazy: only reachable behind `isObjectDetail`. A static import here pinned it
 // into the entry chunk and defeated nav-registry's dynamic import of the same
 // module (vite: "dynamically imported ... but also statically imported").
 //
-// Declared BELOW every import, not among them: WD4-WEB-03 placed it mid-import
-// block, which is exactly what raised the five `import-x/first` errors that
-// WD4-WEB-00 cleared on main. Both changes are kept; only the placement moves.
+// Declared below the complete import block: placing a lazy initializer between
+// imports breaks the `import-x/first` module-order contract.
 const ObjectView = lazy(() => import('./components/views/ObjectView'))
-
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MCPProvider } from './lib/mcp-context.tsx'
-import { getDefaultPageActions, PageContextProvider, type PageContextSelection } from './lib/page-context.tsx'
-// Lazy: only reachable behind `isObjectDetail`. A static import here pinned it
-// into the entry chunk and defeated nav-registry's dynamic import of the same
-// module (vite: "dynamically imported ... but also statically imported").
 
 /**
  * Global React Query client instance for managing server state.
@@ -154,6 +150,7 @@ function useRouteState() {
     objectId,
     currentView,
     identity,
+    identityLoading,
     routeAccessDenied,
   }
 }
@@ -222,6 +219,7 @@ export default function App() {
     objectId,
     currentView,
     identity,
+    identityLoading,
     routeAccessDenied,
   } = useRouteState()
 
@@ -242,40 +240,44 @@ export default function App() {
               baseSelection={baseSelection}
               allowedActions={allowedActions}
             >
-              <SidebarProvider defaultOpen>
-                <AppSidebar />
+              <WebMcpProvider identity={identity} identityLoading={identityLoading}>
+                <SidebarProvider defaultOpen>
+                  <AppSidebar />
 
-                <div className="flex flex-col justify-center flex-1 h-screen overflow-hidden">
-                  {/* Mobile Header: Only visible on small screens */}
-                  <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:hidden">
-                    <SidebarTrigger className="-ml-1" />
-                    <div className="flex items-center gap-2 px-3">
-                      <span className="text-lg">🤖</span>
-                      <span className="text-sm font-bold truncate">Genius Agent</span>
-                    </div>
-                  </header>
-
-                  {/* Dashboard View — Agent-OS Homepage (default landing, always mounted) */}
-                  <div className={cn('flex flex-col w-full h-full overflow-hidden', isDashboard ? 'block' : 'hidden')}>
-                    <Suspense fallback={<RouteLoadingFallback />}>
-                      <DashboardElement />
-                    </Suspense>
-                  </div>
-
-                  {/* Every other registered route (rendered conditionally) */}
-                  {!isChat && !isDashboard && (
-                    <div className="flex flex-col flex-1 h-screen overflow-auto p-8">
-                      <div className="mx-auto w-full">
-                        {routeAccessDenied
-                          ? renderRouteAccessDenied(activeRoute!, identity)
-                          : renderRouteBody(activeRoute!, isObjectDetail, objectId)}
+                  <div className="flex flex-col justify-center flex-1 h-screen overflow-hidden">
+                    {/* Mobile Header: Only visible on small screens */}
+                    <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:hidden">
+                      <SidebarTrigger className="-ml-1" />
+                      <div className="flex items-center gap-2 px-3">
+                        <span className="text-lg">🤖</span>
+                        <span className="text-sm font-bold truncate">Genius Agent</span>
                       </div>
+                    </header>
+
+                    {/* Dashboard View — Agent-OS Homepage (default landing, always mounted) */}
+                    <div
+                      className={cn('flex flex-col w-full h-full overflow-hidden', isDashboard ? 'block' : 'hidden')}
+                    >
+                      <Suspense fallback={<RouteLoadingFallback />}>
+                        <DashboardElement />
+                      </Suspense>
                     </div>
-                  )}
-                  {/* One stable assistant instance: full-page on /chat, drawer everywhere else. */}
-                  <ChatPanel currentView={currentView} isPrimary={currentView === 'chat'} />
-                </div>
-              </SidebarProvider>
+
+                    {/* Every other registered route (rendered conditionally) */}
+                    {!isChat && !isDashboard && (
+                      <div className="flex flex-col flex-1 h-screen overflow-auto p-8">
+                        <div className="mx-auto w-full">
+                          {routeAccessDenied
+                            ? renderRouteAccessDenied(activeRoute!, identity)
+                            : renderRouteBody(activeRoute!, isObjectDetail, objectId)}
+                        </div>
+                      </div>
+                    )}
+                    {/* One stable assistant instance: full-page on /chat, drawer everywhere else. */}
+                    <ChatPanel currentView={currentView} isPrimary={currentView === 'chat'} />
+                  </div>
+                </SidebarProvider>
+              </WebMcpProvider>
             </PageContextProvider>
           </ThemeProvider>
         </MCPProvider>
