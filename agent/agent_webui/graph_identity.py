@@ -282,7 +282,9 @@ def _require_audience_and_policy(config: Any) -> tuple[str, str]:
     return audience, policy_version
 
 
-def _elevate_actor_for_admin(actor: Any, actor_id: str, token_scopes: frozenset[str]) -> Any:
+def _elevate_actor_for_admin(
+    actor: Any, actor_id: str, token_scopes: frozenset[str]
+) -> Any:
     """AUTHZ LANE B — admin elevation, re-derived on EVERY mint (never stored;
     see the module docstring, "Admin elevation is DERIVED, never stored")."""
     if 'kg:admin' in token_scopes:
@@ -306,7 +308,9 @@ def _elevate_actor_for_admin(actor: Any, actor_id: str, token_scopes: frozenset[
     return actor
 
 
-def _expand_graph_scopes(effective_actor: Any, graph_auth_scopes: frozenset[str]) -> frozenset[str]:
+def _expand_graph_scopes(
+    effective_actor: Any, graph_auth_scopes: frozenset[str]
+) -> frozenset[str]:
     """Coarse KG scopes are hierarchical: an administrator implies write+read
     and a writer implies the authorization-safe precondition reads it must
     make. Expanded here exactly as the shared minter expands it."""
@@ -323,7 +327,9 @@ def _expand_graph_scopes(effective_actor: Any, graph_auth_scopes: frozenset[str]
     return scopes
 
 
-def _log_session_minted(session: GraphSession, tenant: str, graph: str, commons_graph: str) -> None:
+def _log_session_minted(
+    session: GraphSession, tenant: str, graph: str, commons_graph: str
+) -> None:
     """Observability (D-TGS-1): a session confined to one physical shard must
     never be silently indistinguishable from one that sees everything. Log
     the resolved graph and, explicitly, whether it is the shared commons or

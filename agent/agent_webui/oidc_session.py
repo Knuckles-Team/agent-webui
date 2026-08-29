@@ -63,7 +63,7 @@ import os
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeGuard
 from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
@@ -766,7 +766,9 @@ class OIDCBrowserSessionMiddleware:
         return scope_type == 'http' and path in _OWNED_PATHS
 
     @staticmethod
-    def _session_has_access_token(session: dict[str, Any] | None) -> bool:
+    def _session_has_access_token(
+        session: dict[str, Any] | None,
+    ) -> TypeGuard[dict[str, Any]]:
         return bool(session and session.get('access_token'))
 
     def _is_navigable_http(self, scope_type: str, scope: Any) -> bool:

@@ -23,31 +23,26 @@
  */
 
 import { useEffect, useMemo, useState, Suspense, lazy, type ReactNode } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppSidebar } from './components/app-sidebar.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
 import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
-import { cn } from './lib/utils.ts'
 import ChatPanel from './components/ChatPanel'
-import { ROUTES, matchRoute, roleAtLeast, type RouteDef } from './lib/nav-registry.ts'
 import { useIdentity, type Identity } from './lib/auth.ts'
+import { MCPProvider } from './lib/mcp-context.tsx'
+import { ROUTES, matchRoute, roleAtLeast, type RouteDef } from './lib/nav-registry.ts'
+import { getDefaultPageActions, PageContextProvider, type PageContextSelection } from './lib/page-context.tsx'
+import { cn } from './lib/utils.ts'
 
 // Lazy: only reachable behind `isObjectDetail`. A static import here pinned it
 // into the entry chunk and defeated nav-registry's dynamic import of the same
 // module (vite: "dynamically imported ... but also statically imported").
 //
-// Declared BELOW every import, not among them: WD4-WEB-03 placed it mid-import
-// block, which is exactly what raised the five `import-x/first` errors that
-// WD4-WEB-00 cleared on main. Both changes are kept; only the placement moves.
+// Declared below the complete import block: placing a lazy initializer between
+// imports breaks the `import-x/first` module-order contract.
 const ObjectView = lazy(() => import('./components/views/ObjectView'))
-
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MCPProvider } from './lib/mcp-context.tsx'
-import { getDefaultPageActions, PageContextProvider, type PageContextSelection } from './lib/page-context.tsx'
-// Lazy: only reachable behind `isObjectDetail`. A static import here pinned it
-// into the entry chunk and defeated nav-registry's dynamic import of the same
-// module (vite: "dynamically imported ... but also statically imported").
 
 /**
  * Global React Query client instance for managing server state.
