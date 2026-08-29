@@ -126,6 +126,17 @@ export interface RouteDef {
   path: string
   label: string
   section: SectionId
+  /**
+   * Where this route is surfaced. Primary routes appear in the global sidebar;
+   * Atlas routes remain directly addressable and are linked from Atlas's guided or
+   * expert index; deep links are reached from a selection or another capability.
+   *
+   * Omitted means `primary`, which keeps the registry additive for non-Knowledge
+   * routes while making the Knowledge consolidation explicit at each affected entry.
+   */
+  navigation?: 'primary' | 'atlas' | 'deep-link'
+  /** Audience-facing grouping used by Atlas's progressive-disclosure launchpad. */
+  atlasTier?: 'guided' | 'expert'
   /** One plain-English sentence: what this page does FOR THE USER. No jargon. Mandatory. */
   blurb: string
   /** Slug into the Documentation section's "What is this?" entry, once one exists. */
@@ -347,6 +358,7 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/explore',
     label: 'Atlas',
     section: 'knowledge',
+    navigation: 'primary',
     blurb:
       'Explore every kind of data the graph holds — filter it one way, then view it as a table, a tree, or in 3D.',
     icon: Compass,
@@ -361,6 +373,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/graph',
     label: 'Knowledge Graph',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'guided',
     blurb: 'Explore how people, systems, and ideas connect as an interactive graph.',
     icon: Network,
     minRole: 'reader',
@@ -372,6 +386,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/graph-3d',
     label: 'Knowledge Graph 3D',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'expert',
     blurb: 'Fly through the connected core of the graph in 3D — orbit, focus a node, expand its neighbours.',
     icon: Boxes,
     minRole: 'reader',
@@ -383,6 +399,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/graph-3d/lod',
     label: 'Knowledge Graph 3D — LOD',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'expert',
     blurb: 'Millions of nodes as clusters sized by member count — drill into one to fetch and render its children.',
     icon: Layers,
     minRole: 'reader',
@@ -394,6 +412,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/temporal-graph',
     label: 'Temporal Graph',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'expert',
     blurb: 'Rewind the knowledge graph to see what it looked like at any point in time.',
     icon: History,
     minRole: 'reader',
@@ -405,6 +425,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/code-graph',
     label: 'Code Graph',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'expert',
     blurb: 'Trace how a piece of code is used and what it depends on, across every repository.',
     icon: Code2,
     // BUG-023: `CodeGraphView`'s entire data path (`/api/enhanced/code/
@@ -419,6 +441,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/viz',
     label: 'Visualizations',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'expert',
     blurb: 'High-density charts and graph renders, generated server-side through the eg-viz LOD pipeline.',
     icon: Zap,
     minRole: 'reader',
@@ -430,6 +454,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/extraction',
     label: 'KG Extraction',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'expert',
     blurb: 'Turn a document or web page into structured knowledge-graph facts.',
     icon: Network,
     minRole: 'user',
@@ -441,6 +467,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/explorer',
     label: 'Object Explorer',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'guided',
     blurb: 'Search, filter, and bulk-edit sets of knowledge-graph objects at once.',
     icon: Boxes,
     minRole: 'user',
@@ -452,6 +480,7 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/object/:id',
     label: 'Object',
     section: 'knowledge',
+    navigation: 'deep-link',
     blurb: 'See everything known about one object: its properties, links, and history.',
     icon: Boxes,
     minRole: 'reader',
@@ -467,6 +496,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/vertex',
     label: 'Vertex Explorer',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'expert',
     blurb: "Expand outward from an object on a graph canvas and test 'what if' changes.",
     icon: Waypoints,
     minRole: 'user',
@@ -478,6 +509,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/schema',
     label: 'Schema View',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'guided',
     blurb: 'See the types of things the knowledge graph can hold and how they relate.',
     icon: Shapes,
     minRole: 'reader',
@@ -489,6 +522,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/sparql',
     label: 'SPARQL & SHACL',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'expert',
     blurb: 'Write advanced graph queries and check data against validation rules.',
     icon: FileCheck2,
     minRole: 'maintainer',
@@ -500,6 +535,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/cypher',
     label: 'Cypher Console',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'expert',
     blurb: 'Run raw graph-database queries directly against the knowledge graph.',
     icon: Terminal,
     // BUG-023: `CypherReplView`'s sole endpoint is `/api/enhanced/graph/query`
@@ -517,6 +554,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/catalogue',
     label: 'Ontology Catalogue',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'expert',
     blurb: 'Browse, search, and import ready-made ontologies to extend the knowledge graph.',
     icon: LibraryBig,
     minRole: 'user',
@@ -528,6 +567,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/magma',
     label: 'Perspective Views',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'expert',
     blurb: 'Look at the same knowledge through different lenses, like cause-and-effect or time.',
     icon: Compass,
     minRole: 'user',
@@ -539,6 +580,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/data-analyst',
     label: 'Data Analyst',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'guided',
     blurb: 'Ask a question in plain English and get back a chart or table of the answer.',
     icon: Database,
     minRole: 'user',
@@ -550,6 +593,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/table-explorer',
     label: 'Table Explorer',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'expert',
     blurb: 'Browse the SQL catalog, inspect column statistics, and manage per-column vector search.',
     icon: Table2,
     // Raw SQL execution surface (`POST /graph/table {action:'query'}`, engine-side
@@ -566,6 +611,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/knowledge',
     label: 'Knowledge Base',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'guided',
     blurb: 'Search the documents and notes the agent has been given to work from.',
     icon: Book,
     // BUG-023: `KnowledgeBaseView`'s entire data path (`/api/enhanced/kb/
@@ -582,6 +629,8 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/memories',
     label: 'Memories',
     section: 'knowledge',
+    navigation: 'atlas',
+    atlasTier: 'guided',
     blurb: 'See and manage the facts the agent has chosen to remember about you and your work.',
     icon: Brain,
     minRole: 'user',
@@ -941,9 +990,29 @@ export function isDynamicPath(path: string): boolean {
   return path.includes(':')
 }
 
-/** Routes belonging to `section`, in declaration order, excluding dynamic-param routes. */
+/** True for routes surfaced in the global sidebar rather than Atlas or a deep link. */
+export function isPrimaryNavRoute(route: RouteDef): boolean {
+  return route.navigation !== 'atlas' && route.navigation !== 'deep-link' && !isDynamicPath(route.path)
+}
+
+/** Primary navigation routes belonging to `section`, excluding dynamic-param routes. */
 export function routesBySection(section: SectionId): RouteDef[] {
-  return ROUTES.filter((route) => route.section === section && !isDynamicPath(route.path))
+  return ROUTES.filter((route) => route.section === section && isPrimaryNavRoute(route))
+}
+
+/**
+ * Knowledge routes intentionally consolidated under Atlas. Dynamic object routes stay
+ * deep-link-only; callers that need a specific object still resolve them through
+ * `matchRoute` and can render the normal Atlas sidebar state.
+ */
+export function routesForAtlas(tier?: 'guided' | 'expert'): RouteDef[] {
+  return ROUTES.filter(
+    (route) =>
+      route.section === 'knowledge' &&
+      route.navigation === 'atlas' &&
+      !isDynamicPath(route.path) &&
+      (tier === undefined || route.atlasTier === tier),
+  )
 }
 
 /** Matches a pathname against a route `path` pattern, extracting any `:param` segments. */
@@ -981,4 +1050,14 @@ export function matchRoute(pathname: string): { route: RouteDef; params: Record<
     if (match) return match
   }
   return null
+}
+
+/** True when a path belongs to Atlas's consolidated Knowledge journey. */
+export function isAtlasPath(pathname: string): boolean {
+  const matched = matchRoute(pathname)
+  return (
+    matched?.route.id === 'knowledge.atlas' ||
+    (matched?.route.section === 'knowledge' &&
+      (matched.route.navigation === 'atlas' || matched.route.navigation === 'deep-link'))
+  )
 }

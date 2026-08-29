@@ -54,7 +54,10 @@ export function AtlasWorkbench() {
   return (
     <>
       <WebMcpAtlasRegistrar atlas={atlas} />
-      <div className="flex h-[calc(100vh-8rem)] min-h-0 flex-col gap-2" data-testid="atlas-workbench">
+      <div
+        className="flex min-h-[32rem] flex-col gap-2 lg:h-[calc(100vh-8rem)] lg:min-h-0"
+        data-testid="atlas-workbench"
+      >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <ModalityPicker
             adapters={atlas.adapters}
@@ -66,6 +69,39 @@ export function AtlasWorkbench() {
           <span className="text-muted-foreground text-xs">
             graph: {state.ctx.graph ?? 'union read (all accessible graphs)'}
           </span>
+        </div>
+
+        <div className="grid min-h-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:hidden">
+          <details className="min-h-0 overflow-hidden rounded-md border" data-testid="atlas-sources-mobile">
+            <summary className="cursor-pointer p-2 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+              Sources
+            </summary>
+            <div className="h-64 min-h-0 border-t">
+              <SourceTree
+                schema={atlas.schema}
+                loading={atlas.schemaLoading}
+                testId="atlas-schema-tree-mobile"
+                onSeed={(text) => {
+                  dispatch({ type: 'seedQuery', text })
+                }}
+              />
+            </div>
+          </details>
+          <details className="min-h-0 overflow-hidden rounded-md border" data-testid="atlas-inspector-mobile">
+            <summary className="cursor-pointer p-2 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+              Selection details
+            </summary>
+            <div className="h-64 min-h-0 border-t">
+              <InspectorPanel
+                selection={state.selection}
+                pivots={pivots}
+                testId="atlas-inspector-mobile-panel"
+                onPivot={(pivot) => {
+                  dispatch({ type: 'applyPivot', pivot })
+                }}
+              />
+            </div>
+          </details>
         </div>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 lg:grid-cols-[16rem_minmax(0,1fr)_20rem]">

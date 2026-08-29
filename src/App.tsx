@@ -195,6 +195,23 @@ function navigateToObjectId(id: string): void {
   window.dispatchEvent(new Event('history-state-changed'))
 }
 
+/** Routes whose page owns the complete heading and needs no generic shell heading. */
+const ROUTES_WITH_OWN_HEADING = new Set<RouteDef['id']>(['knowledge.atlas'])
+
+function routeOwnsHeading(route: RouteDef): boolean {
+  return ROUTES_WITH_OWN_HEADING.has(route.id)
+}
+
+function renderRouteHeading(route: RouteDef): ReactNode {
+  if (routeOwnsHeading(route)) return null
+  return (
+    <>
+      <h1 className="text-2xl font-bold mb-1">{route.label}</h1>
+      <p className="text-sm text-muted-foreground mb-4">{route.blurb}</p>
+    </>
+  )
+}
+
 /** The generic "other route" body: either the Object-detail view or the route's own
  * `RouteDef.element`. `route` is guaranteed non-null by the caller (see above). */
 function renderRouteBody(route: RouteDef, isObjectDetail: boolean, objectId: string): ReactNode {
@@ -207,8 +224,7 @@ function renderRouteBody(route: RouteDef, isObjectDetail: boolean, objectId: str
   }
   return (
     <>
-      <h1 className="text-2xl font-bold mb-1">{route.label}</h1>
-      <p className="text-sm text-muted-foreground mb-4">{route.blurb}</p>
+      {renderRouteHeading(route)}
       <Suspense fallback={<RouteLoadingFallback />}>
         <route.element />
       </Suspense>

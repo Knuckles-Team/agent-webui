@@ -28,6 +28,7 @@ provider, channel, destination, or retention period.
 - **Backend Abstraction**: GraphBackend factory supporting LadybugDB (default), FalkorDB, and Neo4j for hot-swappable database backends
 - **ACP protocol** now routes through the full HSM graph pipeline (not a flat agent) via `create_graph_acp_app()`
 - **Graph Activity visualization** (`GraphActivity.tsx`) shows specialist routing decisions, parallel execution status, tool calls, and expert reasoning in a collapsible timeline
+- **Atlas Knowledge workspace** (`AtlasWorkspace.tsx`) consolidates Knowledge navigation into one guided entry while keeping expert specialist routes and deep links available
 - Backend uses `create_agent_web_app()` in `agent/agent_webui/server.py` to compose Pydantic AI web routes with enhanced workspace APIs
 - **Unified execution**: all protocols (AG-UI, ACP, SSE /stream) share the same graph engine via `graph/unified.py`
 - **Human-in-the-loop approval** (`ApprovalCard.tsx`) intercepts security-sensitive tool calls before execution

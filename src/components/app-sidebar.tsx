@@ -32,7 +32,7 @@ import {
   useConversationIdFromUrl,
 } from '@/hooks/useConversationIdFromUrl'
 import { cn } from '@/lib/utils'
-import { SECTIONS, roleAtLeast, routesBySection } from '@/lib/nav-registry'
+import { isAtlasPath, SECTIONS, roleAtLeast, routesBySection } from '@/lib/nav-registry'
 import { useIdentity } from '@/lib/auth'
 import { deleteConversationEntry, renameConversationEntry, useConversations } from '@/lib/chat-store'
 import type { ConversationEntry } from '@/types'
@@ -211,7 +211,11 @@ export function AppSidebar() {
                 <SidebarMenu className="mb-2">
                   {routes.map((route) => {
                     const Icon = route.icon
-                    const active = route.path === currentPath
+                    // Atlas owns the whole Knowledge journey. Keep its primary
+                    // entry active while an expert/deep-link route is open so a
+                    // direct link never strands the user outside the consolidated IA.
+                    const active =
+                      route.path === currentPath || (route.id === 'knowledge.atlas' && isAtlasPath(currentPath))
                     return (
                       <SidebarMenuItem key={route.id}>
                         <SidebarMenuButton asChild isActive={active} tooltip={route.blurb}>

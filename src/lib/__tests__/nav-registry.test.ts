@@ -3,7 +3,15 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { ROUTES, SECTIONS, isDynamicPath, matchRoute, routesBySection } from '../nav-registry'
+import {
+  ROUTES,
+  SECTIONS,
+  isAtlasPath,
+  isPrimaryNavRoute,
+  matchRoute,
+  routesBySection,
+  routesForAtlas,
+} from '../nav-registry'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const VIEWS_DIR = join(HERE, '..', '..', 'components', 'views')
@@ -102,11 +110,11 @@ describe('nav-registry: ROUTES', () => {
   // no left-nav entry, so it was unreachable once you clicked anywhere else — a page
   // can be perfectly wired into ROUTES (proven above) and STILL be an orphan if it
   // isn't reachable from the one navigation surface (`app-sidebar.tsx`, driven by
-  // `routesBySection`). This closes that gap: every non-dynamic route must appear in
-  // its section's sidebar listing, and the app's actual landing target ('/') must
-  // resolve to one of them.
-  it('has no orphans: every reachable route is listed in its section, and the landing route resolves to one', () => {
-    const nonDynamicRoutes = ROUTES.filter((route) => !isDynamicPath(route.path))
+  // `routesBySection`). Atlas routes are intentionally omitted from that global list,
+  // so only primary routes participate in this check; their own Atlas index is tested
+  // below.
+  it('has no primary-nav orphans, and the landing route resolves to one', () => {
+    const nonDynamicRoutes = ROUTES.filter(isPrimaryNavRoute)
     const sectionIds = new Set(SECTIONS.map((section) => section.id))
     const listedIds = new Set(SECTIONS.flatMap((section) => routesBySection(section.id).map((route) => route.id)))
 
@@ -131,5 +139,24 @@ describe('nav-registry: ROUTES', () => {
       `the landing route ('${landing?.route.id}') is not reachable from the sidebar once the ` +
         `user navigates away — this is exactly the orphaned-landing-page defect the operator hit`,
     ).toBe(true)
+  })
+
+  it('consolidates Knowledge destinations under Atlas without removing deep links', () => {
+    expect(routesBySection('knowledge').map((route) => route.id)).toEqual(['knowledge.atlas'])
+    expect(routesForAtlas('guided').length).toBeGreaterThan(0)
+    expect(routesForAtlas('expert').length).toBeGreaterThan(0)
+
+    const consolidated = ROUTES.filter((route) => route.section === 'knowledge' && route.id !== 'knowledge.atlas')
+    expect(consolidated.every((route) => route.navigation === 'atlas' || route.navigation === 'deep-link')).toBe(true)
+    expect(routesForAtlas()).toHaveLength(consolidated.filter((route) => route.navigation === 'atlas').length)
+    expect(routesForAtlas().every((route) => route.atlasTier !== undefined)).toBe(true)
+    expect(
+      consolidated.every((route) => matchRoute(route.path.replace(':id', 'example'))?.route.id === route.id),
+    ).toBe(true)
+    expect(isAtlasPath('/explore')).toBe(true)
+    expect(isAtlasPath('/graph')).toBe(true)
+    expect(isAtlasPath('/graph-3d/lod')).toBe(true)
+    expect(isAtlasPath('/object/example')).toBe(true)
+    expect(isAtlasPath('/chat')).toBe(false)
   })
 })

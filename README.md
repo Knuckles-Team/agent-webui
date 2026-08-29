@@ -138,7 +138,7 @@ Defined in `agent/agent_webui/api_extensions.py`:
 - **Ecosystem Service Discovery** -- Automatically scans for and lists active/installed local agent packages and MCP servers.
 - **5-Domain Navigation Layout**:
   - **DevOps & Workspace**: Workspace Matrix code status, branch operations, and git pulling.
-  - **Brain & Knowledge**: Visual SVG graph nodes, Cypher console, scientific literature papers explorer, and Prompts visual configurator.
+  - **Knowledge workspace (Atlas)**: one guided entry for graph, document, object, and table exploration, with expert specialist routes kept available inside Atlas.
   - **Infrastructure Hub**: governed SSH/container inventory, CPU/RAM/Disk dials, opaque process utilization, and delegated infrastructure actions.
   - **Lifestyle & Automation**: SmartHome device dimmers, Calendar tasks, qBittorrent torrent speedometers, and MealieScaled grocery trackers.
   - **System Config**: Scheduled crons timeline and Global settings configurator forms.
@@ -161,9 +161,7 @@ Defined in `agent/agent_webui/api_extensions.py`:
 - **Skills** -- view and configure universal skills
 - **Scheduling** -- monitor and manage cron tasks
 - **Configuration** -- adjust agent and workspace settings
-- **Knowledge** -- manage knowledge base and embeddings
-- **Graph** -- interactive knowledge graph visualization and exploration
-- **Memory** -- agent memory management with timeline and search
+- **Atlas** -- the single Knowledge workspace for guided exploration and expert graph, object, memory, and data views
 - **SDD** -- spec-driven development lifecycle management
 
 ### Agent Identity & Context
@@ -258,6 +256,7 @@ Both MCP and A2A specialists are registered through the same code path. The fron
 | `ApprovalCard.tsx`            | `src/components/ApprovalCard.tsx`            | Human-in-the-loop tool approval card for security-sensitive operations                               |
 | `Part.tsx`                    | `src/Part.tsx`                               | Message part renderer handling text, tool calls, elicitation forms, sources, and images              |
 | `app-sidebar.tsx`             | `src/components/app-sidebar.tsx`             | Navigation sidebar with conversation history, agent identity, and view switching                     |
+| `AtlasWorkspace.tsx`          | `src/components/atlas/AtlasWorkspace.tsx`    | Progressive Knowledge workspace with guided starting points, expert deep links, and the unified workbench |
 | **Graph Views**               |                                              |                                                                                                          |
 | `GraphView.tsx`               | `src/components/views/GraphView.tsx`         | Interactive graph visualization with layouts, zoom/pan, node inspection, and statistics                |
 | **Knowledge Management**      |                                              |                                                                                                          |

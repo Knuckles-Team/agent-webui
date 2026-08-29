@@ -21,6 +21,8 @@ export interface InspectorPanelProps {
   selection: Selection | null
   pivots: Pivot[]
   onPivot: (pivot: Pivot) => void
+  /** Stable test hook; mobile and desktop disclosures render separate panel instances. */
+  testId?: string
 }
 
 function PropertyList({ data }: { data: Record<string, unknown> }) {
@@ -38,7 +40,7 @@ function PropertyList({ data }: { data: Record<string, unknown> }) {
   )
 }
 
-export function InspectorPanel({ selection, pivots, onPivot }: InspectorPanelProps) {
+export function InspectorPanel({ selection, pivots, onPivot, testId = 'atlas-inspector' }: InspectorPanelProps) {
   if (!selection) {
     return (
       <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-sm">
@@ -48,7 +50,7 @@ export function InspectorPanel({ selection, pivots, onPivot }: InspectorPanelPro
     )
   }
   return (
-    <ScrollArea className="h-full" data-testid="atlas-inspector">
+    <ScrollArea className="h-full" data-testid={testId}>
       <div className="space-y-4 p-3">
         <div className="space-y-1">
           <p className="text-sm font-semibold break-all">{selection.label}</p>

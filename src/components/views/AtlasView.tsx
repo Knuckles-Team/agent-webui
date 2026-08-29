@@ -9,23 +9,12 @@
  *
  * Design: `plans/atlas/DESIGN-atlas.md`. Adapter authoring: `src/lib/atlas/ADAPTER-GUIDE.md`.
  */
-import { Compass } from 'lucide-react'
-
-import { AtlasWorkbench } from '@/components/atlas/AtlasWorkbench'
+import { AtlasWorkspace } from '@/components/atlas/AtlasWorkspace'
 
 export default function AtlasView() {
   return (
-    <div className="space-y-4" data-testid="atlas-view">
-      <div className="flex items-center gap-2">
-        <Compass className="size-5" />
-        <div>
-          <h1 className="text-xl font-semibold">Atlas</h1>
-          <p className="text-muted-foreground text-sm">
-            Explore every modality of the graph — filter it one way, then draw it as a table, a tree, or in 3D.
-          </p>
-        </div>
-      </div>
-      <AtlasWorkbench />
+    <div data-testid="atlas-view">
+      <AtlasWorkspace />
     </div>
   )
 }

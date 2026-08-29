@@ -20,6 +20,8 @@ export interface SourceTreeProps {
   loading: boolean
   /** A node carrying `seedQuery` was clicked — put its query in the console. */
   onSeed: (query: string) => void
+  /** Stable test hook; mobile and desktop disclosures render separate panel instances. */
+  testId?: string
 }
 
 const KIND_ICON: Readonly<Record<SchemaNodeKind, typeof Circle>> = {
@@ -64,7 +66,13 @@ function SchemaRow({ node, depth, onSeed }: { node: SchemaNode; depth: number; o
   )
 }
 
-function SchemaBody({ schema, loading, onSeed, query }: SourceTreeProps & { query: string }) {
+function SchemaBody({
+  schema,
+  loading,
+  onSeed,
+  query,
+  testId = 'atlas-schema-tree',
+}: SourceTreeProps & { query: string }) {
   const roots = useMemo(() => searchSchema(schema.roots, query), [schema.roots, query])
   if (loading) return <Skeleton className="m-2 h-40" />
   if (schema.unavailable) {
@@ -77,7 +85,7 @@ function SchemaBody({ schema, loading, onSeed, query }: SourceTreeProps & { quer
   }
   if (roots.length === 0) return <p className="text-muted-foreground p-3 text-sm">Nothing matches that.</p>
   return (
-    <div data-testid="atlas-schema-tree">
+    <div data-testid={testId}>
       {roots.map((node) => (
         <SchemaRow key={node.id} node={node} depth={0} onSeed={onSeed} />
       ))}

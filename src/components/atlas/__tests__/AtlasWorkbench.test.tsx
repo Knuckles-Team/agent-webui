@@ -68,6 +68,10 @@ function renderWorkbench() {
   )
 }
 
+async function selectGraphModality(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await user.click(await screen.findByTestId('atlas-modality-graph'))
+}
+
 beforeEach(() => {
   stubBackend()
 })
@@ -84,8 +88,16 @@ describe('AtlasWorkbench', () => {
     expect(within(picker).getByTestId('atlas-modality-sparql')).toBeInTheDocument()
   })
 
-  it('shows the compiled query read-only for a modality with no query language', async () => {
+  it('keeps sources and selection details available through mobile disclosures', async () => {
     renderWorkbench()
+    expect(await screen.findByTestId('atlas-sources-mobile')).toBeInTheDocument()
+    expect(await screen.findByTestId('atlas-inspector-mobile')).toBeInTheDocument()
+  })
+
+  it('shows the compiled query read-only for a modality with no query language', async () => {
+    const user = userEvent.setup()
+    renderWorkbench()
+    await selectGraphModality(user)
     const box = (await screen.findByLabelText('Query')) as HTMLTextAreaElement
     expect(box).toHaveAttribute('readonly')
     expect(box.value).toContain('nodes')
@@ -93,6 +105,7 @@ describe('AtlasWorkbench', () => {
 
   /** Run, then switch to the table — a graph-shaped result auto-selects the 2D canvas. */
   async function runAndTabulate(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+    await selectGraphModality(user)
     await user.click(await screen.findByTestId('atlas-run'))
     await user.click(await screen.findByTestId('atlas-renderer-table'))
     return screen.findByTestId('atlas-table')
@@ -101,6 +114,7 @@ describe('AtlasWorkbench', () => {
   it('auto-selects the graph renderer for a graph-shaped result', async () => {
     const user = userEvent.setup()
     renderWorkbench()
+    await selectGraphModality(user)
     await user.click(await screen.findByTestId('atlas-run'))
     await waitFor(() => {
       expect(screen.getByTestId('atlas-renderer-graph2d')).toHaveAttribute('data-state', 'selected')
@@ -144,7 +158,9 @@ describe('AtlasWorkbench', () => {
   })
 
   it('publishes the client-side-filtering disclosure for the graph modality', async () => {
+    const user = userEvent.setup()
     renderWorkbench()
+    await selectGraphModality(user)
     expect(await screen.findByTestId('atlas-filter-note')).toHaveTextContent('applied in the browser')
   })
 
