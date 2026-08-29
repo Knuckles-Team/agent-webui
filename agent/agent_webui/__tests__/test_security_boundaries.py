@@ -797,6 +797,118 @@ def test_role_matrix_graph_stats_get_agrees_with_reader_nav(
 
 
 @pytest.mark.parametrize(
+    'path',
+    [
+        '/api/graph/ask',
+        '/api/graph/ask-data',
+        '/api/graph/catalog',
+        '/api/graph/code-nav',
+        '/api/graph/federated-search',
+        '/api/graph/projection',
+        '/api/graph/query',
+        '/api/graph/query/federated',
+        '/api/graph/search',
+        '/api/graph/search/analogy',
+        '/api/graph/search/concept',
+        '/api/graph/search/dci',
+        '/api/graph/search/discover',
+        '/api/graph/search/memory',
+        '/api/graph/search-synthesis',
+        '/api/graph/logs',
+        '/api/graph/nl-query',
+        '/api/graph/promql',
+        '/api/graph/sql-schema',
+        '/api/graph/traces',
+        '/api/sparql',
+    ],
+)
+def test_governed_read_posts_are_read_scope_routes(path: str) -> None:
+    """Governed read/query bodies are reads even though transport is POST.
+
+    The canonical handlers enforce read-only syntax, graph visibility, or
+    query-only engine operations after this route-level gate. The WebUI must
+    therefore admit a reader without granting the caller a write scope merely
+    because the body is JSON.
+    """
+
+    assert (
+        WebUIAuthorizationMiddleware._required_scope(
+            scope_type='http', path=path, method='POST'
+        )
+        == 'kg:read'
+    )
+
+
+def test_unknown_post_route_keeps_the_write_floor() -> None:
+    """An unreviewed POST is never implicitly classified as a read operation."""
+
+    assert (
+        WebUIAuthorizationMiddleware._required_scope(
+            scope_type='http', path='/api/graph/future-query', method='POST'
+        )
+        == 'kg:write'
+    )
+
+
+@pytest.mark.parametrize(
+    'path',
+    [
+        '/api/graph/table',
+        '/api/graph/document-tree',
+        '/api/graph/write',
+        '/api/graph/future-query',
+        '/api/graph/query/mutation',
+        '/api/graph/catalog/sync',
+        '/api/graph/nl-query/write',
+    ],
+)
+def test_mixed_or_unknown_posts_keep_the_write_floor(path: str) -> None:
+    """Mixed action routes and unreviewed POSTs cannot inherit reader access."""
+
+    assert (
+        WebUIAuthorizationMiddleware._required_scope(
+            scope_type='http', path=path, method='POST'
+        )
+        == 'kg:write'
+    )
+
+
+def test_query_and_admin_boundaries_remain_distinct() -> None:
+    """Read queries stay reader-scoped while known admin actions stay admin-only."""
+
+    assert (
+        WebUIAuthorizationMiddleware._required_scope(
+            scope_type='http', path='/api/graph/query', method='POST'
+        )
+        == 'kg:read'
+    )
+    assert (
+        WebUIAuthorizationMiddleware._required_scope(
+            scope_type='http', path='/api/enhanced/tunnel-manager/hosts', method='GET'
+        )
+        == 'kg:admin'
+    )
+    assert (
+        WebUIAuthorizationMiddleware._required_scope(
+            scope_type='http', path='/api/graph/write', method='POST'
+        )
+        == 'kg:write'
+    )
+
+
+@pytest.mark.parametrize('method', ['PUT', 'PATCH', 'DELETE'])
+def test_governed_read_paths_do_not_lower_non_post_mutations(method: str) -> None:
+    """The POST exception cannot be reused to admit a mutation method."""
+
+    assert (
+        WebUIAuthorizationMiddleware._required_scope(
+            scope_type='http', path='/api/graph/query', method=method
+        )
+        == 'kg:write'
+    )
+
+
+@pytest.mark.parametrize(
     ('role', 'expected_status'),
     [('reader', 403), ('user', 403), ('maintainer', 403), ('admin', 200)],
 )

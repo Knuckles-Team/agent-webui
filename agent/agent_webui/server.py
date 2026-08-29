@@ -184,6 +184,43 @@ _ADMIN_MUTATION_ROUTE_PREFIXES = (
     '/api/dashboard/daemon/start',
     '/api/dashboard/hydrate',
 )
+
+# Canonical graph query transports use POST because their query text and
+# parameters live in a JSON body.  They remain governed read operations: the
+# downstream graph/UQL policy rejects mutation syntax and applies graph
+# visibility.  The catalog/schema and protocol adapters below have the same
+# contract in their mounted handlers: each only reads the catalog or executes
+# a read/query operation.  Keep this an exact route map so an unreviewed future
+# POST never inherits the read floor accidentally.  In particular, the mixed
+# ``/api/graph/table`` and ``/api/graph/document-tree`` action routes are not
+# listed: they also expose ingest/create/drop/build operations and therefore
+# deliberately retain the mutation fallback.
+_READ_ONLY_POST_PATHS = frozenset(
+    {
+        '/api/graph/ask',
+        '/api/graph/ask-data',
+        '/api/graph/catalog',
+        '/api/graph/code-nav',
+        '/api/graph/federated-search',
+        '/api/graph/projection',
+        '/api/graph/query',
+        '/api/graph/query/federated',
+        '/api/graph/search',
+        '/api/graph/search/analogy',
+        '/api/graph/search/concept',
+        '/api/graph/search/dci',
+        '/api/graph/search/discover',
+        '/api/graph/search/memory',
+        '/api/graph/search-synthesis',
+        '/api/graph/logs',
+        '/api/graph/promql',
+        '/api/graph/sql-schema',
+        '/api/graph/traces',
+        '/api/graph/nl-query',
+        '/api/sparql',
+    }
+)
+
 # GOC-60-W05 (E1b layer 3 / E6): websocket handshakes carry no HTTP method, so the
 # generic branch below has always had only two tiers — `kg:admin` for an admin route,
 # `kg:write` for everything else (a websocket can carry outbound client messages, so
@@ -1063,6 +1100,47 @@ class WebUIAuthorizationMiddleware:
         )
 
     @staticmethod
+    def _is_read_only_post_route(*, path: str, method: str) -> bool:
+        """Whether an HTTP POST is one of the explicitly audited reads."""
+
+        return method == 'POST' and path in _READ_ONLY_POST_PATHS
+
+    @staticmethod
+    def _required_websocket_scope(path: str) -> str:
+        """Resolve the scope floor for a websocket handshake."""
+
+        if WebUIAuthorizationMiddleware._is_admin_route(path):
+            return 'kg:admin'
+        if path in _WEBSOCKET_READ_ONLY_PATHS:
+            return 'kg:read'
+        return 'kg:write'
+
+    @staticmethod
+    def _required_http_scope(*, path: str, method: str) -> str:
+        """Resolve HTTP scope with admin, exact-read, then mutation precedence."""
+
+        # Admin routes remain authoritative even if a future exact-path policy
+        # entry is accidentally added beneath one of their prefixes.
+        if WebUIAuthorizationMiddleware._is_admin_route(path):
+            return 'kg:admin'
+        # Some governed read operations are POSTs because their query text and
+        # parameters live in a JSON body.  This exact allowlist is deliberately
+        # checked before the mutation fallback; unknown POST routes continue to
+        # require ``kg:write`` and cannot silently gain read access.
+        if WebUIAuthorizationMiddleware._is_read_only_post_route(
+            path=path, method=method
+        ):
+            return 'kg:read'
+        if (
+            method not in _SAFE_METHODS
+            and WebUIAuthorizationMiddleware._is_admin_mutation_route(path)
+        ):
+            return 'kg:admin'
+        if method in _SAFE_METHODS:
+            return 'kg:read'
+        return 'kg:write'
+
+    @staticmethod
     def _role_requirement(*, required_scope: str, method: str, path: str) -> str | None:
         """The additional WebUI role (R9: reader < user < maintainer < admin)
         required for this request, layered ON TOP OF the `required_scope` KG
@@ -1098,19 +1176,10 @@ class WebUIAuthorizationMiddleware:
         """
 
         if scope_type == 'websocket':
-            if WebUIAuthorizationMiddleware._is_admin_route(path):
-                return 'kg:admin'
-            if path in _WEBSOCKET_READ_ONLY_PATHS:
-                return 'kg:read'
-            return 'kg:write'
-        if WebUIAuthorizationMiddleware._is_admin_route(path) or (
-            method not in _SAFE_METHODS
-            and WebUIAuthorizationMiddleware._is_admin_mutation_route(path)
-        ):
-            return 'kg:admin'
-        if method in _SAFE_METHODS:
-            return 'kg:read'
-        return 'kg:write'
+            return WebUIAuthorizationMiddleware._required_websocket_scope(path)
+        return WebUIAuthorizationMiddleware._required_http_scope(
+            path=path, method=method
+        )
 
     @staticmethod
     def _origin_sensitive(scope_type: str, required: str) -> bool:
