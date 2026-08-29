@@ -30,6 +30,7 @@ import { XIcon, Settings2Icon, PaperclipIcon, DownloadIcon, Wrench, Square, GitB
 import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai-elements/sources'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -37,7 +38,6 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
 import { ApprovalCard, type ApprovalCardProps } from '@/components/ApprovalCard'
-import { Switch } from '@/components/ui/switch'
 import { useChat, type UIMessage } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIDataTypes, type UIMessagePart, type UITools } from 'ai'
 import {
@@ -173,7 +173,7 @@ const PROGRESS_STAGE_LABEL: Record<string, string> = {
 export function ProgressTimeline({ events, isStreaming }: { events: ProgressEventPayload[]; isStreaming: boolean }) {
   if (events.length === 0) return null
   return (
-    <div className="my-1.5 flex flex-wrap items-center gap-1.5">
+    <div className="my-1.5 flex flex-wrap items-center gap-1.5" role="status" aria-live="polite">
       {events.map((ev, i) => (
         <Badge
           key={i}
@@ -184,7 +184,7 @@ export function ProgressTimeline({ events, isStreaming }: { events: ProgressEven
           {ev.detail ? `: ${ev.detail}` : ''}
         </Badge>
       ))}
-      {isStreaming && <Loader size={12} />}
+      {isStreaming && <Loader size={12} className="motion-reduce:animate-none" />}
     </div>
   )
 }
@@ -755,10 +755,36 @@ function handlePlainEnterKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
 function renderErrorBanner(status: string, error: unknown): ReactNode {
   if (status !== 'error' || !error) return null
   return (
-    <div className="px-4 py-3 mx-4 my-2 bg-destructive/10 border border-destructive/20 rounded-md text-destructive text-sm">
+    <div
+      className="px-4 py-3 mx-4 my-2 bg-destructive/10 border border-destructive/20 rounded-md text-destructive text-sm"
+      role="alert"
+    >
       <strong>Error:</strong> {(error as { message?: string }).message ?? 'Unknown error'}
     </div>
   )
+}
+
+const CHAT_COMMAND_SUGGESTIONS_ID = 'chat-command-suggestions'
+
+function suggestionControls(suggestionCount: number): string | undefined {
+  return suggestionCount > 0 ? CHAT_COMMAND_SUGGESTIONS_ID : undefined
+}
+
+function activeSuggestionId(suggestionCount: number, activeIndex: number): string | undefined {
+  return suggestionCount > 0 ? `chat-command-suggestion-${activeIndex}` : undefined
+}
+
+function submitAccessibleName(status: string): string {
+  const names: Record<string, string> = {
+    error: 'Send message again',
+    submitted: 'Sending message',
+  }
+  return names[status] ?? 'Send message'
+}
+
+function updateEnabledTools(enabled: string[], toolId: string, checked: boolean): string[] {
+  if (!checked) return enabled.filter((id) => id !== toolId)
+  return enabled.includes(toolId) ? enabled : [...enabled, toolId]
 }
 
 /** The slash-command autocomplete popover above the composer. */
@@ -769,11 +795,20 @@ function renderSuggestionsList(
 ): ReactNode {
   if (suggestions.length === 0) return null
   return (
-    <div className="absolute bottom-full left-3 right-3 mb-2 max-h-60 overflow-y-auto rounded-lg border border-border bg-background/95 backdrop-blur-md shadow-lg z-50 divide-y divide-border">
+    <div
+      id={CHAT_COMMAND_SUGGESTIONS_ID}
+      className="absolute bottom-full left-3 right-3 mb-2 max-h-60 overflow-y-auto rounded-lg border border-border bg-background/95 backdrop-blur-md shadow-lg z-50 divide-y divide-border"
+      role="listbox"
+      aria-label="Slash command suggestions"
+    >
       {suggestions.map((suggestion, index) => (
         <button
-          key={suggestion}
+          key={`${suggestion}-${index}`}
           type="button"
+          id={`chat-command-suggestion-${index}`}
+          role="option"
+          aria-selected={index === activeSuggestionIndex}
+          tabIndex={-1}
           className={cn(
             'w-full text-left px-4 py-2 text-sm flex items-center justify-between transition-colors',
             index === activeSuggestionIndex
@@ -805,17 +840,19 @@ function renderAttachmentPreview(attachments: AttachmentItem[], onRemove: (index
         <div key={index} className="relative group">
           <img
             src={attachment.url}
-            alt="attachment"
+            alt={`Attachment ${index + 1}`}
             className="h-16 w-16 object-cover rounded-md border border-border bg-background shadow-sm transition-all group-hover:opacity-80"
           />
           <button
+            type="button"
+            aria-label={`Remove attachment ${index + 1}`}
             onClick={() => {
               onRemove(index)
             }}
-            className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
             title="Remove attachment"
           >
-            <XIcon className="size-3" />
+            <XIcon className="size-3" aria-hidden="true" />
           </button>
         </div>
       ))}
@@ -835,7 +872,7 @@ function renderToolsMenu(
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
-            <PromptInputButton variant="outline">
+            <PromptInputButton variant="outline" aria-label="Configure tools">
               <Settings2Icon className="size-4" />
             </PromptInputButton>
           </DropdownMenuTrigger>
@@ -844,29 +881,18 @@ function renderToolsMenu(
       </Tooltip>
       <DropdownMenuContent align="start">
         {availableTools.map((tool) => (
-          <div
+          <DropdownMenuCheckboxItem
             key={tool.id}
-            className="flex items-center justify-between gap-3 px-2 py-1.5 cursor-pointer hover:bg-accent rounded-sm"
-            onClick={() => {
-              setEnabledTools((prev) =>
-                prev.includes(tool.id) ? prev.filter((id) => id !== tool.id) : [...prev, tool.id],
-              )
+            checked={enabledTools.includes(tool.id)}
+            onCheckedChange={(checked) => {
+              setEnabledTools((prev) => updateEnabledTools(prev, tool.id, checked))
             }}
           >
-            <div className="flex items-center gap-2">
-              {getToolIcon(tool.id)}
+            <span className="flex items-center gap-2">
+              <span aria-hidden="true">{getToolIcon(tool.id)}</span>
               <span className="text-sm">{tool.name}</span>
-            </div>
-            <Switch
-              checked={enabledTools.includes(tool.id)}
-              onCheckedChange={(checked) => {
-                setEnabledTools((prev) => (checked ? [...prev, tool.id] : prev.filter((id) => id !== tool.id)))
-              }}
-              onClick={(e) => {
-                e.stopPropagation()
-              }}
-            />
-          </div>
+            </span>
+          </DropdownMenuCheckboxItem>
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -1015,7 +1041,7 @@ function renderModelSelect(
   if ((modelRegistry?.models.length ?? 0) > 0) {
     return (
       <PromptInputModelSelect onValueChange={onValueChange} value={model}>
-        <PromptInputModelSelectTrigger className="w-[160px]">
+        <PromptInputModelSelectTrigger className="w-[160px]" aria-label="Model">
           <PromptInputModelSelectValue />
         </PromptInputModelSelectTrigger>
         <PromptInputModelSelectContent>
@@ -1031,7 +1057,7 @@ function renderModelSelect(
   if (!configData) return null
   return (
     <PromptInputModelSelect onValueChange={onValueChange} value={model}>
-      <PromptInputModelSelectTrigger className="w-[120px]">
+      <PromptInputModelSelectTrigger className="w-[120px]" aria-label="Model">
         <PromptInputModelSelectValue />
       </PromptInputModelSelectTrigger>
       <PromptInputModelSelectContent>
@@ -1876,10 +1902,10 @@ Available commands:
                 })()}
             </div>
           ))}
-          {status === 'submitted' && <Loader />}
+          {status === 'submitted' && <Loader className="motion-reduce:animate-none" />}
           {renderErrorBanner(status, error)}
         </ConversationContent>
-        <ConversationScrollButton />
+        <ConversationScrollButton aria-label="Scroll to latest message" />
       </Conversation>
 
       <div className="sticky bottom-0 p-3 relative">
@@ -1891,16 +1917,21 @@ Available commands:
         <PromptInput onSubmit={handleSubmit}>
           <PromptInputTextarea
             ref={textareaRef}
+            id="chat-message-input"
+            aria-label="Message input"
+            aria-autocomplete="list"
+            aria-controls={suggestionControls(suggestions.length)}
+            aria-expanded={suggestions.length > 0}
+            aria-activedescendant={activeSuggestionId(suggestions.length, activeSuggestionIndex)}
             onChange={(e) => {
               setInput(e.target.value)
             }}
             onKeyDown={handleInputKeyDown}
             value={input}
-            autoFocus={true}
           />
           {renderAttachmentPreview(attachments, removeAttachment)}
           <PromptInputToolbar>
-            <PromptInputTools>
+            <PromptInputTools className="flex-wrap">
               <input
                 type="file"
                 ref={fileInputRef}
@@ -1913,6 +1944,7 @@ Available commands:
                 <TooltipTrigger asChild>
                   <PromptInputButton
                     variant="outline"
+                    aria-label="Attach image files"
                     onClick={() => {
                       fileInputRef.current?.click()
                     }}
@@ -1970,7 +2002,11 @@ Available commands:
                 </PromptInputModelSelect>
               </div>
             </PromptInputTools>
-            <PromptInputSubmit disabled={!input || (sweMode && sweBusy)} status={status} />
+            <PromptInputSubmit
+              aria-label={submitAccessibleName(status)}
+              disabled={!input || (sweMode && sweBusy)}
+              status={status}
+            />
           </PromptInputToolbar>
         </PromptInput>
       </div>

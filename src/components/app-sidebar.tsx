@@ -1,6 +1,6 @@
 import { CirclePlus, MessageCircle, Trash, Pencil, Check, X } from 'lucide-react'
 import type React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -66,15 +66,59 @@ function deleteConversation(userKey: string, conversationId: string) {
   }
 }
 
+function browserPath(): string {
+  return typeof window === 'undefined' ? '/chat' : window.location.pathname
+}
+
+function useCurrentPath(): string {
+  const [currentPath, setCurrentPath] = useState(browserPath)
+
+  useEffect(() => {
+    const syncCurrentPath = () => {
+      setCurrentPath(browserPath())
+    }
+    window.addEventListener('popstate', syncCurrentPath)
+    window.addEventListener('history-state-changed', syncCurrentPath)
+    syncCurrentPath()
+    return () => {
+      window.removeEventListener('popstate', syncCurrentPath)
+      window.removeEventListener('history-state-changed', syncCurrentPath)
+    }
+  }, [])
+
+  return currentPath
+}
+
+function useFocusWhenEditing(editingId: string | null, editInputRef: React.RefObject<HTMLInputElement | null>): void {
+  useEffect(() => {
+    if (editingId !== null) editInputRef.current?.focus()
+  }, [editInputRef, editingId])
+}
+
+function currentPage(active: boolean): 'page' | undefined {
+  return active ? 'page' : undefined
+}
+
+function conversationLabel(conversation: ConversationEntry): string {
+  return conversation.firstMessage ?? 'conversation'
+}
+
+function isCurrentConversation(path: string, conversationId: string, activeConversationId: string | null): boolean {
+  return path === '/chat' && conversationId === activeConversationId
+}
+
 export function AppSidebar() {
   const { identity } = useIdentity()
   const conversations = useConversations(identity.userKey)
   const [conversationId] = useConversationIdFromUrl()
+  const currentPath = useCurrentPath()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [conversationToDelete, setConversationToDelete] = useState<ConversationEntry | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
+  const editInputRef = useRef<HTMLInputElement>(null)
   const [agentInfo, setAgentInfo] = useState<{ name: string; description: string; emoji: string } | null>(null)
+  useFocusWhenEditing(editingId, editInputRef)
 
   useEffect(() => {
     const fetchInfo = async () => {
@@ -148,7 +192,7 @@ export function AppSidebar() {
           </div>
         </SidebarHeader>
 
-        <SidebarContent>
+        <SidebarContent role="navigation" aria-label="Primary navigation">
           {/* Every section and page below is derived from src/lib/nav-registry.ts — there
               is no second place in this file that declares what pages exist. Routes below
               `identity.role` are filtered out here (R9): this is the UI half of role
@@ -161,15 +205,19 @@ export function AppSidebar() {
             if (routes.length === 0) return null
             return (
               <SidebarGroup key={section.id}>
-                <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
+                <SidebarGroupLabel asChild>
+                  <h2>{section.label}</h2>
+                </SidebarGroupLabel>
                 <SidebarMenu className="mb-2">
                   {routes.map((route) => {
                     const Icon = route.icon
+                    const active = route.path === currentPath
                     return (
                       <SidebarMenuItem key={route.id}>
-                        <SidebarMenuButton asChild tooltip={route.blurb}>
+                        <SidebarMenuButton asChild isActive={active} tooltip={route.blurb}>
                           <a
                             href={route.path}
+                            aria-current={currentPage(active)}
                             onClick={(e) => {
                               doLocalNavigation(e)
                             }}
@@ -203,125 +251,136 @@ export function AppSidebar() {
           })}
 
           <SidebarGroup>
-            <SidebarGroupLabel>Active Chats</SidebarGroupLabel>
+            <SidebarGroupLabel asChild>
+              <h2>Active Chats</h2>
+            </SidebarGroupLabel>
 
             <SidebarGroupContent>
               <SidebarMenu>
-                {conversations.map((conversation, index) => (
-                  <SidebarMenuItem key={index} className="group/sidebar-menu-item">
-                    <div className="flex items-center gap-1 h-auto">
-                      <SidebarMenuButton asChild tooltip={conversation.firstMessage} className="flex-1">
-                        {editingId === conversation.id ? (
-                          <div
-                            className="flex items-center gap-1 w-full pr-2 h-9 p-2"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                            }}
-                          >
-                            <MessageCircle className="size-3 shrink-0" />
-                            <input
-                              autoFocus
-                              className="bg-background border-primary/30 border rounded px-2 text-sm w-full py-1 outline-none focus:ring-2 focus:ring-primary/20 transition-all shadow-sm h-7"
-                              value={editValue}
-                              onChange={(e) => {
-                                setEditValue(e.target.value)
-                              }}
-                              onMouseDown={(e) => {
-                                e.stopPropagation()
-                              }}
-                              onDragStart={(e) => {
-                                e.preventDefault()
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  handleSaveRename(e, conversation.id)
-                                }
-                                if (e.key === 'Escape') {
-                                  setEditingId(null)
-                                }
-                              }}
-                            />
-                            <div className="flex items-center gap-0.5 ml-1 shrink-0">
-                              <button
-                                onClick={(e) => {
-                                  handleSaveRename(e, conversation.id)
+                {conversations.map((conversation) => {
+                  const label = conversationLabel(conversation)
+                  const active = isCurrentConversation(currentPath, conversation.id, conversationId)
+                  return (
+                    <SidebarMenuItem key={conversation.id} className="group/sidebar-menu-item">
+                      <div className="flex items-center gap-1 h-auto">
+                        <SidebarMenuButton asChild tooltip={conversation.firstMessage} className="flex-1">
+                          {editingId === conversation.id ? (
+                            <div className="flex items-center gap-1 w-full pr-2 h-9 p-2">
+                              <MessageCircle className="size-3 shrink-0" />
+                              <input
+                                ref={editInputRef}
+                                aria-label={`Rename ${label}`}
+                                className="bg-background border-primary/30 border rounded px-2 text-sm w-full py-1 outline-none focus:ring-2 focus:ring-primary/20 transition-all shadow-sm h-7"
+                                value={editValue}
+                                onChange={(e) => {
+                                  setEditValue(e.target.value)
                                 }}
-                                className="p-1 hover:bg-green-500/10 hover:text-green-600 rounded-sm transition-colors"
-                                title="Save"
-                              >
-                                <Check className="size-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  handleCancelRename(e)
+                                onMouseDown={(e) => {
+                                  e.stopPropagation()
                                 }}
-                                className="p-1 hover:bg-destructive/10 hover:text-destructive rounded-sm transition-colors"
-                                title="Cancel"
-                              >
-                                <X className="size-3.5" />
-                              </button>
+                                onDragStart={(e) => {
+                                  e.preventDefault()
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleSaveRename(e, conversation.id)
+                                  }
+                                  if (e.key === 'Escape') {
+                                    setEditingId(null)
+                                  }
+                                }}
+                              />
+                              <div className="flex items-center gap-0.5 ml-1 shrink-0">
+                                <button
+                                  type="button"
+                                  aria-label={`Save rename for ${label}`}
+                                  onClick={(e) => {
+                                    handleSaveRename(e, conversation.id)
+                                  }}
+                                  className="p-1 hover:bg-green-500/10 hover:text-green-600 rounded-sm transition-colors"
+                                  title="Save"
+                                >
+                                  <Check className="size-3.5" aria-hidden="true" />
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label="Cancel rename"
+                                  onClick={(e) => {
+                                    handleCancelRename(e)
+                                  }}
+                                  className="p-1 hover:bg-destructive/10 hover:text-destructive rounded-sm transition-colors"
+                                  title="Cancel"
+                                >
+                                  <X className="size-3.5" aria-hidden="true" />
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ) : (
-                          <a
-                            href={`/chat?conversation=${encodeURIComponent(conversation.id)}`}
-                            onClick={(e) => {
-                              doLocalNavigation(e)
-                            }}
-                            className={cn('h-auto flex items-start gap-2', {
-                              'bg-accent pointer-events-none': conversation.id === conversationId,
-                            })}
-                          >
-                            <MessageCircle className="size-3 mt-1" />
-                            <span className="flex flex-col items-start w-full">
-                              <span className="truncate max-w-44">{conversation.firstMessage}</span>
-                              <span className="text-xs opacity-30">
-                                {new Date(conversation.timestamp).toLocaleString()}
+                          ) : (
+                            <a
+                              href={`/chat?conversation=${encodeURIComponent(conversation.id)}`}
+                              aria-current={currentPage(active)}
+                              onClick={(e) => {
+                                doLocalNavigation(e)
+                              }}
+                              className={cn('h-auto flex items-start gap-2', {
+                                'bg-accent': active,
+                              })}
+                            >
+                              <MessageCircle className="size-3 mt-1" />
+                              <span className="flex flex-col items-start w-full">
+                                <span className="truncate max-w-44">{conversation.firstMessage}</span>
+                                <span className="text-xs opacity-30">
+                                  {new Date(conversation.timestamp).toLocaleString()}
+                                </span>
                               </span>
-                            </span>
-                          </a>
-                        )}
-                      </SidebarMenuButton>
-                      <div
-                        className={cn(
-                          'flex flex-col gap-0.5 opacity-0 group-hover/sidebar-menu-item:opacity-100 transition-opacity group-data-[state=collapsed]:hidden absolute right-0 self-start',
-                          editingId === conversation.id && 'hidden',
-                        )}
-                      >
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-auto p-1.5"
-                              onClick={(e) => {
-                                handleRenameClick(e, conversation)
-                              }}
-                            >
-                              <Pencil className="size-3" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Rename conversation</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-auto p-1.5"
-                              onClick={(e) => {
-                                handleDeleteClick(e, conversation)
-                              }}
-                            >
-                              <Trash className="size-3" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Delete conversation</TooltipContent>
-                        </Tooltip>
+                            </a>
+                          )}
+                        </SidebarMenuButton>
+                        <div
+                          className={cn(
+                            'flex flex-col gap-0.5 opacity-0 group-hover/sidebar-menu-item:opacity-100 group-focus-within/sidebar-menu-item:opacity-100 transition-opacity group-data-[state=collapsed]:hidden absolute right-0 self-start',
+                            editingId === conversation.id && 'hidden',
+                          )}
+                        >
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-auto p-1.5"
+                                type="button"
+                                aria-label={`Rename ${label}`}
+                                onClick={(e) => {
+                                  handleRenameClick(e, conversation)
+                                }}
+                              >
+                                <Pencil className="size-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Rename conversation</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-auto p-1.5"
+                                type="button"
+                                aria-label={`Delete ${label}`}
+                                onClick={(e) => {
+                                  handleDeleteClick(e, conversation)
+                                }}
+                              >
+                                <Trash className="size-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Delete conversation</TooltipContent>
+                          </Tooltip>
+                        </div>
                       </div>
-                    </div>
-                  </SidebarMenuItem>
-                ))}
+                    </SidebarMenuItem>
+                  )
+                })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -333,14 +392,7 @@ export function AppSidebar() {
         </SidebarFooter>
 
         <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <DialogContent
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                handleConfirmDelete()
-              }
-            }}
-          >
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>Delete conversation?</DialogTitle>
               <DialogDescription>
@@ -356,7 +408,7 @@ export function AppSidebar() {
               >
                 Cancel
               </Button>
-              <Button variant="destructive" onClick={handleConfirmDelete} autoFocus>
+              <Button variant="destructive" onClick={handleConfirmDelete}>
                 Delete
               </Button>
             </DialogFooter>

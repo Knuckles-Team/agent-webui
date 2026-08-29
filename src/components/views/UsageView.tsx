@@ -95,7 +95,7 @@ function Kpi({ label, value, icon: Icon }: { label: string; value: string; icon:
     <Card>
       <CardContent className="flex items-center gap-3 p-4">
         <div className="rounded-md bg-primary/10 p-2 text-primary">
-          <Icon className="h-5 w-5" />
+          <Icon className="h-5 w-5" aria-hidden="true" />
         </div>
         <div>
           <div className="text-2xl font-semibold tabular-nums">{value}</div>
@@ -104,6 +104,14 @@ function Kpi({ label, value, icon: Icon }: { label: string; value: string; icon:
       </CardContent>
     </Card>
   )
+}
+
+function breakdownLabel(key: string): string {
+  return key.length > 0 ? key : 'Unknown'
+}
+
+function sessionLabel(session: UsageSessionRow): string {
+  return session.project.length > 0 ? session.project : session.id
 }
 
 /**
@@ -117,14 +125,22 @@ function BarRows({ rows, unavailable }: { rows: UsageBreakdown[]; unavailable?: 
   if (unavailable) return <UnavailableNotice what="This breakdown" className="py-4" />
   if (!rows.length) return <Empty>No data yet.</Empty>
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 overflow-x-auto">
       {rows.map((r) => (
-        <div key={r.key} className="flex items-center gap-3 text-sm">
+        <div key={r.key} className="flex min-w-[32rem] items-center gap-3 text-sm">
           <div className="w-40 shrink-0 truncate font-mono text-xs" title={r.key}>
             {r.key}
           </div>
-          <div className="h-3 flex-1 overflow-hidden rounded bg-muted">
-            <div className="h-full bg-primary" style={{ width: `${(r.cost_usd / max) * 100}%` }} />
+          <div
+            className="h-3 flex-1 overflow-hidden rounded bg-muted"
+            role="progressbar"
+            aria-label={`${breakdownLabel(r.key)} cost`}
+            aria-valuemin={0}
+            aria-valuemax={max}
+            aria-valuenow={r.cost_usd}
+            aria-valuetext={fmtUsd(r.cost_usd)}
+          >
+            <div className="h-full bg-primary" style={{ width: `${(r.cost_usd / max) * 100}%` }} aria-hidden="true" />
           </div>
           <div className="w-20 shrink-0 text-right tabular-nums">{fmtUsd(r.cost_usd)}</div>
           <div className="w-24 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
@@ -145,37 +161,55 @@ function Heatmap({ cells }: { cells: UsageActivityCell[] }) {
   }, [cells])
   return (
     <div className="overflow-x-auto">
-      <div className="inline-grid" style={{ gridTemplateColumns: `auto repeat(24, 1fr)` }}>
-        <div />
-        {Array.from({ length: 24 }, (_, h) => (
-          <div key={h} className="px-1 text-center text-[9px] text-muted-foreground">
-            {h % 6 === 0 ? h : ''}
-          </div>
-        ))}
-        {DAYS.map((d, di) => (
-          <>
-            <div key={`l${di}`} className="pr-2 text-right text-[10px] text-muted-foreground">
-              {d}
-            </div>
-            {Array.from({ length: 24 }, (_, h) => {
-              const c = grid.get(`${di}-${h}`)
-              const intensity = c ? 0.15 + (c.sessions / max) * 0.85 : 0
-              return (
-                <div
-                  key={`${di}-${h}`}
-                  className="m-[1px] aspect-square rounded-[2px]"
-                  style={{
-                    backgroundColor: c
-                      ? `color-mix(in srgb, var(--primary) ${intensity * 100}%, transparent)`
-                      : 'var(--muted)',
-                  }}
-                  title={c ? `${d} ${h}:00 — ${c.sessions} sessions, ${fmtUsd(c.cost_usd)}` : `${d} ${h}:00`}
-                />
-              )
-            })}
-          </>
-        ))}
-      </div>
+      <table
+        className="w-full min-w-[640px] border-separate border-spacing-0.5"
+        aria-label="Session activity by day and hour"
+      >
+        <caption className="sr-only">Sessions and cost by day of week and hour.</caption>
+        <thead>
+          <tr>
+            <th scope="col" className="pr-2 text-right text-[10px] font-normal text-muted-foreground">
+              Day / hour
+            </th>
+            {Array.from({ length: 24 }, (_, h) => (
+              <th key={h} scope="col" className="px-1 text-center text-[9px] font-normal text-muted-foreground">
+                <span aria-hidden="true">{h % 6 === 0 ? h : ''}</span>
+                <span className="sr-only">{h}:00</span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {DAYS.map((d, di) => (
+            <tr key={d}>
+              <th scope="row" className="pr-2 text-right text-[10px] font-normal text-muted-foreground">
+                {d}
+              </th>
+              {Array.from({ length: 24 }, (_, h) => {
+                const c = grid.get(`${di}-${h}`)
+                const intensity = c ? 0.15 + (c.sessions / max) * 0.85 : 0
+                const description = c
+                  ? `${d} ${h}:00 — ${c.sessions} sessions, ${fmtUsd(c.cost_usd)}`
+                  : `${d} ${h}:00 — no sessions`
+                return (
+                  <td key={`${d}-${h}`} className="p-0" title={description}>
+                    <div
+                      className="mx-auto aspect-square w-4 rounded-[2px]"
+                      aria-hidden="true"
+                      style={{
+                        backgroundColor: c
+                          ? `color-mix(in srgb, var(--primary) ${intensity * 100}%, transparent)`
+                          : 'var(--muted)',
+                      }}
+                    />
+                    <span className="sr-only">{description}</span>
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -193,27 +227,39 @@ function toolBadgeVariant(successRate: number): 'default' | 'secondary' | 'destr
 function renderToolsTab({ unavailable, tools }: { unavailable: boolean; tools: UsageToolStat[] }) {
   if (unavailable) return <UnavailableNotice what="Tool/skill call stats" />
   if (tools.length === 0) return <Empty>No tool calls recorded yet.</Empty>
+  const maxCalls = Math.max(1, ...tools.map((tool) => tool.calls))
   return (
-    <div className="space-y-1">
-      {tools.map((t) => (
-        <div key={`${t.name}-${t.category}`} className="flex items-center gap-3 text-sm">
-          <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="w-44 shrink-0 truncate font-mono text-xs">{t.name}</span>
-          <Badge variant="outline" className="shrink-0 text-[10px]">
-            {t.category}
-          </Badge>
-          <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
+    <div className="overflow-x-auto">
+      <div className="min-w-[36rem] space-y-1">
+        {tools.map((t) => (
+          <div key={`${t.name}-${t.category}`} className="flex items-center gap-3 text-sm">
+            <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="w-44 shrink-0 truncate font-mono text-xs">{t.name}</span>
+            <Badge variant="outline" className="shrink-0 text-[10px]">
+              {t.category}
+            </Badge>
             <div
-              className="h-full bg-primary"
-              style={{ width: `${Math.min(100, (t.calls / Math.max(1, tools[0].calls)) * 100)}%` }}
-            />
+              className="h-2 flex-1 overflow-hidden rounded bg-muted"
+              role="progressbar"
+              aria-label={`${t.name} calls`}
+              aria-valuemin={0}
+              aria-valuemax={maxCalls}
+              aria-valuenow={t.calls}
+              aria-valuetext={`${t.calls} calls`}
+            >
+              <div
+                className="h-full bg-primary"
+                style={{ width: `${Math.min(100, (t.calls / maxCalls) * 100)}%` }}
+                aria-hidden="true"
+              />
+            </div>
+            <span className="w-12 text-right tabular-nums">{t.calls}</span>
+            <Badge variant={toolBadgeVariant(t.success_rate)} className="w-14 shrink-0 justify-center text-[10px]">
+              {Math.round(t.success_rate * 100)}%
+            </Badge>
           </div>
-          <span className="w-12 text-right tabular-nums">{t.calls}</span>
-          <Badge variant={toolBadgeVariant(t.success_rate)} className="w-14 shrink-0 justify-center text-[10px]">
-            {Math.round(t.success_rate * 100)}%
-          </Badge>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 }
@@ -236,44 +282,67 @@ function renderSessionsTab({
   if (unavailable) return <UnavailableNotice what="The session list" />
   if (sessions.length === 0) return <Empty>No sessions yet.</Empty>
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="text-left text-xs text-muted-foreground">
-          <th className="pb-2">Project</th>
-          <th className="pb-2">Agent</th>
-          <th className="pb-2 text-right">Msgs</th>
-          <th className="pb-2 text-right">Cost</th>
-          <th className="pb-2 text-center">Grade</th>
-        </tr>
-      </thead>
-      <tbody>
-        {sessions.map((s) => (
-          <tr
-            key={s.id}
-            className="cursor-pointer border-t hover:bg-muted/50"
-            onClick={() => {
-              onOpenDetail(s.id)
-            }}
-          >
-            <td className="py-1.5 font-mono text-xs">{s.project || '—'}</td>
-            <td className="py-1.5">
-              <Badge variant="outline" className="text-[10px]">
-                {s.agent}
-              </Badge>
-            </td>
-            <td className="py-1.5 text-right tabular-nums">{s.message_count}</td>
-            <td className="py-1.5 text-right tabular-nums">{fmtUsd(s.cost_usd)}</td>
-            <td className="py-1.5 text-center">
-              {s.health_grade && (
-                <Badge variant="secondary" className="text-[10px]">
-                  {s.health_grade}
-                </Badge>
-              )}
-            </td>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[36rem] text-sm" aria-label="Usage sessions">
+        <caption className="sr-only">Sessions ordered by cost.</caption>
+        <thead>
+          <tr className="text-left text-xs text-muted-foreground">
+            <th scope="col" className="pb-2">
+              Project
+            </th>
+            <th scope="col" className="pb-2">
+              Agent
+            </th>
+            <th scope="col" className="pb-2 text-right">
+              Msgs
+            </th>
+            <th scope="col" className="pb-2 text-right">
+              Cost
+            </th>
+            <th scope="col" className="pb-2 text-center">
+              Grade
+            </th>
+            <th scope="col" className="pb-2 text-right">
+              <span className="sr-only">Open</span>
+            </th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {sessions.map((s) => (
+            <tr key={s.id} className="border-t hover:bg-muted/50">
+              <td className="py-1.5 font-mono text-xs">{s.project || '—'}</td>
+              <td className="py-1.5">
+                <Badge variant="outline" className="text-[10px]">
+                  {s.agent}
+                </Badge>
+              </td>
+              <td className="py-1.5 text-right tabular-nums">{s.message_count}</td>
+              <td className="py-1.5 text-right tabular-nums">{fmtUsd(s.cost_usd)}</td>
+              <td className="py-1.5 text-center">
+                {s.health_grade && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    {s.health_grade}
+                  </Badge>
+                )}
+              </td>
+              <td className="py-1.5 text-right">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Open session ${sessionLabel(s)}`}
+                  onClick={() => {
+                    onOpenDetail(s.id)
+                  }}
+                >
+                  Open
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -292,8 +361,13 @@ function renderSearchTab({
 }) {
   return (
     <>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
+        <label htmlFor="usage-search" className="sr-only">
+          Search sessions and messages
+        </label>
         <Input
+          id="usage-search"
+          className="min-w-0 flex-1"
           placeholder="Search…"
           value={searchQ}
           onChange={(e) => {
@@ -303,29 +377,30 @@ function renderSearchTab({
             if (e.key === 'Enter') onRunSearch()
           }}
         />
-        <Button onClick={onRunSearch}>
-          <Search className="mr-2 h-4 w-4" />
+        <Button type="button" onClick={onRunSearch}>
+          <Search className="mr-2 h-4 w-4" aria-hidden="true" />
           Search
         </Button>
       </div>
       {hits.map((h, i) => (
-        <div
+        <button
           key={`${h.session_id}-${h.ordinal}-${i}`}
-          className="cursor-pointer rounded border p-2 text-sm hover:bg-muted/50"
+          type="button"
+          className="w-full rounded border p-2 text-left text-sm hover:bg-muted/50"
           onClick={() => {
             onOpenDetail(h.session_id)
           }}
         >
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="flex items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline" className="text-[10px]">
               {h.agent}
             </Badge>
             <span>{h.project}</span>
             <span>·</span>
             <span>{h.role}</span>
-          </div>
-          <div className="mt-1">{h.snippet}</div>
-        </div>
+          </span>
+          <span className="mt-1 block">{h.snippet}</span>
+        </button>
       ))}
     </>
   )
@@ -380,7 +455,7 @@ function renderSessionDetailSheet({ detail, onClose }: { detail: UsageSessionDet
                     </Badge>
                     {m.model && <span className="font-mono">{m.model}</span>}
                     {m.output_tokens > 0 && <span>{fmtNum(m.output_tokens)} out</span>}
-                    {m.has_tool_use && <Wrench className="h-3 w-3" />}
+                    {m.has_tool_use && <Wrench className="h-3 w-3" aria-hidden="true" />}
                   </div>
                   <div className="mt-1 line-clamp-4 whitespace-pre-wrap">{m.content}</div>
                 </div>
@@ -425,8 +500,12 @@ function renderAdminTenantBar({
   if (!isAdmin) return null
   return (
     <div className="flex items-center gap-1.5">
-      <Users className="h-4 w-4 text-muted-foreground" />
+      <Users className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+      <label htmlFor="usage-tenant" className="sr-only">
+        Tenant ID
+      </label>
       <Input
+        id="usage-tenant"
         placeholder={tenantPlaceholder}
         value={tenantInput}
         onChange={(e) => {
@@ -472,7 +551,7 @@ function renderDataSourceBadges({ traces }: { traces: UsageTraces | null }) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-2 text-xs">
       <span className="flex items-center gap-1 font-medium text-muted-foreground">
-        <Info className="h-3.5 w-3.5" />
+        <Info className="h-3.5 w-3.5" aria-hidden="true" />
         Data sources:
       </span>
       {sourceRows(Boolean(traces?.enabled)).map((s) => (
@@ -648,14 +727,14 @@ export default function UsageView() {
 
   return (
     <div className="space-y-4 p-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Usage &amp; Cost</h1>
           <p className="text-sm text-muted-foreground">
             Token usage, cost, and metrics across every agent + our own runtime.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {renderAdminTenantBar({
             isAdmin,
             tenantPlaceholder: identity.raw?.tenant ? `tenant (default: ${identity.raw.tenant})` : 'tenant id',
@@ -674,7 +753,10 @@ export default function UsageView() {
             }}
             disabled={loading}
           >
-            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`mr-2 h-4 w-4 ${loading ? 'animate-spin motion-reduce:animate-none' : ''}`}
+              aria-hidden="true"
+            />
             Refresh
           </Button>
         </div>
@@ -688,7 +770,7 @@ export default function UsageView() {
       {summaryUnavailable && <UnavailableNotice what="The usage summary" />}
 
       <Tabs defaultValue="models">
-        <TabsList>
+        <TabsList className="h-auto flex-wrap justify-start gap-1" aria-label="Usage views">
           <TabsTrigger value="models">Models</TabsTrigger>
           <TabsTrigger value="projects">Projects</TabsTrigger>
           <TabsTrigger value="agents">Agents</TabsTrigger>
