@@ -4302,7 +4302,7 @@ def _graph_union_executor(engine: Any) -> Any:
     process client... safe for unified read fan-out", the exact "control
     authority already bound to its own graph" shape used by
     `core/schedule_engine.py::_control_backend`/`_control_session_scope` and
-    `knowledge_graph/pipeline/__init__.py`'s `RegistryPipeline`. Both moves
+    `knowledge_graph/pipeline/__init__.py`'s `IntelligencePipeline`. Both moves
     -- a NEW view bound to `graph_name`, AND the session retargeted onto that
     same `graph_name` -- must happen together; retargeting either one alone
     reproduces the mismatch guard (from the opposite side).
