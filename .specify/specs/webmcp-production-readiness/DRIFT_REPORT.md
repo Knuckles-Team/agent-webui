@@ -51,19 +51,28 @@ closes a task or changes the release decision:
 - `pnpm run site:config:check` failed closed with seven missing or invalid
   values: site origin, legal owner, contact address, effective date, legal
   revision, privacy text, and terms text.
+- The contact flow passed 20 focused backend tests and nine focused frontend
+  tests. This proves the authenticated exact-origin route, field and response
+  bounds, server-owned destination/retention, dedicated throttle, default
+  refusal, durable contact-namespaced opaque receipt, client retry idempotency,
+  strict adapter-result validation, client/server deadlines, required shared
+  limiting, control-character rejection, shared receipt validation, accessible
+  form states, preserved input, unmount cancellation, and receipt-gated App
+  routing to `/thank-you`.
 
 The narrow evidence leaves T001, T003–T007, T009, T011, and T020 with partial
 receipts in `tasks.json`; their task statuses remain `PENDING` because their
 full acceptance criteria are not proven. T010 remains
-`BLOCKED_PENDING_OWNER_INPUT`. T013–T019 and T021–T023 remain open. In
+`BLOCKED_PENDING_OWNER_INPUT`. T012 is complete at the code/test layer;
+production adapter and deployed delivery proof remain part of T021/T022.
+T013–T019 and T021–T023 remain open. In
 particular, no current receipt proves Graph OS ownership, server-verified
 login/session/tenant/principal/document/route/generation binding, attended
 opt-in, at-most-once fences, honest cancellation effects, durable audit before
 dispatch, one `BrowserControlService`, truthful Langfuse status, or deployed
-topology. Real owner-supplied legal/contact values, the contact receipt
-producer, the analytics destination, anonymous SSO policy, the general
-form-error sweep, and the confirmed contact/form submission receipt are also
-explicitly open.
+topology. Real owner-supplied legal/contact values, the production governed
+contact adapter, the analytics destination, anonymous SSO policy, and the
+general form-error sweep are also explicitly open.
 
 ## Ambiguities requiring explicit owner decisions
 

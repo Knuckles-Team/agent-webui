@@ -90,11 +90,15 @@ policy.
     Langfuse/RunTrace. Missing configuration must be truthful and nonfatal.
   - Owner: `agent-webui`; dependencies: `T001`, `T009`, `T010`.
 
-- [ ] [P] **T012** Add confirmed-submission and form receipts.
+- [x] [P] **T012** Add confirmed-submission and form receipts.
   - Covers: `FR-013`, `FR-014`.
   - Preserve safe input on failure, render accessible field/summary errors, and
     navigate to a metadata-backed thank-you route only after backend confirmation;
     no PII or raw submission belongs in the URL.
+  - Code receipt: 20 focused backend tests and nine focused frontend tests pass.
+    The delivery port remains disabled without server-owned destination and
+    retention configuration; production adapter/deployment proof belongs to
+    `T021`/`T022`.
   - Owner: `agent-webui`; dependencies: `T008`, `T009`.
 
 ## Phase 3 — governed WebMCP / Graph OS bridge
@@ -243,9 +247,9 @@ it does not close the corresponding task or production requirement.
   owner, contact-address, legal-date/revision, privacy, and terms values.
 - [ ] Full route, form, legal-owner, deployment, Graph OS bridge, adversarial,
   and release receipts remain open. In particular, real legal/contact values,
-  the contact receipt producer, the analytics destination, anonymous SSO policy,
-  the general form-error sweep, and confirmed contact/form submission receipt
-  are still open. These receipts also do not prove Graph OS authority, server
+  the production governed contact adapter, the analytics destination,
+  anonymous SSO policy, and the general form-error sweep are still open. These
+  receipts also do not prove Graph OS authority, server
   binding, attended opt-in, fences, cancellation effects, durable audit,
   BrowserControlService parity, or Langfuse status.
 

@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
 import { PublicPageLayout } from './PublicPageLayout'
+import { CONTACT_RECEIPT_KEY, isValidContactReceipt } from '@/lib/contact'
 import { routeById } from '@/lib/nav-registry'
-
-const RECEIPT_KEY = 'agent-webui.confirmed-receipt'
 
 function readBoundedReceipt(): string | null {
   try {
-    const receipt = window.sessionStorage.getItem(RECEIPT_KEY)?.trim() ?? ''
-    return /^[A-Za-z0-9_-]{1,64}$/.test(receipt) ? receipt : null
+    const receipt = window.sessionStorage.getItem(CONTACT_RECEIPT_KEY)?.trim() ?? ''
+    return isValidContactReceipt(receipt) ? receipt : null
   } catch {
     return null
   }

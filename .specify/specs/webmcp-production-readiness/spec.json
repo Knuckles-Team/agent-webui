@@ -36,14 +36,24 @@
         "command": "pnpm run site:config:check",
         "result": "EXPECTED_FAIL_CLOSED",
         "proves": "Seven missing or invalid deployment/legal values are rejected: origin, owner, contact address, effective date, legal revision, privacy text, and terms text."
+      },
+      {
+        "command": "PYTHONPATH=agent python -m pytest -q agent/agent_webui/__tests__/test_contact_delivery.py",
+        "result": "PASS_20",
+        "proves": "The live app route enforces authentication, exact same origin, bounded control-safe fields and envelope, fixed destination and retention, local defense-in-depth throttling, required atomic idempotency and shared-limiter adapter capabilities, a server deadline, strict results, success-only durable contact-namespaced receipts, and response privacy."
+      },
+      {
+        "command": "pnpm exec vitest run src/components/public/ContactPage.test.tsx src/lib/__tests__/contact.test.ts",
+        "result": "PASS_9",
+        "proves": "The contact form preserves input on refusal, exposes accessible field/summary and pending states, enforces a bounded client deadline and unmount cancellation, coalesces duplicate clicks, reuses its idempotency key on retry, shares exact receipt validation with the thank-you page, and stores a validated receipt before the real App route navigates."
       }
     ],
     "still_open": [
       "Graph OS bridge authority and server-verified identity/session/tenant/principal/document/route/generation binding",
       "attended opt-in, at-most-once fences, honest cancellation effects, durable audit before dispatch, one BrowserControlService, and truthful Langfuse status",
-      "real owner-supplied legal/contact values and the contact receipt producer",
+      "real owner-supplied legal/contact values and the production governed contact adapter",
       "configured analytics destination, anonymous SSO policy, and deployed-topology receipts",
-      "general form-error sweep and confirmed contact/form submission receipt"
+      "general form-error sweep and deployed contact delivery receipt"
     ]
   },
   "overview": "Govern the boundary between browser-local WebMCP controls and Graph OS remote MCP while making the WebUI production-ready through one route metadata authority, shared public/legal layout, shared consent and analytics loader, existing loading/error primitives, and one image policy.",
@@ -498,13 +508,13 @@
       "id": "FR-014",
       "title": "Thank-you page",
       "description": "Confirmed contact or CTA submission navigates to a dedicated metadata-backed thank-you page with a bounded receipt and next-step CTA.",
-      "evidence_status": "MISSING",
+      "evidence_status": "IMPLEMENTED_TESTED",
       "acceptance_criteria": [
         "The page is a route-registry entry using the public/legal layout.",
         "The URL contains no PII or raw submission data.",
         "The page is shown only after backend confirmation and does not claim delivery on failure."
       ],
-      "source_refs": ["src/lib/nav-registry.ts", "src/App.tsx"]
+      "source_refs": ["src/lib/nav-registry.ts", "src/components/public/ContactForm.tsx", "src/components/public/ThankYouPage.tsx", "src/lib/contact.ts", "agent/agent_webui/contact_delivery.py"]
     },
     {
       "id": "FR-015",

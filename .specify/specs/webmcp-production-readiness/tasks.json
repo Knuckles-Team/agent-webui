@@ -145,11 +145,12 @@
     "domain": "Conversion UX",
     "priority": "P1",
     "effort": "Medium",
-    "status": "PENDING",
+    "status": "COMPLETE",
+    "evidence_status": "IMPLEMENTED_TESTED",
     "dependencies": ["T008", "T009"],
     "requirement_ids": ["FR-013", "FR-014"],
-    "file_paths": ["src/components/views/ThankYouView.tsx", "src/lib/forms.ts"],
-    "evidence": "Successful submission is confirmed before thank-you navigation and carries no PII in the URL."
+    "file_paths": ["src/components/public/ContactForm.tsx", "src/components/public/ContactPage.tsx", "src/components/public/ThankYouPage.tsx", "src/lib/contact.ts", "agent/agent_webui/contact_delivery.py", "agent/agent_webui/server.py"],
+    "evidence": "Twenty focused backend tests and nine focused frontend tests prove authenticated exact-origin delivery, fixed server destination and retention, local defense-in-depth throttling, required atomic-idempotency and shared-limiter adapter capabilities, strict adapter results, control-safe fields, client/server deadlines, durable contact-namespaced opaque receipts, retry key reuse, unmount cancellation, shared receipt validation, accessible errors/loading, preserved input, and confirmed-only App routing to the thank-you page. Production adapter and deployed proof remain T021/T022 work."
   },
   {
     "id": "T013",
