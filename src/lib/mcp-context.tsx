@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 import { ElicitationModal } from '../components/ElicitationModal'
-import { DEFAULT_MCP_SERVER, McpClientError, fetchMcpServerTools, type McpToolDescriptor } from './mcp-client'
+import { DEFAULT_MCP_SERVER, fetchMcpServerToolCatalog, McpClientError, type McpToolDescriptor } from './mcp-client'
 
 interface JSONSchema {
   type?: string
@@ -35,20 +35,28 @@ interface ElicitationState {
  */
 export type MCPCatalogStatus = 'idle' | 'loading' | 'available' | 'unavailable' | 'error'
 
-interface MCPContextValue {
+export interface MCPContextValue {
   /** Bounded, validated tool descriptors from the last successful catalog
    * fetch, or `null` before the first load resolves or after a failure. */
   tools: McpToolDescriptor[] | null
+  /** The backend-reported total for the current catalog page, not the page's
+   * number of descriptors. `null` means no catalog has settled yet. */
+  totalTools: number | null
   isLoadingTools: boolean
   /** Human-readable reason the catalog is not `available`, or `null`. */
   toolsError: string | null
   catalogStatus: MCPCatalogStatus
+  /** Abort the current request and load a fresh catalog page. */
+  reloadTools: () => void
 }
 
 const MCPContext = createContext<MCPContextValue | undefined>(undefined)
 
 export interface MCPProviderProps {
   children: ReactNode
+  /** Public, 404, and unauthenticated shells keep the shared provider mounted
+   * for one-owner semantics but must not probe the governed catalog. */
+  enabled?: boolean
   /** MCP server whose governed catalog is loaded. Defaults to graph-os, the
    * fleet gateway — the same default `mcp-client.ts`'s callers use. */
   server?: string
@@ -67,25 +75,45 @@ export interface MCPProviderProps {
  * A missing/refusing backend (no delegation configured, policy denial,
  * transport failure) settles to an explicit `unavailable`/`error` status
  * with `tools: null` — it never fabricates a catalog and never leaves
- * `isLoadingTools` stuck `true`.
+ * `isLoadingTools` stuck `true`. Public and unauthenticated shells can keep
+ * this one provider owner mounted with `enabled={false}`; those shells remain
+ * `idle` and issue no catalog request.
  */
-export function MCPProvider({ children, server = DEFAULT_MCP_SERVER }: MCPProviderProps) {
+export function MCPProvider({ children, enabled = true, server = DEFAULT_MCP_SERVER }: MCPProviderProps) {
   const [tools, setTools] = useState<McpToolDescriptor[] | null>(null)
+  const [totalTools, setTotalTools] = useState<number | null>(null)
   const [isLoadingTools, setIsLoadingTools] = useState(false)
   const [toolsError, setToolsError] = useState<string | null>(null)
   const [catalogStatus, setCatalogStatus] = useState<MCPCatalogStatus>('idle')
+  const [reloadVersion, setReloadVersion] = useState(0)
+
+  const reloadTools = useCallback(() => {
+    setReloadVersion((version) => version + 1)
+  }, [])
 
   useEffect(() => {
+    if (!enabled) {
+      setIsLoadingTools(false)
+      setCatalogStatus('idle')
+      setTools(null)
+      setTotalTools(null)
+      setToolsError(null)
+      return
+    }
+
     let cancelled = false
     const controller = new AbortController()
     setIsLoadingTools(true)
     setCatalogStatus('loading')
     setToolsError(null)
+    setTools(null)
+    setTotalTools(null)
 
-    fetchMcpServerTools(server, { signal: controller.signal })
-      .then((fetched) => {
+    fetchMcpServerToolCatalog(server, { signal: controller.signal })
+      .then((catalog) => {
         if (cancelled) return
-        setTools(fetched)
+        setTools(catalog.tools)
+        setTotalTools(catalog.total)
         setCatalogStatus('available')
         setIsLoadingTools(false)
       })
@@ -105,7 +133,7 @@ export function MCPProvider({ children, server = DEFAULT_MCP_SERVER }: MCPProvid
       cancelled = true
       controller.abort()
     }
-  }, [server])
+  }, [enabled, reloadVersion, server])
 
   const [elicitation, setElicitation] = useState<ElicitationState>({
     isOpen: false,
@@ -125,7 +153,7 @@ export function MCPProvider({ children, server = DEFAULT_MCP_SERVER }: MCPProvid
   )
 
   return (
-    <MCPContext.Provider value={{ tools, isLoadingTools, toolsError, catalogStatus }}>
+    <MCPContext.Provider value={{ tools, totalTools, isLoadingTools, toolsError, catalogStatus, reloadTools }}>
       {children}
 
       {elicitation.isOpen && elicitation.schema && (

@@ -134,7 +134,7 @@ function AvatarSection({
   return (
     <div className="flex items-center gap-4">
       <Avatar className="size-16 ring-1 ring-border">
-        <AvatarImage src={avatarSrc} alt="" />
+        <AvatarImage src={avatarSrc} alt="" decorative />
         <AvatarFallback className="text-lg">{initialsOf(effectiveDisplayName)}</AvatarFallback>
       </Avatar>
       <div className="flex flex-col gap-1.5">

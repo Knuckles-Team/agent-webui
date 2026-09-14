@@ -1,5 +1,6 @@
 /** Public entry points for the optional, draft-isolated WebMCP integration. */
-export { detectWebMcpAdapter, registerWebMcpTools } from './adapter'
+export { createUnavailableWebMcpRegistration, detectWebMcpAdapter, registerWebMcpTools } from './adapter'
+export type { WebMcpRegistrationHandle, WebMcpRegistrationSnapshot, WebMcpRegistrationStatus } from './adapter'
 export { DocumentModelContextAdapter, DOCUMENT_MODEL_CONTEXT_VERSION } from './document-model-context'
 export { WebMcpAtlasRegistrar } from './atlas'
 export { navigateWithinWebUi } from './navigation'

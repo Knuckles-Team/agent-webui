@@ -1,6 +1,7 @@
 import * as React from 'react'
 import * as AvatarPrimitive from '@radix-ui/react-avatar'
 
+import { assertImageAlt, type ImageAltProps } from '@/lib/accessible-image'
 import { cn } from '@/lib/utils'
 
 function Avatar({ className, ...props }: React.ComponentProps<typeof AvatarPrimitive.Root>) {
@@ -13,9 +14,20 @@ function Avatar({ className, ...props }: React.ComponentProps<typeof AvatarPrimi
   )
 }
 
-function AvatarImage({ className, ...props }: React.ComponentProps<typeof AvatarPrimitive.Image>) {
+function AvatarImage<const Alt extends string>({
+  className,
+  alt,
+  decorative,
+  ...props
+}: Omit<React.ComponentProps<typeof AvatarPrimitive.Image>, 'alt'> & ImageAltProps<Alt>) {
+  assertImageAlt(alt, decorative)
   return (
-    <AvatarPrimitive.Image data-slot="avatar-image" className={cn('aspect-square size-full', className)} {...props} />
+    <AvatarPrimitive.Image
+      data-slot="avatar-image"
+      alt={alt}
+      className={cn('aspect-square size-full', className)}
+      {...props}
+    />
   )
 }
 

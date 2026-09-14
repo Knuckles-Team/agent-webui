@@ -79,6 +79,9 @@ _REMOTE_DEFAULT_RATE = 20.0
 _REMOTE_DEFAULT_BURST = 40.0
 _MAX_WEBSOCKET_MESSAGE_BYTES = 1024 * 1024
 _MAX_BEARER_TOKEN_BYTES = 16 * 1024
+_SPA_ROUTE_MANIFEST_FILENAME = 'spa-routes.json'
+_SPA_ROUTE_MANIFEST_SCHEMA_VERSION = 1
+_SPA_FALLBACK_EXEMPT_PREFIXES = ('api', 'chat', 'configure', 'mcp', 'a2a', 'ag-ui')
 # BUG-019 (GOC-29): bound on how many widget ids a `/ws/dashboard` `subscribe`
 # message may name in one call -- matches api_extensions.py's
 # `_MAX_EXTERNAL_COLLECTION_ITEMS` bound on external collections generally.
@@ -2182,6 +2185,111 @@ def _dashboard_build_is_servable(dist_path: Path) -> bool:
     return True
 
 
+def _valid_spa_route_pattern(value: Any) -> bool:
+    """Whether one manifest value is a bounded React Router path pattern."""
+
+    return (
+        isinstance(value, str)
+        and value.startswith('/')
+        and value != '*'
+        and '?' not in value
+        and '#' not in value
+    )
+
+
+def _parse_spa_route_manifest(payload: Any) -> tuple[str, ...] | None:
+    """Validate the route-manifest schema without accepting partial input."""
+
+    if not isinstance(payload, dict) or payload.get('schema_version') != (
+        _SPA_ROUTE_MANIFEST_SCHEMA_VERSION
+    ):
+        return None
+    routes = payload.get('routes')
+    if not isinstance(routes, list) or not routes:
+        return None
+    if not all(_valid_spa_route_pattern(route) for route in routes):
+        return None
+    if len(routes) != len(set(routes)):
+        return None
+    return tuple(routes)
+
+
+def _load_spa_route_patterns(dist_path: Path) -> tuple[str, ...]:
+    """Load the build-derived, schema-validated React route projection.
+
+    The frontend registry remains the only authored route authority. Its build
+    step writes this small manifest beside ``index.html`` so the HTTP server can
+    distinguish a real client-side route from the React 404 page without
+    duplicating paths in Python. A missing or malformed manifest fails closed:
+    extensionless fallback responses are still rendered by React, but carry a
+    truthful 404 status instead of claiming that every arbitrary URL exists.
+    """
+
+    manifest_path = dist_path / _SPA_ROUTE_MANIFEST_FILENAME
+    try:
+        payload = json.loads(manifest_path.read_text(encoding='utf-8'))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        logger.error(
+            'The SPA route manifest is unavailable or invalid '
+            '(path=%s, error_type=%s); unknown client routes will fail closed',
+            manifest_path,
+            type(exc).__name__,
+        )
+        return ()
+
+    routes = _parse_spa_route_manifest(payload)
+    if routes is None:
+        logger.error(
+            'The SPA route manifest has an unsupported schema or invalid routes '
+            '(path=%s)',
+            manifest_path,
+        )
+        return ()
+    return routes
+
+
+def _matches_spa_route(path: str, route_patterns: tuple[str, ...]) -> bool:
+    """Match a StaticFiles-relative path against React Router-style patterns."""
+
+    normalized = '/' + path.strip('/') if path.strip('/') else '/'
+    request_segments = normalized.strip('/').split('/') if normalized != '/' else []
+    for pattern in route_patterns:
+        if pattern == normalized:
+            return True
+        pattern_segments = pattern.strip('/').split('/') if pattern != '/' else []
+        if len(pattern_segments) != len(request_segments):
+            continue
+        if all(
+            expected.startswith(':') or expected == actual
+            for expected, actual in zip(pattern_segments, request_segments, strict=True)
+        ):
+            return True
+    return False
+
+
+class SPAStaticFiles(StaticFiles):
+    """Serve the SPA shell with an HTTP status that reflects route existence."""
+
+    def __init__(self, *args, route_patterns: tuple[str, ...], **kwargs):
+        super().__init__(*args, **kwargs)
+        self._route_patterns = route_patterns
+
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except _errors.HTTPException as exc:
+            first_segment = path.partition('/')[0]
+            if exc.status_code != 404 or first_segment in _SPA_FALLBACK_EXEMPT_PREFIXES:
+                raise
+            known_route = _matches_spa_route(path, self._route_patterns)
+            if not known_route and '.' in path:
+                raise
+            response = await super().get_response('index.html', scope)
+            if not known_route:
+                response.status_code = 404
+            return response
+
+
 def _ensure_request_observability_middleware(app: FastAPI) -> None:
     """Install the outermost access-logging boundary exactly once.
 
@@ -2618,33 +2726,15 @@ def create_agent_web_app(
 
     dist_path = Path(__file__).parent / 'dist'
 
-    class SPAStaticFiles(StaticFiles):
-        """Custom StaticFiles implementation to support Single Page Application (SPA).
-
-        Intercepts 404s for client-side routing, falling back to index.html
-        unless the request targets a known API endpoint or specific file.
-        """
-
-        async def get_response(self, path: str, scope):
-            try:
-                return await super().get_response(path, scope)
-            except _errors.HTTPException as ex:
-                if (
-                    ex.status_code == 404
-                    and not any(
-                        path.startswith(p)
-                        for p in ['api', 'chat', 'configure', 'mcp', 'a2a', 'ag-ui']
-                    )
-                    and '.' not in path
-                ):
-                    return await super().get_response('index.html', scope)
-                raise ex
-
     # Fallback to serving the built React dashboard if no custom source provided
     if not html_source and _dashboard_build_is_servable(dist_path):
         app.mount(
             '/',
-            SPAStaticFiles(directory=str(dist_path), html=True),
+            SPAStaticFiles(
+                directory=str(dist_path),
+                html=True,
+                route_patterns=_load_spa_route_patterns(dist_path),
+            ),
             name='dashboard',
         )
 

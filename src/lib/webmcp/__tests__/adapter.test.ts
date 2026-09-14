@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { describe, expect, it, vi } from 'vitest'
-import { detectWebMcpAdapter, registerWebMcpTools } from '../adapter'
+import { createUnavailableWebMcpRegistration, detectWebMcpAdapter, registerWebMcpTools } from '../adapter'
 import { createValidatedExecutor, WEBMCP_OUTPUT_CHARACTER_BUDGET } from '../validation'
 import type { WebMcpAdapter, WebMcpToolDefinition } from '../types'
 
@@ -33,16 +33,87 @@ describe('experimental WebMCP adapter', () => {
       execute: async () => ({ ok: true }),
     }
 
-    const cleanup = registerWebMcpTools(adapter, [tool])
+    const registration = registerWebMcpTools(adapter, [tool])
     expect(registerTool).toHaveBeenCalledOnce()
     const signal = registerTool.mock.calls[0]?.[0]
     if (!signal) throw new Error('registration signal was not captured')
     expect(signal).toBeInstanceOf(AbortSignal)
     expect(signal.aborted).toBe(false)
 
-    cleanup()
+    registration()
     expect(signal.aborted).toBe(true)
     await Promise.resolve()
+    expect(registration.getSnapshot().activeToolNames).toEqual([])
+    expect(registration.getSnapshot().statusByTool['agent-webui.test']).toBe('aborted')
+  })
+
+  it('acknowledges only settled registrations and keeps pending tools unavailable', async () => {
+    let acknowledge: (() => void) | undefined
+    const adapter: WebMcpAdapter = {
+      version: 'document-model-context-2026-08-26',
+      registerTool: async () =>
+        new Promise<void>((resolve) => {
+          acknowledge = resolve
+        }),
+    }
+    const tool: WebMcpToolDefinition = {
+      name: 'agent-webui.pending',
+      description: 'pending',
+      inputSchema: { type: 'object' },
+      execute: async () => ({ ok: true }),
+    }
+
+    const registration = registerWebMcpTools(adapter, [tool])
+    expect(registration.getSnapshot()).toMatchObject({
+      activeToolNames: [],
+      unavailableToolNames: ['agent-webui.pending'],
+      statusByTool: { 'agent-webui.pending': 'pending' },
+    })
+
+    acknowledge?.()
+    await expect(registration.acknowledged).resolves.toMatchObject({
+      generation: registration.generation,
+      activeToolNames: ['agent-webui.pending'],
+      unavailableToolNames: [],
+      statusByTool: { 'agent-webui.pending': 'active' },
+    })
+  })
+
+  it('reports failed registrations and never promotes them to active', async () => {
+    const adapter: WebMcpAdapter = {
+      version: 'document-model-context-2026-08-26',
+      registerTool: async () => {
+        throw new Error('permission denied')
+      },
+    }
+    const tool: WebMcpToolDefinition = {
+      name: 'agent-webui.failed',
+      description: 'failed',
+      inputSchema: { type: 'object' },
+      execute: async () => ({ ok: true }),
+    }
+
+    const registration = registerWebMcpTools(adapter, [tool])
+    const snapshot = await registration.acknowledged
+    expect(snapshot.activeToolNames).toEqual([])
+    expect(snapshot.unavailableToolNames).toEqual(['agent-webui.failed'])
+    expect(snapshot.statusByTool['agent-webui.failed']).toBe('failed')
+    expect(snapshot.errorByTool['agent-webui.failed']).toBe('permission denied')
+  })
+
+  it('makes unsupported registration explicit instead of fabricating active evidence', async () => {
+    const tool: WebMcpToolDefinition = {
+      name: 'agent-webui.unsupported',
+      description: 'unsupported',
+      inputSchema: { type: 'object' },
+      execute: async () => ({ ok: true }),
+    }
+    const registration = createUnavailableWebMcpRegistration([tool])
+    await expect(registration.acknowledged).resolves.toMatchObject({
+      activeToolNames: [],
+      unavailableToolNames: ['agent-webui.unsupported'],
+      statusByTool: { 'agent-webui.unsupported': 'unavailable' },
+    })
   })
 })
 
@@ -78,6 +149,16 @@ describe('WebMCP input/output validation', () => {
 
     await expect(execute({ path: '/graph' }, { signal: controller.signal })).rejects.toThrow('execution was cancelled')
     expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('does not claim a completed local dispatch was rolled back by a later abort', async () => {
+    const controller = new AbortController()
+    const execute = createValidatedExecutor(inputSchema, outputSchema, () => {
+      controller.abort()
+      return { accepted: true as const }
+    })
+
+    await expect(execute({ path: '/graph' }, { signal: controller.signal })).resolves.toEqual({ accepted: true })
   })
 
   it('rejects output above the browser-agent character budget', async () => {

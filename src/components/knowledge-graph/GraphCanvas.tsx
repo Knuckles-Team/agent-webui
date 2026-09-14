@@ -9,6 +9,7 @@ import { GraphLegend } from './GraphLegend'
 import { GRAPH_ENGINE_RENDER_NODE_THRESHOLD, renderGraphNodesOnlyViaEngine } from './engineGraphRender'
 import { adaptVizResult } from '../views/dashboards/queries'
 import { pickReadableTextColor, resolveThemeColors, useIsDarkMode } from './theme-colors'
+import { AccessibleImage } from '@/components/ai-elements/image'
 
 interface GraphCanvasProps {
   nodes: GraphNode[]
@@ -451,7 +452,7 @@ function EnginePreviewPane({ nodeCount, enginePreview, onRunPreview }: EnginePre
           </pre>
         ) : (
           <div className="space-y-2">
-            <img
+            <AccessibleImage
               src={enginePreview.dataUrl}
               alt={`Engine node-position preview of ${String(enginePreview.rowCount)} nodes (no edges)`}
               className="max-w-full rounded-md border border-border"

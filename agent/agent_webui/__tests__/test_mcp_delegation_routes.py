@@ -205,7 +205,9 @@ def unwired_client(mock_agent):
 
 
 class TestToolCallRoute:
-    def test_call_reaches_the_mcp_server_and_returns_its_result(self, client):
+    def test_call_reaches_the_mcp_server_and_returns_its_result(
+        self, client, bounded_engine
+    ):
         response = client.post(
             '/api/enhanced/mcp/tools/call',
             json={
@@ -225,7 +227,9 @@ class TestToolCallRoute:
             'status': 'working',
         }
 
-    def test_unknown_tool_is_a_bad_gateway_not_a_silent_empty_result(self, client):
+    def test_unknown_tool_is_a_bad_gateway_not_a_silent_empty_result(
+        self, client, bounded_engine
+    ):
         response = client.post(
             '/api/enhanced/mcp/tools/call',
             json={'server': 'graph-os', 'tool': 'no_such_tool', 'arguments': {}},
@@ -238,6 +242,37 @@ class TestToolCallRoute:
             json={'server': 'graph os', 'tool': 'graph_jobs', 'arguments': {}},
         )
         assert response.status_code == 400
+
+    def test_call_rejects_an_unbounded_timeout_before_delegation(
+        self, client, bounded_engine
+    ):
+        response = client.post(
+            '/api/enhanced/mcp/tools/call',
+            json={
+                'server': 'graph-os',
+                'tool': 'graph_jobs',
+                'arguments': {},
+                'timeout_ms': 30_001,
+            },
+        )
+        assert response.status_code == 400
+
+    def test_disabled_tool_is_rechecked_at_call_time(self, client, bounded_engine):
+        bounded_engine.query_cypher.return_value = [
+            {
+                'id': 'preference:toggle:mcp_tool:graph-os:graph_jobs',
+                'value': 'disabled',
+            }
+        ]
+        response = client.post(
+            '/api/enhanced/mcp/tools/call',
+            json={
+                'server': 'graph-os',
+                'tool': 'graph_jobs',
+                'arguments': {'action': 'status'},
+            },
+        )
+        assert response.status_code == 403
 
     def test_without_host_injection_the_route_refuses(self, unwired_client):
         response = unwired_client.post(

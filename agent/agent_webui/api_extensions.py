@@ -85,6 +85,11 @@ _SAFE_DELEGATION_TOKEN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$')
 # route from being turned into a general-purpose reader for any URI a caller
 # can name (``file://``, ``http://`` to an internal host, ...).
 _SAFE_MCP_APP_URI = re.compile(r'^ui://[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$')
+_MCP_REQUEST_TIMEOUT_MIN_MS = 100
+_MCP_CALL_TIMEOUT_DEFAULT_MS = 30_000
+_MCP_CALL_TIMEOUT_MAX_MS = 30_000
+_MCP_RESOURCE_TIMEOUT_DEFAULT_MS = 15_000
+_MCP_RESOURCE_TIMEOUT_MAX_MS = 15_000
 _MAX_SESSION_RECORDS = 256
 _MAX_SESSION_TURNS = 256
 _MAX_SESSION_REPLY_BYTES = 64 * 1024
@@ -789,6 +794,87 @@ def _validate_delegation_call(
     if not isinstance(bounded_arguments, dict):  # defensive type narrowing
         raise ValueError('Delegated arguments must be an object')
     return bounded_arguments
+
+
+def _mcp_timeout_seconds(
+    raw_timeout_ms: Any,
+    *,
+    default_ms: int,
+    max_ms: int,
+) -> float:
+    """Validate a caller deadline without allowing an unbounded helper call."""
+    if raw_timeout_ms is None:
+        return default_ms / 1000.0
+    if isinstance(raw_timeout_ms, bool) or not isinstance(raw_timeout_ms, (int, float)):
+        raise ValueError('timeout_ms must be a finite number')
+    timeout_ms = float(raw_timeout_ms)
+    if not math.isfinite(timeout_ms):
+        raise ValueError('timeout_ms must be a finite number')
+    if not _MCP_REQUEST_TIMEOUT_MIN_MS <= timeout_ms <= max_ms:
+        raise ValueError(
+            f'timeout_ms must be between {_MCP_REQUEST_TIMEOUT_MIN_MS} and {max_ms}'
+        )
+    return timeout_ms / 1000.0
+
+
+def _validated_mcp_timeout(
+    data: dict[str, Any], *, default_ms: int, max_ms: int
+) -> float:
+    """Turn a route timeout field into a bounded deadline or a 400 response."""
+    try:
+        return _mcp_timeout_seconds(
+            data.get('timeout_ms'), default_ms=default_ms, max_ms=max_ms
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _mcp_tool_request(data: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
+    """Validate and normalize the public MCP tool-call request envelope."""
+    server_name = str(data.get('server') or '')
+    tool_name = str(data.get('tool') or '')
+    arguments = data.get('arguments')
+    if arguments is None:
+        arguments = {}
+    try:
+        bounded_arguments = _validate_delegation_call(server_name, tool_name, arguments)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return server_name, tool_name, bounded_arguments
+
+
+def _require_mcp_helper(name: str, detail: str) -> None:
+    """Refuse a route when its host-owned governed delegation seam is absent."""
+    if get_helper(name) is None:
+        raise HTTPException(status_code=501, detail=detail)
+
+
+async def _enforce_mcp_tool_policy(server_name: str, tool_name: str) -> None:
+    """Re-read the persisted toggle immediately before every tool call.
+
+    Catalog metadata is intentionally stale-able: operators can disable a tool
+    after the browser loaded the inventory. The call seam therefore checks the
+    same KG preference source at execution time and fails closed if that read
+    cannot be verified.
+    """
+    try:
+        engine = await _get_engine_bounded()
+        states, states_ok = await _batch_toggle_states(
+            engine,
+            'mcp_tool',
+            [f'{server_name}:{tool_name}'],
+        )
+    except HTTPException:
+        raise HTTPException(status_code=503, detail='MCP tool policy unavailable')
+    except Exception as exc:
+        _log_failure('mcp_tool_policy', exc)
+        raise HTTPException(
+            status_code=503, detail='MCP tool policy unavailable'
+        ) from exc
+    if not states_ok:
+        raise HTTPException(status_code=503, detail='MCP tool policy unavailable')
+    if states.get(f'{server_name}:{tool_name}', True) is False:
+        raise HTTPException(status_code=403, detail='MCP tool is disabled by policy')
 
 
 def _validate_runtime_id(value: Any) -> str:
@@ -3352,6 +3438,28 @@ async def delete_mcp_server(server_name: str, hard: bool = False) -> dict[str, A
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+async def _execute_mcp_tool_call(
+    server_name: str,
+    tool_name: str,
+    arguments: dict[str, Any],
+    timeout: float,
+) -> Any:
+    """Apply call-time policy, invoke the host seam, and map failures."""
+    try:
+        await _enforce_mcp_tool_policy(server_name, tool_name)
+        return await _call_mcp_tool(
+            server_name,
+            tool_name,
+            arguments,
+            timeout=timeout,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log_failure('mcp_tool_delegation', exc)
+        raise HTTPException(status_code=502, detail='MCP tool call failed') from exc
+
+
 @router.post('/mcp/tools/call')
 async def call_mcp_tool_route(data: dict[str, Any]) -> dict[str, Any]:
     """Invoke one MCP tool through the host's governed delegation seam.
@@ -3372,33 +3480,38 @@ async def call_mcp_tool_route(data: dict[str, Any]) -> dict[str, Any]:
     envelope. With no host injection the route reports 501 rather than
     inventing a delegation path.
     """
-    server_name = str(data.get('server') or '')
-    tool_name = str(data.get('tool') or '')
-    arguments = data.get('arguments')
-    if arguments is None:
-        arguments = {}
-    try:
-        _validate_delegation_call(server_name, tool_name, arguments)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    server_name, tool_name, arguments = _mcp_tool_request(data)
+    timeout = _validated_mcp_timeout(
+        data,
+        default_ms=_MCP_CALL_TIMEOUT_DEFAULT_MS,
+        max_ms=_MCP_CALL_TIMEOUT_MAX_MS,
+    )
+    _require_mcp_helper('call_mcp_tool', 'Governed MCP delegation is not configured')
+    result = await _execute_mcp_tool_call(server_name, tool_name, arguments, timeout)
+    return {'status': 'success', 'result': result}
 
-    if get_helper('call_mcp_tool') is None:
-        raise HTTPException(
-            status_code=501,
-            detail='Governed MCP delegation is not configured',
-        )
+
+async def _read_mcp_app_resource(
+    delegated_read: Any,
+    *,
+    server_name: str,
+    uri: str,
+    timeout: float,
+) -> Any:
+    """Read and bound one MCP Apps resource through the host-owned seam."""
     try:
-        result = await _call_mcp_tool(
-            server_name,
-            tool_name,
-            arguments if isinstance(arguments, dict) else {},
+        resource = await _invoke_governed_helper(
+            delegated_read,
+            deadline=timeout,
+            server_name=server_name,
+            uri=uri,
         )
+        return _public_external_result(resource)
     except HTTPException:
         raise
-    except Exception as e:
-        _log_failure('mcp_tool_delegation', e)
-        raise HTTPException(status_code=502, detail='MCP tool call failed') from e
-    return {'status': 'success', 'result': result}
+    except Exception as exc:
+        _log_failure('mcp_resource_delegation', exc)
+        raise HTTPException(status_code=502, detail='MCP resource read failed') from exc
 
 
 @router.post('/mcp/apps/resource')
@@ -3414,26 +3527,23 @@ async def read_mcp_app_resource_route(data: dict[str, Any]) -> dict[str, Any]:
     never be navigated to directly and inherit this origin.
     """
     server_name, uri = _mcp_app_resource_request(data)
+    timeout = _validated_mcp_timeout(
+        data,
+        default_ms=_MCP_RESOURCE_TIMEOUT_DEFAULT_MS,
+        max_ms=_MCP_RESOURCE_TIMEOUT_MAX_MS,
+    )
 
     delegated_read = get_helper('read_mcp_resource')
-    if delegated_read is None:
-        raise HTTPException(
-            status_code=501,
-            detail='Governed MCP resource delegation is not configured',
-        )
-    try:
-        resource = await _invoke_governed_helper(
-            delegated_read,
-            deadline=15.0,
-            server_name=server_name,
-            uri=uri,
-        )
-        resource = _public_external_result(resource)
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('mcp_resource_delegation', e)
-        raise HTTPException(status_code=502, detail='MCP resource read failed') from e
+    _require_mcp_helper(
+        'read_mcp_resource',
+        'Governed MCP resource delegation is not configured',
+    )
+    resource = await _read_mcp_app_resource(
+        delegated_read,
+        server_name=server_name,
+        uri=uri,
+        timeout=timeout,
+    )
 
     return {'status': 'success', 'result': _mcp_app_resource_result(resource, uri)}
 
