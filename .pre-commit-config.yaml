@@ -182,7 +182,7 @@ repos:
   # parity sweep via `--hook-stage pre-push`.
   - id: release-wheel-build
     name: release parity — uv build (wheel + sdist, HEAVY, pre-push)
-    entry: bash -c 'set -e; rm -rf dist; uv build; ls dist/*.whl >/dev/null'
+    entry: bash -c 'set -e; rm -rf dist; uv build; wheel=$(find dist -maxdepth 1 -name "*.whl" -print -quit); test -n "$wheel"; python scripts/release/check_wheel_contract.py "$wheel"'
     language: system
     pass_filenames: false
     always_run: true
