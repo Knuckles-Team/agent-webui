@@ -77,8 +77,10 @@ function renderIndex(html, indexable, origin, openGraphImagePath) {
   )
   output = replaceGeneratedTag(
     output,
-    /<link rel="canonical"[^>]*data-site-generated="canonical"[^>]*\/>/,
-    `<link rel="canonical" href="${rootUrl}" data-site-generated="canonical" />`,
+    /(?:<link rel="canonical"[^>]*data-site-generated="canonical"[^>]*\/>|<!--\s*data-site-generated="canonical"\s*-->)/,
+    indexable
+      ? `<link rel="canonical" href="${rootUrl}" data-site-generated="canonical" />`
+      : '<!-- data-site-generated="canonical" -->',
   )
   output = replaceGeneratedTag(
     output,

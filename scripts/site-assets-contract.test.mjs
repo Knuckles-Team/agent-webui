@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { projectSpaRouteManifest, projectStaticRouteMetadata, readRouteRegistry } from './site-route-registry.mjs'
 import { isVersionedLocalAssetPath, routePathIssue } from './site-assets-contract.mjs'
@@ -7,6 +8,7 @@ const root = resolve(import.meta.dirname, '..')
 const routeRegistry = await readRouteRegistry(root)
 const projection = projectStaticRouteMetadata(routeRegistry)
 const spaRouteManifest = projectSpaRouteManifest(routeRegistry)
+const indexHtml = await readFile(resolve(root, 'index.html'), 'utf8')
 
 assert.equal(new Set(routeRegistry.map((route) => route.id)).size, routeRegistry.length)
 assert.deepEqual(
@@ -21,6 +23,11 @@ assert.ok(
 assert.ok(projection.disallowPaths.includes('/api/'))
 assert.ok(projection.disallowPaths.includes('/object/'))
 assert.ok(projection.disallowPaths.includes('/thank-you'))
+assert.doesNotMatch(
+  indexHtml,
+  /<link\b(?=[^>]*\brel="canonical")(?=[^>]*\bhref="\/)/,
+  'canonical metadata must never use a root-relative URL',
+)
 assert.equal(spaRouteManifest.schema_version, 1)
 assert.deepEqual(
   spaRouteManifest.routes,

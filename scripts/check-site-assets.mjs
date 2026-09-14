@@ -53,6 +53,15 @@ function required(html, pattern, label) {
   if (!pattern.test(html)) fail(`index.html is missing ${label}`)
 }
 
+function canonicalHrefs(html) {
+  return [...html.matchAll(/<link\b[^>]*>/g)].flatMap((match) => {
+    const tag = match[0]
+    if (!/\brel="canonical"/.test(tag)) return []
+    const href = tag.match(/\bhref="([^"]+)"/)?.[1]
+    return href ? [href] : []
+  })
+}
+
 function pngDimensions(buffer, path) {
   if (buffer.length < 24 || buffer.readUInt32BE(0) !== 0x89504e47 || buffer.toString('ascii', 12, 16) !== 'IHDR') {
     fail(`${path} is not a PNG with an IHDR header`)
@@ -77,7 +86,7 @@ async function checkPng(name, width, height, maxBytes) {
 
 const html = await text(INDEX)
 required(html, /<title>[^<]+<\/title>/, 'a non-empty title')
-required(html, /<meta name="description" content="[^"]+"\s*\/>/, 'meta description')
+required(html, /<meta\s+name="description"\s+content="[^"]+"\s*\/>/, 'meta description')
 required(html, /<meta name="theme-color" content="#[0-9a-fA-F]{6}"\s*\/>/, 'theme-color')
 required(html, /<link rel="icon" type="image\/svg\+xml" href="\/favicon\.svg"\s*\/>/, 'SVG favicon')
 required(html, /<link rel="icon" type="image\/png" sizes="16x16" href="\/favicon-16x16\.png"\s*\/>/, '16px favicon')
@@ -88,7 +97,7 @@ required(html, /<link rel="apple-touch-icon" sizes="180x180" href="\/apple-touch
 required(html, /<link rel="manifest" href="\/site\.webmanifest"\s*\/>/, 'web manifest')
 required(html, /<meta property="og:type" content="website"\s*\/>/, 'Open Graph type')
 required(html, /<meta property="og:title" content="[^"]+"\s*\/>/, 'Open Graph title')
-required(html, /<meta property="og:description" content="[^"]+"\s*\/>/, 'Open Graph description')
+required(html, /<meta\s+property="og:description"\s+content="[^"]+"\s*\/>/, 'Open Graph description')
 required(html, /<meta property="og:image"[^>]*data-site-generated="og-image"[^>]*\/>/, 'Open Graph image')
 required(html, /<meta property="og:image:alt" content="[^"]+"\s*\/>/, 'Open Graph image alt')
 required(html, /<meta name="twitter:card" content="summary_large_image"\s*\/>/, 'Twitter card')
@@ -129,6 +138,9 @@ if (envIndexable) {
   if (!/Disallow: \/(?:\n|$)/.test(robots)) fail('non-indexable robots.txt must disallow all crawling')
   if (/^Sitemap:/m.test(robots)) fail('non-indexable robots.txt must not advertise a sitemap')
   if (/<url>/.test(sitemap)) fail('non-indexable sitemap must not contain public URLs')
+  if (canonicalHrefs(html).some((href) => href.startsWith('/'))) {
+    fail('non-indexable canonical links must be omitted or use an absolute configured origin')
+  }
   for (const tag of ['canonical', 'og:url', 'og:image', 'twitter:image']) {
     const pattern =
       tag === 'canonical'
