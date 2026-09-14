@@ -23,6 +23,13 @@ import type { AtlasContext, ResultSet, SchemaTree, Selection } from './types'
 import { atlasReducer, initialAtlasState, type AtlasAction, type AtlasState, type SubmittedQuery } from './workbench'
 
 const EMPTY_SCHEMA: SchemaTree = { adapterId: '', roots: [], unavailable: true, note: 'No modality selected.' }
+const DEFAULT_ADAPTER_ID = 'graph'
+
+/** Keep the landing modality stable as new adapters change discovery order. */
+export function defaultAdapterId(adapters: readonly Pick<ModalityAdapter, 'id'>[]): string {
+  if (adapters.some((adapter) => adapter.id === DEFAULT_ADAPTER_ID)) return DEFAULT_ADAPTER_ID
+  return adapters[0]?.id ?? ''
+}
 
 /** Build the adapter's query from a submitted snapshot: edited text wins, else the filters. */
 export function queryFromSubmission(adapter: ModalityAdapter, submitted: SubmittedQuery): unknown {
@@ -83,7 +90,7 @@ function describeCurrent(adapter: ModalityAdapter | null, state: AtlasState): st
 
 /** The whole `/explore` page state, in one hook. */
 export function useAtlas(adapters: ModalityAdapter[] = atlasAdapters()): AtlasWorkbench {
-  const [state, dispatch] = useReducer(atlasReducer, adapters[0]?.id ?? '', initialAtlasState)
+  const [state, dispatch] = useReducer(atlasReducer, defaultAdapterId(adapters), initialAtlasState)
   const adapter = useMemo(() => adapters.find((a) => a.id === state.adapterId) ?? null, [adapters, state.adapterId])
 
   const schemaQuery = useSchema(adapter, state.ctx)

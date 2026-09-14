@@ -6,6 +6,10 @@ Atlas (`/explore`) is one workbench for every epistemic-graph modality. A modali
 discovery is `import.meta.glob` over that directory (`discover.ts`), which is what lets
 several lanes add modalities concurrently without a merge conflict.
 
+Atlas opens on the `graph` adapter when it is available. Adding an adapter may change
+picker ordering, but it does not change that landing modality. If `graph` is unavailable,
+Atlas falls back to the first discovered adapter.
+
 Design rationale, projection rules and the modality inventory:
 `plans/atlas/DESIGN-atlas.md` at the workspace root.
 
