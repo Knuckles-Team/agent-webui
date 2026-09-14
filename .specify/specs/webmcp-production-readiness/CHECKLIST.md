@@ -44,12 +44,20 @@ of completion truth.
 - [x] `pnpm run site:config:check` failed closed with seven missing/invalid
   deployment or legal values. Owner-supplied contact/legal data is therefore
   still open and `T010` remains blocked.
+- [x] The contact conversion slice passed 20 backend and nine frontend tests:
+  authenticated exact-origin delivery, schema/PII bounds, fixed server routing,
+  explicit retention, dedicated throttling, fail-closed adapter behavior,
+  durable contact-namespaced opaque receipts, client retry idempotency, strict
+  adapter-result validation, client/server deadlines, required shared limiting,
+  control-character rejection, shared receipt validation, accessible
+  validation/pending/refusal states, input preservation, unmount cancellation,
+  and confirmed-only App routing to `/thank-you`.
 - [ ] No current receipt closes the Graph OS bridge, active-generation server
   binding, attended opt-in, at-most-once fence, cancellation effect, durable
   audit, BrowserControlService, truthful Langfuse, or deployed-topology gates.
-  Real legal/contact values, the contact receipt producer, the analytics
-  destination, anonymous SSO policy, the general form-error sweep, and the
-  confirmed contact/form submission receipt also remain open.
+  Real legal/contact values, the production governed contact adapter, the
+  analytics destination, anonymous SSO policy, and the general form-error sweep
+  also remain open.
 
 ## Audited MCP wiring defects
 

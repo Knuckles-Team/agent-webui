@@ -41,6 +41,7 @@ from .api_extensions import (
 from .api_extensions import (
     router as enhanced_router,
 )
+from .contact_delivery import ContactDeliveryPort, build_contact_router
 from .observability import (
     CORRELATION_RESPONSE_HEADER,
     configure_logging,
@@ -2314,6 +2315,7 @@ def create_agent_web_app(
     builtin_tools: list[Any] | None = None,
     html_source: str | Path | None = None,
     listener_host: str | None = None,
+    contact_delivery: ContactDeliveryPort | None = None,
 ) -> FastAPI:
     """Create the agent-web FastAPI application.
 
@@ -2331,6 +2333,9 @@ def create_agent_web_app(
         html_source: Path to custom HTML to serve as the dashboard root.
         listener_host: Intended listener host. Defaults to ``AgentConfig.host``;
             non-loopback listeners require complete JWT authentication.
+        contact_delivery: Optional host-injected governed contact delivery
+            adapter. The route remains registered but fails closed when this
+            adapter or its server-side destination/retention policy is absent.
 
     Returns:
         A fully configured FastAPI application instance.
@@ -2468,6 +2473,7 @@ def create_agent_web_app(
     # `/api/enhanced` -- this is the SAME handler code that used to live at
     # `/api/enhanced/chats*`, just remounted; no shim, no alias.
     app.include_router(chats_router, prefix='/api')
+    app.include_router(build_contact_router(contact_delivery), prefix='/api')
 
     # Mount the service dashboard API if available (optional dependency).
     #

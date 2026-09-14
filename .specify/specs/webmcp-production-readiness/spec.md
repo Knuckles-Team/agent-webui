@@ -67,6 +67,24 @@ source files. A targeted Vitest run covering `PageHead`, page metadata, public
 and mobile surfaces, consent/analytics, responsive behavior, the site
 configuration gate, and image behavior passed 8 files and 30 tests.
 
+The contact conversion slice now has code-level evidence. `POST /api/contact`
+is authenticated, exact-same-origin, field-bounded, fixed-destination,
+retention-decision-gated, and locally rate limited as defense in depth. It calls
+only a typed host-injected delivery port that declares a durable atomic
+idempotency fence and shared deployment rate limit, accepts only a durable
+contact-namespaced opaque receipt after a strictly validated `success=true`, and
+fails closed when the port, required capabilities, or policy is absent. Twenty
+backend tests and nine frontend tests pass. The form preserves
+input on refusal, connects field errors with `aria-invalid`/`aria-describedby`,
+shows an accessible pending state with a 15-second client deadline, reuses its
+non-PII idempotency key across retries, validates
+the receipt through the same contract as the thank-you page, stores it in
+session storage, and drives the real App route to `/thank-you` only after
+confirmation. The delivery port also has a 12-second server deadline whose
+unknown outcome returns no receipt. A production
+governed messaging adapter and deployed delivery receipt remain open; the
+generic `graph/reach` seam is deliberately not used for contact PII.
+
 The site configuration gate was also run deliberately without production/legal
 configuration. `pnpm run site:config:check` failed closed with seven issues:
 the site origin, legal owner, contact address, effective date, legal revision,
@@ -77,10 +95,9 @@ requirements: server-verified registration generations and identity/session/
 tenant/principal binding, attended opt-in, Graph OS-owned fences/call state,
 durable audit before dispatch, one `BrowserControlService`, honest cancellation
 effects, truthful Langfuse status, or trust-prerequisite deployment gates. Real
-owner-supplied legal/contact values, the contact receipt producer, the
-configured analytics destination, anonymous SSO policy, the general form-error
-sweep, and confirmed contact/form submission receipt also remain explicitly
-open.
+owner-supplied legal/contact values, the production governed contact adapter,
+the configured analytics destination, anonymous SSO policy, and the general
+form-error sweep also remain explicitly open.
 
 The seven audit items below normalize the audited wiring gaps into stable IDs
 for this SDD. If the parent program has an earlier external ID for one of these

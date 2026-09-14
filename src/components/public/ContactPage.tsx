@@ -1,3 +1,4 @@
+import { ContactForm } from './ContactForm'
 import { PublicPageLayout } from './PublicPageLayout'
 import { routeById } from '@/lib/nav-registry'
 import { getSiteConfig } from '@/lib/site-config'
@@ -7,6 +8,7 @@ export default function ContactPage() {
   const config = getSiteConfig()
   if (!route) return null
   const configured = Boolean(config.contactAddress ?? config.contactEmail)
+
   return (
     <PublicPageLayout
       route={route}
@@ -30,6 +32,7 @@ export default function ContactPage() {
           <p className="text-sm text-muted-foreground">Contact address is not configured for this deployment.</p>
         )}
       </div>
+      <ContactForm />
     </PublicPageLayout>
   )
 }
