@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from typing import Any
 
 import pytest
@@ -55,6 +56,14 @@ def contact_policy(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _app(mock_agent: Any, delivery: RecordingDelivery | None) -> Any:
     return create_agent_web_app(mock_agent, {}, contact_delivery=delivery)
+
+
+def test_contact_delivery_is_part_of_the_public_app_factory_contract() -> None:
+    """The published backend must retain its host-injected delivery seam."""
+    parameter = inspect.signature(create_agent_web_app).parameters['contact_delivery']
+
+    assert parameter.default is None
+    assert parameter.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
 
 
 def test_confirmed_delivery_returns_only_an_opaque_receipt(
