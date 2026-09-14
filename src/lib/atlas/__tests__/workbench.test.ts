@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { defaultAdapterId } from '../useAtlas'
 import { atlasReducer, initialAtlasState, type AtlasState } from '../workbench'
 import { EMPTY_FILTER_SET, type Pivot, type Selection } from '../types'
 import { createClause } from '../filters'
@@ -92,5 +93,19 @@ describe('atlasReducer', () => {
     const seeded = atlasReducer(base, { type: 'seedQuery', text: 'SELECT 2' })
     expect(seeded.consoleText).toBe('SELECT 2')
     expect(seeded.consoleDirty).toBe(true)
+  })
+})
+
+describe('defaultAdapterId', () => {
+  it('prefers the graph adapter regardless of discovery order', () => {
+    expect(defaultAdapterId([{ id: 'cypher' }, { id: 'sparql' }, { id: 'graph' }])).toBe('graph')
+  })
+
+  it('falls back to the first available adapter when graph is unavailable', () => {
+    expect(defaultAdapterId([{ id: 'sparql' }, { id: 'sql' }])).toBe('sparql')
+  })
+
+  it('returns the empty adapter id when nothing was discovered', () => {
+    expect(defaultAdapterId([])).toBe('')
   })
 })
