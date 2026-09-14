@@ -24,15 +24,19 @@ All tool inputs and outputs pass strict Zod validation. The executor accepts an
 object or the equivalent JSON string because draft implementations have used
 both callback forms. Invalid input or output rejects the tool call; arbitrary
 coercion is not performed. Every execution consumes the draft callback's
-`AbortSignal`, checks cancellation before and after work, and caps serialized
-output at Chrome's recommended 1,500-character security budget. Mutating Atlas
-tools validate their complete public result before changing local state.
+`AbortSignal`, checks cancellation before dispatch, and caps serialized output
+at Chrome's recommended 1,500-character security budget. Once a local action
+may have been applied, the callback owns cooperative cancellation so the
+browser never receives a false rollback claim. Mutating Atlas tools validate
+their complete public result before changing local state.
 
 No raw Cypher, SQL, SPARQL, REST/MCP, credentials, chat sending, workflows,
 goals, configuration, OpenBao, or backend write surface is registered here.
 Tools are same-origin by default: the registration never supplies `exposedTo`.
 Each registration has an `AbortSignal`, and the provider retires it on unmount,
-identity changes, or page-context changes. The Atlas registrar exists only
+identity changes, or page-context changes. A registration is only reported as
+active after the browser acknowledges it; pending, failed, aborted, and
+unsupported registrations remain unavailable. The Atlas registrar exists only
 while the Atlas workbench is mounted. Agent navigation accepts only registered,
 role-visible application-relative paths; query strings and fragments are
 rejected so credentials or private route state cannot be persisted and echoed.

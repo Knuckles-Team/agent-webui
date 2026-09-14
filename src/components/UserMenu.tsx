@@ -65,7 +65,7 @@ function UserAvatar({
 }) {
   return (
     <Avatar className={size === 'sm' ? 'size-7 rounded-md' : 'size-8 rounded-md'}>
-      <AvatarImage src={avatarSrc} alt="" />
+      <AvatarImage src={avatarSrc} alt="" decorative />
       <AvatarFallback className="rounded-md text-xs">{initialsOf(displayName)}</AvatarFallback>
     </Avatar>
   )

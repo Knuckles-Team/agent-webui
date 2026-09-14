@@ -6,6 +6,19 @@
 | ----------------- | ------- | ------------------------------------------- |
 | `VITE_ENABLE_ACP` | `false` | Enable ACP protocol support alongside AG-UI |
 
+## Environment Variables (Contact Delivery)
+
+| Variable                             | Default | Description                                                                                                           |
+| ------------------------------------ | ------- | --------------------------------------------------------------------------------------------------------------------- |
+| `AGENT_WEBUI_CONTACT_DESTINATION`    | unset   | Fixed server-side destination passed only to the injected governed delivery adapter. Invalid values disable delivery. |
+| `AGENT_WEBUI_CONTACT_RETENTION_DAYS` | unset   | Explicit PII retention decision from `0` (delivery only) through `3650`. Missing or invalid values disable delivery.  |
+
+The host must also pass a `ContactDeliveryPort` implementation to
+`create_agent_web_app(contact_delivery=...)`. An enabling implementation must
+declare that it owns a durable atomic idempotency fence and a shared deployment
+rate limit. No default provider is selected, and the browser cannot name a
+provider, channel, destination, or retention period.
+
 ## Recent Architecture Changes
 
 - **Comprehensive API Extensions**: Added 20+ new API endpoints for knowledge graph CRUD, knowledge base management, SDD lifecycle, MAGMA views, resource management, and maintenance operations
@@ -24,7 +37,17 @@
 
 ## API Endpoint Summary
 
+### Contact API
+
+- `POST /api/contact` - Submit bounded contact fields through the configured,
+  host-injected governed delivery adapter. Authentication, exact same-origin
+  checks, a client idempotency key, a server deadline, and local defense-in-depth
+  throttling apply. The injected adapter must supply the shared abuse limit and
+  atomic fence. Only a confirmed delivery with a valid durable contact receipt
+  returns that opaque receipt.
+
 ### Knowledge Graph APIs
+
 - `GET /api/enhanced/graph/stats` - Graph totals (node/relationship counts)
 - `GET /api/enhanced/graph/node-types` - Real node-type distribution (engine-side `GROUP BY`; a separate route because it is far more expensive than the totals)
 - `GET /api/enhanced/graph/nodes` - List graph nodes
@@ -39,6 +62,7 @@
 - `POST /api/enhanced/graph/query` - Execute Cypher query
 
 ### Knowledge Base APIs
+
 - `POST /api/enhanced/kb/ingest` - Ingest knowledge base
 - `GET /api/enhanced/kb/list` - List knowledge bases
 - `GET /api/enhanced/kb/search` - Search knowledge base
@@ -46,6 +70,7 @@
 - `POST /api/enhanced/kb/health` - Health check
 
 ### SDD Lifecycle APIs
+
 - `GET /api/enhanced/sdd/constitution` - Get constitution
 - `POST /api/enhanced/sdd/constitution` - Save constitution
 - `GET /api/enhanced/sdd/specs` - List specifications
@@ -55,16 +80,20 @@
 - `POST /api/enhanced/sdd/sync` - Sync SDD to memory
 
 ### MAGMA View APIs
+
 - `POST /api/enhanced/graph/magma` - Retrieve orthogonal context
 
 ### Resource Management APIs
+
 - `GET /api/enhanced/resources` - List callable resources
 - `POST /api/enhanced/resources/spawn` - Spawn specialized agent
 
 ### Maintenance APIs
+
 - `GET /api/enhanced/maintenance/status` - Get maintenance status
 - `POST /api/enhanced/maintenance/trigger` - Trigger maintenance operation
 
 ### Pipeline APIs
+
 - `GET /api/enhanced/pipeline/status` - Get pipeline status
 - `POST /api/enhanced/pipeline/trigger` - Trigger pipeline phase

@@ -1,23 +1,32 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { MCPProvider, useMCP } from '@/lib/mcp-context'
 
 function ToolsProbe() {
-  const { tools, isLoadingTools, toolsError, catalogStatus } = useMCP()
+  const { tools, totalTools, isLoadingTools, toolsError, catalogStatus, reloadTools } = useMCP()
   return (
-    <pre data-testid="mcp-tools-probe">{JSON.stringify({ tools, isLoadingTools, toolsError, catalogStatus })}</pre>
+    <>
+      <pre data-testid="mcp-tools-probe">
+        {JSON.stringify({ tools, totalTools, isLoadingTools, toolsError, catalogStatus })}
+      </pre>
+      <button type="button" data-testid="mcp-tools-reload" onClick={reloadTools}>
+        reload
+      </button>
+    </>
   )
 }
 
 function readProbe(): {
   tools: unknown
+  totalTools: number | null
   isLoadingTools: boolean
   toolsError: string | null
   catalogStatus: string
 } {
   return JSON.parse(screen.getByTestId('mcp-tools-probe').textContent ?? '{}') as {
     tools: unknown
+    totalTools: number | null
     isLoadingTools: boolean
     toolsError: string | null
     catalogStatus: string
@@ -39,9 +48,34 @@ describe('MCPProvider', () => {
     vi.unstubAllGlobals()
   })
 
+  it('keeps the shared provider mounted without probing the catalog when disabled', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <MCPProvider enabled={false}>
+        <ToolsProbe />
+      </MCPProvider>,
+    )
+
+    await waitFor(() => {
+      expect(readProbe().catalogStatus).toBe('idle')
+    })
+    expect(readProbe().isLoadingTools).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('starts loading immediately, then reports the real catalog fetched from the governed BFF route (BUG-010)', async () => {
     const tools = [{ name: 'graph_search', description: 'Search the graph', input_schema: {}, enabled: true }]
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, tools))
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        tools,
+        total: 17,
+        offset: 0,
+        limit: 200,
+        has_more: true,
+      }),
+    )
     vi.stubGlobal('fetch', fetchMock)
 
     render(
@@ -60,6 +94,7 @@ describe('MCPProvider', () => {
 
     const probe = readProbe()
     expect(probe.tools).toEqual(tools)
+    expect(probe.totalTools).toBe(17)
     expect(probe.isLoadingTools).toBe(false)
     expect(probe.toolsError).toBeNull()
     // Paginated route: the client asks for its whole documented page budget
@@ -89,6 +124,7 @@ describe('MCPProvider', () => {
 
     const probe = readProbe()
     expect(probe.tools).toBeNull()
+    expect(probe.totalTools).toBeNull()
     expect(probe.isLoadingTools).toBe(false)
     expect(typeof probe.toolsError).toBe('string')
     expect(probe.toolsError).toContain('501')
@@ -110,6 +146,7 @@ describe('MCPProvider', () => {
 
     const probe = readProbe()
     expect(probe.tools).toBeNull()
+    expect(probe.totalTools).toBeNull()
     expect(probe.isLoadingTools).toBe(false)
     expect(probe.toolsError).toBeTruthy()
   })
@@ -161,8 +198,35 @@ describe('MCPProvider', () => {
       expect(readProbe().catalogStatus).toBe('available')
     })
 
-    const probe = readProbe() as unknown as { tools: unknown[] }
+    const probe = readProbe() as unknown as { tools: unknown[]; totalTools: number | null }
     expect(probe.tools).toHaveLength(200)
+    expect(probe.totalTools).toBe(250)
+  })
+
+  it('reloads through the shared provider and publishes the newest catalog only', async () => {
+    const firstTools = [{ name: 'first', description: '', input_schema: {}, enabled: true }]
+    const secondTools = [{ name: 'second', description: '', input_schema: {}, enabled: true }]
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200, { tools: firstTools, total: 4 }))
+      .mockResolvedValueOnce(jsonResponse(200, { tools: secondTools, total: 9 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <MCPProvider>
+        <ToolsProbe />
+      </MCPProvider>,
+    )
+
+    await waitFor(() => {
+      expect(readProbe().tools).toEqual(firstTools)
+    })
+    fireEvent.click(screen.getByTestId('mcp-tools-reload'))
+    await waitFor(() => {
+      expect(readProbe().tools).toEqual(secondTools)
+      expect(readProbe().totalTools).toBe(9)
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('aborts the in-flight catalog request when the provider unmounts', () => {

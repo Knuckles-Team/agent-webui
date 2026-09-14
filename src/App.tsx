@@ -25,14 +25,24 @@
 import { useEffect, useMemo, useState, Suspense, lazy, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppSidebar } from './components/app-sidebar.tsx'
+import { ConsentBanner } from './components/ConsentBanner.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
+import { PageHead } from './components/PageHead.tsx'
+import { ResponsiveLimitation } from './components/ResponsiveLimitation.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
 import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
 import ChatPanel from './components/ChatPanel'
 import { useIdentity, type Identity } from './lib/auth.ts'
 import { MCPProvider } from './lib/mcp-context.tsx'
-import { ROUTES, matchRoute, roleAtLeast, type RouteDef } from './lib/nav-registry.ts'
+import {
+  getRoutePageMetadata,
+  NOT_FOUND_ROUTE,
+  ROUTES,
+  matchRoute,
+  roleAtLeast,
+  type RouteDef,
+} from './lib/nav-registry.ts'
 import { getDefaultPageActions, PageContextProvider, type PageContextSelection } from './lib/page-context.tsx'
 import { cn } from './lib/utils.ts'
 import { WebMcpProvider } from './lib/webmcp/provider.tsx'
@@ -91,13 +101,13 @@ function legacyViewId(route: RouteDef): string {
  * free to live outside `useRouteState` and keep that hook's own branch count down. */
 function deriveRouteFlags(match: ReturnType<typeof matchRoute>) {
   const activeRoute = match?.route ?? null
-  /** Unregistered paths fall back to Chat, matching the pre-registry behavior. */
-  const isChat = !activeRoute || activeRoute.id === 'chat.console'
+  const isNotFound = activeRoute === null
+  const isChat = activeRoute?.id === 'chat.console'
   const isDashboard = activeRoute?.id === 'observability.dashboard'
   const isObjectDetail = activeRoute?.id === 'knowledge.object-detail'
   const objectId = isObjectDetail ? (match?.params.id ?? '') : ''
-  const currentView = activeRoute ? legacyViewId(activeRoute) : 'chat'
-  return { activeRoute, isChat, isDashboard, isObjectDetail, objectId, currentView }
+  const currentView = activeRoute ? legacyViewId(activeRoute) : 'not-found'
+  return { activeRoute, isChat, isDashboard, isNotFound, isObjectDetail, objectId, currentView }
 }
 
 /** All URL-routing state derived for the current render: which `RouteDef` (if any)
@@ -121,16 +131,19 @@ function useRouteState() {
 
     // Listen for custom navigation events emitted by sidebar/links
     window.addEventListener('history-state-changed', handleNavigation)
+    window.addEventListener('popstate', handleNavigation)
     handleNavigation() // Initial check on mount
 
     return () => {
       window.removeEventListener('history-state-changed', handleNavigation)
+      window.removeEventListener('popstate', handleNavigation)
     }
   }, [])
 
   const pathname = useMemo(() => new URL(currentRoute, window.location.origin).pathname, [currentRoute])
   const match = useMemo(() => matchRoute(pathname), [pathname])
-  const { activeRoute, isChat, isDashboard, isObjectDetail, objectId, currentView } = deriveRouteFlags(match)
+  const { activeRoute, isChat, isDashboard, isNotFound, isObjectDetail, objectId, currentView } =
+    deriveRouteFlags(match)
 
   const { identity, loading: identityLoading } = useIdentity()
   /** The route-guard half of R9: the sidebar already hides what `identity.role` cannot
@@ -138,14 +151,14 @@ function useRouteState() {
    * still be stopped here rather than seeing the page render. While `/auth/session` is
    * in flight, hold off rendering a page-required-elsewhere page to avoid a flash of
    * content that then gets pulled back. */
-  const routeAccessDenied =
-    !identityLoading && Boolean(activeRoute) && !roleAtLeast(identity.role, activeRoute!.minRole)
+  const routeAccessDenied = isRouteAccessDenied(activeRoute, identity, identityLoading)
 
   return {
     currentRoute,
     activeRoute,
     isChat,
     isDashboard,
+    isNotFound,
     isObjectDetail,
     objectId,
     currentView,
@@ -203,6 +216,155 @@ function renderRouteBody(route: RouteDef, isObjectDetail: boolean, objectId: str
   )
 }
 
+function isRouteAccessDenied(activeRoute: RouteDef | null, identity: Identity, identityLoading: boolean): boolean {
+  if (identityLoading || !activeRoute) return false
+  if (getRoutePageMetadata(activeRoute).visibility === 'public') return false
+  return !roleAtLeast(identity.role, activeRoute.minRole)
+}
+
+function shouldEnableMcpCatalog({
+  isPublicRoute,
+  isNotFound,
+  identityLoading,
+  identity,
+  routeAccessDenied,
+}: {
+  isPublicRoute: boolean
+  isNotFound: boolean
+  identityLoading: boolean
+  identity: Identity
+  routeAccessDenied: boolean
+}): boolean {
+  return !isPublicRoute && !isNotFound && !identityLoading && !identity.needsSignIn && !routeAccessDenied
+}
+
+function PublicAppSurface({ pageRoute }: { pageRoute: RouteDef }) {
+  return (
+    <div className="min-h-screen">
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <pageRoute.element />
+      </Suspense>
+    </div>
+  )
+}
+
+function DashboardSurface({ isDashboard }: { isDashboard: boolean }) {
+  return (
+    <div className={cn('flex flex-col w-full h-full overflow-hidden', isDashboard ? 'block' : 'hidden')}>
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <DashboardElement />
+      </Suspense>
+    </div>
+  )
+}
+
+interface RouteContentSurfaceProps {
+  isChat: boolean
+  isDashboard: boolean
+  route: RouteDef
+  routeAccessDenied: boolean
+  identity: Identity
+  isObjectDetail: boolean
+  objectId: string
+}
+
+function RouteContentSurface({
+  isChat,
+  isDashboard,
+  route,
+  routeAccessDenied,
+  identity,
+  isObjectDetail,
+  objectId,
+}: RouteContentSurfaceProps) {
+  if (isChat || isDashboard) return null
+
+  const body = routeAccessDenied ? (
+    renderRouteAccessDenied(route, identity)
+  ) : (
+    <ResponsiveLimitation route={route}>{renderRouteBody(route, isObjectDetail, objectId)}</ResponsiveLimitation>
+  )
+
+  return (
+    <div className="flex flex-col flex-1 h-screen overflow-auto p-8">
+      <div className="mx-auto w-full">{body}</div>
+    </div>
+  )
+}
+
+interface PrivateAppSurfaceProps extends Omit<RouteContentSurfaceProps, 'route'> {
+  route: RouteDef
+  currentView: string
+}
+
+function PrivateAppSurface({ route, currentView, ...routeContentProps }: PrivateAppSurfaceProps) {
+  return (
+    <SidebarProvider defaultOpen>
+      <AppSidebar />
+      <div className="flex flex-col justify-center flex-1 h-screen overflow-hidden">
+        {/* Mobile Header: Only visible on small screens */}
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:hidden">
+          <SidebarTrigger className="-ml-1" />
+          <div className="flex items-center gap-2 px-3">
+            <span className="text-lg">🤖</span>
+            <span className="text-sm font-bold truncate">Genius Agent</span>
+          </div>
+        </header>
+
+        {/* Dashboard View — Agent-OS Homepage (default landing, always mounted) */}
+        <DashboardSurface isDashboard={routeContentProps.isDashboard} />
+        <RouteContentSurface route={route} {...routeContentProps} />
+
+        {/* One stable assistant instance: full-page on /chat, drawer everywhere else. */}
+        <ChatPanel currentView={currentView} isPrimary={routeContentProps.isChat} />
+      </div>
+    </SidebarProvider>
+  )
+}
+
+interface AppSurfaceProps {
+  pageRoute: RouteDef
+  isPublicRoute: boolean
+  isNotFound: boolean
+  activeRoute: RouteDef | null
+  isChat: boolean
+  isDashboard: boolean
+  routeAccessDenied: boolean
+  identity: Identity
+  isObjectDetail: boolean
+  objectId: string
+  currentView: string
+}
+
+function AppSurface({
+  pageRoute,
+  isPublicRoute,
+  isNotFound,
+  activeRoute,
+  isChat,
+  isDashboard,
+  routeAccessDenied,
+  identity,
+  isObjectDetail,
+  objectId,
+  currentView,
+}: AppSurfaceProps) {
+  if (isPublicRoute || isNotFound) return <PublicAppSurface pageRoute={pageRoute} />
+
+  return (
+    <PrivateAppSurface
+      route={activeRoute!}
+      currentView={currentView}
+      isChat={isChat}
+      isDashboard={isDashboard}
+      routeAccessDenied={routeAccessDenied}
+      identity={identity}
+      isObjectDetail={isObjectDetail}
+      objectId={objectId}
+    />
+  )
+}
+
 /**
  * Root Application Component
  *
@@ -215,6 +377,7 @@ export default function App() {
     activeRoute,
     isChat,
     isDashboard,
+    isNotFound,
     isObjectDetail,
     objectId,
     currentView,
@@ -228,11 +391,21 @@ export default function App() {
     [isObjectDetail, objectId],
   )
   const allowedActions = useMemo(() => getDefaultPageActions(currentView), [currentView])
+  const pageRoute = activeRoute ?? NOT_FOUND_ROUTE
+  const pageMetadata = getRoutePageMetadata(pageRoute)
+  const isPublicRoute = pageMetadata.visibility === 'public'
+  const mcpCatalogEnabled = shouldEnableMcpCatalog({
+    isPublicRoute,
+    isNotFound,
+    identityLoading,
+    identity,
+    routeAccessDenied,
+  })
 
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <MCPProvider>
+        <MCPProvider enabled={mcpCatalogEnabled}>
           <ThemeProvider defaultTheme="system" storageKey="pydantic-chat-ui-theme">
             <PageContextProvider
               route={currentRoute}
@@ -241,42 +414,21 @@ export default function App() {
               allowedActions={allowedActions}
             >
               <WebMcpProvider identity={identity} identityLoading={identityLoading}>
-                <SidebarProvider defaultOpen>
-                  <AppSidebar />
-
-                  <div className="flex flex-col justify-center flex-1 h-screen overflow-hidden">
-                    {/* Mobile Header: Only visible on small screens */}
-                    <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:hidden">
-                      <SidebarTrigger className="-ml-1" />
-                      <div className="flex items-center gap-2 px-3">
-                        <span className="text-lg">🤖</span>
-                        <span className="text-sm font-bold truncate">Genius Agent</span>
-                      </div>
-                    </header>
-
-                    {/* Dashboard View — Agent-OS Homepage (default landing, always mounted) */}
-                    <div
-                      className={cn('flex flex-col w-full h-full overflow-hidden', isDashboard ? 'block' : 'hidden')}
-                    >
-                      <Suspense fallback={<RouteLoadingFallback />}>
-                        <DashboardElement />
-                      </Suspense>
-                    </div>
-
-                    {/* Every other registered route (rendered conditionally) */}
-                    {!isChat && !isDashboard && (
-                      <div className="flex flex-col flex-1 h-screen overflow-auto p-8">
-                        <div className="mx-auto w-full">
-                          {routeAccessDenied
-                            ? renderRouteAccessDenied(activeRoute!, identity)
-                            : renderRouteBody(activeRoute!, isObjectDetail, objectId)}
-                        </div>
-                      </div>
-                    )}
-                    {/* One stable assistant instance: full-page on /chat, drawer everywhere else. */}
-                    <ChatPanel currentView={currentView} isPrimary={currentView === 'chat'} />
-                  </div>
-                </SidebarProvider>
+                <PageHead route={pageRoute} pathname={new URL(currentRoute, window.location.origin).pathname} />
+                <ConsentBanner />
+                <AppSurface
+                  pageRoute={pageRoute}
+                  isPublicRoute={isPublicRoute}
+                  isNotFound={isNotFound}
+                  activeRoute={activeRoute}
+                  isChat={isChat}
+                  isDashboard={isDashboard}
+                  routeAccessDenied={routeAccessDenied}
+                  identity={identity}
+                  isObjectDetail={isObjectDetail}
+                  objectId={objectId}
+                  currentView={currentView}
+                />
               </WebMcpProvider>
             </PageContextProvider>
           </ThemeProvider>

@@ -10,9 +10,10 @@
  * file's job is proving the launcher wires that same seam to a
  * server-discovered tool rather than a hardcoded URI).
  */
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import McpAppsView from '@/components/views/McpAppsView'
+import { MCPProvider } from '@/lib/mcp-context'
 import { MAX_CATALOG_TOOLS, MCP_APP_RESOURCE_ROUTE, mcpServerToolsRoute } from '@/lib/mcp-client'
 
 // The route is paginated; the client asks for its whole documented budget
@@ -76,10 +77,10 @@ function mockFetch() {
           JSON.stringify({
             server: 'graph-os',
             tools: TOOL_INVENTORY,
-            total: TOOL_INVENTORY.length,
+            total: 37,
             offset: 0,
             limit: MAX_CATALOG_TOOLS,
-            has_more: false,
+            has_more: true,
           }),
           { status: 200 },
         ),
@@ -100,6 +101,14 @@ function mockFetch() {
   })
 }
 
+function renderMcpAppsView(props: { allowedDomains?: string[] } = {}) {
+  return render(
+    <MCPProvider>
+      <McpAppsView {...props} />
+    </MCPProvider>,
+  )
+}
+
 describe('McpAppsView (wiring)', () => {
   beforeEach(() => {
     calls = []
@@ -112,19 +121,20 @@ describe('McpAppsView (wiring)', () => {
   })
 
   it('fetches the real tool inventory on mount', async () => {
-    render(<McpAppsView />)
+    renderMcpAppsView()
     await waitFor(() => {
       expect(calls.some((c) => c.url === TOOLS_ROUTE && c.method === 'GET')).toBe(true)
     })
   })
 
   it('offers a tool WITH meta.ui.resourceUri as a launchable app', async () => {
-    render(<McpAppsView />)
+    renderMcpAppsView()
     expect(await screen.findByTestId('mcp-app-card-graph_task_progress_app')).toBeInTheDocument()
+    expect(screen.getByText(/1 of 37 graph-os tools/)).toBeInTheDocument()
   })
 
   it('never offers a tool WITHOUT meta.ui.resourceUri as launchable (known-bad proof)', async () => {
-    render(<McpAppsView />)
+    renderMcpAppsView()
     // Wait for the fetch to resolve and the launchable list to render...
     await screen.findByTestId('mcp-app-card-graph_task_progress_app')
     // ...then assert the tool with no app binding never got a card, even
@@ -146,14 +156,14 @@ describe('McpAppsView (wiring)', () => {
   }
 
   it('launching a discovered app performs a real resources/read for ITS OWN resourceUri, not a hardcoded one', async () => {
-    render(<McpAppsView />)
+    renderMcpAppsView()
     const card = await screen.findByTestId('mcp-app-card-graph_task_progress_app')
     card.click()
 
     await waitFor(() => {
       const resourceCall = calls.find((c) => c.url === MCP_APP_RESOURCE_ROUTE)
       expect(resourceCall).toBeDefined()
-      expect(resourceCall?.body).toEqual({ server: 'graph-os', uri: APP_URI })
+      expect(resourceCall?.body).toEqual({ server: 'graph-os', uri: APP_URI, timeout_ms: 10000 })
     })
 
     const frame = await findLaunchedFrame()
@@ -161,7 +171,7 @@ describe('McpAppsView (wiring)', () => {
   })
 
   it('sandboxes the launched frame and never honors a server-declared CSP domain the host did not independently allow', async () => {
-    render(<McpAppsView />)
+    renderMcpAppsView()
     const card = await screen.findByTestId('mcp-app-card-graph_task_progress_app')
     card.click()
 
@@ -177,17 +187,38 @@ describe('McpAppsView (wiring)', () => {
     expect(frame.srcdoc).not.toContain('evil.example')
   })
 
+  it('passes only the independently configured host ceiling to the app frame', async () => {
+    renderMcpAppsView({ allowedDomains: ['https://evil.example'] })
+    const card = await screen.findByTestId('mcp-app-card-graph_task_progress_app')
+    card.click()
+
+    const frame = await findLaunchedFrame()
+    expect(frame.srcdoc).toContain('connect-src https://evil.example')
+  })
+
+  it('keeps the last valid initial props when the editor receives invalid JSON', async () => {
+    renderMcpAppsView()
+    const card = await screen.findByTestId('mcp-app-card-graph_task_progress_app')
+    card.click()
+
+    const textarea = await screen.findByLabelText(/Initial props \(JSON\)/i)
+    fireEvent.change(textarea, { target: { value: '{"jobId":"valid"}' } })
+    fireEvent.change(textarea, { target: { value: '{"jobId":' } })
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Invalid JSON; using the last valid props.')
+  })
+
   it('surfaces an unavailable inventory honestly rather than an empty confirmed list', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.resolve(new Response('boom', { status: 503 }))),
     )
-    render(<McpAppsView />)
+    renderMcpAppsView()
     expect(await screen.findByText(/could not be fetched/i)).toBeInTheDocument()
   })
 
   it('is a renderable default export that mounts without throwing', () => {
     expect(typeof McpAppsView).toBe('function')
-    expect(() => render(<McpAppsView />)).not.toThrow()
+    expect(() => renderMcpAppsView()).not.toThrow()
   })
 })

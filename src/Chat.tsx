@@ -61,6 +61,7 @@ import { useConversationIdFromUrl } from './hooks/useConversationIdFromUrl'
 import { Part } from './Part'
 import { getToolIcon } from '@/lib/tool-icons'
 import { GraphActivity, type GraphEvent } from '@/components/ai-elements/graph-activity'
+import { AccessibleImage } from '@/components/ai-elements/image'
 import VoiceDictationButton from '@/components/VoiceDictationButton'
 import { pageContextSystemPrompt, type PageContextEnvelope } from '@/lib/page-context'
 import { useIdentity } from '@/lib/auth'
@@ -838,7 +839,7 @@ function renderAttachmentPreview(attachments: AttachmentItem[], onRemove: (index
     <div className="flex flex-wrap gap-2 p-2 border-t bg-muted/30">
       {attachments.map((attachment, index) => (
         <div key={index} className="relative group">
-          <img
+          <AccessibleImage
             src={attachment.url}
             alt={`Attachment ${index + 1}`}
             className="h-16 w-16 object-cover rounded-md border border-border bg-background shadow-sm transition-all group-hover:opacity-80"

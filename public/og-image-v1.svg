@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
+  <title id="title">Graph OS Agent WebUI</title>
+  <desc id="description">Graph OS Agent WebUI mark on a dark field.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117" />
+      <stop offset="1" stop-color="#171c2b" />
+    </linearGradient>
+    <linearGradient id="halo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e520e9" stop-opacity=".26" />
+      <stop offset="1" stop-color="#7c3aed" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#background)" />
+  <circle cx="990" cy="-24" r="450" fill="url(#halo)" />
+  <path d="M0 580C240 490 390 670 620 554s390-21 580 30v46H0Z" fill="#e520e9" opacity=".08" />
+  <!-- Reuse the repository favicon mark; do not maintain a second logo path. -->
+  <image href="favicon.svg" x="114" y="161" width="334" height="288" preserveAspectRatio="none" />
+  <text x="510" y="282" fill="#ffffff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="62" font-weight="700">Graph OS</text>
+  <text x="514" y="350" fill="#d8deea" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" font-weight="500">Agent WebUI</text>
+  <text x="514" y="410" fill="#9da9bd" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22">Governed agents · knowledge · workflows</text>
+</svg>

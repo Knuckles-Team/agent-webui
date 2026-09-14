@@ -83,6 +83,31 @@ export interface SectionMeta {
   label: string
 }
 
+/** A safe, declarative primary action for a page. */
+export interface RouteCta {
+  label: string
+  target: string
+  eventName: string
+}
+
+/**
+ * Metadata projected by the page head, public shell, sitemap/robots builders,
+ * and the browser-local WebMCP route authority. Application routes intentionally
+ * default to private/noindex metadata; public routes opt in explicitly below.
+ */
+export interface RoutePageMetadata {
+  title: string
+  description: string
+  visibility: 'public' | 'private'
+  indexable: boolean
+  canonicalPath?: string
+  cta?: RouteCta
+  webmcpPageId: string
+  loading: 'route' | 'inline'
+  error: 'boundary' | 'inline'
+  legalRevision?: string
+}
+
 /** Section display order, top to bottom in the sidebar. */
 export const SECTIONS: readonly SectionMeta[] = [
   { id: 'chat', label: 'Chat' },
@@ -111,6 +136,8 @@ export interface RouteDef {
   capability?: string
   element: LazyExoticComponent<ComponentType>
   mobile: 'full' | 'adapted' | 'unsupported'
+  /** Optional route-specific overrides. `getRoutePageMetadata` fills safe defaults. */
+  page?: Partial<RoutePageMetadata>
 }
 
 export const ROUTES: readonly RouteDef[] = [
@@ -745,6 +772,170 @@ export const ROUTES: readonly RouteDef[] = [
   },
 ]
 
+const DEFAULT_PAGE_DESCRIPTION =
+  'Use the Agent WebUI to understand, operate, and safely improve your connected agent system.'
+
+/**
+ * The public/legal pages are registered beside application routes for matching,
+ * metadata, and WebMCP navigation, but are deliberately not part of `ROUTES` so
+ * they cannot appear in the authenticated sidebar.
+ */
+export const PUBLIC_ROUTES: readonly RouteDef[] = [
+  {
+    id: 'public.thank-you',
+    path: '/thank-you',
+    label: 'Thank you',
+    section: 'documentation',
+    blurb: 'Review the bounded confirmation for a submission the service accepted.',
+    icon: BookOpen,
+    minRole: 'reader',
+    mobile: 'full',
+    element: lazy(() => import('@/components/public/ThankYouPage')),
+    page: {
+      title: 'Thank you | Agent WebUI',
+      description: 'Review the bounded confirmation for a submission the service accepted.',
+      visibility: 'public',
+      indexable: false,
+      canonicalPath: '/thank-you',
+      cta: { label: 'Return to Agent WebUI', target: '/', eventName: 'public_thank_you_return' },
+      webmcpPageId: 'public.thank-you',
+      loading: 'inline',
+      error: 'inline',
+    },
+  },
+  {
+    id: 'public.privacy',
+    path: '/privacy',
+    label: 'Privacy policy',
+    section: 'documentation',
+    blurb: 'Read the reviewed privacy policy for this Agent WebUI deployment.',
+    icon: ShieldCheck,
+    minRole: 'reader',
+    mobile: 'full',
+    element: lazy(() => import('@/components/public/PrivacyPage')),
+    page: {
+      title: 'Privacy policy | Agent WebUI',
+      description: 'Read the reviewed privacy policy for this Agent WebUI deployment.',
+      visibility: 'public',
+      indexable: true,
+      canonicalPath: '/privacy',
+      cta: { label: 'Contact the service owner', target: '/contact', eventName: 'public_privacy_contact' },
+      webmcpPageId: 'public.privacy',
+      loading: 'inline',
+      error: 'inline',
+    },
+  },
+  {
+    id: 'public.terms',
+    path: '/terms',
+    label: 'Terms and conditions',
+    section: 'documentation',
+    blurb: 'Read the reviewed terms and safe agent-control boundaries for this service.',
+    icon: FileCheck2,
+    minRole: 'reader',
+    mobile: 'full',
+    element: lazy(() => import('@/components/public/TermsPage')),
+    page: {
+      title: 'Terms and conditions | Agent WebUI',
+      description: 'Read the reviewed terms and safe agent-control boundaries for this service.',
+      visibility: 'public',
+      indexable: true,
+      canonicalPath: '/terms',
+      cta: { label: 'Contact the service owner', target: '/contact', eventName: 'public_terms_contact' },
+      webmcpPageId: 'public.terms',
+      loading: 'inline',
+      error: 'inline',
+    },
+  },
+  {
+    id: 'public.contact',
+    path: '/contact',
+    label: 'Contact',
+    section: 'documentation',
+    blurb: 'Find the reviewed service contact details for this Agent WebUI deployment.',
+    icon: MessageCircle,
+    minRole: 'reader',
+    mobile: 'full',
+    element: lazy(() => import('@/components/public/ContactPage')),
+    page: {
+      title: 'Contact | Agent WebUI',
+      description: 'Find the reviewed service contact details for this Agent WebUI deployment.',
+      visibility: 'public',
+      indexable: true,
+      canonicalPath: '/contact',
+      cta: { label: 'Open Agent WebUI', target: '/', eventName: 'public_contact_open_app' },
+      webmcpPageId: 'public.contact',
+      loading: 'inline',
+      error: 'inline',
+    },
+  },
+]
+
+/** Metadata descriptor used for every unknown path. It is not matchable. */
+export const NOT_FOUND_ROUTE: RouteDef = {
+  id: 'public.not-found',
+  path: '*',
+  label: 'Page not found',
+  section: 'documentation',
+  blurb: 'The requested page was not found in Agent WebUI.',
+  icon: Compass,
+  minRole: 'reader',
+  mobile: 'full',
+  element: lazy(() => import('@/components/public/NotFoundPage')),
+  page: {
+    title: 'Page not found | Agent WebUI',
+    description: 'The requested page was not found in Agent WebUI.',
+    visibility: 'public',
+    indexable: false,
+    cta: { label: 'Open Agent WebUI', target: '/', eventName: 'public_not_found_home' },
+    webmcpPageId: 'public.not-found',
+    loading: 'inline',
+    error: 'inline',
+  },
+}
+
+/** The complete route authority consumed by matching, metadata, and WebMCP. */
+export const ROUTE_REGISTRY: readonly RouteDef[] = [...ROUTES, ...PUBLIC_ROUTES, NOT_FOUND_ROUTE]
+
+function metadataValue<T>(value: T | undefined, fallback: T): T {
+  return value ?? fallback
+}
+
+function defaultCanonicalPath(route: RouteDef): string | undefined {
+  return isDynamicPath(route.path) || route.path === '*' ? undefined : route.path
+}
+
+function optionalMetadata(
+  override: Partial<RoutePageMetadata>,
+  canonicalPath: string | undefined,
+): Pick<RoutePageMetadata, 'canonicalPath' | 'cta' | 'legalRevision'> {
+  const metadata: Pick<RoutePageMetadata, 'canonicalPath' | 'cta' | 'legalRevision'> = {}
+  if (canonicalPath !== undefined) metadata.canonicalPath = canonicalPath
+  if (override.cta !== undefined) metadata.cta = override.cta
+  if (override.legalRevision !== undefined) metadata.legalRevision = override.legalRevision
+  return metadata
+}
+
+/** Return complete, safe metadata for a route, including legacy app routes. */
+export function getRoutePageMetadata(route: RouteDef): RoutePageMetadata {
+  const override = route.page ?? {}
+  const canonicalPath = metadataValue(override.canonicalPath, defaultCanonicalPath(route))
+  return {
+    title: metadataValue(override.title, `${route.label} | Agent WebUI`),
+    description: metadataValue(override.description, route.blurb || DEFAULT_PAGE_DESCRIPTION),
+    visibility: metadataValue(override.visibility, 'private'),
+    indexable: metadataValue(override.indexable, false),
+    ...optionalMetadata(override, canonicalPath),
+    webmcpPageId: metadataValue(override.webmcpPageId, route.id),
+    loading: metadataValue(override.loading, 'route'),
+    error: metadataValue(override.error, 'boundary'),
+  }
+}
+
+export function routeById(id: string): RouteDef | null {
+  return ROUTE_REGISTRY.find((route) => route.id === id) ?? null
+}
+
 /** True if `path` contains a `:param` segment (a detail route, not a nav destination). */
 export function isDynamicPath(path: string): boolean {
   return path.includes(':')
@@ -774,14 +965,20 @@ function matchPath(pattern: string, pathname: string): Record<string, string> | 
 }
 
 /** Resolves a pathname to its RouteDef and any extracted params, or null if unregistered. */
+function matchRegisteredRoute(
+  route: RouteDef,
+  pathname: string,
+): { route: RouteDef; params: Record<string, string> } | null {
+  if (route === NOT_FOUND_ROUTE) return null
+  if (!isDynamicPath(route.path)) return route.path === pathname ? { route, params: {} } : null
+  const params = matchPath(route.path, pathname)
+  return params ? { route, params } : null
+}
+
 export function matchRoute(pathname: string): { route: RouteDef; params: Record<string, string> } | null {
-  for (const route of ROUTES) {
-    if (!isDynamicPath(route.path)) {
-      if (route.path === pathname) return { route, params: {} }
-      continue
-    }
-    const params = matchPath(route.path, pathname)
-    if (params) return { route, params }
+  for (const route of ROUTE_REGISTRY) {
+    const match = matchRegisteredRoute(route, pathname)
+    if (match) return match
   }
   return null
 }

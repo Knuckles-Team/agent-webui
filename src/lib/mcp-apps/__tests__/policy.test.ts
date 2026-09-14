@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildFrameSrcDoc, resolveFramePolicy } from '../policy'
+import { buildFrameSrcDoc, MCP_APP_ARGUMENT_MAX_BYTES, validateMcpAppArguments, resolveFramePolicy } from '../policy'
 import type { McpUiMeta } from '../types'
+
+function deeplyNestedPayload(depth: number): Record<string, unknown> {
+  let nested: Record<string, unknown> = { leaf: true }
+  for (let index = 0; index < depth; index += 1) nested = { child: nested }
+  return nested
+}
 
 describe('resolveFramePolicy', () => {
   it('only keeps declared domains the host allow-list also contains', () => {
@@ -55,5 +61,37 @@ describe('buildFrameSrcDoc', () => {
     })
     expect(out).toContain('connect-src https://trusted.example')
     expect(out).toContain("frame-src 'none'")
+  })
+})
+
+describe('validateMcpAppArguments', () => {
+  const schema = {
+    type: 'object',
+    required: ['action'],
+    additionalProperties: false,
+    properties: {
+      action: { type: 'string', enum: ['status', 'cancel'] },
+      job_id: { type: 'string' },
+    },
+  }
+
+  it('accepts arguments that satisfy the descriptor schema', () => {
+    expect(validateMcpAppArguments(schema, { action: 'status', job_id: 'orch-1' })).toEqual({
+      ok: true,
+      value: { action: 'status', job_id: 'orch-1' },
+    })
+  })
+
+  it('rejects missing, wrong-typed, and undeclared arguments', () => {
+    expect(validateMcpAppArguments(schema, {})).toMatchObject({ ok: false })
+    expect(validateMcpAppArguments(schema, { action: 'delete' })).toMatchObject({ ok: false })
+    expect(validateMcpAppArguments(schema, { action: 'status', unexpected: true })).toMatchObject({ ok: false })
+  })
+
+  it('rejects oversized and deeply nested iframe payloads before delegation', () => {
+    expect(validateMcpAppArguments({}, { value: 'x'.repeat(MCP_APP_ARGUMENT_MAX_BYTES) })).toMatchObject({
+      ok: false,
+    })
+    expect(validateMcpAppArguments({}, deeplyNestedPayload(12))).toMatchObject({ ok: false })
   })
 })

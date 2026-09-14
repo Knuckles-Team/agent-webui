@@ -20,6 +20,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { api, ApiError, type VizRenderRequest, type VizRenderResponse } from '@/lib/api'
+import { AccessibleImage } from '@/components/ai-elements/image'
 
 interface Preset {
   id: string
@@ -192,7 +193,7 @@ export default function VizDemoView() {
           </CardHeader>
           <CardContent>
             {result.format === 'png' ? (
-              <img
+              <AccessibleImage
                 src={result.data_url}
                 alt="eg-viz render"
                 className="max-w-full rounded-md border"

@@ -46,8 +46,12 @@ export function createValidatedExecutor<Input, Output>(
   return async (rawInput, options) => {
     throwIfCancelled(options)
     const input = parseWebMcpInput(inputSchema, rawInput)
+    // Once the callback has returned, its local action may already have been
+    // dispatched (navigation, reducer update, or another browser side effect).
+    // Do not report a post-dispatch abort as if it rolled that action back.
+    // Cooperative async callbacks must observe `options.signal` themselves
+    // before returning an outcome.
     const output = await execute(input, options)
-    throwIfCancelled(options)
     return parseBoundedWebMcpOutput(outputSchema, output)
   }
 }

@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { PanelShell, CapabilityNotice, PanelError } from './PanelShell'
 import { adaptVizResult, plotFromQuery, vizUnavailableReason, VIZ_MARKS, type VizMark } from './queries'
+import { AccessibleImage } from '@/components/ai-elements/image'
 
 export interface VizPanelProps {
   title: string
@@ -66,7 +67,7 @@ async function runVizQuery(params: {
 function renderVizChartImage(render: VizRenderResult, mark: VizMark, xField: string, yField: string) {
   if (render.format === 'png') {
     return (
-      <img
+      <AccessibleImage
         src={render.dataUrl}
         alt={`${mark} chart of ${yField} vs ${xField}`}
         className="max-w-full rounded-md border"

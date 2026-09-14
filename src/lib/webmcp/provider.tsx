@@ -9,7 +9,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react'
 import type { Identity } from '@/lib/auth'
 import { usePageContextEnvelope } from '@/lib/page-context'
-import { detectWebMcpAdapter, registerWebMcpTools } from './adapter'
+import {
+  createUnavailableWebMcpRegistration,
+  detectWebMcpAdapter,
+  registerWebMcpTools,
+  type WebMcpRegistrationHandle,
+} from './adapter'
 import { toPublicPageContext, type PublicPageContext } from './contracts'
 import { createPageTools } from './tools'
 import type { WebMcpToolDefinition } from './types'
@@ -23,7 +28,7 @@ export interface WebMcpProviderProps {
 
 interface WebMcpRuntime {
   readonly registrationKey: string
-  register(tools: readonly WebMcpToolDefinition[]): () => void
+  register(tools: readonly WebMcpToolDefinition[]): WebMcpRegistrationHandle
 }
 
 const WebMcpRuntimeContext = createContext<WebMcpRuntime | null>(null)
@@ -57,8 +62,8 @@ export function WebMcpProvider({ identity, identityLoading = false, children }: 
   const registrationKey = `${enabled ? 'enabled' : 'disabled'}:${identityKey}:${contextKey}`
 
   const register = useCallback(
-    (tools: readonly WebMcpToolDefinition[]): (() => void) => {
-      if (!adapter || !enabled || tools.length === 0) return () => undefined
+    (tools: readonly WebMcpToolDefinition[]): WebMcpRegistrationHandle => {
+      if (!adapter || !enabled || tools.length === 0) return createUnavailableWebMcpRegistration(tools)
       return registerWebMcpTools(adapter, tools)
     },
     [adapter, enabled],

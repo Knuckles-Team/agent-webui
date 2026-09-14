@@ -8,10 +8,13 @@ The `agent-webui` interfaces directly with a centralized system layer located in
 graph TD
     UI[React frontend] -->|Vercel AI SDK useChat| API_Chat[/api/chat]
     UI -->|Enhanced Admin Dashboard| API_Enhanced[/api/enhanced/*]
+    UI -->|Confirmed submission| API_Contact[/api/contact]
 
     subgraph WebUI_Backend ["WebUI Backend Server (agent-webui)"]
         API_Chat --> ChatAgent[Pydantic AI Chat Agent]
         API_Enhanced --> ProxyRouter[FastAPI Route Proxy]
+        API_Contact --> ContactBoundary[Authenticated same-origin contact boundary]
+        ContactBoundary -->|Fixed destination and retention| DeliveryPort[Host-injected delivery port]
     end
 
     subgraph Centralized_Gateway ["Centralized Epistemic Gateway (agent-utilities)"]
@@ -26,18 +29,45 @@ graph TD
     subgraph Database ["Persistence Layer"]
         KG --> LadybugDB[LadybugDB Engine / FalkorDB]
     end
+
+    DeliveryPort -. disabled until safely wired .-> GovernedMessaging[Governed messaging adapter]
 ```
 
 ## REST Endpoints Overview
 
 The centralized `agent-utilities-kg` server exposes two primary REST API namespaces to the proxy:
 
+### Contact delivery (`/api/contact`)
+
+`POST /api/contact` accepts only bounded, control-safe name, email, subject, and
+message fields plus a non-PII idempotency key. It requires an authenticated
+actor and an exact same-origin browser request, applies a bounded process-local
+per-principal limit as defense in depth, and takes its destination and retention
+decision only from server configuration. The host must inject a governed
+delivery adapter that declares a durable atomic idempotency fence and a shared,
+deployment-wide abuse limit; without those capabilities, the adapter, or either
+policy value, the route returns an unavailable response. Adapter execution has
+a 12-second server deadline. A timeout is treated as an unknown outcome and
+returns no receipt. A successful, strictly validated adapter outcome must carry
+a durable, contact-namespaced opaque receipt; the WebUI validates and returns
+that reference while provider IDs, channel IDs, backend errors, and submitted
+content never appear in the HTTP response.
+
+The generic `graph/reach` operation is not used for contact delivery because it
+allows caller-selected routing and has a separate persistence contract. A
+future host adapter may use a messaging provider only when it can atomically
+fence the request key and map the provider's typed `SendResult.success` outcome
+into the narrow delivery port.
+
 ### 1. Unified Tools Registry (`/tools`, `/tools/toggle`)
+
 - **GET `/tools`**: Returns a complete, consolidated catalog of all three tool layers (MCP Server tools, Native Pydantic AI tools, and Universal Skills/Workflows/Graphs).
 - **POST `/tools/toggle`**: Toggles individual tool status and records preferences inside the graph as a `Preference` node, dynamically enabling or disabling them within the `IntelligenceGraphEngine`.
 
 ### 2. Symmetric Graph Tools (`/graph/*`)
+
 Symmetrically maps the 7 main FastMCP tools to HTTP endpoints, enabling zero-wrapper REST execution of complex KG queries:
+
 - **POST `/graph/query`**: Cypher console execution.
 - **POST `/graph/search`**: Semantic, concept-based, analogy-based, or episodic search.
 - **POST `/graph/write`**: Bulk write node and edge insertions.
@@ -48,8 +78,8 @@ Symmetrically maps the 7 main FastMCP tools to HTTP endpoints, enabling zero-wra
 
 ## Backend Component Mapping
 
-| Component         | Responsibility                                                                                            |
-| ----------------- | -------------------------------------------------------------------------------------------------------- |
-| Chat Server       | Composes the local FastAPI server with SPA static serving.                                               |
-| Centralized Gateway | Manages the primary Ne04j/LadybugDB database connections, memory storage pools, and execution processes.  |
-| API Extensions    | Intercepts dashboard routes and dynamically proxy-forwards them directly to the Epistemic Gateway.       |
+| Component           | Responsibility                                                                                           |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| Chat Server         | Composes the local FastAPI server with SPA static serving.                                               |
+| Centralized Gateway | Manages the primary Ne04j/LadybugDB database connections, memory storage pools, and execution processes. |
+| API Extensions      | Intercepts dashboard routes and dynamically proxy-forwards them directly to the Epistemic Gateway.       |
