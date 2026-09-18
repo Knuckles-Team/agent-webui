@@ -650,7 +650,7 @@ function modelIdentityFields({
           onChange={(e) => {
             setNewModelId(e.target.value)
           }}
-          placeholder="e.g. qwen/qwen3.6-27b"
+          placeholder="e.g. qwen/qwen3.8-27b"
           className="font-mono text-xs"
         />
       </div>

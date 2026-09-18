@@ -9949,7 +9949,7 @@ async def get_llm_model_detail(kind: str, model_id: str) -> dict[str, Any]:
     model's auth wiring).
 
     `model_id` is a query param, not a path segment: real model ids contain
-    `/` (e.g. `qwen/qwen3.6-27b`), which a path param cannot carry safely.
+    `/` (e.g. `qwen/qwen3.8-27b`), which a path param cannot carry safely.
     Deliberately separate from `/llm/models`/`/llm/embedding-models`, whose
     browse-list shape intentionally excludes secret references
     (`test_list_llm_models_reads_the_live_chat_models_registry_and_excludes_secrets`) —

@@ -159,7 +159,7 @@ describe('LLMTemplatesView (BUG-260)', () => {
     const newModelButton = screen.getByRole('button', { name: /new embedding model/i })
     await userEvent.click(newModelButton)
 
-    const idInput = await screen.findByPlaceholderText('e.g. qwen/qwen3.6-27b')
+    const idInput = await screen.findByPlaceholderText('e.g. qwen/qwen3.8-27b')
     await userEvent.type(idInput, 'bge-m3')
     const providerInput = screen.getByPlaceholderText('openai')
     await userEvent.type(providerInput, 'openai')
