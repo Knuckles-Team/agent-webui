@@ -12,12 +12,12 @@ name: Release
 #
 #       publish-pypi   -- builds + publishes the agent-webui wheel to PyPI
 #                         (delegates to the fleet's shared reusable
-#                         `python_web_pipeline.yml`, which does its own
-#                         build/test/publish/tag-and-release in one atomic
-#                         job -- there is no separable "gates"/"build" stage
-#                         to pull out of it from here without editing that
-#                         workflow, which is owned by Knuckles-Team/pipelines
-#                         and shared across ~62 packages).
+#                         `python_pipeline.yml` with `web-assets: true`, which
+#                         does its own build/test/publish/tag-and-release in
+#                         one atomic job -- there is no separable
+#                         "gates"/"build" stage to pull out of it from here
+#                         without editing that workflow, which is owned by
+#                         Knuckles-Team/pipelines and shared across the fleet).
 #       publish-docker -- needs: publish-pypi. Builds and publishes the
 #                         container image FROM THE SAME COMMIT, consuming
 #                         whatever agent-utilities/epistemic-graph floor is
@@ -31,7 +31,7 @@ name: Release
 # `docker-publish.yml` for the container image, `pages.yml` for docs) that
 # had no explicit relationship to each other. `docker-publish.yml` triggered
 # on `push: tags: ['v*']` -- which happened to fire only AFTER `pipeline.yml`
-# succeeded, because `python_web_pipeline.yml` creates that tag as its own
+# succeeded, because `python_pipeline.yml` creates that tag as its own
 # last step (`softprops/action-gh-release`, `tag_name: v${BUILD_VERSION}`).
 # That made PyPI-then-Docker ordering an accidental side effect of two
 # decoupled workflows reacting to two separate push events, not something
@@ -72,14 +72,22 @@ permissions:
 
 jobs:
   # ── STAGE 1: build + publish the agent-webui wheel to PyPI, then tag the
-  # release commit. Unchanged from the former pipeline.yml except pinned by
-  # SHA (SC-GHA-style convention this repo's other workflow already follows)
-  # instead of a floating `@main` ref.
+  # release commit. The fleet intentionally tracks the centrally managed
+  # first-party pipelines repository at `@main` (RF-ADR-009 / D9).
+  #
+  # `python_web_pipeline.yml` was merged into `python_pipeline.yml` upstream
+  # (pipelines: refactor/py-workflow-dedup, RF-ADR-009 PY-WORKFLOW-DEDUP --
+  # the two workflows' workflow_call/permissions/job/checkout preamble was a
+  # jscpd-flagged clone; `web-assets: true` below now selects the frontend
+  # build + relaxed-publish behavior this repo needs). Floating on `@main`
+  # here, matching the fleet's centrally managed first-party workflow policy.
   publish-pypi:
     name: publish-pypi
-    uses: Knuckles-Team/pipelines/.github/workflows/python_web_pipeline.yml@ea769702ad1ebdc104293854e0767fea133899e1 # main as of 2026-08-10
+    uses: Knuckles-Team/pipelines/.github/workflows/python_pipeline.yml@main
     permissions:
       contents: write
+    with:
+      web-assets: true
     secrets:
       PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
 
