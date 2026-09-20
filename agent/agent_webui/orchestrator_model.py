@@ -211,7 +211,7 @@ def build_orchestrator_model(
 
     Args:
         engine_provider: an async, zero-arg callable resolving the live
-            ``IntelligenceGraphEngine`` (``agent_webui.api_extensions._get_engine_bounded``
+            ``IntelligenceGraphEngine`` (``agent_webui.api_extensions.get_engine_bounded``
             in production) -- called lazily, per turn, exactly like every
             other engine-backed webui route, never constructed eagerly at
             process startup (the engine requires a verified actor context

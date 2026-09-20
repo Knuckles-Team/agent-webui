@@ -337,7 +337,7 @@ def bounded_engine(monkeypatch):
     async def _get_engine() -> Any:
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     return engine
 
 

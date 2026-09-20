@@ -3,7 +3,7 @@ and their wiring into ``list_all_tools``.
 
 Covers:
   * ``_batch_toggle_states`` no longer re-raises a 503 ``HTTPException`` from
-    ``_invoke_governed_helper`` -- it fails open (same as every other error
+    ``invoke_governed_helper`` -- it fails open (same as every other error
     path it already handled) and reports the failure via its ``ok`` return
     value instead of taking the whole ``/api/enhanced/tools`` response down.
   * ``_batch_toggle_states`` returns ``(states, ok)`` so a caller can tell "no
@@ -142,7 +142,7 @@ async def test_batch_toggle_states_fails_open_and_reports_ok_false_on_query_erro
 async def test_batch_toggle_states_no_longer_reraises_a_503_http_exception(
     stub_engine,
 ):
-    """Previously a 503 ``HTTPException`` from ``_invoke_governed_helper``
+    """Previously a 503 ``HTTPException`` from ``invoke_governed_helper``
     (capacity exhausted / per-call deadline exceeded) was re-raised out of
     ``_batch_toggle_states``, which took the ENTIRE ``/api/enhanced/tools``
     response down over a toggle-preference outage alone -- inconsistent with
@@ -150,7 +150,7 @@ async def test_batch_toggle_states_no_longer_reraises_a_503_http_exception(
     propagating. It must now degrade the same way."""
     with patch.object(
         api_extensions,
-        '_invoke_governed_helper',
+        'invoke_governed_helper',
         AsyncMock(
             side_effect=api_extensions.HTTPException(
                 status_code=503, detail='Synchronous backend deadline exceeded'
@@ -233,7 +233,7 @@ async def test_batch_toggle_states_many_empty_input_makes_no_calls(stub_engine):
 async def test_list_all_tools_fetches_toggle_states_concurrently(
     monkeypatch, bounded_engine
 ) -> None:
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     call_count = 0
 
@@ -276,7 +276,7 @@ async def test_list_all_tools_surfaces_a_toggle_batch_failure_via_toggle_status(
     ``CypherEngineError`` on 100% of live calls, defaulting every item to
     "enabled" while looking like it worked) must now be visible in the
     response, not just in a redacted server log."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     async def _always_fails(engine, item_type, item_ids):
         return {}, False
@@ -303,7 +303,7 @@ async def test_list_all_tools_surfaces_a_toggle_batch_failure_via_toggle_status(
 async def test_list_all_tools_toggle_status_is_healthy_when_all_batches_succeed(
     monkeypatch, bounded_engine
 ) -> None:
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     async def _ok(engine, item_type, item_ids):
         return {}, True
@@ -332,7 +332,7 @@ async def test_list_all_tools_toggle_status_names_the_degraded_item_types(
     an outage -- indistinguishable from a real preference. `toggle_status
     .degraded_item_types` names exactly which item_type(s) are not to be
     trusted, additive to the existing `error` field."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     async def _mixed(engine, item_type, item_ids):
         if item_type == 'skill':

@@ -291,7 +291,7 @@ async def test_graph_reports_engine_unavailable(monkeypatch) -> None:
     async def _raise():
         raise RuntimeError('no engine')
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _raise)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _raise)
     result = await api_extensions.execute_slash_command(
         {'command': '/graph stats'}, make_request()
     )
@@ -306,7 +306,7 @@ async def test_graph_with_no_subcommand_defaults_to_stats(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/graph'}, make_request()
     )
@@ -327,7 +327,7 @@ async def test_graph_nodes_filters_by_type(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/graph nodes Skill'}, make_request()
     )
@@ -342,7 +342,7 @@ async def test_graph_search_with_no_query_shows_usage(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/graph search'}, make_request()
     )
@@ -356,7 +356,7 @@ async def test_graph_search_reports_no_results(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/graph search zzz-no-match'}, make_request()
     )
@@ -374,7 +374,7 @@ async def test_graph_search_matches_id_or_description(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/graph search loop'}, make_request()
     )
@@ -388,7 +388,7 @@ async def test_graph_impact_with_no_symbol_shows_usage(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/graph impact'}, make_request()
     )
@@ -406,7 +406,7 @@ async def test_graph_impact_reports_affected_items(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/graph impact my_func'}, make_request()
     )
@@ -422,7 +422,7 @@ async def test_graph_impact_with_no_results(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/graph impact nothing'}, make_request()
     )
@@ -436,7 +436,7 @@ async def test_graph_unknown_subcommand(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/graph bogus'}, make_request()
     )
@@ -453,7 +453,7 @@ async def test_kb_backend_unavailable_when_engine_raises(monkeypatch) -> None:
     async def _raise():
         raise RuntimeError('no engine')
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _raise)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _raise)
     result = await api_extensions.execute_slash_command(
         {'command': '/kb list'}, make_request()
     )
@@ -469,7 +469,7 @@ async def test_kb_list_reports_none_found(monkeypatch) -> None:
 
     kb_engine = MagicMock()
     kb_engine.list_knowledge_bases = AsyncMock(return_value=[])
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     monkeypatch.setattr(
         api_extensions, 'KBIngestionEngine', lambda graph, backend: kb_engine
     )
@@ -492,7 +492,7 @@ async def test_kb_list_renders_bases_with_article_counts(monkeypatch) -> None:
             {'id': 'workspace-docs', 'description': 'Docs', 'article_count': 42}
         ]
     )
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     monkeypatch.setattr(
         api_extensions, 'KBIngestionEngine', lambda graph, backend: kb_engine
     )
@@ -510,7 +510,7 @@ async def test_kb_search_with_no_query_shows_usage(monkeypatch) -> None:
         return engine
 
     kb_engine = MagicMock()
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     monkeypatch.setattr(
         api_extensions, 'KBIngestionEngine', lambda graph, backend: kb_engine
     )
@@ -533,7 +533,7 @@ async def test_kb_search_renders_hits_with_snippets(monkeypatch) -> None:
             {'title': 'Setup Guide', 'score': 0.91, 'content': 'Install steps...'}
         ]
     )
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     monkeypatch.setattr(
         api_extensions, 'KBIngestionEngine', lambda graph, backend: kb_engine
     )
@@ -552,7 +552,7 @@ async def test_kb_ingest_with_no_path_shows_usage(monkeypatch) -> None:
         return engine
 
     kb_engine = MagicMock()
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     monkeypatch.setattr(
         api_extensions, 'KBIngestionEngine', lambda graph, backend: kb_engine
     )
@@ -571,7 +571,7 @@ async def test_kb_ingest_reports_job_id_when_present(monkeypatch) -> None:
 
     kb_engine = MagicMock()
     kb_engine.ingest = AsyncMock(return_value={'job_id': 'job-42'})
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     monkeypatch.setattr(
         api_extensions, 'KBIngestionEngine', lambda graph, backend: kb_engine
     )
@@ -592,7 +592,7 @@ async def test_kb_ingest_without_a_job_id_omits_the_job_suffix(monkeypatch) -> N
 
     kb_engine = MagicMock()
     kb_engine.ingest = AsyncMock(return_value={})
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     monkeypatch.setattr(
         api_extensions, 'KBIngestionEngine', lambda graph, backend: kb_engine
     )
@@ -612,7 +612,7 @@ async def test_kb_unknown_subcommand(monkeypatch) -> None:
         return engine
 
     kb_engine = MagicMock()
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     monkeypatch.setattr(
         api_extensions, 'KBIngestionEngine', lambda graph, backend: kb_engine
     )
@@ -705,7 +705,7 @@ async def test_sdd_sync_success(monkeypatch) -> None:
         return engine
 
     manager = MagicMock()
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     monkeypatch.setattr(api_extensions, 'SDDManager', lambda _dir: manager)
     result = await api_extensions.execute_slash_command(
         {'command': '/sdd sync'}, make_request()
@@ -820,7 +820,7 @@ async def test_resources_backend_unavailable(monkeypatch) -> None:
     async def _raise():
         raise RuntimeError('no engine')
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _raise)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _raise)
     result = await api_extensions.execute_slash_command(
         {'command': '/resources'}, make_request()
     )
@@ -835,7 +835,7 @@ async def test_resources_list_reports_none_active(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/resources'}, make_request()
     )
@@ -852,7 +852,7 @@ async def test_resources_list_renders_rows(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/resources list'}, make_request()
     )
@@ -869,7 +869,7 @@ async def test_resources_spawn_with_no_name_shows_usage(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/resources spawn'}, make_request()
     )
@@ -888,7 +888,7 @@ async def test_resources_spawn_reports_the_spawned_id(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/resources spawn reviewer'}, make_request()
     )
@@ -902,7 +902,7 @@ async def test_resources_unknown_subcommand(monkeypatch) -> None:
     async def _get_engine():
         return engine
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', _get_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', _get_engine)
     result = await api_extensions.execute_slash_command(
         {'command': '/resources bogus'}, make_request()
     )

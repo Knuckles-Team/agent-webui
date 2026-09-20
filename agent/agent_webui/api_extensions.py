@@ -858,7 +858,7 @@ async def _enforce_mcp_tool_policy(server_name: str, tool_name: str) -> None:
     cannot be verified.
     """
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
         states, states_ok = await _batch_toggle_states(
             engine,
             'mcp_tool',
@@ -1052,14 +1052,18 @@ def get_helper(name: str, fallback: Any = None) -> Any:
     return helper
 
 
-async def _invoke_governed_helper(
+async def invoke_governed_helper(
     helper: Any,
     /,
     *args: Any,
     deadline: float,
     **kwargs: Any,
 ) -> Any:
-    """Invoke an adapter under one end-to-end deadline and fixed thread budget."""
+    """Invoke an adapter under one end-to-end deadline and fixed thread budget.
+
+    This is the supported host-integration seam for calling WebUI helpers
+    without bypassing the shared timeout and synchronous-work capacity policy.
+    """
 
     import asyncio
 
@@ -1203,10 +1207,15 @@ def get_engine() -> IntelligenceGraphEngine:
     return engine
 
 
-async def _get_engine_bounded() -> IntelligenceGraphEngine:
-    """Resolve or initialize the active engine under the shared sync budget."""
+async def get_engine_bounded() -> IntelligenceGraphEngine:
+    """Resolve or initialize the active engine under the shared sync budget.
 
-    return await _invoke_governed_helper(get_engine, deadline=10.0)
+    Hosts should pass this public provider to
+    :func:`agent_webui.orchestrator_model.build_orchestrator_model` rather than
+    calling the synchronous engine resolver directly.
+    """
+
+    return await invoke_governed_helper(get_engine, deadline=10.0)
 
 
 @router.get('/info')
@@ -1219,7 +1228,7 @@ async def get_info() -> dict[str, str]:
         A dictionary containing agent name, description, and emojis.
     """
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
     except HTTPException as exc:
         if exc.status_code == 503:
             raise
@@ -1227,9 +1236,7 @@ async def get_info() -> dict[str, str]:
     except Exception:
         engine = None
     if engine:
-        identity = await _invoke_governed_helper(
-            engine.get_agent_identity, deadline=5.0
-        )
+        identity = await invoke_governed_helper(engine.get_agent_identity, deadline=5.0)
         return {
             'name': identity.get('name', 'Agent'),
             'description': identity.get('description', 'AI Agent'),
@@ -1865,9 +1872,9 @@ async def list_config_files() -> list[str]:
 async def list_agents() -> list[dict[str, Any]]:
     """List all agents registered in the Knowledge Graph."""
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
         query = f'MATCH (a:Agent) RETURN a LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             engine.backend.execute, query, deadline=10.0
         )
         agents = []
@@ -1915,7 +1922,7 @@ async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
         return True
     pref_id = f'preference:toggle:{item_type}:{item_id}'
     try:
-        res = await _invoke_governed_helper(
+        res = await invoke_governed_helper(
             engine.query_cypher,
             'MATCH (p:Preference) WHERE p.id = $pref_id '
             'RETURN p.id AS id, p.value AS value',
@@ -1973,7 +1980,7 @@ async def _batch_toggle_states(
     ``get_toggle_state`` once PER ROW -- up to ~256 MCP servers, ~256
     built-in tools, and ~256 skill-catalog rows, each a SEPARATE, serially
     ``await``-ed ``engine.query_cypher`` round trip through
-    ``_invoke_governed_helper``'s bounded synchronous executor (a shared,
+    ``invoke_governed_helper``'s bounded synchronous executor (a shared,
     process-wide, fixed 4-worker/8-pending-slot budget --
     ``_SYNC_WORK_EXECUTOR`` -- so this was never just slow for this one
     request; a large enough listing could starve every other concurrent
@@ -2000,7 +2007,7 @@ async def _batch_toggle_states(
     mapping callers can safely use, but ``ok=False`` lets the caller surface
     that the toggle read itself is broken rather than silently reporting
     "everything enabled" as if it were a real, verified answer. A previous
-    version re-raised a 503 ``_invoke_governed_helper`` timeout/capacity
+    version re-raised a 503 ``invoke_governed_helper`` timeout/capacity
     ``HTTPException`` here, which took the ENTIRE ``/api/enhanced/tools``
     response down over a toggle-preference outage alone; that is now
     degraded the same as any other failure.
@@ -2010,7 +2017,7 @@ async def _batch_toggle_states(
     prefix = f'preference:toggle:{item_type}:'
     pref_to_item = {f'{prefix}{item_id}': item_id for item_id in item_ids}
     try:
-        res = await _invoke_governed_helper(
+        res = await invoke_governed_helper(
             engine.query_cypher,
             'MATCH (p:Preference) WHERE p.id IN $ids '
             'RETURN p.id AS id, p.value AS value',
@@ -2097,7 +2104,7 @@ async def set_toggle_state(
     try:
         from datetime import datetime
 
-        await _invoke_governed_helper(
+        await invoke_governed_helper(
             engine.add_node,
             pref_id,
             'Preference',
@@ -2212,7 +2219,7 @@ async def _fleet_catalog_record_total(
     try:
         _set_fleet_catalog_total(
             kind,
-            await _invoke_governed_helper(
+            await invoke_governed_helper(
                 _authorized_count, kind, **ctx.call_kwargs(remaining_total)
             ),
         )
@@ -2241,7 +2248,7 @@ async def _fleet_catalog_rows(
         remaining_total = ctx.remaining()
         if remaining_total <= 0:
             raise TimeoutError('overall fleet catalog deadline exceeded')
-        page = await _invoke_governed_helper(
+        page = await invoke_governed_helper(
             _authorized_page,
             kind,
             after=after,
@@ -2270,7 +2277,7 @@ async def _fleet_catalog_kind(
     """Read ONE kind. Independent degradation: this kind failing must not
     discard earlier/later kinds, so any failure returns ``None`` rather than
     propagating -- including a per-call 503 (capacity exhausted / deadline
-    exceeded from `_invoke_governed_helper`), which used to kill the WHOLE
+    exceeded from `invoke_governed_helper`), which used to kill the WHOLE
     multi-kind read."""
     from agent_utilities.gateway.registry_api import _KIND_SPECS, _validate_item
 
@@ -2297,7 +2304,7 @@ async def _read_fleet_catalog(
     ``register_graph_routes``, which mounts ``register_registry_routes`` on
     this SAME app -- see ``server.py``'s ``create_agent_web_app``).
 
-    Every SQL round trip is bounded by ``_invoke_governed_helper`` (the same
+    Every SQL round trip is bounded by ``invoke_governed_helper`` (the same
     deadline pattern every other engine call in this file uses -- previously
     ``list_all_tools`` awaited the shared multiplexer with NO deadline,
     hanging 45s before an infra timeout returned a 503).
@@ -2903,7 +2910,7 @@ async def list_all_tools() -> dict[str, Any]:
     three-levels-deep ``skill_classification.kg_reachable`` boolean.
     """
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
     except HTTPException as exc:
         if exc.status_code == 503:
             raise
@@ -3178,7 +3185,7 @@ async def list_mcp_server_tools(
     instead of silently presenting a truncated list as complete.
     """
 
-    engine = await _get_engine_bounded()
+    engine = await get_engine_bounded()
     _validate_mcp_tool_page_request(server_name, offset, limit)
     delegated_inventory = get_helper('list_mcp_server_tools')
     if delegated_inventory is None:
@@ -3188,7 +3195,7 @@ async def list_mcp_server_tools(
         )
 
     try:
-        tools = await _invoke_governed_helper(
+        tools = await invoke_governed_helper(
             delegated_inventory,
             deadline=15.0,
             server_name=server_name,
@@ -3500,7 +3507,7 @@ async def _read_mcp_app_resource(
 ) -> Any:
     """Read and bound one MCP Apps resource through the host-owned seam."""
     try:
-        resource = await _invoke_governed_helper(
+        resource = await invoke_governed_helper(
             delegated_read,
             deadline=timeout,
             server_name=server_name,
@@ -3590,7 +3597,7 @@ async def toggle_tool_status(data: dict[str, Any]) -> dict[str, Any]:
     ):
         raise HTTPException(status_code=400, detail='Invalid toggle request')
 
-    engine = await _get_engine_bounded()
+    engine = await get_engine_bounded()
     await set_toggle_state(engine, item_type, item_id, enabled)
     return {'status': 'success', 'type': item_type, 'id': item_id, 'enabled': enabled}
 
@@ -3656,7 +3663,7 @@ async def toggle_skill(skill_id: str) -> dict[str, Any]:
     if not _SAFE_DELEGATION_TOKEN.fullmatch(skill_id):
         raise HTTPException(status_code=400, detail='Invalid skill identifier')
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
     except HTTPException as exc:
         # See the matching note in list_skills(): only a genuine 503 hard-
         # fails; "no engine" (501) degrades to the toggle_helper fallback.
@@ -3675,7 +3682,7 @@ async def toggle_skill(skill_id: str) -> dict[str, Any]:
     toggle_helper = get_helper('toggle_skill')
     if not toggle_helper:
         return {'status': 'disabled', 'detail': 'Skill helper not initialized'}
-    return await _invoke_governed_helper(
+    return await invoke_governed_helper(
         toggle_helper,
         skill_id,
         deadline=10.0,
@@ -3696,7 +3703,7 @@ async def reload_agent(request: Request) -> dict[str, Any]:
     """
     try:
         try:
-            engine = await _get_engine_bounded()
+            engine = await get_engine_bounded()
         except HTTPException as exc:
             # See the matching note in list_skills(): only a genuine 503
             # hard-fails; "no engine" (501) degrades to the legacy
@@ -3707,7 +3714,7 @@ async def reload_agent(request: Request) -> dict[str, Any]:
         except Exception:
             engine = None
         if engine:
-            changes = await _invoke_governed_helper(
+            changes = await invoke_governed_helper(
                 engine.reload_from_workspace,
                 deadline=30.0,
             )
@@ -3718,7 +3725,7 @@ async def reload_agent(request: Request) -> dict[str, Any]:
             }
 
         # Legacy fallback
-        await _invoke_governed_helper(
+        await invoke_governed_helper(
             workspace_helpers['initialize_workspace'],
             deadline=30.0,
         )
@@ -3727,7 +3734,7 @@ async def reload_agent(request: Request) -> dict[str, Any]:
             raise HTTPException(
                 status_code=501, detail='Reloadable wrapper not found in app state'
             )
-        await _invoke_governed_helper(reloadable.reload, deadline=30.0)
+        await invoke_governed_helper(reloadable.reload, deadline=30.0)
         return {'status': 'success', 'message': 'Agent reloaded successfully'}
     except HTTPException:
         raise
@@ -4222,7 +4229,7 @@ async def _distinct_graph_labels(engine: Any) -> list[str]:
                     labels.append(label)
         return labels
 
-    return await _invoke_governed_helper(_run, deadline=10.0)
+    return await invoke_governed_helper(_run, deadline=10.0)
 
 
 # ---------------------------------------------------------------------------
@@ -4434,7 +4441,7 @@ async def _read_union_cypher(
         rows = read_union(cypher, params, _graph_union_executor(engine), actor)
         return rows, graphs
 
-    return await _invoke_governed_helper(_run, deadline=deadline)
+    return await invoke_governed_helper(_run, deadline=deadline)
 
 
 # Bound on concurrent per-graph fan-out (`_rows_per_accessible_graph` below).
@@ -4575,7 +4582,7 @@ async def _read_union_scalar_sum(
                     total += value
         return total, graphs, degraded
 
-    return await _invoke_governed_helper(_run, deadline=deadline)
+    return await invoke_governed_helper(_run, deadline=deadline)
 
 
 async def _read_union_sql_group_counts(
@@ -4658,7 +4665,7 @@ async def _read_union_sql_group_counts(
             _absorb(merged, rows)
         return merged, graphs, degraded
 
-    return await _invoke_governed_helper(_run, deadline=deadline)
+    return await invoke_governed_helper(_run, deadline=deadline)
 
 
 def _node_label_rows(
@@ -4847,7 +4854,7 @@ async def _graph_read_engine() -> Any | None:
     yet, not a backend malfunction.
     """
     try:
-        return await _get_engine_bounded()
+        return await get_engine_bounded()
     except HTTPException as exc:
         if exc.status_code != 501:
             raise
@@ -4861,9 +4868,9 @@ async def _union_label_page(
 
     `_union_nodes_by_label` is a plain sync callable (mirroring
     `nodes_by_label`'s own shape), so it goes through
-    `_invoke_governed_helper` exactly like the un-unioned call it replaces.
+    `invoke_governed_helper` exactly like the un-unioned call it replaces.
     """
-    page, sources, degraded = await _invoke_governed_helper(
+    page, sources, degraded = await invoke_governed_helper(
         _union_nodes_by_label, engine, label, remaining, deadline=10.0
     )
     return list(page or []), set(sources), set(degraded)
@@ -5112,7 +5119,7 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
     """
     try:
         try:
-            engine = await _get_engine_bounded()
+            engine = await get_engine_bounded()
         except HTTPException as exc:
             # See the matching note in get_graph_nodes() -- same fix, same
             # reasoning: "no engine" degrades to an honest empty list; a
@@ -5703,7 +5710,7 @@ async def get_graph_stats() -> dict[str, Any]:
     """
     try:
         try:
-            engine = await _get_engine_bounded()
+            engine = await get_engine_bounded()
         except HTTPException as exc:
             # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- get_engine()
             # raises HTTPException(501) rather than returning None, so the
@@ -5753,7 +5760,7 @@ async def get_graph_stats() -> dict[str, Any]:
         # something this call site has to arrange) -- so all three tasks
         # see the SAME `current_session()` this request already has bound,
         # exactly as the sequential `await` chain did. Underneath, each of
-        # the three still goes through `_invoke_governed_helper` ->
+        # the three still goes through `invoke_governed_helper` ->
         # `_SYNC_WORK_EXECUTOR.submit()`, which ALSO does its own
         # `contextvars.copy_context()` per submission (see that class'
         # `submit()` above) before crossing into a worker thread -- the
@@ -5772,7 +5779,7 @@ async def get_graph_stats() -> dict[str, Any]:
         # through the SAME shared, bounded `_SYNC_WORK_EXECUTOR`
         # (`_MAX_SYNC_WORKERS`=4, `_MAX_SYNC_PENDING`=8): once that budget
         # is exhausted, `.submit()` raises `SyncWorkCapacityError`, which
-        # `_invoke_governed_helper` already converts into a clean 503
+        # `invoke_governed_helper` already converts into a clean 503
         # ("Synchronous backend capacity is exhausted") rather than
         # unbounded engine fan-out. The engine's own circuit breaker
         # (`agent_utilities...core.engine_breaker.CircuitBreaker`) only
@@ -5906,7 +5913,7 @@ async def get_graph_node_types() -> dict[str, Any]:
         )
     try:
         try:
-            engine = await _get_engine_bounded()
+            engine = await get_engine_bounded()
         except HTTPException as exc:
             # Same contract as `get_graph_stats`: a 501 ("engine not
             # initialized") is a knowable state and is reported as one --
@@ -5976,7 +5983,7 @@ async def add_memory(data: dict[str, Any]) -> dict[str, Any]:
     try:
         from agent_utilities.models.knowledge_graph import MemoryNode
 
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         data_copy = _bounded_query_params(data)
         safe_copy, _privacy_report = sanitize_for_persistence(data_copy)
@@ -5987,7 +5994,7 @@ async def add_memory(data: dict[str, Any]) -> dict[str, Any]:
             data_copy['name'] = data_copy.get('content', 'Memory Node')[:50]
 
         memory = MemoryNode(**data_copy)
-        await _invoke_governed_helper(engine.add_memory_node, memory, deadline=10.0)
+        await invoke_governed_helper(engine.add_memory_node, memory, deadline=10.0)
         return {'status': 'success', 'id': memory.id}
     except HTTPException:
         raise
@@ -6008,9 +6015,9 @@ async def get_memory(memory_id: str) -> dict[str, Any]:
     """
     try:
         memory_id = _validate_runtime_id(memory_id)
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
-        memory = await _invoke_governed_helper(
+        memory = await invoke_governed_helper(
             engine.get_memory_node, memory_id, deadline=10.0
         )
         if not memory:
@@ -6042,7 +6049,7 @@ async def update_memory(memory_id: str, data: dict[str, Any]) -> dict[str, Any]:
         from agent_utilities.models.knowledge_graph import MemoryNode
 
         memory_id = _validate_runtime_id(memory_id)
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         data_copy = _bounded_query_params(data)
         safe_copy, _privacy_report = sanitize_for_persistence(data_copy)
@@ -6055,7 +6062,7 @@ async def update_memory(memory_id: str, data: dict[str, Any]) -> dict[str, Any]:
             data_copy['name'] = data_copy.get('content', 'Memory Node')[:50]
 
         updated_memory = MemoryNode(**data_copy)
-        await _invoke_governed_helper(
+        await invoke_governed_helper(
             engine.update_memory_node, memory_id, updated_memory, deadline=10.0
         )
         return {'status': 'success'}
@@ -6078,9 +6085,9 @@ async def delete_memory(memory_id: str) -> dict[str, Any]:
     """
     try:
         memory_id = _validate_runtime_id(memory_id)
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
-        await _invoke_governed_helper(
+        await invoke_governed_helper(
             engine.delete_memory_node, memory_id, deadline=10.0
         )
         return {'status': 'success'}
@@ -6114,9 +6121,9 @@ async def link_nodes(data: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(safe_properties, dict):
             raise HTTPException(status_code=400, detail='Invalid link properties')
 
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
-        await _invoke_governed_helper(
+        await invoke_governed_helper(
             engine.link_nodes,
             source,
             target,
@@ -6174,7 +6181,7 @@ async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
     if not 1 <= top_k <= 100:
         raise HTTPException(status_code=400, detail='Invalid result limit')
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         # FIX LANE Priority 1: `search_hybrid` is a native ranked-retrieval
         # call with no Cypher form (`_read_union_cypher` does not apply), so
@@ -6194,7 +6201,7 @@ async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
         def _call(scoped_engine: Any) -> list[dict[str, Any]]:
             return list(scoped_engine.search_hybrid(query, top_k=top_k) or [])
 
-        results, _source_graphs, degraded = await _invoke_governed_helper(
+        results, _source_graphs, degraded = await invoke_governed_helper(
             _union_engine_call, engine, actor, _call, deadline=15.0
         )
         _reject_fully_degraded_search(results, degraded)
@@ -6210,7 +6217,7 @@ async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
     except Exception as e:
         # D-W6-10 (same class of fix as get_graph_nodes/get_graph_relationships/
         # list_workflows): a failure raised OUTSIDE the fail-soft per-graph
-        # fan-out above (e.g. `_invoke_governed_helper`'s own deadline/capacity
+        # fan-out above (e.g. `invoke_governed_helper`'s own deadline/capacity
         # handling, or an error before/after the union call) must also surface
         # as a distinguishable failure, not a fabricated `200 []`.
         _log_failure('search_graph', e)
@@ -6233,7 +6240,7 @@ async def get_impact(symbol: str) -> list[dict[str, Any]]:
     if not symbol.strip() or len(symbol.encode('utf-8')) > 2048:
         raise HTTPException(status_code=400, detail='Invalid impact symbol')
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         # FIX LANE Priority 1: `query_impact` is a native BFS-traversal call
         # with no Cypher form, fanned out per accessible graph and merged by
@@ -6250,7 +6257,7 @@ async def get_impact(symbol: str) -> list[dict[str, Any]]:
         def _call(scoped_engine: Any) -> list[dict[str, Any]]:
             return list(scoped_engine.query_impact(symbol) or [])
 
-        impact_set, _source_graphs, _degraded = await _invoke_governed_helper(
+        impact_set, _source_graphs, _degraded = await invoke_governed_helper(
             _union_engine_call, engine, actor, _call, deadline=15.0
         )
         bounded = _public_external_result(
@@ -6278,7 +6285,7 @@ async def execute_cypher(data: dict[str, Any]) -> list[dict[str, Any]]:
         query = _validate_read_only_cypher(data.get('query'))
         params = _bounded_query_params(data.get('params', {}))
 
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         # FIX LANE Priority 1: unioned across every graph this actor may read
         # (`_read_union_cypher`). Safe to union unconditionally -- unlike a
@@ -6335,11 +6342,11 @@ _MAX_VIZ_RESPONSE_BYTES = 20 * 1024 * 1024
 async def get_viz_capabilities() -> dict[str, Any]:
     """Return the eg-viz mark/surface capability matrix (what's renderable today)."""
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
         if not engine or not engine.backend:
             raise HTTPException(status_code=503, detail='Graph engine not available')
         client = engine.backend._graph.client
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             client.viz.capability_matrix, deadline=10.0
         )
         return _bounded_external_value(result)
@@ -6416,11 +6423,11 @@ async def render_viz(data: dict[str, Any]) -> dict[str, Any]:
             )
         options = _viz_render_options(data)
 
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
         if not engine or not engine.backend:
             raise HTTPException(status_code=503, detail='Graph engine not available')
 
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             engine.backend._graph.client.viz.render,
             spec,
             dataset,
@@ -6480,8 +6487,8 @@ async def code_nav(data: dict[str, Any]) -> dict[str, Any]:
             depth=depth,
             limit=limit,
         )
-        engine = await _get_engine_bounded()
-        rows = await _invoke_governed_helper(
+        engine = await get_engine_bounded()
+        rows = await invoke_governed_helper(
             engine.query_cypher, cypher, params, deadline=15.0
         )
         bounded_rows = list(rows or [])[:limit]
@@ -6501,8 +6508,8 @@ async def code_nav(data: dict[str, Any]) -> dict[str, Any]:
 async def code_instances() -> dict[str, Any]:
     """List source_systems that have code in the graph (the indexed GitLab tenants)."""
     try:
-        engine = await _get_engine_bounded()
-        rows = await _invoke_governed_helper(
+        engine = await get_engine_bounded()
+        rows = await invoke_governed_helper(
             engine.query_cypher,
             'MATCH (c:Code) WHERE c.source_system IS NOT NULL '
             'RETURN DISTINCT c.source_system AS source_system '
@@ -6534,9 +6541,9 @@ async def ingest_kb(data: dict[str, Any]) -> dict[str, Any]:
         Success status and ingestion job ID.
     """
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
-        kb_engine = await _invoke_governed_helper(
+        kb_engine = await invoke_governed_helper(
             KBIngestionEngine,
             engine.graph if engine else None,
             engine.backend if engine else None,
@@ -6550,7 +6557,7 @@ async def ingest_kb(data: dict[str, Any]) -> dict[str, Any]:
         name = data.get('name', kb_id)
         if not isinstance(name, str) or len(name.encode('utf-8')) > 1024:
             raise HTTPException(status_code=400, detail='Invalid KB name')
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             kb_engine.ingest,
             deadline=120.0,
             kb_id=kb_id,
@@ -6574,15 +6581,15 @@ async def list_kbs() -> list[dict[str, Any]]:
         List of Knowledge Base metadata.
     """
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
-        kb_engine = await _invoke_governed_helper(
+        kb_engine = await invoke_governed_helper(
             KBIngestionEngine,
             engine.graph if engine else None,
             engine.backend if engine else None,
             deadline=10.0,
         )
-        bases = await _invoke_governed_helper(
+        bases = await invoke_governed_helper(
             kb_engine.list_knowledge_bases,
             deadline=15.0,
         )
@@ -6615,19 +6622,19 @@ async def search_kb(query: str, kb_id: str | None = None) -> list[dict[str, Any]
     try:
         # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- this route already
         # anticipated a None engine (`engine.graph if engine else None`), but
-        # `_get_engine_bounded()` raises rather than returning None, so that
+        # `get_engine_bounded()` raises rather than returning None, so that
         # ternary was dead code. KB search is a separate subsystem from the
         # graph engine's own live backend, so a still-absent engine degrades
         # to None here (KBIngestionEngine is constructed with graph=None,
         # backend=None); a genuine 503 still hard-fails.
         engine = await _graph_read_engine()
-        kb_engine = await _invoke_governed_helper(
+        kb_engine = await invoke_governed_helper(
             KBIngestionEngine,
             engine.graph if engine else None,
             engine.backend if engine else None,
             deadline=10.0,
         )
-        results = await _invoke_governed_helper(
+        results = await invoke_governed_helper(
             kb_engine.search,
             query,
             kb_id=kb_id,
@@ -6653,10 +6660,10 @@ async def get_kb_article(article_id: str) -> dict[str, Any]:
     """
     try:
         article_id = _validate_runtime_id(article_id)
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         query = 'MATCH (a:Article) WHERE a.id = $id RETURN a'
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             engine.backend.execute,
             query,
             {'id': article_id},
@@ -6692,15 +6699,15 @@ async def kb_health_check(data: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(kb_id, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
             raise HTTPException(status_code=400, detail='Invalid KB identifier')
 
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
-        kb_engine = await _invoke_governed_helper(
+        kb_engine = await invoke_governed_helper(
             KBIngestionEngine,
             engine.graph if engine else None,
             engine.backend if engine else None,
             deadline=10.0,
         )
-        health_result = await _invoke_governed_helper(
+        health_result = await invoke_governed_helper(
             kb_engine.health_check,
             kb_id,
             deadline=30.0,
@@ -6731,7 +6738,7 @@ async def update_kb(data: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(kb_id, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
             raise HTTPException(status_code=400, detail='Invalid KB identifier')
         try:
-            engine = await _get_engine_bounded()
+            engine = await get_engine_bounded()
         except HTTPException as exc:
             # See the matching note in search_kb() -- same pre-existing dead
             # `engine.graph if engine else None` ternary, same fix.
@@ -6739,7 +6746,7 @@ async def update_kb(data: dict[str, Any]) -> dict[str, Any]:
                 raise
             engine = None
 
-        kb_engine = await _invoke_governed_helper(
+        kb_engine = await invoke_governed_helper(
             KBIngestionEngine,
             engine.graph if engine else None,
             engine.backend if engine else None,
@@ -6765,8 +6772,8 @@ async def update_kb(data: dict[str, Any]) -> dict[str, Any]:
                 if file_path:
                     _confine_stored_workspace_path(file_path)
 
-        await _invoke_governed_helper(validate_sources, deadline=15.0)
-        await _invoke_governed_helper(kb_engine.update, kb_id, deadline=120.0)
+        await invoke_governed_helper(validate_sources, deadline=15.0)
+        await invoke_governed_helper(kb_engine.update, kb_id, deadline=120.0)
         return {'status': 'success'}
     except HTTPException:
         raise
@@ -6789,7 +6796,7 @@ async def get_constitution() -> dict[str, Any]:
     """
     try:
         manager = SDDManager(DEFAULT_AGENT_DIR)
-        constitution = await _invoke_governed_helper(
+        constitution = await invoke_governed_helper(
             manager.get_constitution, deadline=10.0
         )
         if not constitution:
@@ -6819,7 +6826,7 @@ async def save_constitution(data: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(safe_data, dict):
             raise HTTPException(status_code=400, detail='Invalid constitution')
         manager = SDDManager(DEFAULT_AGENT_DIR)
-        await _invoke_governed_helper(
+        await invoke_governed_helper(
             manager.save_constitution, safe_data, deadline=15.0
         )
         return {'status': 'success'}
@@ -6839,7 +6846,7 @@ async def list_specs() -> list[dict[str, Any]]:
     """
     try:
         manager = SDDManager(DEFAULT_AGENT_DIR)
-        specs_result = await _invoke_governed_helper(manager.list_specs, deadline=10.0)
+        specs_result = await invoke_governed_helper(manager.list_specs, deadline=10.0)
         specs = list(specs_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
         bounded = _public_external_result(
             [s.model_dump() if hasattr(s, 'model_dump') else s for s in specs]
@@ -6868,7 +6875,7 @@ async def create_spec(data: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(safe_data, dict):
             raise HTTPException(status_code=400, detail='Invalid specification')
         manager = SDDManager(DEFAULT_AGENT_DIR)
-        spec = await _invoke_governed_helper(
+        spec = await invoke_governed_helper(
             manager.create_spec, safe_data, deadline=15.0
         )
         bounded = _public_external_result(spec.model_dump())
@@ -6891,7 +6898,7 @@ async def list_plans() -> list[dict[str, Any]]:
     """
     try:
         manager = SDDManager(DEFAULT_AGENT_DIR)
-        plans_result = await _invoke_governed_helper(manager.list_plans, deadline=10.0)
+        plans_result = await invoke_governed_helper(manager.list_plans, deadline=10.0)
         plans = list(plans_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
         bounded = _public_external_result(
             [p.model_dump() if hasattr(p, 'model_dump') else p for p in plans]
@@ -6911,7 +6918,7 @@ def _dumped(value: Any) -> Any:
 
 async def _tasks_for_plan(manager: Any, plan_id: str) -> Any:
     """One plan's ``Tasks`` document, dumped to plain data."""
-    tasks = await _invoke_governed_helper(manager.get_tasks, plan_id, deadline=10.0)
+    tasks = await invoke_governed_helper(manager.get_tasks, plan_id, deadline=10.0)
     return _dumped(tasks)
 
 
@@ -6929,7 +6936,7 @@ async def _all_tasks(manager: Any) -> list[Any]:
     the caller and reported as `{}`, indistinguishable from "no tasks in any
     feature", for ANY non-empty result -- not just an oversized one.
     """
-    tasks = await _invoke_governed_helper(manager.get_all_tasks, deadline=10.0)
+    tasks = await invoke_governed_helper(manager.get_all_tasks, deadline=10.0)
     return [_dumped(t) for t in (tasks or [])][:_MAX_EXTERNAL_COLLECTION_ITEMS]
 
 
@@ -6989,10 +6996,10 @@ async def sync_sdd_to_memory(data: dict[str, Any]) -> dict[str, Any]:
         safe_data, _privacy_report = sanitize_for_persistence(bounded_data)
         if not isinstance(safe_data, dict):
             raise HTTPException(status_code=400, detail='Invalid SDD sync request')
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         manager = SDDManager(DEFAULT_AGENT_DIR)
-        await _invoke_governed_helper(
+        await invoke_governed_helper(
             manager.sync_to_memory, engine, deadline=30.0, **safe_data
         )
         return {'status': 'success'}
@@ -7019,7 +7026,7 @@ async def magma_retrieve(data: dict[str, Any]) -> list[dict[str, Any]]:
         Retrieved context from specified orthogonal view.
     """
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         view_type = data.get('view_type', 'semantic')
         query = data.get('query', '')
@@ -7031,7 +7038,7 @@ async def magma_retrieve(data: dict[str, Any]) -> list[dict[str, Any]]:
             raise HTTPException(status_code=400, detail='Invalid MAGMA query')
         policy = _bounded_query_params(data.get('policy', {}))
 
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             engine.retrieve_orthogonal_context,
             query=query,
             view_type=view_type,
@@ -7111,7 +7118,7 @@ async def list_resources() -> list[dict[str, Any]]:
         List of resource metadata.
     """
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         query = f'MATCH (r:CallableResource) RETURN r LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
         result, _source_graphs = await _read_union_cypher(
@@ -7148,10 +7155,10 @@ async def spawn_agent(data: dict[str, Any]) -> dict[str, Any]:
         Spawned agent metadata.
     """
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         bounded_data = _bounded_query_params(data)
-        agent = await _invoke_governed_helper(
+        agent = await invoke_governed_helper(
             engine.spawn_specialized_agent, deadline=30.0, **bounded_data
         )
         return _public_external_result(agent.model_dump())
@@ -7222,7 +7229,7 @@ async def list_library_agents() -> list[dict[str, Any]]:
     needed widening.
     """
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
         rows, _source_graphs = await _read_union_cypher(
             engine,
             'MATCH (r:CallableResource) WHERE r.resource_type = $a2a '
@@ -7262,9 +7269,9 @@ async def list_library_tools(mcp_server: str | None = None) -> list[dict[str, An
     if mcp_server is not None and not _SAFE_DELEGATION_TOKEN.fullmatch(mcp_server):
         raise HTTPException(status_code=400, detail='Invalid MCP server filter')
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
         query, params = _library_tool_query(mcp_server)
-        rows = await _invoke_governed_helper(
+        rows = await invoke_governed_helper(
             engine.backend.execute, query, params, deadline=15.0
         )
         return _bounded_list_result(_sorted_library_tools(rows))
@@ -7362,15 +7369,15 @@ async def suggest_library_agents() -> list[dict[str, Any]]:
     already has a composed agent, produces no suggestion.
     """
     try:
-        engine = await _get_engine_bounded()
-        tool_rows = await _invoke_governed_helper(
+        engine = await get_engine_bounded()
+        tool_rows = await invoke_governed_helper(
             engine.backend.execute,
             'MATCH (t:Tool) WHERE t.mcp_server IS NOT NULL AND t.mcp_server <> "" '
             f'RETURN t.mcp_server AS server, t.name AS name LIMIT {_MAX_LIST_FILES}',
             {},
             deadline=15.0,
         )
-        bound_rows = await _invoke_governed_helper(
+        bound_rows = await invoke_governed_helper(
             engine.backend.execute,
             'MATCH (r:CallableResource) WHERE r.resource_type = $skill '
             'AND r.provider_ref = $ref AND r.mcp_server IS NOT NULL '
@@ -7419,8 +7426,8 @@ async def get_library_agent(agent_id: str) -> dict[str, Any]:
 
     agent_id = _validate_runtime_id(agent_id)
     try:
-        engine = await _get_engine_bounded()
-        rows = await _invoke_governed_helper(
+        engine = await get_engine_bounded()
+        rows = await invoke_governed_helper(
             engine.backend.execute,
             'MATCH (r:CallableResource {id: $id}) RETURN r',
             {'id': agent_id},
@@ -7431,7 +7438,7 @@ async def get_library_agent(agent_id: str) -> dict[str, Any]:
         view['instructions'] = row.get('system_prompt') or ''
         view['endpoint'] = row.get('endpoint')
         view['agent_card'] = row.get('agent_card')
-        tool_rows = await _invoke_governed_helper(
+        tool_rows = await invoke_governed_helper(
             engine.backend.execute,
             'MATCH (r {id: $id})-[:USES_TOOL]->(t) RETURN t.name AS name, t.id AS id',
             {'id': agent_id},
@@ -7595,8 +7602,8 @@ async def create_library_agent(data: dict[str, Any]) -> dict[str, Any]:
     """
     spec = _library_agent_spec(data)
     try:
-        engine = await _get_engine_bounded()
-        resource_id, bound_tools = await _invoke_governed_helper(
+        engine = await get_engine_bounded()
+        resource_id, bound_tools = await invoke_governed_helper(
             _persist_library_agent, engine, spec, deadline=30.0
         )
         return _public_external_result(
@@ -7697,8 +7704,8 @@ async def update_library_agent(agent_id: str, data: dict[str, Any]) -> dict[str,
     agent_id = _validate_runtime_id(agent_id)
     spec = _library_agent_spec(data)
     try:
-        engine = await _get_engine_bounded()
-        bound_tools = await _invoke_governed_helper(
+        engine = await get_engine_bounded()
+        bound_tools = await invoke_governed_helper(
             _persist_library_agent_update, engine, agent_id, spec, deadline=30.0
         )
         return _public_external_result(
@@ -7721,8 +7728,8 @@ async def archive_library_agent(agent_id: str) -> dict[str, Any]:
 
     agent_id = _validate_runtime_id(agent_id)
     try:
-        engine = await _get_engine_bounded()
-        rows = await _invoke_governed_helper(
+        engine = await get_engine_bounded()
+        rows = await invoke_governed_helper(
             engine.backend.execute,
             'MATCH (r:CallableResource {id: $id}) '
             'RETURN r.resource_type AS rtype, r.provider_ref AS provider_ref',
@@ -7740,7 +7747,7 @@ async def archive_library_agent(agent_id: str) -> dict[str, Any]:
                 status_code=403,
                 detail='Only agents composed in the Agent Library can be archived here',
             )
-        await _invoke_governed_helper(
+        await invoke_governed_helper(
             engine.backend.execute,
             "MATCH (r:CallableResource {id: $id}) SET r.status = 'ARCHIVED'",
             {'id': agent_id},
@@ -7785,10 +7792,10 @@ async def register_a2a_agent(data: dict[str, Any]) -> dict[str, Any]:
     card = data.get('agent_card')
 
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
         if isinstance(card, dict) and card:
             bounded_card = _bounded_query_params(card)
-            await _invoke_governed_helper(
+            await invoke_governed_helper(
                 engine.ingest_a2a_agent_card, url, bounded_card, deadline=20.0
             )
             return {
@@ -7796,7 +7803,7 @@ async def register_a2a_agent(data: dict[str, Any]) -> dict[str, Any]:
                 'name': bounded_card.get('name'),
                 'endpoint_configured': True,
             }
-        summary = await _invoke_governed_helper(
+        summary = await invoke_governed_helper(
             engine.ingest_agent_toolkit, [url], deadline=25.0
         )
         if not (isinstance(summary, dict) and summary.get('a2a_agents')):
@@ -7830,7 +7837,7 @@ async def agent_config_summary() -> dict[str, Any]:
     try:
         from agent_utilities.core.config import AgentConfig
 
-        cfg = await _invoke_governed_helper(AgentConfig, deadline=15.0)
+        cfg = await invoke_governed_helper(AgentConfig, deadline=15.0)
         chat_models = [
             {
                 'id': m.id,
@@ -7888,7 +7895,7 @@ async def get_maintenance_status() -> dict[str, Any]:
     """
     try:
         try:
-            engine = await _get_engine_bounded()
+            engine = await get_engine_bounded()
         except HTTPException as exc:
             # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- the
             # `if not engine` degrade below was unreachable dead code for
@@ -7904,7 +7911,7 @@ async def get_maintenance_status() -> dict[str, Any]:
             return {'status': 'unavailable', 'operations': {}}
 
         maintainer = GraphMaintainer(engine)
-        status = await _invoke_governed_helper(maintainer.get_status, deadline=10.0)
+        status = await invoke_governed_helper(maintainer.get_status, deadline=10.0)
         bounded = _public_external_result(status)
         return bounded if isinstance(bounded, dict) else {'status': 'unavailable'}
     except HTTPException:
@@ -7931,9 +7938,9 @@ async def trigger_maintenance(data: dict[str, Any]) -> dict[str, Any]:
         ):
             raise HTTPException(status_code=400, detail='Invalid maintenance operation')
 
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
         maintainer = GraphMaintainer(engine)
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             maintainer.trigger_operation, operation, deadline=30.0
         )
         bounded = _public_external_result({'status': 'success', 'result': result})
@@ -7953,12 +7960,12 @@ async def get_pipeline_status() -> dict[str, Any]:
         Pipeline status and phase information.
     """
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
         if not engine:
             return {'status': 'unavailable', 'phases': {}}
 
         runner = PipelineRunner(PHASES)
-        status = await _invoke_governed_helper(runner.get_status, deadline=10.0)
+        status = await invoke_governed_helper(runner.get_status, deadline=10.0)
         bounded = _public_external_result(status)
         return bounded if isinstance(bounded, dict) else {'status': 'unavailable'}
     except HTTPException:
@@ -7979,7 +7986,7 @@ async def trigger_pipeline(data: dict[str, Any]) -> dict[str, Any]:
         Pipeline execution status.
     """
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         config = PipelineConfig(workspace_path=str(DEFAULT_AGENT_DIR))
         ctx = PipelineContext(
@@ -8148,7 +8155,7 @@ def _extract_system_prompt(agent: Any) -> str:
 async def _optional_engine() -> Any | None:
     """Acquire the engine, degrading to ``None`` on anything but a real 503."""
     try:
-        return await _get_engine_bounded()
+        return await get_engine_bounded()
     except HTTPException as exc:
         if exc.status_code == 503:
             raise
@@ -8173,7 +8180,7 @@ def _system_prompt_record(sys_prompt: str) -> dict[str, Any]:
 async def _graph_prompt_records(engine: Any) -> list[Any] | None:
     """The KG's prompt records, or ``None`` when the engine could not serve them."""
     try:
-        prompt_result = await _invoke_governed_helper(
+        prompt_result = await invoke_governed_helper(
             engine.get_all_prompts, deadline=10.0
         )
         prompts = list(prompt_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
@@ -8223,7 +8230,7 @@ async def get_graph_prompt(prompt_id: str, request: Request) -> dict[str, Any]:
     prompt_id = _validate_runtime_id(prompt_id)
     engine = await _optional_engine()
     if engine:
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             engine.get_prompt, prompt_id, deadline=10.0
         )
         if not result:
@@ -8258,7 +8265,7 @@ async def create_graph_prompt(data: dict[str, Any]) -> dict[str, Any]:
     safe_data, _privacy_report = sanitize_for_persistence(bounded_data)
     if not isinstance(safe_data, dict):
         raise HTTPException(status_code=400, detail='Invalid prompt record')
-    engine = await _get_engine_bounded()
+    engine = await get_engine_bounded()
     name = safe_data.get('name', '')
     content = safe_data.get('content', '')
     if not isinstance(name, str) or not name.strip() or len(name.encode('utf-8')) > 512:
@@ -8269,7 +8276,7 @@ async def create_graph_prompt(data: dict[str, Any]) -> dict[str, Any]:
         or len(content.encode('utf-8')) > _MAX_EXTERNAL_STRING_BYTES
     ):
         raise HTTPException(status_code=400, detail='name and content are required')
-    result = await _invoke_governed_helper(
+    result = await invoke_governed_helper(
         engine.add_prompt,
         content=content,
         name=name,
@@ -8301,7 +8308,7 @@ async def update_graph_prompt(prompt_id: str, data: dict[str, Any]) -> dict[str,
     safe_data, _privacy_report = sanitize_for_persistence(bounded_data)
     if not isinstance(safe_data, dict):
         raise HTTPException(status_code=400, detail='Invalid prompt record')
-    engine = await _get_engine_bounded()
+    engine = await get_engine_bounded()
     content = safe_data.get('content', '')
     if (
         not isinstance(content, str)
@@ -8310,7 +8317,7 @@ async def update_graph_prompt(prompt_id: str, data: dict[str, Any]) -> dict[str,
     ):
         raise HTTPException(status_code=400, detail='content is required')
     try:
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             engine.update_prompt,
             prompt_id=prompt_id,
             content=content,
@@ -8338,8 +8345,8 @@ async def get_graph_prompt_versions(prompt_id: str) -> list[dict[str, Any]]:
         List of version dicts ordered newest-first.
     """
     prompt_id = _validate_runtime_id(prompt_id)
-    engine = await _get_engine_bounded()
-    versions_result = await _invoke_governed_helper(
+    engine = await get_engine_bounded()
+    versions_result = await invoke_governed_helper(
         engine.get_prompt_versions, prompt_id, deadline=10.0
     )
     versions = list(versions_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
@@ -8365,9 +8372,9 @@ async def rollback_graph_prompt(prompt_id: str, version_id: str) -> dict[str, An
     """
     prompt_id = _validate_runtime_id(prompt_id)
     version_id = _validate_runtime_id(version_id)
-    engine = await _get_engine_bounded()
+    engine = await get_engine_bounded()
     try:
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             engine.rollback_prompt, prompt_id, version_id, deadline=15.0
         )
         bounded = _public_external_result(result)
@@ -8399,9 +8406,9 @@ async def diff_graph_prompt_versions(
     _validate_runtime_id(prompt_id)
     version_a = _validate_runtime_id(version_a)
     version_b = _validate_runtime_id(version_b)
-    engine = await _get_engine_bounded()
-    va = await _invoke_governed_helper(engine.get_prompt, version_a, deadline=10.0)
-    vb = await _invoke_governed_helper(engine.get_prompt, version_b, deadline=10.0)
+    engine = await get_engine_bounded()
+    va = await invoke_governed_helper(engine.get_prompt, version_a, deadline=10.0)
+    vb = await invoke_governed_helper(engine.get_prompt, version_b, deadline=10.0)
     if not va:
         raise HTTPException(status_code=404, detail=f'Version {version_a} not found')
     if not vb:
@@ -8479,7 +8486,7 @@ async def list_graph_tools(request: Request) -> list[dict[str, Any]]:
     engine = await _optional_engine()
     if engine:
         return _bounded_list_result(
-            await _invoke_governed_helper(engine.get_tools, deadline=10.0)
+            await invoke_governed_helper(engine.get_tools, deadline=10.0)
         )
 
     # Fallback: extract tools from the pydantic-ai agent instance registered on
@@ -8504,7 +8511,7 @@ async def toggle_graph_tool(tool_id: str, request: Request) -> dict[str, Any]:
     """
     tool_id = _validate_runtime_id(tool_id)
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
     except HTTPException as exc:
         if exc.status_code == 503:
             raise
@@ -8513,7 +8520,7 @@ async def toggle_graph_tool(tool_id: str, request: Request) -> dict[str, Any]:
         engine = None
     if engine:
         try:
-            result = await _invoke_governed_helper(
+            result = await invoke_governed_helper(
                 engine.toggle_resource, tool_id, deadline=15.0
             )
             bounded = _public_external_result(result)
@@ -10291,7 +10298,7 @@ async def get_tunnel_hosts() -> dict[str, Any]:
         )
     try:
         inventory = _bounded_tunnel_inventory(
-            await _invoke_governed_helper(delegated_inventory, deadline=10.0)
+            await invoke_governed_helper(delegated_inventory, deadline=10.0)
         )
         return {
             'hosts': [
@@ -10358,7 +10365,7 @@ async def add_tunnel_host(payload: dict[str, Any]) -> dict[str, str]:
         )
     try:
         registration = _tunnel_host_registration(payload)
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             delegated_registration,
             deadline=15.0,
             **registration,
@@ -10476,7 +10483,7 @@ async def list_docker_containers() -> list[dict[str, Any]]:
             detail='Governed container inventory delegation is not configured',
         )
     try:
-        raw_containers = await _invoke_governed_helper(
+        raw_containers = await invoke_governed_helper(
             delegated_inventory,
             deadline=10.0,
             include_stopped=True,
@@ -10768,7 +10775,7 @@ async def transcribe_voice_chunk(file: UploadFile = File(...)) -> dict[str, str]
                 detail='Governed transcription delegation is not configured',
             )
 
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             transcriber,
             deadline=120.0,
             content=payload,
@@ -10843,7 +10850,7 @@ async def _call_mcp_tool(
     if delegated_call is None:
         raise RuntimeError('Governed MCP delegation is not configured')
     bounded_timeout = max(0.1, min(float(timeout), 30.0))
-    result = await _invoke_governed_helper(
+    result = await invoke_governed_helper(
         delegated_call,
         deadline=bounded_timeout,
         server_name=server_name,
@@ -11701,7 +11708,7 @@ async def _slash_skills() -> dict:
     helpers_list = get_helper('list_skills')
     if helpers_list:
         try:
-            skills_list = await _invoke_governed_helper(helpers_list, deadline=10.0)
+            skills_list = await invoke_governed_helper(helpers_list, deadline=10.0)
             for s in skills_list:
                 skills.append(f'- **{s["name"]}** (`{s["id"]}`): {s["description"]}')
         except Exception as e:
@@ -11716,7 +11723,7 @@ async def _slash_skills() -> dict:
 async def _slash_graph_stats(engine) -> str:
     """Render `/graph stats` -- node/edge counts."""
     try:
-        num_nodes, num_edges = await _invoke_governed_helper(
+        num_nodes, num_edges = await invoke_governed_helper(
             lambda: (len(engine.graph.nodes), len(engine.graph.edges)),
             deadline=15.0,
         )
@@ -11734,7 +11741,7 @@ async def _slash_graph_nodes(engine, node_type: str) -> str:
     """Render `/graph nodes [type]` -- optionally type-filtered node list."""
     try:
         nodes = []
-        graph_nodes = await _invoke_governed_helper(
+        graph_nodes = await invoke_governed_helper(
             lambda: list(engine.graph.nodes(data=True)),
             deadline=15.0,
         )
@@ -11757,7 +11764,7 @@ async def _slash_graph_search(engine, query: str) -> str:
         return 'Usage: `/graph search <query>`'
     try:
         hits = []
-        graph_nodes = await _invoke_governed_helper(
+        graph_nodes = await invoke_governed_helper(
             lambda: list(engine.graph.nodes(data=True)),
             deadline=15.0,
         )
@@ -11790,7 +11797,7 @@ async def _slash_graph_impact(engine, symbol: str) -> str:
     if not symbol:
         return 'Usage: `/graph impact <symbol>`'
     try:
-        impact_set = await _invoke_governed_helper(
+        impact_set = await invoke_governed_helper(
             engine.query_impact,
             symbol,
             deadline=30.0,
@@ -11818,7 +11825,7 @@ async def _slash_graph(args: str) -> dict:
     rest = sub_parts[1] if len(sub_parts) > 1 else ''
 
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
     except Exception as e:
         return {
             'response_markdown': f'Error: Graph engine not active: {type(e).__name__}',
@@ -11842,7 +11849,7 @@ async def _slash_graph(args: str) -> dict:
 async def _slash_kb_list(kb_engine) -> str:
     """Render `/kb list` -- connected knowledge bases."""
     try:
-        bases = await _invoke_governed_helper(
+        bases = await invoke_governed_helper(
             kb_engine.list_knowledge_bases,
             deadline=15.0,
         )
@@ -11882,7 +11889,7 @@ async def _slash_kb_search(kb_engine, query: str) -> str:
     if not query:
         return 'Usage: `/kb search <query>`'
     try:
-        hits = await _invoke_governed_helper(
+        hits = await invoke_governed_helper(
             kb_engine.search,
             query,
             deadline=30.0,
@@ -11902,7 +11909,7 @@ async def _slash_kb_ingest(kb_engine, path: str) -> str:
     if not path:
         return 'Usage: `/kb ingest <url_or_path>`'
     try:
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             kb_engine.ingest,
             deadline=120.0,
             kb_id='workspace-docs',
@@ -11924,8 +11931,8 @@ async def _slash_kb(args: str) -> dict:
     rest = sub_parts[1] if len(sub_parts) > 1 else ''
 
     try:
-        engine = await _get_engine_bounded()
-        kb_engine = await _invoke_governed_helper(
+        engine = await get_engine_bounded()
+        kb_engine = await invoke_governed_helper(
             KBIngestionEngine,
             engine.graph,
             engine.backend,
@@ -11988,7 +11995,7 @@ async def _slash_sdd_constitution(manager) -> str:
 async def _slash_sdd_sync(manager) -> str:
     """Handle `/sdd sync` -- synchronize local specs with the KG."""
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
         manager.sync_to_memory(engine)
     except Exception as e:  # noqa: BLE001
         return f'SDD sync failed: {type(e).__name__}'
@@ -12075,7 +12082,7 @@ async def _slash_cron(args: str) -> dict:
 async def _slash_resources_list(engine) -> str:
     """Render `/resources` (or `/resources list`) -- callable resources."""
     try:
-        rows = await _invoke_governed_helper(
+        rows = await invoke_governed_helper(
             engine.backend.execute,
             f'MATCH (r:CallableResource) RETURN r '
             f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
@@ -12102,7 +12109,7 @@ async def _slash_resources_spawn(engine, name: str) -> str:
     if not name:
         return 'Usage: `/resources spawn <name>`'
     try:
-        agent = await _invoke_governed_helper(
+        agent = await invoke_governed_helper(
             engine.spawn_specialized_agent,
             deadline=30.0,
             name=name,
@@ -12121,7 +12128,7 @@ async def _slash_resources(args: str) -> dict:
     rest = sub_parts[1] if len(sub_parts) > 1 else ''
 
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
     except Exception as e:  # noqa: BLE001
         return {
             'response_markdown': (
@@ -12251,7 +12258,7 @@ def _workflow_steps(steps_raw: Any) -> list[Any]:
 async def _workflow_orchestrates(engine: Any, workflow_id: str) -> list[str]:
     """Resolve a workflow's ORCHESTRATES targets; a lookup failure yields []."""
     try:
-        erows = await _invoke_governed_helper(
+        erows = await invoke_governed_helper(
             engine.backend.execute,
             'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
             'WHERE w.id = $workflow_id RETURN t '
@@ -12293,7 +12300,7 @@ def _decode_workflow_canvas(crows: Any) -> Any:
 async def _workflow_canvas(engine: Any, workflow_id: str) -> Any:
     """Load the persisted canvas sidecar if present, else ``None``."""
     try:
-        crows = await _invoke_governed_helper(
+        crows = await invoke_governed_helper(
             engine.backend.execute,
             'MATCH (c:WorkflowCanvas) '
             'WHERE c.workflow_id = $workflow_id RETURN c LIMIT 1',
@@ -12333,8 +12340,8 @@ async def list_workflows() -> list[dict[str, Any]]:
     raises ``HTTPException(503)`` instead of masquerading as ``[]``.
     """
     try:
-        engine = await _get_engine_bounded()
-        rows = await _invoke_governed_helper(
+        engine = await get_engine_bounded()
+        rows = await invoke_governed_helper(
             engine.backend.execute,
             f'MATCH (w:Workflow) RETURN w LIMIT {_MAX_WORKFLOW_RECORDS}',
             deadline=15.0,
@@ -12393,8 +12400,8 @@ async def workflow_capabilities() -> dict[str, list[dict[str, Any]]]:
 
     # Agents from the KG.
     try:
-        engine = await _get_engine_bounded()
-        rows = await _invoke_governed_helper(
+        engine = await get_engine_bounded()
+        rows = await invoke_governed_helper(
             engine.backend.execute,
             f'MATCH (a:Agent) RETURN a LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
             deadline=15.0,
@@ -12526,7 +12533,7 @@ async def _persist_workflow_spec(
         for edge in batch.edges:
             engine.link_nodes(edge.source, edge.target, edge.rel_type)
 
-    await _invoke_governed_helper(persist_workflow, deadline=30.0)
+    await invoke_governed_helper(persist_workflow, deadline=30.0)
 
 
 async def _persist_workflow_canvas(
@@ -12537,7 +12544,7 @@ async def _persist_workflow_canvas(
     Non-fatal: the spec is saved even if the canvas sidecar fails.
     """
     try:
-        await _invoke_governed_helper(
+        await invoke_governed_helper(
             engine.add_node,
             _canvas_node_id(spec.id),
             'WorkflowCanvas',
@@ -12584,7 +12591,7 @@ async def save_workflow(request: Request) -> dict[str, Any]:
     )
 
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
         await _persist_workflow_spec(engine, spec, workflow_to_batch)
     except HTTPException:
         raise
@@ -12619,15 +12626,15 @@ async def _resolve_workflow_record(wid: str) -> tuple[str, list[Any], list[str]]
     steps: list[Any] = []
     orchestrates: list[str] = []
     try:
-        engine = await _get_engine_bounded()
-        rows = await _invoke_governed_helper(
+        engine = await get_engine_bounded()
+        rows = await invoke_governed_helper(
             engine.backend.execute,
             'MATCH (w:Workflow) WHERE w.id = $workflow_id RETURN w LIMIT 1',
             {'workflow_id': wid},
             deadline=15.0,
         )
         name, steps = _workflow_name_and_steps(rows, wid)
-        erows = await _invoke_governed_helper(
+        erows = await invoke_governed_helper(
             engine.backend.execute,
             'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
             'WHERE w.id = $workflow_id RETURN t '
@@ -12700,12 +12707,12 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
     spec = WorkflowSpec(name=name, steps=steps, orchestrates=orchestrates)
 
     try:
-        orch = await _invoke_governed_helper(
+        orch = await invoke_governed_helper(
             AgentOrchestrationEngine,
-            engine=await _get_engine_bounded(),
+            engine=await get_engine_bounded(),
             deadline=10.0,
         )
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             orch.dispatch,
             task=spec,
             mode='workflow',
@@ -12837,7 +12844,7 @@ def get_ontology_kg() -> Any:
 async def _get_ontology_kg_bounded() -> Any:
     """Resolve the live ontology without blocking the event loop unboundedly."""
 
-    return await _invoke_governed_helper(get_ontology_kg, deadline=10.0)
+    return await invoke_governed_helper(get_ontology_kg, deadline=10.0)
 
 
 def _ontology_facade_for(engine: Any, scoped_engine: Any) -> tuple[Any, Any] | None:
@@ -13101,7 +13108,7 @@ async def _live_object_type_counts() -> dict[str, int]:
     """
     live_types: dict[str, int] = {}
     try:
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
         rows, _source_graphs = await _read_union_cypher(
             engine,
             'MATCH (n) RETURN labels(n) as labels, count(n) as count',
@@ -13297,12 +13304,12 @@ async def ontology_object_set_search(
         _kg, _ontology = await _get_ontology_kg_bounded()
         actor = _actor_context(request)
         spec = _object_search_spec(data)
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         def execute_search(scoped_engine: Any) -> list[dict[str, Any]]:
             return _scoped_object_search(engine, spec, actor, scoped_engine)
 
-        rows, _source_graphs, _degraded = await _invoke_governed_helper(
+        rows, _source_graphs, _degraded = await invoke_governed_helper(
             _union_engine_call, engine, actor, execute_search, deadline=30.0
         )
         rows = rows[: spec.limit]
@@ -13359,7 +13366,7 @@ async def ontology_object_set_search_around(
         # links) physically live in (GOC-61: edges never cross a graph
         # boundary) -- the other graph(s) cheaply return `[]` for a seed id
         # they don't hold, not an error.
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         def execute_search_around(scoped_engine: Any) -> list[dict[str, Any]]:
             facade = _ontology_facade_for(engine, scoped_engine)
@@ -13375,7 +13382,7 @@ async def ontology_object_set_search_around(
             )
             return _object_set_rows(scoped_ontology, related, actor, limit=cap)
 
-        rows, _source_graphs, _degraded = await _invoke_governed_helper(
+        rows, _source_graphs, _degraded = await invoke_governed_helper(
             _union_engine_call, engine, actor, execute_search_around, deadline=30.0
         )
         rows = rows[:cap]
@@ -13512,7 +13519,7 @@ async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
     try:
         _kg, _ontology = await _get_ontology_kg_bounded()
         spec = _pivot_spec(data)
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         def execute_pivot(scoped_engine: Any) -> Any:
             return _scoped_pivot(engine, spec, scoped_engine)
@@ -13525,7 +13532,7 @@ async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
             return list(per_graph)
 
         resolved_link_type, merged_groups = _merge_pivot_results(
-            await _invoke_governed_helper(_run, deadline=30.0), spec.link_type
+            await invoke_governed_helper(_run, deadline=30.0), spec.link_type
         )
         return _public_external_result(
             {
@@ -13678,7 +13685,7 @@ async def ontology_object_set_aggregate(data: dict[str, Any]) -> dict[str, Any]:
     try:
         _kg, _ontology = await _get_ontology_kg_bounded()
         spec = _aggregate_spec(data)
-        engine = await _get_engine_bounded()
+        engine = await get_engine_bounded()
 
         def execute_aggregate(scoped_engine: Any) -> Any:
             return _scoped_aggregate(engine, spec, scoped_engine)
@@ -13691,7 +13698,7 @@ async def ontology_object_set_aggregate(data: dict[str, Any]) -> dict[str, Any]:
             return list(per_graph)
 
         groups, total_objects = _merge_aggregate_results(
-            await _invoke_governed_helper(_run, deadline=30.0), spec.metric
+            await invoke_governed_helper(_run, deadline=30.0), spec.metric
         )
         return _public_external_result(
             {
@@ -13895,7 +13902,7 @@ async def ontology_object_set_save(
         if not name or len(name.encode('utf-8')) > 512:
             raise HTTPException(status_code=422, detail='name is required')
 
-        ids, kind = await _invoke_governed_helper(
+        ids, kind = await invoke_governed_helper(
             _resolve_object_set_ids,
             ontology,
             data,
@@ -13914,7 +13921,7 @@ async def ontology_object_set_save(
             'actor': actor,
         }
 
-        record['persisted'] = await _invoke_governed_helper(
+        record['persisted'] = await invoke_governed_helper(
             _persist_object_set_node,
             backend,
             record,
@@ -14005,7 +14012,7 @@ def _object_set_is_visible(
 async def _durable_object_set_rows(backend: Any) -> Any:
     """The durable ``object_set`` nodes; a failed read degrades to []."""
     try:
-        return await _invoke_governed_helper(
+        return await invoke_governed_helper(
             backend.execute,
             f"MATCH (n {{type: 'object_set'}}) RETURN n "
             f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
@@ -14179,7 +14186,7 @@ async def _apply_bulk_action(plan: _BulkActionPlan, ids: list[str]) -> dict[str,
         call_params = dict(plan.params)
         if plan.id_param:
             call_params[plan.id_param] = target_id
-        inv = await _invoke_governed_helper(
+        inv = await invoke_governed_helper(
             plan.executor.execute,
             plan.action_name,
             plan.actor,
@@ -14313,7 +14320,7 @@ async def _object_derived_properties(
 ) -> dict[str, Any]:
     """The object's derived properties; a compute failure degrades to {}."""
     try:
-        return await _invoke_governed_helper(
+        return await invoke_governed_helper(
             ontology.derive_all,
             view_props,
             object_type=object_type,
@@ -14342,13 +14349,13 @@ async def _object_edit_history(
     Prefer the durable, cross-request audit trail from the store; fall back to
     the in-process ledger mirror when nothing was persisted.
     """
-    history = await _invoke_governed_helper(
+    history = await invoke_governed_helper(
         _durable_edit_history, backend, object_id, deadline=15.0
     )
     if history:
         return history
     try:
-        fallback_history = await _invoke_governed_helper(
+        fallback_history = await invoke_governed_helper(
             ontology.history,
             object_id,
             deadline=15.0,
@@ -14438,8 +14445,8 @@ async def get_ontology_object(
     try:
         from agent_utilities.knowledge_graph.core.session import current_session
 
-        engine = await _get_engine_bounded()
-        located = await _invoke_governed_helper(
+        engine = await get_engine_bounded()
+        located = await invoke_governed_helper(
             _locate_object_graph, engine, object_id, deadline=15.0
         )
         if located is None:
@@ -14462,7 +14469,7 @@ async def get_ontology_object(
             history = await _object_edit_history(ontology, backend, object_id)
             layout_choice = (layout or 'standard').strip().lower()
             view = _object_view_payload(ontology, object_type, layout_choice)
-            links = await _invoke_governed_helper(
+            links = await invoke_governed_helper(
                 _node_links, backend, object_id, deadline=15.0
             )
 
@@ -14499,7 +14506,7 @@ async def _edit_property_set(
                 detail='property_set requires properties or property+value',
             )
         properties = {str(prop): data.get('value')}
-    return await _invoke_governed_helper(
+    return await invoke_governed_helper(
         ontology.set_property_edit,
         object_id,
         _bounded_query_params(properties),
@@ -14525,7 +14532,7 @@ async def _edit_link_add(
 ) -> Any:
     """``link_add``: journal a new labelled edge from the object."""
     target, label = _link_edit_arguments(data, 'link_add')
-    return await _invoke_governed_helper(
+    return await invoke_governed_helper(
         ontology.edits.add_link,
         object_id,
         target,
@@ -14540,7 +14547,7 @@ async def _edit_link_remove(
 ) -> Any:
     """``link_remove``: journal the removal of a labelled edge."""
     target, label = _link_edit_arguments(data, 'link_remove')
-    return await _invoke_governed_helper(
+    return await invoke_governed_helper(
         ontology.edits.remove_link,
         object_id,
         target,
@@ -14584,10 +14591,10 @@ async def edit_ontology_object(
                 'edit': edit.model_dump(mode='json'),
                 'object': {
                     'id': object_id,
-                    'properties': await _invoke_governed_helper(
+                    'properties': await invoke_governed_helper(
                         _node_properties, backend, object_id, deadline=15.0
                     ),
-                    'links': await _invoke_governed_helper(
+                    'links': await invoke_governed_helper(
                         _node_links, backend, object_id, deadline=15.0
                     ),
                 },
@@ -14630,12 +14637,12 @@ async def _ensure_edit_on_ledger(
     """
     if ontology.edits.get(edit_id) is not None:
         return
-    durable_history = await _invoke_governed_helper(
+    durable_history = await invoke_governed_helper(
         _durable_edit_history, backend, object_id, deadline=15.0
     )
     for hist in durable_history:
         if hist.get('id') == edit_id:
-            await _invoke_governed_helper(
+            await invoke_governed_helper(
                 ontology.edits.rehydrate,
                 _rehydrated_edit(hist, object_id),
                 deadline=15.0,
@@ -14663,7 +14670,7 @@ async def revert_ontology_edit(
             raise HTTPException(status_code=422, detail='edit_id is required')
 
         await _ensure_edit_on_ledger(ontology, backend, object_id, str(edit_id))
-        compensating = await _invoke_governed_helper(
+        compensating = await invoke_governed_helper(
             ontology.revert_edit,
             str(edit_id),
             actor=actor,
@@ -14674,10 +14681,10 @@ async def revert_ontology_edit(
                 'edit': compensating.model_dump(mode='json'),
                 'object': {
                     'id': object_id,
-                    'properties': await _invoke_governed_helper(
+                    'properties': await invoke_governed_helper(
                         _node_properties, backend, object_id, deadline=15.0
                     ),
-                    'links': await _invoke_governed_helper(
+                    'links': await invoke_governed_helper(
                         _node_links, backend, object_id, deadline=15.0
                     ),
                 },
@@ -14714,7 +14721,7 @@ async def invoke_ontology_function(
             raise HTTPException(status_code=400, detail='Invalid function version')
         actor_id = _actor_id_from_request(request)
 
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             _canonical_kg_tool,
             deadline=30.0,
             tool_name='ontology_function',
@@ -14780,8 +14787,8 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
 
         from agent_utilities.knowledge_graph.core.session import current_session
 
-        engine = await _get_engine_bounded()
-        located = await _invoke_governed_helper(
+        engine = await get_engine_bounded()
+        located = await invoke_governed_helper(
             _locate_object_graph, engine, str(object_id), deadline=15.0
         )
         if located is None:
@@ -14797,7 +14804,7 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
         bounded_props = _bounded_query_params(props)
         session = current_session()
         with _session_scoped_to(session, graph_name):
-            result = await _invoke_governed_helper(
+            result = await invoke_governed_helper(
                 ontology.derive,
                 bounded_props,
                 derived_name,
@@ -14887,7 +14894,7 @@ async def process_ontology_document(data: dict[str, Any]) -> dict[str, Any]:
         if text and path:
             kwargs.setdefault('text', text)
 
-        result = await _invoke_governed_helper(
+        result = await invoke_governed_helper(
             ontology.process_document,
             deadline=30.0,
             document=path if path else text,

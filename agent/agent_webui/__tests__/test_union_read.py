@@ -743,7 +743,7 @@ def _node_data_from_graphs(
 
 def _async_return(value: Any) -> Any:
     """An async callable ignoring its arguments and returning ``value`` --
-    used to stub `_get_engine_bounded`/`_get_ontology_kg_bounded` for the
+    used to stub `get_engine_bounded`/`_get_ontology_kg_bounded` for the
     pivot/aggregate route tests below."""
 
     async def _fn(*_args: Any, **_kwargs: Any) -> Any:
@@ -784,9 +784,7 @@ class TestOntologyObjectSetPivot:
             api_extensions, '_get_ontology_kg_bounded', _async_return((None, None))
         )
         engine = _PinnedGraphEngine(_TENANT_GRAPH)
-        monkeypatch.setattr(
-            api_extensions, '_get_engine_bounded', _async_return(engine)
-        )
+        monkeypatch.setattr(api_extensions, 'get_engine_bounded', _async_return(engine))
 
         async def _run() -> Any:
             with use_session(_session()):
@@ -837,9 +835,7 @@ class TestOntologyObjectSetAggregate:
         engine = _PinnedGraphEngine(
             _TENANT_GRAPH, node_data=_node_data_from_graphs(graphs)
         )
-        monkeypatch.setattr(
-            api_extensions, '_get_engine_bounded', _async_return(engine)
-        )
+        monkeypatch.setattr(api_extensions, 'get_engine_bounded', _async_return(engine))
         return ['tenant-a', 'tenant-b', 'commons-tool']
 
     @staticmethod

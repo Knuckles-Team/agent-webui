@@ -526,7 +526,7 @@ class TestGraphStatsByTypeDegrade:
         deliberately tiny `_GRAPH_STATS_BY_TYPE_DEADLINE_SECONDS`.
 
         This is what proves the new constant is actually the value
-        `_by_type_call` passes to `_invoke_governed_helper` -- a knob that
+        `_by_type_call` passes to `invoke_governed_helper` -- a knob that
         silently was not read would leave the live route on the old 10s
         budget and this test would hang past its bound and fail.
         """

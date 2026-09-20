@@ -2803,7 +2803,7 @@ def main() -> None:
 
     import uvicorn
 
-    from agent_webui.api_extensions import _get_engine_bounded
+    from agent_webui.api_extensions import get_engine_bounded
     from agent_webui.orchestrator_model import build_orchestrator_model
 
     # D-W5OEP-2: this was ``Agent(TestModel())`` -- a canned, no-LLM double,
@@ -2813,7 +2813,7 @@ def main() -> None:
     # messaging already uses), which resolves its model/provider from the
     # existing ``AgentConfig`` -- there is no separate webui model config to
     # build here, only the wiring to the one that already exists.
-    agent = Agent(build_orchestrator_model(_get_engine_bounded))
+    agent = Agent(build_orchestrator_model(get_engine_bounded))
     # GOC-60-W04b: this was ``workspace_helpers={}`` -- a LITERAL empty dict.
     # All three MCP delegation routes (list_mcp_server_tools/call_mcp_tool/
     # read_mcp_resource) resolve behaviour via ``get_helper(...)`` against

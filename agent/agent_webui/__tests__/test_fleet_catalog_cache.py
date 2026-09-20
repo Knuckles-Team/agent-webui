@@ -149,7 +149,7 @@ async def test_list_all_tools_serves_a_second_call_from_cache(
 
     with (
         patch.object(
-            api_extensions, '_get_engine_bounded', new=AsyncMock(return_value=None)
+            api_extensions, 'get_engine_bounded', new=AsyncMock(return_value=None)
         ),
         patch.object(api_extensions, '_read_fleet_catalog', side_effect=_fake_read),
     ):

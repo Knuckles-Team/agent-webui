@@ -91,7 +91,7 @@ async def test_list_all_tools_sources_mcp_servers_from_the_sql_catalog(
 ) -> None:
     """``mcp_tools`` is read from the SQL `servers`/`discoveries` tables,
     never the shared multiplexer."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     catalog = {
         'servers': [
@@ -134,7 +134,7 @@ async def test_list_all_tools_never_renders_a_catalog_failure_as_a_silent_empty_
 ) -> None:
     """A failed/denied catalog read (``_read_fleet_catalog`` -> ``None``) is
     an ERROR/DEGRADED state, never a silent ``[]`` with ``error: null``."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     with _patch_catalog(None):
         result = await api_extensions.list_all_tools()
@@ -153,7 +153,7 @@ async def test_list_all_tools_distinguishes_not_yet_synced_from_genuinely_empty(
     ``fleet-tool-schema-sync`` job -- a reachable catalog with zero rows and
     NO recorded discovery observation must say "not yet synced", never read
     identically to a real, healthy, empty fleet."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     with _patch_catalog(
         {'servers': [], 'discoveries': [], 'skills': [], 'prompts': []}
@@ -174,7 +174,7 @@ async def test_list_all_tools_reports_a_genuinely_empty_fleet_as_healthy(
     """The complement of the test above: the catalog HAS been synced (a
     discovery observation is on record) and genuinely found zero servers --
     that is an honest, healthy answer, not a missing-sync warning."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     # A discovery row can outlive its server (append-only history), so its
     # presence alone is evidence a sync ran even though `servers` is empty.
@@ -207,7 +207,7 @@ async def test_list_all_tools_marks_an_unreachable_server_from_its_latest_discov
 ) -> None:
     """`status` reflects the MOST RECENT discovery row per server (the
     discovery table is append-only), not an arbitrary/first one."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     with _patch_catalog(
         {
@@ -245,7 +245,7 @@ async def test_list_all_tools_classifies_skills_from_the_sql_skill_type_column(
     """Skills/graphs/workflows are bucketed directly from the catalog's own
     `skill_type` column (written by the sync job's `classify_skill_type`) --
     never a filesystem scan or a separate KG resource-type cross-reference."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     with _patch_catalog(
         {
@@ -314,7 +314,7 @@ async def test_list_all_tools_flags_unclassified_skills_inside_skills_not_a_four
     agent skill, flagged via `kg_classified: False`/`resource_type: None`,
     never in a separate bucket (there is no `skill_unclassified` key at
     all)."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     with _patch_catalog(
         {
@@ -370,7 +370,7 @@ async def test_list_all_tools_surfaces_the_sql_prompts_table(
 ) -> None:
     """`mcp_prompts` -- previously never surfaced anywhere in this app --
     comes straight from the SQL catalog's `prompts` kind."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     with _patch_catalog(
         {
@@ -401,13 +401,13 @@ async def test_list_all_tools_batches_toggle_state_reads_not_per_row(
     """Root-cause regression test for the ``/api/enhanced/tools`` hang that
     never returned (measured live: >120s, timed out). ``list_all_tools``
     used to call ``get_toggle_state`` -- one ``engine.query_cypher`` round
-    trip through ``_invoke_governed_helper``'s bounded synchronous executor
+    trip through ``invoke_governed_helper``'s bounded synchronous executor
     -- once PER ROW across servers/builtin_tools/skills, up to ~1000
     sequential calls for a full catalog. ``_batch_toggle_states`` replaces
     that with ONE round trip per toggle ``item_type``. However many rows the
     catalog holds, the number of ``query_cypher`` calls must stay a small,
     FIXED constant -- never scale with the listing size."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     catalog = {
         'servers': [_server_row(id=f'srv:{i}', name=f'server-{i}') for i in range(300)],
@@ -467,7 +467,7 @@ async def test_list_all_tools_a_failed_servers_kind_does_not_discard_a_healthy_s
     unreachable -- `_read_fleet_catalog` returned a single `None` for the
     whole four-kind read the moment `servers` failed, so `skills` was never
     read at all regardless of its own health."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     with _patch_catalog(
         {
@@ -510,7 +510,7 @@ async def test_list_all_tools_skill_status_is_a_top_level_unambiguous_failure_si
     failed" other than `skill_classification.kg_reachable`, three levels
     deep. `skill_status` now mirrors `mcp_status`'s shape at the SAME top
     level, so a caller can check `.error` the same way for either."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     with _patch_catalog(
         {'servers': [], 'discoveries': [], 'skills': None, 'prompts': []}
@@ -543,7 +543,7 @@ async def test_list_all_tools_prompts_kind_degrades_independently(
 ) -> None:
     """`prompts` failing must not affect `servers`/`skills`, and vice versa
     -- each of the four requested kinds is independent."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     with _patch_catalog(
         {
@@ -570,7 +570,7 @@ async def test_list_all_tools_discoveries_failure_is_noted_but_servers_still_lis
     known servers (best-effort -- registration is still real data) but
     flags that their live health/reachability could not be read, rather
     than silently reporting them as healthy."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     with _patch_catalog(
         {

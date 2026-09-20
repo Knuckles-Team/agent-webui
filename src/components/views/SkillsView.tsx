@@ -1507,7 +1507,7 @@ export default function SkillsView() {
   const handleToggleCognitive = async (
     // The backend keys an unclassified item's toggle preference under the
     // same `skill` namespace it uses while KG-unverified (api_extensions.py
-    // `_get_engine_bounded`/`get_toggle_state` call for the unclassified
+    // `get_engine_bounded`/`get_toggle_state` call for the unclassified
     // branch) -- no separate `skill_unclassified` toggle type exists.
     type: 'skill' | 'skill_graph' | 'skill_workflow',
     id: string,

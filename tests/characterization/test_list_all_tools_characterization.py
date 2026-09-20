@@ -77,7 +77,7 @@ _EMPTY_CATALOG: dict[str, list[dict[str, Any]]] = {
 async def test_builtin_tools_lists_python_modules_skipping_underscore_prefixed(
     tmp_path, monkeypatch, bounded_engine
 ) -> None:
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
     tools_dir = tmp_path / 'agent_utilities' / 'tools'
     tools_dir.mkdir(parents=True)
     (tools_dir / 'search_web.py').write_text('# tool')
@@ -108,7 +108,7 @@ async def test_builtin_tools_lists_python_modules_skipping_underscore_prefixed(
 async def test_builtin_tools_is_empty_when_the_tools_dir_does_not_exist(
     tmp_path, monkeypatch, bounded_engine
 ) -> None:
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
     monkeypatch.setattr(
         api_extensions,
         'get_agent_utilities_dir',
@@ -125,7 +125,7 @@ async def test_builtin_tools_is_empty_when_the_tools_dir_does_not_exist(
 async def test_builtin_tools_reflects_a_disabled_toggle(
     tmp_path, monkeypatch, stub_engine, bounded_engine
 ) -> None:
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
     tools_dir = tmp_path / 'agent_utilities' / 'tools'
     tools_dir.mkdir(parents=True)
     (tools_dir / 'search_web.py').write_text('# tool')
@@ -164,7 +164,7 @@ async def test_builtin_tools_reflects_a_disabled_toggle(
 async def test_toggle_status_is_healthy_when_every_toggle_read_succeeds(
     monkeypatch, bounded_engine
 ) -> None:
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     with _patch_catalog(_EMPTY_CATALOG):
         result = await api_extensions.list_all_tools()
@@ -180,7 +180,7 @@ async def test_toggle_status_is_healthy_when_every_toggle_read_succeeds(
 async def test_toggle_status_names_the_degraded_item_types_on_a_failed_read(
     monkeypatch, bounded_engine
 ) -> None:
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
 
     async def _batch_toggle_states_many(engine, item_types_and_ids):
         out: dict[str, tuple[dict[str, bool], bool]] = {}
@@ -223,7 +223,7 @@ async def test_result_is_bounded_through_public_external_result(
     monkeypatch, bounded_engine
 ) -> None:
     """``list_all_tools`` always returns a dict, even in the fallback branch."""
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', bounded_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', bounded_engine)
     with _patch_catalog(_EMPTY_CATALOG):
         result = await api_extensions.list_all_tools()
     assert isinstance(result, dict)

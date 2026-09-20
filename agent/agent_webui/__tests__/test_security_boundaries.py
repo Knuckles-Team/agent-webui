@@ -15,11 +15,12 @@ from agent_webui.api_extensions import (
     _actor_context,
     _actor_id_from_request,
     _BoundedSyncWorkExecutor,
-    _invoke_governed_helper,
     _redact_inline_secrets,
     _validate_read_only_cypher,
     _workspace_ingestion_source,
+    get_engine_bounded,
     get_toggle_state,
+    invoke_governed_helper,
     process_ontology_document,
     set_workspace_helpers,
 )
@@ -35,6 +36,13 @@ from agent_webui.server import (
 )
 from fastapi import FastAPI
 from fastapi import HTTPException as FastAPIHTTPException
+
+
+def test_governed_host_helpers_are_public_api() -> None:
+    assert callable(get_engine_bounded)
+    assert callable(invoke_governed_helper)
+    assert not hasattr(api_extensions, '_get_engine_bounded')
+    assert not hasattr(api_extensions, '_invoke_governed_helper')
 
 
 @pytest.mark.parametrize(
@@ -266,13 +274,13 @@ def test_sync_deadline_keeps_capacity_charged_until_worker_exits(
 
     async def exercise() -> None:
         with pytest.raises(FastAPIHTTPException) as timeout_error:
-            await _invoke_governed_helper(blocking_backend, deadline=0.1)
+            await invoke_governed_helper(blocking_backend, deadline=0.1)
         assert timeout_error.value.status_code == 503
         assert started.is_set()
         assert executor.status()['timed_out_in_flight'] == 1
 
         with pytest.raises(FastAPIHTTPException) as capacity_error:
-            await _invoke_governed_helper(lambda: 'unreachable', deadline=0.1)
+            await invoke_governed_helper(lambda: 'unreachable', deadline=0.1)
         assert capacity_error.value.status_code == 503
         assert executor.status()['rejections_total'] == 1
 
@@ -291,7 +299,7 @@ def test_sync_worker_preserves_the_request_identity_context() -> None:
     token = actor_marker.set('verified-actor')
     try:
         assert (
-            asyncio.run(_invoke_governed_helper(actor_marker.get, deadline=1.0))
+            asyncio.run(invoke_governed_helper(actor_marker.get, deadline=1.0))
             == 'verified-actor'
         )
     finally:
@@ -375,7 +383,7 @@ def test_best_effort_graph_read_does_not_mask_sync_capacity(
             detail='Synchronous backend capacity is exhausted',
         )
 
-    monkeypatch.setattr(api_extensions, '_get_engine_bounded', exhausted_engine)
+    monkeypatch.setattr(api_extensions, 'get_engine_bounded', exhausted_engine)
 
     with pytest.raises(FastAPIHTTPException) as exc_info:
         asyncio.run(api_extensions.list_resources())
