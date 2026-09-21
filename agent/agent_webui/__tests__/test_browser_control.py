@@ -518,7 +518,7 @@ def test_one_injected_connection_handles_every_browser_event_and_outbound_send(
     port = RecordingPort()
     port.connection = AcknowledgingConnection()
     client = TestClient(_app(mock_agent, port))
-    events = [
+    events: list[dict[str, Any]] = [
         {
             'protocol': 'webmcp.control.v1',
             'type': 'control.confirm',

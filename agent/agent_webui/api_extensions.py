@@ -9392,20 +9392,13 @@ _WEBUI_SESSION_SCHEMA = """
 
 
 def _resolved_session_db_path() -> Path:
-    """Where the session database lives.
+    """Return the WebUI-owned degraded/local session database path.
 
-    Use the shared TUI location when available, otherwise the WebUI's XDG data
-    directory. Never materialize a process-relative database.
+    Shared sessions are gateway-owned.  The local fallback must therefore stay
+    inside the WebUI data directory regardless of which sibling frontends are
+    installed in this process.
     """
-    try:
-        from agent_terminal_ui.session_manager import DEFAULT_DB_PATH
-
-        configured_db_path = Path(DEFAULT_DB_PATH).expanduser()
-        if configured_db_path.is_symlink():
-            raise RuntimeError('Refusing symbolic-link session database')
-        db_path = configured_db_path.resolve()
-    except ImportError:
-        db_path = _WEBUI_DATA_DIR / 'agent_terminal_ui.db'
+    db_path = _WEBUI_DATA_DIR / 'agent_terminal_ui.db'
 
     if db_path.is_symlink():
         raise RuntimeError('Refusing symbolic-link session database')

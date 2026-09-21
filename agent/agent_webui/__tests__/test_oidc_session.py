@@ -1178,6 +1178,7 @@ async def test_attended_receipt_is_forwarded_only_for_its_exact_request_origin(
     if receipt_forwarded:
         rotated_value = rotated[0].split(';', 1)[0].split('=', 1)[1]
         revoke_receipt = middleware._unseal(rotated_value)
+        assert revoke_receipt is not None
         assert revoke_receipt['kind'] == 'browser_control_attended_revoke_v1'
         revoke_scope = _scope(
             ATTENDED_ARM_PATH,
@@ -1371,6 +1372,7 @@ async def test_finalize_consumes_recent_auth_once_and_mints_exact_arm(monkeypatc
     async def failed_revoke(_binding):
         raise RuntimeError('durable authority unavailable')
 
+    assert middleware.browser_control is not None
     successful_revoke = middleware.browser_control.revoke_attended_arm
     middleware.browser_control.revoke_attended_arm = failed_revoke
     failed_revoke_send = _Recorder()

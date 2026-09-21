@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import sqlite3
+import sys
 import threading
+import types
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -1247,13 +1250,136 @@ def test_current_webui_is_admin_fails_closed_with_no_bound_actor() -> None:
     assert api_extensions._current_webui_is_admin() is False
 
 
+@pytest.mark.parametrize('terminal_ui_importable', [False, True])
+def test_local_session_path_is_webui_owned_regardless_of_terminal_ui_installation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    terminal_ui_importable: bool,
+) -> None:
+    """A sibling frontend must not select WebUI's local persistence path."""
+
+    webui_data_dir = tmp_path / 'webui'
+    terminal_ui_path = tmp_path / 'terminal-ui' / 'sessions.db'
+    monkeypatch.setattr(api_extensions, '_WEBUI_DATA_DIR', webui_data_dir)
+
+    if terminal_ui_importable:
+        terminal_ui = types.ModuleType('agent_terminal_ui')
+        terminal_ui.__dict__['__path__'] = []
+        session_manager = types.ModuleType('agent_terminal_ui.session_manager')
+        session_manager.__dict__['DEFAULT_DB_PATH'] = terminal_ui_path
+        monkeypatch.setitem(sys.modules, 'agent_terminal_ui', terminal_ui)
+        monkeypatch.setitem(
+            sys.modules, 'agent_terminal_ui.session_manager', session_manager
+        )
+    else:
+        # ``None`` makes an attempted import fail even if terminal-ui happens
+        # to be installed in the test environment.
+        monkeypatch.setitem(sys.modules, 'agent_terminal_ui', None)
+        monkeypatch.setitem(sys.modules, 'agent_terminal_ui.session_manager', None)
+
+    assert api_extensions._resolved_session_db_path() == (
+        webui_data_dir / 'agent_terminal_ui.db'
+    )
+    assert api_extensions._resolved_session_db_path() != terminal_ui_path
+
+
+def test_local_session_path_still_refuses_a_symbolic_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    webui_data_dir = tmp_path / 'webui'
+    webui_data_dir.mkdir()
+    target = tmp_path / 'outside.db'
+    target.touch()
+    (webui_data_dir / 'agent_terminal_ui.db').symlink_to(target)
+    monkeypatch.setattr(api_extensions, '_WEBUI_DATA_DIR', webui_data_dir)
+
+    with pytest.raises(RuntimeError, match='symbolic-link session database'):
+        api_extensions._resolved_session_db_path()
+
+
+def test_webui_local_database_keeps_schema_and_privacy_migrations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    webui_data_dir = tmp_path / 'webui'
+    webui_data_dir.mkdir()
+    db_path = webui_data_dir / 'agent_terminal_ui.db'
+    monkeypatch.setattr(api_extensions, '_WEBUI_DATA_DIR', webui_data_dir)
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY, title TEXT DEFAULT '', created_at REAL NOT NULL,
+            updated_at REAL NOT NULL, model TEXT DEFAULT '', mode TEXT DEFAULT 'ask',
+            workspace TEXT DEFAULT '', turn_count INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'active', background INTEGER DEFAULT 0,
+            needs_input INTEGER DEFAULT 0, last_response_preview TEXT DEFAULT '',
+            goal_id TEXT DEFAULT '', metadata_json TEXT DEFAULT '{}'
+        )
+        """
+    )
+    conn.execute(
+        'INSERT INTO sessions (id, created_at, updated_at, workspace) VALUES (?, ?, ?, ?)',
+        ('legacy-session', 1.0, 1.0, '/private/workspace'),
+    )
+    conn.commit()
+    conn.close()
+
+    assert api_extensions._get_db_path() == db_path
+
+    conn = sqlite3.connect(db_path)
+    columns = {row[1] for row in conn.execute('PRAGMA table_info(sessions)')}
+    privacy_version = conn.execute(
+        "SELECT value FROM webui_schema_meta WHERE key = 'privacy_version'"
+    ).fetchone()
+    workspace = conn.execute(
+        'SELECT workspace FROM sessions WHERE id = ?', ('legacy-session',)
+    ).fetchone()
+    conn.close()
+
+    assert 'owner' in columns
+    assert privacy_version == ('1',)
+    assert workspace == ('workspace://active',)
+    assert db_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_gateway_session_success_never_opens_the_webui_local_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shared session reads remain gateway-owned after local-path isolation."""
+
+    from agent_utilities.security.brain_context import reset_actor, set_actor
+
+    calls: list[tuple[str, str]] = []
+
+    async def _gateway(method: str, path: str, json_data: Any = None) -> Any:
+        del json_data
+        calls.append((method, path))
+        return [{'id': 'shared-session'}]
+
+    def _unexpected_local_path() -> Path:
+        raise AssertionError('gateway success must not open local persistence')
+
+    monkeypatch.setattr(api_extensions, '_is_gateway_active', lambda: True)
+    monkeypatch.setattr(api_extensions, '_proxy_to_gateway', _gateway)
+    monkeypatch.setattr(api_extensions, '_get_db_path', _unexpected_local_path)
+
+    token = set_actor(_actor(roles=('kg:admin',), actor_id='admin-user'))
+    try:
+        sessions = asyncio.run(api_extensions.get_all_sessions())
+    finally:
+        reset_actor(token)
+
+    assert sessions == [{'id': 'shared-session'}]
+    assert calls == [('GET', '/sessions')]
+
+
 def test_get_all_sessions_scopes_rows_to_the_owner_unless_admin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The core of D-WUI-33: two users' sessions live in the same table: a
     non-admin caller sees only the session they own; the admin sees both."""
 
-    import sqlite3
     import time
 
     from agent_utilities.security.brain_context import reset_actor, set_actor
@@ -1307,7 +1433,6 @@ def test_get_all_sessions_scopes_rows_to_the_owner_unless_admin(
 def test_get_session_details_404s_for_a_non_owner_instead_of_leaking_existence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import sqlite3
     import time
 
     from agent_utilities.security.brain_context import reset_actor, set_actor
