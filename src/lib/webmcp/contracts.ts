@@ -30,9 +30,9 @@ function redactRoute(route: string): string {
     for (const key of [...url.searchParams.keys()]) {
       if (isSensitiveName(key)) url.searchParams.delete(key)
     }
-    return `${url.pathname}${url.search}${url.hash}`
+    return `${url.pathname}${url.search}`
   } catch {
-    return route
+    return '/'
   }
 }
 
@@ -54,11 +54,13 @@ const pageSelectionSchema = z
   })
   .strict()
 
+const isoTimestamp = z.iso.datetime({ offset: true })
+
 const pageTimeRangeSchema = z
   .object({
-    start: boundedString(128).optional(),
-    end: boundedString(128).optional(),
-    asOf: boundedString(128).optional(),
+    start: isoTimestamp.optional(),
+    end: isoTimestamp.optional(),
+    asOf: isoTimestamp.optional(),
     timezone: boundedString(64).optional(),
   })
   .strict()
@@ -72,7 +74,7 @@ export const PublicPageContextSchema = z
     selection: z.array(pageSelectionSchema).max(16),
     filters: pageContextFiltersSchema,
     timeRange: pageTimeRangeSchema.optional(),
-    capturedAt: boundedString(64),
+    capturedAt: isoTimestamp,
   })
   .strict()
 

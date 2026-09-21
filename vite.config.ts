@@ -39,6 +39,11 @@ export default defineConfig(() => ({
         target: `http://localhost:${BACKEND_DEV_SERVER_PORT}/`,
         changeOrigin: true,
       },
+      '/ws/browser-control': {
+        target: `ws://localhost:${BACKEND_DEV_SERVER_PORT}/`,
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
 }))

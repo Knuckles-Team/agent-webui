@@ -56,17 +56,74 @@ default is `self`). A deployment that enables `document.domain`, including via
 `Origin-Agent-Cluster: ?0`, disables the API. No cross-origin `exposedTo` access
 is configured here.
 
-## Why this is not lazy-loaded by graph-os
+## Graph OS leased browser control
 
-WebMCP tools live in, and act on, a particular open browser document. They are
-discovered only after an agent visits that page; they are not remote MCP server
-tools and cannot truthfully be registered in graph-os when no user browser is
-present. Browser-native agents can use this surface directly.
+WebMCP tools live in, and act on, one open browser document. Browser-native agents
+can use the registered draft API directly. An authenticated operator may also
+explicitly arm the Graph OS bridge from the visible control in the WebUI. Arming
+opens the same-origin `/ws/browser-control` channel with the existing OIDC cookie;
+JavaScript never receives or sends a Keycloak token, service bearer, OpenBao
+value, tenant assertion, or principal assertion.
 
-A future graph-os-to-browser bridge must therefore be an explicit, short-lived,
-user-bound capability lease associated with one authenticated browser session.
-It must preserve role checks, cancellation, confirmation, and per-tool audit
-provenance and must never forward Keycloak bearer tokens, OpenBao material, or a
-generic backend request primitive. A permanent fleet registration or synthetic
-"lazy loader" would erase those browser security and lifecycle boundaries and
-is intentionally out of scope for this adapter.
+```mermaid
+sequenceDiagram
+  participant User
+  participant IdP
+  participant Page as WebMcpProvider
+  participant Channel as /ws/browser-control
+  participant GraphOS as BrowserControlService
+
+  Page->>Page: Register and acknowledge local definitions
+  User->>Page: Arm current visible page
+  Page->>Channel: POST route and path-only return for attended step-up
+  Channel-->>Page: IdP authorization URL (no receipt)
+  Page->>IdP: Top-level recent-auth redirect
+  IdP->>Channel: Verified callback sets HttpOnly recent-auth grant
+  Page->>Page: Rebuild and acknowledge the current local catalog
+  Page->>Channel: POST current generation/catalog/tool digests to finalize
+  Channel-->>Page: Non-secret armed status; HttpOnly one-use receipt set
+  Page->>Channel: channel.open + versioned catalog
+  Channel->>GraphOS: Verify session, route, generation, policy
+  GraphOS-->>Page: channel.ready for exact route + generation
+  GraphOS-->>Page: control.confirmation_request (mutation only)
+  User->>Page: Confirm exact call/tool/schema/argument digest
+  Page->>GraphOS: control.confirm
+  GraphOS-->>Page: control.call (read or confirmed mutation)
+  Page->>Page: Invoke retained validated definition
+  Page->>GraphOS: bounded result or honest cancellation effect
+```
+
+`ActiveWebMcpRegistry` retains only browser-acknowledged definitions from the
+current identity, document, route, page context, and generation. The capability
+catalog is deterministic and versioned. Each tool carries its input/output JSON
+schemas, a canonical SHA-256 schema digest, current role and route binding,
+read/mutation class, exact-request confirmation policy, and source reference.
+The browser sends the language-neutral catalog projection to Graph OS, while the
+original validated `execute` callback remains the sole local executor.
+
+The trusted click is local UX evidence only. Server authority comes from the
+existing OIDC provider's recent-auth step-up. Its callback creates only a
+server-owned recent-auth grant. After reload, the page rebuilds its catalog and
+finalizes that grant against the current route, generation, catalog digest, and
+tool scope. The server then creates a short-lived one-use HttpOnly receipt.
+The receipt is consumed by the WebSocket handshake and is never exposed to
+JavaScript. The redirect continuation contains only the path, with query and
+fragment removed. Authorization and global revoke operations are serialized so
+stale cleanup completes before another arm can start.
+
+Graph OS owns authorization, leases, replay fences, call state, durable receipts,
+and terminal outcomes. The WebUI retains only the active local definitions,
+in-flight abort controllers, and the attended confirmation being displayed. A
+mutation uses two phases: the initial confirmation request never executes; only
+the later `control.call` carrying Graph OS's `confirmed_mutation` authorization
+and the exact approved digest reaches the local definition. Arguments, schemas,
+channel frames, and UTF-8 results are bounded; result errors are reduced to safe
+codes. Denied or cancelled confirmations retain a bounded call/digest tombstone
+for the channel lifetime so a replay cannot reopen the prompt.
+
+Sign-out, identity/tenant/session expiry change, page context or active generation
+change, hidden documents, page unload, explicit revoke, and channel loss retire
+the channel. Cancellation is best effort and reports only `none`,
+`browser_reported_committed`, or `unknown`; it never claims rollback. Unsupported,
+insecure, unpermitted, anonymous, or local-development sessions retain the honest
+browser-local no-op behavior and cannot arm remote control.

@@ -11,17 +11,25 @@ from __future__ import annotations
 
 import json
 import time
+from dataclasses import replace
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from agent_webui.oidc_session import (
+    ATTENDED_ARM_COOKIE,
+    ATTENDED_ARM_FINALIZE_PATH,
+    ATTENDED_ARM_PATH,
     CALLBACK_PATH,
     FLOW_COOKIE,
     LOGIN_PATH,
+    RECENT_AUTH_COOKIE,
     SESSION_COOKIE,
     SESSION_PATH,
     OIDCBrowserSessionMiddleware,
     OIDCConfigurationError,
     OIDCSettings,
+    _browser_login_session_ref,
     _clear_session_cookie_headers,
     _read_session_cookie,
     _request_scheme_redirect_uri,
@@ -47,6 +55,10 @@ def _settings() -> OIDCSettings:
         scope='openid profile email',
         session_key=Fernet.generate_key().decode('ascii'),
     )
+
+
+def _arm_settings() -> OIDCSettings:
+    return replace(_settings(), attended_acr=('urn:example:acr:mfa',))
 
 
 class _Recorder:
@@ -111,6 +123,7 @@ def test_unconfigured_sso_is_inert(monkeypatch):
         'AUTH_JWT_ISSUER',
         'WEBUI_OIDC_REDIRECT_URI',
         'WEBUI_SESSION_KEY',
+        'WEBUI_OIDC_ATTENDED_ACR_VALUES',
     ):
         monkeypatch.delenv(name, raising=False)
     assert load_settings() is None
@@ -124,6 +137,7 @@ def test_partial_configuration_fails_loud(monkeypatch):
         'AUTH_JWT_ISSUER',
         'WEBUI_OIDC_REDIRECT_URI',
         'WEBUI_SESSION_KEY',
+        'WEBUI_OIDC_ATTENDED_ACR_VALUES',
     ):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(OIDCConfigurationError):
@@ -161,7 +175,7 @@ def test_next_target_can_never_leave_the_origin(candidate):
 
 
 def test_next_target_keeps_a_relative_path():
-    assert _safe_next('/graph/explore?q=1') == '/graph/explore?q=1'
+    assert _safe_next('/graph/explore?q=secret') == '/graph/explore'
 
 
 # ------------------------------------------------------------ cookie chunking
@@ -518,6 +532,7 @@ async def test_a_caller_with_its_own_bearer_is_never_given_a_browser_session():
 
     async def app(scope, _receive, _send):
         seen['headers'] = scope['headers']
+        seen['state'] = scope.get('state') or {}
 
     settings = _settings()
     middleware = OIDCBrowserSessionMiddleware(app, settings=settings)
@@ -541,6 +556,7 @@ async def test_a_caller_with_its_own_bearer_is_never_given_a_browser_session():
     )
     authorization = [v for k, v in seen['headers'] if k.lower() == b'authorization']
     assert authorization == [b'Bearer service-token']
+    assert 'browser_login_session_ref' not in seen['state']
 
 
 @pytest.mark.anyio
@@ -549,6 +565,7 @@ async def test_a_valid_session_is_forwarded_as_the_users_own_bearer():
 
     async def app(scope, _receive, _send):
         seen['headers'] = scope['headers']
+        seen['state'] = scope.get('state') or {}
 
     middleware = OIDCBrowserSessionMiddleware(app, settings=_settings())
     sealed = middleware._seal(
@@ -565,6 +582,10 @@ async def test_a_valid_session_is_forwarded_as_the_users_own_bearer():
     )
     authorization = [v for k, v in seen['headers'] if k.lower() == b'authorization']
     assert authorization == [b'Bearer users-own-token']
+    login_ref = seen['state']['browser_login_session_ref']
+    assert login_ref.startswith('login_')
+    assert len(login_ref) == 70
+    assert 'users-own-token' not in login_ref
 
 
 @pytest.mark.anyio
@@ -689,6 +710,734 @@ async def test_an_expired_session_with_a_refresh_token_is_silently_renewed():
         )
     finally:
         monkeypatch.undo()
+
+
+# ----------------------------------------------------- attended browser control
+
+
+def _configure_arm_origin(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent_utilities.core.config import config
+
+    monkeypatch.setattr(config, 'allowed_origins', 'https://webui.example.test')
+    monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui')
+    monkeypatch.setattr(config, 'auth_jwt_jwks_uri', 'https://idp.example.test/jwks')
+
+
+def _arm_headers(middleware: OIDCBrowserSessionMiddleware, token: str) -> list:
+    sealed = middleware._seal(
+        {
+            'access_token': token,
+            'refresh_token': '',
+            'expires_at': time.time() + 600,
+        }
+    )
+    cookie = '; '.join(
+        raw.decode('latin-1').split(';', 1)[0]
+        for _name, raw in _session_cookie_headers(sealed, secure=True)
+    )
+    return [
+        (b'host', b'webui.example.test'),
+        (b'origin', b'https://webui.example.test'),
+        (b'cookie', cookie.encode('latin-1')),
+    ]
+
+
+def _arm_body() -> dict:
+    return {
+        'route_id': 'knowledge.graph',
+        'next': '/graph?private=discarded',
+    }
+
+
+def _finalize_body() -> dict:
+    return {
+        'route_id': 'knowledge.graph',
+        'registration_generation': 7,
+        'catalog_digest': f'sha256:{"b" * 64}',
+        'tools': [
+            {
+                'tool_id': 'webui.page.context',
+                'schema_digest': f'sha256:{"a" * 64}',
+            }
+        ],
+    }
+
+
+def _json_receiver(document: dict):
+    async def receive():
+        return {
+            'type': 'http.request',
+            'body': json.dumps(document).encode('utf-8'),
+            'more_body': False,
+        }
+
+    return receive
+
+
+@pytest.mark.anyio
+async def test_attended_arm_is_unavailable_without_configured_accepted_acr(
+    monkeypatch,
+):
+    _configure_arm_origin(monkeypatch)
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=_settings())
+    send = _Recorder()
+    await middleware(
+        _scope(
+            ATTENDED_ARM_PATH,
+            method='POST',
+            scheme='https',
+            headers=_arm_headers(middleware, 'existing-token'),
+        ),
+        _json_receiver(_arm_body()),
+        send,
+    )
+    assert send.status == 503
+
+
+@pytest.mark.anyio
+async def test_attended_arm_forces_interactive_exact_acr_step_up(monkeypatch):
+    _configure_arm_origin(monkeypatch)
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=_arm_settings())
+
+    async def endpoints():
+        return {'authorization_endpoint': f'{ISSUER}/protocol/openid-connect/auth'}
+
+    async def verified(_token, *, audience):
+        assert audience == 'agent-webui'
+        return {
+            'sub': 'user-1',
+            'tenant_id': 'homelab',
+            'exp': time.time() + 600,
+        }
+
+    monkeypatch.setattr(middleware, '_endpoints', endpoints)
+    monkeypatch.setattr(middleware, '_verified_jwt_claims', verified)
+    send = _Recorder()
+    await middleware(
+        _scope(
+            ATTENDED_ARM_PATH,
+            method='POST',
+            scheme='https',
+            headers=_arm_headers(middleware, 'existing-token'),
+        ),
+        _json_receiver(_arm_body()),
+        send,
+    )
+
+    assert send.status == 200
+    query = parse_qs(urlsplit(json.loads(send.body)['authorization_url']).query)
+    assert query['prompt'] == ['login']
+    assert query['max_age'] == ['0']
+    assert query['acr_values'] == ['urn:example:acr:mfa']
+    assert query['code_challenge_method'] == ['S256']
+    flow_cookie = next(
+        item.decode('latin-1')
+        for item in send.headers(b'set-cookie')
+        if item.decode('latin-1').startswith(f'{FLOW_COOKIE}=')
+    )
+    assert 'HttpOnly' in flow_cookie and 'Secure' in flow_cookie
+    opened_flow = middleware._unseal(flow_cookie.split(';', 1)[0].split('=', 1)[1])
+    assert opened_flow is not None
+    assert opened_flow['next'] == '/graph'
+    assert 'registration_generation' not in opened_flow
+    assert 'catalog_digest' not in opened_flow
+
+
+@pytest.mark.anyio
+async def test_attended_arm_rejects_nonfinite_current_token_expiry(monkeypatch):
+    _configure_arm_origin(monkeypatch)
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=_arm_settings())
+
+    async def verified(_token, *, audience):
+        assert audience == 'agent-webui'
+        return {'sub': 'user-1', 'tenant_id': 'homelab', 'exp': float('inf')}
+
+    monkeypatch.setattr(middleware, '_verified_jwt_claims', verified)
+    send = _Recorder()
+    await middleware(
+        _scope(
+            ATTENDED_ARM_PATH,
+            method='POST',
+            scheme='https',
+            headers=_arm_headers(middleware, 'existing-token'),
+        ),
+        _json_receiver(_arm_body()),
+        send,
+    )
+
+    assert send.status == 401
+
+
+def test_session_token_lifetime_rejects_nonfinite_provider_value() -> None:
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=_arm_settings())
+    before = time.time()
+    session = middleware._session_from_tokens(
+        {'access_token': 'access', 'expires_in': float('inf')}
+    )
+
+    assert before + 299 <= session['expires_at'] <= time.time() + 301
+
+
+def _attended_flow(now: float) -> dict:
+    return {
+        'kind': 'browser_control_attended_arm_v1',
+        'state': 'state-1',
+        'verifier': 'verifier-1',
+        'nonce': 'nonce-1',
+        'started_at': now,
+        'origin': 'https://webui.example.test',
+        'subject': 'user-1',
+        'tenant': 'homelab',
+        'document_ref': f'document_{"d" * 64}',
+        **_arm_body(),
+    }
+
+
+async def _attended_callback(
+    middleware: OIDCBrowserSessionMiddleware, flow: dict
+) -> _Recorder:
+    send = _Recorder()
+    sealed_flow = middleware._seal(flow)
+    await middleware(
+        _scope(
+            CALLBACK_PATH,
+            scheme='https',
+            query=b'code=code-1&state=state-1',
+            headers=[
+                (b'host', b'webui.example.test'),
+                (b'cookie', f'{FLOW_COOKIE}={sealed_flow}'.encode()),
+            ],
+        ),
+        None,
+        send,
+    )
+    return send
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    'bad_evidence', ['acr', 'auth_time', 'nonfinite_auth_time', 'nonfinite_exp']
+)
+async def test_attended_callback_rejects_invalid_stepup_evidence(
+    monkeypatch, bad_evidence
+):
+    _configure_arm_origin(monkeypatch)
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=_arm_settings())
+    now = time.time()
+
+    async def tokens(_form):
+        return {
+            'access_token': 'new-access',
+            'id_token': 'new-id',
+            'expires_in': 600,
+        }
+
+    async def verified(token, *, audience):
+        if token == 'new-access':
+            return {
+                'sub': 'user-1',
+                'tenant_id': 'homelab',
+                'exp': float('inf') if bad_evidence == 'nonfinite_exp' else now + 600,
+            }
+        assert audience == 'agent-webui'
+        return {
+            'sub': 'user-1',
+            'nonce': 'nonce-1',
+            'acr': 'urn:example:acr:weak'
+            if bad_evidence == 'acr'
+            else 'urn:example:acr:mfa',
+            'auth_time': (
+                float('nan')
+                if bad_evidence == 'nonfinite_auth_time'
+                else now - 600
+                if bad_evidence == 'auth_time'
+                else now
+            ),
+            'exp': now + 600,
+        }
+
+    monkeypatch.setattr(middleware, '_token_request', tokens)
+    monkeypatch.setattr(middleware, '_verified_jwt_claims', verified)
+    send = await _attended_callback(middleware, _attended_flow(now))
+    assert send.status == 401
+    assert not any(
+        item.decode('latin-1').startswith(f'{RECENT_AUTH_COOKIE}=g')
+        for item in send.headers(b'set-cookie')
+    )
+
+
+@pytest.mark.anyio
+async def test_attended_callback_binds_recent_auth_to_new_login_and_token_expiry(
+    monkeypatch,
+):
+    _configure_arm_origin(monkeypatch)
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=_arm_settings())
+    now = time.time()
+
+    async def tokens(_form):
+        return {
+            'access_token': 'new-access',
+            'id_token': 'new-id',
+            'refresh_token': 'new-refresh',
+            'expires_in': 600,
+        }
+
+    async def verified(token, *, audience):
+        if token == 'new-access':
+            return {
+                'sub': 'user-1',
+                'tenant_id': 'homelab',
+                'exp': now + 240,
+            }
+        assert audience == 'agent-webui'
+        return {
+            'sub': 'user-1',
+            'nonce': 'nonce-1',
+            'acr': 'urn:example:acr:mfa',
+            'auth_time': now,
+            'exp': now + 600,
+        }
+
+    monkeypatch.setattr(middleware, '_token_request', tokens)
+    monkeypatch.setattr(middleware, '_verified_jwt_claims', verified)
+    send = await _attended_callback(middleware, _attended_flow(now))
+
+    assert send.status == 302
+    grant_cookie = next(
+        item.decode('latin-1')
+        for item in send.headers(b'set-cookie')
+        if item.decode('latin-1').startswith(f'{RECENT_AUTH_COOKIE}=')
+    )
+    opened = middleware._unseal(grant_cookie.split(';', 1)[0].split('=', 1)[1])
+    assert opened is not None
+    assert opened['kind'] == 'browser_control_recent_auth_v1'
+    assert opened['route_id'] == _arm_body()['route_id']
+    assert 'catalog_digest' not in opened
+    assert 'registration_generation' not in opened
+    assert opened['expires_at'] <= opened['access_token_expires_at'] == now + 240
+    assert opened['login_session_ref'].startswith('login_')
+
+
+@pytest.mark.anyio
+async def test_refreshed_session_never_reuses_an_attended_arm_receipt(monkeypatch):
+    _configure_arm_origin(monkeypatch)
+    captured: dict = {}
+    sent: list[dict] = []
+
+    async def app(scope, _receive, send):
+        captured.update(scope.get('state') or {})
+        await send({'type': 'websocket.accept'})
+
+    async def record(message):
+        sent.append(message)
+
+    middleware = OIDCBrowserSessionMiddleware(app, settings=_arm_settings())
+    stale = middleware._seal(
+        {
+            'access_token': 'stale-access',
+            'refresh_token': 'refresh',
+            'expires_at': time.time() - 1,
+        }
+    )
+    receipt = middleware._seal(
+        {'kind': 'browser_control_attended_arm_v1', 'login_session_ref': 'login_stale'}
+    )
+
+    async def refresh(_form):
+        return {
+            'access_token': 'fresh-access',
+            'refresh_token': 'fresh-refresh',
+            'expires_in': 600,
+        }
+
+    monkeypatch.setattr(middleware, '_token_request', refresh)
+    scope = {
+        'type': 'websocket',
+        'path': '/ws/browser-control',
+        'scheme': 'wss',
+        'headers': [
+            (b'host', b'webui.example.test'),
+            (b'origin', b'https://webui.example.test'),
+            (
+                b'cookie',
+                f'au_session0={stale}; {ATTENDED_ARM_COOKIE}={receipt}'.encode(),
+            ),
+        ],
+    }
+    await middleware(scope, None, record)
+    assert captured['browser_login_session_ref'].startswith('login_')
+    assert 'browser_attended_arm_ref' not in captured
+    assert any(
+        name == b'set-cookie' and value.startswith(b'au_session0=')
+        for name, value in sent[0]['headers']
+    )
+
+
+@pytest.mark.anyio
+async def test_service_bearer_cannot_request_an_attended_browser_arm(monkeypatch):
+    _configure_arm_origin(monkeypatch)
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=_arm_settings())
+    send = _Recorder()
+    await middleware(
+        _scope(
+            ATTENDED_ARM_PATH,
+            method='POST',
+            scheme='https',
+            headers=[
+                (b'host', b'webui.example.test'),
+                (b'origin', b'https://webui.example.test'),
+                (b'authorization', b'Bearer service-token'),
+            ],
+        ),
+        _json_receiver(_arm_body()),
+        send,
+    )
+    assert send.status == 403
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ('request_origin', 'expiry_delta', 'receipt_forwarded'),
+    [
+        ('https://webui.example.test', 240, True),
+        ('https://other.example.test', 240, False),
+        ('https://webui.example.test', -1, False),
+    ],
+)
+async def test_attended_receipt_is_forwarded_only_for_its_exact_request_origin(
+    monkeypatch, request_origin, expiry_delta, receipt_forwarded
+):
+    _configure_arm_origin(monkeypatch)
+    captured: dict = {}
+    sent: list[dict] = []
+
+    async def app(scope, _receive, send):
+        captured.update(scope.get('state') or {})
+        await send({'type': 'websocket.accept'})
+
+    async def send(message):
+        sent.append(message)
+
+    middleware = OIDCBrowserSessionMiddleware(app, settings=_arm_settings())
+    now = time.time()
+    token = 'verified-access'
+    session = middleware._seal(
+        {
+            'access_token': token,
+            'refresh_token': '',
+            'expires_at': now + 600,
+        }
+    )
+    receipt = middleware._seal(
+        {
+            'kind': 'browser_control_attended_arm_v1',
+            'attended_arm_ref': f'attended_{"a" * 64}',
+            'login_session_ref': _browser_login_session_ref(middleware.settings, token),
+            'subject': 'user-1',
+            'tenant': 'homelab',
+            'origin': 'https://webui.example.test',
+            'document_ref': f'document_{"d" * 64}',
+            'route_id': 'knowledge.graph',
+            'registration_generation': 7,
+            'catalog_digest': f'sha256:{"b" * 64}',
+            'tool_scope_digest': f'sha256:{"c" * 64}',
+            'issued_at': now,
+            'expires_at': now + expiry_delta,
+            'access_token_expires_at': now + 300,
+            'auth_time': now - 1,
+            'acr': 'urn:example:acr:mfa',
+            'issuer': ISSUER,
+        }
+    )
+    await middleware(
+        {
+            'type': 'websocket',
+            'path': '/ws/browser-control',
+            'scheme': 'wss',
+            'headers': [
+                (b'host', b'webui.example.test'),
+                (b'origin', request_origin.encode()),
+                (
+                    b'cookie',
+                    f'au_session0={session}; {ATTENDED_ARM_COOKIE}={receipt}'.encode(),
+                ),
+            ],
+        },
+        None,
+        send,
+    )
+    assert ('browser_attended_arm_ref' in captured) is receipt_forwarded
+    response_headers = sent[0].get('headers') or []
+    rotated = [
+        value.decode()
+        for name, value in response_headers
+        if name == b'set-cookie'
+        and value.startswith(f'{ATTENDED_ARM_COOKIE}=g'.encode())
+    ]
+    assert bool(rotated) is receipt_forwarded
+    if receipt_forwarded:
+        rotated_value = rotated[0].split(';', 1)[0].split('=', 1)[1]
+        revoke_receipt = middleware._unseal(rotated_value)
+        assert revoke_receipt['kind'] == 'browser_control_attended_revoke_v1'
+        revoke_scope = _scope(
+            ATTENDED_ARM_PATH,
+            method='DELETE',
+            scheme='https',
+            headers=[
+                (b'host', b'webui.example.test'),
+                (b'origin', b'https://webui.example.test'),
+                (b'cookie', f'{ATTENDED_ARM_COOKIE}={rotated_value}'.encode()),
+            ],
+        )
+        assert middleware._attended_receipt(revoke_scope, token=token) is None
+        assert (
+            middleware._attended_receipt(
+                revoke_scope, token=token, allow_revoke_only=True
+            )
+            is not None
+        )
+        seen: dict = {}
+
+        async def introspect(_credential, **claims):
+            seen.update(claims)
+            return True
+
+        monkeypatch.setattr(middleware, '_introspect_access_token', introspect)
+        assert await captured['browser_session_revalidator']() is True
+        assert seen['subject'] == 'user-1'
+        assert seen['tenant'] == 'homelab'
+
+
+@pytest.mark.anyio
+async def test_finalize_consumes_recent_auth_once_and_mints_exact_arm(monkeypatch):
+    from agent_utilities.security import request_identity
+    from agent_utilities.security.actor_identity import ActorType
+    from agent_utilities.security.brain_context import ActorContext
+
+    _configure_arm_origin(monkeypatch)
+    consumed: set[str] = set()
+    finalized: list = []
+    revoked: list = []
+
+    class Port:
+        authority = 'graph-os'
+        supports_durable_fences = True
+        supports_durable_audit = True
+        supports_attended_leases = True
+        supports_live_revalidation = True
+        supports_backchannel_revalidation = True
+        supports_catalog_verification = True
+
+        async def open_channel(self, _binding, _send):
+            raise AssertionError('finalize must not open a channel')
+
+        async def finalize_attended_arm(self, grant, binding):
+            if grant.grant_ref in consumed:
+                raise PermissionError('recent authentication already consumed')
+            consumed.add(grant.grant_ref)
+            finalized.append((grant, binding))
+            return SimpleNamespace(
+                status='active',
+                attended_arm_ref=binding.attended_arm_ref,
+                attended_arm_expires_at=binding.attended_arm_expires_at,
+                catalog_digest=binding.catalog_digest,
+                tool_scope_digest=binding.tool_scope_digest,
+            )
+
+        async def revoke_attended_arm(self, binding):
+            revoked.append(binding)
+            return SimpleNamespace(
+                status='revoked',
+                attended_arm_ref=binding.attended_arm_ref,
+                attended_arm_expires_at=binding.attended_arm_expires_at,
+                catalog_digest=binding.catalog_digest,
+                tool_scope_digest=binding.tool_scope_digest,
+            )
+
+    actor = ActorContext(
+        actor_id='user-1',
+        actor_type=ActorType.HUMAN,
+        tenant_id='homelab',
+        roles=('kg:write',),
+        authenticated=True,
+        credential_expires_at=int(time.time() + 600),
+    )
+
+    async def verified_actor(_token):
+        return actor
+
+    monkeypatch.setattr(request_identity, 'actor_from_bearer_token', verified_actor)
+    middleware = OIDCBrowserSessionMiddleware(
+        _noop_app,
+        settings=_arm_settings(),
+        browser_control=Port(),
+        mint_graph_session=lambda verified: SimpleNamespace(
+            actor=verified, tenant=verified.tenant_id, policy_version='1'
+        ),
+    )
+    now = time.time()
+    signed_access_fixture = 'stepped-up-access'
+    session = middleware._seal(
+        {
+            'access_token': signed_access_fixture,
+            'refresh_token': '',
+            'expires_at': now + 600,
+        }
+    )
+    grant_payload = {
+        'kind': 'browser_control_recent_auth_v1',
+        'grant_ref': f'attended_{"e" * 64}',
+        'login_session_ref': _browser_login_session_ref(
+            middleware.settings, signed_access_fixture
+        ),
+        'subject': 'user-1',
+        'tenant': 'homelab',
+        'origin': 'https://webui.example.test',
+        'route_id': 'knowledge.graph',
+        'issued_at': now,
+        'expires_at': now + 60,
+        'access_token_expires_at': now + 600,
+        'auth_time': now - 1,
+        'acr': 'urn:example:acr:mfa',
+        'issuer': ISSUER,
+    }
+    grant = middleware._seal(grant_payload)
+    cookies = f'au_session0={session}; {RECENT_AUTH_COOKIE}={grant}'
+
+    async def finalize_once(body: dict | None = None) -> _Recorder:
+        send = _Recorder()
+        await middleware(
+            _scope(
+                ATTENDED_ARM_FINALIZE_PATH,
+                method='POST',
+                scheme='https',
+                headers=[
+                    (b'host', b'webui.example.test'),
+                    (b'origin', b'https://webui.example.test'),
+                    (b'cookie', cookies.encode()),
+                ],
+            ),
+            _json_receiver(body or _finalize_body()),
+            send,
+        )
+        return send
+
+    mismatch = await finalize_once({**_finalize_body(), 'route_id': 'other.route'})
+    assert mismatch.status == 403
+    assert not finalized
+
+    first = await finalize_once()
+    assert first.status == 200
+    assert json.loads(first.body)['status'] == 'armed'
+    assert len(finalized) == 1
+    assert finalized[0][0].grant_issued_at == grant_payload['issued_at']
+    assert finalized[0][1].registration_generation == 7
+    assert any(
+        item.decode().startswith(f'{ATTENDED_ARM_COOKIE}=g')
+        for item in first.headers(b'set-cookie')
+    )
+    arm_cookie = next(
+        item.decode().split(';', 1)[0].split('=', 1)[1]
+        for item in first.headers(b'set-cookie')
+        if item.decode().startswith(f'{ATTENDED_ARM_COOKIE}=g')
+    )
+    arm_payload = middleware._unseal(arm_cookie)
+    assert arm_payload is not None
+    arm_cookie = middleware._seal(
+        {**arm_payload, 'kind': 'browser_control_attended_revoke_v1'}
+    )
+    revoke_send = _Recorder()
+    await middleware(
+        _scope(
+            ATTENDED_ARM_PATH,
+            method='DELETE',
+            scheme='https',
+            headers=[
+                (b'host', b'webui.example.test'),
+                (b'origin', b'https://webui.example.test'),
+                (
+                    b'cookie',
+                    f'au_session0={session}; {ATTENDED_ARM_COOKIE}={arm_cookie}'.encode(),
+                ),
+            ],
+        ),
+        None,
+        revoke_send,
+    )
+    assert revoke_send.status == 204
+    assert len(revoked) == 1
+    assert revoked[0].attended_arm_ref == grant_payload['grant_ref']
+
+    async def failed_revoke(_binding):
+        raise RuntimeError('durable authority unavailable')
+
+    successful_revoke = middleware.browser_control.revoke_attended_arm
+    middleware.browser_control.revoke_attended_arm = failed_revoke
+    failed_revoke_send = _Recorder()
+    await middleware(
+        _scope(
+            ATTENDED_ARM_PATH,
+            method='DELETE',
+            scheme='https',
+            headers=[
+                (b'host', b'webui.example.test'),
+                (b'origin', b'https://webui.example.test'),
+                (
+                    b'cookie',
+                    f'au_session0={session}; {ATTENDED_ARM_COOKIE}={arm_cookie}'.encode(),
+                ),
+            ],
+        ),
+        None,
+        failed_revoke_send,
+    )
+    assert failed_revoke_send.status == 503
+    assert not any(
+        value.startswith(f'{ATTENDED_ARM_COOKIE}='.encode())
+        for value in failed_revoke_send.headers(b'set-cookie')
+    )
+    assert any(
+        value.startswith(f'{RECENT_AUTH_COOKIE}=;'.encode()) and b'Max-Age=0' in value
+        for value in failed_revoke_send.headers(b'set-cookie')
+    )
+    middleware.browser_control.revoke_attended_arm = successful_revoke
+    retry_send = _Recorder()
+    await middleware(
+        _scope(
+            ATTENDED_ARM_PATH,
+            method='DELETE',
+            scheme='https',
+            headers=[
+                (b'host', b'webui.example.test'),
+                (b'origin', b'https://webui.example.test'),
+                (
+                    b'cookie',
+                    f'au_session0={session}; {ATTENDED_ARM_COOKIE}={arm_cookie}'.encode(),
+                ),
+            ],
+        ),
+        None,
+        retry_send,
+    )
+    assert retry_send.status == 204
+    assert len(revoked) == 2
+    second = await finalize_once()
+    assert second.status == 403
+    assert len(finalized) == 1
+    expired = middleware._seal(
+        {**grant_payload, 'issued_at': now - 120, 'expires_at': now - 60}
+    )
+    cookies = f'au_session0={session}; {RECENT_AUTH_COOKIE}={expired}'
+    stale = await finalize_once()
+    assert stale.status == 403
+    assert len(finalized) == 1
+    future = middleware._seal(
+        {**grant_payload, 'issued_at': now + 10, 'expires_at': now + 60}
+    )
+    cookies = f'au_session0={session}; {RECENT_AUTH_COOKIE}={future}'
+    premature = await finalize_once()
+    assert premature.status == 403
+    assert len(finalized) == 1
 
 
 @pytest.fixture

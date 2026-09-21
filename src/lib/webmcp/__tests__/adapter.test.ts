@@ -135,6 +135,28 @@ describe('WebMCP input/output validation', () => {
     expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true)
   })
 
+  it('rejects duplicate-key compatibility JSON before schema validation', async () => {
+    const execute = createValidatedExecutor(inputSchema, outputSchema, () => ({ accepted: true as const }))
+
+    await expect(execute('{"path":"/graph","p\\u0061th":"/other"}', executionOptions())).rejects.toThrow(
+      'duplicate keys',
+    )
+  })
+
+  it.each([1.5, 9_007_199_254_740_992, '\uD800'])('rejects non-canonical local input and output %s', async (value) => {
+    const permissiveInput = z.object({ value: z.unknown() }).strict()
+    const permissiveOutput = z.object({ value: z.unknown() }).strict()
+    const execute = createValidatedExecutor(permissiveInput, permissiveOutput, ({ value: result }) => ({
+      value: result,
+    }))
+
+    await expect(execute({ value }, executionOptions())).rejects.toThrow()
+    await expect(execute({ value: 'safe' }, executionOptions())).resolves.toEqual({ value: 'safe' })
+
+    const invalidOutput = createValidatedExecutor(z.object({}).strict(), permissiveOutput, () => ({ value }))
+    await expect(invalidOutput({}, executionOptions())).rejects.toThrow()
+  })
+
   it('rejects extra input fields and invalid output', async () => {
     const execute = createValidatedExecutor(inputSchema, outputSchema, () => ({ accepted: false }))
     await expect(execute({ path: '/graph', extra: true }, executionOptions())).rejects.toThrow()
@@ -167,5 +189,13 @@ describe('WebMCP input/output validation', () => {
     }))
 
     await expect(execute({}, executionOptions())).rejects.toThrow('output exceeded')
+  })
+
+  it('measures the output boundary as UTF-8 bytes', async () => {
+    const execute = createValidatedExecutor(z.object({}).strict(), z.object({ value: z.string() }).strict(), () => ({
+      value: '🙂'.repeat(700),
+    }))
+
+    await expect(execute({}, executionOptions())).rejects.toThrow('byte budget')
   })
 })

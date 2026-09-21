@@ -15,6 +15,22 @@ export interface WebMcpToolAnnotations {
   readonly untrustedContentHint?: boolean
 }
 
+export type WebMcpMutationClass = 'read' | 'local-ui-mutation'
+export type WebMcpConfirmationPolicy = 'none' | 'exact-request'
+
+/**
+ * Stable metadata used to project the same local tool into the governed
+ * capability catalog. It does not add another execution callback: the
+ * definition's validated `execute` function remains the only implementation.
+ */
+export interface WebMcpCapabilityMetadata {
+  readonly version: string
+  readonly outputSchema: WebMcpJsonSchema
+  readonly mutationClass: WebMcpMutationClass
+  readonly confirmationPolicy: WebMcpConfirmationPolicy
+  readonly source: string
+}
+
 export interface WebMcpExecutionOptions {
   readonly signal: AbortSignal
 }
@@ -25,6 +41,7 @@ export interface WebMcpToolDefinition {
   readonly description: string
   readonly inputSchema: WebMcpJsonSchema
   readonly annotations?: WebMcpToolAnnotations
+  readonly capability?: WebMcpCapabilityMetadata
   readonly execute: (input: unknown, options: WebMcpExecutionOptions) => Promise<unknown>
 }
 

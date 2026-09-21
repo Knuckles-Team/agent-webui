@@ -24,7 +24,8 @@ export class DocumentModelContextAdapter implements WebMcpAdapter {
     // mechanism. Promise.resolve also normalizes early implementations that
     // return void despite the draft's Promise<void> contract.
     try {
-      return Promise.resolve(this.modelContext.registerTool(tool, { signal })).then(() => undefined)
+      const { capability: _catalogMetadata, ...browserTool } = tool
+      return Promise.resolve(this.modelContext.registerTool(browserTool, { signal })).then(() => undefined)
     } catch (error) {
       const cause = error instanceof Error ? error : new Error('Unknown WebMCP registration failure')
       return Promise.reject(cause)

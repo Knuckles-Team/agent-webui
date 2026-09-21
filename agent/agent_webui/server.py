@@ -41,6 +41,7 @@ from .api_extensions import (
 from .api_extensions import (
     router as enhanced_router,
 )
+from .browser_control import BrowserControlPort, build_browser_control_router
 from .contact_delivery import ContactDeliveryPort, build_contact_router
 from .observability import (
     CORRELATION_RESPONSE_HEADER,
@@ -2031,7 +2032,12 @@ def _ensure_authorization_middleware(app: FastAPI) -> None:
         app.add_middleware(WebUIAuthorizationMiddleware)
 
 
-def _ensure_browser_sso_middleware(app: FastAPI) -> None:
+def _ensure_browser_sso_middleware(
+    app: FastAPI,
+    *,
+    browser_control: BrowserControlPort | None,
+    mint_graph_session: Any,
+) -> None:
     """Install the browser authorization-code boundary outside the identity gate.
 
     ``add_middleware`` prepends, so calling this *after*
@@ -2060,7 +2066,12 @@ def _ensure_browser_sso_middleware(app: FastAPI) -> None:
             'present their own Bearer credential'
         )
         return
-    app.add_middleware(OIDCBrowserSessionMiddleware, settings=settings)
+    app.add_middleware(
+        OIDCBrowserSessionMiddleware,
+        settings=settings,
+        browser_control=browser_control,
+        mint_graph_session=mint_graph_session,
+    )
     logger.info(
         'Agent WebUI browser SSO active: authorization-code + PKCE against %s '
         'as client %s',
@@ -2432,6 +2443,7 @@ def create_agent_web_app(
     html_source: str | Path | None = None,
     listener_host: str | None = None,
     contact_delivery: ContactDeliveryPort | None = None,
+    browser_control: BrowserControlPort | None = None,
 ) -> FastAPI:
     """Create the agent-web FastAPI application.
 
@@ -2452,6 +2464,9 @@ def create_agent_web_app(
         contact_delivery: Optional host-injected governed contact delivery
             adapter. The route remains registered but fails closed when this
             adapter or its server-side destination/retention policy is absent.
+        browser_control: Optional host-injected Graph OS browser-control
+            authority. The WebSocket route remains registered but fails closed
+            unless the authoritative lease/fence/audit service is available.
 
     Returns:
         A fully configured FastAPI application instance.
@@ -2472,7 +2487,6 @@ def create_agent_web_app(
     app.state.agent = agent
     app.state.security_contract = security_contract
     _install_request_body_boundary(app)
-    _install_host_boundary(app, resolved_listener_host)
 
     @app.exception_handler(_errors.HTTPException)
     async def _privacy_safe_http_error(_request, exc: _errors.HTTPException):
@@ -2590,6 +2604,7 @@ def create_agent_web_app(
     # `/api/enhanced/chats*`, just remounted; no shim, no alias.
     app.include_router(chats_router, prefix='/api')
     app.include_router(build_contact_router(contact_delivery), prefix='/api')
+    app.include_router(build_browser_control_router(browser_control))
 
     # Mount the service dashboard API if available (optional dependency).
     #
@@ -2873,11 +2888,18 @@ def create_agent_web_app(
         app,
         mint_graph_session=mint_graph_session,
     )
-    _ensure_browser_sso_middleware(app)
+    _ensure_browser_sso_middleware(
+        app,
+        browser_control=browser_control,
+        mint_graph_session=mint_graph_session,
+    )
     _ensure_security_headers_middleware(
         app,
         content_security_policy=content_security_policy,
     )
+    # Starlette prepends later middleware. Install Host validation after the
+    # OIDC owner so malformed/disallowed Host never reaches `/auth/*`.
+    _install_host_boundary(app, resolved_listener_host)
     # LANE F: mounted LAST (add_middleware prepends, so this is the OUTERMOST
     # layer — see RequestObservabilityMiddleware's own docstring).
     _ensure_request_observability_middleware(app)

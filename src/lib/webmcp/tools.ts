@@ -29,6 +29,9 @@ import {
 import { createValidatedExecutor, parseBoundedWebMcpOutput } from './validation'
 import type { WebMcpJsonSchema, WebMcpToolDefinition } from './types'
 
+const WEBMCP_LOCAL_TOOL_VERSION = '1.0.0'
+const WEBMCP_LOCAL_TOOL_SOURCE = 'agent-webui:src/lib/webmcp/tools.ts'
+
 const PAGE_CONTEXT_JSON_SCHEMA: WebMcpJsonSchema = {
   type: 'object',
   properties: {},
@@ -156,12 +159,20 @@ function makeTool<Input, Output>(options: {
   readOnly: boolean
   execute: (input: Input) => Output | PromiseLike<Output>
 }): WebMcpToolDefinition {
+  const mutationClass = options.readOnly ? 'read' : 'local-ui-mutation'
   return {
     name: options.name,
     title: options.title,
     description: options.description,
     inputSchema: options.jsonSchema,
     annotations: { readOnlyHint: options.readOnly, untrustedContentHint: true },
+    capability: {
+      version: WEBMCP_LOCAL_TOOL_VERSION,
+      outputSchema: z.toJSONSchema(options.outputSchema),
+      mutationClass,
+      confirmationPolicy: options.readOnly ? 'none' : 'exact-request',
+      source: WEBMCP_LOCAL_TOOL_SOURCE,
+    },
     execute: createValidatedExecutor(options.inputSchema, options.outputSchema, options.execute),
   }
 }

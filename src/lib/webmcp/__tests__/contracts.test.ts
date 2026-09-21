@@ -13,7 +13,7 @@ describe('public WebMCP context contract', () => {
   it('omits action affordances and redacts credential-shaped route/filter keys', () => {
     const envelope: PageContextEnvelope = {
       schemaVersion: '1.0',
-      route: '/graph?workspace=alpha&access_token=do-not-echo',
+      route: '/graph?workspace=alpha&access_token=do-not-echo#access_token=also-do-not-echo',
       view: 'graph',
       selection: [{ kind: 'graph-node', id: 'node-1', label: 'Service' }],
       filters: { workspace: 'alpha', api_key: 'do-not-echo' },
@@ -29,6 +29,22 @@ describe('public WebMCP context contract', () => {
       filters: { workspace: 'alpha' },
       capturedAt: '2026-08-29T00:00:00.000Z',
     })
+  })
+
+  it('fails closed for malformed routes and non-ISO temporal context', () => {
+    const envelope: PageContextEnvelope = {
+      schemaVersion: '1.0',
+      route: 'http://[malformed',
+      view: 'temporalgraph',
+      selection: [],
+      filters: {},
+      timeRange: { asOf: 'not-a-time' },
+      allowedActions: [],
+      capturedAt: '2026-08-29T00:00:00.000Z',
+    }
+
+    expect(() => toPublicPageContext(envelope)).toThrow()
+    expect(toPublicPageContext({ ...envelope, timeRange: undefined }).route).toBe('/')
   })
 })
 
