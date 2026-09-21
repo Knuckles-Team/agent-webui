@@ -8,7 +8,6 @@ with enhanced workspace management, real-time observability via Logfire,
 and a high-performance React-based frontend.
 """
 
-import asyncio
 import importlib
 import json
 import logging
@@ -16,14 +15,14 @@ import os
 import re
 import sys
 import time
-import uuid
+from collections.abc import Callable
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import logfire
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -84,17 +83,7 @@ _MAX_BEARER_TOKEN_BYTES = 16 * 1024
 _SPA_ROUTE_MANIFEST_FILENAME = 'spa-routes.json'
 _SPA_ROUTE_MANIFEST_SCHEMA_VERSION = 1
 _SPA_FALLBACK_EXEMPT_PREFIXES = ('api', 'chat', 'configure', 'mcp', 'a2a', 'ag-ui')
-# BUG-019 (GOC-29): bound on how many widget ids a `/ws/dashboard` `subscribe`
-# message may name in one call -- matches api_extensions.py's
-# `_MAX_EXTERNAL_COLLECTION_ITEMS` bound on external collections generally.
-_MAX_DASHBOARD_SUBSCRIBE_WIDGET_IDS = 256
-# W-19: how often `/ws/dashboard` pushes an `update` message after its initial
-# `snapshot`. Matches the Aggregator's own short read cache (`agent_utilities.
-# gateway.api`'s 10s-TTL comment) so a push never re-fetches data the cache
-# would have answered stale anyway, while staying well under the frontend's
-# 30s HTTP poll (`DashboardView.tsx` `refetchInterval: 30000`) so the socket
-# is genuinely faster than falling back to polling.
-_DASHBOARD_WS_PUSH_INTERVAL_SECONDS = 15.0
+ApplicationComposer = Callable[[FastAPI], None]
 # `/api/enhanced/sessions` (D-WUI-27, D-WUI-33) is deliberately NOT here: nav-registry.ts
 # declares `control-plane.sessions` at `minRole: 'user'`, so this middleware only decides
 # whether the ROUTE is reachable (kg:read for GET, kg:write for mutation, like any other
@@ -2157,22 +2146,6 @@ def _install_request_body_boundary(app: FastAPI) -> None:
     app.add_middleware(RequestBodyLimitMiddleware, max_bytes=limit)
 
 
-def _ensure_rate_limit_middleware(app: FastAPI) -> None:
-    """Apply the AgentConfig token bucket to the entire composed application."""
-
-    from agent_utilities.core.config import config
-
-    if float(config.gateway_rate_limit or 0) <= 0:
-        return
-    from agent_utilities.gateway.rate_limit import GatewayRateLimitMiddleware
-
-    if not any(
-        getattr(middleware, 'cls', None) is GatewayRateLimitMiddleware
-        for middleware in app.user_middleware
-    ):
-        app.add_middleware(GatewayRateLimitMiddleware)
-
-
 def _default_provider_models() -> dict[str, str]:
     """The model menu implied by whichever provider credentials are present.
 
@@ -2193,70 +2166,6 @@ def _default_provider_models() -> dict[str, str]:
     if not default_models:
         default_models['Test Model (Markdown Only)'] = 'test'
     return default_models
-
-
-def _register_canonical_graph_routes(app: FastAPI) -> None:
-    """Mount the canonical KG REST surface, or refuse to build the app.
-
-    NOT optional and NOT allowed to fail soft: this is the entire canonical KG
-    REST surface (`/api/graph/*`, `/api/registry/*`, `/api/ontology/*`,
-    `/api/research/*`, `/api/dashboard/*`'s route-table twin, plus the fleet
-    supervisory plane). A gateway that cannot register this surface is not a
-    degraded gateway, it is a headless one -- refuse to build the app instead of
-    quietly serving one. `generate_openapi.py` also enforces a minimum
-    mounted-path floor (see its `--write` sanity check) so a partial spec can
-    never be committed as documentation, but the first and loudest guard belongs
-    here, at the source.
-    """
-
-    try:
-        from agent_utilities.gateway.graph_api import register_graph_routes
-    except ImportError as exc:
-        raise RuntimeError(
-            'Canonical KG REST surface unavailable: could not import '
-            'agent_utilities.gateway.graph_api.register_graph_routes. '
-            'Refusing to serve a headless webui gateway missing '
-            '/api/graph, /api/registry, /api/ontology, and /api/research.'
-        ) from exc
-
-    try:
-        register_graph_routes(app, prefix='/api')
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(
-            'Canonical KG REST surface failed to register '
-            f'({type(exc).__name__}: {exc}). Refusing to serve a headless '
-            'webui gateway missing /api/graph, /api/registry, '
-            '/api/ontology, and /api/research.'
-        ) from exc
-
-    logger.info(
-        'Canonical KG REST surface + fleet supervisory plane mounted under /api'
-    )
-
-
-def _parsed_widget_subscription(raw: str) -> set[str] | None:
-    """The widget ids a ``/ws/dashboard`` subscribe message names.
-
-    ``None`` for anything that is not a well-formed subscription -- unparsable
-    JSON, a non-object, a different message type, or a non-list ``widget_ids``.
-    Every such message leaves the existing subscription untouched, exactly as
-    the inline ``continue`` branches did.
-    """
-
-    try:
-        parsed = json.loads(raw)
-    except (TypeError, ValueError):
-        return None
-    if not isinstance(parsed, dict) or parsed.get('type') != 'subscribe':
-        return None
-    widget_ids = parsed.get('widget_ids')
-    if not isinstance(widget_ids, list):
-        return None
-    return {
-        widget_id
-        for widget_id in widget_ids[:_MAX_DASHBOARD_SUBSCRIBE_WIDGET_IDS]
-        if isinstance(widget_id, str)
-    }
 
 
 def _bridged_route_path(prefix: str, route_path: str) -> str:
@@ -2444,6 +2353,7 @@ def create_agent_web_app(
     listener_host: str | None = None,
     contact_delivery: ContactDeliveryPort | None = None,
     browser_control: BrowserControlPort | None = None,
+    application_composer: ApplicationComposer | None = None,
 ) -> FastAPI:
     """Create the agent-web FastAPI application.
 
@@ -2467,6 +2377,10 @@ def create_agent_web_app(
         browser_control: Optional host-injected Graph OS browser-control
             authority. The WebSocket route remains registered but fails closed
             unless the authoritative lease/fence/audit service is available.
+        application_composer: Optional host-owned route composer. Graph OS uses
+            this public port to add its gateway routes without WebUI importing
+            Graph OS or gateway internals. Composition happens after WebUI
+            routes and before the catch-all SPA mount.
 
     Returns:
         A fully configured FastAPI application instance.
@@ -2606,177 +2520,6 @@ def create_agent_web_app(
     app.include_router(build_contact_router(contact_delivery), prefix='/api')
     app.include_router(build_browser_control_router(browser_control))
 
-    # Mount the service dashboard API if available (optional dependency).
-    #
-    # This block is DELIBERATELY independent of the canonical KG REST
-    # surface registered below. They used to share a single outer
-    # `try/except ImportError` that wrapped both this optional dashboard
-    # import *and* the mandatory `register_graph_routes(...)` call ~130
-    # lines further down: any ImportError raised anywhere in that combined
-    # block -- including one confined entirely to this dashboard-only
-    # import -- fell through to one `except ImportError` that logged a
-    # single misleading INFO line ("agent-utilities gateway not available")
-    # and silently skipped registering `/api/graph/*`, `/api/registry/*`,
-    # `/api/ontology/*`, `/api/research/*`, and `/api/dashboard/*` with no
-    # error anywhere. A broken *optional* dashboard dependency and the
-    # *mandatory* canonical API surface must not share a failure domain.
-    try:
-        from agent_utilities.gateway.api import (
-            dashboard_router,
-            fetch_dashboard_subset,
-            get_full_dashboard,
-        )
-    except ImportError:
-        logger.info(
-            'agent-utilities dashboard API not available — /api/dashboard '
-            'and /ws/dashboard are disabled (the canonical KG REST surface '
-            'is registered separately below and is unaffected)'
-        )
-    else:
-        app.include_router(dashboard_router, prefix='/api/dashboard')
-        logger.info('Service Dashboard API mounted at /api/dashboard')
-
-        # W-19 (reports/webui-graphos-defects-2026-08-08.md): `/ws/dashboard`
-        # never registered a real route — Starlette closed the unmatched
-        # handshake and uvicorn logged that as a bare "403 Forbidden", which
-        # read for hours like an authorization bug. `_ADMIN_ROUTE_PREFIXES`
-        # above already lists `/ws/dashboard` and `WebUIAuthorizationMiddleware`
-        # already enforces `kg:admin` on it (proven with a real sealed-cookie
-        # chain test in `test_ws_dashboard_denial_diagnostics.py`) — the only
-        # missing piece was the endpoint itself.
-        #
-        # Deliberately NOT `agent_utilities.gateway.ws.dashboard_ws_router`:
-        # that handler re-checks capabilities itself using the OLDER
-        # `gateway:read/write/admin` namespace (`identity_group_capability_map`
-        # never maps `kg:admin` -> `gateway:admin`), so it would reject a
-        # caller `WebUIAuthorizationMiddleware` just admitted. This route
-        # performs NO additional internal auth check — the middleware chain
-        # above is the single source of truth for who may connect — and
-        # streams the exact same payload `GET /api/dashboard/full` serves by
-        # calling that route's own handler (`get_full_dashboard`) rather than
-        # re-deriving the data.
-        @app.websocket('/ws/dashboard')
-        async def _dashboard_ws(websocket: WebSocket) -> None:
-            """Stream dashboard widget data: a `snapshot` on connect, then
-            periodic `update` messages, both shaped exactly like
-            `GET /api/dashboard/full`'s `data` field so the frontend's single
-            `['dashboard-full']` query-cache merge (`DashboardView.tsx`)
-            applies to either source unmodified.
-
-            GOC-29 (closing BUG-019's deferred backend half): every message
-            now also carries `stream_id` (a UUID minted fresh per accepted
-            connection) and `sequence` (monotonic within that connection,
-            starting at 1). This endpoint has no durable backlog to replay
-            from -- each push is a fresh poll (full, or subscription-scoped
-            once a subscribe message has arrived; see below), not a delta
-            against an event log -- so there is no cursor a reconnect could
-            resume from. `stream_id` makes that honest on the
-            wire: a client that already held one `stream_id` and now receives
-            a *different* one knows, structurally, that whatever changed
-            between its last received message and this one was never
-            delivered (BUG-019's forced-disconnect gap) -- it must treat the
-            new snapshot as a reset, not as a continuation, and say so rather
-            than silently keep rendering the prior data as if it were still
-            live. `sequence` lets a client also detect a duplicate/out-of-order
-            delivery within one connection.
-
-            BUG-019 (GOC-29, subscription-scoped fetch): the client MAY send
-            `{"type": "subscribe", "widget_ids": [...]}` at any point -- the
-            reply used to be silently discarded (this receive was only ever
-            used to detect a dead socket). `DashboardView.tsx` sends one
-            whenever its visible widget set changes (a group collapses/
-            expands, or the search filter narrows it), naming exactly the
-            widget ids currently rendered on screen. Once a subscription is
-            received, every subsequent push fetches ONLY the subscribed
-            widgets via `fetch_dashboard_subset()` (concurrent per-widget
-            `Aggregator.fetch_one()` calls, the same primitive
-            `GET /api/dashboard/data/{service_id}` uses) -- a collapsed
-            group's widgets are neither computed nor sent. Before any
-            subscribe message arrives, the full set is fetched via
-            `get_full_dashboard()` and sent (matches every pre-existing
-            caller/test that never subscribes at all).
-            """
-            await websocket.accept()
-            stream_id = uuid.uuid4().hex
-            sequence = 0
-            message_type = 'snapshot'
-            subscribed_widget_ids: set[str] | None = None
-            try:
-                while True:
-                    if subscribed_widget_ids is None:
-                        widgets = (await get_full_dashboard()).data
-                    else:
-                        widgets = await fetch_dashboard_subset(subscribed_widget_ids)
-                    sequence += 1
-                    await websocket.send_json(
-                        {
-                            'type': message_type,
-                            'stream_id': stream_id,
-                            'sequence': sequence,
-                            'data': {
-                                widget_id: widget.model_dump(mode='json')
-                                for widget_id, widget in widgets.items()
-                            },
-                        }
-                    )
-                    message_type = 'update'
-                    try:
-                        raw = await asyncio.wait_for(
-                            websocket.receive_text(),
-                            timeout=_DASHBOARD_WS_PUSH_INTERVAL_SECONDS,
-                        )
-                    except TimeoutError:
-                        continue
-                    subscription = _parsed_widget_subscription(raw)
-                    if subscription is not None:
-                        subscribed_widget_ids = subscription
-            except WebSocketDisconnect:
-                pass
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    '/ws/dashboard stream failed: error_type=%s',
-                    type(exc).__name__,
-                )
-
-    # Canonical Knowledge Graph REST surface (CONCEPT:AU-ECO.messaging.native-backend-abstraction): mount the
-    # SAME route table the API gateway serves — /api/graph/*, /api/ontology/*,
-    # /api/object/*, /api/sessions, /api/goals, /api/tools, plus the fleet
-    # supervisory plane (CONCEPT:AU-OS.safety.ontological-guardrail) and the /cypher fast path — via
-    # the single canonical registrar. WebUI clients and gateway clients are
-    # served by one route implementation, so the two surfaces cannot drift.
-    _register_canonical_graph_routes(app)
-
-    # This process is the KG daemon HOST by default: it runs the single
-    # consolidated background daemon (queue drain + graph writer + task
-    # workers + maintenance scheduler + file-watch) that all
-    # KG_DAEMON_ROLE=client processes (MCP server / CLI / scripts) rely on.
-    # (CONCEPT:EG-KG.storage.nonblocking-checkpoint / OS-5.9)
-    #
-    # Thin, horizontally-scalable instances opt out with KG_DAEMON_ROLE=client:
-    # they reach a SHARED KG host over the engine socket instead of each
-    # forcing itself to be the host, so many webui API instances can run
-    # behind a load balancer against one backend (the agent-terminal-ui
-    # scale-many-instances pattern; see the agent-utilities "Scalable
-    # Frontends" guide).
-    @app.on_event('startup')
-    async def _start_kg_host_daemon() -> None:
-        if (os.environ.get('KG_DAEMON_ROLE') or '').strip().lower() == 'client':
-            logger.info(
-                'KG_DAEMON_ROLE=client — thin instance; skipping in-process '
-                'KG host daemon (using the shared backend over the engine socket)'
-            )
-            return
-        try:
-            from agent_utilities.gateway.daemon import start_host_daemon
-
-            start_host_daemon()
-            logger.info('KG host daemon started (KG_DAEMON_ROLE=host)')
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                'Failed to start KG host daemon: error_type=%s',
-                type(exc).__name__,
-            )
-
     # Current Pydantic AI has no ``builtin_tools`` web-adapter argument.
     # Native tools now belong to the Agent capability contract and are discovered
     # by ``to_web``.  Silently ignoring an old non-empty list would make the UI
@@ -2861,6 +2604,9 @@ def create_agent_web_app(
     for _liveness_path in ('/health', '/health/ready', '/healthz', '/api/healthz'):
         app.add_route(_liveness_path, _webui_liveness, methods=['GET'])
 
+    if application_composer is not None:
+        application_composer(app)
+
     dist_path = Path(__file__).parent / 'dist'
 
     # Fallback to serving the built React dashboard if no custom source provided
@@ -2877,12 +2623,9 @@ def create_agent_web_app(
 
     if _LOGFIRE_ENABLED:
         logfire.instrument_starlette(app)
-    # Some gateway configurations install this middleware while registering
-    # graph routes. Ensure it exists exactly once even when that optional
-    # gateway is absent, and install it after every WebUI route is composed so
-    # Pydantic-AI, static, dashboard, websocket, and enhanced routes share one
-    # authenticated actor boundary.
-    _ensure_rate_limit_middleware(app)
+    # Install the WebUI-owned security boundary after route composition so
+    # injected Graph OS routes and standalone WebUI routes share the same
+    # authenticated actor/session boundary.
     _ensure_authorization_middleware(app)
     _ensure_actor_identity_middleware(
         app,
@@ -2952,34 +2695,12 @@ def main() -> None:
     # existing ``AgentConfig`` -- there is no separate webui model config to
     # build here, only the wiring to the one that already exists.
     agent = Agent(build_orchestrator_model(get_engine_bounded))
-    # GOC-60-W04b: this was ``workspace_helpers={}`` -- a LITERAL empty dict.
-    # All three MCP delegation routes (list_mcp_server_tools/call_mcp_tool/
-    # read_mcp_resource) resolve behaviour via ``get_helper(...)`` against
-    # this dict and answer 501 when a key is absent, so this standalone CLI
-    # entrypoint refused every fleet MCP call unconditionally -- independent
-    # of, and undetected by, the SEPARATE fix already applied at
-    # ``agent_utilities/server/app.py``'s embedded-mount caller of this same
-    # function (GOC-60 lane evidence E2, break 2: "a control wired at one
-    # entrypoint while other callers bypass it"). Reusing
-    # ``webui_mcp_delegation_helpers()`` here -- the SAME host-side
-    # implementation the embedded mount already injects -- keeps both
-    # callers of ``create_agent_web_app`` on one source of truth instead of
-    # two independent (and now provably divergent) delegation seams.
-    from agent_utilities.server.webui_mcp_delegation import (
-        webui_mcp_delegation_helpers,
-    )
-    from agent_utilities.server.webui_voice_delegation import (
-        webui_voice_delegation_helpers,
-    )
-
-    webui_helpers = {
-        **webui_mcp_delegation_helpers(),
-        **webui_voice_delegation_helpers(),
-    }
-
     app = create_agent_web_app(
         agent,
-        workspace_helpers=webui_helpers,
+        # The standalone command serves WebUI-owned UI/session behavior only.
+        # Graph OS supplies fleet delegation and gateway routes when it embeds
+        # this factory; missing host services therefore fail closed here.
+        workspace_helpers={'deployment': 'standalone'},
         listener_host=host,
     )
 

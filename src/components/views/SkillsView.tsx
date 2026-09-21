@@ -5,7 +5,6 @@ import {
   Wrench,
   Code,
   Zap,
-  Network,
   GitBranch,
   RefreshCw,
   Search,
@@ -34,11 +33,11 @@ import type { JsonSchema } from '@/lib/capability-forms'
 import type { PageContextEnvelope } from '@/lib/page-context'
 
 interface MCPTool {
+  server_id: string
   name: string
-  type: string
-  status: string
-  enabled: boolean
-  tool_count?: number
+  url: string
+  status: 'available' | 'unavailable'
+  tool_count: number
   /** Stated reason a server is `unavailable` (e.g. "stdio transport is not
    * permitted in this process") -- `null`/absent when healthy. Never treat
    * an unavailable server with no `error` as healthy; the backend always
@@ -46,93 +45,29 @@ interface MCPTool {
   error?: string | null
 }
 
-interface BuiltinTool {
-  name: string
-  type: string
-  file_path: string
-  status: string
-  enabled: boolean
-}
-
-// `runnable` / `resource_type` / `kg_classified` come from the backend's
-// live KG lookup (GOC-60-W06 / E7: `CallableResource.resource_type` vs a
-// describe-only `WorkflowDefinition` node) -- NOT from filesystem path.
-// `resource_type` is `null` and `kg_classified` is `false` for a skill the
-// KG has no record of yet (surfaced honestly instead of guessed).
-interface Skill {
+interface CatalogEntry {
   id: string
   name: string
-  description?: string
-  enabled: boolean
-  tags: string[]
-  domain?: string
-  type: string
-  runnable?: boolean
-  resource_type?: string | null
-  kg_classified?: boolean
-}
-
-interface SkillGraph {
-  id: string
-  name: string
-  type: string
-  file_path: string
-  enabled: boolean
-  domain?: string
-  tags?: string[]
-}
-
-interface SkillWorkflow {
-  id: string
-  name: string
-  type: string
-  file_path: string
-  enabled: boolean
-  domain?: string
-  tags?: string[]
-  runnable?: boolean
-  resource_type?: string | null
-  kg_classified?: boolean
-}
-
-// GOC-60-W06b: the live filesystem-vs-KG reconciliation. Computed fresh by
-// the backend on every `/api/enhanced/tools` call so a drift between what's
-// on disk and what the KG has actually typed as runnable is always visible
-// here, not just discoverable via a one-off script.
-interface SkillClassificationSummary {
-  source: string
-  kg_reachable: boolean
-  filesystem_skill_md_count: number
-  kg_agent_skill_count: number
-  kg_workflow_definition_count: number
-  runnable_count: number
-  describe_only_count: number
-  unclassified_count: number
-  /** The TRUE number of rows the fleet `skills` table holds. The backend's
-   * catalog read stops at 256, so this is what distinguishes "these are all
-   * the skills" from "these are the first 256 of 841". `null`/absent when
-   * the backend could not determine it -- never a guessed number. */
-  catalog_total?: number | null
-}
-
-/** Why `mcp_tools` looks the way it does -- distinguishes a genuinely empty
- * fleet from a degraded/missing data source (GOC-60 lane authority/invariant
- * 1: a missing source is an ERROR/DEGRADED state, never an indistinguishable
- * silent `[]`). `error` is `null` for a healthy result (including a real
- * "this fleet has zero servers" answer); non-null names what was missing. */
-interface MCPStatus {
-  source: string
-  error: string | null
+  kind: 'tool' | 'skill' | 'workflow'
+  description: string
+  status: 'active' | 'retired' | 'withdrawn'
+  authority: 'agent_component' | 'workflow_catalog'
+  server_name?: string | null
+  revision?: number | null
+  definition_digest?: string | null
+  content_digest?: string | null
 }
 
 interface ToolsData {
-  mcp_tools: MCPTool[]
-  mcp_status: MCPStatus
-  builtin_tools: BuiltinTool[]
-  skills: Skill[]
-  skill_graphs: SkillGraph[]
-  skill_workflows: SkillWorkflow[]
-  skill_classification: SkillClassificationSummary
+  source: 'epistemic_graph'
+  servers: MCPTool[]
+  components: CatalogEntry[]
+  counts: {
+    servers: number
+    tools: number
+    skills: number
+    workflows: number
+  }
 }
 
 interface LiveMCPTool {
@@ -194,90 +129,49 @@ const mcpToolPageSchema = z.union([
 ])
 
 const mcpToolSchema: z.ZodType<MCPTool> = z.object({
+  server_id: z.string(),
   name: z.string(),
-  type: z.string(),
-  status: z.string(),
-  enabled: z.boolean(),
-  // Backend never sends `command`/`args` -- those are per-process launch
-  // config for a static local mcp_config.json, not something the KG's
-  // discovered-fleet catalog carries (D-W5WR-4 follow-up fix). Requiring
-  // them here silently discarded EVERY mcp_tools entry (a single item
-  // failing z.array(mcpToolSchema) fails the whole array, which fails the
-  // whole toolsDataSchema, which fails the whole SkillsView fetch) the
-  // moment mcp_tools stopped being empty -- masked until now only because
-  // it was always `[]`.
-  tool_count: z.number().optional(),
+  url: z.string(),
+  status: z.enum(['available', 'unavailable']),
+  tool_count: z.number(),
   error: z.string().nullable().optional(),
 })
-const builtinToolSchema: z.ZodType<BuiltinTool> = z.object({
-  name: z.string(),
-  type: z.string(),
-  file_path: z.string(),
-  status: z.string(),
-  enabled: z.boolean(),
-})
-const skillSchema: z.ZodType<Skill> = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string().optional(),
-  enabled: z.boolean(),
-  tags: looseArray(z.string()),
-  domain: z.string().optional(),
-  type: z.string(),
-  runnable: z.boolean().optional(),
-  resource_type: z.string().nullable().optional(),
-  kg_classified: z.boolean().optional(),
-})
-const skillGraphSchema: z.ZodType<SkillGraph> = z.object({
-  id: z.string(),
-  name: z.string(),
-  type: z.string(),
-  file_path: z.string(),
-  enabled: z.boolean(),
-  domain: z.string().optional(),
-  tags: looseArray(z.string()).optional(),
-})
-const skillWorkflowSchema: z.ZodType<SkillWorkflow> = z.object({
-  id: z.string(),
-  name: z.string(),
-  type: z.string(),
-  file_path: z.string(),
-  enabled: z.boolean(),
-  domain: z.string().optional(),
-  tags: looseArray(z.string()).optional(),
-  runnable: z.boolean().optional(),
-  resource_type: z.string().nullable().optional(),
-  kg_classified: z.boolean().optional(),
-})
-const skillClassificationSummarySchema: z.ZodType<SkillClassificationSummary> = z.object({
-  source: z.string(),
-  kg_reachable: z.boolean(),
-  filesystem_skill_md_count: z.number(),
-  kg_agent_skill_count: z.number(),
-  kg_workflow_definition_count: z.number(),
-  runnable_count: z.number(),
-  describe_only_count: z.number(),
-  unclassified_count: z.number(),
-  catalog_total: z.number().nullable().optional(),
-})
-const mcpStatusSchema: z.ZodType<MCPStatus> = z.object({
-  source: z.string(),
-  error: z.string().nullable(),
-})
+function catalogAuthorityMatchesKind(entry: CatalogEntry): boolean {
+  if (entry.kind === 'workflow') return entry.authority === 'workflow_catalog'
+  return entry.authority === 'agent_component'
+}
+
+const catalogEntrySchema: z.ZodType<CatalogEntry> = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    kind: z.enum(['tool', 'skill', 'workflow']),
+    description: z.string(),
+    status: z.enum(['active', 'retired', 'withdrawn']),
+    authority: z.enum(['agent_component', 'workflow_catalog']),
+    server_name: z.string().nullable().optional(),
+    revision: z.number().nullable().optional(),
+    definition_digest: z.string().nullable().optional(),
+    content_digest: z.string().nullable().optional(),
+  })
+  .refine(catalogAuthorityMatchesKind, {
+    message: 'catalog entry kind does not match its authority',
+    path: ['authority'],
+  })
 const toolsDataSchema: z.ZodType<ToolsData> = z.object({
-  mcp_tools: looseArray(mcpToolSchema),
-  mcp_status: mcpStatusSchema,
-  builtin_tools: looseArray(builtinToolSchema),
-  skills: looseArray(skillSchema),
-  skill_graphs: looseArray(skillGraphSchema),
-  skill_workflows: looseArray(skillWorkflowSchema),
-  skill_classification: skillClassificationSummarySchema,
+  source: z.literal('epistemic_graph'),
+  servers: looseArray(mcpToolSchema),
+  components: looseArray(catalogEntrySchema),
+  counts: z.object({
+    servers: z.number(),
+    tools: z.number(),
+    skills: z.number(),
+    workflows: z.number(),
+  }),
 })
 
-// Exported for the zod round-trip test (GOC-60-W06c) -- proves `domain`/
-// `tags`/`runnable` actually survive backend-shaped JSON through the zod
-// boundary instead of being silently stripped by key-shape mismatch.
-export { skillSchema, skillGraphSchema, skillWorkflowSchema, toolsDataSchema }
+// Exported so contract tests pin the exact GraphOS-owned response boundary.
+export { catalogEntrySchema, toolsDataSchema }
 
 /** Group items by `domain` (falling back to "Uncategorized"), sorted by
  * domain name. GOC-60-W06d: every cognitive surface is organized by domain
@@ -307,45 +201,35 @@ function matchesSearch(query: string, name: string, domain?: string, tags?: stri
   return false
 }
 
-/** Structural shape shared by everything a cognitive-registry box renders
- * (Skill / SkillGraph / SkillWorkflow / unclassified Skill items). */
-interface CognitiveItem {
-  id: string
-  name: string
-  enabled: boolean
-  domain?: string
-  tags?: string[]
-  description?: string
-  file_path?: string
-  runnable?: boolean
-  resource_type?: string | null
-  kg_classified?: boolean
+function matchesCatalogEntry(query: string, item: CatalogEntry): boolean {
+  const catalogGroup = item.server_name ?? item.authority
+  return matchesSearch(query, item.name, catalogGroup, [item.description])
 }
 
-/** Shows runnability explicitly (GOC-60-W06a): a describe-only
- * `WorkflowDefinition` is visibly distinguished from a runnable
- * `CallableResource(AGENT_SKILL)`, and an item whose kind the catalog could
- * not determine carries an `unclassified` BADGE rather than being moved into
- * a bucket of its own -- an unclassified skill is still a skill and belongs
- * in the skills list. Renders nothing for surfaces with no KG resource-type
- * concept at all (Skill Graphs -- `resource_type` is `undefined`, not
- * `null`, on that shape). */
+function selectCatalogEntries(data: ToolsData, kind: CatalogEntry['kind'], query: string): CatalogEntry[] {
+  const matchingKind = data.components.filter((item) => item.kind === kind)
+  return matchingKind.filter((item) => matchesCatalogEntry(query, item))
+}
+
+function groupCatalogEntries(items: CatalogEntry[]): [string, CognitiveItem[]][] {
+  const groupedItems = items.map((item) => ({ ...item, domain: item.server_name ?? item.authority }))
+  return groupByDomain(groupedItems)
+}
+
+/** Structural shape shared by the typed catalog panels. */
+interface CognitiveItem extends CatalogEntry {
+  id: string
+  name: string
+}
+
 function RunnabilityBadge({ item }: { item: CognitiveItem }) {
-  if (item.resource_type === undefined) return null
-  if (!item.kg_classified) {
-    return (
-      <Badge variant="outline" className="text-[8px] font-bold border-amber-500/40 text-amber-400 bg-amber-500/10">
-        unclassified
-      </Badge>
-    )
-  }
-  return item.runnable ? (
+  return item.status === 'active' ? (
     <Badge variant="outline" className="text-[8px] font-bold border-emerald-500/40 text-emerald-400 bg-emerald-500/10">
-      Runnable
+      Active
     </Badge>
   ) : (
     <Badge variant="outline" className="text-[8px] font-bold border-sky-500/40 text-sky-400 bg-sky-500/10">
-      Describe-only
+      {item.status}
     </Badge>
   )
 }
@@ -360,7 +244,6 @@ function CognitiveBox({
   groups,
   totalCount,
   emptyLabel,
-  onToggle,
   renderSecondary,
 }: {
   icon: LucideIcon
@@ -370,7 +253,6 @@ function CognitiveBox({
   groups: [string, CognitiveItem[]][]
   totalCount: number
   emptyLabel: string
-  onToggle: (item: CognitiveItem) => void
   renderSecondary: (item: CognitiveItem) => ReactNode
 }) {
   return (
@@ -405,30 +287,17 @@ function CognitiveBox({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="font-bold text-xs text-foreground">{item.name}</span>
-                        <button
-                          onClick={() => {
-                            onToggle(item)
-                          }}
-                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold border shrink-0 transition-all ${
-                            item.enabled
-                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                              : 'bg-red-500/10 border-red-500/20 text-red-400'
-                          }`}
-                        >
-                          {item.enabled ? 'ON' : 'OFF'}
-                        </button>
+                        <RunnabilityBadge item={item} />
                       </div>
                       <div className="flex flex-wrap items-center gap-1">
-                        <RunnabilityBadge item={item} />
-                        {item.tags?.slice(0, 3).map((t) => (
-                          <Badge
-                            key={t}
-                            variant="secondary"
-                            className="text-[8px] bg-muted/40 font-semibold scale-90 origin-left"
-                          >
-                            {t}
+                        <Badge variant="secondary" className="text-[8px] bg-muted/40 font-semibold">
+                          {item.authority}
+                        </Badge>
+                        {item.server_name && (
+                          <Badge variant="secondary" className="text-[8px] bg-muted/40 font-semibold">
+                            {item.server_name}
                           </Badge>
-                        ))}
+                        )}
                       </div>
                       {renderSecondary(item)}
                     </div>
@@ -444,7 +313,6 @@ function CognitiveBox({
 }
 
 interface McpServerCardHandlers {
-  onToggleServer: (name: string, enabled: boolean) => void
   onEditServer: (name: string) => void
   onDeleteServer: (name: string) => void
   onToggleExpansion: (name: string) => void
@@ -454,32 +322,19 @@ interface McpServerCardHandlers {
 
 function renderMcpServerHeaderActions({
   server,
-  onToggleServer,
   onEditServer,
   onDeleteServer,
 }: {
   server: MCPTool
-} & Pick<McpServerCardHandlers, 'onToggleServer' | 'onEditServer' | 'onDeleteServer'>) {
+} & Pick<McpServerCardHandlers, 'onEditServer' | 'onDeleteServer'>) {
   return (
     <div className="flex items-center gap-2">
       <Badge
         variant="outline"
-        className={`text-[10px] font-semibold ${server.enabled ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}
+        className={`text-[10px] font-semibold ${server.status === 'available' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-amber-500/10 border-amber-500/30 text-amber-400'}`}
       >
-        {server.enabled ? 'Active' : 'Disabled'}
+        {server.status}
       </Badge>
-      <button
-        onClick={() => {
-          onToggleServer(server.name, server.enabled)
-        }}
-        className={`px-2.5 py-1 rounded text-xs font-bold transition-all border ${
-          server.enabled
-            ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
-            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
-        }`}
-      >
-        {server.enabled ? 'Disable' : 'Enable'}
-      </button>
       <button
         title={`Edit ${server.name}`}
         aria-label={`Edit ${server.name}`}
@@ -695,7 +550,7 @@ function renderMcpServerExpandSection({
   toolPage: McpToolPageState | undefined
   isLoadingTools: boolean
 } & Pick<McpServerCardHandlers, 'onToggleExpansion' | 'onToggleTool' | 'onLoadMore'>) {
-  if (!server.enabled) return null
+  if (server.status !== 'available') return null
   return (
     <div className="mt-4 border-t border-border/20 pt-3">
       <button
@@ -720,7 +575,6 @@ function renderMcpServerCard({
   isExpanded,
   toolPage,
   isLoadingTools,
-  onToggleServer,
   onEditServer,
   onDeleteServer,
   onToggleExpansion,
@@ -743,7 +597,7 @@ function renderMcpServerCard({
             <Wrench className="size-4 text-emerald-400" />
             <h4 className="font-bold text-sm text-foreground">{server.name}</h4>
           </div>
-          {renderMcpServerHeaderActions({ server, onToggleServer, onEditServer, onDeleteServer })}
+          {renderMcpServerHeaderActions({ server, onEditServer, onDeleteServer })}
         </div>
         {renderMcpServerStatus(server)}
       </div>
@@ -797,21 +651,18 @@ function renderMcpServersList({
   )
 }
 
-function renderMcpEmptyState(mcpStatusError: string | null) {
+function renderMcpEmptyState() {
   return (
     <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
       <span className="text-muted-foreground text-sm">No MCP servers registered.</span>
-      {!mcpStatusError && (
-        <span className="text-[10px] text-muted-foreground/70">
-          Checked the MCP fleet catalog — it genuinely has no servers configured.
-        </span>
-      )}
+      <span className="text-[10px] text-muted-foreground/70">
+        The authoritative fleet catalog has no live server registrations.
+      </span>
     </div>
   )
 }
 
 function renderMcpTab({
-  data,
   filteredMcp,
   expandedMcp,
   mcpTools,
@@ -819,7 +670,6 @@ function renderMcpTab({
   onAddServer,
   handlers,
 }: {
-  data: ToolsData
   filteredMcp: MCPTool[]
   expandedMcp: Record<string, boolean | undefined>
   mcpTools: Record<string, McpToolPageState | undefined>
@@ -829,17 +679,6 @@ function renderMcpTab({
 }) {
   return (
     <div className="space-y-4">
-      {/* A catalog failure is surfaced whether or not the list came back
-          empty. Previously this banner lived ONLY in the
-          `filteredMcp.length === 0` branch, so a partial backend failure --
-          some servers listed, the read degraded -- rendered as a healthy
-          fleet and was reported to us as "some servers show 0 tools". */}
-      {data.mcp_status.error && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-amber-300">
-          <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-          <p className="text-xs">{data.mcp_status.error}</p>
-        </div>
-      )}
       <div className="flex justify-end">
         <Button size="sm" variant="outline" className="gap-1.5" onClick={onAddServer}>
           <Plus className="size-3.5" />
@@ -847,210 +686,78 @@ function renderMcpTab({
         </Button>
       </div>
       {filteredMcp.length === 0
-        ? renderMcpEmptyState(data.mcp_status.error)
+        ? renderMcpEmptyState()
         : renderMcpServersList({ filteredMcp, expandedMcp, mcpTools, loadingMcpTools, handlers })}
     </div>
   )
 }
 
-function renderBuiltinToolCard({
-  tool,
-  onToggle,
-}: {
-  tool: BuiltinTool
-  onToggle: (name: string, enabled: boolean) => void
-}) {
-  return (
-    <div
-      key={tool.name}
-      className="p-4 rounded-xl border border-border/40 bg-muted/10 backdrop-blur-sm hover:border-emerald-500/30 transition-all flex flex-col justify-between"
-    >
-      <div>
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <div className="flex items-center gap-2">
-            <Code className="size-4 text-emerald-400" />
-            <h4 className="font-bold text-sm text-foreground">{tool.name}</h4>
-          </div>
-          <button
-            onClick={() => {
-              onToggle(tool.name, tool.enabled)
-            }}
-            className={`px-2 py-0.75 rounded text-[10px] font-bold border transition-all ${
-              tool.enabled
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
-                : 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
-            }`}
-          >
-            {tool.enabled ? 'Enabled' : 'Disabled'}
-          </button>
-        </div>
-        <div className="space-y-1.5 mt-2">
-          <div className="text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">File Path: </span>
-            <span className="font-mono text-muted-foreground text-[10px] break-all">{tool.file_path}</span>
-          </div>
-        </div>
-      </div>
-      <div className="mt-4 flex items-center justify-between border-t border-border/30 pt-3 text-[11px] text-muted-foreground">
-        <span>Source: agent-utilities core</span>
-        <div className="flex items-center gap-1 text-emerald-400 font-bold">
-          <CheckCircle className="size-3" /> Class Ingested
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function renderBuiltinTab({
-  filteredBuiltin,
-  onToggle,
-}: {
-  filteredBuiltin: BuiltinTool[]
-  onToggle: (name: string, enabled: boolean) => void
-}) {
-  return (
-    <div className="space-y-4">
-      {filteredBuiltin.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground text-sm">No built-in tools found.</div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredBuiltin.map((tool) => renderBuiltinToolCard({ tool, onToggle }))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function renderKgUnreachableNotice(kgReachable: boolean) {
-  if (kgReachable) return null
-  return (
-    <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-amber-300">
-      <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-      <div className="text-xs">
-        <p className="font-bold">Knowledge Graph unreachable</p>
-        <p className="text-amber-300/80">
-          Skill/workflow classification could not be verified against the KG on this request. Every discovered skill is
-          still listed below, each carrying an &ldquo;unclassified&rdquo; badge rather than having a kind guessed from
-          its filesystem path.
-        </p>
-      </div>
-    </div>
-  )
-}
-
-function renderCatalogTotalSuffix(classification: SkillClassificationSummary) {
-  if (
-    typeof classification.catalog_total !== 'number' ||
-    classification.catalog_total <= classification.filesystem_skill_md_count
-  ) {
-    return null
-  }
-  return (
-    <>
-      {' of '}
-      <span className="font-semibold text-foreground">{classification.catalog_total}</span>
-    </>
-  )
-}
-
-function renderUnclassifiedSuffix(unclassifiedCount: number) {
-  if (unclassifiedCount <= 0) return null
-  return (
-    <>
-      {' '}
-      · <span className="font-semibold text-amber-400">{unclassifiedCount}</span> badged unclassified
-    </>
-  )
-}
-
-function renderCognitiveSummary({ data, allSkillsCount }: { data: ToolsData; allSkillsCount: number }) {
-  const classification = data.skill_classification
+function renderCatalogSummary(data: ToolsData) {
   return (
     <div className="text-[10px] text-muted-foreground px-1">
-      <span className="font-semibold text-foreground">{classification.filesystem_skill_md_count}</span>
-      {renderCatalogTotalSuffix(classification)} in the fleet catalog ·{' '}
-      <span className="font-semibold text-emerald-400">{allSkillsCount}</span> skill ·{' '}
-      <span className="font-semibold text-teal-400">{data.skill_graphs.length}</span> skill-graph ·{' '}
-      <span className="font-semibold text-sky-400">{data.skill_workflows.length}</span> skill-workflow
-      {renderUnclassifiedSuffix(classification.unclassified_count)}
+      <span className="font-semibold text-foreground">{data.counts.tools}</span> tools ·{' '}
+      <span className="font-semibold text-emerald-400">{data.counts.skills}</span> skills ·{' '}
+      <span className="font-semibold text-sky-400">{data.counts.workflows}</span> workflows
     </div>
   )
 }
 
 function renderCognitiveTab({
   data,
-  allSkillsCount,
+  groupedTools,
   groupedSkills,
-  groupedGraphs,
   groupedWorkflows,
+  filteredToolsCount,
   filteredSkillsCount,
-  filteredGraphsCount,
   filteredWorkflowsCount,
-  onToggleCognitive,
 }: {
   data: ToolsData
-  allSkillsCount: number
+  groupedTools: [string, CognitiveItem[]][]
   groupedSkills: [string, CognitiveItem[]][]
-  groupedGraphs: [string, CognitiveItem[]][]
   groupedWorkflows: [string, CognitiveItem[]][]
+  filteredToolsCount: number
   filteredSkillsCount: number
-  filteredGraphsCount: number
   filteredWorkflowsCount: number
-  onToggleCognitive: (type: 'skill' | 'skill_graph' | 'skill_workflow', id: string, enabled: boolean) => void
 }) {
   return (
     <div className="space-y-4">
-      {renderKgUnreachableNotice(data.skill_classification.kg_reachable)}
-      {renderCognitiveSummary({ data, allSkillsCount })}
+      {renderCatalogSummary(data)}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <CognitiveBox
+          icon={Code}
+          iconClassName="text-teal-400"
+          title="Tools"
+          description="Current AgentComponent tools"
+          groups={groupedTools}
+          totalCount={filteredToolsCount}
+          emptyLabel="No matching tools found."
+          renderSecondary={(item) => (
+            <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">{item.description}</p>
+          )}
+        />
         <CognitiveBox
           icon={Zap}
           iconClassName="text-emerald-400"
           title="Skills"
-          description="Catalog skill_type: skill / mcp_skill"
+          description="Current AgentComponent skills"
           groups={groupedSkills}
           totalCount={filteredSkillsCount}
           emptyLabel="No matching skills found."
-          onToggle={(item) => {
-            onToggleCognitive('skill', item.id, item.enabled)
-          }}
           renderSecondary={(item) => (
-            <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">
-              {item.description ?? 'No description available.'}
-            </p>
+            <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">{item.description}</p>
           )}
         />
-
-        <CognitiveBox
-          icon={Network}
-          iconClassName="text-teal-400"
-          title="Skill Graphs"
-          description="Catalog skill_type: graph"
-          groups={groupedGraphs}
-          totalCount={filteredGraphsCount}
-          emptyLabel="No matching graphs found."
-          onToggle={(item) => {
-            onToggleCognitive('skill_graph', item.id, item.enabled)
-          }}
-          renderSecondary={(item) => (
-            <div className="text-[9px] text-muted-foreground font-mono truncate break-all">{item.file_path}</div>
-          )}
-        />
-
         <CognitiveBox
           icon={GitBranch}
           iconClassName="text-sky-400"
-          title="Skill Workflows"
-          description="Catalog skill_type: workflow"
+          title="Workflows"
+          description="Current workflow catalog definitions"
           groups={groupedWorkflows}
           totalCount={filteredWorkflowsCount}
           emptyLabel="No matching workflows found."
-          onToggle={(item) => {
-            onToggleCognitive('skill_workflow', item.id, item.enabled)
-          }}
           renderSecondary={(item) => (
-            <div className="text-[9px] text-muted-foreground font-mono truncate break-all">{item.file_path}</div>
+            <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">{item.description}</p>
           )}
         />
       </div>
@@ -1059,7 +766,7 @@ function renderCognitiveTab({
 }
 
 interface ActiveTabContentProps {
-  activeTab: 'mcp' | 'builtin' | 'cognitive'
+  activeTab: 'mcp' | 'catalog'
   data: ToolsData
   filteredMcp: MCPTool[]
   expandedMcp: Record<string, boolean | undefined>
@@ -1067,22 +774,17 @@ interface ActiveTabContentProps {
   loadingMcpTools: Record<string, boolean | undefined>
   onAddServer: () => void
   mcpHandlers: McpServerCardHandlers
-  filteredBuiltin: BuiltinTool[]
-  onToggleBuiltin: (name: string, enabled: boolean) => void
-  allSkillsCount: number
+  groupedTools: [string, CognitiveItem[]][]
   groupedSkills: [string, CognitiveItem[]][]
-  groupedGraphs: [string, CognitiveItem[]][]
   groupedWorkflows: [string, CognitiveItem[]][]
+  filteredToolsCount: number
   filteredSkillsCount: number
-  filteredGraphsCount: number
   filteredWorkflowsCount: number
-  onToggleCognitive: (type: 'skill' | 'skill_graph' | 'skill_workflow', id: string, enabled: boolean) => void
 }
 
 function renderActiveTabContent(props: ActiveTabContentProps) {
   if (props.activeTab === 'mcp') {
     return renderMcpTab({
-      data: props.data,
       filteredMcp: props.filteredMcp,
       expandedMcp: props.expandedMcp,
       mcpTools: props.mcpTools,
@@ -1091,19 +793,14 @@ function renderActiveTabContent(props: ActiveTabContentProps) {
       handlers: props.mcpHandlers,
     })
   }
-  if (props.activeTab === 'builtin') {
-    return renderBuiltinTab({ filteredBuiltin: props.filteredBuiltin, onToggle: props.onToggleBuiltin })
-  }
   return renderCognitiveTab({
     data: props.data,
-    allSkillsCount: props.allSkillsCount,
+    groupedTools: props.groupedTools,
     groupedSkills: props.groupedSkills,
-    groupedGraphs: props.groupedGraphs,
     groupedWorkflows: props.groupedWorkflows,
+    filteredToolsCount: props.filteredToolsCount,
     filteredSkillsCount: props.filteredSkillsCount,
-    filteredGraphsCount: props.filteredGraphsCount,
     filteredWorkflowsCount: props.filteredWorkflowsCount,
-    onToggleCognitive: props.onToggleCognitive,
   })
 }
 
@@ -1111,19 +808,16 @@ function renderNavTabs({
   activeTab,
   onSetActiveTab,
   mcpCount,
-  builtinCount,
-  cognitiveCount,
+  catalogCount,
 }: {
-  activeTab: 'mcp' | 'builtin' | 'cognitive'
-  onSetActiveTab: (tab: 'mcp' | 'builtin' | 'cognitive') => void
+  activeTab: 'mcp' | 'catalog'
+  onSetActiveTab: (tab: 'mcp' | 'catalog') => void
   mcpCount: number
-  builtinCount: number
-  cognitiveCount: number
+  catalogCount: number
 }) {
-  const tabs: { id: 'mcp' | 'builtin' | 'cognitive'; label: string; icon: LucideIcon; count: number }[] = [
+  const tabs: { id: 'mcp' | 'catalog'; label: string; icon: LucideIcon; count: number }[] = [
     { id: 'mcp', label: 'MCP Servers', icon: Wrench, count: mcpCount },
-    { id: 'builtin', label: 'Built-in Tools', icon: Code, count: builtinCount },
-    { id: 'cognitive', label: 'Cognitive Skills', icon: Layers, count: cognitiveCount },
+    { id: 'catalog', label: 'Component Catalog', icon: Layers, count: catalogCount },
   ]
   return (
     <div className="flex flex-wrap gap-2 mt-4 border-b border-border/40 pb-2">
@@ -1211,26 +905,14 @@ function renderMcpServerDialog({
 
 export default function SkillsView() {
   const [data, setData] = useState<ToolsData>({
-    mcp_tools: [],
-    mcp_status: { source: 'multiplexer', error: null },
-    builtin_tools: [],
-    skills: [],
-    skill_graphs: [],
-    skill_workflows: [],
-    skill_classification: {
-      source: 'kg_resource_type',
-      kg_reachable: true,
-      filesystem_skill_md_count: 0,
-      kg_agent_skill_count: 0,
-      kg_workflow_definition_count: 0,
-      runnable_count: 0,
-      describe_only_count: 0,
-      unclassified_count: 0,
-    },
+    source: 'epistemic_graph',
+    servers: [],
+    components: [],
+    counts: { servers: 0, tools: 0, skills: 0, workflows: 0 },
   })
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeTab, setActiveTab] = useState<'mcp' | 'builtin' | 'cognitive'>('mcp')
+  const [activeTab, setActiveTab] = useState<'mcp' | 'catalog'>('mcp')
   const [sessionExpired, setSessionExpired] = useState(false)
 
   // Track expanded MCP servers and their loaded tools
@@ -1263,28 +945,6 @@ export default function SkillsView() {
       }
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleToggleMcpServer = async (name: string, currentVal: boolean) => {
-    try {
-      const res = await fetch('/api/enhanced/tools/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'mcp_server',
-          id: name,
-          enabled: !currentVal,
-        }),
-      })
-      if (res.ok) {
-        toast.success(`MCP Server '${name}' ${!currentVal ? 'enabled' : 'disabled'}`)
-        void fetchTools()
-      } else {
-        toast.error('Failed to toggle MCP server')
-      }
-    } catch {
-      toast.error('Error toggling MCP server')
     }
   }
 
@@ -1409,58 +1069,6 @@ export default function SkillsView() {
     }
   }
 
-  const handleToggleBuiltin = async (name: string, currentVal: boolean) => {
-    try {
-      const res = await fetch('/api/enhanced/tools/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'builtin_tool',
-          id: name,
-          enabled: !currentVal,
-        }),
-      })
-      if (res.ok) {
-        toast.success(`Built-in tool '${name}' ${!currentVal ? 'enabled' : 'disabled'}`)
-        void fetchTools()
-      } else {
-        toast.error('Failed to toggle tool')
-      }
-    } catch {
-      toast.error('Error toggling tool')
-    }
-  }
-
-  const handleToggleCognitive = async (
-    // The backend keys an unclassified item's toggle preference under the
-    // same `skill` namespace it uses while KG-unverified (api_extensions.py
-    // `_get_engine_bounded`/`get_toggle_state` call for the unclassified
-    // branch) -- no separate `skill_unclassified` toggle type exists.
-    type: 'skill' | 'skill_graph' | 'skill_workflow',
-    id: string,
-    currentVal: boolean,
-  ) => {
-    try {
-      const res = await fetch('/api/enhanced/tools/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type,
-          id,
-          enabled: !currentVal,
-        }),
-      })
-      if (res.ok) {
-        toast.success(`Cognitive asset updated successfully`)
-        void fetchTools()
-      } else {
-        toast.error('Failed to update asset status')
-      }
-    } catch {
-      toast.error('Error saving toggle status')
-    }
-  }
-
   const handleToggleMcpTool = async (serverName: string, toolName: string, currentVal: boolean) => {
     try {
       const res = await fetch('/api/enhanced/tools/toggle', {
@@ -1546,22 +1154,14 @@ export default function SkillsView() {
 
   // Filters -- name, domain, and tags all match (GOC-60-W06d keeps free-text
   // search working across the new grouped-by-domain layout).
-  const filteredMcp = data.mcp_tools.filter((t) => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  const filteredBuiltin = data.builtin_tools.filter((t) => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  // Skills are grouped by KIND -- skill-graph, skill-workflow, and skill
-  // (atomic). There is deliberately NO fourth "unclassified" bucket: a skill
-  // whose kind the catalog could not determine is listed here with the rest
-  // and carries an `unclassified` badge (`RunnabilityBadge`). The backend
-  // returns unclassified entries directly in `skills`; there is no parallel
-  // `skill_unclassified` response bucket to merge or duplicate.
-  const allSkills = [...data.skills].sort((a, b) => a.name.localeCompare(b.name))
-  const filteredSkills = allSkills.filter((s) => matchesSearch(searchQuery, s.name, s.domain, s.tags))
-  const filteredGraphs = data.skill_graphs.filter((g) => matchesSearch(searchQuery, g.name, g.domain, g.tags))
-  const filteredWorkflows = data.skill_workflows.filter((w) => matchesSearch(searchQuery, w.name, w.domain, w.tags))
+  const filteredMcp = data.servers.filter((t) => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredTools = selectCatalogEntries(data, 'tool', searchQuery)
+  const filteredSkills = selectCatalogEntries(data, 'skill', searchQuery)
+  const filteredWorkflows = selectCatalogEntries(data, 'workflow', searchQuery)
 
-  const groupedSkills = groupByDomain(filteredSkills)
-  const groupedGraphs = groupByDomain(filteredGraphs)
-  const groupedWorkflows = groupByDomain(filteredWorkflows)
+  const groupedTools = groupCatalogEntries(filteredTools)
+  const groupedSkills = groupCatalogEntries(filteredSkills)
+  const groupedWorkflows = groupCatalogEntries(filteredWorkflows)
 
   if (sessionExpired) {
     return <SessionExpiredNotice />
@@ -1577,8 +1177,7 @@ export default function SkillsView() {
                 Tools & Cognitive Registry
               </CardTitle>
               <CardDescription>
-                Unified control plane to discover, monitor, and dynamically toggle MCP servers, built-in operations,
-                and dynamic cognitive assets.
+                Live MCP registrations and typed tool, skill, and workflow catalogs from the GraphOS gateway.
               </CardDescription>
             </div>
             <div className="flex items-center gap-2 w-full md:w-auto">
@@ -1610,9 +1209,8 @@ export default function SkillsView() {
           {renderNavTabs({
             activeTab,
             onSetActiveTab: setActiveTab,
-            mcpCount: data.mcp_tools.length,
-            builtinCount: data.builtin_tools.length,
-            cognitiveCount: allSkills.length + data.skill_graphs.length + data.skill_workflows.length,
+            mcpCount: data.counts.servers,
+            catalogCount: data.counts.tools + data.counts.skills + data.counts.workflows,
           })}
         </CardHeader>
         <CardContent>
@@ -1634,9 +1232,6 @@ export default function SkillsView() {
                   void openAddMcpServer()
                 },
                 mcpHandlers: {
-                  onToggleServer: (name, enabled) => {
-                    void handleToggleMcpServer(name, enabled)
-                  },
                   onEditServer: (name) => {
                     void openEditMcpServer(name)
                   },
@@ -1651,20 +1246,12 @@ export default function SkillsView() {
                     void loadMcpTools(serverName, offset)
                   },
                 },
-                filteredBuiltin,
-                onToggleBuiltin: (name, enabled) => {
-                  void handleToggleBuiltin(name, enabled)
-                },
-                allSkillsCount: allSkills.length,
+                groupedTools,
                 groupedSkills,
-                groupedGraphs,
                 groupedWorkflows,
+                filteredToolsCount: filteredTools.length,
                 filteredSkillsCount: filteredSkills.length,
-                filteredGraphsCount: filteredGraphs.length,
                 filteredWorkflowsCount: filteredWorkflows.length,
-                onToggleCognitive: (type, id, enabled) => {
-                  void handleToggleCognitive(type, id, enabled)
-                },
               })
             )}
           </ScrollArea>

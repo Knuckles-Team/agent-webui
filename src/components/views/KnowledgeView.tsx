@@ -15,14 +15,22 @@ interface Skill {
   id: string
   name: string
   description: string
-  enabled: boolean
+  kind: 'skill'
+  status: 'active' | 'retired' | 'withdrawn'
+  authority: 'agent_component'
 }
 
 const skillSchema: z.ZodType<Skill> = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
-  enabled: z.boolean(),
+  kind: z.literal('skill'),
+  status: z.enum(['active', 'retired', 'withdrawn']),
+  authority: z.literal('agent_component'),
+  server_name: z.string().nullable().optional(),
+  revision: z.number().nullable().optional(),
+  definition_digest: z.string().nullable().optional(),
+  content_digest: z.string().nullable().optional(),
 })
 
 export default function KnowledgeView() {

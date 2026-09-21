@@ -27,11 +27,13 @@ import { z } from 'zod'
 /* ── Schemas (loose — count-only consumers tolerate extra/missing fields) ── */
 
 const toolsCountsSchema = z.object({
-  mcp_tools: looseArray(z.unknown()).default([]),
-  builtin_tools: looseArray(z.unknown()).default([]),
-  skills: looseArray(z.unknown()).default([]),
-  skill_graphs: looseArray(z.unknown()).default([]),
-  skill_workflows: looseArray(z.unknown()).default([]),
+  source: z.literal('epistemic_graph'),
+  counts: z.object({
+    servers: z.number(),
+    tools: z.number(),
+    skills: z.number(),
+    workflows: z.number(),
+  }),
 })
 
 const graphStatsSchema = z.object({
@@ -171,16 +173,11 @@ export default function DefaultOverviewPanel() {
       const r = await apiGet('/enhanced/tools', toolsCountsSchema)
       if (flag.cancelled) return
       if (r.ok && r.data) {
-        const total =
-          r.data.mcp_tools.length +
-          r.data.builtin_tools.length +
-          r.data.skills.length +
-          r.data.skill_graphs.length +
-          r.data.skill_workflows.length
+        const total = r.data.counts.tools + r.data.counts.skills + r.data.counts.workflows
         setTools({
           loading: false,
           value: String(total),
-          detail: `${String(r.data.mcp_tools.length)} MCP · ${String(r.data.builtin_tools.length)} built-in · ${String(r.data.skills.length + r.data.skill_graphs.length + r.data.skill_workflows.length)} skills`,
+          detail: `${String(r.data.counts.servers)} servers · ${String(r.data.counts.tools)} tools · ${String(r.data.counts.skills)} skills · ${String(r.data.counts.workflows)} workflows`,
           unavailable: false,
         })
       } else {

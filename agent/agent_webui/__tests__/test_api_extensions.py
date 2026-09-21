@@ -6,7 +6,7 @@ import asyncio
 import math
 import time
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import agent_webui.api_extensions as api_extensions
 import pytest
@@ -2097,82 +2097,6 @@ class TestCoverageExpansion:
             response = client.get('/api/enhanced/sdd/tasks')
             assert response.status_code == 200
             assert response.json() == {}
-
-    def test_list_skills_success(self, client):
-        """`/api/enhanced/skills` reads exclusively from the SQL fleet
-        catalog's `skills` table (via `_read_fleet_catalog`) -- not a
-        filesystem scan or a live-engine fallback chain."""
-        catalog_rows = {
-            'skills': [
-                {
-                    'id': 'wger-agent-docs',
-                    'name': 'wger-agent-docs',
-                    'description': 'Wger docs',
-                    'enabled': True,
-                },
-                {
-                    'id': 'a-skill',
-                    'name': 'a-skill',
-                    'description': '',
-                    'enabled': False,
-                },
-            ]
-        }
-        with patch(
-            'agent_webui.api_extensions._read_fleet_catalog',
-            AsyncMock(return_value=catalog_rows),
-        ):
-            response = client.get('/api/enhanced/skills')
-            assert response.status_code == 200
-            data = response.json()
-            # sorted alphabetically by name
-            assert [item['id'] for item in data] == ['a-skill', 'wger-agent-docs']
-            assert data[1] == {
-                'id': 'wger-agent-docs',
-                'name': 'wger-agent-docs',
-                'description': 'Wger docs',
-                'enabled': True,
-            }
-
-    def test_list_skills_empty_catalog_is_an_honest_empty_list(self, client):
-        """A reachable catalog with zero rows (e.g. the hourly
-        fleet-tool-schema-sync job has not run yet) is a genuine `[]`, never
-        conflated with a read failure."""
-        with patch(
-            'agent_webui.api_extensions._read_fleet_catalog',
-            AsyncMock(return_value={'skills': []}),
-        ):
-            response = client.get('/api/enhanced/skills')
-            assert response.status_code == 200
-            assert response.json() == []
-
-    def test_list_skills_catalog_unavailable_fails_closed(self, client):
-        """A failed/denied catalog read (`_read_fleet_catalog` returning
-        `None`) must raise 503, never render as an indistinguishable empty
-        list -- a degraded read must never look like "all clear"."""
-        with patch(
-            'agent_webui.api_extensions._read_fleet_catalog',
-            AsyncMock(return_value=None),
-        ):
-            response = client.get('/api/enhanced/skills')
-            assert response.status_code == 503
-
-    def test_list_skills_this_kind_unavailable_within_a_mapping_also_fails_closed(
-        self, client
-    ):
-        """Per-kind degradation (FIX LANE 2, Defect A): `_read_fleet_catalog`
-        now returns a MAPPING (never a bare `None`) once authority is
-        granted, with a per-kind `None` for a kind whose own read failed.
-        `list_skills` only ever requests the `skills` kind, so THAT kind
-        failing is equivalent to the old whole-catalog failure and must
-        still raise 503, not render `catalog['skills']` as if it were an
-        honest empty list."""
-        with patch(
-            'agent_webui.api_extensions._read_fleet_catalog',
-            AsyncMock(return_value={'skills': None}),
-        ):
-            response = client.get('/api/enhanced/skills')
-            assert response.status_code == 503
 
     def test_toggle_skill_success(self, client):
         mock_toggle = MagicMock(return_value={'status': 'enabled'})
