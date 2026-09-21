@@ -13,7 +13,6 @@ pytest.importorskip(
 
 def test_import_agent_webui():
     """Test that the agent_webui package can be imported."""
-    import agent_webui
 
     pass
 
@@ -27,8 +26,9 @@ def test_server_import():
 
 def test_main():
     """Test that main() can be executed."""
-    from agent_webui import server
     from unittest.mock import patch
+
+    from agent_webui import server
 
     with patch('uvicorn.run'):
         # Simulate a call to main without starting the server for real

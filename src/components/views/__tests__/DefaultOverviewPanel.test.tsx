@@ -39,11 +39,8 @@ describe('DefaultOverviewPanel', () => {
       '/api/enhanced/prompts': { body: [{ name: 'a' }, { name: 'b' }, { name: 'c' }] },
       '/api/enhanced/tools': {
         body: {
-          mcp_tools: [{ name: 'x' }],
-          builtin_tools: [{ name: 'y' }, { name: 'z' }, { name: 'w' }, { name: 'v' }],
-          skills: [],
-          skill_graphs: [],
-          skill_workflows: [],
+          source: 'epistemic_graph',
+          counts: { servers: 1, tools: 4, skills: 2, workflows: 1 },
         },
       },
       '/api/enhanced/llm/models': { body: [{ id: 'gpt' }, { id: 'claude' }] },
@@ -68,7 +65,7 @@ describe('DefaultOverviewPanel', () => {
       expect(screen.getByText('43,579')).toBeInTheDocument() // KG nodes
     })
     expect(screen.getByText('3')).toBeInTheDocument() // prompts
-    expect(screen.getByText('5')).toBeInTheDocument() // 1 mcp + 4 builtin
+    expect(screen.getByText('7')).toBeInTheDocument() // tools + skills + workflows
     expect(screen.getByText('2')).toBeInTheDocument() // models
     expect(screen.getByText('ok')).toBeInTheDocument() // health status
     // No "unavailable" badge anywhere when every surface succeeded.
@@ -79,7 +76,7 @@ describe('DefaultOverviewPanel', () => {
     global.fetch = mockFetch({
       '/api/enhanced/prompts': { body: [] },
       '/api/enhanced/tools': {
-        body: { mcp_tools: [], builtin_tools: [], skills: [], skill_graphs: [], skill_workflows: [] },
+        body: { source: 'epistemic_graph', counts: { servers: 0, tools: 0, skills: 0, workflows: 0 } },
       },
       '/api/enhanced/llm/models': { body: [] },
       '/api/enhanced/graph/stats': { status: 503 }, // D-W6-10: a real backend failure

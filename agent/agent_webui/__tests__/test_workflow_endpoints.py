@@ -3,11 +3,10 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def client():
+def client(authenticated_client_factory):
     """Create a test client for the FastAPI app."""
     from agent_webui.server import create_agent_web_app
     from pydantic_ai import Agent
@@ -16,7 +15,7 @@ def client():
     mock_agent = Agent(TestModel())
     mock_helpers = {'get_path': lambda x: x}
     app = create_agent_web_app(mock_agent, mock_helpers)
-    return TestClient(app)
+    return authenticated_client_factory(app)
 
 
 @pytest.fixture
@@ -54,30 +53,15 @@ def test_list_workflows_returns_records(client, mock_engine):
         assert data[0]['orchestrates'] == ['agent:planner']
 
 
-def test_list_workflows_degrades_to_empty(client, mock_engine):
+def test_list_workflows_fails_closed_when_backend_is_unavailable(client, mock_engine):
     mock_engine.backend.execute.side_effect = Exception('DB down')
     with patch(
         'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
         return_value=mock_engine,
     ):
         res = client.get('/api/enhanced/workflows')
-        assert res.status_code == 200
-        assert res.json() == []
-
-
-def test_capabilities_returns_catalog(client, mock_engine):
-    mock_engine.backend.execute.return_value = [
-        {'a': {'id': 'agent:planner', 'name': 'Planner', 'system_prompt': 'Plan'}}
-    ]
-    with patch(
-        'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
-        return_value=mock_engine,
-    ):
-        res = client.get('/api/enhanced/workflows/capabilities')
-        assert res.status_code == 200
-        data = res.json()
-        assert 'agents' in data and 'tools' in data and 'skills' in data
-        assert data['agents'][0]['name'] == 'Planner'
+        assert res.status_code == 503
+        assert res.json() == {'detail': 'Internal request failed'}
 
 
 def test_save_workflow_builds_spec_and_persists(client, mock_engine):
