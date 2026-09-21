@@ -6,13 +6,13 @@ the verified-identity-carrier gate GOC-15 added), the fixture still called the
 REAL ``GraphComputeEngine.__init__``, which resolves an engine coordinator and
 opens a UDS/TCP socket via ``SyncEpistemicGraphClient.connect`` -- i.e. a
 fixture named "mock" constructed a live client. With no engine running that is
-``ConnectionRefusedError``; without the optional native ``epistemic_graph``
-client package installed (this repo does not depend on it) it never even gets
-that far -- it fails on the client import itself.
+``ConnectionRefusedError``. The ``graphos`` dependency extra now deliberately
+installs the native ``epistemic_graph`` client, so package absence can no
+longer be used as the safety boundary.
 
-This test proves the fixture is now a genuine double: it succeeds with
-``epistemic_graph`` absent (this environment does not have it installed) AND
-with the socket layer wired to explode on first use, and the resulting
+These tests prove both sides of the current contract: the declared client is
+importable, while the fixture remains a genuine double with the socket layer
+wired to explode on first use. The resulting
 ``engine.graph`` is still a real ``GraphComputeEngine`` instance (the exact
 type ``PipelineContext`` -- agent_utilities/knowledge_graph/pipeline/types.py
 -- validates via Pydantic ``arbitrary_types_allowed`` isinstance checking).
@@ -21,23 +21,17 @@ type ``PipelineContext`` -- agent_utilities/knowledge_graph/pipeline/types.py
 from __future__ import annotations
 
 import socket
-import sys
-
-import pytest
 
 
-def test_epistemic_graph_client_package_is_not_installed() -> None:
-    """Sanity check the premise: the real socket-connecting client is absent.
+def test_epistemic_graph_client_package_is_declared_and_importable() -> None:
+    """The graphos dependency contract includes the engine client package.
 
-    If this ever starts passing because someone installs the ``[graphos]``
-    extra into the test environment, the next assertion (fixture succeeds
-    anyway) is the one that actually matters -- this one just documents why
-    a regression to the real constructor would be loud here (ModuleNotFoundError)
-    rather than a silent hang.
+    Network isolation is proven by the fixture test below, not by keeping a
+    runtime dependency absent from the environment.
     """
-    assert 'epistemic_graph' not in sys.modules
-    with pytest.raises(ModuleNotFoundError):
-        __import__('epistemic_graph.client')
+    import epistemic_graph.client as client
+
+    assert client.__name__ == 'epistemic_graph.client'
 
 
 def test_mock_graph_engine_never_opens_a_socket(mock_graph_engine, monkeypatch) -> None:

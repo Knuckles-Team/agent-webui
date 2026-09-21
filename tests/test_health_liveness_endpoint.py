@@ -137,29 +137,28 @@ def test_api_health_still_served_by_pydantic_ai(client):
     assert response.json() == {'ok': True}
 
 
-def test_unknown_client_route_still_falls_back_to_spa_shell(
+def test_unknown_client_route_fails_closed_outside_spa_manifest(
     app, authenticated_client_factory
 ):
-    """The fix must be narrowly scoped: real SPA client-side routing survives.
+    """An extensionless route absent from the SPA manifest must fail closed.
 
-    A path with no relation to any liveness or API prefix (e.g. a
-    client-side router path like ``/dashboard/settings``) must still hit
-    ``SPAStaticFiles``'s 404-to-``index.html`` fallback -- proving the fix
-    added explicit liveness routes rather than broadening the SPA's
-    exemption list in a way that could mask other 404s.
+    The governed route manifest prevents mistyped or removed client paths from
+    being disguised as a successful SPA response. ``/dashboard/settings`` is
+    intentionally not registered, so the server keeps the SPA shell body for
+    client rendering but returns a truthful 404 status.
 
     Uses ``authenticated_client_factory`` (tests/conftest.py) rather than the
     bare unauthenticated ``client`` fixture: with a real credential absent,
     ``WebUIActorIdentityMiddleware``/``ActorIdentityMiddleware`` reject an
     unclassified path with 401 before the request ever reaches routing --
     correct production behavior, but it would make this assertion about the
-    SPA fallback specifically fail for the wrong reason.
+    static route boundary fail for the wrong reason.
     """
     authed_client = authenticated_client_factory(app)
 
     response = authed_client.get('/dashboard/settings')
 
-    assert response.status_code == 200
+    assert response.status_code == 404
     assert 'spa-shell-marker' in response.text
 
 
