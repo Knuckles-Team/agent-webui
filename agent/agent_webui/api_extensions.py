@@ -5549,6 +5549,737 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
         ) from e
 
 
+# ---------------------------------------------------------------------------
+# Authenticated JSON hierarchy preview proxy (VIZ-1-shaped; not VIZ-2)
+#
+# The native epistemic-graph process exposes hierarchy RPCs on its loopback
+# listener. That listener is deliberately not a browser API: it has no WebUI
+# identity or row-level authorization boundary. These routes are the only
+# browser-facing seam. They validate one graph against the verified session,
+# retarget both the engine facade and ambient GraphSession together, then call
+# the generated routed client (`engine.graph.client.graph`). The current
+# browser contract is a bounded JSON hierarchy preview: it does not claim the
+# VIZ-2 binary/tiled streaming path. No synthetic data is returned when the
+# authority-scoped hierarchy capability or cache is unavailable.
+_LOD_MAX_UI_LEVEL = 64
+_LOD_MAX_IDENTIFIER_BYTES = 256
+_LOD_MAX_CLUSTERS = 20_000
+_LOD_MAX_NODES = 100_000
+_LOD_MAX_EDGES = 120_000
+_LOD_MAX_RESULT_BYTES = 16 * 1024 * 1024
+_LOD_MAX_SAFE_INTEGER = 2**53 - 1
+_LOD_RPC_DEADLINE_SECONDS = 30.0
+_LOD_CLUSTER_ID = re.compile(r'^L[1-9][0-9]*-[0-9]+$')
+# BUG-CX-156: the legacy ClusterHierarchyRefresh RPC is not enough evidence
+# that its derived cache is authority-scoped. The WebUI must negotiate an
+# explicit native capability and invoke the corresponding scoped operation;
+# absence of either is an unavailable preview, never a fallback to the legacy
+# graph-only cache. The EG integration must advertise this operation only once
+# its refresh/load paths bind the cache to the verified authority scope.
+_LOD_AUTHORITY_SCOPED_REFRESH_CAPABILITY = 'ClusterHierarchyRefreshScoped'
+_LOD_AUTHORITY_SCOPED_REFRESH_METHODS = (
+    'cluster_hierarchy_refresh_scoped',
+    'cluster_hierarchy_refresh_authority_scoped',
+)
+
+
+class _LodUnavailable(RuntimeError):
+    """Internal marker for a missing hierarchy capability or cache."""
+
+
+def _lod_identifier(value: Any, *, field: str, cluster: bool = False) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise _LodUnavailable(f'Invalid {field}')
+    if len(value.encode('utf-8')) > _LOD_MAX_IDENTIFIER_BYTES:
+        raise _LodUnavailable(f'{field} exceeds its bound')
+    if any(ord(character) < 0x20 for character in value):
+        raise _LodUnavailable(f'Invalid {field}')
+    if cluster and _LOD_CLUSTER_ID.fullmatch(value) is None:
+        raise _LodUnavailable(f'Invalid {field}')
+    return value
+
+
+def _lod_nonnegative_int(value: Any, *, field: str) -> int:
+    if isinstance(value, bool):
+        raise _LodUnavailable(f'Invalid {field}')
+    if isinstance(value, int):
+        result = value
+    elif isinstance(value, float) and math.isfinite(value) and value.is_integer():
+        result = int(value)
+    else:
+        raise _LodUnavailable(f'Invalid {field}')
+    if result < 0 or result > _LOD_MAX_SAFE_INTEGER:
+        raise _LodUnavailable(f'Invalid {field}')
+    return result
+
+
+def _lod_weight(value: Any, *, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise _LodUnavailable(f'Invalid {field}')
+    try:
+        result = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise _LodUnavailable(f'Invalid {field}') from exc
+    if not math.isfinite(result) or result < 0:
+        raise _LodUnavailable(f'Invalid {field}')
+    return result
+
+
+def _lod_top_node_types(value: Any) -> list[str]:
+    """Translate EG's `[(node_type, count), ...]` to the UI's string list."""
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)) or len(value) > 32:
+        raise _LodUnavailable('Invalid top_node_types')
+    result: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            node_type = item
+        elif isinstance(item, (list, tuple)) and len(item) == 2:
+            node_type = item[0]
+            _lod_nonnegative_int(item[1], field='top_node_types count')
+        else:
+            raise _LodUnavailable('Invalid top_node_types entry')
+        node_type = _lod_identifier(node_type, field='node type')
+        if node_type not in result:
+            result.append(node_type)
+    return result
+
+
+def _lod_cluster_summary(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise _LodUnavailable('Invalid cluster summary')
+    return {
+        'id': _lod_identifier(value.get('id'), field='cluster id', cluster=True),
+        'label': _lod_identifier(value.get('label'), field='cluster label'),
+        'node_count': _lod_nonnegative_int(value.get('node_count'), field='node_count'),
+        # EG stores this as f64 because hierarchy edges are weighted. Preserve
+        # finite nonnegative fractional weights; rounding would change the
+        # meaning of the derived metric and make the preview disagree with EG.
+        'edge_count': _lod_weight(value.get('edge_count'), field='edge_count'),
+        # The hierarchy RPC intentionally carries no placement. `None` tells
+        # the renderer to use its existing bounded local layout.
+        'centroid': None,
+        'top_node_types': _lod_top_node_types(value.get('top_node_types')),
+    }
+
+
+def _lod_validate_level(level: Any) -> int:
+    if isinstance(level, bool) or not isinstance(level, int):
+        raise HTTPException(status_code=400, detail='Invalid LOD level')
+    if level < 0 or level > _LOD_MAX_UI_LEVEL:
+        raise HTTPException(status_code=400, detail='LOD level is out of range')
+    return level
+
+
+def _lod_validate_cluster_id(value: Any, *, field: str) -> str:
+    try:
+        return _lod_identifier(value, field=field, cluster=True)
+    except _LodUnavailable as exc:
+        raise HTTPException(status_code=400, detail=f'Invalid {field}') from exc
+
+
+def _require_lod_graph_scope(request: Request) -> tuple[Any, str]:
+    """Require exactly one caller-authorized graph, never a server default."""
+    graph_values = request.query_params.getlist('graph')
+    if len(graph_values) != 1:
+        raise HTTPException(
+            status_code=400,
+            detail='Exactly one authorized graph scope is required',
+        )
+    try:
+        graph_name = _lod_identifier(graph_values[0], field='graph')
+    except _LodUnavailable as exc:
+        raise HTTPException(status_code=400, detail='Invalid graph scope') from exc
+    try:
+        from agent_utilities.knowledge_graph.core.session import resolve_session
+
+        session = resolve_session(required_scope='kg:read')
+        # The native hierarchy RPC has no commons-catalog projection. Keep the
+        # proxy pinned to the session's own tenant graph even though ordinary
+        # union reads may include additional catalog graphs; accepting an
+        # arbitrary accessible graph here would expose unfiltered topology.
+        if graph_name != session.graph or graph_name not in _accessible_graphs(
+            session.actor
+        ):
+            raise PermissionError('graph is outside the session-bound read scope')
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log_failure('lod_graph_scope', exc, level=logging.INFO)
+        raise HTTPException(
+            status_code=403, detail='Graph scope is not authorized'
+        ) from exc
+    return session, graph_name
+
+
+def _lod_unavailable_clusters(level: int, reason: str) -> dict[str, Any]:
+    return {
+        'available': False,
+        'status': 'unavailable',
+        'reason': reason,
+        'transport': 'json-hierarchy-preview',
+        'streaming': False,
+        'level': level,
+        'clusters': [],
+        'inter_cluster_edges': [],
+    }
+
+
+def _lod_unavailable_expand(reason: str) -> dict[str, Any]:
+    return {
+        'available': False,
+        'status': 'unavailable',
+        'reason': reason,
+        'transport': 'json-hierarchy-preview',
+        'streaming': False,
+        'nodes': [],
+        'edges': [],
+        'child_clusters': [],
+    }
+
+
+def _lod_error_response(payload: dict[str, Any]) -> JSONResponse:
+    """Return a stable status body without exposing backend exception text."""
+    return JSONResponse(status_code=503, content=payload)
+
+
+def _lod_size_bounded(payload: dict[str, Any]) -> dict[str, Any]:
+    if (
+        len(
+            json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode(
+                'utf-8'
+            )
+        )
+        > _LOD_MAX_RESULT_BYTES
+    ):
+        raise _LodUnavailable('hierarchy response exceeds its size bound')
+    return payload
+
+
+def _lod_rpc(engine: Any, graph_name: str, method: str, *args: Any) -> Any:
+    """Call one generated hierarchy RPC through a graph-scoped, signed view."""
+    from agent_utilities.knowledge_graph.core.session import (
+        current_session,
+        use_session,
+    )
+
+    session = current_session()
+    if (
+        session is None
+        or graph_name != session.graph
+        or graph_name not in _accessible_graphs(session.actor)
+    ):
+        raise _LodUnavailable('verified graph scope is unavailable')
+    scoped_engine = (
+        engine if graph_name == session.graph else engine.for_graph(graph_name)
+    )
+    graph_compute = getattr(scoped_engine, 'graph', None)
+    client = getattr(graph_compute, 'client', None)
+    graph_operations = getattr(client, 'graph', None)
+    operation = getattr(graph_operations, method, None)
+    if not callable(operation):
+        raise _LodUnavailable('hierarchy RPC is unavailable on the graph client')
+    with use_session(session.with_graph(graph_name)):
+        result = operation(*args)
+    # The current GraphComputeEngine exposes a synchronous generated-client
+    # wrapper. Refuse an async object here rather than letting the session
+    # context end before its RPC executes under authority.
+    if inspect.isawaitable(result):
+        close = getattr(result, 'close', None)
+        if callable(close):
+            close()
+        raise _LodUnavailable('async hierarchy client is not safely routed')
+    return result
+
+
+def _lod_scoped_graph_operations(engine: Any, graph_name: str) -> tuple[Any, Any, Any]:
+    """Return the current verified session and its graph RPC namespaces."""
+    from agent_utilities.knowledge_graph.core.session import current_session
+
+    session = current_session()
+    if (
+        session is None
+        or graph_name != session.graph
+        or graph_name not in _accessible_graphs(session.actor)
+    ):
+        raise _LodUnavailable('verified graph scope is unavailable')
+    scoped_engine = (
+        engine if graph_name == session.graph else engine.for_graph(graph_name)
+    )
+    graph_compute = getattr(scoped_engine, 'graph', None)
+    client = getattr(graph_compute, 'client', None)
+    return session, client, getattr(client, 'graph', None)
+
+
+def _lod_reject_awaitable(value: Any, message: str) -> None:
+    """Reject a coroutine whose authority context would outlive this helper."""
+    if not inspect.isawaitable(value):
+        return
+    close = getattr(value, 'close', None)
+    if callable(close):
+        close()
+    raise _LodUnavailable(message)
+
+
+def _lod_capability_advertised(client: Any, session: Any) -> bool:
+    """Probe a native capability while retaining the verified session context."""
+    from agent_utilities.knowledge_graph.core.session import use_session
+
+    supports = getattr(client, 'supports', None)
+    if not callable(supports):
+        raise _LodUnavailable('authority-scoped hierarchy capability is unavailable')
+    with use_session(session.with_graph(session.graph)):
+        advertised = supports(_LOD_AUTHORITY_SCOPED_REFRESH_CAPABILITY)
+    _lod_reject_awaitable(
+        advertised,
+        'async hierarchy capability negotiation is not safely routed',
+    )
+    return advertised is True
+
+
+def _lod_refresh_method(graph_operations: Any) -> str | None:
+    """Choose a supported native spelling without falling back to legacy RPCs."""
+    return next(
+        (
+            method
+            for method in _LOD_AUTHORITY_SCOPED_REFRESH_METHODS
+            if callable(getattr(graph_operations, method, None))
+        ),
+        None,
+    )
+
+
+def _lod_authority_scoped_refresh_rpc(engine: Any, graph_name: str) -> Any:
+    """Refresh the hierarchy only through an explicitly scoped EG capability.
+
+    ``ClusterHierarchyRefresh`` existed before BUG-CX-156 was root-caused and
+    therefore cannot itself be used as a capability probe: an old engine may
+    accept that method while still persisting one graph-wide derived row. The
+    separate negotiated capability and method below are the deploy-ordering
+    fence. A missing/false capability is deliberately an unavailable preview;
+    this function never falls back to the legacy RPC.
+    """
+    session, client, graph_operations = _lod_scoped_graph_operations(engine, graph_name)
+    if not _lod_capability_advertised(client, session):
+        raise _LodUnavailable('authority-scoped hierarchy capability is unavailable')
+    # `_lod_rpc` re-checks the same ambient session immediately before the
+    # operation and refuses an async result, keeping capability negotiation and
+    # the refresh under the verified request authority. Accept the two natural
+    # generated-client spellings, but never fall back to the legacy method.
+    method = _lod_refresh_method(graph_operations)
+    if method is None:
+        raise _LodUnavailable(
+            'authority-scoped hierarchy refresh operation is unavailable'
+        )
+    return _lod_rpc(engine, graph_name, method)
+
+
+def _lod_refresh_version(value: Any) -> int:
+    """Read the native source/hierarchy version without accepting coercions."""
+    for field in (
+        'version',
+        'source_version',
+        'source_graph_version',
+        'hierarchy_version',
+    ):
+        if field in value:
+            return _lod_nonnegative_int(value[field], field='hierarchy version')
+    raise _LodUnavailable('Missing hierarchy version')
+
+
+def _lod_refresh_observed_at(value: Any) -> str:
+    """Require a timezone-qualified observation timestamp for freshness claims."""
+    observed_at = value.get('observed_at', value.get('refreshed_at'))
+    if not isinstance(observed_at, str) or not observed_at.strip():
+        raise _LodUnavailable('Missing hierarchy freshness timestamp')
+    try:
+        parsed = datetime.fromisoformat(observed_at.replace('Z', '+00:00'))
+    except ValueError as exc:
+        raise _LodUnavailable('Invalid hierarchy freshness timestamp') from exc
+    if parsed.tzinfo is None:
+        raise _LodUnavailable('Hierarchy freshness timestamp must include a timezone')
+    return observed_at
+
+
+def _normalize_lod_refresh(value: Any, graph_name: str) -> dict[str, Any]:
+    """Normalize the scoped EG refresh receipt into the preview contract."""
+    if not isinstance(value, dict):
+        raise _LodUnavailable('Invalid hierarchy refresh response')
+    if value.get('graph') != graph_name:
+        raise _LodUnavailable('Hierarchy refresh graph did not match the request')
+    if value.get('authority_scoped') is not True:
+        raise _LodUnavailable('Hierarchy refresh lacks an authority scope')
+    freshness = value.get('freshness')
+    if freshness != 'fresh':
+        raise _LodUnavailable('Hierarchy freshness is not ready')
+    return {
+        'available': True,
+        'status': 'ready',
+        'graph': graph_name,
+        'authority_scoped': True,
+        'version': _lod_refresh_version(value),
+        'freshness': 'fresh',
+        'observed_at': _lod_refresh_observed_at(value),
+        'transport': 'json-hierarchy-preview',
+        'streaming': False,
+    }
+
+
+def _lod_unavailable_refresh(reason: str) -> dict[str, Any]:
+    return {
+        'available': False,
+        'status': 'unavailable',
+        'graph': None,
+        'authority_scoped': False,
+        'transport': 'json-hierarchy-preview',
+        'streaming': False,
+        'reason': reason,
+    }
+
+
+def _lod_cluster_payload(
+    value: Any, requested_level: int
+) -> tuple[int, list[Any], list[Any]]:
+    if not isinstance(value, dict):
+        raise _LodUnavailable('Invalid clusters response')
+    native_level = _lod_nonnegative_int(value.get('level'), field='level')
+    expected_native_level = requested_level + 1
+    if native_level != expected_native_level:
+        raise _LodUnavailable('Hierarchy level did not match the requested level')
+    raw_clusters = value.get('clusters')
+    raw_edges = value.get('inter_cluster_edges')
+    if not isinstance(raw_clusters, list) or len(raw_clusters) > _LOD_MAX_CLUSTERS:
+        raise _LodUnavailable('Invalid clusters collection')
+    if not isinstance(raw_edges, list) or len(raw_edges) > _LOD_MAX_EDGES:
+        raise _LodUnavailable('Invalid inter-cluster edge collection')
+    return native_level, raw_clusters, raw_edges
+
+
+def _lod_unique_ids(values: list[str], message: str) -> None:
+    if len(values) != len(set(values)):
+        raise _LodUnavailable(message)
+
+
+def _lod_cluster_edges(
+    raw_edges: list[Any], clusters: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    edges: list[dict[str, Any]] = []
+    for item in raw_edges:
+        if not isinstance(item, dict):
+            raise _LodUnavailable('Invalid inter-cluster edge')
+        src_idx = _lod_nonnegative_int(item.get('src_idx'), field='src_idx')
+        dst_idx = _lod_nonnegative_int(item.get('dst_idx'), field='dst_idx')
+        if src_idx >= len(clusters) or dst_idx >= len(clusters):
+            raise _LodUnavailable('Inter-cluster edge index is out of bounds')
+        edges.append(
+            {
+                'src_idx': src_idx,
+                'dst_idx': dst_idx,
+                'weight': _lod_weight(item.get('weight'), field='weight'),
+            }
+        )
+    return edges
+
+
+def _normalize_lod_clusters(value: Any, requested_level: int) -> dict[str, Any]:
+    native_level, raw_clusters, raw_edges = _lod_cluster_payload(value, requested_level)
+    clusters = [_lod_cluster_summary(item) for item in raw_clusters]
+    _lod_unique_ids([cluster['id'] for cluster in clusters], 'Duplicate cluster id')
+    return {
+        'available': True,
+        'status': 'ready',
+        'transport': 'json-hierarchy-preview',
+        'streaming': False,
+        'level': native_level - 1,
+        'clusters': clusters,
+        'inter_cluster_edges': _lod_cluster_edges(raw_edges, clusters),
+    }
+
+
+def _lod_node(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        raise _LodUnavailable('Invalid expanded node')
+    node_id = _lod_identifier(value.get('id'), field='node id')
+    properties = value.get('properties')
+    properties = properties if isinstance(properties, dict) else {}
+    raw_type = properties.get('node_type') or properties.get('type') or 'Unknown'
+    raw_name = properties.get('name') or node_id
+    node_type = _lod_identifier(raw_type, field='node type')
+    name = _lod_identifier(raw_name, field='node name')
+    return {'id': node_id, 'type': node_type, 'name': name}
+
+
+def _lod_expand_payload(value: Any) -> tuple[list[Any], list[Any], list[Any]]:
+    if not isinstance(value, dict):
+        raise _LodUnavailable('Invalid expand response')
+    collections = (
+        (value.get('nodes'), _LOD_MAX_NODES, 'Invalid expanded node collection'),
+        (value.get('edges'), _LOD_MAX_EDGES, 'Invalid expanded edge collection'),
+        (
+            value.get('child_clusters'),
+            _LOD_MAX_CLUSTERS,
+            'Invalid child cluster collection',
+        ),
+    )
+    if any(
+        not isinstance(items, list) or len(items) > limit
+        for items, limit, _ in collections
+    ):
+        raise _LodUnavailable(
+            next(
+                message
+                for items, limit, message in collections
+                if not isinstance(items, list) or len(items) > limit
+            )
+        )
+    return tuple(items for items, _, _ in collections)  # type: ignore[return-value]
+
+
+def _lod_expand_edges(
+    raw_edges: list[Any], node_indexes: dict[str, int]
+) -> list[dict[str, Any]]:
+    edges: list[dict[str, Any]] = []
+    for item in raw_edges:
+        if not isinstance(item, dict):
+            raise _LodUnavailable('Invalid expanded edge')
+        source = _lod_identifier(item.get('src_id'), field='edge source id')
+        target = _lod_identifier(item.get('dst_id'), field='edge target id')
+        if source not in node_indexes or target not in node_indexes:
+            raise _LodUnavailable('Expanded edge endpoint is missing')
+        edges.append(
+            {
+                'src_idx': node_indexes[source],
+                'dst_idx': node_indexes[target],
+                'type': _lod_identifier(item.get('type'), field='edge type'),
+            }
+        )
+    return edges
+
+
+def _normalize_lod_expand(value: Any) -> dict[str, Any]:
+    raw_nodes, raw_edges, raw_children = _lod_expand_payload(value)
+    nodes = [_lod_node(item) for item in raw_nodes]
+    children = [_lod_cluster_summary(item) for item in raw_children]
+    _lod_unique_ids(
+        [node['id'] for node in nodes] + [child['id'] for child in children],
+        'Duplicate expanded id',
+    )
+    node_indexes = {node['id']: index for index, node in enumerate(nodes)}
+    return {
+        'available': True,
+        'status': 'ready',
+        'transport': 'json-hierarchy-preview',
+        'streaming': False,
+        'nodes': nodes,
+        'edges': _lod_expand_edges(raw_edges, node_indexes),
+        'child_clusters': children,
+    }
+
+
+@router.get('/graph/graph3d/scope')
+async def get_graph_3d_lod_scope() -> dict[str, Any]:
+    """Return the one graph name this verified WebUI session may read.
+
+    This is only graph identity. The JSON hierarchy preview remains disabled
+    until its separate scoped refresh receipt proves the EG capability,
+    freshness, and source version.
+    """
+    try:
+        from agent_utilities.knowledge_graph.core.session import resolve_session
+
+        session = resolve_session(required_scope='kg:read')
+        graph_name = session.graph
+        if not graph_name or graph_name not in _accessible_graphs(session.actor):
+            return {
+                'available': False,
+                'status': 'unavailable',
+                'graph': None,
+                'reason': 'No authorized graph scope is available.',
+            }
+        _lod_identifier(graph_name, field='graph')
+        return {'available': True, 'status': 'ready', 'graph': graph_name}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log_failure('get_graph_3d_lod_scope', exc, level=logging.INFO)
+        raise HTTPException(
+            status_code=403, detail='Graph scope is not authorized'
+        ) from exc
+
+
+@router.get('/graph/graph3d/refresh', response_model=None)
+async def get_graph_3d_lod_refresh(
+    request: Request,
+) -> dict[str, Any] | JSONResponse:
+    """Return an authenticated, authority-scoped hierarchy freshness receipt.
+
+    The receipt is a mandatory preflight for both ``clusters`` and ``expand``.
+    It intentionally uses a distinct native capability from the legacy
+    graph-only hierarchy RPC, so CX-156 remains a hard production gate until
+    EG can prove scoped cache reads/writes and return a source version.
+    """
+    _, graph_name = _require_lod_graph_scope(request)
+    try:
+        engine = await _graph_read_engine()
+        if engine is None:
+            return _lod_unavailable_refresh(
+                'Knowledge Graph hierarchy preview is unavailable.'
+            )
+        raw = await invoke_governed_helper(
+            _lod_authority_scoped_refresh_rpc,
+            engine,
+            graph_name,
+            deadline=_LOD_RPC_DEADLINE_SECONDS,
+        )
+        return _lod_size_bounded(_normalize_lod_refresh(raw, graph_name))
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            return _lod_error_response(
+                _lod_unavailable_refresh(
+                    'Knowledge Graph hierarchy preview is unavailable.'
+                )
+            )
+        raise
+    except _LodUnavailable:
+        _log_failure(
+            'get_graph_3d_lod_refresh',
+            RuntimeError('unavailable'),
+            level=logging.INFO,
+        )
+        return _lod_error_response(
+            _lod_unavailable_refresh(
+                'Authority-scoped hierarchy support is not available.'
+            )
+        )
+    except Exception as exc:
+        _log_failure('get_graph_3d_lod_refresh', exc)
+        return _lod_error_response(
+            _lod_unavailable_refresh(
+                'Knowledge Graph hierarchy preview is unavailable.'
+            )
+        )
+
+
+@router.get('/graph/graph3d/clusters', response_model=None)
+async def get_graph_3d_lod_clusters(
+    request: Request,
+    level: int,
+    parent_cluster_id: str | None = None,
+) -> dict[str, Any] | JSONResponse:
+    """Proxy one UI depth to EG's level-1-based hierarchy RPC."""
+    ui_level = _lod_validate_level(level)
+    session, graph_name = _require_lod_graph_scope(request)
+    if parent_cluster_id is not None:
+        parent_cluster_id = _lod_validate_cluster_id(
+            parent_cluster_id, field='parent cluster id'
+        )
+    del session  # `_lod_rpc` reads the propagated verified session in its worker.
+    try:
+        engine = await _graph_read_engine()
+        if engine is None:
+            return _lod_unavailable_clusters(
+                ui_level, 'Knowledge Graph hierarchy is unavailable.'
+            )
+        # Revalidate authority, freshness, and source version immediately
+        # before every hierarchy read. This prevents a client that bypasses
+        # the browser transport's preflight from reaching a stale or
+        # authority-ambiguous cache row.
+        refreshed = await invoke_governed_helper(
+            _lod_authority_scoped_refresh_rpc,
+            engine,
+            graph_name,
+            deadline=_LOD_RPC_DEADLINE_SECONDS,
+        )
+        _normalize_lod_refresh(refreshed, graph_name)
+        raw = await invoke_governed_helper(
+            _lod_rpc,
+            engine,
+            graph_name,
+            'cluster_hierarchy_clusters',
+            ui_level + 1,
+            parent_cluster_id,
+            deadline=_LOD_RPC_DEADLINE_SECONDS,
+        )
+        return _lod_size_bounded(_normalize_lod_clusters(raw, ui_level))
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            return _lod_error_response(
+                _lod_unavailable_clusters(
+                    ui_level, 'Knowledge Graph hierarchy is unavailable.'
+                )
+            )
+        raise
+    except _LodUnavailable:
+        _log_failure(
+            'get_graph_3d_lod_clusters', RuntimeError('unavailable'), level=logging.INFO
+        )
+        return _lod_error_response(
+            _lod_unavailable_clusters(
+                ui_level, 'Knowledge Graph hierarchy is unavailable.'
+            )
+        )
+    except Exception as exc:
+        _log_failure('get_graph_3d_lod_clusters', exc)
+        return _lod_error_response(
+            _lod_unavailable_clusters(
+                ui_level, 'Knowledge Graph hierarchy is unavailable.'
+            )
+        )
+
+
+@router.get('/graph/graph3d/expand', response_model=None)
+async def get_graph_3d_lod_expand(
+    request: Request,
+    cluster_id: str,
+) -> dict[str, Any] | JSONResponse:
+    """Proxy one cluster expansion through the authenticated graph RPC."""
+    cluster_id = _lod_validate_cluster_id(cluster_id, field='cluster id')
+    session, graph_name = _require_lod_graph_scope(request)
+    del session
+    try:
+        engine = await _graph_read_engine()
+        if engine is None:
+            return _lod_unavailable_expand('Knowledge Graph hierarchy is unavailable.')
+        # Keep expand behind the same scoped refresh/freshness/version fence as
+        # the root/child cluster read; never trust a previously successful
+        # preflight on its own.
+        refreshed = await invoke_governed_helper(
+            _lod_authority_scoped_refresh_rpc,
+            engine,
+            graph_name,
+            deadline=_LOD_RPC_DEADLINE_SECONDS,
+        )
+        _normalize_lod_refresh(refreshed, graph_name)
+        raw = await invoke_governed_helper(
+            _lod_rpc,
+            engine,
+            graph_name,
+            'cluster_hierarchy_expand',
+            cluster_id,
+            deadline=_LOD_RPC_DEADLINE_SECONDS,
+        )
+        return _lod_size_bounded(_normalize_lod_expand(raw))
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            return _lod_error_response(
+                _lod_unavailable_expand('Knowledge Graph hierarchy is unavailable.')
+            )
+        raise
+    except _LodUnavailable:
+        _log_failure(
+            'get_graph_3d_lod_expand', RuntimeError('unavailable'), level=logging.INFO
+        )
+        return _lod_error_response(
+            _lod_unavailable_expand('Knowledge Graph hierarchy is unavailable.')
+        )
+    except Exception as exc:
+        _log_failure('get_graph_3d_lod_expand', exc)
+        return _lod_error_response(
+            _lod_unavailable_expand('Knowledge Graph hierarchy is unavailable.')
+        )
+
+
 # Bounds the node-type breakdown's `GROUP BY` result. The node-type/label
 # vocabulary is a finite, curated ontology (~46 distinct values live) -- 200
 # is generous headroom over any realistic cardinality while still bounding a

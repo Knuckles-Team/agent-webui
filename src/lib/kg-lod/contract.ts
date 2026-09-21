@@ -1,15 +1,18 @@
 /**
  * @file contract.ts
- * @description Wire shapes for the server-side LOD (level-of-detail)
- * clustering protocol that VIZ-1 (hierarchical clustering) and VIZ-2 (binary
- * tile protocol) are building. This file is the ONE place that names the
- * contract; everything downstream (`lodGraph.ts`, `LodTransport`
+ * @description Wire shapes for the bounded JSON hierarchy preview. This is the
+ * VIZ-1-shaped contract currently available to the WebUI; VIZ-2 binary tiles
+ * and streaming are not implemented by this lane. This file is the ONE place
+ * that names the contract; everything downstream (`lodGraph.ts`, `LodTransport`
  * implementations, `useLodExplorer.ts`) is written against these types, not
  * against a specific transport's wire format.
  *
  * ## The contract, as briefed
  *
  * ```
+ * refresh(graph) ->
+ *   { available, status, graph, authority_scoped, version, freshness,
+ *     observed_at, transport: "json-hierarchy-preview", streaming: false }
  * clusters(graph, level, parent_cluster_id?) ->
  *   { level, clusters: [ {id, label, node_count, edge_count, centroid?, top_node_types} ],
  *     inter_cluster_edges: [ {src_idx, dst_idx, weight} ] }
@@ -17,8 +20,8 @@
  *   { nodes: [...], edges: [ {src_idx, dst_idx, type} ], child_clusters: [...] }
  * ```
  *
- * VIZ-1/VIZ-2 are running now, so the wire format may still shift. Two things
- * insulate this lane from that:
+ * The native VIZ-2 binary/tiled protocol is not claimed here. Two things
+ * insulate the preview lane from future contract changes:
  *
  *  1. Everything is a zod schema, not a type assertion — the SAME chokepoint
  *     discipline `api-validation.ts` establishes for every other route in
@@ -26,9 +29,8 @@
  *     boundary, with a message naming the field — never a silent `undefined`
  *     three components downstream.
  *  2. `LodTransport` (bottom of this file) is the only surface the UI layer
- *     depends on. `mockTransport.ts` implements it today so this lane is not
- *     blocked on the siblings landing; `httpTransport.ts` implements it
- *     against the real routes and is a drop-in swap once they exist. If the
+ *     depends on. `httpTransport.ts` is the production implementation;
+ *     `mockTransport.ts` remains an explicit test/demo fixture only. If the
  *     shape below turns out to be wrong, only `contract.ts` +
  *     `httpTransport.ts` need to change — `lodGraph.ts` and the UI do not.
  *
@@ -41,6 +43,25 @@
  */
 
 import { z } from 'zod'
+
+/** A response status is explicit so an unavailable graph never looks empty. */
+export const lodStatusSchema = z.enum(['ready', 'unavailable'])
+export type LodStatus = z.infer<typeof lodStatusSchema>
+
+/**
+ * Raised by the production transport when the authenticated graph gateway
+ * cannot serve hierarchy data. This is intentionally distinct from a shape
+ * or network error so the view can explain "unavailable" instead of implying
+ * that the graph has zero clusters.
+ */
+export class LodUnavailableError extends Error {
+  readonly status = 'unavailable' as const
+
+  constructor(message = 'Knowledge Graph hierarchy is unavailable') {
+    super(message)
+    this.name = 'LodUnavailableError'
+  }
+}
 
 /** A 3D point in the same canonical world units the layout worker settles to. */
 export const centroidSchema = z.object({
@@ -55,7 +76,8 @@ export const clusterSummarySchema = z.object({
   id: z.string(),
   label: z.string(),
   node_count: z.number().int().nonnegative(),
-  edge_count: z.number().int().nonnegative(),
+  /** Weighted edge count; finite fractional values are valid. */
+  edge_count: z.number().nonnegative(),
   centroid: centroidSchema.nullish(),
   /** Most-frequent node types inside the cluster, most frequent first. */
   top_node_types: z.array(z.string()).default([]),
@@ -79,6 +101,13 @@ export const clustersResponseSchema = z.object({
   level: z.number().int().nonnegative(),
   clusters: z.array(clusterSummarySchema),
   inter_cluster_edges: z.array(interClusterEdgeSchema),
+  /** Always present on the authenticated production route; optional for legacy test/demo tiles. */
+  available: z.boolean().optional(),
+  status: lodStatusSchema.optional(),
+  reason: z.string().optional(),
+  /** Production marker; omitted only by legacy local fixtures. */
+  transport: z.literal('json-hierarchy-preview').optional(),
+  streaming: z.literal(false).optional(),
 })
 export type ClustersResponse = z.infer<typeof clustersResponseSchema>
 
@@ -110,22 +139,53 @@ export const expandResponseSchema = z.object({
   nodes: z.array(expandNodeSchema),
   edges: z.array(expandEdgeSchema),
   child_clusters: z.array(childClusterSchema).default([]),
+  /** Always present on the authenticated production route; optional for legacy test/demo tiles. */
+  available: z.boolean().optional(),
+  status: lodStatusSchema.optional(),
+  reason: z.string().optional(),
+  /** Production marker; omitted only by legacy local fixtures. */
+  transport: z.literal('json-hierarchy-preview').optional(),
+  streaming: z.literal(false).optional(),
 })
 export type ExpandResponse = z.infer<typeof expandResponseSchema>
 
+/** The graph selected by the authenticated WebUI session for LOD requests. */
+export const lodScopeResponseSchema = z.object({
+  available: z.boolean(),
+  status: lodStatusSchema,
+  graph: z.string().nullable(),
+  reason: z.string().optional(),
+})
+export type LodScopeResponse = z.infer<typeof lodScopeResponseSchema>
+
 /**
- * A page of an otherwise-single response, for progressive rendering.
+ * Authenticated hierarchy refresh receipt. A ready receipt is the feature
+ * gate for JSON clusters/expand: without an authority-scoped proof, a source
+ * version, and a fresh observation, the preview stays unavailable.
+ */
+export const lodHierarchyRefreshResponseSchema = z.object({
+  available: z.boolean(),
+  status: lodStatusSchema,
+  graph: z.string().nullable(),
+  authority_scoped: z.boolean(),
+  version: z.number().int().nonnegative().nullish(),
+  freshness: z.enum(['fresh', 'stale', 'unknown']).nullish(),
+  observed_at: z.string().nullish(),
+  transport: z.literal('json-hierarchy-preview'),
+  streaming: z.literal(false),
+  reason: z.string().optional(),
+})
+export type LodHierarchyRefreshResponse = z.infer<typeof lodHierarchyRefreshResponseSchema>
+
+/**
+ * A page of an otherwise-single response. The JSON preview currently yields
+ * one complete tile per request; this wrapper remains useful to the local
+ * state machine and explicit test fixture, but it is not a VIZ-2 stream.
  *
- * Neither half of the briefed contract is paginated on the wire today — this
- * is this lane's own addition, motivated by deliverable #3 ("render a first
- * frame from the first tile; refine as more arrive"). A `LodTransport`
- * yields these instead of one big payload so the UI can paint as data
- * arrives rather than blocking on the whole response, the same shape of
- * trade-off `layout.worker.ts` already makes for the force simulation
- * (`POST_EVERY` snapshots instead of one final result). `HttpLodTransport`
- * yields exactly one tile per call (whatever the server sends back) until a
- * real tiled endpoint exists; `MockLodTransport` chunks its synthetic
- * response to exercise the progressive path today.
+ * `HttpLodTransport` yields exactly one tile per call (whatever the server
+ * sends back); `MockLodTransport` may split synthetic data to exercise local
+ * state transitions, but neither is evidence of binary/tiled production
+ * support.
  */
 export interface LodTile<T> {
   data: T
@@ -134,7 +194,7 @@ export interface LodTile<T> {
   done: boolean
 }
 
-/** Identifies which graph(s) a request scopes to — same convention `graph3d` uses. */
+/** Identifies the graph a request scopes to; production LOD requests require exactly one. */
 export type LodGraphScope = string[]
 
 /**
@@ -144,6 +204,13 @@ export type LodGraphScope = string[]
  * parent's children (omitted at the root).
  */
 export interface LodTransport {
+  /**
+   * Authenticate and refresh the hierarchy, returning freshness/version
+   * evidence. The production implementation calls this before `clusters` or
+   * `expand`; the explicit synthetic fixture intentionally remains offline.
+   */
+  refresh(graph: LodGraphScope, signal?: AbortSignal): Promise<LodHierarchyRefreshResponse>
+
   clusters(
     graph: LodGraphScope,
     level: number,

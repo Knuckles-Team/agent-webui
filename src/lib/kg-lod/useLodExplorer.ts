@@ -46,20 +46,26 @@ import type {
   LodTile,
   LodTransport,
 } from './contract'
+import { LodUnavailableError } from './contract'
 import { clustersToScope, emptyScope, expandToScope, mergeScopes, removeClusterNode, type LodScope } from './lodGraph'
 
 export interface UseLodExplorerOptions {
   transport: LodTransport
   graph: LodGraphScope
+  /** Keep the controller idle until the server has returned an authorized graph scope. */
+  enabled?: boolean
 }
 
 export type ExpandOutcome = 'expanded' | 'no-children' | 'error'
+export type LodRootStatus = 'loading' | 'ready' | 'unavailable' | 'error'
 
 export interface UseLodExplorerResult {
   /** The combined scope to render: root clusters with every open expansion folded in. */
   scope: LodScope
   /** True while the root level's first tile has not landed yet. */
   rootLoading: boolean
+  /** Whether the root hierarchy is ready, unavailable, or failed to load. */
+  rootStatus: LodRootStatus
   error: string | null
   /** Ids currently being fetched — drive a per-node loading affordance. */
   pending: ReadonlySet<string>
@@ -122,6 +128,141 @@ interface ExpandTileSinkParams {
   setFollowIndex: Dispatch<SetStateAction<number | null>>
 }
 
+interface RootTileSinkParams {
+  transport: LodTransport
+  graph: LodGraphScope
+  controller: AbortController
+  setRoot: Dispatch<SetStateAction<LodScope>>
+  setRootLoading: Dispatch<SetStateAction<boolean>>
+  setRootStatus: Dispatch<SetStateAction<LodRootStatus>>
+  setError: Dispatch<SetStateAction<string | null>>
+}
+
+interface RootTileResult {
+  sawTile: boolean
+  sawDone: boolean
+}
+
+interface RootLoadParams extends Omit<RootTileSinkParams, 'controller'> {
+  enabled: boolean
+  rootAbort: { current: AbortController | null }
+  expandAbort: Map<string, AbortController>
+  setPending: Dispatch<SetStateAction<ReadonlySet<string>>>
+  setExpanded: Dispatch<SetStateAction<Map<string, AccumulatedExpansion>>>
+  setLastExpandedId: Dispatch<SetStateAction<string | null>>
+  setFollowIndex: Dispatch<SetStateAction<number | null>>
+}
+
+function abortExpansionControllers(expandAbort: Map<string, AbortController>): void {
+  for (const controller of expandAbort.values()) controller.abort()
+  expandAbort.clear()
+}
+
+function clearExplorerState(
+  setRoot: Dispatch<SetStateAction<LodScope>>,
+  setRootLoading: Dispatch<SetStateAction<boolean>>,
+  setRootStatus: Dispatch<SetStateAction<LodRootStatus>>,
+  setError: Dispatch<SetStateAction<string | null>>,
+  setExpanded: Dispatch<SetStateAction<Map<string, AccumulatedExpansion>>>,
+  setLastExpandedId: Dispatch<SetStateAction<string | null>>,
+  setFollowIndex: Dispatch<SetStateAction<number | null>>,
+): void {
+  setRoot(emptyScope())
+  setRootLoading(false)
+  setRootStatus('unavailable')
+  setError(null)
+  setExpanded(new Map())
+  setLastExpandedId(null)
+  setFollowIndex(null)
+}
+
+function initialRootStatus(enabled: boolean): LodRootStatus {
+  return enabled ? 'loading' : 'unavailable'
+}
+
+async function applyRootTiles(p: RootTileSinkParams): Promise<RootTileResult> {
+  const accumulated: ClusterSummary[] = []
+  let sawTile = false
+  let sawDone = false
+  for await (const tile of p.transport.clusters(p.graph, 0, undefined, p.controller.signal)) {
+    sawTile = true
+    sawDone = sawDone || tile.done
+    accumulated.push(...tile.data.clusters)
+    const scope = clustersToScope({
+      level: tile.data.level,
+      clusters: accumulated,
+      inter_cluster_edges: tile.done ? tile.data.inter_cluster_edges : [],
+    })
+    if (p.controller.signal.aborted) return { sawTile, sawDone }
+    p.setRoot(scope)
+    p.setRootLoading(false)
+    p.setRootStatus('ready')
+  }
+  return { sawTile, sawDone }
+}
+
+function finishRootTiles(p: RootTileSinkParams, result: RootTileResult): void {
+  if (result.sawDone || p.controller.signal.aborted) return
+  p.setRootLoading(false)
+  p.setRootStatus('unavailable')
+  p.setError(
+    result.sawTile
+      ? 'Knowledge Graph hierarchy ended before completion.'
+      : 'Knowledge Graph hierarchy returned no data.',
+  )
+}
+
+function handleRootTileError(p: RootTileSinkParams, error: unknown): void {
+  if (p.controller.signal.aborted) return
+  p.setError(error instanceof Error ? error.message : String(error))
+  p.setRootLoading(false)
+  p.setRootStatus(error instanceof LodUnavailableError ? 'unavailable' : 'error')
+}
+
+async function consumeRootTiles(p: RootTileSinkParams): Promise<void> {
+  try {
+    finishRootTiles(p, await applyRootTiles(p))
+  } catch (error: unknown) {
+    handleRootTileError(p, error)
+  }
+}
+
+function startRootLoad(p: RootLoadParams): void {
+  p.rootAbort.current?.abort()
+  abortExpansionControllers(p.expandAbort)
+  p.setPending(new Set())
+  if (!p.enabled) {
+    clearExplorerState(
+      p.setRoot,
+      p.setRootLoading,
+      p.setRootStatus,
+      p.setError,
+      p.setExpanded,
+      p.setLastExpandedId,
+      p.setFollowIndex,
+    )
+    return
+  }
+  const controller = new AbortController()
+  p.rootAbort.current = controller
+  p.setRoot(emptyScope())
+  p.setRootLoading(true)
+  p.setRootStatus('loading')
+  p.setError(null)
+  p.setExpanded(new Map())
+  p.setLastExpandedId(null)
+  p.setFollowIndex(null)
+  void consumeRootTiles({
+    transport: p.transport,
+    graph: p.graph,
+    controller,
+    setRoot: p.setRoot,
+    setRootLoading: p.setRootLoading,
+    setRootStatus: p.setRootStatus,
+    setError: p.setError,
+  })
+}
+
 /** The parent level and ancestor expansion (if any) that `clusterId` expands from, per the current scope's meta. */
 function resolveExpansionContext(
   scope: LodScope,
@@ -171,9 +312,58 @@ async function consumeExpandTiles(p: ExpandTileSinkParams): Promise<{ aborted: b
   return { aborted: false, hasChildren: sawAnyTile && (accNodes.length > 0 || accClusters.length > 0) }
 }
 
-export function useLodExplorer({ transport, graph }: UseLodExplorerOptions): UseLodExplorerResult {
+interface ExpandRunParams {
+  enabled: boolean
+  transport: LodTransport
+  graph: LodGraphScope
+  clusterId: string
+  expanded: Map<string, AccumulatedExpansion>
+  scope: LodScope
+  expandAbort: Map<string, AbortController>
+  setPending: Dispatch<SetStateAction<ReadonlySet<string>>>
+  setExpanded: Dispatch<SetStateAction<Map<string, AccumulatedExpansion>>>
+  setLastExpandedId: Dispatch<SetStateAction<string | null>>
+  setFollowIndex: Dispatch<SetStateAction<number | null>>
+  setError: Dispatch<SetStateAction<string | null>>
+}
+
+async function runExpansion(p: ExpandRunParams): Promise<ExpandOutcome> {
+  if (!p.enabled) return 'error'
+  if (p.expanded.has(p.clusterId)) return 'no-children'
+  const { parentLevel, ancestorExpansionId } = resolveExpansionContext(p.scope, p.clusterId)
+  const controller = beginExpansion(p.clusterId, p.expandAbort, p.setPending)
+
+  try {
+    const result = await consumeExpandTiles({
+      transport: p.transport,
+      graph: p.graph,
+      clusterId: p.clusterId,
+      parentLevel,
+      ancestorExpansionId,
+      controller,
+      setExpanded: p.setExpanded,
+      setLastExpandedId: p.setLastExpandedId,
+      setFollowIndex: p.setFollowIndex,
+    })
+    if (result.aborted) return 'error'
+    return result.hasChildren ? 'expanded' : 'no-children'
+  } catch (error: unknown) {
+    if (controller.signal.aborted) return 'error'
+    p.setError(error instanceof Error ? error.message : String(error))
+    return 'error'
+  } finally {
+    p.setPending((current) => {
+      const next = new Set(current)
+      next.delete(p.clusterId)
+      return next
+    })
+  }
+}
+
+export function useLodExplorer({ transport, graph, enabled = true }: UseLodExplorerOptions): UseLodExplorerResult {
   const [root, setRoot] = useState<LodScope>(() => emptyScope())
-  const [rootLoading, setRootLoading] = useState(true)
+  const [rootLoading, setRootLoading] = useState(enabled)
+  const [rootStatus, setRootStatus] = useState<LodRootStatus>(() => initialRootStatus(enabled))
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Map<string, AccumulatedExpansion>>(() => new Map())
   const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set())
@@ -184,39 +374,29 @@ export function useLodExplorer({ transport, graph }: UseLodExplorerOptions): Use
   const expandAbort = useRef<Map<string, AbortController>>(new Map())
 
   const fetchRoot = useCallback(() => {
-    rootAbort.current?.abort()
-    const controller = new AbortController()
-    rootAbort.current = controller
-    setRootLoading(true)
-    setError(null)
-    setExpanded(new Map())
-    setLastExpandedId(null)
-    setFollowIndex(null)
-    void (async () => {
-      const accumulated: ClusterSummary[] = []
-      try {
-        for await (const tile of transport.clusters(graph, 0, undefined, controller.signal)) {
-          accumulated.push(...tile.data.clusters)
-          const scope = clustersToScope({
-            level: tile.data.level,
-            clusters: accumulated,
-            inter_cluster_edges: tile.done ? tile.data.inter_cluster_edges : [],
-          })
-          if (controller.signal.aborted) return
-          setRoot(scope)
-          setRootLoading(false)
-        }
-      } catch (err) {
-        if (controller.signal.aborted) return
-        setError(err instanceof Error ? err.message : String(err))
-        setRootLoading(false)
-      }
-    })()
-  }, [transport, graph])
+    startRootLoad({
+      enabled,
+      rootAbort,
+      expandAbort: expandAbort.current,
+      setPending,
+      setExpanded,
+      setLastExpandedId,
+      setFollowIndex,
+      transport,
+      graph,
+      setRoot,
+      setRootLoading,
+      setRootStatus,
+      setError,
+    })
+  }, [enabled, transport, graph])
 
   useEffect(() => {
     fetchRoot()
-    return () => rootAbort.current?.abort()
+    return () => {
+      rootAbort.current?.abort()
+      abortExpansionControllers(expandAbort.current)
+    }
   }, [fetchRoot])
 
   // ── the combined scope: root with every open expansion folded in ───────
@@ -238,38 +418,22 @@ export function useLodExplorer({ transport, graph }: UseLodExplorerOptions): Use
   }, [scope, lastExpandedId])
 
   const expand = useCallback(
-    async (clusterId: string): Promise<ExpandOutcome> => {
-      if (expanded.has(clusterId)) return 'no-children'
-      const { parentLevel, ancestorExpansionId } = resolveExpansionContext(scope, clusterId)
-      const controller = beginExpansion(clusterId, expandAbort.current, setPending)
-
-      try {
-        const result = await consumeExpandTiles({
-          transport,
-          graph,
-          clusterId,
-          parentLevel,
-          ancestorExpansionId,
-          controller,
-          setExpanded,
-          setLastExpandedId,
-          setFollowIndex,
-        })
-        if (result.aborted) return 'error'
-        return result.hasChildren ? 'expanded' : 'no-children'
-      } catch (err) {
-        if (controller.signal.aborted) return 'error'
-        setError(err instanceof Error ? err.message : String(err))
-        return 'error'
-      } finally {
-        setPending((current) => {
-          const next = new Set(current)
-          next.delete(clusterId)
-          return next
-        })
-      }
-    },
-    [transport, graph, expanded, scope],
+    (clusterId: string) =>
+      runExpansion({
+        enabled,
+        transport,
+        graph,
+        clusterId,
+        expanded,
+        scope,
+        expandAbort: expandAbort.current,
+        setPending,
+        setExpanded,
+        setLastExpandedId,
+        setFollowIndex,
+        setError,
+      }),
+    [enabled, transport, graph, expanded, scope],
   )
 
   const collapse = useCallback((clusterId: string) => {
@@ -305,8 +469,7 @@ export function useLodExplorer({ transport, graph }: UseLodExplorerOptions): Use
   }, [])
 
   const reset = useCallback(() => {
-    for (const controller of expandAbort.current.values()) controller.abort()
-    expandAbort.current.clear()
+    abortExpansionControllers(expandAbort.current)
     setExpanded(new Map())
     setLastExpandedId(null)
     setFollowIndex(null)
@@ -321,6 +484,7 @@ export function useLodExplorer({ transport, graph }: UseLodExplorerOptions): Use
   return {
     scope,
     rootLoading,
+    rootStatus,
     error,
     pending,
     expandedIds,

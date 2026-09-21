@@ -1,21 +1,24 @@
 /**
  * @file mockTransport.ts
- * @description `LodTransport` implementation over the synthetic hierarchy in
- * `mockGenerator.ts`. This is what lets this lane build and demonstrate LOD
- * rendering, expand-on-demand and progressive tiling TODAY, without waiting
- * on VIZ-1 (server clustering) or VIZ-2 (binary tile protocol) to land. Swap
- * `HttpLodTransport` (`httpTransport.ts`) in once they have — both implement
- * the same `LodTransport` interface from `contract.ts`, so nothing above
- * this file (the LOD controller hook, the view) needs to change.
+ * @description Explicit test/dev-only `LodTransport` implementation over the
+ * synthetic hierarchy in `mockGenerator.ts`. Production views must use
+ * `HttpLodTransport`; this fixture is never an implicit fallback when the
+ * authenticated graph gateway is unavailable.
  *
- * Chunks each response into `LodTile`s (`clusterTileSize` / `nodeTileSize`
- * entries per tile) with an `await` between them, so a consumer iterating
- * with `for await` observes exactly the progressive-arrival shape a real
- * paginated/streamed backend would produce — see `contract.ts`'s `LodTile`
- * doc for why this file, not the server, currently owns tiling.
+ * Chunks synthetic responses into `LodTile`s (`clusterTileSize` /
+ * `nodeTileSize` entries per tile) with an `await` between them so state-
+ * machine tests can exercise multiple arrivals. This fixture is not evidence
+ * of a production paginated, binary, or streaming backend.
  */
 
-import type { ClustersResponse, ExpandResponse, LodGraphScope, LodTile, LodTransport } from './contract'
+import type {
+  ClustersResponse,
+  ExpandResponse,
+  LodGraphScope,
+  LodHierarchyRefreshResponse,
+  LodTile,
+  LodTransport,
+} from './contract'
 import {
   DEFAULT_MOCK_CONFIG,
   describeCluster,
@@ -29,7 +32,7 @@ export interface MockLodTransportOptions {
   config?: MockGeneratorConfig
   clusterTileSize?: number
   nodeTileSize?: number
-  /** Milliseconds to await between tiles — 0 in tests, a small value to make progressive fill visible in the app. */
+  /** Milliseconds to await between synthetic tiles — 0 in tests. */
   tileDelayMs?: number
 }
 
@@ -56,6 +59,23 @@ export class MockLodTransport implements LodTransport {
     this.clusterTileSize = options.clusterTileSize ?? 500
     this.nodeTileSize = options.nodeTileSize ?? 2_000
     this.tileDelayMs = options.tileDelayMs ?? 0
+  }
+
+  refresh(graph: LodGraphScope, signal?: AbortSignal): Promise<LodHierarchyRefreshResponse> {
+    signal?.throwIfAborted()
+    // Synthetic data has no authenticated EG authority or source version. It
+    // remains useful for isolated state-machine tests, but must never be
+    // mistaken for a production hierarchy preview receipt.
+    void graph
+    return Promise.resolve({
+      available: false,
+      status: 'unavailable',
+      graph: null,
+      authority_scoped: false,
+      transport: 'json-hierarchy-preview',
+      streaming: false,
+      reason: 'Synthetic hierarchy data has no authenticated authority proof.',
+    })
   }
 
   async *clusters(

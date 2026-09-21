@@ -9,9 +9,10 @@
  * ## Why a separate view rather than a mode toggle on `Graph3DView`
  *
  * `Graph3DView` answers "show me the connected core" with one fetch and one
- * `Graph3DModel`. This view answers a different question — "show me the
- * TOP of a graph too large to fetch at all, and let me drill in" — with a
- * server-paced, progressively-tiled, expandable HIERARCHY. The two data
+ * `Graph3DModel`. This view is a bounded JSON hierarchy PREVIEW: when its
+ * explicit feature flag and authenticated EG freshness receipt are present,
+ * it can show a hierarchy and let the operator drill in. It is not the
+ * promised VIZ-2 binary/tiled streaming production surface. The two data
  * flows are different enough (see `useLodExplorer.ts`'s file doc) that
  * folding them into one component's state machine would obscure both. What
  * they share — the canvas, the interaction feel, the effect toggles — is
@@ -27,7 +28,7 @@
  * (`node_count`-derived, not degree-derived — `lodGraph.ts`). Hovering,
  * clicking, isolating, filtering by relationship type, all work on it
  * exactly as they would on a real node, because the renderer cannot tell
- * the difference. The one LOD-specific interaction is expand-on-demand:
+ * the difference. The one preview-specific interaction is expand-on-demand:
  * double-click (or the side panel's "Expand" button) fetches a cluster's
  * children and folds them into the SAME rendered scene in place of its
  * pseudo-node (`useLodExplorer.expand`), the camera glides to the new
@@ -53,21 +54,106 @@ import { neighbourhood, neighbours } from '@/components/knowledge-graph-3d/model
 import type { EffectSettings } from '@/components/knowledge-graph-3d/scene'
 import { NodeTypeBreakdown, type NodeTypeBreakdownData } from '@/components/knowledge-graph/NodeTypeBreakdown'
 import { cssColorToHex, nodeTypeColor, useIsDarkMode } from '@/components/knowledge-graph/theme-colors'
-import { MockLodTransport } from '@/lib/kg-lod/mockTransport'
-import { useLodExplorer } from '@/lib/kg-lod/useLodExplorer'
+import { HttpLodTransport } from '@/lib/kg-lod/httpTransport'
+import { lodScopeResponseSchema } from '@/lib/kg-lod/contract'
+import type { LodHierarchyRefreshResponse, LodScopeResponse } from '@/lib/kg-lod/contract'
+import { useLodExplorer, type UseLodExplorerResult } from '@/lib/kg-lod/useLodExplorer'
 
 /**
- * The transport swap point. `MockLodTransport` (`mockTransport.ts`) is what
- * lets this view run today, ahead of VIZ-1/VIZ-2 landing — see that file's
- * doc. Once the real routes exist and have been confirmed against this
- * lane's `contract.ts`, replace this with `new HttpLodTransport()`
- * (`httpTransport.ts`); nothing else in this file, `useLodExplorer.ts`, or
- * `lodGraph.ts` needs to change.
+ * Production always uses the authenticated WebUI graph gateway. The gateway
+ * selects one graph from the verified session and invokes only the
+ * authority-scoped hierarchy RPC after its freshness/version preflight; this
+ * view never contacts EG's loopback listener directly and never substitutes
+ * synthetic data when the preview is unavailable.
  */
-const LOD_TRANSPORT = new MockLodTransport()
+const LOD_TRANSPORT = new HttpLodTransport()
+const LOD_SCOPE_PATH = '/api/enhanced/graph/graph3d/scope'
+// Opt-in only: this lane is a bounded JSON hierarchy preview, not VIZ-2. The
+// backend performs an independent authority-scoped capability/freshness gate;
+// either gate being absent keeps the page visibly unavailable.
+const LOD_JSON_PREVIEW_ENABLED =
+  (import.meta.env as { VITE_GRAPH3D_LOD_JSON_PREVIEW?: string }).VITE_GRAPH3D_LOD_JSON_PREVIEW === 'true'
 
-/** Every graph the engine knows, same convention `graph3d` uses for its own `source_graphs`. */
-const LOD_GRAPH_SCOPE: string[] = []
+function isTimezoneQualifiedTimestamp(value: string): boolean {
+  return value.trim() === value && /(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value))
+}
+
+function isAuthorizedLodScope(scope: LodScopeResponse | null): scope is LodScopeResponse & { graph: string } {
+  return (
+    scope?.available === true && scope.status === 'ready' && typeof scope.graph === 'string' && scope.graph.length > 0
+  )
+}
+
+function hasFreshLodReceipt(
+  refresh: LodHierarchyRefreshResponse | null,
+): refresh is LodHierarchyRefreshResponse & { version: number; observed_at: string } {
+  if (refresh == null || !refresh.available || refresh.status !== 'ready') return false
+  if (!refresh.authority_scoped || refresh.freshness !== 'fresh') return false
+  if (typeof refresh.version !== 'number' || !Number.isFinite(refresh.version)) return false
+  if (typeof refresh.observed_at !== 'string') return false
+  return isTimezoneQualifiedTimestamp(refresh.observed_at)
+}
+
+function isReadyLodRefresh(
+  refresh: LodHierarchyRefreshResponse | null,
+  graph: string | undefined,
+): refresh is LodHierarchyRefreshResponse & { graph: string; version: number; observed_at: string } {
+  if (!hasFreshLodReceipt(refresh)) return false
+  return typeof graph === 'string' && refresh.graph === graph
+}
+
+function isLodPreviewReady(
+  enabled: boolean,
+  scope: LodScopeResponse | null,
+  refresh: LodHierarchyRefreshResponse | null,
+): boolean {
+  return enabled && isAuthorizedLodScope(scope) && isReadyLodRefresh(refresh, scope.graph)
+}
+
+interface LodPreviewLoadResult {
+  scope: LodScopeResponse | null
+  scopeError: string | null
+  refresh: LodHierarchyRefreshResponse | null
+  refreshError: string | null
+}
+
+async function loadLodPreview(signal: AbortSignal): Promise<LodPreviewLoadResult> {
+  if (!LOD_JSON_PREVIEW_ENABLED) {
+    return {
+      scope: null,
+      scopeError: 'JSON hierarchy preview is disabled until authority-scoped EG support is deployed.',
+      refresh: null,
+      refreshError: null,
+    }
+  }
+  const scope = await fetchValidated(LOD_SCOPE_PATH, lodScopeResponseSchema, { signal })
+  if (!isAuthorizedLodScope(scope)) {
+    return {
+      scope,
+      scopeError: scope.reason ?? 'No authorized graph scope is available.',
+      refresh: null,
+      refreshError: null,
+    }
+  }
+  try {
+    const refresh = await LOD_TRANSPORT.refresh([scope.graph], signal)
+    return {
+      scope,
+      scopeError: null,
+      refresh,
+      refreshError: isReadyLodRefresh(refresh, scope.graph)
+        ? null
+        : (refresh.reason ?? 'Authority-scoped hierarchy support is not available.'),
+    }
+  } catch (error: unknown) {
+    return {
+      scope,
+      scopeError: null,
+      refresh: null,
+      refreshError: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
 
 const HOP_CHOICES = [1, 2, 3] as const
 const DEFAULT_HOPS = 2
@@ -168,6 +254,7 @@ function renderCanvasControls({
               onHopsChange(choice)
             }}
             title="How many hops of context a selection reveals"
+            aria-pressed={hops === choice}
             className={`px-2 py-1 text-[11px] transition-colors ${
               hops === choice ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
             }`}
@@ -200,6 +287,10 @@ interface SelectedMetaType {
   clusterId?: string | null
 }
 
+function isSelectionInBounds(selected: number | null, nodeCount: number, metaCount: number): selected is number {
+  return selected != null && selected >= 0 && selected < nodeCount && selected < metaCount
+}
+
 function renderClusterExpandControls({
   selectedMeta,
   isExpanded,
@@ -229,7 +320,7 @@ function renderClusterExpandControls({
           <Undo2 className="mr-1.5 h-3.5 w-3.5" /> Collapse
         </Button>
       ) : (
-        <Button size="sm" variant="outline" onClick={onExpand} disabled={isPending}>
+        <Button size="sm" variant="outline" onClick={onExpand} disabled={isPending} aria-busy={isPending}>
           <Boxes className="mr-1.5 h-3.5 w-3.5" />
           {isPending ? 'Expanding…' : 'Expand'}
         </Button>
@@ -357,6 +448,7 @@ function renderRelTypesList({
             onClick={() => {
               onToggle(type)
             }}
+            aria-pressed={!hidden}
             className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted ${
               hidden ? 'opacity-40' : ''
             }`}
@@ -389,11 +481,66 @@ function renderLoadError(error: string | null) {
   )
 }
 
+function renderLodStatus({
+  previewEnabled,
+  loading,
+  error,
+  reason,
+  onRetry,
+}: {
+  previewEnabled: boolean
+  loading: boolean
+  error: string | null
+  reason?: string
+  onRetry: () => void
+}) {
+  if (!previewEnabled) {
+    return (
+      <Card role="status" aria-live="polite" className="max-w-md">
+        <CardHeader>
+          <CardTitle className="text-base">JSON hierarchy preview disabled</CardTitle>
+          <CardDescription>
+            This bounded preview is opt-in and remains disabled until the authority-scoped EG hierarchy contract is
+            deployed. It does not claim VIZ-2 binary or streaming support.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+  if (loading) {
+    return (
+      <Card role="status" aria-live="polite" className="max-w-md">
+        <CardHeader>
+          <CardTitle className="text-base">Checking JSON hierarchy preview</CardTitle>
+          <CardDescription>
+            Reading the authorized graph scope and freshness/version receipt before requesting hierarchy data…
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+  return (
+    <Card role="status" aria-live="polite" className="max-w-md">
+      <CardHeader>
+        <CardTitle className="text-base">JSON hierarchy preview unavailable</CardTitle>
+        <CardDescription>
+          {error ?? reason ?? 'The authenticated graph gateway has no authority-scoped hierarchy data to display yet.'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button size="sm" variant="outline" onClick={onRetry}>
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Try again
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
 function renderRootLoadingOverlay(rootLoading: boolean) {
   if (!rootLoading) return null
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 text-sm text-muted-foreground backdrop-blur-sm">
-      <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Reading the top level…
+      <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Reading the JSON hierarchy top level…
     </div>
   )
 }
@@ -403,7 +550,9 @@ function resolveSelection(
   scope: { meta: SelectedMetaType[] },
   selected: number | null,
 ): { node: SelectedNodeType; meta: SelectedMetaType } | null {
-  if (selected == null) return null
+  if (!isSelectionInBounds(selected, model.nodes.length, scope.meta.length)) {
+    return null
+  }
   return { node: model.nodes[selected], meta: scope.meta[selected] }
 }
 
@@ -485,9 +634,159 @@ function renderTypesRelsTabs({
   )
 }
 
+function renderRootExplorerError(rootStatus: UseLodExplorerResult['rootStatus'], error: string | null) {
+  return rootStatus === 'ready' ? renderLoadError(error) : null
+}
+
+function lodStatusError({
+  scopeError,
+  refreshError,
+  previewReady,
+  rootStatus,
+  explorerError,
+}: {
+  scopeError: string | null
+  refreshError: string | null
+  previewReady: boolean
+  rootStatus: UseLodExplorerResult['rootStatus']
+  explorerError: string | null
+}): string | null {
+  if (scopeError) return scopeError
+  if (refreshError) return refreshError
+  if (previewReady && rootStatus !== 'loading') return explorerError
+  return null
+}
+
+interface LodCanvasContentProps {
+  explorer: UseLodExplorerResult
+  previewReady: boolean
+  lodScopeLoading: boolean
+  lodScopeError: string | null
+  lodRefreshError: string | null
+  lodScope: LodScopeResponse | null
+  lodRefresh: LodHierarchyRefreshResponse | null
+  onRetry: () => void
+  isDark: boolean
+  background: string
+  selected: number | null
+  onSelect: (index: number | null) => void
+  onExpand: (index: number) => void
+  visibleMask: Uint8Array | null
+  autoRotate: boolean
+  frameToken: number
+  effects: EffectSettings
+  hops: (typeof HOP_CHOICES)[number]
+  relationshipFilter: Set<string> | null
+  onIsolate: () => void
+  onHopsChange: (hops: (typeof HOP_CHOICES)[number]) => void
+  onShowAll: () => void
+  showAllDisabled: boolean
+  onReframe: () => void
+  clusterCount: number
+  leafCount: number
+}
+
+function renderLodCanvasContent({
+  explorer,
+  previewReady,
+  lodScopeLoading,
+  lodScopeError,
+  lodRefreshError,
+  lodScope,
+  lodRefresh,
+  onRetry,
+  isDark,
+  background,
+  selected,
+  onSelect,
+  onExpand,
+  visibleMask,
+  autoRotate,
+  frameToken,
+  effects,
+  hops,
+  relationshipFilter,
+  onIsolate,
+  onHopsChange,
+  onShowAll,
+  showAllDisabled,
+  onReframe,
+  clusterCount,
+  leafCount,
+}: LodCanvasContentProps) {
+  const { scope } = explorer
+  const model = scope.model
+  if (previewReady && explorer.rootStatus === 'ready') {
+    return (
+      <>
+        {renderRootLoadingOverlay(explorer.rootLoading)}
+        <Graph3DCanvas
+          model={model}
+          isDark={isDark}
+          background={background}
+          selected={selected}
+          onSelect={onSelect}
+          onExpand={onExpand}
+          visibleMask={visibleMask}
+          autoRotate={autoRotate}
+          frameToken={frameToken}
+          effects={effects}
+          contextHops={hops}
+          relationshipFilter={relationshipFilter}
+          sizeOverride={scope.sizeHints}
+          emphasisMask={explorer.emphasisMask}
+          fixedPositions={scope.fixedPositions}
+        />
+        {renderCanvasBadges({
+          clusterCount,
+          leafCount,
+          edgeCount: model.edges.length,
+          expandedCount: explorer.expandedIds.size,
+          pendingCount: explorer.pending.size,
+        })}
+        {renderCanvasControls({
+          selected,
+          onIsolate,
+          hops,
+          onHopsChange,
+          onShowAll,
+          showAllDisabled,
+          onReframe,
+        })}
+      </>
+    )
+  }
+  return (
+    <div className="flex h-full items-center justify-center p-6">
+      {renderLodStatus({
+        previewEnabled: LOD_JSON_PREVIEW_ENABLED,
+        loading: lodScopeLoading || (previewReady && explorer.rootStatus === 'loading'),
+        error: lodStatusError({
+          scopeError: lodScopeError,
+          refreshError: lodRefreshError,
+          previewReady,
+          rootStatus: explorer.rootStatus,
+          explorerError: explorer.error,
+        }),
+        reason: lodRefresh?.reason ?? lodScope?.reason,
+        onRetry,
+      })}
+    </div>
+  )
+}
+
 export default function Graph3DLodView() {
   const isDark = useIsDarkMode()
-  const explorer = useLodExplorer({ transport: LOD_TRANSPORT, graph: LOD_GRAPH_SCOPE })
+  const [lodScope, setLodScope] = useState<LodScopeResponse | null>(null)
+  const [lodScopeLoading, setLodScopeLoading] = useState(true)
+  const [lodScopeError, setLodScopeError] = useState<string | null>(null)
+  const [lodRefresh, setLodRefresh] = useState<LodHierarchyRefreshResponse | null>(null)
+  const [lodRefreshError, setLodRefreshError] = useState<string | null>(null)
+  const [lodScopeReloadToken, setLodScopeReloadToken] = useState(0)
+  const lodGraphScope = useMemo(() => (isAuthorizedLodScope(lodScope) ? [lodScope.graph] : []), [lodScope])
+  const lodPreviewReady = isLodPreviewReady(LOD_JSON_PREVIEW_ENABLED, lodScope, lodRefresh)
+  const explorer = useLodExplorer({ transport: LOD_TRANSPORT, graph: lodGraphScope, enabled: lodPreviewReady })
+  const reloadExplorer = explorer.reload
   const { scope } = explorer
   const model = scope.model
 
@@ -508,6 +807,35 @@ export default function Graph3DLodView() {
   useEffect(() => {
     setBackground(backgroundHex(isDark))
   }, [isDark])
+
+  useEffect(() => {
+    let cancelled = false
+    const controller = new AbortController()
+    setLodScopeLoading(true)
+    setLodScopeError(null)
+    setLodRefresh(null)
+    setLodRefreshError(null)
+    void loadLodPreview(controller.signal)
+      .then((result) => {
+        if (cancelled) return
+        setLodScope(result.scope)
+        setLodScopeError(result.scopeError)
+        setLodRefresh(result.refresh)
+        setLodRefreshError(result.refreshError)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setLodScope(null)
+        setLodScopeError(error instanceof Error ? error.message : String(error))
+      })
+      .finally(() => {
+        if (!cancelled) setLodScopeLoading(false)
+      })
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [lodScopeReloadToken])
 
   // A tile landing, an expand, or a collapse all reshape `model` (new node
   // indices throughout — `buildModel` is rebuilt from scratch every time,
@@ -547,6 +875,14 @@ export default function Graph3DLodView() {
       cancelled = true
     }
   }, [])
+
+  const retryLod = useCallback(() => {
+    if (lodPreviewReady) {
+      reloadExplorer()
+      return
+    }
+    setLodScopeReloadToken((token) => token + 1)
+  }, [lodPreviewReady, reloadExplorer])
 
   const effects: EffectSettings = useMemo(() => ({ bloom, depthOfField }), [bloom, depthOfField])
 
@@ -597,7 +933,7 @@ export default function Graph3DLodView() {
 
   const selection = resolveSelection(model, scope, selected)
   const selectedNeighbours = useMemo(() => {
-    if (selected == null) return []
+    if (!isSelectionInBounds(selected, model.nodes.length, scope.meta.length)) return []
     return neighbours(model, selected)
       .map((index) => ({ index, node: model.nodes[index], degree: model.degree[index] }))
       .sort((a, b) => b.degree - a.degree)
@@ -605,6 +941,7 @@ export default function Graph3DLodView() {
 
   const onExpandDoubleClick = useCallback(
     (index: number) => {
+      if (!isSelectionInBounds(index, model.nodes.length, scope.meta.length)) return
       const meta = scope.meta[index]
       const node = model.nodes[index]
       if (meta.kind !== 'cluster' || !meta.clusterId) {
@@ -645,28 +982,29 @@ export default function Graph3DLodView() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <Layers className="h-6 w-6" /> Knowledge Graph 3D — LOD
+            <Layers className="h-6 w-6" /> Knowledge Graph 3D — JSON hierarchy preview
           </h1>
           <p className="text-sm text-muted-foreground">
-            The graph at scale: clusters at the top, sized by member count. Double-click a cluster (or hover it and
-            press Expand) to drill in — its children fold into view, the camera follows, and the rest of the graph
-            recedes without disappearing.
+            This bounded JSON hierarchy preview shows authenticated cluster summaries and lets you drill in.
+            Double-click a cluster (or hover it and press Expand) to request its children. It is not the VIZ-2 binary
+            or streaming production path; when authority-scoped freshness/version evidence is unavailable, this page
+            stays visibly unavailable instead of showing sample data.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Switch checked={autoRotate} onCheckedChange={setAutoRotate} aria-label="Auto-rotate" />
             <Orbit className="h-3.5 w-3.5" /> Drift
-          </label>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Switch checked={bloom} onCheckedChange={setBloom} aria-label="Bloom" />
             <Sparkles className="h-3.5 w-3.5" /> Bloom
-          </label>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Switch checked={depthOfField} onCheckedChange={setDepthOfField} aria-label="Depth of field" />
             Depth of field
-          </label>
-          <Button variant="outline" size="sm" onClick={explorer.reload}>
+          </div>
+          <Button variant="outline" size="sm" onClick={retryLod}>
             <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Reload
           </Button>
           <Button variant="outline" size="sm" onClick={explorer.reset} disabled={explorer.expandedIds.size === 0}>
@@ -675,7 +1013,7 @@ export default function Graph3DLodView() {
         </div>
       </div>
 
-      {renderLoadError(explorer.error)}
+      {renderRootExplorerError(explorer.rootStatus, explorer.error)}
 
       {/*
         `h-[70vh]` (a viewport-relative unit, ALWAYS definite, unlike an
@@ -706,41 +1044,35 @@ export default function Graph3DLodView() {
       */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">
         <Card className="relative h-[70vh] min-h-[440px] overflow-hidden p-0">
-          {renderRootLoadingOverlay(explorer.rootLoading)}
-          <Graph3DCanvas
-            model={model}
-            isDark={isDark}
-            background={background}
-            selected={selected}
-            onSelect={setSelected}
-            onExpand={onExpandDoubleClick}
-            visibleMask={visibleMask}
-            autoRotate={autoRotate}
-            frameToken={frameToken}
-            effects={effects}
-            contextHops={hops}
-            relationshipFilter={relationshipFilter}
-            sizeOverride={scope.sizeHints}
-            emphasisMask={explorer.emphasisMask}
-            fixedPositions={scope.fixedPositions}
-          />
-          {renderCanvasBadges({
-            clusterCount,
-            leafCount,
-            edgeCount: model.edges.length,
-            expandedCount: explorer.expandedIds.size,
-            pendingCount: explorer.pending.size,
-          })}
-          {renderCanvasControls({
+          {renderLodCanvasContent({
+            explorer,
+            previewReady: lodPreviewReady,
+            lodScopeLoading,
+            lodScopeError,
+            lodRefreshError,
+            lodScope,
+            lodRefresh,
+            onRetry: retryLod,
+            isDark,
+            background,
             selected,
-            onIsolate: isolate,
+            onSelect: setSelected,
+            onExpand: onExpandDoubleClick,
+            visibleMask,
+            autoRotate,
+            frameToken,
+            effects,
             hops,
+            relationshipFilter,
+            onIsolate: isolate,
             onHopsChange: setHops,
             onShowAll: showAll,
             showAllDisabled: !revealed && !highlightType,
             onReframe: () => {
               setFrameToken((token) => token + 1)
             },
+            clusterCount,
+            leafCount,
           })}
         </Card>
 

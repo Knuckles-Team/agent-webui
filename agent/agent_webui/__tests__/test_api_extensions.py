@@ -3,6 +3,7 @@ from __future__ import annotations
 """Test API endpoints for agent-webui backend."""
 
 import asyncio
+import math
 import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -54,6 +55,8 @@ class TestAuthenticationGateIsNotWeakened:
         response = bare_client.get('/api/enhanced/graph/stats')
 
         assert response.status_code == 401
+        scope_response = bare_client.get('/api/enhanced/graph/graph3d/scope')
+        assert scope_response.status_code == 401
 
     def test_underprivileged_role_is_still_refused_on_an_admin_route(
         self, mock_agent, mock_workspace_helpers, authenticated_client_factory
@@ -974,6 +977,262 @@ class TestGraph3DEndpoint:
             assert data['available'] is False
             assert data['nodes'] == []
             assert data['edges'] == []
+
+
+class TestGraph3DLodEndpoints:
+    """The authenticated WebUI proxy for the JSON hierarchy preview."""
+
+    @staticmethod
+    def _graph(client):
+        response = client.get('/api/enhanced/graph/graph3d/scope')
+        assert response.status_code == 200
+        data = response.json()
+        assert data['available'] is True
+        assert data['status'] == 'ready'
+        return data['graph']
+
+    @staticmethod
+    def _enable_scoped_refresh(mock_graph_engine, graph):
+        """Opt a test double into the explicit CX-156-safe EG capability."""
+        graph_client = mock_graph_engine.graph.client
+        graph_client.supports.return_value = True
+        graph_client.graph.cluster_hierarchy_refresh_scoped.return_value = {
+            'graph': graph,
+            'authority_scoped': True,
+            'version': 7,
+            'freshness': 'fresh',
+            'observed_at': '2026-08-29T12:00:00Z',
+        }
+
+    def test_clusters_use_the_authenticated_graph_and_normalize_level(
+        self, client, mock_graph_engine
+    ):
+        graph = self._graph(client)
+        self._enable_scoped_refresh(mock_graph_engine, graph)
+        mock_graph_engine.graph.client.graph.cluster_hierarchy_clusters.return_value = {
+            'level': 1,
+            'clusters': [
+                {
+                    'id': 'L1-0',
+                    'label': 'Root cluster',
+                    'node_count': 2,
+                    'edge_count': 1.5,
+                    'top_node_types': [['Skill', 2]],
+                }
+            ],
+            'inter_cluster_edges': [],
+        }
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            response = client.get(
+                '/api/enhanced/graph/graph3d/clusters',
+                params={'graph': graph, 'level': 0},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['available'] is True
+        assert data['status'] == 'ready'
+        assert data['level'] == 0
+        assert data['transport'] == 'json-hierarchy-preview'
+        assert data['streaming'] is False
+        assert data['clusters'][0]['top_node_types'] == ['Skill']
+        assert data['clusters'][0]['edge_count'] == 1.5
+        mock_graph_engine.graph.client.graph.cluster_hierarchy_refresh_scoped.assert_called_once_with()
+        mock_graph_engine.graph.client.graph.cluster_hierarchy_clusters.assert_called_once_with(
+            1, None
+        )
+
+    def test_expand_translates_id_edges_to_closed_index_payload(
+        self, client, mock_graph_engine
+    ):
+        graph = self._graph(client)
+        self._enable_scoped_refresh(mock_graph_engine, graph)
+        mock_graph_engine.graph.client.graph.cluster_hierarchy_expand.return_value = {
+            'nodes': [
+                {
+                    'id': 'node-a',
+                    'properties': {'node_type': 'Skill', 'name': 'Build skill'},
+                },
+                {
+                    'id': 'node-b',
+                    'properties': {'node_type': 'Agent', 'name': 'Builder'},
+                },
+            ],
+            'edges': [{'src_id': 'node-a', 'dst_id': 'node-b', 'type': 'USES'}],
+            'child_clusters': [],
+        }
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            response = client.get(
+                '/api/enhanced/graph/graph3d/expand',
+                params={'graph': graph, 'cluster_id': 'L1-0'},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['available'] is True
+        assert data['nodes'][0] == {
+            'id': 'node-a',
+            'type': 'Skill',
+            'name': 'Build skill',
+        }
+        assert data['edges'] == [{'src_idx': 0, 'dst_idx': 1, 'type': 'USES'}]
+        mock_graph_engine.graph.client.graph.cluster_hierarchy_refresh_scoped.assert_called_once_with()
+        mock_graph_engine.graph.client.graph.cluster_hierarchy_expand.assert_called_once_with(
+            'L1-0'
+        )
+
+    def test_refresh_returns_authenticated_freshness_and_version_receipt(
+        self, client, mock_graph_engine
+    ):
+        graph = self._graph(client)
+        self._enable_scoped_refresh(mock_graph_engine, graph)
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            response = client.get(
+                '/api/enhanced/graph/graph3d/refresh', params={'graph': graph}
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            'available': True,
+            'status': 'ready',
+            'graph': graph,
+            'authority_scoped': True,
+            'version': 7,
+            'freshness': 'fresh',
+            'observed_at': '2026-08-29T12:00:00Z',
+            'transport': 'json-hierarchy-preview',
+            'streaming': False,
+        }
+
+    def test_legacy_hierarchy_capability_fails_closed_before_cluster_rpc(
+        self, client, mock_graph_engine
+    ):
+        graph = self._graph(client)
+        # Even an engine that exposes the old cluster method is not enough:
+        # there is no negotiated authority-scoped capability or scoped method.
+        mock_graph_engine.graph.client.graph.cluster_hierarchy_clusters.return_value = {
+            'level': 1,
+            'clusters': [],
+            'inter_cluster_edges': [],
+        }
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            response = client.get(
+                '/api/enhanced/graph/graph3d/clusters',
+                params={'graph': graph, 'level': 0},
+            )
+
+        assert response.status_code == 503
+        data = response.json()
+        assert data['available'] is False
+        assert data['status'] == 'unavailable'
+        mock_graph_engine.graph.client.graph.cluster_hierarchy_clusters.assert_not_called()
+
+    @pytest.mark.parametrize('edge_count', [-0.01, math.nan, math.inf])
+    def test_nonfinite_or_negative_weighted_edge_count_is_unavailable(
+        self, client, mock_graph_engine, edge_count
+    ):
+        graph = self._graph(client)
+        self._enable_scoped_refresh(mock_graph_engine, graph)
+        mock_graph_engine.graph.client.graph.cluster_hierarchy_clusters.return_value = {
+            'level': 1,
+            'clusters': [
+                {
+                    'id': 'L1-0',
+                    'label': 'Root cluster',
+                    'node_count': 2,
+                    'edge_count': edge_count,
+                    'top_node_types': [],
+                }
+            ],
+            'inter_cluster_edges': [],
+        }
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            response = client.get(
+                '/api/enhanced/graph/graph3d/clusters',
+                params={'graph': graph, 'level': 0},
+            )
+
+        assert response.status_code == 503
+        assert response.json()['status'] == 'unavailable'
+
+    def test_clusters_require_one_authorized_graph_scope(self, client):
+        missing = client.get(
+            '/api/enhanced/graph/graph3d/clusters', params={'level': 0}
+        )
+        assert missing.status_code == 400
+
+        scope = self._graph(client)
+        forbidden = client.get(
+            '/api/enhanced/graph/graph3d/clusters',
+            params={'graph': f'{scope}-other', 'level': 0},
+        )
+        assert forbidden.status_code == 403
+
+    def test_malformed_hierarchy_is_unavailable_not_renderable(
+        self, client, mock_graph_engine
+    ):
+        graph = self._graph(client)
+        self._enable_scoped_refresh(mock_graph_engine, graph)
+        mock_graph_engine.graph.client.graph.cluster_hierarchy_clusters.return_value = {
+            'level': 1,
+            'clusters': [
+                {
+                    'id': 'L1-0',
+                    'label': 'Root cluster',
+                    'node_count': 2,
+                    'edge_count': 1.0,
+                    'top_node_types': [],
+                }
+            ],
+            'inter_cluster_edges': [{'src_idx': 0, 'dst_idx': 99, 'weight': 1.0}],
+        }
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=mock_graph_engine,
+        ):
+            response = client.get(
+                '/api/enhanced/graph/graph3d/clusters',
+                params={'graph': graph, 'level': 0},
+            )
+
+        assert response.status_code == 503
+        data = response.json()
+        assert data['available'] is False
+        assert data['status'] == 'unavailable'
+        assert data['clusters'] == []
+        assert data['inter_cluster_edges'] == []
+
+    def test_no_engine_returns_explicit_unavailable_status(self, client):
+        graph = self._graph(client)
+        with patch(
+            'agent_webui.api_extensions.IntelligenceGraphEngine.get_active',
+            return_value=None,
+        ):
+            response = client.get(
+                '/api/enhanced/graph/graph3d/clusters',
+                params={'graph': graph, 'level': 0},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['available'] is False
+        assert data['status'] == 'unavailable'
+        assert data['clusters'] == []
 
 
 class TestMemoryCRUDEndpoints:
