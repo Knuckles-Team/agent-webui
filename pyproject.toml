@@ -113,6 +113,12 @@ text = "MIT"
 [tool.uv.workspace]
 members = ["."]
 
+[tool.pipelines_hooks.public_surface]
+repository = "Knuckles-Team/agent-webui"
+distribution = "agent-webui"
+pages_url = "https://knuckles-team.github.io/agent-webui/"
+mcp_server = false
+
 [tool.ruff.format]
 docstring-code-format = false
 quote-style = "single"

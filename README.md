@@ -8,7 +8,7 @@
 [![GitHub forks](https://img.shields.io/github/forks/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/forks)
 [![GitHub contributors](https://img.shields.io/github/contributors/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/graphs/contributors)
 [![PyPI - License](https://img.shields.io/pypi/l/agent-webui)](https://pypi.org/project/agent-webui/)
-[![GitHub](https://img.shields.io/github/license/Knuckles-Team/agent-webui)](LICENSE)
+[![GitHub license](https://img.shields.io/github/license/Knuckles-Team/agent-webui)](LICENSE)
 [![GitHub last commit (by committer)](https://img.shields.io/github/last-commit/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/commits/main/)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/pulls)
 [![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/pulls?q=is%3Apr+is%3Aclosed)
@@ -20,22 +20,22 @@
 [![PyPI - Wheel](https://img.shields.io/pypi/wheel/agent-webui)](https://pypi.org/project/agent-webui/#files)
 [![PyPI - Implementation](https://img.shields.io/pypi/implementation/agent-webui)](https://pypi.org/project/agent-webui/)
 
-Version: 2.6.0
-
 ![Agent WebUI — governed agents, knowledge, and workflows](public/og-image-v1.png)
+
+## Overview
 
 Agent WebUI is the browser interface for Graph OS. It combines streaming agent chat,
 governed tool use, live graph activity, knowledge exploration, and operational
 views in one responsive React application. A FastAPI serving layer hosts the
 built application, adapts browser protocols, and composes the authoritative
-Graph OS gateway surface.
+Graph OS gateway surface. Current package Version: 2.6.0.
 
 [Read the documentation](https://knuckles-team.github.io/agent-webui/) ·
 [Explore the architecture](https://knuckles-team.github.io/agent-webui/architecture/)
 ·
 [View the feature reference](https://knuckles-team.github.io/agent-webui/features/)
 
-## What it provides
+## Key capabilities
 
 - **Streaming agent workspace** — text, reasoning, sources, tool calls, attachments,
   elicitation forms, and human approval in a single conversation timeline.
@@ -86,7 +86,7 @@ See the
 [architecture guide](https://knuckles-team.github.io/agent-webui/architecture/)
 for the protocol and component maps.
 
-## Install
+## Quick start
 
 Agent WebUI is published as a Python package and in its own container image for
 Graph OS deployments. Python 3.12–3.14 is supported.
@@ -103,7 +103,7 @@ Follow the
 [deployment guide](https://knuckles-team.github.io/agent-webui/deployment/)
 rather than assembling those services from unpinned packages.
 
-## Develop locally
+## Development
 
 Prerequisites: Python 3.12+, Node.js (the version in `.node-version`), `pnpm`,
 and `uv`.
@@ -122,10 +122,8 @@ cp .env.example .env
 Start the backend and frontend in separate terminals:
 
 ```bash
-# Terminal 1 — FastAPI backend on http://localhost:38001
 pnpm run dev:server
 
-# Terminal 2 — Vite development server on http://localhost:5173
 pnpm run dev
 ```
 

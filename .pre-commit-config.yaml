@@ -66,6 +66,10 @@ repos:
   hooks:
   - id: nbqa-ruff
     args: ["--fix"]
+- repo: https://github.com/Knuckles-Team/pipelines
+  rev: 35209bf6d85569a3c1fe3d5cd31771cacfdc3731
+  hooks:
+  - id: public-surface
 - repo: local
   hooks:
   - id: dependency-readiness
