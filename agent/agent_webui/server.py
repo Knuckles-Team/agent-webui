@@ -175,6 +175,12 @@ _ADMIN_MUTATION_ROUTE_PREFIXES = (
     '/api/enhanced/mcp',
     '/api/enhanced/skills',
     '/api/enhanced/tools',
+    # Atlas source declarations, mapping approvals, synchronization, and run
+    # cancellation all mutate the governed source plane.  The two POST
+    # operations that only read/propose data (discovery and sync preview) are
+    # carved out below so they retain the ``kg:read`` floor.
+    '/api/enhanced/atlas/sources',
+    '/api/enhanced/atlas/sync',
     # GOC-60-W05: `/api/dashboard`'s reads (layout/data/full/widgets/health/discover/
     # daemon-status/hydration-status) are ordinary status information matching
     # `observability.dashboard`'s nav `minRole: 'reader'` (E1b/E6) and are NOT listed
@@ -220,6 +226,37 @@ _READ_ONLY_POST_PATHS = frozenset(
         '/api/sparql',
     }
 )
+
+
+def _is_atlas_read_only_mutation_route(path: str) -> bool:
+    """Return whether an Atlas POST is a bounded read/preview operation.
+
+    Discovery and preview accept a request body, but neither operation is a
+    source-plane mutation.  Keeping the exception narrow prevents a future
+    write route under the same resource from accidentally inheriting
+    ``kg:read``.
+    """
+
+    atlas_sources_prefix = '/api/enhanced/atlas/sources/'
+    atlas_discover_suffix = '/discover'
+    if path in {
+        '/api/enhanced/atlas/sync/preview',
+        '/api/enhanced/atlas/sources/sync/preview',
+    }:
+        return True
+    if not path.startswith(atlas_sources_prefix) or not path.endswith(
+        atlas_discover_suffix
+    ):
+        return False
+    resource = path[len(atlas_sources_prefix) : -len(atlas_discover_suffix)]
+    # The façade has one discovery route below ``connections/{id}`` (and the
+    # direct source-id form remains valid for the UI adapter). Keep this
+    # predicate equally exact so a future deeper route ending in ``/discover``
+    # cannot accidentally inherit the reader floor.
+    return bool(
+        re.fullmatch(r'(?:connections/)?[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}', resource)
+    )
+
 
 # GOC-60-W05 (E1b layer 3 / E6): websocket handshakes carry no HTTP method, so the
 # generic branch below has always had only two tiers — `kg:admin` for an admin route,
@@ -1103,7 +1140,9 @@ class WebUIAuthorizationMiddleware:
     def _is_read_only_post_route(*, path: str, method: str) -> bool:
         """Whether an HTTP POST is one of the explicitly audited reads."""
 
-        return method == 'POST' and path in _READ_ONLY_POST_PATHS
+        return method == 'POST' and (
+            path in _READ_ONLY_POST_PATHS or _is_atlas_read_only_mutation_route(path)
+        )
 
     @staticmethod
     def _required_websocket_scope(path: str) -> str:
@@ -1141,6 +1180,16 @@ class WebUIAuthorizationMiddleware:
         return 'kg:write'
 
     @staticmethod
+    def _requires_maintainer(*, method: str, path: str) -> bool:
+        return (
+            method not in _SAFE_METHODS
+            and WebUIAuthorizationMiddleware._is_admin_mutation_route(path)
+            and not WebUIAuthorizationMiddleware._is_read_only_post_route(
+                path=path, method=method
+            )
+        )
+
+    @staticmethod
     def _role_requirement(*, required_scope: str, method: str, path: str) -> str | None:
         """The additional WebUI role (R9: reader < user < maintainer < admin)
         required for this request, layered ON TOP OF the `required_scope` KG
@@ -1160,9 +1209,7 @@ class WebUIAuthorizationMiddleware:
 
         if required_scope == 'kg:admin':
             return 'admin'
-        if method not in _SAFE_METHODS and (
-            WebUIAuthorizationMiddleware._is_admin_mutation_route(path)
-        ):
+        if WebUIAuthorizationMiddleware._requires_maintainer(method=method, path=path):
             return 'maintainer'
         return None
 

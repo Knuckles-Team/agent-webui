@@ -20,7 +20,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from ipaddress import ip_address
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from urllib.parse import quote, urlsplit
 
 from agent_utilities.core.config import config
@@ -46,7 +46,7 @@ from fastapi import (
 from fastapi import (
     HTTPException as FastAPIHTTPException,
 )
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 # Global constant for agent directory
 
@@ -500,6 +500,7 @@ def _is_inline_secret_key(key: str) -> bool:
         'client_secret',
         'credential',
         'credentials',
+        'credential_value',
         'private_key',
         'authorization',
         'cookie',
@@ -8540,7 +8541,7 @@ import sqlite3
 import uuid
 
 from agent_utilities.models.goal import GoalIteration, GoalSpec, GoalStatus
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StartGoalPayload(BaseModel):
@@ -12785,6 +12786,1686 @@ def _raise_canonical_error(result: Any, status_code: int = 500) -> None:
     """Surface a canonical tool's ``{'error': ...}`` envelope as an HTTP error."""
     if isinstance(result, dict) and set(result.keys()) == {'error'}:
         raise HTTPException(status_code=status_code, detail=str(result['error']))
+
+
+# ---------------------------------------------------------------------------
+# Atlas governed source façade
+#
+# Atlas does not own a second connector registry.  These routes are a typed,
+# privacy-preserving HTTP façade over the canonical graph-os tools and are kept
+# deliberately small so the source-control plane remains authoritative in
+# agent-utilities.  In particular, a connection declaration contains aliases,
+# policy knobs, and opaque profile references only.  A DSN, endpoint, identity,
+# credential, TLS document, or variables map is never accepted or reflected.
+# ---------------------------------------------------------------------------
+
+# AU's source catalogue is currently exposed by the unified ``graph_catalog``
+# tool (``action='list'``/``'preview_sync'``).  Keep the route coupled to that
+# canonical name, rather than inventing a second ``source_catalog`` registry.
+_ATLAS_SOURCE_CATALOG_TOOL = 'graph_catalog'
+_ATLAS_FORBIDDEN_REF_SCHEMES = (
+    'http://',
+    'https://',
+    'postgres://',
+    'postgresql://',
+    'mysql://',
+    'mssql://',
+    'teradata://',
+    'spark://',
+    's3://',
+    'gs://',
+    'file://',
+)
+_ATLAS_REF_PATTERN = re.compile(r'^(?:vault|env|secret)://[A-Za-z0-9_./#-]{1,503}$')
+_ATLAS_BACKEND_PATTERN = re.compile(r'^[A-Za-z][A-Za-z0-9_.:-]{0,63}$')
+_ATLAS_RECORD_ID_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,255}$')
+_ATLAS_RAW_VALUE_PATTERN = re.compile(
+    r'(?i)(?:(?:[a-z][a-z0-9+.-]*):\/\/|jdbc:|odbc:|'
+    r'(?:host|server|database|user|uid|pwd|password|token|secret|endpoint|port)\s*=)'
+)
+_ATLAS_REF_FIELDS = frozenset(
+    {
+        'auth_profile_ref',
+        'connection_profile_ref',
+        'mapping_policy_ref',
+        'tls_profile_ref',
+        'variables_ref',
+    }
+)
+_ATLAS_SENSITIVE_OUTPUT_KEYS = frozenset(
+    {
+        'address',
+        'api_key',
+        'auth',
+        'authorization',
+        'address_ref',
+        'bearer',
+        'certificate',
+        'client_id',
+        'client_secret',
+        'connection_string',
+        'cookie',
+        'credential',
+        'credentials',
+        'dsn',
+        'endpoint',
+        'headers',
+        'host',
+        'identity',
+        'login',
+        'database',
+        'db_name',
+        'db_path',
+        'database_ref',
+        'db_name_ref',
+        'db_path_ref',
+        'local_path',
+        'local_path_ref',
+        'location',
+        'location_ref',
+        'password',
+        'password_ref',
+        'path',
+        'path_ref',
+        'port',
+        'port_ref',
+        'private_key',
+        'refresh_token',
+        'secret_key',
+        'secret_value',
+        'session',
+        'tls_config',
+        'tls_material',
+        'tls_ref',
+        'ca_bundle',
+        'secret',
+        'secrets',
+        'tls',
+        'token',
+        'token_value',
+        'access_key',
+        'user',
+        'user_ref',
+        'user_name',
+        'username',
+        'username_ref',
+        'uri_ref',
+        'dsn_ref',
+        'endpoint_ref',
+        'host_ref',
+        'variables',
+    }
+)
+_ATLAS_SAFE_PRESENCE_KEYS = frozenset(
+    {
+        'approved',
+        'available',
+        'configured',
+        'connected',
+        'enabled',
+        'healthy',
+        'present',
+        'read_only',
+        'readable',
+        'required',
+        'supported',
+        'verified',
+        'writable',
+    }
+)
+_ATLAS_ERROR_STATUS = frozenset(
+    {'error', 'failed', 'failure', 'unavailable', 'not_available'}
+)
+_ATLAS_STATUS_KINDS = {
+    'permission_denied': ('forbidden', 403),
+    'forbidden': ('forbidden', 403),
+    'denied': ('forbidden', 403),
+    'not_found': ('not_found', 404),
+    'missing': ('not_found', 404),
+    'conflict': ('conflict', 409),
+    'approval_required': ('conflict', 409),
+    'capability_unavailable': ('capability_unavailable', 501),
+    'not_available': ('capability_unavailable', 501),
+    'not_configured': ('capability_unavailable', 501),
+    'unavailable': ('capability_unavailable', 501),
+}
+_ATLAS_ERROR_CODE_KINDS = {
+    'permission_denied': ('forbidden', 403),
+    'forbidden': ('forbidden', 403),
+    'not_found': ('not_found', 404),
+    'missing': ('not_found', 404),
+    'graph_not_found': ('not_found', 404),
+    'conflict': ('conflict', 409),
+    'approval_required': ('conflict', 409),
+    'graph_selection_conflict': ('conflict', 409),
+    'invalid_request': ('invalid_request', 422),
+    'bad_request': ('invalid_request', 422),
+    'capability_unavailable': ('capability_unavailable', 501),
+    # A registered action whose runtime dependency is down is a transient
+    # backend failure (503), not the 501 used for an action/provider that this
+    # deployment does not expose at all.
+    'dependency_unavailable': ('backend_unavailable', 503),
+    'engine_degraded': ('backend_unavailable', 503),
+    'not_available': ('capability_unavailable', 501),
+    'unknown_action': ('capability_unavailable', 501),
+    'unknown_tool': ('capability_unavailable', 501),
+    'unsupported_provider': ('capability_unavailable', 501),
+    'source_unavailable': ('capability_unavailable', 501),
+    'source_not_configured': ('capability_unavailable', 501),
+    'backend_contract_invalid': ('backend_contract_invalid', 502),
+}
+_ATLAS_ERROR_TEXT_KINDS = (
+    (
+        ('permission', 'forbidden', 'access denied', 'not authorized'),
+        ('forbidden', 403),
+    ),
+    (
+        (
+            'not registered',
+            'unknown action',
+            'unknown tool',
+            'active engine required',
+            'capability unavailable',
+            'not available',
+            'not configured',
+            'no client',
+            'unknown mcp_tool preset',
+            'unsupported provider',
+            'unavailable',
+            'not persistence-safe',
+            'no source',
+            'persistent ',
+        ),
+        ('capability_unavailable', 501),
+    ),
+    (('not found', 'missing'), ('not_found', 404)),
+    (
+        (
+            'invalid',
+            'must be',
+            'requires',
+            'require ',
+            'required',
+            'unsupported',
+            'takes no payload',
+        ),
+        ('invalid_request', 422),
+    ),
+)
+_ATLAS_ERROR_CHILD_KEYS = (
+    'result',
+    'data',
+    'response',
+    'payload',
+    'envelope',
+    'body',
+)
+_ATLAS_HTTP_ERROR_KINDS = {
+    401: ('forbidden', 403),
+    403: ('forbidden', 403),
+    404: ('not_found', 404),
+    409: ('conflict', 409),
+    400: ('invalid_request', 422),
+    422: ('invalid_request', 422),
+    501: ('capability_unavailable', 501),
+}
+_ATLAS_OMIT = object()
+
+
+def _atlas_validate_reference(value: Any) -> Any:
+    """Validate a caller-supplied opaque profile reference."""
+
+    if value is None:
+        return value
+    if not isinstance(value, str):
+        raise TypeError('profile fields must be opaque references')
+    candidate = value.strip()
+    lowered = candidate.casefold()
+    if (
+        not candidate
+        or any(lowered.startswith(scheme) for scheme in _ATLAS_FORBIDDEN_REF_SCHEMES)
+        or not _ATLAS_REF_PATTERN.fullmatch(candidate)
+    ):
+        raise ValueError('profile fields accept opaque references only')
+    return candidate
+
+
+def _atlas_record_identifier_is_safe(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(_ATLAS_RECORD_ID_PATTERN.fullmatch(value))
+        and not _ATLAS_RAW_VALUE_PATTERN.search(value)
+    )
+
+
+def _atlas_validate_record_identifier(value: Any) -> str:
+    if not _atlas_record_identifier_is_safe(value):
+        raise ValueError('record identifiers accept opaque values only')
+    return value
+
+
+class _AtlasRequestModel(BaseModel):
+    """Strict common configuration for Atlas boundary payloads."""
+
+    model_config = ConfigDict(extra='forbid', strict=True)
+
+
+AtlasOpaqueRef = Annotated[str, Field(min_length=1, max_length=256)]
+AtlasIdentifier = Annotated[
+    str,
+    Field(min_length=1, max_length=128, pattern=_SAFE_DELEGATION_TOKEN.pattern),
+]
+AtlasRecordIdentifier = Annotated[
+    str,
+    Field(min_length=1, max_length=256, pattern=_ATLAS_RECORD_ID_PATTERN.pattern),
+]
+AtlasBackend = Annotated[
+    str,
+    Field(min_length=1, max_length=64, pattern=_ATLAS_BACKEND_PATTERN.pattern),
+]
+
+
+class AtlasConnectionCreate(_AtlasRequestModel):
+    """Reference-only declaration for one governed Atlas source connection."""
+
+    name: AtlasIdentifier
+    backend: AtlasBackend | None = None
+    backend_type: AtlasBackend | None = None
+    role: Literal['read', 'mirror'] = 'read'
+    source_alias: AtlasIdentifier | None = None
+    connection_profile_ref: AtlasOpaqueRef | None = None
+    auth_profile_ref: AtlasOpaqueRef | None = None
+    tls_profile_ref: AtlasOpaqueRef | None = None
+    variables_ref: AtlasOpaqueRef | None = None
+    mapping_policy_ref: AtlasOpaqueRef | None = None
+    mirror_target: AtlasIdentifier | None = None
+    schema_drift_policy: Literal['fail_closed'] = 'fail_closed'
+    sync_mode: Literal['auto', 'cdc', 'snapshot'] = 'auto'
+    require_approval: Literal[True] = True
+    reconcile_deletions: bool = True
+    allow_empty_snapshot: bool = False
+    contextual: bool = True
+    semantic_mapping: bool = False
+    allow_introspection: bool = False
+    ingest_operation: AtlasIdentifier | None = None
+    discovery_max_types: int = Field(default=200, ge=1, le=500)
+    discovery_max_depth: int = Field(default=6, ge=1, le=12)
+    ingest_max_records: int = Field(default=1000, ge=1, le=10000)
+    ingest_page_size: int = Field(default=250, ge=1, le=1000)
+    ingest_max_pages: int = Field(default=100, ge=1, le=1000)
+    ingest_max_row_bytes: int = Field(default=1024 * 1024, ge=256, le=8 * 1024 * 1024)
+    ingest_max_total_bytes: int = Field(
+        default=16 * 1024 * 1024, ge=256, le=64 * 1024 * 1024
+    )
+    ingest_max_nesting_depth: int = Field(default=16, ge=1, le=64)
+    ingest_max_collection_items: int = Field(default=10000, ge=1, le=100000)
+
+    @field_validator(*_ATLAS_REF_FIELDS, mode='before')
+    @classmethod
+    def _reference_only(cls, value: Any) -> Any:
+        """Reject URL/DSN literals while allowing opaque secret references."""
+        return _atlas_validate_reference(value)
+
+    @model_validator(mode='after')
+    def _backend_required(self) -> 'AtlasConnectionCreate':
+        selected_backend = _atlas_selected_backend(self)
+        _atlas_validate_backend_selector(self, selected_backend)
+        _atlas_validate_graphql_options(self, selected_backend)
+        _atlas_validate_ingest_bounds(self)
+        return self
+
+
+def _atlas_selected_backend(request: AtlasConnectionCreate) -> str:
+    return (request.backend_type or request.backend or '').casefold()
+
+
+def _atlas_validate_backend_selector(
+    request: AtlasConnectionCreate, selected_backend: str
+) -> None:
+    if not selected_backend:
+        raise ValueError('backend or backend_type is required')
+    if (
+        request.backend is not None
+        and request.backend_type is not None
+        and request.backend.casefold() != request.backend_type.casefold()
+    ):
+        raise ValueError('backend and backend_type must agree')
+
+
+def _atlas_validate_graphql_options(
+    request: AtlasConnectionCreate, selected_backend: str
+) -> None:
+    if selected_backend != 'graphql':
+        return
+    if request.role != 'read':
+        raise ValueError("GraphQL connections must use role='read'")
+    if request.semantic_mapping:
+        raise ValueError('GraphQL connections cannot enable semantic_mapping')
+
+
+def _atlas_validate_ingest_bounds(request: AtlasConnectionCreate) -> None:
+    if request.ingest_max_total_bytes < request.ingest_max_row_bytes:
+        raise ValueError('ingest_max_total_bytes must cover one bounded row')
+
+
+class AtlasSourceDiscover(_AtlasRequestModel):
+    """Bounded schema discovery options; the connection is path-scoped."""
+
+    max_types: int | None = Field(default=None, ge=1, le=500)
+    max_depth: int | None = Field(default=None, ge=1, le=12)
+
+
+class AtlasConnectSourceRequest(_AtlasRequestModel):
+    """UI-facing request to associate one opaque profile with a source."""
+
+    source_id: AtlasIdentifier
+    connection_profile_ref: Annotated[str, Field(min_length=1, max_length=512)]
+
+    @field_validator('connection_profile_ref', mode='before')
+    @classmethod
+    def _reference_only(cls, value: Any) -> Any:
+        return _atlas_validate_reference(value)
+
+
+class AtlasSyncPreviewRequest(_AtlasRequestModel):
+    """UI-facing preview request; execution remains a separate operation."""
+
+    source_id: AtlasIdentifier
+    mode: Literal['delta', 'full', 'reconcile']
+    connection_profile_ref: (
+        Annotated[str, Field(min_length=1, max_length=512)] | None
+    ) = None
+
+    @field_validator('connection_profile_ref', mode='before')
+    @classmethod
+    def _reference_only(cls, value: Any) -> Any:
+        return _atlas_validate_reference(value)
+
+
+class AtlasStartSyncRequest(_AtlasRequestModel):
+    """Start exactly one operator-reviewed preview by opaque id."""
+
+    preview_id: AtlasRecordIdentifier
+    idempotency_key: AtlasRecordIdentifier | None = None
+
+    @field_validator('preview_id', 'idempotency_key', mode='before')
+    @classmethod
+    def _record_ids_only(cls, value: Any) -> Any:
+        return None if value is None else _atlas_validate_record_identifier(value)
+
+
+class AtlasCancelSyncRequest(_AtlasRequestModel):
+    """Cancel exactly one server-owned run by opaque id."""
+
+    run_id: AtlasRecordIdentifier
+
+    @field_validator('run_id', mode='before')
+    @classmethod
+    def _record_id_only(cls, value: Any) -> Any:
+        return _atlas_validate_record_identifier(value)
+
+
+class AtlasMappingProposal(_AtlasRequestModel):
+    """Bounded mapping proposal options with no source query text."""
+
+    source_alias: AtlasIdentifier | None = None
+    max_types: int | None = Field(default=None, ge=1, le=500)
+
+
+class AtlasMappingApproval(_AtlasRequestModel):
+    """Digest-bound approval payload for a previously proposed mapping."""
+
+    proposal_id: Annotated[
+        str,
+        Field(min_length=1, max_length=256, pattern=_ATLAS_RECORD_ID_PATTERN.pattern),
+    ]
+    schema_digest: Annotated[str, Field(pattern=r'^sha256:[0-9a-f]{64}$')]
+    mapping_digest: Annotated[str, Field(pattern=r'^sha256:[0-9a-f]{64}$')]
+    proposal_version: int = Field(default=1, ge=1, le=1000000)
+
+    @field_validator('proposal_id', mode='before')
+    @classmethod
+    def _proposal_id_only(cls, value: Any) -> Any:
+        return _atlas_validate_record_identifier(value)
+
+
+class AtlasSourceSync(_AtlasRequestModel):
+    """Source sync request containing aliases and bounded record identifiers."""
+
+    source: AtlasIdentifier
+    mode: Literal['delta', 'full', 'reconcile'] = 'delta'
+    ids: list[AtlasRecordIdentifier] = Field(default_factory=list, max_length=256)
+    connection: AtlasIdentifier | None = None
+    graph: AtlasIdentifier | None = None
+
+    @field_validator('ids')
+    @classmethod
+    def _record_ids_only(cls, value: list[str]) -> list[str]:
+        return [_atlas_validate_record_identifier(item) for item in value]
+
+
+# Descriptive aliases make the generated OpenAPI names useful to clients while
+# keeping one request contract for preview and execute.
+AtlasSyncRequest = AtlasSourceSync
+AtlasSyncPreview = AtlasSourceSync
+
+
+AtlasSourceDispatcher = Callable[[str, dict[str, Any]], Any]
+_atlas_source_dispatcher: AtlasSourceDispatcher | None = None
+
+
+def set_atlas_source_dispatcher(dispatcher: AtlasSourceDispatcher | None) -> None:
+    """Install an injectable decoded-tool dispatcher for tests/embedded hosts.
+
+    The callable receives ``(tool_name, kwargs)`` and may return a decoded JSON
+    value or an awaitable of one.  Production leaves it unset so every call
+    goes through ``_canonical_kg_tool``.  This seam is intentionally explicit:
+    an AU action that has not landed is reported as unavailable rather than
+    replaced with a local approximation.
+    """
+
+    global _atlas_source_dispatcher
+    _atlas_source_dispatcher = dispatcher
+
+
+async def _atlas_dispatch(tool_name: str, **kwargs: Any) -> Any:
+    dispatcher = _atlas_source_dispatcher
+    if dispatcher is None:
+        return await _canonical_kg_tool(tool_name, **kwargs)
+    result = dispatcher(tool_name, dict(kwargs))
+    if inspect.isawaitable(result):
+        return await result
+    return result
+
+
+def _atlas_key(value: Any) -> str:
+    return re.sub(r'[^a-z0-9]+', '_', str(value).casefold()).strip('_')
+
+
+def _atlas_is_ref_key(key: str) -> bool:
+    normalized = _atlas_key(key)
+    return (
+        normalized in {'ref', 'reference', 'digest', 'schema_digest', 'mapping_digest'}
+        or normalized.endswith('_ref')
+        or normalized.endswith('_reference')
+        or normalized.endswith('_digest')
+    )
+
+
+def _atlas_is_presence_key(key: str) -> bool:
+    normalized = _atlas_key(key)
+    return normalized in _ATLAS_SAFE_PRESENCE_KEYS or normalized.endswith(
+        ('_configured', '_present', '_available', '_enabled')
+    )
+
+
+def _atlas_is_sensitive_key(key: str) -> bool:
+    normalized = _atlas_key(key)
+    if normalized in _ATLAS_SENSITIVE_OUTPUT_KEYS:
+        return True
+    if normalized.endswith(
+        (
+            '_ca_bundle',
+            '_certificate',
+            '_client_secret',
+            '_credential',
+            '_credentials',
+            '_db_name',
+            '_db_path',
+            '_dsn',
+            '_endpoint',
+            '_host',
+            '_local_path',
+            '_password',
+            '_secret_value',
+            '_secret',
+            '_secrets',
+            '_token_value',
+            '_tls',
+            '_tls_config',
+            '_tls_material',
+            '_token',
+            '_url',
+            '_uri',
+            '_user',
+            '_user_id',
+            '_username',
+        )
+    ):
+        return True
+    if _atlas_is_ref_key(normalized) or _atlas_is_presence_key(normalized):
+        return False
+    return False
+
+
+def _atlas_ref_value_is_safe(key: str, value: Any) -> bool:
+    """Accept only controlled refs/digests at keys that advertise refs."""
+
+    if not isinstance(value, str):
+        return False
+    # Controlled runtime references intentionally use a URI-like spelling;
+    # exempt only the allow-listed schemes before applying the generic raw
+    # URI/DSN detector used for every other scalar.
+    if _ATLAS_REF_PATTERN.fullmatch(value):
+        return True
+    if _ATLAS_RAW_VALUE_PATTERN.search(value):
+        return False
+    normalized = _atlas_key(key)
+    if normalized.endswith(
+        (
+            '_profile_ref',
+            '_connection_ref',
+            '_credential_ref',
+            '_secret_ref',
+            '_tls_ref',
+            '_variables_ref',
+        )
+    ):
+        return _atlas_valid_reference(value) is not None
+    return _atlas_record_identifier_is_safe(value)
+
+
+def _atlas_project_mapping(
+    value: dict[Any, Any], *, presence_only: bool
+) -> dict[str, Any]:
+    projected_dict: dict[str, Any] = {}
+    for item_key, item_value in value.items():
+        projected = _atlas_public_projection(
+            item_value, key=str(item_key), presence_only=presence_only
+        )
+        if projected is not _ATLAS_OMIT:
+            projected_dict[str(item_key)] = projected
+    return projected_dict
+
+
+def _atlas_project_sequence(value: Any, *, presence_only: bool) -> list[Any]:
+    projected_list: list[Any] = []
+    for item in value:
+        projected = _atlas_public_projection(item, presence_only=presence_only)
+        if projected is not _ATLAS_OMIT:
+            projected_list.append(projected)
+    return projected_list
+
+
+def _atlas_project_scalar(value: Any, *, presence_only: bool) -> Any:
+    if not isinstance(value, str):
+        return value
+    if _ATLAS_REF_PATTERN.fullmatch(value):
+        return value
+    if _ATLAS_RAW_VALUE_PATTERN.search(value):
+        return _ATLAS_OMIT
+    if presence_only and not _ATLAS_REF_PATTERN.fullmatch(value):
+        return _ATLAS_OMIT
+    return value
+
+
+def _atlas_project_sensitive_value(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return _ATLAS_OMIT
+    projected = _atlas_project_mapping(value, presence_only=True)
+    return projected if projected else _ATLAS_OMIT
+
+
+def _atlas_project_reference(value: str, key: str) -> Any:
+    return value if _atlas_ref_value_is_safe(key, value) else _ATLAS_OMIT
+
+
+def _atlas_presence_projection_allowed(key: str) -> bool:
+    return _atlas_is_ref_key(key) or _atlas_is_presence_key(key)
+
+
+def _atlas_project_keyed_value(
+    value: Any, *, key: str, presence_only: bool
+) -> tuple[bool, Any]:
+    normalized = _atlas_key(key)
+    if _atlas_is_sensitive_key(normalized):
+        return True, _atlas_project_sensitive_value(value)
+    if _atlas_is_ref_key(normalized) and isinstance(value, str):
+        return True, _atlas_project_reference(value, normalized)
+    if presence_only and not _atlas_presence_projection_allowed(normalized):
+        # Preserve nested presence facts, but never pass an arbitrary mapping
+        # through untouched: its descendants may contain endpoint, identity,
+        # or credential material that must be projected as well.
+        return True, (
+            _atlas_project_unkeyed(value, presence_only=True)
+            if isinstance(value, dict)
+            else _ATLAS_OMIT
+        )
+    return False, value
+
+
+def _atlas_project_unkeyed(value: Any, *, presence_only: bool) -> Any:
+    if isinstance(value, dict):
+        return _atlas_project_mapping(value, presence_only=presence_only)
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return _atlas_project_sequence(value, presence_only=presence_only)
+    return _atlas_project_scalar(value, presence_only=presence_only)
+
+
+def _atlas_public_projection(
+    value: Any,
+    *,
+    key: str | None = None,
+    presence_only: bool = False,
+) -> Any:
+    """Drop raw connection material while preserving refs and presence facts."""
+
+    if key is not None:
+        handled, projected = _atlas_project_keyed_value(
+            value, key=key, presence_only=presence_only
+        )
+        if handled:
+            return projected
+    return _atlas_project_unkeyed(value, presence_only=presence_only)
+
+
+def _atlas_safe_result(value: Any) -> Any:
+    bounded = _bounded_external_value(value, truncate_lists=True)
+    projected = _atlas_public_projection(bounded)
+    if projected is _ATLAS_OMIT:
+        return None
+    encoded = json.dumps(
+        projected,
+        separators=(',', ':'),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode('utf-8')
+    if len(encoded) > _MAX_EXTERNAL_RESULT_BYTES:
+        raise ValueError('Atlas result exceeds its serialized safety bound')
+    return projected
+
+
+def _atlas_error_text_kind(value: str) -> tuple[str, int]:
+    normalized = value.casefold()
+    for markers, kind in _ATLAS_ERROR_TEXT_KINDS:
+        if any(marker in normalized for marker in markers):
+            return kind
+    return ('backend_unavailable', 503)
+
+
+def _atlas_error_field_kind(value: Any, *, depth: int) -> tuple[str, int]:
+    if isinstance(value, dict):
+        nested = _atlas_error_kind(value, depth=depth + 1)
+        return nested or _ATLAS_ERROR_CODE_KINDS.get(
+            _atlas_key(value.get('code')), ('backend_unavailable', 503)
+        )
+    if isinstance(value, str):
+        return _atlas_error_text_kind(value)
+    return ('backend_contract_invalid', 502)
+
+
+def _atlas_nested_error(value: dict[str, Any], *, depth: int) -> tuple[str, int] | None:
+    for child_key in _ATLAS_ERROR_CHILD_KEYS:
+        if child_key in value:
+            nested = _atlas_error_kind(value[child_key], depth=depth + 1)
+            if nested is not None:
+                return nested
+    return None
+
+
+def _atlas_scalar_error_kind(value: Any) -> tuple[str, int] | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().casefold()
+    if normalized.startswith(('error:', 'failed:', 'failure:')) or normalized in {
+        'error',
+        'failed',
+        'failure',
+        'unavailable',
+    }:
+        return _atlas_error_text_kind(normalized)
+    return None
+
+
+def _atlas_status_error_kind(
+    value: dict[str, Any], status: str, *, depth: int
+) -> tuple[str, int]:
+    if status not in _ATLAS_ERROR_STATUS:
+        return _ATLAS_STATUS_KINDS.get(status, ('backend_unavailable', 503))
+    nested = (
+        _atlas_error_field_kind(value['error'], depth=depth)
+        if value.get('error') is not None
+        else None
+    )
+    nested = nested or _atlas_nested_error(value, depth=depth)
+    if nested is None and isinstance(value.get('reason'), str):
+        reason = value['reason'].casefold()
+        if any(
+            marker in reason
+            for marker in (
+                'not registered',
+                'not configured',
+                'no governed',
+                'no certified',
+                'unsupported provider',
+                'capability unavailable',
+                'no source_sync adapter',
+            )
+        ):
+            nested = ('capability_unavailable', 501)
+    return nested or ('backend_unavailable', 503)
+
+
+def _atlas_error_kind(value: Any, *, depth: int = 0) -> tuple[str, int] | None:
+    """Find an error in a nested canonical envelope without exposing its text."""
+
+    if depth > 8:
+        return ('backend_contract_invalid', 502)
+    if not isinstance(value, dict):
+        return _atlas_scalar_error_kind(value)
+    status = value.get('status')
+    if isinstance(status, str):
+        status_kind = _atlas_status_error_kind(value, _atlas_key(status), depth=depth)
+        if _atlas_key(status) in _ATLAS_STATUS_KINDS:
+            return status_kind
+    if 'error' in value:
+        return _atlas_error_field_kind(value.get('error'), depth=depth)
+    if value.get('ok') is False or value.get('success') is False:
+        return ('backend_unavailable', 503)
+    return _atlas_nested_error(value, depth=depth)
+
+
+def _atlas_exception_kind(error: BaseException) -> tuple[str, int]:
+    if isinstance(error, FastAPIHTTPException):
+        return _ATLAS_HTTP_ERROR_KINDS.get(
+            error.status_code, ('backend_unavailable', 503)
+        )
+    if isinstance(error, PermissionError):
+        return ('forbidden', 403)
+    if isinstance(error, (LookupError, ImportError, ModuleNotFoundError)):
+        return ('capability_unavailable', 501)
+    if isinstance(error, TypeError):
+        # A canonical action with a changed callable signature is an
+        # unavailable capability at this façade boundary.  Other TypeErrors
+        # remain backend failures and must not be mistaken for client input.
+        message = str(error).casefold()
+        return (
+            ('capability_unavailable', 501)
+            if any(
+                marker in message
+                for marker in ('unexpected keyword', 'missing required', 'takes ')
+            )
+            else ('backend_contract_invalid', 502)
+        )
+    if isinstance(error, ValueError):
+        # `_execute_tool` uses ValueError for an unregistered tool/action and
+        # for signature drift.  Both mean the requested AU capability is not
+        # available through this deployment, not that Atlas should emulate it.
+        return ('capability_unavailable', 501)
+    return ('backend_unavailable', 503)
+
+
+def _atlas_error_response(operation: str, code: str, status_code: int) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            'status': 'error',
+            'error': {
+                'code': code,
+                'operation': operation,
+                'message': {
+                    'forbidden': 'Atlas source operation is not authorized.',
+                    'not_found': 'The requested Atlas source resource was not found.',
+                    'conflict': 'The Atlas source operation conflicts with current state.',
+                    'capability_unavailable': 'Atlas source capability is unavailable.',
+                    'backend_unavailable': 'The governed source backend is unavailable.',
+                    'backend_contract_invalid': 'The governed source returned an invalid response.',
+                    'invalid_request': 'The Atlas source request is invalid.',
+                }.get(code, 'Atlas source operation failed.'),
+            },
+        },
+    )
+
+
+async def _atlas_execute(operation: str, tool_name: str, **kwargs: Any) -> JSONResponse:
+    try:
+        result = await _atlas_dispatch(tool_name, **kwargs)
+    except Exception as error:  # noqa: BLE001 - boundary must be truthful and bounded
+        code, status_code = _atlas_exception_kind(error)
+        _log_failure(f'atlas.{operation}', error, level=logging.WARNING)
+        return _atlas_error_response(operation, code, status_code)
+
+    error_kind = _atlas_error_kind(result)
+    if error_kind is not None:
+        code, status_code = error_kind
+        _log_failure(
+            f'atlas.{operation}',
+            RuntimeError(code),
+            level=logging.WARNING,
+        )
+        return _atlas_error_response(operation, code, status_code)
+    if result is None:
+        return _atlas_error_response(operation, 'backend_contract_invalid', 502)
+    try:
+        return JSONResponse(status_code=200, content=_atlas_safe_result(result))
+    except (TypeError, ValueError) as error:
+        _log_failure(f'atlas.{operation}', error, level=logging.WARNING)
+        return _atlas_error_response(operation, 'backend_contract_invalid', 502)
+
+
+async def _atlas_execute_source_catalog(
+    operation: str, *, action: str, **kwargs: Any
+) -> JSONResponse:
+    """Call ``graph_catalog`` and project only its governed ``sources`` leg."""
+
+    # Keep the action explicit: a deployment with only the older broad
+    # graph-catalog callable must fail closed here instead of being mistaken
+    # for an Atlas source catalogue.
+    dispatch_kwargs = {'action': action, **kwargs}
+    response = await _atlas_execute(
+        operation,
+        _ATLAS_SOURCE_CATALOG_TOOL,
+        **dispatch_kwargs,
+    )
+    if response.status_code != 200:
+        return response
+    try:
+        # Starlette types ``Response.body`` as ``bytes | memoryview``.  The
+        # latter is a valid transport buffer but is not accepted by the
+        # stdlib JSON type signature, so normalize it before decoding.
+        response_body = response.body
+        if isinstance(response_body, memoryview):
+            response_body = response_body.tobytes()
+        body = json.loads(response_body)
+    except (TypeError, ValueError):
+        return _atlas_error_response(operation, 'backend_contract_invalid', 502)
+    if not isinstance(body, dict) or not isinstance(body.get('sources'), dict):
+        return _atlas_error_response(operation, 'capability_unavailable', 501)
+    return JSONResponse(status_code=200, content=body['sources'])
+
+
+def _atlas_response_body(response: JSONResponse) -> Any | None:
+    try:
+        response_body = response.body
+        if isinstance(response_body, memoryview):
+            response_body = response_body.tobytes()
+        return json.loads(response_body)
+    except (TypeError, ValueError):
+        return None
+
+
+def _atlas_observed_at() -> str:
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def _atlas_valid_reference(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return value if _ATLAS_REF_PATTERN.fullmatch(value) else None
+
+
+def _atlas_catalog_value(descriptor: dict[str, Any], field_name: str) -> Any:
+    """Read a canonical descriptor field in snake- or wire-camel-case."""
+
+    if field_name in descriptor:
+        return descriptor[field_name]
+    parts = field_name.split('_')
+    camel_name = parts[0] + ''.join(part.capitalize() for part in parts[1:])
+    return descriptor.get(camel_name)
+
+
+def _atlas_catalog_query_modes(descriptor: dict[str, Any]) -> list[str]:
+    dialects = descriptor.get('dialects')
+    dialect_values = list(dialects) if isinstance(dialects, (list, tuple)) else []
+    modes: list[str] = []
+    for mode in [_atlas_catalog_value(descriptor, 'query_mode'), *dialect_values]:
+        if isinstance(mode, str) and _ATLAS_BACKEND_PATTERN.fullmatch(mode):
+            if mode not in modes:
+                modes.append(mode)
+    return modes
+
+
+def _atlas_catalog_capabilities(descriptor: dict[str, Any]) -> list[str]:
+    values = descriptor.get('capabilities')
+    capabilities = list(values) if isinstance(values, (list, tuple)) else []
+    return [
+        item
+        for item in capabilities
+        if isinstance(item, str) and _ATLAS_RECORD_ID_PATTERN.fullmatch(item)
+    ]
+
+
+def _atlas_catalog_availability(
+    descriptor: dict[str, Any],
+) -> tuple[str, bool, str | None]:
+    availability = str(descriptor.get('availability') or '').casefold()
+    available = descriptor.get('available') is True
+    if available and availability == 'available':
+        state = 'available'
+    elif availability in {'unsupported', 'unavailable'}:
+        state = 'unavailable'
+    elif availability in {'configured', 'unverified'}:
+        state = 'degraded'
+    else:
+        state = 'not_configured'
+    reason = descriptor.get('reason')
+    return state, available, reason if isinstance(reason, str) else None
+
+
+def _atlas_catalog_connection(
+    descriptor: dict[str, Any], *, available: bool
+) -> dict[str, Any] | None:
+    connection_names = _atlas_catalog_value(descriptor, 'connection_names')
+    if not isinstance(connection_names, list) or not connection_names:
+        return None
+    profile_ref = next(
+        (
+            _atlas_valid_reference(_atlas_catalog_value(descriptor, field_name))
+            for field_name in (
+                'connection_profile_ref',
+                'auth_profile_ref',
+                'tls_profile_ref',
+            )
+            if _atlas_valid_reference(_atlas_catalog_value(descriptor, field_name))
+        ),
+        None,
+    )
+    connection: dict[str, Any] = {
+        'state': 'connected' if available else 'disconnected',
+        'reason': (
+            'registered connection is live'
+            if available
+            else 'registered connection is not live'
+        ),
+    }
+    if profile_ref is not None:
+        connection['profile_ref'] = profile_ref
+    return connection
+
+
+def _atlas_catalog_provider(
+    descriptor: dict[str, Any], *, observed_at: str
+) -> dict[str, Any] | None:
+    source_id = descriptor.get('provider') or _atlas_catalog_value(
+        descriptor, 'source_id'
+    )
+    label = descriptor.get('label')
+    if not _atlas_record_identifier_is_safe(source_id):
+        return None
+    if not isinstance(label, str) or not label.strip():
+        return None
+    state, available, reason = _atlas_catalog_availability(descriptor)
+    provider: dict[str, Any] = {
+        'source_id': source_id,
+        'label': label,
+        'description': reason,
+        'availability': {
+            'state': state,
+            'reason': reason,
+            'observed_at': observed_at,
+        },
+        'query_modes': _atlas_catalog_query_modes(descriptor),
+        'capabilities': _atlas_catalog_capabilities(descriptor),
+    }
+    connection = _atlas_catalog_connection(descriptor, available=available)
+    if connection is not None:
+        provider['connection'] = connection
+    return provider
+
+
+def _atlas_direct_catalog_wire(body: dict[str, Any]) -> dict[str, Any] | None:
+    if isinstance(body.get('providers'), list) and isinstance(
+        body.get('observed_at'), str
+    ):
+        return body
+    return None
+
+
+def _atlas_source_catalog_payload(
+    body: dict[str, Any],
+) -> tuple[dict[str, Any], list[Any]] | None:
+    source_entry = body.get('sources')
+    if not isinstance(source_entry, dict):
+        return None
+    # ``graph_catalog`` currently returns the typed AU SourceCatalog directly
+    # as the ``sources`` modality.  Keep accepting the older capability-wrapper
+    # shape as well because mixed-version graph-os deployments can still emit
+    # ``{available: true, items: {...}}`` while they roll forward.
+    if source_entry.get('available') is True:
+        catalog = source_entry.get('items')
+        if not isinstance(catalog, dict):
+            return None
+    else:
+        catalog = source_entry
+    descriptors = catalog.get('sources')
+    if not isinstance(descriptors, list):
+        return None
+    return catalog, descriptors
+
+
+def _atlas_catalog_providers(
+    descriptors: list[Any], *, observed_at: str
+) -> list[dict[str, Any]] | None:
+    providers: list[dict[str, Any]] = []
+    for descriptor in descriptors:
+        if not isinstance(descriptor, dict):
+            return None
+        provider = _atlas_catalog_provider(descriptor, observed_at=observed_at)
+        if provider is None:
+            return None
+        providers.append(provider)
+    return providers
+
+
+def _atlas_catalog_version(catalog: dict[str, Any]) -> str:
+    schema_version = catalog.get('schema_version')
+    return (
+        schema_version if isinstance(schema_version, str) else 'atlas-source-catalog.v1'
+    )
+
+
+def _atlas_catalog_result(
+    catalog: dict[str, Any], providers: list[dict[str, Any]], observed_at: str
+) -> dict[str, Any]:
+    return {
+        'catalog_version': _atlas_catalog_version(catalog),
+        'observed_at': observed_at,
+        'providers': providers,
+    }
+
+
+def _atlas_source_catalog_wire(body: Any) -> dict[str, Any] | None:
+    """Project AU's capability envelope into the WebUI source contract.
+
+    ``graph_catalog(action='list')`` intentionally aggregates modalities and
+    wraps the source catalogue in ``sources.items``.  Atlas's source screen
+    needs only that typed source projection.  A future AU implementation may
+    return the WebUI contract directly; that shape is accepted unchanged.
+    """
+
+    if not isinstance(body, dict):
+        return None
+    direct = _atlas_direct_catalog_wire(body)
+    if direct is not None:
+        return direct
+    payload = _atlas_source_catalog_payload(body)
+    if payload is None:
+        return None
+    catalog, descriptors = payload
+    observed_at = _atlas_observed_at()
+    providers = _atlas_catalog_providers(descriptors, observed_at=observed_at)
+    if providers is None:
+        return None
+    return _atlas_catalog_result(catalog, providers, observed_at)
+
+
+async def _atlas_execute_ui_catalog() -> JSONResponse:
+    response = await _atlas_execute(
+        'catalog',
+        _ATLAS_SOURCE_CATALOG_TOOL,
+        action='list',
+    )
+    if response.status_code != 200:
+        return response
+    projected = _atlas_source_catalog_wire(_atlas_response_body(response))
+    if projected is None:
+        return _atlas_error_response('catalog', 'capability_unavailable', 501)
+    try:
+        return JSONResponse(status_code=200, content=_atlas_safe_result(projected))
+    except (TypeError, ValueError) as error:
+        _log_failure('atlas.catalog', error, level=logging.WARNING)
+        return _atlas_error_response('catalog', 'backend_contract_invalid', 502)
+
+
+_ATLAS_CONNECTION_STATES = frozenset(
+    {'connected', 'disconnected', 'checking', 'unavailable', 'error'}
+)
+_ATLAS_CONNECTION_REASONS = {
+    'connected': 'governed source connection is ready',
+    'disconnected': 'governed source connection is not ready',
+}
+
+
+def _atlas_connection_state(body: dict[str, Any]) -> str | None:
+    state = body.get('state')
+    if isinstance(state, str) and state in _ATLAS_CONNECTION_STATES:
+        return state
+    ready = body.get('ready')
+    status = str(body.get('status') or '').casefold()
+    if ready is True or status == 'ready':
+        return 'connected'
+    if ready is False or status in {'not_ready', 'disconnected'}:
+        return 'disconnected'
+    return None
+
+
+def _atlas_connection_status_output(state: str) -> dict[str, Any]:
+    output: dict[str, Any] = {
+        'state': state,
+        # The projection is an observation made by this request, not a provider
+        # timestamp supplied by an untrusted connector.
+        'checked_at': _atlas_observed_at(),
+    }
+    reason = _ATLAS_CONNECTION_REASONS.get(state)
+    if reason is not None:
+        output['reason'] = reason
+    return output
+
+
+def _atlas_connection_status_wire(body: Any) -> dict[str, Any] | None:
+    if not isinstance(body, dict):
+        return None
+    state = _atlas_connection_state(body)
+    if state is None:
+        return None
+    output = _atlas_connection_status_output(state)
+    profile_ref = _atlas_valid_reference(body.get('profile_ref'))
+    if profile_ref is not None:
+        output['profile_ref'] = profile_ref
+    return output
+
+
+async def _atlas_execute_ui_connection_status(source_id: str) -> JSONResponse:
+    response = await _atlas_execute(
+        'connections.status',
+        'graph_configure',
+        action='external_graph_doctor',
+        config_key=_atlas_source_connection_key(source_id),
+        config_value='{}',
+    )
+    if response.status_code != 200:
+        return response
+    projected = _atlas_connection_status_wire(_atlas_response_body(response))
+    if projected is None:
+        return _atlas_error_response(
+            'connections.status', 'capability_unavailable', 501
+        )
+    return JSONResponse(status_code=200, content=projected)
+
+
+def _atlas_success_object_or_unavailable(
+    response: JSONResponse, operation: str, required: tuple[str, ...]
+) -> JSONResponse:
+    if response.status_code != 200:
+        return response
+    body = _atlas_response_body(response)
+    if not isinstance(body, dict) or any(field not in body for field in required):
+        return _atlas_error_response(operation, 'capability_unavailable', 501)
+    return response
+
+
+def _atlas_path_identifier(value: str, field_name: str) -> JSONResponse | None:
+    if not isinstance(value, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(value):
+        return _atlas_error_response(field_name, 'invalid_request', 422)
+    return None
+
+
+def _atlas_json_payload(payload: dict[str, Any]) -> str:
+    bounded = _bounded_external_value(payload)
+    rendered = json.dumps(
+        bounded,
+        separators=(',', ':'),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    if len(rendered.encode('utf-8')) > _MAX_EXTERNAL_ARGUMENT_BYTES:
+        raise ValueError('Atlas source request exceeds its safety bound')
+    return rendered
+
+
+def _atlas_explicit_options(
+    model: BaseModel, fields: tuple[str, ...]
+) -> dict[str, Any]:
+    model_fields_set: set[str] = set(getattr(model, 'model_fields_set', set()))
+    return {
+        field_name: getattr(model, field_name)
+        for field_name in fields
+        if field_name in model_fields_set and getattr(model, field_name) is not None
+    }
+
+
+def _atlas_connection_config(request: AtlasConnectionCreate) -> str:
+    payload = request.model_dump(exclude_none=True)
+    # The route path/key is authoritative; accepting a second name in the
+    # canonical config payload would create an avoidable aliasing seam.
+    payload.pop('name', None)
+    selected_backend = (request.backend_type or request.backend or '').casefold()
+    if selected_backend == 'graphql':
+        # The canonical GraphQL declaration is intentionally narrower than a
+        # property-graph declaration.  Do not send property-graph defaults
+        # that would make an otherwise valid GraphQL registration fail its
+        # own allow-list validation.
+        for field_name in (
+            'ingest_max_pages',
+            'ingest_max_row_bytes',
+            'ingest_max_total_bytes',
+            'ingest_max_nesting_depth',
+            'ingest_max_collection_items',
+            'ingest_page_size',
+            'reconcile_deletions',
+            'sync_mode',
+        ):
+            payload.pop(field_name, None)
+    elif selected_backend in {
+        'age',
+        'epistemic_graph',
+        'ladybug',
+        'neo4j',
+        'opencypher',
+    }:
+        payload.pop('allow_introspection', None)
+        payload.pop('ingest_operation', None)
+    return _atlas_json_payload(payload)
+
+
+def _atlas_sync_kwargs(request: AtlasSourceSync) -> dict[str, Any]:
+    return {
+        'source': _atlas_source_connection_key(request.source),
+        'mode': request.mode,
+        'ids_json': json.dumps(request.ids, separators=(',', ':'), ensure_ascii=True),
+        'connection': request.connection or '',
+        'graph': request.graph or '',
+    }
+
+
+@router.get('/atlas/sources')
+async def atlas_source_catalog() -> JSONResponse:
+    """Return the server-owned provider/source catalog used by Atlas."""
+
+    return await _atlas_execute_ui_catalog()
+
+
+@router.get('/atlas/sources/{source_id}/connection')
+async def atlas_source_connection_status_ui(source_id: str) -> JSONResponse:
+    """Read one source's last governed connection observation."""
+
+    invalid = _atlas_path_identifier(source_id, 'connections.status')
+    if invalid is not None:
+        return invalid
+    return await _atlas_execute_ui_connection_status(source_id)
+
+
+def _atlas_source_connection_key(source_id: str) -> str:
+    """Map the UI ``source:provider`` coordinate to a neutral config alias."""
+
+    candidate = source_id.removeprefix('source:')
+    return candidate if _ATLAS_BACKEND_PATTERN.fullmatch(candidate) else source_id
+
+
+def _atlas_source_backend(source_id: str) -> str:
+    """Select only the neutral provider token from a source id."""
+
+    candidate = _atlas_source_connection_key(source_id)
+    return candidate if _ATLAS_BACKEND_PATTERN.fullmatch(candidate) else source_id
+
+
+def _atlas_connect_config(request: AtlasConnectSourceRequest) -> str:
+    connection_key = _atlas_source_connection_key(request.source_id)
+    return _atlas_json_payload(
+        {
+            'backend': _atlas_source_backend(request.source_id),
+            'source_alias': connection_key,
+            'connection_profile_ref': request.connection_profile_ref,
+            'role': 'read',
+            'require_approval': True,
+        }
+    )
+
+
+def _atlas_connect_response(
+    response: JSONResponse, request: AtlasConnectSourceRequest
+) -> JSONResponse:
+    if response.status_code != 200:
+        return response
+    body = _atlas_response_body(response)
+    if not isinstance(body, dict) or body.get('status') != 'success':
+        return _atlas_error_response(
+            'connections.create', 'capability_unavailable', 501
+        )
+    # Registration itself does not probe a source.  ``checking`` is the only
+    # truthful state the façade can return until the status route records a
+    # provider observation.
+    return JSONResponse(
+        status_code=200,
+        content={
+            'source_id': request.source_id,
+            'connection': {
+                'state': 'checking',
+                'reason': 'profile reference accepted; connection probe is pending',
+                'profile_ref': request.connection_profile_ref,
+            },
+        },
+    )
+
+
+@router.post('/atlas/sources/{source_id}/connection')
+async def atlas_source_connection_connect(
+    source_id: str, request: AtlasConnectSourceRequest
+) -> JSONResponse:
+    """Associate one source with an opaque, server-managed profile reference."""
+
+    invalid = _atlas_path_identifier(source_id, 'connections.create')
+    if invalid is not None:
+        return invalid
+    if request.source_id != source_id:
+        return _atlas_error_response('connections.create', 'invalid_request', 422)
+    try:
+        config_value = _atlas_connect_config(request)
+    except (TypeError, ValueError) as error:
+        _log_failure('atlas.connections.create', error, level=logging.WARNING)
+        return _atlas_error_response('connections.create', 'invalid_request', 422)
+    response = await _atlas_execute(
+        'connections.create',
+        'graph_configure',
+        action='add_connection',
+        config_key=_atlas_source_connection_key(source_id),
+        config_value=config_value,
+    )
+    return _atlas_connect_response(response, request)
+
+
+@router.post('/atlas/sync/preview')
+async def atlas_source_sync_preview_ui(
+    request: AtlasSyncPreviewRequest,
+) -> JSONResponse:
+    """Request a non-executable, canonical source-sync preview."""
+
+    kwargs: dict[str, Any] = {
+        'source': _atlas_source_connection_key(request.source_id),
+        'mode': request.mode,
+        'ids_json': '[]',
+        'connection': '',
+        'graph': '',
+    }
+    if request.connection_profile_ref is not None:
+        # A profile reference is allowed as an opaque selector; the canonical
+        # tool decides whether this deployment's preview action supports it.
+        kwargs['connection_profile_ref'] = request.connection_profile_ref
+    response = await _atlas_execute(
+        'sync.preview',
+        _ATLAS_SOURCE_CATALOG_TOOL,
+        action='preview_sync',
+        **kwargs,
+    )
+    return _atlas_success_object_or_unavailable(
+        response,
+        'sync.preview',
+        (
+            'preview_id',
+            'source_id',
+            'mode',
+            'generated_at',
+            'changes',
+            'will_write',
+            'requires_approval',
+            'warnings',
+        ),
+    )
+
+
+@router.post('/atlas/sync/runs')
+async def atlas_source_sync_start(request: AtlasStartSyncRequest) -> JSONResponse:
+    """Start exactly the reviewed preview named by the operator."""
+
+    kwargs: dict[str, Any] = {'preview_id': request.preview_id}
+    if request.idempotency_key is not None:
+        kwargs['idempotency_key'] = request.idempotency_key
+    response = await _atlas_execute('sync.start', 'source_sync', **kwargs)
+    return _atlas_success_object_or_unavailable(
+        response, 'sync.start', ('run_id', 'source_id')
+    )
+
+
+@router.get('/atlas/sync/runs')
+async def atlas_source_sync_runs(source_id: str | None = None) -> JSONResponse:
+    """Read the canonical aggregate of bounded source-sync run observations."""
+
+    if source_id is not None:
+        invalid = _atlas_path_identifier(source_id, 'runs.list')
+        if invalid is not None:
+            return invalid
+    # AU's current ``source_drain`` contract exposes only ``status`` and
+    # ``list``.  Passing an invented ``aggregate`` action is unsafe: the
+    # implementation treats every non-``list`` action as status and would
+    # either report a misleading validation error or leak one drain's view.
+    return _atlas_error_response('runs.list', 'capability_unavailable', 501)
+
+
+@router.post('/atlas/sync/runs/{run_id}/cancel')
+async def atlas_source_sync_cancel(
+    run_id: str, request: AtlasCancelSyncRequest
+) -> JSONResponse:
+    """Cancel one server-owned run through the canonical drain action."""
+
+    invalid = _atlas_path_identifier(run_id, 'runs.cancel')
+    if invalid is not None:
+        return invalid
+    if request.run_id != run_id:
+        return _atlas_error_response('runs.cancel', 'invalid_request', 422)
+    # ``source_drain`` has no cancellation action yet; it would interpret
+    # ``action='cancel'`` as a status request.  Keep the façade truthful until
+    # AU adds a dedicated cancellation verb.
+    return _atlas_error_response('runs.cancel', 'capability_unavailable', 501)
+
+
+@router.get('/atlas/sources/providers')
+async def atlas_source_providers() -> JSONResponse:
+    """List provider capabilities from the canonical source catalog."""
+
+    return await _atlas_execute_source_catalog(
+        'providers',
+        action='list',
+    )
+
+
+@router.get('/atlas/sources/connections')
+async def atlas_source_connections() -> JSONResponse:
+    """List metadata-only governed connection declarations."""
+
+    return await _atlas_execute(
+        'connections.list',
+        'graph_configure',
+        action='list_connections',
+        config_key='',
+        config_value='{}',
+    )
+
+
+@router.post('/atlas/sources/connections')
+async def atlas_source_connection_create(
+    request: AtlasConnectionCreate,
+) -> JSONResponse:
+    """Create a reference-only governed connection declaration."""
+
+    try:
+        config_value = _atlas_connection_config(request)
+    except (TypeError, ValueError) as error:
+        _log_failure('atlas.connections.create', error, level=logging.WARNING)
+        return _atlas_error_response('connections.create', 'invalid_request', 422)
+    return await _atlas_execute(
+        'connections.create',
+        'graph_configure',
+        action='add_connection',
+        config_key=request.name,
+        config_value=config_value,
+    )
+
+
+@router.delete('/atlas/sources/connections/{connection_id}')
+async def atlas_source_connection_delete(connection_id: str) -> JSONResponse:
+    """Remove one governed connection by its opaque catalog identifier."""
+
+    invalid = _atlas_path_identifier(connection_id, 'connections.delete')
+    if invalid is not None:
+        return invalid
+    return await _atlas_execute(
+        'connections.delete',
+        'graph_configure',
+        action='remove_connection',
+        config_key=connection_id,
+        config_value='{}',
+    )
+
+
+@router.post('/atlas/sources/connections/{connection_id}/discover')
+async def atlas_source_connection_discover(
+    connection_id: str, request: AtlasSourceDiscover
+) -> JSONResponse:
+    """Discover a bounded source schema without persisting a mapping."""
+
+    invalid = _atlas_path_identifier(connection_id, 'connections.discover')
+    if invalid is not None:
+        return invalid
+    options = _atlas_explicit_options(request, ('max_types', 'max_depth'))
+    try:
+        config_value = _atlas_json_payload(options)
+    except (TypeError, ValueError) as error:
+        _log_failure('atlas.connections.discover', error, level=logging.WARNING)
+        return _atlas_error_response('connections.discover', 'invalid_request', 422)
+    return await _atlas_execute(
+        'connections.discover',
+        'graph_configure',
+        action='discover_connection_schema',
+        config_key=connection_id,
+        config_value=config_value,
+    )
+
+
+@router.get('/atlas/sources/connections/{connection_id}/mapping')
+async def atlas_source_connection_mapping(connection_id: str) -> JSONResponse:
+    """Read the approved/proposed mapping status for one connection."""
+
+    invalid = _atlas_path_identifier(connection_id, 'connections.mapping')
+    if invalid is not None:
+        return invalid
+    return await _atlas_execute(
+        'connections.mapping',
+        'graph_configure',
+        action='connection_mapping_status',
+        config_key=connection_id,
+        # The canonical status action deliberately accepts no payload.  An
+        # empty string distinguishes that contract from an empty JSON object,
+        # which graph_configure rejects as an unexpected payload.
+        config_value='',
+    )
+
+
+@router.post('/atlas/sources/connections/{connection_id}/mapping/propose')
+async def atlas_source_connection_mapping_propose(
+    connection_id: str, request: AtlasMappingProposal
+) -> JSONResponse:
+    """Request a digestable mapping proposal from the canonical source plane."""
+
+    invalid = _atlas_path_identifier(connection_id, 'connections.mapping.propose')
+    if invalid is not None:
+        return invalid
+    options = _atlas_explicit_options(request, ('source_alias', 'max_types'))
+    try:
+        config_value = _atlas_json_payload(options)
+    except (TypeError, ValueError) as error:
+        _log_failure('atlas.connections.mapping.propose', error, level=logging.WARNING)
+        return _atlas_error_response(
+            'connections.mapping.propose', 'invalid_request', 422
+        )
+    return await _atlas_execute(
+        'connections.mapping.propose',
+        'graph_configure',
+        action='propose_connection_mapping',
+        config_key=connection_id,
+        config_value=config_value,
+    )
+
+
+@router.post('/atlas/sources/connections/{connection_id}/mapping/approve')
+async def atlas_source_connection_mapping_approve(
+    connection_id: str, request: AtlasMappingApproval
+) -> JSONResponse:
+    """Approve exactly the schema/mapping digests returned by a proposal."""
+
+    invalid = _atlas_path_identifier(connection_id, 'connections.mapping.approve')
+    if invalid is not None:
+        return invalid
+    try:
+        config_value = _atlas_json_payload(request.model_dump())
+    except (TypeError, ValueError) as error:
+        _log_failure('atlas.connections.mapping.approve', error, level=logging.WARNING)
+        return _atlas_error_response(
+            'connections.mapping.approve', 'invalid_request', 422
+        )
+    return await _atlas_execute(
+        'connections.mapping.approve',
+        'graph_configure',
+        action='approve_connection_mapping',
+        config_key=connection_id,
+        config_value=config_value,
+    )
+
+
+@router.get('/atlas/sources/connections/{connection_id}/status')
+async def atlas_source_connection_status(connection_id: str) -> JSONResponse:
+    """Return a metadata-only health/status report for one connection."""
+
+    invalid = _atlas_path_identifier(connection_id, 'connections.status')
+    if invalid is not None:
+        return invalid
+    return await _atlas_execute(
+        'connections.status',
+        'graph_configure',
+        action='external_graph_doctor',
+        config_key=connection_id,
+        config_value='{}',
+    )
+
+
+@router.post('/atlas/sources/sync/preview')
+async def atlas_source_sync_preview(request: AtlasSyncPreview) -> JSONResponse:
+    """Preview a sync through the source catalog; never emulate a dry run."""
+
+    try:
+        kwargs = _atlas_sync_kwargs(request)
+    except (TypeError, ValueError) as error:
+        _log_failure('atlas.sync.preview', error, level=logging.WARNING)
+        return _atlas_error_response('sync.preview', 'invalid_request', 422)
+    response = await _atlas_execute(
+        'sync.preview',
+        _ATLAS_SOURCE_CATALOG_TOOL,
+        action='preview_sync',
+        **kwargs,
+    )
+    return _atlas_success_object_or_unavailable(
+        response,
+        'sync.preview',
+        ('schema_version', 'source', 'mode', 'entrypoint', 'wouldExecute', 'reason'),
+    )
+
+
+@router.post('/atlas/sources/sync')
+async def atlas_source_sync(request: AtlasSyncRequest) -> JSONResponse:
+    """Execute the canonical connector-to-KG sync for a governed source."""
+
+    try:
+        kwargs = _atlas_sync_kwargs(request)
+    except (TypeError, ValueError) as error:
+        _log_failure('atlas.sync', error, level=logging.WARNING)
+        return _atlas_error_response('sync', 'invalid_request', 422)
+    return await _atlas_execute('sync', 'source_sync', **kwargs)
+
+
+@router.get('/atlas/sources/runs/{run_id}')
+async def atlas_source_run_status(run_id: str) -> JSONResponse:
+    """Read progress for a canonical source drain handle."""
+
+    invalid = _atlas_path_identifier(run_id, 'runs.status')
+    if invalid is not None:
+        return invalid
+    return await _atlas_execute(
+        'runs.status',
+        'source_drain',
+        action='status',
+        drain_id=run_id,
+    )
+
+
+@router.post('/atlas/sources/runs/{run_id}/cancel')
+async def atlas_source_run_cancel(run_id: str) -> JSONResponse:
+    """Request cancellation through source_drain when AU exposes that action."""
+
+    invalid = _atlas_path_identifier(run_id, 'runs.cancel')
+    if invalid is not None:
+        return invalid
+    # See ``atlas_source_sync_cancel``: forwarding an unsupported action to
+    # source_drain currently aliases it to status rather than cancelling.
+    return _atlas_error_response('runs.cancel', 'capability_unavailable', 501)
 
 
 # Process-level cache of the KnowledgeGraph facade keyed by the live engine's
