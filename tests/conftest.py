@@ -109,7 +109,7 @@ def mock_graph_engine(monkeypatch):
     from agent_utilities.knowledge_graph.core.graph_compute import (
         GraphComputeEngine,
     )
-    from agent_utilities.models.company_brain import ActorType
+    from agent_utilities.security.actor_identity import ActorType
     from agent_utilities.security.brain_context import ActorContext, use_actor
 
     def _double_init(self, graph_name: str | None = None, **_kwargs) -> None:
