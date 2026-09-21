@@ -171,6 +171,14 @@ const nodeTypeBreakdownSchema: z.ZodType<NodeTypeBreakdownData> = z.object({
 
 const numberFormat = new Intl.NumberFormat()
 
+function hopContextLabel(choice: number): string {
+  return `Show ${choice} relationship step${choice === 1 ? '' : 's'} of context`
+}
+
+function relationshipToggleLabel(type: string, hidden: boolean, count: number): string {
+  return `${hidden ? 'Show' : 'Hide'} ${type} relationships (${numberFormat.format(count)} edges)`
+}
+
 function backgroundHex(isDark: boolean): string {
   if (typeof window === 'undefined') return isDark ? '#0a0d14' : '#f6f7fb'
   const token = window.getComputedStyle(document.documentElement).getPropertyValue('--background')
@@ -210,7 +218,7 @@ function renderCanvasBadges({
       ) : null}
       {pendingCount > 0 ? (
         <Badge variant="outline" className="text-[10px]">
-          <RefreshCw className="mr-1 h-3 w-3 animate-spin" /> loading {pendingCount}
+          <RefreshCw className="mr-1 h-3 w-3 animate-spin" aria-hidden="true" /> loading {pendingCount}
         </Badge>
       ) : null}
     </div>
@@ -237,15 +245,21 @@ function renderCanvasControls({
   return (
     <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-1.5">
       <Button
+        type="button"
         size="sm"
         variant="secondary"
         onClick={onIsolate}
         disabled={selected == null}
+        aria-label="Show the selected node and nearby nodes"
         title="Show only this node's neighbourhood"
       >
-        <ScanSearch className="mr-1.5 h-3.5 w-3.5" /> Isolate
+        <ScanSearch className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> Isolate
       </Button>
-      <div className="flex overflow-hidden rounded-md border bg-background/80 backdrop-blur">
+      <div
+        className="flex overflow-hidden rounded-md border bg-background/80 backdrop-blur"
+        role="group"
+        aria-label="Context distance in relationship steps"
+      >
         {HOP_CHOICES.map((choice) => (
           <button
             key={choice}
@@ -255,6 +269,7 @@ function renderCanvasControls({
             }}
             title="How many hops of context a selection reveals"
             aria-pressed={hops === choice}
+            aria-label={hopContextLabel(choice)}
             className={`px-2 py-1 text-[11px] transition-colors ${
               hops === choice ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
             }`}
@@ -263,11 +278,24 @@ function renderCanvasControls({
           </button>
         ))}
       </div>
-      <Button size="sm" variant="secondary" onClick={onShowAll} disabled={showAllDisabled}>
-        <Eye className="mr-1.5 h-3.5 w-3.5" /> Show all
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        onClick={onShowAll}
+        disabled={showAllDisabled}
+        aria-label="Show all clusters and nodes"
+      >
+        <Eye className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> Show all
       </Button>
-      <Button size="sm" variant="secondary" onClick={onReframe}>
-        <Crosshair className="mr-1.5 h-3.5 w-3.5" /> Re-frame
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        onClick={onReframe}
+        aria-label="Re-frame the graph in the viewport"
+      >
+        <Crosshair className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> Re-frame
       </Button>
     </div>
   )
@@ -316,12 +344,20 @@ function renderClusterExpandControls({
         </Badge>
       </div>
       {isExpanded ? (
-        <Button size="sm" variant="outline" onClick={onCollapse}>
-          <Undo2 className="mr-1.5 h-3.5 w-3.5" /> Collapse
+        <Button type="button" size="sm" variant="outline" onClick={onCollapse} aria-label="Collapse this cluster">
+          <Undo2 className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> Collapse
         </Button>
       ) : (
-        <Button size="sm" variant="outline" onClick={onExpand} disabled={isPending} aria-busy={isPending}>
-          <Boxes className="mr-1.5 h-3.5 w-3.5" />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onExpand}
+          disabled={isPending}
+          aria-busy={isPending}
+          aria-label="Expand this cluster to show its members"
+        >
+          <Boxes className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
           {isPending ? 'Expanding…' : 'Expand'}
         </Button>
       )}
@@ -347,11 +383,13 @@ function renderNeighboursList({
           onClick={() => {
             onSelect(index)
           }}
+          aria-label={`Select ${node.name}; ${degree} links`}
           className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
         >
           <span
             className="inline-block h-2 w-2 shrink-0 rounded-full"
             style={{ background: nodeTypeColor(node.type, isDark) }}
+            aria-hidden="true"
           />
           <span className="min-w-0 flex-1 truncate">{node.name}</span>
           <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{degree}</span>
@@ -388,9 +426,14 @@ function renderSelectedPanel({
     <Card className="min-h-0 flex-1">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          {selectedMeta.kind === 'cluster' ? <Boxes className="h-4 w-4" /> : <Layers className="h-4 w-4" />}
+          {selectedMeta.kind === 'cluster' ? (
+            <Boxes className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <Layers className="h-4 w-4" aria-hidden="true" />
+          )}
           {selectedMeta.kind === 'cluster' ? 'Cluster' : 'Node'}
         </CardTitle>
+        <CardDescription className="text-xs">Choose a neighbour below to move the focus.</CardDescription>
       </CardHeader>
       <CardContent className="min-h-0 p-0">
         <ScrollArea className="h-[300px] px-4 pb-4">
@@ -401,6 +444,7 @@ function renderSelectedPanel({
                 <span
                   className="inline-block h-2 w-2 rounded-full"
                   style={{ background: nodeTypeColor(selectedNode.type, isDark) }}
+                  aria-hidden="true"
                 />
                 {selectedNode.type}
                 {selectedMeta.level != null ? <span className="opacity-60">· level {selectedMeta.level}</span> : null}
@@ -414,7 +458,13 @@ function renderSelectedPanel({
               <Badge variant="outline" className="text-[10px]">
                 {neighbours.length} neighbours in view
               </Badge>
-              <Button size="sm" variant="ghost" onClick={onUnpin}>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={onUnpin}
+                aria-label={`Clear selected ${selectedMeta.kind}`}
+              >
                 Unpin
               </Button>
             </div>
@@ -449,6 +499,7 @@ function renderRelTypesList({
               onToggle(type)
             }}
             aria-pressed={!hidden}
+            aria-label={relationshipToggleLabel(type, hidden, relTypeCount[index])}
             className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted ${
               hidden ? 'opacity-40' : ''
             }`}
@@ -457,6 +508,7 @@ function renderRelTypesList({
               className={`inline-block h-2 w-2 shrink-0 rounded-sm border ${
                 hidden ? 'border-muted-foreground' : 'border-primary bg-primary'
               }`}
+              aria-hidden="true"
             />
             <span className="min-w-0 flex-1 truncate font-mono">{type}</span>
             <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
@@ -469,13 +521,23 @@ function renderRelTypesList({
   )
 }
 
-function renderLoadError(error: string | null) {
+function renderRetryButton(onRetry: (() => void) | undefined) {
+  if (!onRetry) return null
+  return (
+    <Button type="button" variant="outline" size="sm" className="mt-3 w-fit" onClick={onRetry}>
+      Try again
+    </Button>
+  )
+}
+
+function renderLoadError(error: string | null, onRetry?: () => void) {
   if (!error) return null
   return (
-    <Card>
+    <Card role="alert">
       <CardHeader>
         <CardTitle className="text-base">Could not load</CardTitle>
         <CardDescription>{error}</CardDescription>
+        {renderRetryButton(onRetry)}
       </CardHeader>
     </Card>
   )
@@ -528,8 +590,8 @@ function renderLodStatus({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Button size="sm" variant="outline" onClick={onRetry}>
-          <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Try again
+        <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> Try again
         </Button>
       </CardContent>
     </Card>
@@ -539,8 +601,12 @@ function renderLodStatus({
 function renderRootLoadingOverlay(rootLoading: boolean) {
   if (!rootLoading) return null
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 text-sm text-muted-foreground backdrop-blur-sm">
-      <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Reading the JSON hierarchy top level…
+    <div
+      className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 text-sm text-muted-foreground backdrop-blur-sm"
+      role="status"
+      aria-live="polite"
+    >
+      <RefreshCw className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> Reading the JSON hierarchy top level…
     </div>
   )
 }
@@ -590,7 +656,7 @@ function renderTypesRelsTabs({
           Node types
         </TabsTrigger>
         <TabsTrigger value="rels" className="flex-1 text-xs">
-          <Filter className="mr-1 h-3 w-3" /> Relationships
+          <Filter className="mr-1 h-3 w-3" aria-hidden="true" /> Relationships
         </TabsTrigger>
       </TabsList>
       <TabsContent value="types" className="min-h-0 flex-1">
@@ -620,7 +686,7 @@ function renderTypesRelsTabs({
           <CardHeader className="pb-2">
             <CardDescription className="text-xs">
               {relTypes.length} relationship types currently in view (cluster links plus any real edges inside expanded
-              clusters). Untick one to drop its edges.
+              clusters). Select one to hide or show its edges.
             </CardDescription>
           </CardHeader>
           <CardContent className="min-h-0 p-0">
@@ -634,8 +700,12 @@ function renderTypesRelsTabs({
   )
 }
 
-function renderRootExplorerError(rootStatus: UseLodExplorerResult['rootStatus'], error: string | null) {
-  return rootStatus === 'ready' ? renderLoadError(error) : null
+function renderRootExplorerError(
+  rootStatus: UseLodExplorerResult['rootStatus'],
+  error: string | null,
+  onRetry: () => void,
+) {
+  return rootStatus === 'ready' ? renderLoadError(error, onRetry) : null
 }
 
 function lodStatusError({
@@ -982,7 +1052,7 @@ export default function Graph3DLodView() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <Layers className="h-6 w-6" /> Knowledge Graph 3D — JSON hierarchy preview
+            <Layers className="h-6 w-6" aria-hidden="true" /> Knowledge Graph 3D — JSON hierarchy preview
           </h1>
           <p className="text-sm text-muted-foreground">
             This bounded JSON hierarchy preview shows authenticated cluster summaries and lets you drill in.
@@ -993,27 +1063,57 @@ export default function Graph3DLodView() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Switch checked={autoRotate} onCheckedChange={setAutoRotate} aria-label="Auto-rotate" />
-            <Orbit className="h-3.5 w-3.5" /> Drift
+            <Switch
+              id="graph-3d-lod-auto-rotate"
+              checked={autoRotate}
+              onCheckedChange={setAutoRotate}
+              aria-labelledby="graph-3d-lod-auto-rotate-label"
+            />
+            <Orbit className="h-3.5 w-3.5" aria-hidden="true" />
+            <label htmlFor="graph-3d-lod-auto-rotate" id="graph-3d-lod-auto-rotate-label">
+              Auto-rotate
+            </label>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Switch checked={bloom} onCheckedChange={setBloom} aria-label="Bloom" />
-            <Sparkles className="h-3.5 w-3.5" /> Bloom
+            <Switch
+              id="graph-3d-lod-bloom"
+              checked={bloom}
+              onCheckedChange={setBloom}
+              aria-labelledby="graph-3d-lod-bloom-label"
+            />
+            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+            <label htmlFor="graph-3d-lod-bloom" id="graph-3d-lod-bloom-label">
+              Bloom lighting
+            </label>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Switch checked={depthOfField} onCheckedChange={setDepthOfField} aria-label="Depth of field" />
-            Depth of field
+            <Switch
+              id="graph-3d-lod-depth-of-field"
+              checked={depthOfField}
+              onCheckedChange={setDepthOfField}
+              aria-labelledby="graph-3d-lod-depth-of-field-label"
+            />
+            <label htmlFor="graph-3d-lod-depth-of-field" id="graph-3d-lod-depth-of-field-label">
+              Depth of field
+            </label>
           </div>
-          <Button variant="outline" size="sm" onClick={retryLod}>
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Reload
+          <Button type="button" variant="outline" size="sm" onClick={retryLod} aria-label="Reload the LOD graph data">
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> Reload
           </Button>
-          <Button variant="outline" size="sm" onClick={explorer.reset} disabled={explorer.expandedIds.size === 0}>
-            <Undo2 className="mr-1.5 h-3.5 w-3.5" /> Collapse all
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={explorer.reset}
+            disabled={explorer.expandedIds.size === 0}
+            aria-label="Collapse all expanded clusters"
+          >
+            <Undo2 className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> Collapse all
           </Button>
         </div>
       </div>
 
-      {renderRootExplorerError(explorer.rootStatus, explorer.error)}
+      {renderRootExplorerError(explorer.rootStatus, explorer.error, retryLod)}
 
       {/*
         `h-[70vh]` (a viewport-relative unit, ALWAYS definite, unlike an
@@ -1043,7 +1143,19 @@ export default function Graph3DLodView() {
         card breaks the circularity locally instead.
       */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">
-        <Card className="relative h-[70vh] min-h-[440px] overflow-hidden p-0">
+        <Card
+          className="relative h-[70vh] min-h-[440px] overflow-hidden p-0"
+          role="region"
+          aria-labelledby="graph-3d-lod-canvas-title"
+          aria-describedby="graph-3d-lod-canvas-help"
+        >
+          <h2 id="graph-3d-lod-canvas-title" className="sr-only">
+            Interactive level-of-detail 3D knowledge graph
+          </h2>
+          <p id="graph-3d-lod-canvas-help" className="sr-only">
+            The canvas is a visual overview. Keyboard users can use the controls below it and the node, type, and
+            relationship lists beside it.
+          </p>
           {renderLodCanvasContent({
             explorer,
             previewReady: lodPreviewReady,

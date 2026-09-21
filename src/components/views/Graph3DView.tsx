@@ -92,6 +92,24 @@ const nodeTypeBreakdownSchema: z.ZodType<NodeTypeBreakdownData> = z.object({
 
 const numberFormat = new Intl.NumberFormat()
 
+function hopContextLabel(choice: number): string {
+  return `Show ${choice} relationship step${choice === 1 ? '' : 's'} of context`
+}
+
+function relationshipToggleLabel(type: string, hidden: boolean, count: number): string {
+  return `${hidden ? 'Show' : 'Hide'} ${type} relationships (${numberFormat.format(count)} edges)`
+}
+
+function renderInvalidEdgeBadge(invalidEdgeCount: number) {
+  if (invalidEdgeCount <= 0) return null
+  return (
+    <Badge variant="destructive" className="text-[10px]">
+      <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" /> {invalidEdgeCount} invalid relationship
+      {invalidEdgeCount === 1 ? '' : 's'} omitted
+    </Badge>
+  )
+}
+
 function backgroundHex(isDark: boolean): string {
   if (typeof window === 'undefined') return isDark ? '#0a0d14' : '#f6f7fb'
   const token = window.getComputedStyle(document.documentElement).getPropertyValue('--background')
@@ -140,28 +158,54 @@ function ViewControls({
 }: ViewControlsProps) {
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <Switch
+          id="graph-3d-include-isolated"
           checked={includeIsolated}
           onCheckedChange={onIncludeIsolatedChange}
-          aria-label="Include unconnected nodes"
+          aria-labelledby="graph-3d-include-isolated-label"
         />
-        Include unconnected
-      </label>
-      <label className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Switch checked={autoRotate} onCheckedChange={onAutoRotateChange} aria-label="Auto-rotate" />
-        <Orbit className="h-3.5 w-3.5" /> Drift
-      </label>
-      <label className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Switch checked={bloom} onCheckedChange={onBloomChange} aria-label="Bloom" />
-        <Sparkles className="h-3.5 w-3.5" /> Bloom
-      </label>
-      <label className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Switch checked={depthOfField} onCheckedChange={onDepthOfFieldChange} aria-label="Depth of field" />
-        Depth of field
-      </label>
-      <Button variant="outline" size="sm" onClick={onReload}>
-        <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Reload
+        <label htmlFor="graph-3d-include-isolated" id="graph-3d-include-isolated-label">
+          Include unconnected nodes
+        </label>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Switch
+          id="graph-3d-auto-rotate"
+          checked={autoRotate}
+          onCheckedChange={onAutoRotateChange}
+          aria-labelledby="graph-3d-auto-rotate-label"
+        />
+        <Orbit className="h-3.5 w-3.5" aria-hidden="true" />
+        <label htmlFor="graph-3d-auto-rotate" id="graph-3d-auto-rotate-label">
+          Auto-rotate
+        </label>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Switch
+          id="graph-3d-bloom"
+          checked={bloom}
+          onCheckedChange={onBloomChange}
+          aria-labelledby="graph-3d-bloom-label"
+        />
+        <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+        <label htmlFor="graph-3d-bloom" id="graph-3d-bloom-label">
+          Bloom lighting
+        </label>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Switch
+          id="graph-3d-depth-of-field"
+          checked={depthOfField}
+          onCheckedChange={onDepthOfFieldChange}
+          aria-labelledby="graph-3d-depth-of-field-label"
+        />
+        <label htmlFor="graph-3d-depth-of-field" id="graph-3d-depth-of-field-label">
+          Depth of field
+        </label>
+      </div>
+      <Button type="button" variant="outline" size="sm" onClick={onReload} aria-label="Reload the 3D graph data">
+        <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> Reload
       </Button>
     </div>
   )
@@ -170,34 +214,40 @@ function ViewControls({
 /** The loading / unavailable / error / empty status card. Renders nothing
  * (null) for `state.kind === 'ready'` — the caller renders the graph itself
  * in that case. */
-function StatusCard({ state }: { state: LoadState }) {
+function StatusCard({ state, onRetry }: { state: LoadState; onRetry: () => void }) {
   if (state.kind === 'loading') {
     return (
-      <Card className="flex-1">
+      <Card className="flex-1" role="status" aria-live="polite">
         <CardContent className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Reading the graph…
+          <RefreshCw className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> Reading the graph…
         </CardContent>
       </Card>
     )
   }
   if (state.kind === 'unavailable' || state.kind === 'error') {
     return (
-      <Card className="flex-1">
+      <Card className="flex-1" role="alert">
         <CardHeader>
           <CardTitle className="text-base">
             {state.kind === 'unavailable' ? 'Not available yet' : 'Could not load the graph'}
           </CardTitle>
           <CardDescription>{state.reason}</CardDescription>
+          <Button type="button" variant="outline" size="sm" className="mt-3 w-fit" onClick={onRetry}>
+            Try again
+          </Button>
         </CardHeader>
       </Card>
     )
   }
   if (state.kind === 'empty') {
     return (
-      <Card className="flex-1">
+      <Card className="flex-1" role="status">
         <CardHeader>
           <CardTitle className="text-base">No connected nodes</CardTitle>
-          <CardDescription>The graph answered successfully and holds no relationships to draw.</CardDescription>
+          <CardDescription>
+            The graph answered successfully but has no relationships to draw. Turn on &quot;Include unconnected
+            nodes&quot; above to check whether standalone nodes are available.
+          </CardDescription>
         </CardHeader>
       </Card>
     )
@@ -220,8 +270,9 @@ function CanvasBadges({
 }) {
   const overReported =
     payload.engine_total_relationships != null && payload.engine_total_relationships > model.edges.length
+  const invalidEdgeCount = payload.edges.length - model.edges.length
   return (
-    <div className="absolute left-3 top-3 flex flex-wrap items-center gap-1.5">
+    <div className="absolute left-3 top-3 flex flex-wrap items-center gap-1.5" aria-live="polite">
       <Badge variant="secondary" className="font-mono text-[10px]">
         {numberFormat.format(model.nodes.length)} nodes
       </Badge>
@@ -240,7 +291,7 @@ function CanvasBadges({
       )}
       {overReported && payload.engine_total_relationships != null && (
         <Badge variant="destructive" className="text-[10px]">
-          <AlertTriangle className="mr-1 h-3 w-3" /> the engine reports{' '}
+          <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" /> the engine reports{' '}
           {numberFormat.format(payload.engine_total_nodes ?? 0)} nodes /{' '}
           {numberFormat.format(payload.engine_total_relationships)} edges in these graphs — the read surface returned{' '}
           {((100 * model.edges.length) / payload.engine_total_relationships).toFixed(1)}% of the edges
@@ -253,10 +304,11 @@ function CanvasBadges({
       )}
       {degraded && (
         <Badge variant="destructive" className="text-[10px]">
-          <AlertTriangle className="mr-1 h-3 w-3" /> {degraded.length} graph
+          <AlertTriangle className="mr-1 h-3 w-3" aria-hidden="true" /> {degraded.length} graph
           {degraded.length === 1 ? '' : 's'} unreadable: {degraded.join(', ')}
         </Badge>
       )}
+      {renderInvalidEdgeBadge(invalidEdgeCount)}
     </div>
   )
 }
@@ -269,7 +321,11 @@ function HopChoiceButtons({
   onSelect: (hops: (typeof HOP_CHOICES)[number]) => void
 }) {
   return (
-    <div className="flex overflow-hidden rounded-md border bg-background/80 backdrop-blur">
+    <div
+      className="flex overflow-hidden rounded-md border bg-background/80 backdrop-blur"
+      role="group"
+      aria-label="Context distance in relationship steps"
+    >
       {HOP_CHOICES.map((choice) => (
         <button
           key={choice}
@@ -277,6 +333,8 @@ function HopChoiceButtons({
           onClick={() => {
             onSelect(choice)
           }}
+          aria-pressed={hops === choice}
+          aria-label={hopContextLabel(choice)}
           title="How many hops of context a selection reveals"
           className={`px-2 py-1 text-[11px] transition-colors ${
             hops === choice ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
@@ -309,20 +367,35 @@ function CanvasControls({
   return (
     <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-1.5">
       <Button
+        type="button"
         size="sm"
         variant="secondary"
         onClick={onIsolate}
         disabled={selected == null}
+        aria-label="Show the selected node and nearby nodes"
         title="Show only this node's neighbourhood"
       >
-        <ScanSearch className="mr-1.5 h-3.5 w-3.5" /> Isolate
+        <ScanSearch className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> Isolate
       </Button>
       <HopChoiceButtons hops={hops} onSelect={onSelectHops} />
-      <Button size="sm" variant="secondary" onClick={onShowAll} disabled={showAllDisabled}>
-        <Eye className="mr-1.5 h-3.5 w-3.5" /> Show all
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        onClick={onShowAll}
+        disabled={showAllDisabled}
+        aria-label="Show all nodes and relationship types"
+      >
+        <Eye className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> Show all
       </Button>
-      <Button size="sm" variant="secondary" onClick={onReframe}>
-        <Crosshair className="mr-1.5 h-3.5 w-3.5" /> Re-frame
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        onClick={onReframe}
+        aria-label="Re-frame the graph in the viewport"
+      >
+        <Crosshair className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> Re-frame
       </Button>
     </div>
   )
@@ -374,7 +447,19 @@ function GraphCanvasPanel({
   onReframe,
 }: GraphCanvasPanelProps) {
   return (
-    <Card className="relative h-[70vh] min-h-[440px] overflow-hidden p-0">
+    <Card
+      className="relative h-[70vh] min-h-[440px] overflow-hidden p-0"
+      role="region"
+      aria-labelledby="graph-3d-canvas-title"
+      aria-describedby="graph-3d-canvas-help"
+    >
+      <h2 id="graph-3d-canvas-title" className="sr-only">
+        Interactive 3D knowledge graph
+      </h2>
+      <p id="graph-3d-canvas-help" className="sr-only">
+        The canvas is a visual overview. Keyboard users can use the controls below it and the node, type, and
+        relationship lists beside it.
+      </p>
       <Graph3DCanvas
         model={model}
         isDark={isDark}
@@ -430,8 +515,9 @@ function SelectedNodeCard({
     <Card className="min-h-0 flex-1">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Layers className="h-4 w-4" /> Selected
+          <Layers className="h-4 w-4" aria-hidden="true" /> Selected node
         </CardTitle>
+        <CardDescription className="text-xs">Choose a neighbour below to move the focus.</CardDescription>
       </CardHeader>
       <CardContent className="min-h-0 p-0">
         <ScrollArea className="h-[300px] px-4 pb-4">
@@ -442,6 +528,7 @@ function SelectedNodeCard({
                 <span
                   className="inline-block h-2 w-2 rounded-full"
                   style={{ background: nodeTypeColor(selectedNode.type, isDark) }}
+                  aria-hidden="true"
                 />
                 {selectedNode.type}
               </div>
@@ -453,21 +540,25 @@ function SelectedNodeCard({
               </Badge>
               {hiddenNeighbourCount > 0 && (
                 <Button
+                  type="button"
                   size="sm"
                   variant="outline"
                   onClick={() => {
                     onExpand(selected)
                   }}
+                  aria-label={`Show ${hiddenNeighbourCount} more neighbours of ${selectedNode.name}`}
                 >
-                  <Rows3 className="mr-1.5 h-3.5 w-3.5" /> Expand {hiddenNeighbourCount}
+                  <Rows3 className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> Show {hiddenNeighbourCount} more
                 </Button>
               )}
               <Button
+                type="button"
                 size="sm"
                 variant="ghost"
                 onClick={() => {
                   onSelect(null)
                 }}
+                aria-label={`Clear selected node ${selectedNode.name}`}
               >
                 Unpin
               </Button>
@@ -480,11 +571,13 @@ function SelectedNodeCard({
                   onClick={() => {
                     onSelect(index)
                   }}
+                  aria-label={`Select neighbour ${node.name}; ${degree} links`}
                   className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
                 >
                   <span
                     className="inline-block h-2 w-2 shrink-0 rounded-full"
                     style={{ background: nodeTypeColor(node.type, isDark) }}
+                    aria-hidden="true"
                   />
                   <span className="min-w-0 flex-1 truncate">{node.name}</span>
                   <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{degree}</span>
@@ -519,8 +612,8 @@ function NodeTypesTabContent({
         <CardHeader className="pb-2">
           <CardDescription className="text-xs">
             {numberFormat.format(payload.connected_nodes)} of the graph&apos;s nodes carry at least one edge and are
-            drawn here. The distribution below is the whole graph, from the engine&apos;s own aggregate — click a type
-            to keep only those nodes on the canvas.
+            drawn here. The distribution below covers the whole graph, from the engine&apos;s aggregate. Select a type
+            to show only those nodes on the canvas.
           </CardDescription>
         </CardHeader>
         <CardContent className="min-h-0 p-0">
@@ -556,6 +649,8 @@ function RelationshipToggleRow({
       onClick={() => {
         onToggle(type)
       }}
+      aria-pressed={!hidden}
+      aria-label={relationshipToggleLabel(type, hidden, count)}
       className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-muted ${
         hidden ? 'opacity-40' : ''
       }`}
@@ -564,6 +659,7 @@ function RelationshipToggleRow({
         className={`inline-block h-2 w-2 shrink-0 rounded-sm border ${
           hidden ? 'border-muted-foreground' : 'border-primary bg-primary'
         }`}
+        aria-hidden="true"
       />
       <span className="min-w-0 flex-1 truncate font-mono">{type}</span>
       <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{numberFormat.format(count)}</span>
@@ -585,8 +681,8 @@ function RelationshipsTabContent({
       <Card className="h-full">
         <CardHeader className="pb-2">
           <CardDescription className="text-xs">
-            {model.relTypes.length} relationship types in view. Untick one to drop its edges — the four largest are
-            most of the graph, so hiding them is the fastest way to see what else is there.
+            {model.relTypes.length} relationship types are in view. Select one to hide or show its edges — the four
+            largest are most of the graph, so hiding them is the fastest way to see what else is there.
           </CardDescription>
         </CardHeader>
         <CardContent className="min-h-0 p-0">
@@ -664,7 +760,7 @@ function GraphSidePanel({
           Node types
         </TabsTrigger>
         <TabsTrigger value="rels" className="flex-1 text-xs">
-          <Filter className="mr-1 h-3 w-3" /> Relationships
+          <Filter className="mr-1 h-3 w-3" aria-hidden="true" /> Relationships
         </TabsTrigger>
       </TabsList>
       <NodeTypesTabContent
@@ -900,11 +996,13 @@ export default function Graph3DView() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <Boxes className="h-6 w-6" /> Knowledge Graph 3D
+            <Boxes className="h-6 w-6" aria-hidden="true" /> Knowledge Graph 3D
           </h1>
-          <p className="text-sm text-muted-foreground">
-            The connected core of the graph in three dimensions. Drag to orbit, scroll to zoom, hover to highlight a
-            node and its neighbours, click to pin it, double-click to pull its neighbours into view.
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Explore the connected part of the knowledge graph in three dimensions. Drag to orbit, scroll to zoom, and
+            select a node to inspect it. By default, isolated nodes stay out of the view; turn on &quot;Include
+            unconnected nodes&quot; when you need the full count. Keyboard users can use the controls and lists beside
+            the canvas.
           </p>
         </div>
         <ViewControls
@@ -920,7 +1018,7 @@ export default function Graph3DView() {
         />
       </div>
 
-      <StatusCard state={state} />
+      <StatusCard state={state} onRetry={reload} />
 
       {state.kind === 'ready' && model && payload ? (
         <ReadyGraphSection

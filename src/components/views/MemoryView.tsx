@@ -7,7 +7,14 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
@@ -18,11 +25,16 @@ import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
 const memoryNodeSchema = z.object({
   id: z.string(),
   content: z.string(),
-  importance: z.number(),
+  importance: z.number().min(0).max(1),
   tags: looseArray(z.string()).optional(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  created_at: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Expected a valid creation timestamp'),
+  updated_at: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Expected a valid update timestamp'),
   linked_nodes: looseArray(z.string()).optional(),
+})
+
+const memoryMutationResponseSchema = z.object({
+  status: z.string(),
+  id: z.string().optional(),
 })
 
 interface MemoryNode {
@@ -35,22 +47,409 @@ interface MemoryNode {
   linked_nodes?: string[]
 }
 
+interface MemoryFormState {
+  id: string
+  content: string
+  importance: number
+  tags: string[]
+}
+
+const EMPTY_MEMORY_FORM: MemoryFormState = { id: '', content: '', importance: 0.5, tags: [] }
+
+function memoryPreview(content: string): string {
+  return content.length > 100 ? `${content.slice(0, 100)}…` : content
+}
+
+function memoryActionLabel(memory: MemoryNode): string {
+  return `Open memory ${memory.id}: ${memoryPreview(memory.content)}`
+}
+
+function memoryFormValidationError(form: { content: string; importance: number }): string | null {
+  if (!form.content.trim()) return 'Memory content is required.'
+  if (!Number.isFinite(form.importance) || form.importance < 0 || form.importance > 1) {
+    return 'Importance must be between 0% and 100%.'
+  }
+  return null
+}
+
+function memoryErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback
+}
+
+function handleMemoryLoadError(
+  error: unknown,
+  setSessionExpired: (value: boolean) => void,
+  setMemoryError: (value: string | null) => void,
+): void {
+  if (error instanceof ApiError && error.status === 401) {
+    setSessionExpired(true)
+    return
+  }
+  const message = memoryErrorMessage(error, 'The memory service returned an invalid response.')
+  setMemoryError(message)
+  toast.error('Failed to load memories', { description: message })
+}
+
+function hasFormFieldError(error: string | null, field: string): boolean {
+  return error?.toLowerCase().includes(field.toLowerCase()) ?? false
+}
+
+function formFieldDescriptionId(prefix: string, field: string, error: string | null): string {
+  return error ? `${prefix}-${field}-help ${prefix}-form-error` : `${prefix}-${field}-help`
+}
+
+function renderMemoryFormError(prefix: string, error: string | null) {
+  if (!error) return null
+  return (
+    <p id={`${prefix}-form-error`} className="text-sm text-destructive" role="alert">
+      {error}
+    </p>
+  )
+}
+
+function renderMemoryLoadError(error: string | null, onRetry: () => void) {
+  if (!error) return null
+  return (
+    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm" role="alert">
+      <p className="font-medium text-destructive">Memories could not be loaded.</p>
+      <p className="mt-1 text-muted-foreground">{error}</p>
+      <Button type="button" variant="outline" size="sm" className="mt-3" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
+  )
+}
+
+async function createMemory({
+  form,
+  setFormError,
+  setIsCreateDialogOpen,
+  setMemoryForm,
+  fetchMemories,
+}: {
+  form: MemoryFormState
+  setFormError: (value: string | null) => void
+  setIsCreateDialogOpen: (value: boolean) => void
+  setMemoryForm: (value: MemoryFormState) => void
+  fetchMemories: () => Promise<void>
+}): Promise<void> {
+  const validationError = memoryFormValidationError(form)
+  if (validationError) {
+    setFormError(validationError)
+    return
+  }
+  try {
+    await fetchValidated('/api/enhanced/graph/memory', memoryMutationResponseSchema, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...form,
+        id: form.id || `mem_${Date.now()}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    })
+    toast.success('Memory created successfully')
+    setIsCreateDialogOpen(false)
+    setMemoryForm(EMPTY_MEMORY_FORM)
+    setFormError(null)
+    await fetchMemories()
+  } catch (error: unknown) {
+    const message = memoryErrorMessage(error, 'The memory service rejected this record.')
+    toast.error('Failed to create memory', { description: message })
+  }
+}
+
+async function updateMemory({
+  memoryId,
+  form,
+  setFormError,
+  setIsEditDialogOpen,
+  setEditingMemoryId,
+  setSelectedMemory,
+  setMemoryForm,
+  fetchMemories,
+}: {
+  memoryId: string | null
+  form: MemoryFormState
+  setFormError: (value: string | null) => void
+  setIsEditDialogOpen: (value: boolean) => void
+  setEditingMemoryId: (value: string | null) => void
+  setSelectedMemory: (value: MemoryNode | null) => void
+  setMemoryForm: (value: MemoryFormState) => void
+  fetchMemories: () => Promise<void>
+}): Promise<void> {
+  if (!memoryId) return
+  const validationError = memoryFormValidationError(form)
+  if (validationError) {
+    setFormError(validationError)
+    return
+  }
+  try {
+    await fetchValidated(`/api/enhanced/graph/memory/${memoryId}`, memoryMutationResponseSchema, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, updated_at: new Date().toISOString() }),
+    })
+    toast.success('Memory updated successfully')
+    setIsEditDialogOpen(false)
+    setEditingMemoryId(null)
+    setSelectedMemory(null)
+    setMemoryForm(EMPTY_MEMORY_FORM)
+    setFormError(null)
+    await fetchMemories()
+  } catch (error: unknown) {
+    const message = memoryErrorMessage(error, 'The memory service rejected this record.')
+    toast.error('Failed to update memory', { description: message })
+  }
+}
+
+function MemoryBrowseCard({
+  memory,
+  selected,
+  onSelect,
+  onEdit,
+  onDelete,
+}: {
+  memory: MemoryNode
+  selected: boolean
+  onSelect: (memory: MemoryNode) => void
+  onEdit: (memory: MemoryNode) => void
+  onDelete: (id: string) => void
+}) {
+  return (
+    <Card className={cn('transition-all hover:shadow-md', selected ? 'ring-2 ring-primary' : '')}>
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <button
+            type="button"
+            aria-pressed={selected}
+            aria-label={memoryActionLabel(memory)}
+            className="flex-1 border-0 bg-transparent text-left"
+            onClick={() => {
+              onSelect(memory)
+            }}
+          >
+            <span className="block text-base font-semibold line-clamp-2">{memoryPreview(memory.content)}</span>
+            <span className="block text-xs text-muted-foreground">{new Date(memory.created_at).toLocaleString()}</span>
+          </button>
+          <div className="flex gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={`Edit memory: ${memory.id}`}
+              onClick={(event) => {
+                event.stopPropagation()
+                onEdit(memory)
+              }}
+            >
+              <Edit2 className="size-3" aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={`Delete memory: ${memory.id}`}
+              onClick={(event) => {
+                event.stopPropagation()
+                onDelete(memory.id)
+              }}
+            >
+              <Trash2 className="size-3" aria-hidden="true" />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="size-3 text-muted-foreground" aria-hidden="true" />
+            <span className="text-xs text-muted-foreground">Importance:</span>
+            <div className="flex-1">
+              <div
+                className="h-2 bg-muted rounded-full overflow-hidden"
+                role="progressbar"
+                aria-label={`Importance of memory ${memory.id}`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={memory.importance * 100}
+                aria-valuetext={`${(memory.importance * 100).toFixed(0)} percent`}
+              >
+                <div className="h-full bg-primary" style={{ width: `${memory.importance * 100}%` }} />
+              </div>
+            </div>
+            <span className="text-xs font-medium">{(memory.importance * 100).toFixed(0)}%</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {(memory.tags ?? []).slice(0, 3).map((tag) => (
+              <Badge key={tag} variant="secondary" className="text-xs">
+                <Tag className="size-2 mr-1" aria-hidden="true" />
+                {tag}
+              </Badge>
+            ))}
+            {(memory.tags ?? []).length > 3 && (
+              <Badge variant="secondary" className="text-xs">
+                +{(memory.tags ?? []).length - 3}
+              </Badge>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function MemoryTimelineCard({
+  memory,
+  selected,
+  onSelect,
+}: {
+  memory: MemoryNode
+  selected: boolean
+  onSelect: (memory: MemoryNode) => void
+}) {
+  return (
+    <div className="relative">
+      <div
+        className="absolute left-[-26px] w-4 h-4 rounded-full bg-primary border-2 border-background"
+        aria-hidden="true"
+      />
+      <Card className={cn('hover:shadow-md transition-all', selected ? 'ring-2 ring-primary' : '')}>
+        <button
+          type="button"
+          aria-pressed={selected}
+          aria-label={memoryActionLabel(memory)}
+          className="w-full border-0 bg-transparent text-left"
+          onClick={() => {
+            onSelect(memory)
+          }}
+        >
+          <span className="flex items-start justify-between p-6">
+            <span className="flex-1">
+              <span className="mb-1 flex items-center gap-2">
+                <Calendar className="size-3 text-muted-foreground" aria-hidden="true" />
+                <span className="text-xs text-muted-foreground">{new Date(memory.created_at).toLocaleString()}</span>
+              </span>
+              <span className="block text-base font-semibold line-clamp-2">{memoryPreview(memory.content)}</span>
+            </span>
+            <Badge variant="outline" className="text-xs">
+              {(memory.importance * 100).toFixed(0)}%
+            </Badge>
+          </span>
+        </button>
+      </Card>
+    </div>
+  )
+}
+
+function MemorySearchCard({
+  memory,
+  selected,
+  onSelect,
+}: {
+  memory: MemoryNode
+  selected: boolean
+  onSelect: (memory: MemoryNode) => void
+}) {
+  return (
+    <Card className={cn('hover:shadow-md transition-all', selected ? 'ring-2 ring-primary' : '')}>
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-4">
+          <button
+            type="button"
+            aria-pressed={selected}
+            aria-label={memoryActionLabel(memory)}
+            className="flex-1 border-0 bg-transparent text-left"
+            onClick={() => {
+              onSelect(memory)
+            }}
+          >
+            <span className="block text-sm line-clamp-2">{memory.content}</span>
+            <span className="mt-2 flex items-center gap-2">
+              <Badge variant="outline" className="text-xs">
+                {(memory.importance * 100).toFixed(0)}%
+              </Badge>
+              {(memory.tags ?? []).slice(0, 2).map((tag) => (
+                <Badge key={tag} variant="secondary" className="text-xs">
+                  {tag}
+                </Badge>
+              ))}
+            </span>
+          </button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled
+            title="Linking memories is not available yet"
+            aria-label={`Link memory ${memory.id} (not available yet)`}
+          >
+            <Link2 className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function renderBrowseResults({
+  loading,
+  memories,
+  sortedMemories,
+  selectedMemory,
+  onSelect,
+  onEdit,
+  onDelete,
+}: {
+  loading: boolean
+  memories: MemoryNode[]
+  sortedMemories: MemoryNode[]
+  selectedMemory: MemoryNode | null
+  onSelect: (memory: MemoryNode) => void
+  onEdit: (memory: MemoryNode) => void
+  onDelete: (id: string) => void
+}) {
+  if (loading) {
+    return (
+      <p className="text-center text-muted-foreground col-span-3" role="status">
+        Loading memories…
+      </p>
+    )
+  }
+  if (sortedMemories.length === 0) {
+    return (
+      <p className="text-center text-muted-foreground col-span-3">
+        {memories.length === 0 ? 'No memories found' : 'No memories match this search.'}
+      </p>
+    )
+  }
+  return sortedMemories.map((memory) => (
+    <MemoryBrowseCard
+      key={memory.id}
+      memory={memory}
+      selected={selectedMemory?.id === memory.id}
+      onSelect={onSelect}
+      onEdit={onEdit}
+      onDelete={onDelete}
+    />
+  ))
+}
+
 export default function MemoryView() {
   const [memories, setMemories] = useState<MemoryNode[]>([])
   const [selectedMemory, setSelectedMemory] = useState<MemoryNode | null>(null)
+  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
+  const [memoryError, setMemoryError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('browse')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
-  const [memoryForm, setMemoryForm] = useState({
-    id: '',
-    content: '',
-    importance: 0.5,
-    tags: [] as string[],
-  })
+  const [memoryForm, setMemoryForm] = useState<MemoryFormState>(EMPTY_MEMORY_FORM)
   const [tagInput, setTagInput] = useState('')
   const [sessionExpired, setSessionExpired] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   useEffect(() => {
     void fetchMemories()
@@ -61,85 +460,45 @@ export default function MemoryView() {
       setLoading(true)
       const data = await fetchValidated('/api/enhanced/graph/nodes?node_type=Memory', looseArray(memoryNodeSchema))
       setSessionExpired(false)
+      setMemoryError(null)
       setMemories(data)
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        setSessionExpired(true)
-      } else {
-        toast.error('Failed to load memories')
-      }
+      handleMemoryLoadError(err, setSessionExpired, setMemoryError)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleCreateMemory = async () => {
-    try {
-      const res = await fetch('/api/enhanced/graph/memory', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...memoryForm,
-          id: memoryForm.id || `mem_${Date.now()}`,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }),
-      })
-      if (res.ok) {
-        toast.success('Memory created successfully')
-        setIsCreateDialogOpen(false)
-        setMemoryForm({ id: '', content: '', importance: 0.5, tags: [] })
-        void fetchMemories()
-      } else {
-        toast.error('Failed to create memory')
-      }
-    } catch {
-      toast.error('Failed to create memory')
-    }
+  const handleCreateMemory = () => {
+    void createMemory({ form: memoryForm, setFormError, setIsCreateDialogOpen, setMemoryForm, fetchMemories })
   }
 
-  const handleUpdateMemory = async () => {
-    if (!selectedMemory) return
-
-    try {
-      const res = await fetch(`/api/enhanced/graph/memory/${selectedMemory.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...memoryForm,
-          updated_at: new Date().toISOString(),
-        }),
-      })
-      if (res.ok) {
-        toast.success('Memory updated successfully')
-        setIsEditDialogOpen(false)
-        setSelectedMemory(null)
-        setMemoryForm({ id: '', content: '', importance: 0.5, tags: [] })
-        void fetchMemories()
-      } else {
-        toast.error('Failed to update memory')
-      }
-    } catch {
-      toast.error('Failed to update memory')
-    }
+  const handleUpdateMemory = () => {
+    void updateMemory({
+      memoryId: editingMemoryId,
+      form: memoryForm,
+      setFormError,
+      setIsEditDialogOpen,
+      setEditingMemoryId,
+      setSelectedMemory,
+      setMemoryForm,
+      fetchMemories,
+    })
   }
 
   const handleDeleteMemory = async (id: string) => {
     try {
-      const res = await fetch(`/api/enhanced/graph/memory/${id}`, {
+      await fetchValidated(`/api/enhanced/graph/memory/${id}`, memoryMutationResponseSchema, {
         method: 'DELETE',
       })
-      if (res.ok) {
-        toast.success('Memory deleted successfully')
-        void fetchMemories()
-        if (selectedMemory?.id === id) {
-          setSelectedMemory(null)
-        }
-      } else {
-        toast.error('Failed to delete memory')
+      toast.success('Memory deleted successfully')
+      void fetchMemories()
+      if (selectedMemory?.id === id) {
+        setSelectedMemory(null)
       }
-    } catch {
-      toast.error('Failed to delete memory')
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'The memory service rejected this request.'
+      toast.error('Failed to delete memory', { description: message })
     }
   }
 
@@ -155,7 +514,7 @@ export default function MemoryView() {
   }
 
   const openEditDialog = (memory: MemoryNode) => {
-    setSelectedMemory(memory)
+    setEditingMemoryId(memory.id)
     setMemoryForm({
       id: memory.id,
       content: memory.content,
@@ -187,17 +546,21 @@ export default function MemoryView() {
   return (
     <div className="space-y-6 h-[calc(100vh-12rem)]">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Brain className="size-6" />
+            <Brain className="size-6" aria-hidden="true" />
             Memory Management
           </h1>
-          <p className="text-muted-foreground text-sm">Manage knowledge graph memory nodes</p>
+          <p className="text-muted-foreground text-sm">
+            Browse saved knowledge, inspect why it matters, and add or update memories for future work.
+          </p>
         </div>
         <div className="flex gap-2">
           <Button
+            type="button"
             variant="outline"
+            aria-busy={loading}
             onClick={() => {
               void fetchMemories()
             }}
@@ -206,16 +569,18 @@ export default function MemoryView() {
           </Button>
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button>
-                <Plus className="size-4 mr-2" />
+              <Button type="button">
+                <Plus className="size-4 mr-2" aria-hidden="true" />
                 Add Memory
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create New Memory</DialogTitle>
+                <DialogDescription>Save a concise fact, decision, or reminder for later retrieval.</DialogDescription>
               </DialogHeader>
               <MemoryForm
+                idPrefix="create-memory"
                 form={memoryForm}
                 setForm={setMemoryForm}
                 tagInput={tagInput}
@@ -223,7 +588,11 @@ export default function MemoryView() {
                 onAddTag={handleAddTag}
                 onRemoveTag={handleRemoveTag}
                 onSubmit={() => {
-                  void handleCreateMemory()
+                  handleCreateMemory()
+                }}
+                error={formError}
+                onClearError={() => {
+                  setFormError(null)
                 }}
                 submitLabel="Create Memory"
               />
@@ -232,7 +601,11 @@ export default function MemoryView() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      {renderMemoryLoadError(memoryError, () => {
+        void fetchMemories()
+      })}
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} aria-label="Memory views">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="browse">Browse</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
@@ -243,97 +616,47 @@ export default function MemoryView() {
         <TabsContent value="browse" className="space-y-4">
           <div className="flex gap-4">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Search
+                className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <label htmlFor="memory-browse-search" className="sr-only">
+                Search memories
+              </label>
               <Input
+                id="memory-browse-search"
+                type="search"
                 placeholder="Search memories..."
                 className="pl-9"
                 value={searchQuery}
+                aria-controls="memory-browse-results"
+                aria-describedby="memory-browse-search-help"
                 onChange={(e) => {
                   setSearchQuery(e.target.value)
                 }}
               />
+              <p id="memory-browse-search-help" className="sr-only">
+                Search by memory text, identifier, or tag. Results update as you type.
+              </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {loading ? (
-              <p className="text-center text-muted-foreground col-span-3">Loading memories...</p>
-            ) : sortedMemories.length === 0 ? (
-              <p className="text-center text-muted-foreground col-span-3">No memories found</p>
-            ) : (
-              sortedMemories.map((memory) => (
-                <Card
-                  key={memory.id}
-                  className={cn(
-                    'cursor-pointer transition-all hover:shadow-md',
-                    selectedMemory?.id === memory.id ? 'ring-2 ring-primary' : '',
-                  )}
-                  onClick={() => {
-                    setSelectedMemory(memory)
-                  }}
-                >
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <CardTitle className="text-base line-clamp-2">{memory.content.substring(0, 100)}...</CardTitle>
-                        <CardDescription className="text-xs">
-                          {new Date(memory.created_at).toLocaleString()}
-                        </CardDescription>
-                      </div>
-                      <div className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            openEditDialog(memory)
-                          }}
-                        >
-                          <Edit2 className="size-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            void handleDeleteMemory(memory.id)
-                          }}
-                        >
-                          <Trash2 className="size-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <TrendingUp className="size-3 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">Importance:</span>
-                        <div className="flex-1">
-                          <div className="h-2 bg-muted rounded-full overflow-hidden">
-                            <div className="h-full bg-primary" style={{ width: `${memory.importance * 100}%` }} />
-                          </div>
-                        </div>
-                        <span className="text-xs font-medium">{(memory.importance * 100).toFixed(0)}%</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {(memory.tags ?? []).slice(0, 3).map((tag) => (
-                          <Badge key={tag} variant="secondary" className="text-xs">
-                            <Tag className="size-2 mr-1" />
-                            {tag}
-                          </Badge>
-                        ))}
-                        {(memory.tags ?? []).length > 3 && (
-                          <Badge variant="secondary" className="text-xs">
-                            +{(memory.tags ?? []).length - 3}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
+          <div
+            id="memory-browse-results"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+            aria-live="polite"
+          >
+            {renderBrowseResults({
+              loading,
+              memories,
+              sortedMemories,
+              selectedMemory,
+              onSelect: setSelectedMemory,
+              onEdit: openEditDialog,
+              onDelete: (id) => {
+                void handleDeleteMemory(id)
+              },
+            })}
           </div>
         </TabsContent>
 
@@ -343,34 +666,12 @@ export default function MemoryView() {
             <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />
             <div className="space-y-6 pl-10">
               {sortedMemories.map((memory) => (
-                <div key={memory.id} className="relative">
-                  <div className="absolute left-[-26px] w-4 h-4 rounded-full bg-primary border-2 border-background" />
-                  <Card
-                    className="cursor-pointer hover:shadow-md transition-all"
-                    onClick={() => {
-                      setSelectedMemory(memory)
-                    }}
-                  >
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Calendar className="size-3 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(memory.created_at).toLocaleString()}
-                            </span>
-                          </div>
-                          <CardTitle className="text-base line-clamp-2">
-                            {memory.content.substring(0, 100)}...
-                          </CardTitle>
-                        </div>
-                        <Badge variant="outline" className="text-xs">
-                          {(memory.importance * 100).toFixed(0)}%
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                  </Card>
-                </div>
+                <MemoryTimelineCard
+                  key={memory.id}
+                  memory={memory}
+                  selected={selectedMemory?.id === memory.id}
+                  onSelect={setSelectedMemory}
+                />
               ))}
             </div>
           </div>
@@ -386,19 +687,35 @@ export default function MemoryView() {
             <CardContent>
               <div className="space-y-4">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                  <Search
+                    className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <label htmlFor="memory-advanced-search" className="sr-only">
+                    Search memories
+                  </label>
                   <Input
+                    id="memory-advanced-search"
+                    type="search"
                     placeholder="Search memories..."
                     className="pl-9"
                     value={searchQuery}
+                    aria-controls="memory-search-results"
+                    aria-describedby="memory-advanced-search-help"
                     onChange={(e) => {
                       setSearchQuery(e.target.value)
                     }}
                   />
+                  <p id="memory-advanced-search-help" className="sr-only">
+                    Search by memory text, identifier, or tag. Results update as you type.
+                  </p>
                 </div>
                 <div className="flex gap-2">
                   <Button
+                    type="button"
                     variant="outline"
+                    disabled={!searchQuery}
+                    aria-label="Clear memory search"
                     onClick={() => {
                       setSearchQuery('')
                     }}
@@ -406,48 +723,31 @@ export default function MemoryView() {
                     Clear
                   </Button>
                   <Button
+                    type="button"
+                    disabled
+                    title="Search is applied as you type"
                     onClick={() => {
-                      /* Advanced search logic */
+                      // Search is applied immediately by the filteredMemories derivation.
                     }}
                   >
-                    Advanced Search
+                    Search applied automatically
                   </Button>
                 </div>
-                <div className="text-sm text-muted-foreground">Found {sortedMemories.length} memories</div>
+                <div id="memory-search-results" className="text-sm text-muted-foreground" aria-live="polite">
+                  Found {sortedMemories.length} {sortedMemories.length === 1 ? 'memory' : 'memories'}
+                </div>
               </div>
             </CardContent>
           </Card>
 
           <div className="space-y-2">
             {sortedMemories.map((memory) => (
-              <Card
+              <MemorySearchCard
                 key={memory.id}
-                className="cursor-pointer hover:shadow-md transition-all"
-                onClick={() => {
-                  setSelectedMemory(memory)
-                }}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <p className="text-sm line-clamp-2">{memory.content}</p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Badge variant="outline" className="text-xs">
-                          {(memory.importance * 100).toFixed(0)}%
-                        </Badge>
-                        {(memory.tags ?? []).slice(0, 2).map((tag) => (
-                          <Badge key={tag} variant="secondary" className="text-xs">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                    <Button variant="ghost" size="sm">
-                      <Link2 className="size-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                memory={memory}
+                selected={selectedMemory?.id === memory.id}
+                onSelect={setSelectedMemory}
+              />
             ))}
           </div>
         </TabsContent>
@@ -464,34 +764,44 @@ export default function MemoryView() {
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Memory Details</DialogTitle>
+              <DialogDescription>Review this saved item or choose an action below.</DialogDescription>
             </DialogHeader>
             <ScrollArea className="max-h-[60vh]">
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium">Content</label>
+                  <span className="text-sm font-medium">Content</span>
                   <p className="text-sm mt-1">{selectedMemory.content}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm font-medium">Importance</label>
+                    <span className="text-sm font-medium">Importance</span>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                        <div className="h-full bg-primary" style={{ width: `${selectedMemory.importance * 100}%` }} />
+                        <div
+                          className="h-full bg-primary"
+                          role="progressbar"
+                          aria-label={`Importance of memory ${selectedMemory.id}`}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={selectedMemory.importance * 100}
+                          aria-valuetext={`${(selectedMemory.importance * 100).toFixed(0)} percent`}
+                          style={{ width: `${selectedMemory.importance * 100}%` }}
+                        />
                       </div>
                       <span className="text-sm">{(selectedMemory.importance * 100).toFixed(0)}%</span>
                     </div>
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Created</label>
+                    <span className="text-sm font-medium">Created</span>
                     <p className="text-sm mt-1">{new Date(selectedMemory.created_at).toLocaleString()}</p>
                   </div>
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Tags</label>
+                  <span className="text-sm font-medium">Tags</span>
                   <div className="flex flex-wrap gap-2 mt-1">
                     {(selectedMemory.tags ?? []).map((tag) => (
                       <Badge key={tag} variant="secondary">
-                        <Tag className="size-2 mr-1" />
+                        <Tag className="size-2 mr-1" aria-hidden="true" />
                         {tag}
                       </Badge>
                     ))}
@@ -499,22 +809,24 @@ export default function MemoryView() {
                 </div>
                 <div className="flex gap-2 pt-4">
                   <Button
+                    type="button"
                     onClick={() => {
                       setSelectedMemory(null)
                       openEditDialog(selectedMemory)
                     }}
                   >
-                    <Edit2 className="size-4 mr-2" />
+                    <Edit2 className="size-4 mr-2" aria-hidden="true" />
                     Edit
                   </Button>
                   <Button
+                    type="button"
                     variant="destructive"
                     onClick={() => {
                       void handleDeleteMemory(selectedMemory.id)
                       setSelectedMemory(null)
                     }}
                   >
-                    <Trash2 className="size-4 mr-2" />
+                    <Trash2 className="size-4 mr-2" aria-hidden="true" />
                     Delete
                   </Button>
                 </div>
@@ -529,8 +841,10 @@ export default function MemoryView() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Memory</DialogTitle>
+            <DialogDescription>Update the content, importance, or tags for this memory.</DialogDescription>
           </DialogHeader>
           <MemoryForm
+            idPrefix="edit-memory"
             form={memoryForm}
             setForm={setMemoryForm}
             tagInput={tagInput}
@@ -538,7 +852,11 @@ export default function MemoryView() {
             onAddTag={handleAddTag}
             onRemoveTag={handleRemoveTag}
             onSubmit={() => {
-              void handleUpdateMemory()
+              handleUpdateMemory()
+            }}
+            error={formError}
+            onClearError={() => {
+              setFormError(null)
             }}
             submitLabel="Update Memory"
           />
@@ -549,6 +867,7 @@ export default function MemoryView() {
 }
 
 function MemoryForm({
+  idPrefix,
   form,
   setForm,
   tagInput,
@@ -556,39 +875,69 @@ function MemoryForm({
   onAddTag,
   onRemoveTag,
   onSubmit,
+  error,
+  onClearError,
   submitLabel,
 }: {
-  form: { id: string; content: string; importance: number; tags: string[] }
-  setForm: (form: { id: string; content: string; importance: number; tags: string[] }) => void
+  idPrefix: string
+  form: MemoryFormState
+  setForm: (form: MemoryFormState) => void
   tagInput: string
   setTagInput: (value: string) => void
   onAddTag: () => void
   onRemoveTag: (tag: string) => void
   onSubmit: () => void
+  error: string | null
+  onClearError: () => void
   submitLabel: string
 }) {
   return (
-    <div className="space-y-4">
+    <form
+      className="space-y-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        onSubmit()
+      }}
+      noValidate
+    >
       <div>
-        <label className="text-sm font-medium">Content</label>
+        <label htmlFor={`${idPrefix}-content`} className="text-sm font-medium">
+          Content <span aria-hidden="true">(required)</span>
+        </label>
         <Textarea
+          id={`${idPrefix}-content`}
           value={form.content}
+          required
+          aria-required="true"
+          aria-invalid={hasFormFieldError(error, 'content')}
+          aria-describedby={formFieldDescriptionId(idPrefix, 'content', error)}
           onChange={(e) => {
+            onClearError()
             setForm({ ...form, content: e.target.value })
           }}
-          placeholder="Memory content..."
+          placeholder="Memory content (for example, a fact or decision)..."
           rows={4}
         />
+        <p id={`${idPrefix}-content-help`} className="mt-1 text-xs text-muted-foreground">
+          Keep it concise so it is easy to find later.
+        </p>
       </div>
       <div>
-        <label className="text-sm font-medium">Importance</label>
+        <label htmlFor={`${idPrefix}-importance`} className="text-sm font-medium">
+          Importance
+        </label>
         <Select
           value={(form.importance * 100).toString()}
           onValueChange={(value) => {
+            onClearError()
             setForm({ ...form, importance: parseInt(value) / 100 })
           }}
         >
-          <SelectTrigger>
+          <SelectTrigger
+            id={`${idPrefix}-importance`}
+            aria-invalid={hasFormFieldError(error, 'importance')}
+            aria-describedby={formFieldDescriptionId(idPrefix, 'importance', error)}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -600,13 +949,21 @@ function MemoryForm({
             <SelectItem value="100">100% - Critical</SelectItem>
           </SelectContent>
         </Select>
+        <p id={`${idPrefix}-importance-help`} className="mt-1 text-xs text-muted-foreground">
+          Higher values make this memory appear first in Browse.
+        </p>
       </div>
       <div>
-        <label className="text-sm font-medium">Tags</label>
+        <label htmlFor={`${idPrefix}-tags`} className="text-sm font-medium">
+          Tags
+        </label>
         <div className="flex gap-2 mt-1">
           <Input
+            id={`${idPrefix}-tags`}
             value={tagInput}
+            aria-describedby={`${idPrefix}-tags-help`}
             onChange={(e) => {
+              onClearError()
               setTagInput(e.target.value)
             }}
             placeholder="Add tag..."
@@ -617,16 +974,20 @@ function MemoryForm({
               }
             }}
           />
-          <Button type="button" onClick={onAddTag} size="sm">
+          <Button type="button" onClick={onAddTag} size="sm" aria-label="Add memory tag" disabled={!tagInput.trim()}>
             Add
           </Button>
         </div>
+        <p id={`${idPrefix}-tags-help`} className="mt-1 text-xs text-muted-foreground">
+          Optional. Press Enter or Add to attach a short label.
+        </p>
         <div className="flex flex-wrap gap-2 mt-2">
           {form.tags.map((tag) => (
             <Badge key={tag} variant="secondary" className="gap-1">
               {tag}
               <button
                 type="button"
+                aria-label={`Remove tag: ${tag}`}
                 onClick={() => {
                   onRemoveTag(tag)
                 }}
@@ -638,9 +999,10 @@ function MemoryForm({
           ))}
         </div>
       </div>
-      <Button onClick={onSubmit} className="w-full">
+      {renderMemoryFormError(idPrefix, error)}
+      <Button type="submit" className="w-full">
         {submitLabel}
       </Button>
-    </div>
+    </form>
   )
 }

@@ -55,13 +55,13 @@ interface GoalRun {
 // boundary so a hostile/degraded response is rejected loudly here instead of
 // crashing `goals.length`/`goals.map` or `data.iterations.length` downstream.
 const goalIterationSchema: z.ZodType<GoalIteration> = z.object({
-  iteration: z.number(),
+  iteration: z.number().int().nonnegative(),
   action: z.string(),
   result: z.string(),
   validation_output: z.string(),
   is_complete: z.boolean(),
-  duration_ms: z.number(),
-  tool_calls: z.number(),
+  duration_ms: z.number().int().nonnegative(),
+  tool_calls: z.number().int().nonnegative(),
   timestamp: z.number(),
 })
 
@@ -70,17 +70,72 @@ const goalRunSchema: z.ZodType<GoalRun> = z.object({
   session_id: z.string(),
   status: z.enum(['running', 'completed', 'failed', 'cancelled']),
   iterations: looseArray(goalIterationSchema),
-  total_iterations: z.number(),
-  total_duration_ms: z.number(),
-  total_tool_calls: z.number(),
+  total_iterations: z.number().int().nonnegative(),
+  total_duration_ms: z.number().int().nonnegative(),
+  total_tool_calls: z.number().int().nonnegative(),
   summary: z.string(),
   error: z.string().optional(),
 })
 
+const goalLaunchResponseSchema = z.object({
+  status: z.string(),
+  goal_id: z.string().min(1),
+  session_id: z.string().min(1).optional(),
+  validation_action: z.string().optional(),
+})
+
+const goalCancelResponseSchema = z.object({
+  status: z.string(),
+  message: z.string().optional(),
+})
+
+function requestErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback
+}
+
+function constraintCountLabel(count: number): string {
+  return `${count} configured guardrail${count === 1 ? '' : 's'}`
+}
+
+function canAddConstraint(constraints: string[], value: string): boolean {
+  return constraints.length < 50 && Boolean(value.trim())
+}
+
+function renderGoalErrorNotice(error: string | null, onRetry: () => void) {
+  if (!error) return null
+  return (
+    <div className="m-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs" role="alert">
+      <p className="font-medium text-destructive">Goal runs could not be refreshed.</p>
+      <p className="mt-1 text-muted-foreground">{error}</p>
+      <Button type="button" variant="outline" size="sm" className="mt-3" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
+  )
+}
+
+function startGoalsRequest(
+  silent: boolean,
+  setLoading: (value: boolean) => void,
+  setError: (value: string | null) => void,
+): void {
+  if (!silent) {
+    setLoading(true)
+    setError(null)
+  }
+}
+
+function finishGoalsRequest(silent: boolean, setLoading: (value: boolean) => void): void {
+  if (!silent) setLoading(false)
+}
+
 function renderConstraintsList({ constraints, onRemove }: { constraints: string[]; onRemove: (i: number) => void }) {
   if (constraints.length === 0) return null
   return (
-    <div className="p-2 border border-border/20 rounded bg-muted/20 max-h-[120px] overflow-y-auto space-y-1">
+    <div
+      className="p-2 border border-border/20 rounded bg-muted/20 max-h-[120px] overflow-y-auto space-y-1"
+      aria-label={constraintCountLabel(constraints.length)}
+    >
       {constraints.map((c, i) => (
         <div
           key={i}
@@ -88,6 +143,8 @@ function renderConstraintsList({ constraints, onRemove }: { constraints: string[
         >
           <span className="truncate pr-2">{c}</span>
           <button
+            type="button"
+            aria-label={`Remove constraint: ${c}`}
             onClick={() => {
               onRemove(i)
             }}
@@ -128,58 +185,95 @@ function renderConfigPanel({
     <div className="space-y-4 pt-2 border-t border-border/20 animate-in fade-in slide-in-from-top-1 duration-200">
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <label className="text-[11px] font-semibold text-muted-foreground uppercase">Iteration Limit</label>
-          <div className="flex items-center border border-border/40 rounded-md bg-muted/10 h-9">
+          <span id="goal-iteration-limit-label" className="text-[11px] font-semibold text-muted-foreground uppercase">
+            Maximum steps
+          </span>
+          <div
+            className="flex items-center border border-border/40 rounded-md bg-muted/10 h-9"
+            role="group"
+            aria-labelledby="goal-iteration-limit-label"
+            aria-describedby="goal-iteration-limit-help"
+          >
             <Button
               type="button"
               variant="ghost"
               size="sm"
               className="h-full px-2"
+              aria-label="Decrease iteration limit"
+              disabled={maxIterations <= 1}
               onClick={() => {
                 onMaxIterationsChange(Math.max(1, maxIterations - 5))
               }}
             >
-              <Minus className="size-3" />
+              <Minus className="size-3" aria-hidden="true" />
             </Button>
-            <span className="flex-1 text-center text-xs font-mono">{maxIterations}</span>
+            <span
+              className="flex-1 text-center text-xs font-mono"
+              role="status"
+              aria-live="polite"
+              aria-label={`${maxIterations} maximum steps`}
+            >
+              {maxIterations}
+            </span>
             <Button
               type="button"
               variant="ghost"
               size="sm"
               className="h-full px-2"
+              aria-label="Increase iteration limit"
+              disabled={maxIterations >= 100}
               onClick={() => {
                 onMaxIterationsChange(Math.min(100, maxIterations + 5))
               }}
             >
-              <Plus className="size-3" />
+              <Plus className="size-3" aria-hidden="true" />
             </Button>
           </div>
+          <p id="goal-iteration-limit-help" className="text-[10px] text-muted-foreground">
+            The loop stops after this many steps (1–100).
+          </p>
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-[11px] font-semibold text-muted-foreground uppercase">Validation Action</label>
+          <label
+            htmlFor="goal-validation-action"
+            className="text-[11px] font-semibold text-muted-foreground uppercase"
+          >
+            Validation Action
+          </label>
           <select
+            id="goal-validation-action"
             value={validationAction}
             onChange={(e) => {
               onValidationActionChange(e.target.value)
             }}
+            aria-describedby="goal-validation-action-help"
             className="w-full rounded-md border px-2 text-xs bg-muted/20 border-border/40 font-mono h-9"
           >
-            <option value="none">None</option>
-            <option value="workspace-present">Workspace present</option>
-            <option value="repository-present">Repository present</option>
+            <option value="none">No extra check</option>
+            <option value="workspace-present">Confirm workspace</option>
+            <option value="repository-present">Confirm repository</option>
           </select>
+          <p id="goal-validation-action-help" className="text-[10px] text-muted-foreground">
+            A safe, built-in check used to verify completion.
+          </p>
         </div>
       </div>
 
       <div className="space-y-2">
-        <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-          Guardrail Constraints
+        <label
+          htmlFor="goal-new-constraint"
+          className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider"
+        >
+          Guardrail rules
         </label>
         <div className="flex gap-2">
           <Input
-            placeholder="Add rule constraint..."
+            id="goal-new-constraint"
+            placeholder="Add a rule, such as ‘keep changes reversible’"
             value={newConstraint}
+            maxLength={1024}
+            aria-describedby="goal-constraints-help"
             onChange={(e) => {
               onNewConstraintChange(e.target.value)
             }}
@@ -191,10 +285,20 @@ function renderConfigPanel({
               }
             }}
           />
-          <Button type="button" onClick={onAddConstraint} className="h-8 px-3 shadow-none border">
+          <Button
+            type="button"
+            onClick={onAddConstraint}
+            disabled={!canAddConstraint(constraints, newConstraint)}
+            aria-label="Add guardrail rule"
+            className="h-8 px-3 shadow-none border"
+          >
             Add
           </Button>
         </div>
+
+        <p id="goal-constraints-help" className="text-[10px] text-muted-foreground">
+          Optional instructions for the agent. Add up to 50 rules; each can be 1,024 characters.
+        </p>
 
         {renderConstraintsList({ constraints, onRemove: onRemoveConstraint })}
       </div>
@@ -220,17 +324,19 @@ function renderGoalListItem({
   onSelect: (id: string) => void
 }) {
   return (
-    <div
+    <button
       key={g.goal_id}
+      type="button"
+      aria-pressed={isSelected}
       onClick={() => {
         onSelect(g.goal_id)
       }}
       className={cn(
-        'p-4 cursor-pointer hover:bg-muted/20 transition-all flex flex-col gap-2',
+        'w-full border-0 bg-transparent p-4 text-left cursor-pointer hover:bg-muted/20 transition-all flex flex-col gap-2',
         isSelected && 'bg-primary/5 hover:bg-primary/10 border-l-2 border-primary',
       )}
     >
-      <div className="flex justify-between items-start gap-2">
+      <span className="flex justify-between items-start gap-2">
         <span className="text-xs font-medium line-clamp-1 flex-1 pr-1">{goalListItemTitle(g)}</span>
         <Badge
           className={cn(
@@ -243,20 +349,20 @@ function renderGoalListItem({
         >
           {g.status}
         </Badge>
-      </div>
+      </span>
 
-      <div className="flex items-center gap-3 text-[10px] text-muted-foreground/80 font-mono">
+      <span className="flex items-center gap-3 text-[10px] text-muted-foreground/80 font-mono">
         <span className="flex items-center gap-1">
-          <RotateCcw className="size-3" /> Step {g.total_iterations}
+          <RotateCcw className="size-3" aria-hidden="true" /> Step {g.total_iterations}
         </span>
         <span className="flex items-center gap-1">
-          <Clock className="size-3" /> {(g.total_duration_ms / 1000).toFixed(1)}s
+          <Clock className="size-3" aria-hidden="true" /> {(g.total_duration_ms / 1000).toFixed(1)}s
         </span>
         <span className="flex items-center gap-1">
-          <Terminal className="size-3" /> {g.total_tool_calls} tools
+          <Terminal className="size-3" aria-hidden="true" /> {g.total_tool_calls} tools
         </span>
-      </div>
-    </div>
+      </span>
+    </button>
   )
 }
 
@@ -265,33 +371,54 @@ function renderGoalsListBody({
   goals,
   selectedGoalId,
   onSelect,
+  error,
+  onRetry,
 }: {
   loading: boolean
   goals: GoalRun[]
   selectedGoalId: string | null
   onSelect: (id: string) => void
+  error: string | null
+  onRetry: () => void
 }) {
+  const errorNotice = renderGoalErrorNotice(error, onRetry)
+
   if (loading) {
     return (
-      <div className="p-8 flex justify-center">
-        <Loader2 className="size-5 animate-spin text-muted-foreground/60" />
-      </div>
+      <>
+        {errorNotice}
+        <div className="p-8 flex items-center justify-center gap-2 text-xs text-muted-foreground" role="status">
+          <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+          Loading goal runs…
+        </div>
+      </>
     )
   }
   if (goals.length === 0) {
     return (
-      <div className="p-8 text-center text-xs text-muted-foreground/50">
-        No goals in registry database. Create a new objective loop above.
-      </div>
+      <>
+        {errorNotice}
+        <div className="p-8 text-center text-xs text-muted-foreground/50">
+          No goal runs yet. Describe a task above to create the first one.
+        </div>
+      </>
     )
   }
-  return <>{goals.map((g) => renderGoalListItem({ g, isSelected: selectedGoalId === g.goal_id, onSelect }))}</>
+  return (
+    <>
+      {errorNotice}
+      {goals.map((g) => renderGoalListItem({ g, isSelected: selectedGoalId === g.goal_id, onSelect }))}
+    </>
+  )
 }
 
 function renderStatusBanner(selectedGoal: GoalRun | null) {
   if (!selectedGoal) return null
   return (
     <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
       className={cn(
         'p-4 rounded-lg border text-xs leading-relaxed flex flex-col gap-1.5',
         selectedGoal.status === 'running' && 'bg-blue-500/5 border-blue-500/20 text-blue-400',
@@ -301,21 +428,30 @@ function renderStatusBanner(selectedGoal: GoalRun | null) {
       )}
     >
       <div className="flex items-center gap-2 font-semibold">
-        {selectedGoal.status === 'completed' && <CheckCircle2 className="size-4" />}
-        {selectedGoal.status === 'failed' && <AlertTriangle className="size-4" />}
-        {selectedGoal.status === 'running' && <Loader2 className="size-4 animate-spin" />}
+        {selectedGoal.status === 'completed' && <CheckCircle2 className="size-4" aria-hidden="true" />}
+        {selectedGoal.status === 'failed' && <AlertTriangle className="size-4" aria-hidden="true" />}
+        {selectedGoal.status === 'running' && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
         <span className="capitalize">{selectedGoal.status} Execution Banner</span>
       </div>
       <p className="font-mono text-[11px] opacity-80">
-        {selectedGoal.summary || 'Loop is performing verification sweeps...'}
+        {selectedGoal.summary || 'The agent is working. New steps will appear here as they finish.'}
       </p>
+      {renderGoalStatusError(selectedGoal.error)}
     </div>
   )
 }
 
-function renderTimelineStepBody(step: GoalIteration) {
+function renderGoalStatusError(error: string | undefined) {
+  return error ? <p className="text-destructive">{error}</p> : null
+}
+
+function renderTimelineStepBody(step: GoalIteration, detailsId: string, expanded: boolean) {
   return (
-    <div className="mt-3 pl-2 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+    <div
+      id={detailsId}
+      hidden={!expanded}
+      className="mt-3 pl-2 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200"
+    >
       <div className="text-xs text-[#d1d5db] bg-muted/15 border border-border/10 rounded-lg p-3 leading-relaxed">
         <span className="font-semibold text-primary/80 font-mono block text-[10px] uppercase tracking-wider mb-1">
           Observation
@@ -327,11 +463,14 @@ function renderTimelineStepBody(step: GoalIteration) {
         <div className="rounded-lg overflow-hidden border border-border/10 bg-black font-mono">
           <div className="bg-muted/10 border-b border-border/10 px-3 py-1.5 flex items-center gap-2 justify-between text-[9px] text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <Terminal className="size-3" /> Validation Status
+              <Terminal className="size-3" aria-hidden="true" /> Validation output
             </span>
-            <span>Output</span>
+            <span aria-hidden="true">Output</span>
           </div>
-          <pre className="p-3 text-[10px] leading-relaxed text-[#10b981] overflow-x-auto whitespace-pre">
+          <pre
+            className="p-3 text-[10px] leading-relaxed text-[#10b981] overflow-x-auto whitespace-pre"
+            aria-label="Validation output"
+          >
             {step.validation_output}
           </pre>
         </div>
@@ -349,6 +488,7 @@ function renderTimelineStep({
   expanded: boolean
   onToggle: (iteration: number) => void
 }) {
+  const detailsId = `goal-step-${step.iteration}-details`
   return (
     <div key={step.iteration} className="relative pl-6">
       <span
@@ -357,27 +497,34 @@ function renderTimelineStep({
           step.is_complete ? 'border-emerald-500 text-emerald-500' : 'border-primary/60 text-primary/60',
         )}
       >
-        <span className="size-1.5 rounded-full bg-current" />
+        <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
       </span>
 
-      <div
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={detailsId}
         onClick={() => {
           onToggle(step.iteration)
         }}
-        className="flex items-center justify-between gap-4 cursor-pointer hover:bg-muted/5 p-2 rounded transition-all"
+        className="flex w-full items-center justify-between gap-4 cursor-pointer border-0 bg-transparent p-2 text-left transition-all hover:bg-muted/5"
       >
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-xs font-bold text-muted-foreground/60">STEP {step.iteration}</span>
+        <span className="flex items-center gap-3">
+          <span className="font-mono text-xs font-bold text-muted-foreground/60">Step {step.iteration}</span>
           <span className="text-xs text-[#f3f4f6] font-medium line-clamp-1">{step.action}</span>
-        </div>
+        </span>
 
-        <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground/60 shrink-0">
+        <span className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground/60 shrink-0">
           <span>{step.duration_ms}ms</span>
-          {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-        </div>
-      </div>
+          {expanded ? (
+            <ChevronUp className="size-3.5" aria-hidden="true" />
+          ) : (
+            <ChevronDown className="size-3.5" aria-hidden="true" />
+          )}
+        </span>
+      </button>
 
-      {expanded && renderTimelineStepBody(step)}
+      {renderTimelineStepBody(step, detailsId, expanded)}
     </div>
   )
 }
@@ -408,16 +555,53 @@ function renderEmptyGoalPanel() {
     <Card className="border-border/40 bg-muted/5 border-dashed min-h-[600px] flex items-center justify-center text-center">
       <CardContent className="flex flex-col items-center justify-center p-12">
         <div className="p-4 rounded-full bg-primary/5 text-primary/60 mb-4 border border-primary/10">
-          <Compass className="size-8 animate-pulse" />
+          <Compass className="size-8 animate-pulse" aria-hidden="true" />
         </div>
         <h3 className="font-semibold text-lg">Goal Execution Panel</h3>
         <p className="text-muted-foreground text-sm max-w-sm mt-1">
-          Select an active goal execution run from the left panel registry or launch a new autonomous loop to track
-          live progression here.
+          Choose a goal run on the left to follow its steps, or launch a new task above. Progress and checks will
+          appear here as the agent works.
         </p>
       </CardContent>
     </Card>
   )
+}
+
+function renderGoalTimelineContent({
+  selectedGoal,
+  expandedSteps,
+  onToggleStep,
+  iterationsLoading,
+  iterationsError,
+  onRetryIterations,
+}: {
+  selectedGoal: GoalRun | null
+  expandedSteps: Record<number, boolean | undefined>
+  onToggleStep: (iteration: number) => void
+  iterationsLoading: boolean
+  iterationsError: string | null
+  onRetryIterations: () => void
+}) {
+  if (iterationsLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 p-8 text-sm text-muted-foreground" role="status">
+        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        Loading goal steps…
+      </div>
+    )
+  }
+  if (iterationsError) {
+    return (
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm" role="alert">
+        <p className="font-medium text-destructive">Goal steps could not be loaded.</p>
+        <p className="mt-1 text-muted-foreground">{iterationsError}</p>
+        <Button type="button" variant="outline" size="sm" className="mt-3" onClick={onRetryIterations}>
+          Try again
+        </Button>
+      </div>
+    )
+  }
+  return renderGoalTimeline({ selectedGoal, expandedSteps, onToggleStep })
 }
 
 function renderGoalTimelinePanel({
@@ -426,12 +610,18 @@ function renderGoalTimelinePanel({
   expandedSteps,
   onToggleStep,
   onCancel,
+  iterationsLoading,
+  iterationsError,
+  onRetryIterations,
 }: {
   selectedGoalId: string | null
   selectedGoal: GoalRun | null
   expandedSteps: Record<number, boolean | undefined>
   onToggleStep: (iteration: number) => void
   onCancel: (goalId: string, e: MouseEvent) => void
+  iterationsLoading: boolean
+  iterationsError: string | null
+  onRetryIterations: () => void
 }) {
   if (!selectedGoalId) return renderEmptyGoalPanel()
   return (
@@ -439,7 +629,7 @@ function renderGoalTimelinePanel({
       <CardHeader className="border-b border-border/20 flex flex-row items-center justify-between gap-4 py-4 shrink-0">
         <div>
           <CardTitle className="text-sm font-semibold flex items-center gap-2 font-mono text-primary">
-            <Terminal className="size-4" />
+            <Terminal className="size-4" aria-hidden="true" />
             <span>Goal: {selectedGoalId.slice(0, 8)}...</span>
           </CardTitle>
           <CardDescription className="text-xs font-mono mt-0.5">
@@ -449,21 +639,30 @@ function renderGoalTimelinePanel({
 
         {selectedGoal?.status === 'running' && (
           <Button
+            type="button"
             size="sm"
             variant="destructive"
             onClick={(e) => {
               onCancel(selectedGoalId, e)
             }}
             className="h-8 gap-1.5"
+            aria-label={`Cancel goal ${selectedGoalId}`}
           >
-            <XCircle className="size-4" />
+            <XCircle className="size-4" aria-hidden="true" />
             <span>Cancel Goal</span>
           </Button>
         )}
       </CardHeader>
 
       <ScrollArea className="flex-1 p-6 bg-[#030712]">
-        {renderGoalTimeline({ selectedGoal, expandedSteps, onToggleStep })}
+        {renderGoalTimelineContent({
+          selectedGoal,
+          expandedSteps,
+          onToggleStep,
+          iterationsLoading,
+          iterationsError,
+          onRetryIterations,
+        })}
       </ScrollArea>
     </Card>
   )
@@ -472,8 +671,11 @@ function renderGoalTimelinePanel({
 export default function GoalsView() {
   const [goals, setGoals] = useState<GoalRun[]>([])
   const [loading, setLoading] = useState(true)
+  const [goalsError, setGoalsError] = useState<string | null>(null)
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
   const [selectedGoal, setSelectedGoal] = useState<GoalRun | null>(null)
+  const [iterationsLoading, setIterationsLoading] = useState(false)
+  const [iterationsError, setIterationsError] = useState<string | null>(null)
 
   // Builder form state
   const [objective, setObjective] = useState('')
@@ -501,6 +703,8 @@ export default function GoalsView() {
 
   useEffect(() => {
     if (selectedGoalId) {
+      setSelectedGoal(null)
+      setIterationsError(null)
       void fetchGoalIterations(selectedGoalId)
       const interval = setInterval(() => {
         void fetchGoalIterations(selectedGoalId, true)
@@ -509,24 +713,32 @@ export default function GoalsView() {
         clearInterval(interval)
       }
     }
+    setSelectedGoal(null)
+    setIterationsLoading(false)
+    setIterationsError(null)
   }, [selectedGoalId])
 
   const fetchGoals = async (silent = false) => {
     try {
-      if (!silent) setLoading(true)
+      startGoalsRequest(silent, setLoading, setGoalsError)
       const data = await fetchValidated('/api/enhanced/goals', looseArray(goalRunSchema))
       setGoals(data)
-    } catch (_err) {
-      if (!silent) toast.error('Failed to query goals registry')
+      setGoalsError(null)
+    } catch (error: unknown) {
+      const message = requestErrorMessage(error, 'The goal registry returned an invalid response.')
+      setGoalsError(message)
+      if (!silent) toast.error('Failed to query goals registry', { description: message })
     } finally {
-      if (!silent) setLoading(false)
+      finishGoalsRequest(silent, setLoading)
     }
   }
 
   const fetchGoalIterations = async (goalId: string, silent = false) => {
     try {
+      startGoalsRequest(silent, setIterationsLoading, setIterationsError)
       const data = await fetchValidated(`/api/enhanced/goals/${goalId}/iterations`, goalRunSchema)
       setSelectedGoal(data)
+      setIterationsError(null)
       // Auto-expand new iterations
       if (data.iterations.length > 0) {
         const lastIdx = data.iterations.length
@@ -535,8 +747,12 @@ export default function GoalsView() {
           [lastIdx]: prev[lastIdx] !== false, // default true for last
         }))
       }
-    } catch (_err) {
-      if (!silent) toast.error('Failed to pull goal timeline steps')
+    } catch (error: unknown) {
+      const message = requestErrorMessage(error, 'The goal timeline returned an invalid response.')
+      setIterationsError(message)
+      if (!silent) toast.error('Failed to pull goal timeline steps', { description: message })
+    } finally {
+      finishGoalsRequest(silent, setIterationsLoading)
     }
   }
 
@@ -548,7 +764,7 @@ export default function GoalsView() {
 
     try {
       setLaunching(true)
-      const res = await fetch('/api/enhanced/goals', {
+      const data = await fetchValidated('/api/enhanced/goals', goalLaunchResponseSchema, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -558,18 +774,14 @@ export default function GoalsView() {
           constraints,
         }),
       })
-      if (res.ok) {
-        const data = (await res.json()) as { goal_id: string }
-        toast.success('Autonomous goal loop successfully dispatched')
-        setObjective('')
-        setValidationAction('none')
-        setSelectedGoalId(data.goal_id)
-        void fetchGoals()
-      } else {
-        toast.error('Failed to dispatch autonomous goal execution')
-      }
-    } catch (_err) {
-      toast.error('Network failure during goal dispatch')
+      toast.success('Autonomous goal loop successfully dispatched')
+      setObjective('')
+      setValidationAction('none')
+      setSelectedGoalId(data.goal_id)
+      void fetchGoals()
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Network failure during goal dispatch.'
+      toast.error('Failed to dispatch autonomous goal execution', { description: message })
     } finally {
       setLaunching(false)
     }
@@ -578,15 +790,12 @@ export default function GoalsView() {
   const handleCancelGoal = async (goalId: string, e: MouseEvent) => {
     e.stopPropagation()
     try {
-      const res = await fetch(`/api/enhanced/goals/${goalId}/cancel`, { method: 'POST' })
-      if (res.ok) {
-        toast.success('Autonomous execution loop interrupted successfully')
-        void fetchGoals()
-      } else {
-        toast.error('Failed to interrupt goal execution')
-      }
-    } catch (_err) {
-      toast.error('Network error during cancel request')
+      await fetchValidated(`/api/enhanced/goals/${goalId}/cancel`, goalCancelResponseSchema, { method: 'POST' })
+      toast.success('Autonomous execution loop interrupted successfully')
+      void fetchGoals()
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Network error during cancel request.'
+      toast.error('Failed to interrupt goal execution', { description: message })
     }
   }
 
@@ -610,6 +819,17 @@ export default function GoalsView() {
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+      <div className="xl:col-span-12">
+        <h1 className="flex items-center gap-2 text-2xl font-bold">
+          <Compass className="size-6 text-primary" aria-hidden="true" />
+          Goals
+        </h1>
+        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+          Describe a task, choose an optional completion check, and follow the agent&apos;s bounded work one step at a
+          time. You can stop a running goal whenever you need to.
+        </p>
+      </div>
+
       {/* Sidebar Control Deck (Builder & Goals List) */}
       <div className="xl:col-span-5 space-y-6">
         {/* Goal Builder Form */}
@@ -617,46 +837,64 @@ export default function GoalsView() {
           <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-primary/60 via-purple-500/60 to-pink-500/60" />
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <Compass className="size-5 text-primary" />
+              <Compass className="size-5 text-primary" aria-hidden="true" />
               <span>Autonomous Goal Builder</span>
             </CardTitle>
             <CardDescription className="text-xs">
-              Establish high-level objectives and constraints for independent background execution loops (ORCH-5.0).
+              Write the outcome you want, then let a bounded background run work toward it and report each step.
             </CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Objective Target
+              <label
+                htmlFor="goal-objective"
+                className="text-xs font-semibold text-muted-foreground uppercase tracking-wider"
+              >
+                What should the agent accomplish?
               </label>
               <Textarea
-                placeholder="Describe exactly what needs to be solved (e.g., 'Fix the styling alignment of the main sidebar and run pytest validations')"
+                id="goal-objective"
+                placeholder="Describe the outcome (for example: Fix the sidebar alignment and verify it with tests.)"
                 value={objective}
+                required
+                aria-required="true"
+                maxLength={8192}
+                aria-describedby="goal-objective-help"
                 onChange={(e) => {
                   setObjective(e.target.value)
                 }}
                 className="min-h-[90px] text-xs bg-muted/20 border-border/40"
               />
+              <p id="goal-objective-help" className="text-[10px] text-muted-foreground">
+                Required. Be specific about the result; the agent can run for up to 100 steps.
+              </p>
             </div>
 
             <Button
               type="button"
               variant="ghost"
               size="sm"
+              aria-expanded={showConfig}
+              aria-controls="goal-config-panel"
+              aria-label="Toggle advanced goal options"
               onClick={() => {
                 setShowConfig(!showConfig)
               }}
               className="w-full justify-between px-2 text-xs border border-border/20 hover:bg-muted/40 h-8"
             >
               <span className="flex items-center gap-1 text-muted-foreground font-mono">
-                <Settings2 className="size-3.5" /> Configure Limits & Validation
+                <Settings2 className="size-3.5" aria-hidden="true" /> Advanced options: limits and checks
               </span>
-              {showConfig ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+              {showConfig ? (
+                <ChevronUp className="size-4" aria-hidden="true" />
+              ) : (
+                <ChevronDown className="size-4" aria-hidden="true" />
+              )}
             </Button>
 
-            {showConfig &&
-              renderConfigPanel({
+            <div id="goal-config-panel" hidden={!showConfig}>
+              {renderConfigPanel({
                 maxIterations,
                 onMaxIterationsChange: setMaxIterations,
                 validationAction,
@@ -667,18 +905,25 @@ export default function GoalsView() {
                 constraints,
                 onRemoveConstraint: handleRemoveConstraint,
               })}
+            </div>
           </CardContent>
 
           <CardFooter className="bg-muted/5 border-t border-border/20 pt-4 flex justify-end">
             <Button
+              type="button"
               onClick={() => {
                 void handleLaunchGoal()
               }}
               disabled={launching || !objective.trim()}
+              aria-busy={launching}
               className="bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5 px-4 shadow-sm"
             >
-              {launching ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4 fill-current" />}
-              <span>Launch Autonomous Loop</span>
+              {launching ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Play className="size-4 fill-current" aria-hidden="true" />
+              )}
+              <span>{launching ? 'Launching…' : 'Launch goal'}</span>
             </Button>
           </CardFooter>
         </Card>
@@ -686,10 +931,20 @@ export default function GoalsView() {
         {/* Goals List Registry */}
         <Card className="border-border/40 bg-card/45 shadow-sm">
           <CardHeader className="pb-3 border-b border-border/20">
-            <CardTitle className="text-sm font-semibold">Active Goal Executions</CardTitle>
+            <CardTitle className="text-sm font-semibold">Goal runs</CardTitle>
+            <CardDescription className="text-xs">Select a run to see its status and steps.</CardDescription>
           </CardHeader>
           <CardContent className="p-0 max-h-[350px] overflow-y-auto divide-y divide-border/20">
-            {renderGoalsListBody({ loading, goals, selectedGoalId, onSelect: setSelectedGoalId })}
+            {renderGoalsListBody({
+              loading,
+              goals,
+              selectedGoalId,
+              onSelect: setSelectedGoalId,
+              error: goalsError,
+              onRetry: () => {
+                void fetchGoals()
+              },
+            })}
           </CardContent>
         </Card>
       </div>
@@ -701,6 +956,11 @@ export default function GoalsView() {
           selectedGoal,
           expandedSteps,
           onToggleStep: toggleStepExpand,
+          iterationsLoading,
+          iterationsError,
+          onRetryIterations: () => {
+            if (selectedGoalId) void fetchGoalIterations(selectedGoalId)
+          },
           onCancel: (goalId, e) => {
             void handleCancelGoal(goalId, e)
           },
