@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import { toast } from 'sonner'
 import SkillsView, {
   skillSchema,
   skillGraphSchema,
@@ -268,134 +267,29 @@ describe('SkillsView — unclassified skills flagged in place, not a fourth grou
     })
   }
 
-  it('renders exactly three cognitive boxes -- Agent Skills, Skill Graphs, Skill Workflows -- and no fourth "Unclassified" box', async () => {
+  it('renders exactly three cognitive boxes -- Skills, Skill Graphs, Skill Workflows -- and no fourth "Unclassified" box', async () => {
     vi.stubGlobal('fetch', mockFetch(GROUPED_PAYLOAD))
     await openCognitiveTab()
 
-    expect(screen.getByText('Agent Skills')).toBeInTheDocument()
+    expect(screen.getByText('Skills')).toBeInTheDocument()
     expect(screen.getByText('Skill Graphs')).toBeInTheDocument()
     expect(screen.getByText('Skill Workflows')).toBeInTheDocument()
-    // "Unclassified" appears only as the per-item badge text on mystery-skill,
-    // never as a box title (there is no h3 with this text).
+    // "Unclassified" is not a box title (there is no h3 with this text).
     const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)
     expect(headings).not.toContain('Unclassified')
   })
 
-  it('flags the unclassified skill inside the Agent Skills group', async () => {
+  it('flags the unclassified skill inside the Skills group without a legacy classify control', async () => {
     vi.stubGlobal('fetch', mockFetch(GROUPED_PAYLOAD))
     await openCognitiveTab()
 
     // The unclassified skill sits among the other agent skills...
     expect(screen.getByText('mystery-skill')).toBeInTheDocument()
     expect(screen.getByText('finance-skill')).toBeInTheDocument()
-    // ...and carries the "Unclassified" flag a classified skill does not.
-    expect(screen.getByText('Unclassified')).toBeInTheDocument()
-    // It also exposes the classify control (an already-classified skill does not).
-    expect(screen.getByLabelText('Classify mystery-skill')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Classify finance-skill')).not.toBeInTheDocument()
-  })
-
-  it('classifying a skill persists it and refreshes from the real (confirmed) backend state', async () => {
-    const reclassifiedPayload = {
-      ...GROUPED_PAYLOAD,
-      skills: GROUPED_PAYLOAD.skills.map((s) =>
-        s.id === 'mystery-skill'
-          ? { ...s, type: 'Atomic Skill', runnable: true, resource_type: 'AGENT_SKILL', kg_classified: true }
-          : s,
-      ),
-      skill_classification: { ...GROUPED_PAYLOAD.skill_classification, unclassified_count: 0 },
-    }
-    // First GET returns the unclassified state; the refetch AFTER a
-    // confirmed persist returns the now-classified state -- proving the
-    // badge change comes from the backend, never an optimistic patch. Order-
-    // sensitive, so this is a sequenced mock rather than `routedFetch`
-    // (which cannot distinguish "before" from "after" the POST).
-    let toolsGetCount = 0
-    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
-      if (url.includes('/api/skill/classify') && init?.method === 'POST') {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              status: 'success',
-              result: {
-                persisted: true,
-                reason: null,
-                skill_type: 'skill',
-                classification: 'Atomic Skill',
-                persisted_to_source_file: true,
-                persisted_as_durable_override: false,
-                catalog_refreshed: true,
-              },
-            }),
-            { status: 200 },
-          ),
-        )
-      }
-      if (url.includes('/api/enhanced/tools')) {
-        toolsGetCount += 1
-        const body = toolsGetCount === 1 ? GROUPED_PAYLOAD : reclassifiedPayload
-        return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))
-      }
-      return Promise.resolve(new Response(JSON.stringify({}), { status: 404 }))
-    })
-    vi.stubGlobal('fetch', fetchMock)
-    await openCognitiveTab()
-
-    fireEvent.change(screen.getByLabelText('Classify mystery-skill'), { target: { value: 'skill' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Set' }))
-
-    await waitFor(() => {
-      const postCall = fetchMock.mock.calls.find(
-        (c) => c[0].includes('/api/skill/classify') && c[1]?.method === 'POST',
-      )
-      expect(postCall).toBeDefined()
-      const body = JSON.parse(String((postCall?.[1] as RequestInit).body))
-      expect(body).toEqual({ skill_id: 'mystery-skill', skill_type: 'skill' })
-    })
-    await waitFor(() => {
-      expect(toast.success).toHaveBeenCalled()
-    })
-    expect(toast.error).not.toHaveBeenCalled()
-    // The refetch happened, and the UI now reflects the backend's confirmed
-    // state -- the flag is gone because the backend says so, not the click.
-    await waitFor(() => {
-      expect(screen.queryByLabelText('Classify mystery-skill')).not.toBeInTheDocument()
-    })
-  })
-
-  it('a refused classification surfaces as a failure, never a silent success', async () => {
-    const fetchMock = routedFetch([
-      {
-        match: (u, i) => u.includes('/api/skill/classify') && i?.method === 'POST',
-        body: {
-          status: 'success',
-          result: {
-            persisted: false,
-            reason: 'the skills source tree is not writable from this process',
-            skill_type: 'skill',
-            classification: 'Atomic Skill',
-            persisted_to_source_file: false,
-            persisted_as_durable_override: false,
-            catalog_refreshed: false,
-          },
-        },
-      },
-      { match: (u) => u.includes('/api/enhanced/tools'), body: GROUPED_PAYLOAD },
-    ])
-    vi.stubGlobal('fetch', fetchMock)
-    await openCognitiveTab()
-
-    fireEvent.change(screen.getByLabelText('Classify mystery-skill'), { target: { value: 'skill' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Set' }))
-
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('the skills source tree is not writable from this process')
-    })
-    expect(toast.success).not.toHaveBeenCalled()
-    // A failed persist must not be re-fetched as if it changed anything --
-    // the flag stays exactly where it was.
-    expect(screen.getByLabelText('Classify mystery-skill')).toBeInTheDocument()
-    expect(screen.getByText('Unclassified')).toBeInTheDocument()
+    // ...and carries the lower-case catalog status badge. Classification is
+    // owned by the catalog sync path; the removed legacy endpoint has no UI.
+    expect(screen.getByText('unclassified')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Classify mystery-skill')).not.toBeInTheDocument()
   })
 })
 

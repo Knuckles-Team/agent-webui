@@ -15,7 +15,6 @@ import {
   Sliders,
   Layers,
   AlertTriangle,
-  HelpCircle,
   Plus,
   Pencil,
   Trash2,
@@ -29,7 +28,6 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
-import { api } from '@/lib/api'
 import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
 import { SchemaActionForm } from '@/components/capabilities/SchemaActionForm'
 import type { JsonSchema } from '@/lib/capability-forms'
@@ -310,8 +308,7 @@ function matchesSearch(query: string, name: string, domain?: string, tags?: stri
 }
 
 /** Structural shape shared by everything a cognitive-registry box renders
- * (Skill / SkillGraph / SkillWorkflow items, including an unclassified
- * skill -- it is a Skill, not a separate shape). */
+ * (Skill / SkillGraph / SkillWorkflow / unclassified Skill items). */
 interface CognitiveItem {
   id: string
   name: string
@@ -327,22 +324,18 @@ interface CognitiveItem {
 
 /** Shows runnability explicitly (GOC-60-W06a): a describe-only
  * `WorkflowDefinition` is visibly distinguished from a runnable
- * `CallableResource(AGENT_SKILL)`, and a skill whose `skill_type` the
- * catalog does not recognize reads as "Unclassified" -- flagged in place
- * among the other Agent Skills rather than hidden in a separate group or
- * silently guessed one way or the other. Renders nothing for surfaces with
- * no resource-type concept at all (Skill Graphs -- `resource_type` is
- * `undefined`, not `null`, on that shape). */
+ * `CallableResource(AGENT_SKILL)`, and an item whose kind the catalog could
+ * not determine carries an `unclassified` BADGE rather than being moved into
+ * a bucket of its own -- an unclassified skill is still a skill and belongs
+ * in the skills list. Renders nothing for surfaces with no KG resource-type
+ * concept at all (Skill Graphs -- `resource_type` is `undefined`, not
+ * `null`, on that shape). */
 function RunnabilityBadge({ item }: { item: CognitiveItem }) {
   if (item.resource_type === undefined) return null
   if (!item.kg_classified) {
     return (
-      <Badge
-        variant="outline"
-        className="text-[8px] font-bold border-amber-500/40 text-amber-400 bg-amber-500/10 gap-0.5"
-      >
-        <HelpCircle className="size-2.5" />
-        Unclassified
+      <Badge variant="outline" className="text-[8px] font-bold border-amber-500/40 text-amber-400 bg-amber-500/10">
+        unclassified
       </Badge>
     )
   }
@@ -446,60 +439,6 @@ function CognitiveBox({
           </div>
         )}
       </ScrollArea>
-    </div>
-  )
-}
-
-const CLASSIFY_OPTIONS: { value: 'skill' | 'workflow' | 'graph'; label: string }[] = [
-  { value: 'skill', label: 'Skill' },
-  { value: 'workflow', label: 'Workflow' },
-  { value: 'graph', label: 'Skill Graph' },
-]
-
-/** Classify affordance for one unclassified Agent Skill card. Local state
- * tracks only the pending choice; the parent refetches after a confirmed
- * persist, so the card never claims an optimistic classification. */
-function ClassifySkillControl({
-  item,
-  busy,
-  onClassify,
-}: {
-  item: CognitiveItem
-  busy: boolean
-  onClassify: (item: CognitiveItem, skillType: 'skill' | 'workflow' | 'graph') => void
-}) {
-  const [pending, setPending] = useState<'skill' | 'workflow' | 'graph' | ''>('')
-  if (item.kg_classified !== false) return null
-
-  return (
-    <div className="flex items-center gap-1.5 pt-1 border-t border-border/20 mt-1">
-      <select
-        aria-label={`Classify ${item.name}`}
-        value={pending}
-        disabled={busy}
-        onChange={(event) => {
-          setPending(event.target.value as 'skill' | 'workflow' | 'graph' | '')
-        }}
-        className="h-6 flex-1 min-w-0 rounded border border-border/40 bg-muted/20 text-[10px] px-1.5 text-foreground disabled:opacity-50"
-      >
-        <option value="">Classify as…</option>
-        {CLASSIFY_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-6 px-2 text-[10px]"
-        disabled={busy || !pending}
-        onClick={() => {
-          if (pending) onClassify(item, pending)
-        }}
-      >
-        {busy ? <RefreshCw className="size-3 animate-spin" /> : 'Set'}
-      </Button>
     </div>
   )
 }
@@ -1048,8 +987,6 @@ function renderCognitiveTab({
   filteredGraphsCount,
   filteredWorkflowsCount,
   onToggleCognitive,
-  classifyingId,
-  onClassifySkill,
 }: {
   data: ToolsData
   allSkillsCount: number
@@ -1060,8 +997,6 @@ function renderCognitiveTab({
   filteredGraphsCount: number
   filteredWorkflowsCount: number
   onToggleCognitive: (type: 'skill' | 'skill_graph' | 'skill_workflow', id: string, enabled: boolean) => void
-  classifyingId: string | null
-  onClassifySkill: (item: CognitiveItem, skillType: 'skill' | 'workflow' | 'graph') => void
 }) {
   return (
     <div className="space-y-4">
@@ -1072,8 +1007,8 @@ function renderCognitiveTab({
         <CognitiveBox
           icon={Zap}
           iconClassName="text-emerald-400"
-          title="Agent Skills"
-          description="Runnable CallableResource(AGENT_SKILL) -- unclassified skills flagged, classify them here"
+          title="Skills"
+          description="Catalog skill_type: skill / mcp_skill"
           groups={groupedSkills}
           totalCount={filteredSkillsCount}
           emptyLabel="No matching skills found."
@@ -1081,12 +1016,9 @@ function renderCognitiveTab({
             onToggleCognitive('skill', item.id, item.enabled)
           }}
           renderSecondary={(item) => (
-            <>
-              <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">
-                {item.description ?? 'No description available.'}
-              </p>
-              <ClassifySkillControl item={item} busy={classifyingId === item.id} onClassify={onClassifySkill} />
-            </>
+            <p className="text-[11px] text-muted-foreground leading-normal line-clamp-3">
+              {item.description ?? 'No description available.'}
+            </p>
           )}
         />
 
@@ -1094,7 +1026,7 @@ function renderCognitiveTab({
           icon={Network}
           iconClassName="text-teal-400"
           title="Skill Graphs"
-          description="Epistemic connection abstractions"
+          description="Catalog skill_type: graph"
           groups={groupedGraphs}
           totalCount={filteredGraphsCount}
           emptyLabel="No matching graphs found."
@@ -1110,7 +1042,7 @@ function renderCognitiveTab({
           icon={GitBranch}
           iconClassName="text-sky-400"
           title="Skill Workflows"
-          description="KG-verified describe-only WorkflowDefinition"
+          description="Catalog skill_type: workflow"
           groups={groupedWorkflows}
           totalCount={filteredWorkflowsCount}
           emptyLabel="No matching workflows found."
@@ -1145,8 +1077,6 @@ interface ActiveTabContentProps {
   filteredGraphsCount: number
   filteredWorkflowsCount: number
   onToggleCognitive: (type: 'skill' | 'skill_graph' | 'skill_workflow', id: string, enabled: boolean) => void
-  classifyingId: string | null
-  onClassifySkill: (item: CognitiveItem, skillType: 'skill' | 'workflow' | 'graph') => void
 }
 
 function renderActiveTabContent(props: ActiveTabContentProps) {
@@ -1174,8 +1104,6 @@ function renderActiveTabContent(props: ActiveTabContentProps) {
     filteredGraphsCount: props.filteredGraphsCount,
     filteredWorkflowsCount: props.filteredWorkflowsCount,
     onToggleCognitive: props.onToggleCognitive,
-    classifyingId: props.classifyingId,
-    onClassifySkill: props.onClassifySkill,
   })
 }
 
@@ -1304,7 +1232,6 @@ export default function SkillsView() {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTab, setActiveTab] = useState<'mcp' | 'builtin' | 'cognitive'>('mcp')
   const [sessionExpired, setSessionExpired] = useState(false)
-  const [classifyingId, setClassifyingId] = useState<string | null>(null)
 
   // Track expanded MCP servers and their loaded tools
   const [expandedMcp, setExpandedMcp] = useState<Record<string, boolean | undefined>>({})
@@ -1507,7 +1434,7 @@ export default function SkillsView() {
   const handleToggleCognitive = async (
     // The backend keys an unclassified item's toggle preference under the
     // same `skill` namespace it uses while KG-unverified (api_extensions.py
-    // `get_engine_bounded`/`get_toggle_state` call for the unclassified
+    // `_get_engine_bounded`/`get_toggle_state` call for the unclassified
     // branch) -- no separate `skill_unclassified` toggle type exists.
     type: 'skill' | 'skill_graph' | 'skill_workflow',
     id: string,
@@ -1531,32 +1458,6 @@ export default function SkillsView() {
       }
     } catch {
       toast.error('Error saving toggle status')
-    }
-  }
-
-  /** Persist classification through the canonical API and fail closed. The
-   * badge changes only after a successful write and a backend refetch. */
-  const handleClassifySkill = async (item: CognitiveItem, skillType: 'skill' | 'workflow' | 'graph') => {
-    setClassifyingId(item.id)
-    try {
-      const result = await api.classifySkill(item.id, skillType)
-      if (!result.persisted) {
-        toast.error(result.reason ?? `Could not classify '${item.name}'`)
-        return
-      }
-      if (result.persisted_to_source_file) {
-        toast.success(`'${item.name}' classified as ${result.classification} -- written to its SKILL.md.`)
-      } else {
-        toast.success(
-          `'${item.name}' classified as ${result.classification} -- the skills source is read-only here, ` +
-            'so the choice was saved as a durable override that applies on every future sync.',
-        )
-      }
-      await fetchTools()
-    } catch {
-      toast.error(`Error classifying '${item.name}'`)
-    } finally {
-      setClassifyingId(null)
     }
   }
 
@@ -1763,10 +1664,6 @@ export default function SkillsView() {
                 filteredWorkflowsCount: filteredWorkflows.length,
                 onToggleCognitive: (type, id, enabled) => {
                   void handleToggleCognitive(type, id, enabled)
-                },
-                classifyingId,
-                onClassifySkill: (item, skillType) => {
-                  void handleClassifySkill(item, skillType)
                 },
               })
             )}
