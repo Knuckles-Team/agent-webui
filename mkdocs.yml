@@ -90,5 +90,7 @@ nav:
   - Agents & Events: agents.md
   - Features: features.md
   - Atlas workspace: atlas.md
+  - Capability Workbench: capability-workbench.md
+  - Deployment and operations: deployment.md
   - Ecosystem Integration: ecosystem.md
   - Concept Registry: concepts.md
