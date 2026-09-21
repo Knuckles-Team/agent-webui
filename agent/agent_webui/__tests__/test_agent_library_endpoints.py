@@ -12,9 +12,10 @@ running the pre-existing, untouched ``test_workflow_endpoints.py`` in this
 same environment — it now fails 6/6 with the identical shape). That gate is
 owned by a sibling lane; these tests exercise the new route logic this lane
 owns (engine resolution, Cypher shape, node/edge writes, validation,
-degrade-to-empty behavior) without re-deriving or working around the identity
-boundary that isn't this lane's to fix. ``test_identity_middleware_boundary.py``
-already pins that boundary's own behavior.
+truthful backend failures, and genuine empty results) without re-deriving or
+working around the identity boundary that isn't this lane's to fix.
+``test_identity_middleware_boundary.py`` already pins that boundary's own
+behavior.
 """
 
 import asyncio
@@ -99,10 +100,22 @@ def test_list_library_agents_excludes_archived(mock_engine):
         assert run(list_library_agents()) == []
 
 
-def test_list_library_agents_degrades_to_empty_on_backend_failure(mock_engine):
+def test_list_library_agents_reports_backend_failure(mock_engine):
     from agent_webui.api_extensions import list_library_agents
+    from fastapi import HTTPException
 
     mock_engine.query_cypher.side_effect = Exception('DB down')
+    with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
+        run(list_library_agents())
+    assert exc.value.status_code == 503
+    assert exc.value.detail == 'Service unavailable'
+    assert 'DB down' not in str(exc.value.detail)
+
+
+def test_list_library_agents_preserves_genuine_empty_result(mock_engine):
+    from agent_webui.api_extensions import list_library_agents
+
+    mock_engine.query_cypher.return_value = []
     with _patched_engine(mock_engine):
         assert run(list_library_agents()) == []
 
@@ -398,6 +411,26 @@ def test_suggest_library_agents_excludes_bound_servers(mock_engine):
     assert data[0]['tool_count'] == 2
 
 
+def test_suggest_library_agents_reports_backend_failure(mock_engine):
+    from agent_webui.api_extensions import suggest_library_agents
+    from fastapi import HTTPException
+
+    mock_engine.backend.execute.side_effect = RuntimeError('DB down')
+    with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
+        run(suggest_library_agents())
+    assert exc.value.status_code == 503
+    assert exc.value.detail == 'Service unavailable'
+    assert 'DB down' not in str(exc.value.detail)
+
+
+def test_suggest_library_agents_preserves_genuine_empty_result(mock_engine):
+    from agent_webui.api_extensions import suggest_library_agents
+
+    mock_engine.backend.execute.return_value = []
+    with _patched_engine(mock_engine):
+        assert run(suggest_library_agents()) == []
+
+
 def test_list_library_tools_filters_by_server(mock_engine):
     from agent_webui.api_extensions import list_library_tools
 
@@ -407,6 +440,26 @@ def test_list_library_tools_filters_by_server(mock_engine):
     with _patched_engine(mock_engine):
         data = run(list_library_tools(mcp_server='demo-mcp'))
     assert data[0]['id'] == 'tool:a'
+
+
+def test_list_library_tools_reports_backend_failure(mock_engine):
+    from agent_webui.api_extensions import list_library_tools
+    from fastapi import HTTPException
+
+    mock_engine.backend.execute.side_effect = RuntimeError('DB down')
+    with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
+        run(list_library_tools())
+    assert exc.value.status_code == 503
+    assert exc.value.detail == 'Service unavailable'
+    assert 'DB down' not in str(exc.value.detail)
+
+
+def test_list_library_tools_preserves_genuine_empty_result(mock_engine):
+    from agent_webui.api_extensions import list_library_tools
+
+    mock_engine.backend.execute.return_value = []
+    with _patched_engine(mock_engine):
+        assert run(list_library_tools()) == []
 
 
 def test_list_library_tools_rejects_unsafe_server_filter(mock_engine):
@@ -454,16 +507,33 @@ def test_agent_config_summary_projects_model_registry():
     assert 'api_key_ref' not in data['chat_models'][0]
 
 
-def test_agent_config_summary_degrades_to_empty_on_failure():
+def test_agent_config_summary_preserves_empty_registry():
     from agent_webui.api_extensions import agent_config_summary
+
+    class _EmptyConfig:
+        app_profile = ''
+        deployment_profile = ''
+        chat_models = []
+        embedding_models = []
+
+    with patch('agent_utilities.core.config.AgentConfig', return_value=_EmptyConfig()):
+        assert run(agent_config_summary()) == {
+            'app_profile': '',
+            'deployment_profile': '',
+            'chat_models': [],
+            'embedding_models': [],
+        }
+
+
+def test_agent_config_summary_reports_backend_failure():
+    from agent_webui.api_extensions import agent_config_summary
+    from fastapi import HTTPException
 
     with patch(
         'agent_utilities.core.config.AgentConfig', side_effect=RuntimeError('boom')
     ):
-        data = run(agent_config_summary())
-    assert data == {
-        'app_profile': '',
-        'deployment_profile': '',
-        'chat_models': [],
-        'embedding_models': [],
-    }
+        with pytest.raises(HTTPException) as exc:
+            run(agent_config_summary())
+    assert exc.value.status_code == 503
+    assert exc.value.detail == 'Service unavailable'
+    assert 'boom' not in str(exc.value.detail)

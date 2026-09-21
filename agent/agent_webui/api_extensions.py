@@ -7988,7 +7988,10 @@ async def list_library_agents() -> list[dict[str, Any]]:
         raise
     except Exception as e:
         _log_failure('list_library_agents', e)
-        return []
+        raise HTTPException(
+            status_code=503,
+            detail='Agent Library agents are unavailable',
+        ) from e
 
 
 @router.get('/agent-library/tools')
@@ -8011,7 +8014,10 @@ async def list_library_tools(mcp_server: str | None = None) -> list[dict[str, An
         raise
     except Exception as e:
         _log_failure('list_library_tools', e)
-        return []
+        raise HTTPException(
+            status_code=503,
+            detail='Agent Library tools are unavailable',
+        ) from e
 
 
 def _library_tool_query(mcp_server: str | None) -> tuple[str, dict[str, Any]]:
@@ -8130,7 +8136,10 @@ async def suggest_library_agents() -> list[dict[str, Any]]:
         raise
     except Exception as e:
         _log_failure('suggest_library_agents', e)
-        return []
+        raise HTTPException(
+            status_code=503,
+            detail='Agent Library suggestions are unavailable',
+        ) from e
 
 
 def _library_agent_tool_refs(tool_rows: Any) -> list[dict[str, Any]]:
@@ -8605,12 +8614,10 @@ async def agent_config_summary() -> dict[str, Any]:
         raise
     except Exception as e:
         _log_failure('agent_config_summary', e)
-        return {
-            'app_profile': '',
-            'deployment_profile': '',
-            'chat_models': [],
-            'embedding_models': [],
-        }
+        raise HTTPException(
+            status_code=503,
+            detail='Agent configuration is unavailable',
+        ) from e
 
 
 # ---------------------------------------------------------------------------
