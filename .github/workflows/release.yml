@@ -7,9 +7,12 @@ name: Release
 # already landed in agent-utilities and epistemic-graph:
 #
 #   release.yml (THIS FILE) -- the ONLY workflow that can block a release.
-#     Two jobs, wired with `needs:` so the ordering is explicit and the
+#     Three jobs, wired with `needs:` so the ordering is explicit and the
 #     failing stage is obvious at a glance:
 #
+#       release-intent -- skips release-neutral commits when this version is
+#                         already published, while retaining exact artifact
+#                         verification for the tagged release commit.
 #       publish-pypi   -- builds the agent-webui wheel and sdist, verifies an
 #                         existing immutable PyPI release byte-for-byte,
 #                         publishes only when absent, then tags/releases the
@@ -68,6 +71,26 @@ permissions:
   contents: read
 
 jobs:
+  release-intent:
+    name: release-intent
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.intent.outputs.release }}
+    steps:
+      - name: Checkout Repository with release tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Decide whether this commit enters the release pipeline
+        id: intent
+        shell: bash
+        run: |
+          python3 scripts/release/check_pypi_artifacts.py pyproject.toml \
+            --release-intent --repository . --head-sha "${GITHUB_SHA}" \
+            --github-output "${GITHUB_OUTPUT}"
+
   # ── STAGE 1: build + publish the agent-webui wheel to PyPI, then tag the
   # release commit. This remains structurally equivalent to the fleet's
   # shared Python publication pipeline, while owning WebUI's stricter
@@ -75,6 +98,8 @@ jobs:
   # every filename and SHA-256 digest matches the artifacts built here.
   publish-pypi:
     name: publish-pypi
+    needs: release-intent
+    if: needs.release-intent.outputs.release == 'true'
     runs-on: self-hosted
     permissions:
       contents: write
@@ -175,7 +200,8 @@ jobs:
   # step) already succeeded on this exact commit.
   publish-docker:
     name: publish-docker
-    needs: publish-pypi
+    needs: [release-intent, publish-pypi]
+    if: needs.release-intent.outputs.release == 'true' && needs.publish-pypi.result == 'success'
     runs-on: ubuntu-latest
     # D-ORC-10-style gate (matches agent-utilities' own publish-docker job):
     # a protected GitHub Environment enables required-reviewer / wait-timer

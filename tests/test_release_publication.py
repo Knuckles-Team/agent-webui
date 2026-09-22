@@ -109,8 +109,60 @@ def test_existing_release_mismatch_is_never_skipped(
         module.publication_action(local, remote)
 
 
+def test_release_intent_publishes_absent_version_and_verifies_tagged_rerun() -> None:
+    module = _load_script()
+    remote = {'package.whl': _sha(b'wheel')}
+
+    assert module.release_intent(
+        None, tag_target=None, head_sha='new-release', changed_paths=[]
+    )
+    assert module.release_intent(
+        remote,
+        tag_target=None,
+        head_sha='partially-published-release',
+        changed_paths=[],
+    )
+    assert module.release_intent(
+        remote,
+        tag_target='release-commit',
+        head_sha='release-commit',
+        changed_paths=[],
+    )
+
+
+def test_release_intent_skips_later_release_neutral_commit() -> None:
+    module = _load_script()
+    assert not module.release_intent(
+        {'package.whl': _sha(b'wheel')},
+        tag_target='release-commit',
+        head_sha='docs-commit',
+        changed_paths=[
+            '.github/workflows/advisory.yml',
+            'README.md',
+            'docs/status.md',
+            'mkdocs.yml',
+            'scripts/release/check_pypi_artifacts.py',
+            'tests/test_release_publication.py',
+        ],
+    )
+
+
+def test_release_intent_requires_version_bump_for_runtime_change() -> None:
+    module = _load_script()
+    with pytest.raises(module.VersionBumpRequired, match='agent/agent_webui/server.py'):
+        module.release_intent(
+            {'package.whl': _sha(b'wheel')},
+            tag_target='release-commit',
+            head_sha='runtime-commit',
+            changed_paths=['agent/agent_webui/server.py', 'docs/status.md'],
+        )
+
+
 def test_release_workflow_preflights_and_rechecks_without_skip_existing() -> None:
     workflow = WORKFLOW.read_text(encoding='utf-8')
+    assert 'name: release-intent' in workflow
+    assert '--release-intent --repository . --head-sha "${GITHUB_SHA}"' in workflow
+    assert "if: needs.release-intent.outputs.release == 'true'" in workflow
     assert (
         'check_pypi_artifacts.py pyproject.toml dist --github-output "$GITHUB_OUTPUT"'
         in workflow
@@ -123,4 +175,4 @@ def test_release_workflow_preflights_and_rechecks_without_skip_existing() -> Non
     assert (
         'uses: ./.pipeline-contract/.github/actions/create-version-release' in workflow
     )
-    assert 'needs: publish-pypi' in workflow
+    assert 'needs: [release-intent, publish-pypi]' in workflow
