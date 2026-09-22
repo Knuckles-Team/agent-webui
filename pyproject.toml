@@ -104,8 +104,8 @@ test = [
 ]
 
 [[project.authors]]
-name = "Repository Maintainers"
-email = "maintainers@example.invalid"
+name = "Audel Rouhi"
+email = "knucklessg1@gmail.com"
 
 [project.license]
 text = "MIT"
