@@ -40,7 +40,7 @@ which let a real tracked artifact sit unchallenged at a repo root:
    ``.liveness_baseline.json`` -- a self-writing ratchet, not a convention --
    sit at agent-utilities' root unchallenged. Dotfiles are now split: a
    conventional, self-describing dot-FILE (``.gitignore``,
-   ``.pre-commit-config.yaml``, ...) is enumerated in ``ALLOWED_DOTFILES``
+   ``.node-version``, ...) is enumerated in ``ALLOWED_DOTFILES``
    below; a dot-DIRECTORY (``.github``, ``.security``, ...) is repo-specific
    enough to need a stated reason, so it is declared in the manifest's
    ``[dirs]`` table like any other directory.
@@ -94,7 +94,6 @@ ALLOWED_DOTFILES: frozenset[str] = frozenset(
         # proof, not by review.
         ".repo-layout.toml",
         ".bumpversion.cfg",  # release version bump config (bump2version)
-        ".codespellignore",  # codespell false-positive word list
         # WD4-TOOL-02: dependency-cruiser's own conventional config filename
         # (run via `pnpm dlx dependency-cruiser`, never installed into
         # package.json -- see .dependency-cruiser.cjs's own header). Same
@@ -109,7 +108,6 @@ ALLOWED_DOTFILES: frozenset[str] = frozenset(
         ".mergequeue.yaml",  # merge-queue config
         ".node-version",  # pinned Node.js version (Volta/nvm-style)
         ".npmrc",  # npm/pnpm registry + install config
-        ".pre-commit-config.yaml",  # pre-commit hook config
         ".prettierignore",  # Prettier formatter exclusions
         ".prettierrc.json",  # Prettier formatter config
         ".releaserc.json",  # semantic-release config

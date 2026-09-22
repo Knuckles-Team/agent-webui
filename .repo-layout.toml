@@ -14,8 +14,8 @@
 #     file cannot rot into fiction by silently outliving what it describes.
 #
 # Every tracked root directory, and every tracked non-dot root file, must have
-# a line here. Conventional, self-describing dot-FILES (.gitignore,
-# .pre-commit-config.yaml, ...) are instead enumerated in
+# a line here. Remaining conventional, self-describing dot-FILES (.gitignore,
+# .node-version, ...) are instead enumerated in
 # scripts/check_root_hygiene.py's ALLOWED_DOTFILES -- see that module's
 # docstring for why the split. Ported from the agent-utilities original of
 # this gate per CX-HYG-01.
@@ -27,6 +27,7 @@ docs = "mkdocs documentation source (architecture, concepts, capability coverage
 e2e = "Playwright end-to-end specs (auth, graph-view, knowledge-base-view, memory-view, routes-smoke, sdd-view)"
 public = "static assets Vite serves as-is (favicons, apple-touch-icon)"
 scripts = "gate scripts (check_*.py) and release tooling invoked by pre-commit/CI"
+".config" = "tracked directory for explicitly located tool configuration (pre-commit and codespell ignore words)"
 specs = "lightweight per-feature spec markdown (delete-past-chats, update-color-scheme, update-tools-dropdown) -- distinct from the spec-kit-generated specs under .specify/specs/"
 src = "the React/TypeScript frontend: App/Chat/Part components, assets, component tree, and its own __tests__"
 tests = "the Python backend test suite: characterization tests plus dashboard/health/graph-endpoint tests"

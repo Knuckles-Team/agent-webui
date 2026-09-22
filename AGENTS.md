@@ -89,7 +89,7 @@ Backend and repository checks:
 
 ```bash
 uv run --all-extras pytest agent/agent_webui/__tests__
-pre-commit run --all-files
+pre-commit run --config .config/pre-commit.yaml --all-files
 python -m agent_webui.server --security-doctor --host 0.0.0.0
 ```
 
@@ -103,15 +103,20 @@ docker/deploy.sh
 
 ## Quality gates
 
-Run focused tests while developing, then run `pre-commit run --all-files` before
-committing. Do not bypass a gate with `--no-verify`, `SKIP`, diagnostic ignores,
+Install the commit and push hooks with
+`pre-commit install --config .config/pre-commit.yaml`. Run focused tests while
+developing, then run
+`pre-commit run --config .config/pre-commit.yaml --all-files` before committing.
+Automatic pre-push checks are bounded; full pytest, typecheck, wheel builds,
+dependency readiness, and repository-wide lint remain manual/hosted checks. Do
+not bypass a gate with `--no-verify`, `SKIP`, diagnostic ignores,
 or warning suppression. Fix the source of each finding or report a genuine
 environmental blocker.
 
 For documentation changes, run the shared public-surface gate and build Pages:
 
 ```bash
-pre-commit run public-surface --all-files
+pre-commit run --config .config/pre-commit.yaml public-surface --all-files
 mkdocs build --strict
 ```
 

@@ -1,8 +1,8 @@
-# `git push` must run the FULL gate, not a subset. Without
-# `default_install_hook_types`, `pre-commit install` wires ONLY the pre-commit
-# hook, so `git push` runs nothing and any hook staged pre-push is dead code.
-# `default_stages` then makes every hook that names no stages of its own run at
-# BOTH stages, so a push is a strict superset of a commit.
+# Pushes run a bounded fast gate; the full pytest, dependency-readiness, wheel,
+# and repository-wide lint checks remain available at the manual stage and in
+# hosted CI. Install the configured hooks with
+# `pre-commit install --config .config/pre-commit.yaml`.
+# `default_stages` keeps unspecified hooks on commit only; push checks opt in.
 default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]  # P0.3: was [pre-commit, pre-push] -- see per-hook stages: below for what moved explicitly
 exclude:
@@ -31,17 +31,20 @@ repos:
   hooks:
   - id: ruff
     name: ruff check
-    args: ["--fix", "--ignore=E402"]
+    args: ["--ignore=E402"]
     exclude: ^(tests/|test/|scripts/|script/)
+    stages: [pre-commit, pre-push, manual]
   - id: ruff-format
     name: ruff format
     exclude: ^(tests/|test/|scripts/|script/)
+    stages: [pre-commit, pre-push, manual]
 - repo: https://github.com/pre-commit/mirrors-mypy
   rev: fc0f09a29bb495f4a91f00266155d6282d52485d # v1.20.2
   hooks:
   - id: mypy
     additional_dependencies: [pydantic==2.13.4, types-PyYAML==6.0.12.20260518, types-requests==2.33.0.20260518]
     args: ["--ignore-missing-imports"]
+    stages: [pre-commit, pre-push, manual]
 - repo: https://github.com/jendrikseipp/vulture
   rev: b0f67ba0044693aa9ec0d38fe460590facc98004 # v2.16
   hooks:
@@ -53,7 +56,7 @@ repos:
   rev: 2ccb47ff45ad361a21071a7eedda4c37e6ae8c5a # v2.4.2
   hooks:
   - id: codespell
-    args: ["-L", "ans,linar,nam,tread,ot,", "--ignore-words=.codespellignore"]
+    args: ["-L", "ans,linar,nam,tread,ot,", "--ignore-words=.config/codespell.ignore"]
     exclude: ^(tests/|test/|scripts/|script/)
 - repo: https://github.com/PyCQA/bandit
   rev: 92ae8b82fb422a639f0ed8d99e96cea769594e08 # 1.9.4
@@ -67,7 +70,7 @@ repos:
   - id: nbqa-ruff
     args: ["--fix"]
 - repo: https://github.com/Knuckles-Team/pipelines
-  rev: 35209bf6d85569a3c1fe3d5cd31771cacfdc3731
+  rev: 7ae4192 # shared scanner argv fix + public-surface contract
   hooks:
   - id: public-surface
 - repo: local
@@ -78,7 +81,7 @@ repos:
     language: system
     pass_filenames: false
     always_run: true
-    stages: [manual, pre-push]
+    stages: [manual]
   - id: uv-lock
     name: uv-lock (verify, never mutate)
     entry: bash -c 'repo=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)"); if [ -n "$AGENT_UTILITIES_ROOT" ]; then root="$AGENT_UTILITIES_ROOT"; else au_d="$repo"; root=""; while [ "$au_d" != "/" ]; do if [ -d "$au_d/agent-utilities/scripts" ]; then root="$au_d/agent-utilities"; break; fi; au_d=$(dirname "$au_d"); done; fi; if [ -d "$root" ] && [ "$repo" != "$root" ]; then mkdir -p .uv-workspace-siblings && ln -sfn "$root" .uv-workspace-siblings/agent-utilities; fi; uv lock --check'
@@ -120,11 +123,10 @@ repos:
     always_run: true
   - id: eslint-staged
     name: eslint (staged .ts/.tsx) - errors block, warnings (incl. jsx-a11y) reported only
-    # D-FE-7/D-WD-5 self-healing pattern (see the `pnpm-build` hook's own
-    # comment above/below for the full rationale): a `git worktree` checkout
-    # has no `node_modules` of its own until something populates one, so
-    # install once, locally, when missing -- pnpm's content-addressable store
-    # makes a warm install a few seconds, not a fresh download.
+    # Require the locked local toolchain to be present instead of installing
+    # dependencies from a commit/push hook. Set up the worktree once with
+    # `pnpm install --frozen-lockfile`; this keeps the automatic gate bounded
+    # and offline after setup.
     #
     # Scoped to the files pre-commit is about to commit (via `files:` below,
     # not a whole-repo `eslint .`) so this hook enforces the NEW/changed code
@@ -135,10 +137,11 @@ repos:
     # without blocking every commit that touches an already-noisy file. Once
     # `pnpm exec eslint .` is fully clean of BOTH errors and warnings, add
     # `--max-warnings=0` here.
-    entry: bash -c 'if [ ! -d node_modules ]; then pnpm install --frozen-lockfile; fi && pnpm exec eslint "$@"' --
+    entry: bash -c 'if [ ! -x node_modules/.bin/eslint ]; then echo "Run pnpm install --frozen-lockfile before pre-commit checks." >&2; exit 1; fi; pnpm exec eslint "$@"' --
     language: system
     files: \.(ts|tsx)$
     exclude: ^scripts/
+    stages: [pre-commit, pre-push, manual]
   - id: no-fabrication-gate
     name: no-fabrication gate — Ecosystem view (BUG-008 / GOC-28)
     # Static scan rejecting fabricated operational state in production paths
@@ -159,92 +162,52 @@ repos:
     stages: [pre-push, manual]
   - id: pnpm-build
     name: pnpm build
-    # D-FE-7/D-WD-5: a `git worktree` checkout gets no `node_modules` of its
-    # own (only `pnpm install` populates one; worktrees don't inherit the
-    # canonical checkout's), so `pnpm build`'s `tsc` step failed outright with
-    # `sh: 1: tsc: not found` in every worktree. Installing once, locally to
-    # this worktree, when `node_modules` is missing makes the hook self-healing
-    # instead of silently unrunnable — pnpm's content-addressable store makes
-    # this a few seconds, not a fresh download, whenever the store is already
-    # warm (e.g. from the canonical checkout's own install).
+    # Worktrees do not inherit `node_modules`; require developers to install
+    # the tracked toolchain before this manual build rather than doing
+    # network/package work in an automatic hook. `pnpm install --frozen-lockfile`
+    # is the setup command.
     # NODE_OPTIONS mirrors the release workflow's own ceiling
     # (Knuckles-Team/pipelines python_web_pipeline.yml sets
     # --max-old-space-size=4096 on its "Build Frontend" step). Without it this
     # hook builds under the dev box's unbounded heap and cannot reproduce a
     # runner OOM, so a build that only fails in CI looks green locally.
-    entry: bash -c 'if [ ! -d node_modules ]; then pnpm install --frozen-lockfile; fi && NODE_OPTIONS=--max-old-space-size=4096 pnpm build'
+    entry: bash -c 'if [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ]; then echo "Run pnpm install --frozen-lockfile before the manual build." >&2; exit 1; fi; NODE_OPTIONS=--max-old-space-size=4096 pnpm build'
     language: system
     pass_filenames: false
     always_run: true
-    stages: [pre-push, manual]
+    stages: [manual]
   # Release parity (offline): the publish workflow's ONLY two build steps are
   # "Build Frontend" (pnpm run build, above) and "Build package" (uv build).
   # The wheel build had no local gate at all, so a packaging break could only
   # ever be discovered by pushing to main and watching the release job -- and
   # when that job's logs expire, not even then. Runs fully offline against the
-  # tracked lock; staged pre-push because it is heavy, and reachable in the
-  # parity sweep via `--hook-stage pre-push`.
+  # tracked lock; manual-only locally to keep the automatic push gate bounded,
+  # and remains covered by hosted publication CI.
   - id: release-wheel-build
-    name: release parity — uv build (wheel + sdist, HEAVY, pre-push)
+    name: release parity — uv build (wheel + sdist, manual)
     entry: bash -c 'set -e; rm -rf dist; uv build; wheel=$(find dist -maxdepth 1 -name "*.whl" -print -quit); test -n "$wheel"; python scripts/release/check_wheel_contract.py "$wheel"'
     language: system
     pass_filenames: false
     always_run: true
-    stages: [pre-push, manual]
-  # w5-ci-gates-local (D-W5CG-1): `.mergequeue.yaml`'s `typecheck`/`lint` gates
-  # are FAST-tier and genuinely reachable (unlike `build`/`e2e`, which are
-  # `tier: slow` and structurally never executed by the queue engine) -- but
-  # until now had NO pre-commit hook at all, so the merge queue was the ONLY
-  # place either ever ran; a local `git commit`/`git push` never caught a
-  # type or lint regression before this. Mirrors the queue's exact
-  # self-provisioning command (`test -d node_modules || pnpm install ...`)
-  # so the two surfaces can't drift.
-  #
-  # Re-verified live in this worktree (2026-08-07), NOT just trusted from
-  # `.mergequeue.yaml`'s own (older) comments: `typecheck` is actually CLEAN
-  # today (`.mergequeue.yaml`'s "2 pre-existing tsc errors / D-TLS-1" note is
-  # stale -- that fix has since landed on `main`, confirmed via a direct
-  # `pnpm exec tsc --noEmit` run here, exit 0). `lint` is still RED: 8
-  # pre-existing eslint errors reproduced exactly as `.mergequeue.yaml`
-  # describes (2 prettier-format diffs, 1 no-unnecessary-type-assertion, 2
-  # no-unnecessary-condition, in Chat.tsx/GraphActivity.tsx/
-  # SessionExpiredNotice.tsx/GoalsView.tsx/MemoryView.tsx/capability-forms.ts/
-  # page-context.tsx). `.mergequeue.yaml` absorbs `lint`'s debt via
-  # `compare: lines` (only a NEW diagnostic blocks a candidate); pre-commit has
-  # no differential comparator, so making `lint` a commit-blocking hook today
-  # would brick every local commit over debt this lane does not own fixing --
-  # the same tradeoff already named once for this repo (D-CIP-11) and again
-  # this lane for agent-utilities' `check-current-only-contract-debt` hook.
-  # Both staged `pre-push` (not `manual`-only, unlike that hook): cost alone
-  # already justifies staging off commit (measured warm-`node_modules` on this
-  # worktree: tsc ~26s, eslint ~55s; cold with `pnpm install` first is the
-  # queue's own measured 300s/150s) even for `typecheck`, which is green today
-  # and could otherwise be a commit-stage candidate.
-  #
-  # w6-precommit-ci-parity (D-W6PC-3) correction: staging `lint` at pre-push
-  # anyway, with the debt only reasoned about above, IS the exact "absolute
-  # local gate on a red baseline blocks every push for unrelated reasons"
-  # anti-pattern this program's own differential-gating decision (D-W5GR-4)
-  # exists to avoid -- 8 pre-existing eslint errors on unrelated files would
-  # fail `git push` for EVERY branch in this repo, forever, no matter what it
-  # touches. Reclassified `lint` to `manual`-only below (same bucket as au's
-  # debt hook) -- real enforcement of a NEW lint regression lives in
-  # `.mergequeue.yaml`'s differential `lint` gate; this local hook is for
-  # deliberately checking the current backlog
-  # (`pre-commit run lint --hook-stage manual --all-files`), not for blocking
-  # every push. `typecheck` stays at `pre-push` because it is verified CLEAN
-  # today -- nothing red to block on, so cost alone is an acceptable reason to
-  # keep it off the default commit stage.
+    stages: [manual]
+  # The full `typecheck` gate is clean and takes about 26s with dependencies
+  # installed; it remains manual-only so the automatic push gate checks only
+  # changed TypeScript files and never installs the full frontend toolchain.
+  # The full-repository
+  # `lint` command still reports eight pre-existing ESLint errors; it stays
+  # manual-only because it has no local differential comparator. The staged
+  # `eslint-staged` hook above checks changed TS/TSX files on commit and push,
+  # while `.mergequeue.yaml` retains differential enforcement for hosted runs.
   - id: typecheck
     name: CI/queue parity — tsc --noEmit (D-W5CG-1)
-    entry: bash -c 'test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm exec tsc --noEmit'
+    entry: bash -c 'if [ ! -x node_modules/.bin/tsc ]; then echo "Run pnpm install --frozen-lockfile before manual typecheck." >&2; exit 1; fi; pnpm exec tsc --noEmit'
     language: system
     pass_filenames: false
     always_run: true
-    stages: [manual, pre-push]
+    stages: [manual]
   - id: lint
-    name: CI/queue parity — eslint (D-W6PC-3; 8 pre-existing errors — informational, manual-only, see comment above)
-    entry: bash -c 'test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm exec eslint'
+    name: CI/queue parity — eslint (D-W6PC-3; 8 pre-existing errors — informational, manual-only)
+    entry: bash -c 'if [ ! -x node_modules/.bin/eslint ]; then echo "Run pnpm install --frozen-lockfile before manual lint." >&2; exit 1; fi; pnpm exec eslint'
     language: system
     pass_filenames: false
     always_run: true
@@ -256,7 +219,7 @@ repos:
     types: [python]
     pass_filenames: false
     always_run: true
-    stages: [pre-push, manual]
+    stages: [manual]
   - id: check-agent-standards
     name: check agent standards
     entry: |-
