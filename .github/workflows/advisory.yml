@@ -16,7 +16,7 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    uses: Knuckles-Team/pipelines/.github/workflows/pages_pipeline.yml@479c6652266b6265c5a66d167af086edb837844b
+    uses: Knuckles-Team/pipelines/.github/workflows/pages_pipeline.yml@ebfaa43bc23346a3a635edd5d1822beb46d48898
     with:
       content_source: docs
       shared_theme_enabled: true

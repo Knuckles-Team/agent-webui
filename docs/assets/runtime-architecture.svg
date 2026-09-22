@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 500" role="img" aria-labelledby="diagram-title diagram-description">
   <title id="diagram-title">Knuckles-Team agent ecosystem runtime architecture</title>
-  <desc id="diagram-description">People and MCP or A2A clients use Agent WebUI and GraphOS. Both connect to the agent-utilities control plane, which uses epistemic-graph as its durable multimodal knowledge and reasoning engine. Source systems connect through agent-connector-sdk to epistemic-graph.</desc>
+  <desc id="diagram-description">People and MCP or A2A clients enter through Agent WebUI or GraphOS. Agent WebUI is hosted and composed by GraphOS. GraphOS connects to the agent-utilities control plane, which uses epistemic-graph as its durable multimodal knowledge and reasoning engine. Source systems connect through agent-connector-sdk to epistemic-graph.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
       <path d="M0 0 10 5 0 10z" fill="#365f93"/>
@@ -16,9 +16,9 @@
   <rect width="1120" height="500" rx="18" fill="#fff"/>
   <g class="arrow">
     <path d="M260 113H325"/>
-    <path d="M260 145H290V190H632V154"/>
-    <path d="M480 92V45H935V72"/>
-    <path d="M710 143H745V155H785"/>
+    <path d="M260 145H290V190H530V143H555"/>
+    <path d="M480 113H555"/>
+    <path d="M710 113H785"/>
     <path d="M935 188V235"/>
     <path d="M260 375H325"/><path d="M710 375H750V293H785"/>
   </g>
