@@ -39,6 +39,20 @@ def test_exact_existing_artifact_set_is_idempotent() -> None:
     assert module.publication_action(artifacts, artifacts.copy()) == 'already-published'
 
 
+def test_artifact_digests_ignores_non_distribution_files(tmp_path: Path) -> None:
+    module = _load_script()
+    wheel = tmp_path / 'package-2.6.1-py3-none-any.whl'
+    sdist = tmp_path / 'package-2.6.1.tar.gz'
+    wheel.write_bytes(b'wheel')
+    sdist.write_bytes(b'sdist')
+    (tmp_path / '.gitignore').write_text('*\n', encoding='utf-8')
+
+    assert module.artifact_digests(tmp_path) == {
+        wheel.name: _sha(b'wheel'),
+        sdist.name: _sha(b'sdist'),
+    }
+
+
 def test_pypi_release_response_is_reduced_to_filename_digests() -> None:
     module = _load_script()
     payload = {
@@ -56,11 +70,11 @@ def test_pypi_release_response_is_reduced_to_filename_digests() -> None:
             self.close()
 
     def opener(url: str, *, timeout: int) -> Response:
-        assert url.endswith('/agent-webui/2.6.0/json')
+        assert url.endswith('/agent-webui/2.6.1/json')
         assert timeout == 15
         return Response(json.dumps(payload).encode())
 
-    assert module.pypi_artifact_digests('agent-webui', '2.6.0', opener=opener) == {
+    assert module.pypi_artifact_digests('agent-webui', '2.6.1', opener=opener) == {
         'package.whl': 'wheel-digest',
         'package.tar.gz': 'sdist-digest',
     }
@@ -104,6 +118,8 @@ def test_release_workflow_preflights_and_rechecks_without_skip_existing() -> Non
     assert "if: steps.pypi_preflight.outputs.publish == 'true'" in workflow
     assert '--expect-existing' in workflow
     assert '--skip-existing' not in workflow
+    assert 'twine upload dist/*.whl dist/*.tar.gz --verbose' in workflow
+    assert 'twine upload dist/* --verbose' not in workflow
     assert (
         'uses: ./.pipeline-contract/.github/actions/create-version-release' in workflow
     )

@@ -160,7 +160,7 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           set -euo pipefail
-          if ! .venv/bin/twine upload dist/* --verbose; then
+          if ! .venv/bin/twine upload dist/*.whl dist/*.tar.gz --verbose; then
             echo "Upload failed; checking whether a concurrent publisher completed the exact release."
             python3 scripts/release/check_pypi_artifacts.py pyproject.toml dist --expect-existing
           fi

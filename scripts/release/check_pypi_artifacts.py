@@ -23,6 +23,7 @@ from typing import Any
 import tomllib
 
 PYPI_RELEASE_URL = 'https://pypi.org/pypi/{project}/{version}/json'
+PUBLISHABLE_SUFFIXES = ('.whl', '.tar.gz')
 
 
 class PublicationMismatch(RuntimeError):
@@ -41,8 +42,15 @@ def project_identity(pyproject: Path) -> tuple[str, str]:
     return name, version
 
 
+def is_publishable_artifact(path: Path) -> bool:
+    """Return whether *path* is a wheel or source distribution."""
+    return path.is_file() and path.name.endswith(PUBLISHABLE_SUFFIXES)
+
+
 def artifact_digests(dist_dir: Path) -> dict[str, str]:
-    artifacts = sorted(path for path in dist_dir.iterdir() if path.is_file())
+    artifacts = sorted(
+        path for path in dist_dir.iterdir() if is_publishable_artifact(path)
+    )
     if not artifacts:
         raise ValueError(f'no distribution artifacts found in {dist_dir}')
     return {

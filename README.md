@@ -19,7 +19,7 @@ GraphOS delegation on the server side.
 |---|---|
 | Browser presentation, local interaction state, accessible route composition, and the WebUI FastAPI boundary | GraphOS owns public routing, identity, policy, and fleet supervision; agent-utilities owns agent behavior; epistemic-graph owns durable knowledge; connector services own external-system effects |
 
-Current package Version: 2.6.0.
+Current package Version: 2.6.1.
 
 ## Key Capabilities
 
