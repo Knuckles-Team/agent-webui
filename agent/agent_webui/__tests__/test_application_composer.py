@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from agent_utilities.knowledge_graph.core.session import current_session
 from agent_webui.server import create_agent_web_app
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -91,6 +92,40 @@ def test_injected_routes_retain_webui_fail_closed_identity_boundary(
     response = TestClient(app).get('/api/composed/private')
     assert response.status_code == 401
     assert response.json() == {'error': 'Verified Bearer identity required'}
+
+
+def test_injected_routes_receive_verified_graph_session(
+    mock_agent: Any,
+    mock_workspace_helpers: dict[str, Any],
+    authenticated_client_factory: Any,
+) -> None:
+    def compose(app: FastAPI) -> None:
+        @app.get('/api/composed/session')
+        async def _session() -> dict[str, object]:
+            session = current_session()
+            assert session is not None
+            return {
+                'actor_id': session.actor.actor_id,
+                'tenant': session.tenant,
+                'scopes': sorted(session.scopes),
+            }
+
+    app = create_agent_web_app(
+        mock_agent,
+        mock_workspace_helpers,
+        application_composer=compose,
+    )
+
+    client = authenticated_client_factory(app, scope='kg:read')
+    response = client.get('/api/composed/session')
+
+    assert response.status_code == 200
+    assert response.json() == {
+        'actor_id': 'test-suite',
+        'tenant': 'test-tenant',
+        'scopes': ['kg:read'],
+    }
+    assert current_session() is None, 'the ambient session must be reset'
 
 
 def test_composer_failure_refuses_partial_application(

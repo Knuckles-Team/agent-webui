@@ -12405,10 +12405,10 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
 #
 # Relationship to the canonical gateway routes (drift policy):
 #
-# * The canonical KG REST surface (/api/graph/*, /api/ontology/*, /api/object/*
-#   — agent_utilities.mcp.kg_server._mount_rest_routes) is mounted VERBATIM on
-#   this app by server.py via gateway.graph_api.register_graph_routes, so
-#   anything the gateway serves, this backend serves from the same code.
+# * The canonical KG REST surface (/api/graph/*, /api/ontology/*, /api/object/*)
+#   is owned by Graph OS.  A Graph OS host mounts it through the public
+#   ``ApplicationComposer`` port passed to ``create_agent_web_app``; standalone
+#   WebUI intentionally does not expose those gateway routes.
 # * Routes here that have a 1:1 canonical tool twin dispatch through
 #   kg_server's REGISTERED_TOOLS (see _canonical_kg_tool) instead of
 #   reimplementing the logic — /ontology/function/invoke and /ontology/derive.
