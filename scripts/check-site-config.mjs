@@ -6,13 +6,18 @@
  * type stripping is used deliberately so the release path exercises the real
  * `validateSiteConfig` implementation.
  */
-const { validateSiteConfig } = await import('../src/lib/site-config.ts')
+const { getSiteConfig, validateSiteConfig } = await import('../src/lib/site-config.ts')
 
-const validation = validateSiteConfig()
-if (!validation.valid) {
-  console.error(`site config check failed (${validation.errors.length} issue(s))`)
-  for (const error of validation.errors) console.error(`- ${error}`)
-  process.exitCode = 1
+const config = getSiteConfig()
+if (!config.indexableEnvironment) {
+  console.log('site config check passed (safe noindex mode; public publication metadata is not required)')
 } else {
-  console.log('site config check passed (legal identity, canonical origin, and reviewed content configured)')
+  const validation = validateSiteConfig(config)
+  if (validation.valid) {
+    console.log('site config check passed (public origin, legal identity, and reviewed content configured)')
+  } else {
+    console.error(`site config check failed (${validation.errors.length} issue(s))`)
+    for (const error of validation.errors) console.error(`- ${error}`)
+    process.exitCode = 1
+  }
 }
