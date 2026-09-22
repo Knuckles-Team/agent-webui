@@ -1,85 +1,96 @@
 # Architecture
 
-## Centralized Epistemic Gateway Topology
+Agent WebUI is the browser and same-origin presentation boundary for GraphOS.
+It renders runtime capabilities; it does not duplicate their authorities.
 
-The `agent-webui` interfaces directly with a centralized system layer located inside `agent-utilities` (`agent-utilities-kg`). This gateway centralizes data access and tool registry control, ensuring absolute consistency across multi-agent workflows.
+![Runtime architecture: Agent WebUI enters GraphOS, which composes agent-utilities, epistemic-graph, and connector services.](assets/runtime-architecture.svg)
 
-```mermaid
-graph TD
-    UI[React frontend] -->|Vercel AI SDK useChat| API_Chat[/api/chat]
-    UI -->|Enhanced Admin Dashboard| API_Enhanced[/api/enhanced/*]
-    UI -->|Confirmed submission| API_Contact[/api/contact]
+## Runtime composition
 
-    subgraph WebUI_Backend ["WebUI Backend Server (agent-webui)"]
-        API_Chat --> ChatAgent[Pydantic AI Chat Agent]
-        API_Enhanced --> ProxyRouter[FastAPI Route Proxy]
-        API_Contact --> ContactBoundary[Authenticated same-origin contact boundary]
-        ContactBoundary -->|Fixed destination and retention| DeliveryPort[Host-injected delivery port]
-    end
+GraphOS starts Agent WebUI as a supervised co-service when `ENABLE_WEB_UI=true`.
+The composition path is explicit:
 
-    subgraph Centralized_Gateway ["Centralized Epistemic Gateway (agent-utilities)"]
-        ProxyRouter -->|JSON-RPC / SSE / HTTP| GatewayREST[REST APIs / Starlette Routes]
-        GatewayREST -->|/tools & /tools/toggle| ToolsConfig[Unified Tool Listing & Toggling]
-        GatewayREST -->|7 Symmetric Endpoints| GraphExecutor[Direct Tool Executor]
+1. GraphOS creates the native gateway application and verified process context.
+2. The GraphOS WebUI host creates the Agent WebUI FastAPI application.
+3. GraphOS injects its gateway route composer through `ApplicationComposer`.
+4. Agent WebUI mounts the single-page application after every typed API route.
+5. Security and observability middleware wrap the complete application.
 
-        ToolsConfig -->|Persist state| KG[IntelligenceGraphEngine]
-        GraphExecutor -->|Query / Search / Write / Ingest / Analyze / Orchestrate / Configure| KG
-    end
+The standalone Agent WebUI server deliberately omits GraphOS-owned routes. Use
+the GraphOS-hosted composition for the complete platform surface.
 
-    subgraph Database ["Persistence Layer"]
-        KG --> LadybugDB[LadybugDB Engine / FalkorDB]
-    end
+## Browser request path
 
-    DeliveryPort -. disabled until safely wired .-> GovernedMessaging[Governed messaging adapter]
-```
+<ol class="site-flow">
+  <li class="site-flow__step">
+    <h3 class="site-flow__title">Browser</h3>
+    <p class="site-flow__body">React sends same-origin HTTP, SSE, AG-UI, ACP, or browser-control requests to the WebUI host.</p>
+  </li>
+  <li class="site-flow__step">
+    <h3 class="site-flow__title">WebUI host</h3>
+    <p class="site-flow__body">FastAPI validates browser boundaries and converts UI intent into a typed, server-side operation.</p>
+  </li>
+  <li class="site-flow__step">
+    <h3 class="site-flow__title">GraphOS</h3>
+    <p class="site-flow__body">The injected gateway verifies identity, applies runtime policy, and delegates to the owning service.</p>
+  </li>
+  <li class="site-flow__step">
+    <h3 class="site-flow__title">Owned authority</h3>
+    <p class="site-flow__body">Agent, graph, or connector code executes the operation and returns typed evidence and receipts.</p>
+  </li>
+</ol>
 
-## REST Endpoints Overview
+## Authority boundaries
 
-The centralized `agent-utilities-kg` server exposes two primary REST API namespaces to the proxy:
+| Boundary | Owns | Does not own |
+|---|---|---|
+| React application | Presentation, interaction state, route metadata, accessibility | Service credentials, policy truth, durable graph state |
+| Agent WebUI FastAPI host | Same-origin browser endpoints, SPA serving, host checks, request bounds, CSP | GraphOS fleet lifecycle or graph-engine implementation |
+| GraphOS composition | Verified identity, public routing, runtime policy, fleet supervision, injected gateway routes | Agent reasoning, durable knowledge, vendor-specific transport |
+| agent-utilities | Agent decisions, workflows, evaluation, skills | Public gateway hosting or database semantics |
+| epistemic-graph | Durable data, reasoning, provenance, transactions | Agent orchestration or browser presentation |
+| Connector services | Authorized source reads and writes through SDK contracts | Global policy or graph authority |
 
-### Contact delivery (`/api/contact`)
+## Identity and credentials
 
-`POST /api/contact` accepts only bounded, control-safe name, email, subject, and
-message fields plus a non-PII idempotency key. It requires an authenticated
-actor and an exact same-origin browser request, applies a bounded process-local
-per-principal limit as defense in depth, and takes its destination and retention
-decision only from server configuration. The host must inject a governed
-delivery adapter that declares a durable atomic idempotency fence and a shared,
-deployment-wide abuse limit; without those capabilities, the adapter, or either
-policy value, the route returns an unavailable response. Adapter execution has
-a 12-second server deadline. A timeout is treated as an unknown outcome and
-returns no receipt. A successful, strictly validated adapter outcome must carry
-a durable, contact-namespaced opaque receipt; the WebUI validates and returns
-that reference while provider IDs, channel IDs, backend errors, and submitted
-content never appear in the HTTP response.
+The browser never receives a GraphOS service bearer. The WebUI host terminates
+the browser session, derives the request actor from the verified server
+context, and uses host-injected delegation ports for privileged operations.
+Role metadata affects navigation, but the server remains authoritative for
+every permission decision.
 
-The generic `graph/reach` operation is not used for contact delivery because it
-allows caller-selected routing and has a separate persistence contract. A
-future host adapter may use a messaging provider only when it can atomically
-fence the request key and map the provider's typed `SendResult.success` outcome
-into the narrow delivery port.
+A local loopback deployment can run without SSO and resolves to the documented
+single-operator posture. A configured OIDC deployment verifies the session and
+maps its realm roles to the WebUI role ladder before a protected route renders.
 
-### 1. Unified Tools Registry (`/tools`, `/tools/toggle`)
+## Streaming and activity
 
-- **GET `/tools`**: Returns a complete, consolidated catalog of all three tool layers (MCP Server tools, Native Pydantic AI tools, and Universal Skills/Workflows/Graphs).
-- **POST `/tools/toggle`**: Toggles individual tool status and records preferences inside the graph as a `Preference` node, dynamically enabling or disabling them within the `IntelligenceGraphEngine`.
+AG-UI is the primary conversation stream. ACP sessions use the same composed
+agent runtime, and WebUI event components render specialist routing, parallel
+activity, tool invocations, approvals, and sources from typed runtime events.
+Conversation history combines server-owned records with per-user local
+presentation state.
 
-### 2. Symmetric Graph Tools (`/graph/*`)
+## Knowledge workspace
 
-Symmetrically maps the 7 main FastMCP tools to HTTP endpoints, enabling zero-wrapper REST execution of complex KG queries:
+Atlas is the shared entry point for graph, RDF, schema, object, table, document,
+code, and memory exploration. Each view uses the same GraphOS-injected request
+context. Query and reasoning semantics remain in epistemic-graph; the browser
+selects a view and renders the returned typed result.
 
-- **POST `/graph/query`**: Cypher console execution.
-- **POST `/graph/search`**: Semantic, concept-based, analogy-based, or episodic search.
-- **POST `/graph/write`**: Bulk write node and edge insertions.
-- **POST `/graph/ingest`**: Codebase, document, or logs ingestion.
-- **POST `/graph/analyze`**: Complex traversal, sweep, and evaluation algorithms.
-- **POST `/graph/orchestrate`**: Multi-agent swarm dispatch and workflow compiles.
-- **POST `/graph/configure`**: Secret configuration, tool registrations, hooks.
+## Contact boundary
 
-## Backend Component Mapping
+`POST /api/contact` accepts only bounded contact fields and a client
+idempotency key. It requires an authenticated actor and exact same-origin
+request. Delivery is available only when the host injects an adapter with a
+durable idempotency fence, deployment-wide abuse control, a fixed destination,
+and an explicit retention decision. Successful delivery returns only an opaque
+receipt.
 
-| Component           | Responsibility                                                                                           |
-| ------------------- | -------------------------------------------------------------------------------------------------------- |
-| Chat Server         | Composes the local FastAPI server with SPA static serving.                                               |
-| Centralized Gateway | Manages the primary Ne04j/LadybugDB database connections, memory storage pools, and execution processes. |
-| API Extensions      | Intercepts dashboard routes and dynamically proxy-forwards them directly to the Epistemic Gateway.       |
+## Related reference
+
+- [Agents and events](agents.md)
+- [Atlas workspace](atlas.md)
+- [Capability Workbench](capability-workbench.md)
+- [Feature reference](features.md)
+- [Deployment and operations](deployment.md)

@@ -9,7 +9,7 @@ new registered action becomes discoverable without adding a static React page.
 
 1. `GET /api/capabilities` supplies the searchable catalog, availability,
    action schemas, side-effect declarations, render hints, and the normative
-   governed-invoke contract. Legacy REST twins are labeled display-only and
+   governed-invoke contract. Display-only REST projections are labeled and
    never treated as executable frontend routes.
 2. Selecting an item refreshes its descriptor with
    `GET /api/capabilities/{capability_id}`.

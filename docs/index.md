@@ -1,39 +1,94 @@
-# Agent WebUI
+<section class="site-hero" aria-labelledby="webui-hero-title">
+  <p class="site-hero__eyebrow">Operator experience for GraphOS</p>
+  <h1 class="site-hero__title" id="webui-hero-title">See the work. Guide the agent. Explore the evidence.</h1>
+  <p class="site-hero__summary">
+    Agent WebUI brings conversations, governed actions, workflows, fleet activity,
+    and epistemic knowledge into one role-aware browser workspace.
+  </p>
+  <div class="site-hero__actions">
+    <a href="start/">Start locally</a>
+    <a href="architecture/">Understand the system</a>
+    <a href="deployment/">Operate it</a>
+  </div>
+</section>
 
-Agent WebUI is a React and FastAPI web interface for Pydantic AI agents built on
-Agent Utilities. It provides a cinematic chat experience for complex agentic
-workflows, visualizing background reasoning, rendering tool invocations, and
-presenting a real-time sideband view of parallel multi-agent graph execution.
+![The Agent WebUI Atlas workspace presents guided knowledge entry points and expert query tools.](assets/screenshots/atlas-workspace.png)
 
-This documentation is the reference companion to the application. It describes
-how the interface is composed, how it consumes streaming agent events, and how
-it integrates with the wider agent platform.
+## One interface, explicit authority
 
-## Where to start
+<div class="site-ownership">
+  <div class="site-ownership__grid">
+    <article class="site-ownership__item">
+      <span class="site-ownership__label">This repository owns</span>
+      <div class="site-ownership__value">Browser presentation, accessible route composition, local interaction state, and the WebUI FastAPI boundary.</div>
+    </article>
+    <article class="site-ownership__item">
+      <span class="site-ownership__label">GraphOS owns</span>
+      <div class="site-ownership__value">Public routing, verified identity, runtime policy, fleet supervision, and composition of this UI.</div>
+    </article>
+    <article class="site-ownership__item">
+      <span class="site-ownership__label">The platform owns elsewhere</span>
+      <div class="site-ownership__value">Agent behavior lives in agent-utilities, durable knowledge in epistemic-graph, and source effects in connector services.</div>
+    </article>
+  </div>
+</div>
 
-- **[Architecture](architecture.md)** — The centralized epistemic gateway topology,
-  protocol flow, component map, and backend structure.
-- **[Agents & Events](agents.md)** — The graph-activity event types emitted by the
-  orchestrator, specialist discovery, and telemetry.
-- **[Features](features.md)** — The current API endpoints, frontend environment
-  variables, and application behavior.
-- **[Atlas workspace](atlas.md)** — The unified Knowledge entry, guided/expert paths,
-  specialist deep links, and responsive workbench behavior.
-- **[Capability Workbench](capability-workbench.md)** — Live capability
-  discovery, contextual schema forms, policy preflight, renderer fallbacks, and
-  run replay/follow.
-- **[Deployment and operations](deployment.md)** — Security boundaries,
-  immutable image promotion, frontend asset verification, Kubernetes checks,
-  and rollback.
-- **[Ecosystem Integration](ecosystem.md)** — The Unified Agent Homelab model, layout
-  taxonomy, and the REST interfaces that expose installed agent packages and MCP
-  servers.
-- **[Concept Registry](concepts.md)** — The stable concept identifiers that
-  trace the project's core ideas across documentation and source.
+## Choose your path
 
-## Source and packaging
+<div class="site-card-grid">
+  <article class="site-card">
+    <h3 class="site-card__title">Try it</h3>
+    <p class="site-card__body">Install the GraphOS WebUI integration, start one local composition, and open the browser workspace.</p>
+    <p><a href="start/">Open the start guide →</a></p>
+  </article>
+  <article class="site-card">
+    <h3 class="site-card__title">Understand it</h3>
+    <p class="site-card__body">Follow one request from the browser through GraphOS to agents, knowledge, and connector effects.</p>
+    <p><a href="ecosystem/">See how the ecosystem fits →</a></p>
+  </article>
+  <article class="site-card">
+    <h3 class="site-card__title">Operate it</h3>
+    <p class="site-card__body">Apply identity, origin, host, content-security, image-promotion, and rollback controls.</p>
+    <p><a href="deployment/">Open deployment operations →</a></p>
+  </article>
+</div>
 
-Agent WebUI is developed in the
-[agent-webui repository](https://github.com/Knuckles-Team/agent-webui) and
-distributed on [PyPI](https://pypi.org/project/agent-webui/). Build, test, and
-local development commands are kept in the repository `README.md`.
+## What operators can do
+
+- Hold agent conversations with sources, tool activity, and approval prompts.
+- Build workflows and inspect active sessions, goals, schedules, and fleet health.
+- Use Atlas to move between graph, RDF, schema, object, table, document, code,
+  and memory views.
+- Discover MCP Apps and connector capabilities through the GraphOS boundary.
+- Apply the same role-aware navigation and server authorization model across
+  the complete workspace.
+
+## Request flow
+
+<ol class="site-flow">
+  <li class="site-flow__step">
+    <h3 class="site-flow__title">Interact</h3>
+    <p class="site-flow__body">The operator chats, explores knowledge, approves an action, or runs a workflow.</p>
+  </li>
+  <li class="site-flow__step">
+    <h3 class="site-flow__title">Govern</h3>
+    <p class="site-flow__body">The same-origin WebUI host and GraphOS verify identity, route the request, and apply policy.</p>
+  </li>
+  <li class="site-flow__step">
+    <h3 class="site-flow__title">Execute</h3>
+    <p class="site-flow__body">agent-utilities runs agent behavior while epistemic-graph and connector services perform their owned operations.</p>
+  </li>
+  <li class="site-flow__step">
+    <h3 class="site-flow__title">Observe</h3>
+    <p class="site-flow__body">Typed events, evidence, and governed results return to the browser without service credentials crossing the boundary.</p>
+  </li>
+</ol>
+
+## Explore the interface
+
+- [Atlas workspace](atlas.md) — guided and expert knowledge exploration.
+- [Capability Workbench](capability-workbench.md) — discover, preflight, invoke,
+  and follow governed capabilities.
+- [Agents and events](agents.md) — event types, routing, and graph activity.
+- [Feature reference](features.md) — browser configuration and WebUI-owned API surfaces.
+- [Ecosystem map](ecosystem.md) — the five repositories and their exact ownership.

@@ -19,22 +19,23 @@ declare that it owns a durable atomic idempotency fence and a shared deployment
 rate limit. No default provider is selected, and the browser cannot name a
 provider, channel, destination, or retention period.
 
-## Recent Architecture Changes
+## Application capabilities
 
-- **Comprehensive API Extensions**: Added 20+ new API endpoints for knowledge graph CRUD, knowledge base management, SDD lifecycle, MAGMA views, resource management, and maintenance operations
-- **Enhanced Frontend Components**: Created GraphView with interactive visualization, KnowledgeBaseView for KB management, MemoryView for memory management, and SDDView for spec-driven development
-- **Testing Infrastructure**: Implemented comprehensive testing with Vitest (frontend), Pytest (backend), Playwright (E2E), and CI/CD pipeline with coverage reporting
-- **Knowledge Graph Integration**: Full CRUD operations for memory nodes, article management, and MAGMA orthogonal views (semantic, temporal, causal, entity)
-- **Backend Abstraction**: GraphBackend factory supporting LadybugDB (default), FalkorDB, and Neo4j for hot-swappable database backends
-- **ACP protocol** now routes through the full HSM graph pipeline (not a flat agent) via `create_graph_acp_app()`
-- **Graph Activity visualization** (`GraphActivity.tsx`) shows specialist routing decisions, parallel execution status, tool calls, and expert reasoning in a collapsible timeline
-- **Atlas Knowledge workspace** (`AtlasWorkspace.tsx`) consolidates Knowledge navigation into one guided entry while keeping expert specialist routes and deep links available
-- Backend uses `create_agent_web_app()` in `agent/agent_webui/server.py` to compose Pydantic AI web routes with enhanced workspace APIs
-- **Unified execution**: all protocols (AG-UI, ACP, SSE /stream) share the same graph engine via `graph/unified.py`
-- **Human-in-the-loop approval** (`ApprovalCard.tsx`) intercepts security-sensitive tool calls before execution
-- **Conversation persistence** merges localStorage entries with server-side records from `/api/enhanced/chats`
-- **Model registry is backend-driven**: the hardcoded `MODEL_COST_TABLE` in `Chat.tsx` has been removed. Both the model picker and the per-session cost badge now consume `GET /api/enhanced/models` (which mirrors the `agent-utilities` core `GET /models`). Zero-cost models render as `$0.00` so token / tool counts remain visible for local / free deployments
-- **Structured trace logger**: The backend emits structured log lines to `agent_utilities.graph.trace` for every graph event, enabling server-side prompt-flow tracing without the UI
+- **Workspace APIs** cover graph and knowledge-base exploration, SDD lifecycle,
+  perspective views, resource management, and maintenance operations.
+- **Knowledge views** include interactive graph, knowledge base, memory, schema,
+  object, table, RDF, code, and temporal surfaces under Atlas.
+- **ACP and AG-UI** share the composed agent runtime rather than creating a
+  second browser-only execution path.
+- **Graph activity** renders specialist routing, parallel execution, tool calls,
+  and expert reasoning in a collapsible timeline.
+- **Human approval** intercepts security-sensitive tool calls before execution.
+- **Conversation persistence** combines per-user local presentation state with
+  server-side chat records from `/api/enhanced/chats`.
+- **Model discovery** reads the backend registry for the model picker and usage
+  display, including zero-cost local models.
+- **Structured traces** link browser requests to their downstream GraphOS and
+  engine activity without exposing credentials to the frontend.
 
 ## API Endpoint Summary
 

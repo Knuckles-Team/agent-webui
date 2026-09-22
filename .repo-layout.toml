@@ -24,6 +24,7 @@
 agent = "the agent_webui Python backend package: FastAPI + pydantic-ai orchestrator, RBAC/OIDC session handling, observability, api_extensions -- plus its own README, icon, and mcp_config.json"
 docker = "Dockerfile plus build_and_push.sh / deploy.sh for the webui image"
 docs = "mkdocs documentation source (architecture, concepts, capability coverage)"
+overrides = "shared MkDocs Material template overrides for ecosystem navigation and footer chrome"
 e2e = "Playwright end-to-end specs (auth, graph-view, knowledge-base-view, memory-view, routes-smoke, sdd-view)"
 public = "static assets Vite serves as-is (favicons, apple-touch-icon)"
 scripts = "gate scripts (check_*.py) and release tooling invoked by pre-commit/CI"
