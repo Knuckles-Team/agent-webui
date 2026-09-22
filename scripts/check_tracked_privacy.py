@@ -398,7 +398,7 @@ _CREDENTIAL_PLACEHOLDER_TOKENS = frozenset(
 _HOST_IDENTITY_RE = re.compile(r"(?i)\bssh://(?!\$\{)[^\s/@]+@")
 _MACHINE_HOST_ID_RE = re.compile(r"(?i)(?<![a-z0-9])(?:rw?|host)[0-9]{3,}(?![a-z0-9])")
 _NEUTRAL_AUTHOR_NAME = "repository maintainers"
-_NEUTRAL_AUTHOR_EMAIL_SUFFIX = "@example.invalid"
+_NEUTRAL_AUTHOR_EMAIL = "maintainers@knuckles.team"
 _SCAN_EXCLUDED_DIRECTORIES = frozenset(
     {
         ".acp-sessions",
@@ -901,6 +901,12 @@ def _is_bundled_connector_profile(path: Path) -> bool:
     ) and path.suffix.casefold() in {".py", ".json", ".yaml", ".yml"}
 
 
+def _has_exact_toml_string_assignment(line: str, key: str, value: str) -> bool:
+    """Return whether a TOML line assigns *key* the exact quoted *value*."""
+    pattern = rf"\b{re.escape(key)}\s*=\s*(['\"]){re.escape(value)}\1"
+    return re.search(pattern, line) is not None
+
+
 def _author_toml_line_is_violation(stripped: str, in_project_authors: bool) -> bool:
     """Whether one already-stripped TOML line is a non-neutral author value.
 
@@ -911,14 +917,19 @@ def _author_toml_line_is_violation(stripped: str, in_project_authors: bool) -> b
     """
     folded = stripped.casefold()
     if re.match(r"authors\s*=", folded):
-        return (
-            _NEUTRAL_AUTHOR_NAME not in folded
-            or _NEUTRAL_AUTHOR_EMAIL_SUFFIX not in folded
+        return not _has_exact_toml_string_assignment(
+            folded, "name", _NEUTRAL_AUTHOR_NAME
+        ) or not _has_exact_toml_string_assignment(
+            folded, "email", _NEUTRAL_AUTHOR_EMAIL
         )
     if in_project_authors and re.match(r"name\s*=", folded):
-        return _NEUTRAL_AUTHOR_NAME not in folded
+        return not _has_exact_toml_string_assignment(
+            folded, "name", _NEUTRAL_AUTHOR_NAME
+        )
     if in_project_authors and re.match(r"email\s*=", folded):
-        return _NEUTRAL_AUTHOR_EMAIL_SUFFIX not in folded
+        return not _has_exact_toml_string_assignment(
+            folded, "email", _NEUTRAL_AUTHOR_EMAIL
+        )
     return False
 
 
