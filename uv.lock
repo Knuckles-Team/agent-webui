@@ -266,7 +266,7 @@ guardrails = [
 
 [[package]]
 name = "agent-webui"
-version = "2.6.1"
+version = "2.6.2"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi", marker = "sys_platform == 'linux'" },
