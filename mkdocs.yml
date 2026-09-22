@@ -1,5 +1,5 @@
-site_name: Agent WebUI
-site_description: The browser workspace for governed agents, workflows, and knowledge in GraphOS.
+site_name: Agent Web UI
+site_description: The browser workspace for governed agents, workflows, and knowledge in Graph OS.
 site_url: https://knuckles-team.github.io/agent-webui/
 repo_name: Knuckles-Team/agent-webui
 repo_url: https://github.com/Knuckles-Team/agent-webui
@@ -73,23 +73,23 @@ extra:
     current: agent-webui
     sites:
       - slug: agent-webui
-        name: Agent WebUI
+        name: Agent Web UI
         role: operator experience
         url: https://knuckles-team.github.io/agent-webui/
       - slug: graph-os
-        name: GraphOS
+        name: Graph OS
         role: public runtime gateway
         url: https://knuckles-team.github.io/graph-os/
       - slug: agent-utilities
-        name: agent-utilities
+        name: Agent Utilities
         role: agent control plane
         url: https://knuckles-team.github.io/agent-utilities/
       - slug: epistemic-graph
-        name: epistemic-graph
+        name: Epistemic Graph
         role: durable multimodal knowledge and reasoning engine
         url: https://knuckles-team.github.io/epistemic-graph/
       - slug: agent-connector-sdk
-        name: agent-connector-sdk
+        name: Agent Connector SDK
         role: governed source integration boundary
         url: https://knuckles-team.github.io/agent-connector-sdk/
   social:

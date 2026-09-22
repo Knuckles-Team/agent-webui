@@ -1,46 +1,54 @@
-# Agent WebUI
+# Agent Web UI
+
+<p align="center">
+  <img src="docs/assets/brands/agent-webui-logo-v1.png" alt="Agent Web UI logo" width="160" />
+</p>
 
 [![PyPI - Version](https://img.shields.io/pypi/v/agent-webui)](https://pypi.org/project/agent-webui/)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-526cfe)](https://knuckles-team.github.io/agent-webui/)
 [![GitHub license](https://img.shields.io/github/license/Knuckles-Team/agent-webui)](LICENSE)
 
-The browser workspace for governed agents, workflows, and knowledge in GraphOS.
+The browser workspace for governed agents, workflows, and knowledge in Graph OS.
 
-![The Agent WebUI Atlas workspace presents graph, object, schema, data, document, and memory entry points in one browser surface.](docs/assets/screenshots/atlas-workspace.png)
+![The Agent Web UI Atlas workspace presents graph, object, schema, data, document, and memory entry points in one browser surface.](docs/assets/screenshots/atlas-workspace.png)
 
 ## Overview
 
-Agent WebUI turns GraphOS into an operator-facing product. It provides one React
-workspace for agent conversations, approvals, workflows, fleet activity, and
-epistemic-graph exploration. Its FastAPI host keeps privileged credentials and
-GraphOS delegation on the server side.
+Agent Web UI is the browser workspace composed by Graph OS. It brings agent
+conversations, approvals, workflows, fleet activity, and Epistemic Graph
+exploration into one React application. Its FastAPI host keeps privileged
+credentials and gateway delegation on the server side.
 
-| This repository owns | Other components own |
+| Agent Web UI owns | Other components own |
 |---|---|
-| Browser presentation, local interaction state, accessible route composition, and the WebUI FastAPI boundary | GraphOS owns public routing, identity, policy, and fleet supervision; agent-utilities owns agent behavior; epistemic-graph owns durable knowledge; connector services own external-system effects |
+| Browser presentation, local interaction state, accessible route composition, and the FastAPI boundary | Graph OS owns public routing, identity, policy, and fleet supervision; Agent Utilities owns agent behavior; Epistemic Graph owns durable knowledge; connector services own external-system effects |
 
 Current package Version: 2.6.1.
 
-## Key Capabilities
+## Key capabilities
 
 - Stream agent responses with sources, governed tool activity, and approval prompts.
 - Build and run workflows while observing sessions, goals, schedules, and fleet health.
-- Explore property graphs, RDF, schemas, objects, tables, documents, code, and memories through Atlas.
+- Explore property graphs, RDF, schemas, objects, tables, documents, code, and memories through Atlas and Epistemic Graph.
 - Discover MCP Apps and connector capabilities without exposing service credentials to the browser.
 - Apply one role-aware navigation and server authorization model across the complete workspace.
-- Run as the GraphOS-hosted browser co-service or as an independently deployed ASGI application.
+- Run as the Graph OS-hosted browser co-service or as an independently deployed ASGI application.
 
 ## Documentation
 
-Start with the [Agent WebUI documentation](https://knuckles-team.github.io/agent-webui/),
+Start with the [Agent Web UI documentation](https://knuckles-team.github.io/agent-webui/),
 then use the shared platform map to move between components:
 
 | Component | Role | Documentation |
 |---|---|---|
-| GraphOS | Public MCP, REST, A2A, identity, policy, and runtime composition | [Docs](https://knuckles-team.github.io/graph-os/) |
-| agent-utilities | Agent decisions, workflows, evaluation, and skills | [Docs](https://knuckles-team.github.io/agent-utilities/) |
-| epistemic-graph | Durable multimodal data, reasoning, provenance, and transactions | [Docs](https://knuckles-team.github.io/epistemic-graph/) |
-| agent-connector-sdk | Typed source adapters, connector serving, and write-back contracts | [Docs](https://knuckles-team.github.io/agent-connector-sdk/) |
+| Agent Web UI | Browser operator workspace and Atlas knowledge views | [Docs](https://knuckles-team.github.io/agent-webui/) |
+| Agent Terminal UI | Terminal and headless client; REST operations are available, with no ACP conversational path | [Docs](https://knuckles-team.github.io/agent-terminal-ui/) |
+| Geniusbot | Desktop cockpit for chat, graph, fleet, health, and operator workflows | [Docs](https://knuckles-team.github.io/geniusbot/) |
+| Graph OS messaging | Hosts chat and voice entrypoints; Agent Utilities supplies adapter and routing behavior | [Docs](https://knuckles-team.github.io/graph-os/) |
+| Graph OS | Public MCP, REST, A2A, identity, policy, and runtime composition | [Docs](https://knuckles-team.github.io/graph-os/) |
+| Agent Utilities | Agent decisions, workflows, evaluation, and skills | [Docs](https://knuckles-team.github.io/agent-utilities/) |
+| Epistemic Graph | Durable multimodal data, reasoning, provenance, and transactions | [Docs](https://knuckles-team.github.io/epistemic-graph/) |
+| Agent Connector SDK | Typed source adapters, connector serving, and write-back contracts | [Docs](https://knuckles-team.github.io/agent-connector-sdk/) |
 
 <details>
 <summary>Project telemetry</summary>
@@ -67,19 +75,23 @@ then use the shared platform map to move between components:
 
 ## Architecture
 
-![Runtime architecture: people and MCP clients enter through Agent WebUI or GraphOS; GraphOS delegates agent work to agent-utilities, durable operations to epistemic-graph, and external effects to connector services built with agent-connector-sdk.](docs/assets/runtime-architecture.svg)
+![Runtime architecture: people use Agent Web UI, Agent Terminal UI, Geniusbot, and Graph OS-hosted messaging; MCP, REST, and A2A clients enter through Graph OS; source systems flow through Agent Connector SDK into Epistemic Graph.](docs/assets/runtime-architecture.svg)
 
-The browser talks only to its same-origin FastAPI host. GraphOS injects the
-gateway routes and verified request context before the single-page application
-is mounted. The UI renders typed responses and records local presentation state;
-it does not become a second authority for policy, knowledge, or connector state.
+People also enter through Agent Terminal UI and Geniusbot or Graph OS-hosted
+messaging; Agent Terminal UI exposes REST operations, with no ACP conversational
+path. External applications connect over MCP, REST, or A2A. The browser talks
+only to its same-origin FastAPI host. Graph OS injects gateway routes and
+verified request context, then delegates agent behavior to Agent Utilities and
+durable knowledge to Epistemic Graph. Source systems connect through Agent
+Connector SDK directly to Epistemic Graph. Agent Web UI renders typed results
+and local presentation state while each service retains its own authority.
 
 See the [architecture guide](https://knuckles-team.github.io/agent-webui/architecture/)
 for the request flow and trust boundaries.
 
-## Quick Start
+## Quick start
 
-Generate a local profile and launch GraphOS with the WebUI integration:
+Generate a local profile and launch Graph OS with Agent Web UI enabled:
 
 ```bash
 uvx --from "graph-os[webui]" setup-config generate --profile tiny
@@ -87,8 +99,8 @@ export ENABLE_WEB_UI=true
 uvx --from "graph-os[webui]" graph-os --transport streamable-http --host 127.0.0.1 --port 8000
 ```
 
-Open <http://127.0.0.1:8080>. GraphOS serves MCP on port `8000` and the WebUI
-co-service on port `8080`. The [start guide](https://knuckles-team.github.io/agent-webui/start/)
+Open <http://127.0.0.1:8080>. Graph OS serves MCP on port `8000` and the Agent
+Web UI co-service on port `8080`. The [start guide](https://knuckles-team.github.io/agent-webui/start/)
 covers local source development and deployment profiles.
 
 ## Contributing
@@ -99,4 +111,4 @@ before opening a pull request.
 
 ## License
 
-Agent WebUI is available under the [MIT License](LICENSE).
+Agent Web UI is available under the [MIT License](LICENSE).
