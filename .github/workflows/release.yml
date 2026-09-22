@@ -10,14 +10,11 @@ name: Release
 #     Two jobs, wired with `needs:` so the ordering is explicit and the
 #     failing stage is obvious at a glance:
 #
-#       publish-pypi   -- builds + publishes the agent-webui wheel to PyPI
-#                         (delegates to the fleet's shared reusable
-#                         `python_pipeline.yml` with `web-assets: true`, which
-#                         does its own build/test/publish/tag-and-release in
-#                         one atomic job -- there is no separable
-#                         "gates"/"build" stage to pull out of it from here
-#                         without editing that workflow, which is owned by
-#                         Knuckles-Team/pipelines and shared across the fleet).
+#       publish-pypi   -- builds the agent-webui wheel and sdist, verifies an
+#                         existing immutable PyPI release byte-for-byte,
+#                         publishes only when absent, then tags/releases the
+#                         source commit. It consumes the fleet's shared release
+#                         action but keeps the WebUI-specific preflight local.
 #       publish-docker -- needs: publish-pypi. Builds and publishes the
 #                         container image FROM THE SAME COMMIT, consuming
 #                         whatever agent-utilities/epistemic-graph floor is
@@ -72,24 +69,106 @@ permissions:
 
 jobs:
   # ── STAGE 1: build + publish the agent-webui wheel to PyPI, then tag the
-  # release commit. The fleet intentionally tracks the centrally managed
-  # first-party pipelines repository at `@main` (RF-ADR-009 / D9).
-  #
-  # `python_web_pipeline.yml` was merged into `python_pipeline.yml` upstream
-  # (pipelines: refactor/py-workflow-dedup, RF-ADR-009 PY-WORKFLOW-DEDUP --
-  # the two workflows' workflow_call/permissions/job/checkout preamble was a
-  # jscpd-flagged clone; `web-assets: true` below now selects the frontend
-  # build + relaxed-publish behavior this repo needs). Floating on `@main`
-  # here, matching the fleet's centrally managed first-party workflow policy.
+  # release commit. This remains structurally equivalent to the fleet's
+  # shared Python publication pipeline, while owning WebUI's stricter
+  # immutable-version preflight: an existing release is success only when
+  # every filename and SHA-256 digest matches the artifacts built here.
   publish-pypi:
     name: publish-pypi
-    uses: Knuckles-Team/pipelines/.github/workflows/python_pipeline.yml@main
+    runs-on: self-hosted
     permissions:
       contents: write
-    with:
-      web-assets: true
-    secrets:
-      PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout pipeline release contract
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Knuckles-Team/pipelines
+          ref: main
+          sparse-checkout: |
+            .github/actions
+          path: .pipeline-contract
+          persist-credentials: false
+
+      - name: Bind source and pipeline commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          echo "PIPELINES_CONTRACT_COMMIT=$(git -C .pipeline-contract rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Install Frontend Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Frontend
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm run build
+
+      - name: Build Python distributions
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv venv --python 3.13 .venv
+          source .venv/bin/activate
+          uv pip install -r requirements.txt || true
+          uv pip install --require-hashes -r .pipeline-contract/.github/actions/publish-python-package/twine-requirements.txt
+          uv build
+          BUILD_VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          {
+            echo "BUILD_VERSION=${BUILD_VERSION}"
+            echo "LATEST_COMMIT=${GITHUB_SHA}"
+            echo "COMMIT_DATETIME=$(date -u '+%m/%d/%Y %H:%M:%S')"
+            echo "COMMIT_MESSAGE=$(git log -1 --format=%B "${GITHUB_SHA}" | tr '\n' ' ')"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify source commit after build
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ github.event.repository.name }}-${{ env.BUILD_VERSION }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+      - name: Check immutable PyPI artifact state
+        id: pypi_preflight
+        run: python3 scripts/release/check_pypi_artifacts.py pyproject.toml dist --github-output "$GITHUB_OUTPUT"
+
+      - name: Publish package when absent
+        if: steps.pypi_preflight.outputs.publish == 'true'
+        shell: bash
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! .venv/bin/twine upload dist/* --verbose; then
+            echo "Upload failed; checking whether a concurrent publisher completed the exact release."
+            python3 scripts/release/check_pypi_artifacts.py pyproject.toml dist --expect-existing
+          fi
+
+      - name: Create Release
+        uses: ./.pipeline-contract/.github/actions/create-version-release
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   # ── STAGE 2: build + publish the container image. Needs: publish-pypi --
   # unreachable unless the PyPI stage above (including its tag-and-release
@@ -110,8 +189,8 @@ jobs:
     steps:
       # Belt-and-suspenders confirmation that this commit really is a
       # published release, not merely a commit that happens to follow one:
-      # `publish-pypi`'s reusable workflow creates a `vX.Y.Z` tag pointing at
-      # this exact commit as its last step (softprops/action-gh-release), so
+      # `publish-pypi` creates a `vX.Y.Z` tag pointing at this exact commit as
+      # its last step (through the fleet's shared release action), so
       # by the time `needs: publish-pypi` has been satisfied the tag should
       # already exist. Failing loudly here if it doesn't catches a
       # partial-success case (e.g. the tag/release step itself regresses
