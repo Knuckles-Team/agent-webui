@@ -112,4 +112,5 @@ nav:
       - Knowledge extraction: kg-extraction.md
       - Concept registry: concepts.md
       - Ecosystem glossary: glossary.md
+      - Status: status.md
   - Operate: deployment.md

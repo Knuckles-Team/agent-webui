@@ -4,11 +4,42 @@
   <img src="docs/assets/brands/agent-webui-logo-v1.png" alt="Agent Web UI logo" width="160" />
 </p>
 
+<p align="center">
+  <strong>The browser workspace for governed agents, workflows, and knowledge in Graph OS.</strong><br>
+  <sub>Conversations · approvals · workflows · fleet activity · Atlas knowledge views</sub>
+</p>
+
+<p align="center">
+
 [![PyPI - Version](https://img.shields.io/pypi/v/agent-webui)](https://pypi.org/project/agent-webui/)
+[![Build](https://github.com/Knuckles-Team/agent-webui/actions/workflows/release.yml/badge.svg)](https://github.com/Knuckles-Team/agent-webui/actions/workflows/release.yml)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-526cfe)](https://knuckles-team.github.io/agent-webui/)
 [![GitHub license](https://img.shields.io/github/license/Knuckles-Team/agent-webui)](LICENSE)
+[![Docs build](https://github.com/Knuckles-Team/agent-webui/actions/workflows/advisory.yml/badge.svg?branch=main)](https://github.com/Knuckles-Team/agent-webui/actions/workflows/advisory.yml)
+[![PyPI - Downloads](https://img.shields.io/pypi/dd/agent-webui)](https://pypi.org/project/agent-webui/)
+[![PyPI - License](https://img.shields.io/pypi/l/agent-webui)](https://pypi.org/project/agent-webui/)
+[![PyPI - Wheel](https://img.shields.io/pypi/wheel/agent-webui)](https://pypi.org/project/agent-webui/)
+[![PyPI - Implementation](https://img.shields.io/pypi/implementation/agent-webui)](https://pypi.org/project/agent-webui/)
+[![GitHub Repo stars](https://img.shields.io/github/stars/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/forks)
+[![GitHub contributors](https://img.shields.io/github/contributors/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/graphs/contributors)
+[![GitHub last commit (by committer)](https://img.shields.io/github/last-commit/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/commits/main)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/pulls)
+[![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/pulls?q=is%3Apr+is%3Aclosed)
+[![GitHub issues](https://img.shields.io/github/issues/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/issues)
+[![GitHub top language](https://img.shields.io/github/languages/top/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui)
+[![GitHub language count](https://img.shields.io/github/languages/count/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui)
+[![GitHub repo size](https://img.shields.io/github/repo-size/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui)
+[![GitHub repo file count (file type)](https://img.shields.io/github/directory-file-count/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui)
 
-The browser workspace for governed agents, workflows, and knowledge in Graph OS.
+</p>
+
+<p align="center">
+  <a href="https://knuckles-team.github.io/agent-webui/">Documentation</a> ·
+  <a href="https://knuckles-team.github.io/agent-webui/features/">Capabilities</a> ·
+  <a href="https://knuckles-team.github.io/agent-webui/architecture/">Interfaces</a> ·
+  <a href="https://knuckles-team.github.io/agent-webui/status/">Status</a>
+</p>
 
 ![The Agent Web UI Atlas workspace presents graph, object, schema, data, document, and memory entry points in one browser surface.](docs/assets/screenshots/atlas-workspace.png)
 
@@ -49,29 +80,6 @@ then use the shared platform map to move between components:
 | Agent Utilities | Agent decisions, workflows, evaluation, and skills | [Docs](https://knuckles-team.github.io/agent-utilities/) |
 | Epistemic Graph | Durable multimodal data, reasoning, provenance, and transactions | [Docs](https://knuckles-team.github.io/epistemic-graph/) |
 | Agent Connector SDK | Typed source adapters, connector serving, and write-back contracts | [Docs](https://knuckles-team.github.io/agent-connector-sdk/) |
-
-<details>
-<summary>Project telemetry</summary>
-
-[![Build](https://github.com/Knuckles-Team/agent-webui/actions/workflows/release.yml/badge.svg)](https://github.com/Knuckles-Team/agent-webui/actions/workflows/release.yml)
-[![Docs build](https://github.com/Knuckles-Team/agent-webui/actions/workflows/advisory.yml/badge.svg?branch=main)](https://github.com/Knuckles-Team/agent-webui/actions/workflows/advisory.yml)
-[![PyPI - Downloads](https://img.shields.io/pypi/dd/agent-webui)](https://pypi.org/project/agent-webui/)
-[![PyPI - License](https://img.shields.io/pypi/l/agent-webui)](https://pypi.org/project/agent-webui/)
-[![PyPI - Wheel](https://img.shields.io/pypi/wheel/agent-webui)](https://pypi.org/project/agent-webui/)
-[![PyPI - Implementation](https://img.shields.io/pypi/implementation/agent-webui)](https://pypi.org/project/agent-webui/)
-[![GitHub Repo stars](https://img.shields.io/github/stars/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/forks)
-[![GitHub contributors](https://img.shields.io/github/contributors/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/graphs/contributors)
-[![GitHub last commit (by committer)](https://img.shields.io/github/last-commit/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/commits/main)
-[![GitHub pull requests](https://img.shields.io/github/issues-pr/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/pulls)
-[![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/pulls?q=is%3Apr+is%3Aclosed)
-[![GitHub issues](https://img.shields.io/github/issues/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui/issues)
-[![GitHub top language](https://img.shields.io/github/languages/top/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui)
-[![GitHub language count](https://img.shields.io/github/languages/count/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui)
-[![GitHub repo size](https://img.shields.io/github/repo-size/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui)
-[![GitHub repo file count (file type)](https://img.shields.io/github/directory-file-count/Knuckles-Team/agent-webui)](https://github.com/Knuckles-Team/agent-webui)
-
-</details>
 
 ## Architecture
 
