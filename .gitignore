@@ -54,6 +54,7 @@ playwright/.auth/
 *.sw?
 /.claude/settings.local.json
 /scratch/
+/.specify/
 /agent/.venv/
 /tsconfig.tsbuildinfo
 .env

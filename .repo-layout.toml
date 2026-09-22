@@ -32,17 +32,6 @@ src = "the React/TypeScript frontend: App/Chat/Part components, assets, componen
 tests = "the Python backend test suite: characterization tests plus dashboard/health/graph-endpoint tests"
 ".github" = "GitHub Actions workflow definitions"
 ".security" = "adversarial security-gate scripts (authenticated_negative.py, repository_fuzz.py) and security-contract.json read by the security CI gate"
-".specify" = "spec-kit state for SDD-governed feature work: memory/reports/specs"
-# LAYOUT DEBT, reported by CX-HYG-01, NOT fixed by this lane (moving the file
-# is outside this lane's ownership -- see the CX-HYG-01 lane report). This is
-# a directory named `agent-webui` tracked INSIDE the agent-webui repo itself,
-# containing exactly one file: agent-webui/docs/concept_reservations.yaml.
-# That file almost certainly belongs at docs/concept_reservations.yaml
-# (the real docs/ directory two lines up already exists). Declared here,
-# honestly, so the gate stays green without hiding the debt: removing this
-# line the moment the file is moved is how the manifest's own staleness
-# check confirms the move actually happened.
-"agent-webui" = "LAYOUT DEBT: a self-nested directory holding one misplaced file (agent-webui/docs/concept_reservations.yaml) that belongs at docs/concept_reservations.yaml; not moved by CX-HYG-01 (outside its ownership), reported for follow-up"
 
 [files]
 "AGENTS.md" = "agent-facing repo guide"
