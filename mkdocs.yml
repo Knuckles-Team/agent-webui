@@ -1,3 +1,5 @@
+INHERIT: .pipeline-theme/templates/mkdocs-theme/base.mkdocs.yml
+
 site_name: Agent Web UI
 site_description: The browser workspace for governed agents, workflows, and knowledge in Graph OS.
 site_url: https://knuckles-team.github.io/agent-webui/
@@ -5,98 +7,12 @@ repo_name: Knuckles-Team/agent-webui
 repo_url: https://github.com/Knuckles-Team/agent-webui
 edit_uri: edit/main/docs/
 docs_dir: docs
+strict: true
 copyright: Copyright &copy; Knuckles-Team — MIT licensed
-
-theme:
-  name: material
-  custom_dir: overrides
-  logo: assets/graph-mark.svg
-  favicon: assets/favicon.svg
-  icon:
-    repo: fontawesome/brands/github
-  features:
-    - navigation.tabs
-    - navigation.tabs.sticky
-    - navigation.sections
-    - navigation.top
-    - navigation.tracking
-    - navigation.instant
-    - navigation.instant.progress
-    - navigation.footer
-    - toc.follow
-    - search.suggest
-    - search.highlight
-    - search.share
-    - content.code.copy
-    - content.code.annotate
-    - content.tabs.link
-  palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: indigo
-      accent: indigo
-      toggle:
-        icon: material/weather-sunny
-        name: Switch to dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      primary: indigo
-      accent: indigo
-      toggle:
-        icon: material/weather-night
-        name: Switch to light mode
-
-plugins:
-  - search
-
-markdown_extensions:
-  - admonition
-  - attr_list
-  - md_in_html
-  - tables
-  - toc:
-      permalink: true
-  - pymdownx.details
-  - pymdownx.superfences
-  - pymdownx.tabbed:
-      alternate_style: true
-  - pymdownx.highlight:
-      anchor_linenums: true
-  - pymdownx.inlinehilite
-  - pymdownx.snippets
-
-extra_css:
-  - stylesheets/extra.css
 
 extra:
   ecosystem:
     current: agent-webui
-    sites:
-      - slug: agent-webui
-        name: Agent Web UI
-        role: operator experience
-        url: https://knuckles-team.github.io/agent-webui/
-      - slug: graph-os
-        name: Graph OS
-        role: public runtime gateway
-        url: https://knuckles-team.github.io/graph-os/
-      - slug: agent-utilities
-        name: Agent Utilities
-        role: agent control plane
-        url: https://knuckles-team.github.io/agent-utilities/
-      - slug: epistemic-graph
-        name: Epistemic Graph
-        role: durable multimodal knowledge and reasoning engine
-        url: https://knuckles-team.github.io/epistemic-graph/
-      - slug: agent-connector-sdk
-        name: Agent Connector SDK
-        role: governed source integration boundary
-        url: https://knuckles-team.github.io/agent-connector-sdk/
-  social:
-    - icon: fontawesome/brands/github
-      link: https://github.com/Knuckles-Team/agent-webui
-    - icon: fontawesome/brands/python
-      link: https://pypi.org/project/agent-webui/
 
 nav:
   - Home: index.md
@@ -109,7 +25,7 @@ nav:
       - Capability Workbench: capability-workbench.md
   - Reference:
       - Features and APIs: features.md
-      - Knowledge extraction: kg-extraction.md
+      - Knowledge graph extraction: kg-extraction.md
       - Concept registry: concepts.md
       - Ecosystem glossary: glossary.md
       - Status: status.md
