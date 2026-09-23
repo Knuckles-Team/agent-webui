@@ -18,7 +18,7 @@ nav:
   - Home: index.md
   - Start: start.md
   - How it fits: ecosystem.md
-  - Guides:
+  - Components:
       - Architecture: architecture.md
       - Agents and events: agents.md
       - Atlas workspace: atlas.md
