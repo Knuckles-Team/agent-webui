@@ -16,7 +16,7 @@
  * lasted. This reproduced live twice in one day (2026-08-25); the second
  * time via a merge commit.
  *
- * `vite.config.ts` now builds into a STAGING directory (`dist.tmp`), never
+ * `.config/vite.config.ts` now builds into a STAGING directory (`dist.tmp`), never
  * the live path directly. This script is the only thing allowed to touch
  * the live `dist` directory, and does so with two `rename()` syscalls
  * (POSIX-atomic on a same-filesystem move -- `dist.tmp` and `dist.prev`

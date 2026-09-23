@@ -3,7 +3,11 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// This config lives in `.config/`; the Vitest project root is the repository root.
+const repoRoot = path.resolve(__dirname, '..')
+
 export default defineConfig({
+  root: repoRoot,
   plugins: [react()],
   test: {
     environment: 'jsdom',
@@ -55,7 +59,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(repoRoot, 'src'),
     },
     // Keep a SINGLE React instance under jsdom (shared with react-dom,
     // @tanstack/react-query, @xyflow/react, etc.). See note below — the real

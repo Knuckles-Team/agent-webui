@@ -37,7 +37,7 @@
 #   - Python gate: invoke bare `python3` (PATH search, no `uv`, no relative `.venv`
 #     lookup). This host's `python3` already carries `agent-utilities` editable-installed
 #     at the user site-packages level (`~/.local/lib/python3.14/site-packages`) —
-#     independent of cwd — while `pytest.ini`'s `pythonpath = agent` still makes pytest
+#     independent of cwd — while pyproject.toml's `[tool.pytest.ini_options] pythonpath = ["agent"]` still makes pytest
 #     import the MERGED TREE's own `agent/agent_webui` package, not a stale installed
 #     copy (the ini file says so explicitly). Verified byte-for-byte: `python3 -m pytest`
 #     from a disposable detached worktree reproduces the SAME failing-id set as running
@@ -64,7 +64,7 @@ environment_signature: ["bash", "-c", "python3 --version && node --version && pn
 
 gates:
   # ── Python: FastAPI backend + Pydantic AI agent glue ─────────────────────────────────
-  # Full `pytest.ini` `testpaths` (`agent/agent_webui/__tests__ tests`), matching the
+  # Full `[tool.pytest.ini_options]` `testpaths` (`agent/agent_webui/__tests__ tests`), matching the
   # ALREADY-VERIFIED baseline in the register (D-FE-7's closure evidence: "71 failed / 73
   # errors, all pre-existing, byte-identical between canonical and worktree"; reproduced
   # freshly here as 69 failed / 121 passed / 2 skipped / 73 errors — the small drift from
@@ -81,7 +81,7 @@ gates:
     compare: pytest-ids
     on_timeout: defer
     when_changed: ["agent/**/*.py", "*.py", "tests/*.py", "tests/**/*.py",
-                   "pyproject.toml", "pytest.ini"]
+                   "pyproject.toml"]
 
   # ── TypeScript: typecheck ─────────────────────────────────────────────────────────────
   # `main` is ALSO legitimately red here: 2 pre-existing `tsc` errors in
@@ -129,7 +129,7 @@ gates:
                    "^Lockfile is up to date", "^Done in .* using pnpm",
                    "^dependencies:$", "^devDependencies:$"]
     when_changed: ["src/**/*.ts", "src/**/*.tsx", "*.ts", "*.tsx",
-                   "tsconfig*.json", "vite.config.ts"]
+                   "tsconfig*.json", ".config/vite.config.ts"]
 
   # ── TypeScript: lint ──────────────────────────────────────────────────────────────────
   # `main` is red here too: pre-existing eslint errors (a prettier-format diff in
@@ -177,7 +177,7 @@ gates:
   # which REMOVES those lines from the comparison entirely instead of shifting them.
   - name: lint
     command: ["bash", "-c",
-      "test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm exec eslint"]
+      "test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm exec eslint --config .config/eslint.config.ts"]
     tier: fast
     ignore_lines: ["^\\+ \\S", "^\\+{10,}$", "^Progress: ", "^Packages: ",
                    "^Lockfile is up to date", "^Done in .* using pnpm",
@@ -189,7 +189,7 @@ gates:
     compare: lines
     on_timeout: defer
     when_changed: ["src/**/*.ts", "src/**/*.tsx", "src/**/*.js",
-                   "eslint.config.ts"]
+                   ".config/eslint.config.ts"]
 
   # ── TypeScript: unit/component tests (Vitest) ────────────────────────────────────────
   # `main` is red here too: 10 pre-existing failures, all in GraphView.test.tsx (8) and
@@ -204,7 +204,7 @@ gates:
   # makes the compare exact instead of noisy.
   - name: vitest
     command: ["bash", "-c",
-      "test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm exec vitest run"]
+      "test -d node_modules || pnpm install --frozen-lockfile --prefer-offline; pnpm exec vitest run --config .config/vitest.config.ts"]
     tier: fast
     # 2026-08-06: raised from 90/150. Two compounding, structural reasons:
     #  1. This command runs `pnpm install --frozen-lockfile` INSIDE the timed
@@ -220,7 +220,7 @@ gates:
     baseline_timeout: 480
     compare: lines
     keep_lines: ["^FAIL "]
-    when_changed: ["src/**/*.ts", "src/**/*.tsx", "vitest.config.ts"]
+    when_changed: ["src/**/*.ts", "src/**/*.tsx", ".config/vitest.config.ts"]
 
   # ── Deliberately outside the fast tier ────────────────────────────────────────────────
   # w5-ci-gates-local (D-W5CG-1) correction: "NOT run inside the queue's lease" below is
@@ -247,7 +247,7 @@ gates:
     compare: lines
 
   # Playwright e2e: declared for the same "single description" reason, NOT run inside the
-  # queue. `e2e/*.spec.ts` all target `baseURL: http://localhost:5173` (playwright.config.ts)
+  # queue. `e2e/*.spec.ts` all target `baseURL: http://localhost:5173` (.config/playwright.config.ts)
   # — a live `pnpm run dev` server the queue does not (and should not) provision per
   # candidate. Without a server, EVERY spec fails identically on both the candidate and
   # the base ref with a bare connection refusal, which `compare: lines` would then read as

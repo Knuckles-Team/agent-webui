@@ -1,4 +1,13 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
+
+/**
+ * This config lives in `.config/`; Playwright resolves `testDir`, `outputDir`,
+ * reporter output and `webServer.cwd` against the config file's directory, so
+ * every such path is anchored at the repository root explicitly.
+ */
+const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
 /**
  * Read environment variables from file.
@@ -25,7 +34,7 @@ const isLiveTarget = !!process.env.PLAYWRIGHT_BASE_URL
  * See D-WUI-29: without this, every route redirects to the Keycloak login
  * page and the suite produces zero signal about the application.
  */
-const authFile = 'playwright/.auth/user.json'
+const authFile = path.join(repoRoot, 'playwright/.auth/user.json')
 
 /**
  * Optional Chrome channel override (e.g. `PLAYWRIGHT_CHROME_CHANNEL=chrome`
@@ -39,7 +48,8 @@ const chromeChannel = process.env.PLAYWRIGHT_CHROME_CHANNEL || undefined
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
-  testDir: './e2e',
+  testDir: path.join(repoRoot, 'e2e'),
+  outputDir: path.join(repoRoot, 'test-results'),
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
@@ -49,7 +59,11 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: [['html'], ['list'], ['junit', { outputFile: 'test-results/junit.xml' }]],
+  reporter: [
+    ['html', { outputFolder: path.join(repoRoot, 'playwright-report') }],
+    ['list'],
+    ['junit', { outputFile: path.join(repoRoot, 'test-results/junit.xml') }],
+  ],
   /* Shared settings for all tests below */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
@@ -120,6 +134,7 @@ export default defineConfig({
     ? undefined
     : {
         command: 'pnpm run dev',
+        cwd: repoRoot,
         url: 'http://localhost:5173',
         reuseExistingServer: !process.env.CI,
         timeout: 120000,

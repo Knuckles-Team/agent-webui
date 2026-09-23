@@ -70,7 +70,7 @@ repos:
   - id: nbqa-ruff
     args: ["--fix"]
 - repo: https://github.com/Knuckles-Team/pipelines
-  rev: 7ae4192 # shared scanner argv fix + public-surface contract
+  rev: 1d12b14a9f51c889316591c6314f4fc835660870 # gate inputs under .config/
   hooks:
   - id: public-surface
 - repo: local
@@ -133,11 +133,11 @@ repos:
     # a commit actually introduces, the same "don't gate on unrelated debt"
     # principle as `complexity-staged` above -- not `--max-warnings=0`: the
     # jsx-a11y rules landed at `warn` (94 pre-existing findings across the
-    # repo; see eslint.config.ts's own comment) specifically so they surface
+    # repo; see .config/eslint.config.ts's own comment) specifically so they surface
     # without blocking every commit that touches an already-noisy file. Once
     # `pnpm exec eslint .` is fully clean of BOTH errors and warnings, add
     # `--max-warnings=0` here.
-    entry: bash -c 'if [ ! -x node_modules/.bin/eslint ]; then echo "Run pnpm install --frozen-lockfile before pre-commit checks." >&2; exit 1; fi; pnpm exec eslint "$@"' --
+    entry: bash -c 'if [ ! -x node_modules/.bin/eslint ]; then echo "Run pnpm install --frozen-lockfile before pre-commit checks." >&2; exit 1; fi; pnpm exec eslint --config .config/eslint.config.ts "$@"' --
     language: system
     files: \.(ts|tsx)$
     exclude: ^scripts/
@@ -207,7 +207,7 @@ repos:
     stages: [manual]
   - id: lint
     name: CI/queue parity — eslint (D-W6PC-3; 8 pre-existing errors — informational, manual-only)
-    entry: bash -c 'if [ ! -x node_modules/.bin/eslint ]; then echo "Run pnpm install --frozen-lockfile before manual lint." >&2; exit 1; fi; pnpm exec eslint'
+    entry: bash -c 'if [ ! -x node_modules/.bin/eslint ]; then echo "Run pnpm install --frozen-lockfile before manual lint." >&2; exit 1; fi; pnpm exec eslint --config .config/eslint.config.ts'
     language: system
     pass_filenames: false
     always_run: true
@@ -237,7 +237,7 @@ repos:
   - id: check-bumpversion
     name: validate bumpversion config
     entry: |-
-      bash -c 'if [ -f ".bumpversion.cfg" ]; then bump2version patch --dry-run --allow-dirty; fi'
+      bump2version --config-file .config/bumpversion.cfg patch --dry-run --allow-dirty
     language: system
     pass_filenames: false
     always_run: true

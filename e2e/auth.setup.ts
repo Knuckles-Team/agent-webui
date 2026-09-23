@@ -4,7 +4,7 @@ import { test as setup, expect } from '@playwright/test'
 /**
  * Playwright's standard "setup project" auth pattern
  * (https://playwright.dev/docs/auth#basic-shared-account-in-all-tests): this
- * spec is wired as its own `setup` project in `playwright.config.ts`, which
+ * spec is wired as its own `setup` project in `.config/playwright.config.ts`, which
  * every browser project depends on (`dependencies: ['setup']`) and whose
  * `storageState` output every browser project reuses. No bespoke mechanism —
  * this drives the REAL Keycloak Authorization-Code+PKCE hosted login form

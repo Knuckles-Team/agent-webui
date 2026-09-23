@@ -41,7 +41,7 @@ dependencies = [
     # D-WA-1 (reports/deferred/lane-webui-auth.md): agent_utilities.security.auth._decode_jwt
     # needs joserfc to verify any bearer JWT; its absence turns into a 401 "Token validation
     # failed" that reads as a rejected credential rather than a missing dependency. Declared
-    # directly (mirrors requirements.txt) so a fresh image build gets it unconditionally
+    # directly so a fresh image build gets it unconditionally
     # regardless of which agent-utilities version/extras the image-build step installs.
     "joserfc>=1.7.4"
 ]
@@ -118,6 +118,27 @@ repository = "Knuckles-Team/agent-webui"
 distribution = "agent-webui"
 pages_url = "https://knuckles-team.github.io/agent-webui/"
 mcp_server = false
+
+[tool.pytest.ini_options]
+testpaths = ["agent/agent_webui/__tests__", "tests"]
+# Always import the in-repo backend package: without this, a pip-installed
+# agent_webui in site-packages shadows agent/agent_webui at collection time
+# and the suite exercises stale code.
+pythonpath = ["agent"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["--verbose", "--tb=short"]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "e2e: End-to-end tests",
+    "slow: Slow running tests",
+]
+env = ["AGENT_UTILITIES_TESTING=true"]
+filterwarnings = [
+    "ignore:Module already imported so cannot be rewritten:pytest.PytestAssertRewriteWarning",
+]
 
 [tool.ruff.format]
 docstring-code-format = false
