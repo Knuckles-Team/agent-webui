@@ -18,6 +18,7 @@
  */
 import type { z } from 'zod'
 
+import { failedEnvelope, unwrapEnvelope } from '@/lib/action-envelope'
 import { ApiShapeError, validateShape } from '@/lib/api-validation'
 
 export interface AtlasFetchResult<T> {
@@ -26,13 +27,6 @@ export interface AtlasFetchResult<T> {
   /** The route is not served / the engine capability is off. Not an error — a stated absence. */
   unavailable: boolean
   error?: string
-}
-
-function unwrapEnvelope(raw: unknown): unknown {
-  if (raw && typeof raw === 'object' && 'result' in raw && 'status' in raw) {
-    return (raw as { result: unknown }).result
-  }
-  return raw
 }
 
 function degradedReason(body: unknown): string | null {
@@ -54,6 +48,8 @@ async function toResult<T>(res: Response, endpoint: string, schema?: z.ZodType<T
   if (res.status === 404 || res.status === 501) return unavailable<T>(`HTTP ${String(res.status)}`)
   if (!res.ok) {
     const body = await res.text().catch(() => 'Unknown error')
+    const failure = failedEnvelope(res.status, body)
+    if (failure) return failure.unavailable ? unavailable<T>(failure.error) : failed<T>(failure.error)
     return failed<T>(`HTTP ${String(res.status)}: ${body}`)
   }
   const body = unwrapEnvelope(await res.json())
