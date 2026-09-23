@@ -29,4 +29,5 @@ nav:
       - Concept registry: concepts.md
       - Ecosystem glossary: glossary.md
       - Status: status.md
+      - Skill graph reference: reference/skill-graph.generated.md
   - Operate: deployment.md
