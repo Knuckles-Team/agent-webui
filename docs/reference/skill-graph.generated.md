@@ -7,7 +7,7 @@
 
 Every concept and component this repo's own registries and documentation nav declare, generated from the same cross-repo [skill graph](https://knuckles-team.github.io/pipelines/) corpus (RF-ADR-009 D1) that indexes all seven repos. This page is this repo's own slice of that corpus, not a duplicate authority -- the full machine corpus, with typed links, is published from `pipelines`.
 
-## Guides
+## Components
 
 - **Architecture** — `architecture.md`
 - **Agents and events** — `agents.md`
@@ -29,10 +29,11 @@ Every concept and component this repo's own registries and documentation nav dec
 ## Reference
 
 - **Features and APIs** — `features.md`
-- **Knowledge extraction** — `kg-extraction.md`
+- **Knowledge graph extraction** — `kg-extraction.md`
 - **Concept registry** — `concepts.md`
 - **Ecosystem glossary** — `glossary.md`
 - **Status** — `status.md`
+- **Skill graph reference** — `reference/skill-graph.generated.md`
 
 ## Start
 
