@@ -33,6 +33,7 @@ import {
 } from '@/hooks/useConversationIdFromUrl'
 import { cn } from '@/lib/utils'
 import { isAtlasPath, SECTIONS, roleAtLeast, routesBySection } from '@/lib/nav-registry'
+import { capabilityVisible, useAppAvailability } from '@/lib/apps/catalog'
 import { useIdentity } from '@/lib/auth'
 import { deleteConversationEntry, renameConversationEntry, useConversations } from '@/lib/chat-store'
 import type { ConversationEntry } from '@/types'
@@ -109,6 +110,8 @@ function isCurrentConversation(path: string, conversationId: string, activeConve
 
 export function AppSidebar() {
   const { identity } = useIdentity()
+  // Hosted apps (EH-429) appear once the host reports their engine capability.
+  const appAvailability = useAppAvailability()
   const conversations = useConversations(identity.userKey)
   const [conversationId] = useConversationIdFromUrl()
   const currentPath = useCurrentPath()
@@ -201,7 +204,10 @@ export function AppSidebar() {
               an API surface, so a hidden nav item is never the ONLY thing standing between
               a caller and a page. */}
           {SECTIONS.map((section) => {
-            const routes = routesBySection(section.id).filter((route) => roleAtLeast(identity.role, route.minRole))
+            const routes = routesBySection(section.id).filter(
+              (route) =>
+                roleAtLeast(identity.role, route.minRole) && capabilityVisible(route.capability, appAvailability),
+            )
             if (routes.length === 0) return null
             return (
               <SidebarGroup key={section.id}>
