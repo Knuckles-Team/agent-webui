@@ -38,6 +38,8 @@
  * host, and the app gets exactly the tools the host named.
  */
 
+import { unwrapEnvelope } from './action-envelope'
+
 /** Backend route that proxies one MCP `tools/call` through the governed seam. */
 export const MCP_TOOL_CALL_ROUTE = '/api/enhanced/mcp/tools/call'
 
@@ -342,14 +344,6 @@ export async function fetchMcpServerToolCatalog(
   const res = await fetchToolCatalogResponse(server, options)
   const { entries, total } = await parseToolCatalogPayload(server, res)
   return { tools: dedupeValidTools(entries), total }
-}
-
-/** Unwrap the canonical `{status, result}` action-twin envelope when present. */
-function unwrapEnvelope(raw: unknown): unknown {
-  if (raw && typeof raw === 'object' && 'result' in raw && 'status' in raw) {
-    return (raw as { result: unknown }).result
-  }
-  return raw
 }
 
 async function postJson(

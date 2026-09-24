@@ -30,6 +30,7 @@
  * a second, inconsistent failure channel for the same module).
  */
 import type { z } from 'zod'
+import { failedEnvelope, unwrapEnvelope } from './action-envelope'
 import { validateShape, ApiShapeError } from './api-validation'
 
 /** Base path for the canonical KG REST surface as mounted in the webui backend. */
@@ -58,14 +59,6 @@ export interface GatewayResult<T> {
   error?: string
 }
 
-/** Unwrap the canonical `{status, result}` action-twin envelope when present. */
-function unwrapEnvelope(raw: unknown): unknown {
-  if (raw && typeof raw === 'object' && 'result' in raw && 'status' in raw) {
-    return (raw as { result: unknown }).result
-  }
-  return raw
-}
-
 /**
  * True when an already-unwrapped body is the engine-surface tools'
  * `_degraded(...)` payload (`agent_utilities/mcp/tools/engine_surface_tools.py`):
@@ -87,6 +80,8 @@ async function toResult<T>(res: Response, endpoint: string, schema?: z.ZodType<T
   }
   if (!res.ok) {
     const body = await res.text().catch(() => 'Unknown error')
+    const failure = failedEnvelope(res.status, body)
+    if (failure) return { ok: false, data: null, ...failure }
     return { ok: false, data: null, unavailable: false, error: `HTTP ${String(res.status)}: ${body}` }
   }
   const raw: unknown = await res.json()
