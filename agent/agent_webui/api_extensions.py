@@ -7624,23 +7624,34 @@ async def agent_config_summary() -> dict[str, Any]:
 # committed decision log.
 #
 # A `DecisionRecord` (`plans/refactor/architecture/DECIDE-LAYER-DESIGN.md`
-# §4.1) is an Agent Library row, not a graph row: it has no Cypher/SPARQL
-# projection (decide-consumers WRAPUP §4 confirmed none exists anywhere in
-# EG), so it is reached the same way the decide-consumers lane's own AU
-# transport reaches it -- the generated `DecisionLog` sender bound to the
-# process engine's async client -- never through `engine.backend.execute`.
-# `DecisionLog.get`/`.query`/`.aggregate` are the three read ops
-# (`agent:decision-read`); this module only ever sends those three, never
-# `.commit`/`.evaluate`/`.resolve`/`.compact` (write actions, out of scope
-# for an explorer).
+# §4.1) is an Agent Library row, not a graph row, so it has no Cypher/SPARQL
+# projection. Two distinct read paths, per the 2026-09-24 ruling
+# (`uql-followups` lane, commit `8efed824e`: "decision record views are
+# read-only views over the DecisionLog through the existing SQL/pgwire
+# catalog and UQL, with no wire surface of their own" -- this revoked
+# decide-consumers' own `DecisionLog.query` op, EH-066):
+#
+# * List and provenance read the reserved, per-caller `decisions` /
+#   `decision_evaluations` / `decision_resolutions` relations
+#   (`src/server/sql_catalog_acl/relations.rs`,
+#   `src/server/handlers/decide/stat_view.rs`) through the SAME general
+#   `Method::Sql` surface every other SQL/pgwire read in this codebase uses
+#   (`EpistemicGraphClient.query.sql`) -- there is no `decide`-specific
+#   client module involved at all for these two, so they work against
+#   today's published EG, not just a future decide-consumers wheel.
+# * Single-record read and the calibration aggregate stay on `DecisionLog`'s
+#   `Get`/`Aggregate` ops (`agent:decision-read`) -- decide-consumers' own
+#   `crates/eg-types/src/decision/statistical/log.rs` still declares both;
+#   only `Query` was reverted. This module never sends `.commit`/`.evaluate`/
+#   `.resolve`/`.compact` (write actions, out of scope for an explorer).
 # ---------------------------------------------------------------------------
 
 _DECISIONS_UNAVAILABLE = 'The decision log is unavailable'
 _MAX_DECISION_LIST_ROWS = 200
 
-#: `decisions` relation columns (`src/server/handlers/decide/stat_view.rs`),
-#: exactly as `DecisionLog.query` materializes them -- kept as a literal
-#: allowlist so `list_decisions`'s SQL text never depends on caller input.
+#: `decisions` relation columns (`src/server/handlers/decide/stat_view.rs`
+#: `DECISION_COLUMNS`) -- kept as a literal allowlist so `list_decisions`'s
+#: SQL text never depends on caller input.
 _DECISION_LIST_COLUMNS = (
     'record_id',
     'question_id',
@@ -7668,9 +7679,12 @@ def _decision_session_info() -> tuple[str, str | None]:
     "this tenant" -- widening it would be exactly the leak §4.3 names.
     `graph` is threaded through only because
     `agent_utilities.decide.transport.GeneratedTransport` (the decide-consumers
-    lane's own reference caller of these same generated senders) binds one;
-    this route matches that reference call shape rather than guessing whether
-    a `None` graph is accepted.
+    lane's own reference caller of the `DecisionLog` senders `get_decision`/
+    `get_decision_aggregate` still use) binds one; those two routes match that
+    reference call shape rather than guessing whether a `None` graph is
+    accepted. `list_decisions`/`get_decision_provenance` no longer need
+    `graph` at all (the general SQL surface is session-routed already) but
+    still need `tenant_id` for the same visibility reasoning.
     """
 
     from agent_utilities.knowledge_graph.core.session import current_session
@@ -7686,13 +7700,61 @@ def _decision_session_info() -> tuple[str, str | None]:
     return tenant, (graph or None)
 
 
+def _eg_client() -> Any:
+    """The generated-client view over the process engine's graph transport,
+    or ``None`` when no engine (or no epistemic-graph backend) is available.
+
+    The SAME accessor (`.client`, never `.async_client`) every other typed
+    EG surface in this file already uses (`get_viz_capabilities` above) --
+    `.client` is itself GraphSession-routed and async-callable;
+    `.async_client` is a legacy bridge (`_AsyncProcessClientView`, a
+    `to_thread`-based facade "for async consumers that historically opened a
+    second native client", `graph_compute.py`) this file has no other user
+    of and this route does not need.
+    """
+
+    engine = IntelligenceGraphEngine.get_active()
+    backend = getattr(engine, 'backend', None)
+    graph_compute = getattr(backend, '_graph', None)
+    return getattr(graph_compute, 'client', None)
+
+
+async def _send_decisions_sql(sql: str) -> list[dict[str, Any]]:
+    """Run one read-only SQL statement over the reserved `decisions` /
+    `decision_evaluations` / `decision_resolutions` relations, through the
+    same general `Method::Sql` surface every SQL/pgwire read in this
+    codebase uses (`EpistemicGraphClient.query.sql`, already on the
+    installed EG wheel -- no `decide`-specific module needed). The relation
+    names are reserved in the SQL catalog and materialized per caller from
+    only their own visible entries (`src/server/sql_catalog_acl/relations.rs`,
+    `stat_view.rs`) -- this route supplies no filter the engine does not
+    itself enforce as a visibility boundary.
+    """
+
+    client = _eg_client()
+    if client is None:
+        raise HTTPException(status_code=501, detail=_DECISIONS_UNAVAILABLE)
+    query_client = getattr(client, 'query', None)
+    sql_method = getattr(query_client, 'sql', None)
+    if sql_method is None:
+        raise HTTPException(status_code=501, detail=_DECISIONS_UNAVAILABLE)
+    try:
+        rows = await invoke_governed_helper(sql_method, sql, deadline=10.0)
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('decisions_sql', e)
+        raise HTTPException(status_code=503, detail=_DECISIONS_UNAVAILABLE) from e
+    return rows if isinstance(rows, list) else []
+
+
 def _decision_client_module() -> Any:
     """The `epistemic_graph.decision_client` module, or ``None`` when the
     installed epistemic-graph predates the decide-consumers lane (no
-    `decide` surface yet). The ONE guarded import point: every route below
-    reaches `DecisionClient`/`get_op`/`query_op`/`aggregate_op` through the
-    returned module, never via its own top-level import, so a missing
-    module reports a clean 501 instead of an unhandled `ImportError`.
+    `decide` surface yet). The ONE guarded import point: `get_decision`/
+    `get_decision_aggregate` reach `DecisionClient`/`get_op`/`aggregate_op`
+    through the returned module, never via their own top-level import, so a
+    missing module reports a clean 501 instead of an unhandled `ImportError`.
     """
 
     try:
@@ -7702,42 +7764,25 @@ def _decision_client_module() -> Any:
     return module
 
 
-def _decision_log_client(graph: str | None, module: Any) -> Any:
-    """The generated `DecisionLog`/`Decide` sender, bound to the process
-    engine's async client -- or ``None`` when no engine (or no epistemic-graph
-    backend) is available.
-
-    Mirrors `agent_utilities.decide.transport.GeneratedTransport`, the
-    decide-consumers lane's own reference caller of these same generated
-    senders, so this route and the write-side consumer stay on one path.
-    """
-
-    engine = IntelligenceGraphEngine.get_active()
-    backend = getattr(engine, 'backend', None)
-    graph_compute = getattr(backend, '_graph', None)
-    client = getattr(graph_compute, 'async_client', None)
-    if client is None:
-        return None
-    return module.DecisionClient(client=client, graph=graph)
-
-
 async def _send_decision_log(
     graph: str | None, build_op: Callable[[Any], dict[str, Any]]
 ) -> Any:
     """Resolve the decision-log client and send one read-only `DecisionLog`
-    op; raise a caller-safe 503/501 on anything the UI cannot act on (no
-    `decide`-capable EG installed, no engine, or a transport failure) --
-    never leak the underlying cause. `build_op(module)` defers building the
-    op dict until the module is known to be importable, using that same
-    module's own `get_op`/`query_op`/`aggregate_op` builders.
+    op (`Get` or `Aggregate` only -- see this section's header); raise a
+    caller-safe 503/501 on anything the UI cannot act on (no `decide`-capable
+    EG installed, no engine, or a transport failure) -- never leak the
+    underlying cause. `build_op(module)` defers building the op dict until
+    the module is known to be importable, using that same module's own
+    `get_op`/`aggregate_op` builders.
     """
 
     module = _decision_client_module()
     if module is None:
         raise HTTPException(status_code=501, detail=_DECISIONS_UNAVAILABLE)
-    decision_client = _decision_log_client(graph, module)
-    if decision_client is None:
+    client = _eg_client()
+    if client is None:
         raise HTTPException(status_code=501, detail=_DECISIONS_UNAVAILABLE)
+    decision_client = module.DecisionClient(client=client, graph=graph)
     try:
         op = build_op(module)
         return await invoke_governed_helper(decision_client.log, op, deadline=10.0)
@@ -7748,46 +7793,22 @@ async def _send_decision_log(
         raise HTTPException(status_code=503, detail=_DECISIONS_UNAVAILABLE) from e
 
 
-def _view_cell(cell: Any) -> Any:
-    """One `ViewCell` (`{"cell": "text"|"int"|"bool"|"null", "value": ...}`,
-    DECIDE §4.1's `DecisionLogRows`) to its plain JSON value."""
-
-    if not isinstance(cell, dict):
-        return cell
-    return cell.get('value')
-
-
-def _decision_rows_to_dicts(rows_payload: Any) -> list[dict[str, Any]]:
-    """One `DecisionLogRows` payload (`{schema_version, columns, rows}`) to a
-    list of `{column: value}` dicts the frontend table renders directly."""
-
-    if not isinstance(rows_payload, dict):
-        return []
-    columns = [str(c) for c in (rows_payload.get('columns') or [])]
-    rows = rows_payload.get('rows') or []
-    return [
-        dict(zip(columns, (_view_cell(cell) for cell in row), strict=False))
-        for row in rows
-        if isinstance(row, list)
-    ]
-
-
 @router.get('/decisions')
 async def list_decisions(
     question_id: str | None = None, limit: int = 100
 ) -> list[dict[str, Any]]:
     """List the caller's visible decision-log entries, newest first (EH-046).
 
-    Backed by `DecisionLog.query` (EH-066): a read-only SQL statement over a
-    `decisions` relation materialized, server-side, from only the entries the
-    caller may already `DecisionLog.get` (DECIDE §4.1) -- this route supplies
-    no filter the engine does not itself enforce as a visibility boundary.
+    Reads the reserved `decisions` relation (see this section's header) --
+    `tenant_id` is not part of the SQL text: the relation is already
+    materialized to exactly this caller's visible rows before the statement
+    runs, so there is nothing to filter by tenant here.
     """
 
     if question_id is not None and not _SAFE_DELEGATION_TOKEN.fullmatch(question_id):
         raise HTTPException(status_code=400, detail='Invalid question filter')
     bounded_limit = max(1, min(int(limit), _MAX_DECISION_LIST_ROWS))
-    tenant_id, graph = _decision_session_info()
+    _decision_session_info()  # 401s early when unauthenticated; tenant is engine-side.
     columns_sql = ', '.join(_DECISION_LIST_COLUMNS)
     # `_SAFE_DELEGATION_TOKEN` already forbids a quote character in `question_id`;
     # this escape is defense-in-depth, matching `get_decision_provenance`'s
@@ -7798,16 +7819,9 @@ async def list_decisions(
         f'SELECT {columns_sql} FROM decisions{where_sql} '
         f'ORDER BY committed_at_ms DESC LIMIT {bounded_limit}'
     )
-    try:
-        payload = await _send_decision_log(graph, lambda m: m.query_op(tenant_id, sql))
-        rows = _decision_rows_to_dicts(payload)
-        bounded = _public_external_result(rows)
-        return bounded if isinstance(bounded, list) else rows
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('list_decisions', e)
-        raise HTTPException(status_code=503, detail=_DECISIONS_UNAVAILABLE) from e
+    rows = await _send_decisions_sql(sql)
+    bounded = _public_external_result(rows)
+    return bounded if isinstance(bounded, list) else rows
 
 
 @router.get('/decisions/aggregate')
@@ -7818,12 +7832,13 @@ async def get_decision_aggregate(
 ) -> dict[str, Any]:
     """The outcome aggregate for the calibration/coverage dashboard (EH-047).
 
-    Backed by `DecisionLog.aggregate` (DECIDE §4.1/§6.4): success rates,
-    trial counts and trace-fidelity breakdowns per option, k-anonymized by
-    `min_support` server-side -- this route neither computes nor widens that
-    floor, it only renders what the engine already agreed to disclose.
-    Registered before `/decisions/{record_id}` so this literal path is never
-    swallowed by that dynamic one.
+    Backed by `DecisionLog.aggregate` (DECIDE §4.1/§6.4, unaffected by the
+    EH-066 `Query`-op reversal -- `Aggregate` is a distinct op and was never
+    reverted): success rates, trial counts and trace-fidelity breakdowns per
+    option, k-anonymized by `min_support` server-side -- this route neither
+    computes nor widens that floor, it only renders what the engine already
+    agreed to disclose. Registered before `/decisions/{record_id}` so this
+    literal path is never swallowed by that dynamic one.
     """
 
     if question_id is not None and not _SAFE_DELEGATION_TOKEN.fullmatch(question_id):
@@ -7832,19 +7847,13 @@ async def get_decision_aggregate(
     window_end = to_ms if to_ms is not None else int(time.time() * 1000)
     if window_end < from_ms:
         raise HTTPException(status_code=400, detail='to_ms must not precede from_ms')
-    try:
-        payload = await _send_decision_log(
-            graph,
-            lambda m: m.aggregate_op(tenant_id, (from_ms, window_end), question_id),
-        )
-        result = payload if isinstance(payload, dict) else {}
-        bounded = _public_external_result(result)
-        return bounded if isinstance(bounded, dict) else result
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('get_decision_aggregate', e)
-        raise HTTPException(status_code=503, detail=_DECISIONS_UNAVAILABLE) from e
+    payload = await _send_decision_log(
+        graph,
+        lambda m: m.aggregate_op(tenant_id, (from_ms, window_end), question_id),
+    )
+    result = payload if isinstance(payload, dict) else {}
+    bounded = _public_external_result(result)
+    return bounded if isinstance(bounded, dict) else result
 
 
 @router.get('/decisions/{record_id}')
@@ -7852,20 +7861,15 @@ async def get_decision(record_id: str) -> dict[str, Any]:
     """One committed `DecisionRecord` in full (EH-046 detail view): premises
     with their evidence classes, eliminations, coverage derivations, the
     solve certificate or the typed abstention reasons, and `why_not`.
+
+    Backed by `DecisionLog.get` (DECIDE §4.1) -- the canonical single-record
+    read, unaffected by the EH-066 `Query`-op reversal.
     """
 
     if not _SAFE_DELEGATION_TOKEN.fullmatch(record_id):
         raise HTTPException(status_code=400, detail='Invalid record id')
     tenant_id, graph = _decision_session_info()
-    try:
-        payload = await _send_decision_log(
-            graph, lambda m: m.get_op(tenant_id, record_id)
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('get_decision', e)
-        raise HTTPException(status_code=503, detail=_DECISIONS_UNAVAILABLE) from e
+    payload = await _send_decision_log(graph, lambda m: m.get_op(tenant_id, record_id))
     if not isinstance(payload, dict) or not payload:
         raise HTTPException(status_code=404, detail='No such decision record')
     bounded = _public_external_result(payload)
@@ -7876,38 +7880,26 @@ async def get_decision(record_id: str) -> dict[str, Any]:
 async def get_decision_provenance(record_id: str) -> dict[str, list[dict[str, Any]]]:
     """Every independent evaluation and abstention resolution recorded
     against one decision (EH-046's provenance requirement) -- the
-    `evaluations`/`resolutions` relations `DecisionLog.query` materializes,
-    filtered to this one `record_id`, the caller's visible rows only.
+    `decision_evaluations`/`decision_resolutions` relations (see this
+    section's header), filtered to this one `record_id`, the caller's
+    visible rows only.
     """
 
     if not _SAFE_DELEGATION_TOKEN.fullmatch(record_id):
         raise HTTPException(status_code=400, detail='Invalid record id')
-    tenant_id, graph = _decision_session_info()
+    _decision_session_info()  # 401s early when unauthenticated; tenant is engine-side.
     escaped_id = record_id.replace("'", "''")
     evaluations_sql = (
         'SELECT evaluation_id, class, fidelity, producer, success, recorded_at_ms '
-        f"FROM evaluations WHERE record_id = '{escaped_id}' ORDER BY recorded_at_ms"
+        f"FROM decision_evaluations WHERE record_id = '{escaped_id}' ORDER BY recorded_at_ms"
     )
     resolutions_sql = (
         'SELECT resolution_id, option_id, resolver, class, producer, recorded_at_ms '
-        f"FROM resolutions WHERE record_id = '{escaped_id}' ORDER BY recorded_at_ms"
+        f"FROM decision_resolutions WHERE record_id = '{escaped_id}' ORDER BY recorded_at_ms"
     )
-    try:
-        evaluations_payload = await _send_decision_log(
-            graph, lambda m: m.query_op(tenant_id, evaluations_sql)
-        )
-        resolutions_payload = await _send_decision_log(
-            graph, lambda m: m.query_op(tenant_id, resolutions_sql)
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('get_decision_provenance', e)
-        raise HTTPException(status_code=503, detail=_DECISIONS_UNAVAILABLE) from e
-    result = {
-        'evaluations': _decision_rows_to_dicts(evaluations_payload),
-        'resolutions': _decision_rows_to_dicts(resolutions_payload),
-    }
+    evaluations_rows = await _send_decisions_sql(evaluations_sql)
+    resolutions_rows = await _send_decisions_sql(resolutions_sql)
+    result = {'evaluations': evaluations_rows, 'resolutions': resolutions_rows}
     bounded = _public_external_result(result)
     return bounded if isinstance(bounded, dict) else result
 

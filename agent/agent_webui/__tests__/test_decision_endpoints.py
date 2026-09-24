@@ -1,5 +1,5 @@
 """Tests for the Decisions endpoints (EH-046/047): list/detail/provenance and
-the calibration aggregate over epistemic-graph's committed `DecisionLog`
+the calibration aggregate over epistemic-graph's committed decision log
 (`agent/agent_webui/api_extensions.py`'s Decisions section).
 
 These call the route handler functions directly (`agent_webui.api_extensions
@@ -9,23 +9,33 @@ documents and justifies (no configured `WEBUI_OIDC_*` verifier in this
 environment; that boundary is owned by a sibling lane and already pinned by
 `test_identity_middleware_boundary.py`).
 
-`epistemic_graph.decision_client` -- the generated Python client the
-decide-consumers lane built for exactly this surface -- is not yet on the
-EG wheel this repo's environment installs (it lands with that lane in this
-same train; see `/var/tmp/l9/finish/MAIN-MOVES.md` and
-`/var/tmp/l9/finish/decide-consumers/WRAPUP.md`). `_install_fake_decision_client`
-stubs it into `sys.modules` with the exact call shape read directly from
-its source (`epistemic_graph/decision_client.py` on the decide-consumers
-worktree: `DecisionClient(client, graph=None).log(op)`, `get_op`/`query_op`/
-`aggregate_op` building `{"op": ..., "tenant_id": ..., ...}` dicts) so these
-tests exercise this lane's own route logic today and keep passing, unchanged,
-once the real module lands.
+Two read paths, per the 2026-09-24 ruling (`uql-followups` lane, EG commit
+`8efed824e` reverted decide-consumers' own `DecisionLog.query` op, EH-066;
+read `/var/tmp/l9/finish/uql-followups/STATE.md` and
+`src/server/handlers/decide/stat_view.rs` on that worktree for the full
+story):
+
+* `list_decisions`/`get_decision_provenance` now read the reserved
+  `decisions`/`decision_evaluations`/`decision_resolutions` relations
+  through the general `EpistemicGraphClient.query.sql` method -- ALREADY on
+  the installed EG wheel (confirmed: `epistemic_graph/client.py:11432`,
+  `async def sql`), so these two are tested against the real method
+  signature, no `sys.modules` stub needed.
+* `get_decision`/`get_decision_aggregate` still use `DecisionLog`'s `Get`/
+  `Aggregate` ops (unaffected by the reversal -- only `Query` was dropped),
+  reached through `epistemic_graph.decision_client`, which is NOT yet on the
+  installed EG wheel (decide-consumers' own new module, lands with this
+  train). `_install_fake_decision_client` stubs it into `sys.modules` with
+  the exact call shape read directly from its source
+  (`epistemic_graph/decision_client.py` on the decide-consumers worktree)
+  so these two are tested against the real call shape today and keep
+  passing, unchanged, once the module lands.
 """
 
 import asyncio
 import sys
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -71,7 +81,9 @@ _FAKE_RESPONDER = [lambda op: None]
 def _install_fake_decision_client(responder):
     """Patch `epistemic_graph.decision_client` into `sys.modules` for the
     duration of the context; `responder(op) -> Any` decides each call's
-    return payload (the raw dict a generated sender's `.payload` carries)."""
+    return payload (the raw dict a generated sender's `.payload` carries).
+    Only `get_op`/`aggregate_op` are provided -- `query_op` was reverted
+    (EH-066) and no longer exists on the real module either."""
 
     _FAKE_LOG_CALLS.clear()
     _FAKE_RESPONDER[0] = responder
@@ -81,11 +93,6 @@ def _install_fake_decision_client(responder):
             'op': 'get',
             'tenant_id': tenant_id,
             'record_id': record_id,
-        },
-        query_op=lambda tenant_id, sql: {
-            'op': 'query',
-            'tenant_id': tenant_id,
-            'sql': sql,
         },
         aggregate_op=lambda tenant_id, window, question_id=None: {
             'op': 'aggregate',
@@ -107,21 +114,19 @@ def mock_engine():
 
     engine = MagicMock(spec=IntelligenceGraphEngine)
     engine.backend = MagicMock()
-    engine.backend._graph.async_client = MagicMock()
+    engine.backend._graph.client = MagicMock()
+    engine.backend._graph.client.query.sql = AsyncMock(return_value=[])
     return engine
 
 
-def _rows_payload(columns, rows):
-    """One `DecisionLogRows`-shaped payload: `rows` is a list of plain
-    Python values, wrapped as the engine's `{"cell": ..., "value": ...}`
-    tagged cells in column order."""
+def _mock_sql(engine, responder):
+    """Wire `engine.backend._graph.client.query.sql` to `responder(sql_text)
+    -> list[dict]`, matching `EpistemicGraphClient.query.sql`'s real return
+    shape (already-zipped row dicts, not a `{columns, rows}` envelope)."""
 
-    kinds = {str: 'text', bool: 'bool', int: 'int', type(None): 'null'}
-    return {
-        'schema_version': 1,
-        'columns': list(columns),
-        'rows': [[{'cell': kinds[type(v)], 'value': v} for v in row] for row in rows],
-    }
+    mock = AsyncMock(side_effect=lambda sql: responder(sql))
+    engine.backend._graph.client.query.sql = mock
+    return mock
 
 
 # --------------------------------------------------------------------- list
@@ -130,15 +135,17 @@ def _rows_payload(columns, rows):
 def test_list_decisions_returns_rows(mock_engine):
     from agent_webui.api_extensions import list_decisions
 
-    payload = _rows_payload(
-        ['record_id', 'outcome', 'committed_at_ms'],
-        [['decision:abc', 'solved', 1700000000000]],
+    sql_mock = _mock_sql(
+        mock_engine,
+        lambda sql: [
+            {
+                'record_id': 'decision:abc',
+                'outcome': 'solved',
+                'committed_at_ms': 1700000000000,
+            }
+        ],
     )
-    with (
-        _patched_engine(mock_engine),
-        _patched_session(),
-        _install_fake_decision_client(lambda op: payload),
-    ):
+    with _patched_engine(mock_engine), _patched_session():
         rows = run(list_decisions())
     assert rows == [
         {
@@ -147,21 +154,27 @@ def test_list_decisions_returns_rows(mock_engine):
             'committed_at_ms': 1700000000000,
         }
     ]
-    assert _FAKE_LOG_CALLS[0]['op'] == 'query'
-    assert _FAKE_LOG_CALLS[0]['tenant_id'] == 'tenant-a'
-    assert 'FROM decisions' in _FAKE_LOG_CALLS[0]['sql']
+    sent_sql = sql_mock.call_args.args[0]
+    assert 'FROM decisions' in sent_sql
+    assert 'decision_evaluations' not in sent_sql
 
 
 def test_list_decisions_clamps_the_row_limit(mock_engine):
     from agent_webui.api_extensions import list_decisions
 
-    with (
-        _patched_engine(mock_engine),
-        _patched_session(),
-        _install_fake_decision_client(lambda op: _rows_payload(['record_id'], [])),
-    ):
+    sql_mock = _mock_sql(mock_engine, lambda sql: [])
+    with _patched_engine(mock_engine), _patched_session():
         run(list_decisions(limit=999999))
-    assert 'LIMIT 200' in _FAKE_LOG_CALLS[0]['sql']
+    assert 'LIMIT 200' in sql_mock.call_args.args[0]
+
+
+def test_list_decisions_filters_by_question_id(mock_engine):
+    from agent_webui.api_extensions import list_decisions
+
+    sql_mock = _mock_sql(mock_engine, lambda sql: [])
+    with _patched_engine(mock_engine), _patched_session():
+        run(list_decisions(question_id='assemble'))
+    assert "question_id = 'assemble'" in sql_mock.call_args.args[0]
 
 
 def test_list_decisions_rejects_an_unsafe_question_filter(mock_engine):
@@ -184,13 +197,8 @@ def test_list_decisions_requires_a_tenant_session(mock_engine):
     assert exc.value.status_code == 401
 
 
-def test_list_decisions_reports_no_decide_module_as_unavailable(mock_engine):
-    """No `epistemic_graph.decision_client` at all (a pre-decide-consumers EG
-    build) -- the guarded single import point in `_decision_client_module`
-    must convert that `ImportError` to a clean 501, never let it propagate
-    as an unhandled `ModuleNotFoundError` (a real bug this test caught: an
-    earlier version imported `query_op` at the top of the route body,
-    outside `_send_decision_log`'s guard)."""
+def test_list_decisions_reports_no_client_as_unavailable(mock_engine):
+    mock_engine.backend._graph.client = None
     from agent_webui.api_extensions import list_decisions
     from fastapi import HTTPException
 
@@ -200,33 +208,15 @@ def test_list_decisions_reports_no_decide_module_as_unavailable(mock_engine):
     assert exc.value.status_code == 501
 
 
-def test_list_decisions_reports_no_client_as_unavailable(mock_engine):
-    mock_engine.backend._graph.async_client = None
-    from agent_webui.api_extensions import list_decisions
-    from fastapi import HTTPException
-
-    with (
-        _patched_engine(mock_engine),
-        _patched_session(),
-        _install_fake_decision_client(lambda op: _rows_payload(['record_id'], [])),
-    ):
-        with pytest.raises(HTTPException) as exc:
-            run(list_decisions())
-    assert exc.value.status_code == 501
-
-
 def test_list_decisions_reports_transport_failure(mock_engine):
     from agent_webui.api_extensions import list_decisions
     from fastapi import HTTPException
 
-    def _boom(_op):
+    def _boom(_sql):
         raise RuntimeError('engine unreachable')
 
-    with (
-        _patched_engine(mock_engine),
-        _patched_session(),
-        _install_fake_decision_client(_boom),
-    ):
+    _mock_sql(mock_engine, _boom)
+    with _patched_engine(mock_engine), _patched_session():
         with pytest.raises(HTTPException) as exc:
             run(list_decisions())
     assert exc.value.status_code == 503
@@ -278,26 +268,38 @@ def test_get_decision_rejects_an_unsafe_record_id(mock_engine):
     assert exc.value.status_code == 400
 
 
+def test_get_decision_reports_no_decide_module_as_unavailable(mock_engine):
+    """No `epistemic_graph.decision_client` at all (a pre-decide-consumers EG
+    build) -- the guarded single import point in `_decision_client_module`
+    must convert that `ImportError` to a clean 501, never let it propagate as
+    an unhandled `ModuleNotFoundError`."""
+    from agent_webui.api_extensions import get_decision
+    from fastapi import HTTPException
+
+    with _patched_engine(mock_engine), _patched_session():
+        with pytest.raises(HTTPException) as exc:
+            run(get_decision('decision:abc'))
+    assert exc.value.status_code == 501
+
+
 # --------------------------------------------------------------- provenance
 
 
 def test_get_decision_provenance_returns_both_relations(mock_engine):
     from agent_webui.api_extensions import get_decision_provenance
 
-    def _responder(op):
-        if 'FROM evaluations' in op['sql']:
-            return _rows_payload(['evaluation_id', 'success'], [['eval-1', True]])
-        return _rows_payload(['resolution_id', 'option_id'], [['res-1', 'opt-a']])
+    def _responder(sql):
+        if 'FROM decision_evaluations' in sql:
+            return [{'evaluation_id': 'eval-1', 'success': True}]
+        assert 'FROM decision_resolutions' in sql
+        return [{'resolution_id': 'res-1', 'option_id': 'opt-a'}]
 
-    with (
-        _patched_engine(mock_engine),
-        _patched_session(),
-        _install_fake_decision_client(_responder),
-    ):
+    sql_mock = _mock_sql(mock_engine, _responder)
+    with _patched_engine(mock_engine), _patched_session():
         result = run(get_decision_provenance('decision:abc'))
     assert result['evaluations'] == [{'evaluation_id': 'eval-1', 'success': True}]
     assert result['resolutions'] == [{'resolution_id': 'res-1', 'option_id': 'opt-a'}]
-    assert len(_FAKE_LOG_CALLS) == 2
+    assert sql_mock.await_count == 2
 
 
 def test_get_decision_provenance_escapes_the_record_id(mock_engine):
@@ -361,21 +363,11 @@ def test_get_decision_aggregate_rejects_an_inverted_window(mock_engine):
     assert exc.value.status_code == 400
 
 
-# --------------------------------------------------------------- unit-level
+def test_get_decision_aggregate_reports_no_decide_module_as_unavailable(mock_engine):
+    from agent_webui.api_extensions import get_decision_aggregate
+    from fastapi import HTTPException
 
-
-def test_view_cell_reads_the_value_field():
-    from agent_webui.api_extensions import _view_cell
-
-    assert _view_cell({'cell': 'text', 'value': 'x'}) == 'x'
-    assert _view_cell({'cell': 'null'}) is None
-    assert _view_cell('already-plain') == 'already-plain'
-
-
-def test_decision_rows_to_dicts_zips_columns_and_cells():
-    from agent_webui.api_extensions import _decision_rows_to_dicts
-
-    payload = _rows_payload(['a', 'b'], [[1, 'x'], [2, 'y']])
-    assert _decision_rows_to_dicts(payload) == [{'a': 1, 'b': 'x'}, {'a': 2, 'b': 'y'}]
-    assert _decision_rows_to_dicts({'not': 'a rows payload'}) == []
-    assert _decision_rows_to_dicts(None) == []
+    with _patched_engine(mock_engine), _patched_session():
+        with pytest.raises(HTTPException) as exc:
+            run(get_decision_aggregate())
+    assert exc.value.status_code == 501
