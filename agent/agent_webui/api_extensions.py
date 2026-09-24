@@ -7789,7 +7789,11 @@ async def list_decisions(
     bounded_limit = max(1, min(int(limit), _MAX_DECISION_LIST_ROWS))
     tenant_id, graph = _decision_session_info()
     columns_sql = ', '.join(_DECISION_LIST_COLUMNS)
-    where_sql = f" WHERE question_id = '{question_id}'" if question_id else ''
+    # `_SAFE_DELEGATION_TOKEN` already forbids a quote character in `question_id`;
+    # this escape is defense-in-depth, matching `get_decision_provenance`'s
+    # `record_id` handling so the two SQL-building call sites agree.
+    escaped_question_id = question_id.replace("'", "''") if question_id else ''
+    where_sql = f" WHERE question_id = '{escaped_question_id}'" if question_id else ''
     sql = (
         f'SELECT {columns_sql} FROM decisions{where_sql} '
         f'ORDER BY committed_at_ms DESC LIMIT {bounded_limit}'
