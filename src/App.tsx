@@ -44,6 +44,7 @@ import {
   type RouteDef,
 } from './lib/nav-registry.ts'
 import { getDefaultPageActions, PageContextProvider, type PageContextSelection } from './lib/page-context.tsx'
+import { useRum } from './lib/rum.ts'
 import { cn } from './lib/utils.ts'
 import { WebMcpProvider } from './lib/webmcp/provider.tsx'
 
@@ -410,6 +411,8 @@ export default function App() {
   const pageRoute = activeRoute ?? NOT_FOUND_ROUTE
   const pageMetadata = getRoutePageMetadata(pageRoute)
   const isPublicRoute = pageMetadata.visibility === 'public'
+  // EH-410: first-party web-vitals, reported per route TEMPLATE (never ids).
+  useRum(pageRoute.path)
   const mcpCatalogEnabled = shouldEnableMcpCatalog({
     isPublicRoute,
     isNotFound,
