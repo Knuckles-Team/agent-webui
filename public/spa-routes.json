@@ -13,6 +13,7 @@
     "/scheduling",
     "/sdd",
     "/agent-library",
+    "/decisions",
     "/llm-templates",
     "/mcp-apps",
     "/explore",
@@ -53,6 +54,9 @@
     "/thank-you",
     "/privacy",
     "/terms",
-    "/contact"
+    "/contact",
+    "/apps/markets",
+    "/apps/markets/chart/:listing",
+    "/apps/markets/share/:lease"
   ]
 }

@@ -198,7 +198,11 @@ function navigateToObjectId(id: string): void {
 }
 
 /** Routes whose page owns the complete heading and needs no generic shell heading. */
-const ROUTES_WITH_OWN_HEADING = new Set<RouteDef['id']>(['knowledge.atlas'])
+const ROUTES_WITH_OWN_HEADING = new Set<RouteDef['id']>([
+  'knowledge.atlas',
+  'apps.markets.chart',
+  'apps.markets.share',
+])
 
 function routeOwnsHeading(route: RouteDef): boolean {
   return ROUTES_WITH_OWN_HEADING.has(route.id)
