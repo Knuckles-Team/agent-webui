@@ -38,6 +38,7 @@ import {
   ListTodo,
   MessageCircle,
   Network,
+  Scale,
   ScrollText,
   Settings,
   Shapes,
@@ -327,6 +328,18 @@ export const ROUTES: readonly RouteDef[] = [
     minRole: 'maintainer',
     mobile: 'adapted',
     element: lazy(() => import('@/components/views/AgentLibraryView')),
+  },
+  {
+    id: 'control-plane.decisions',
+    path: '/decisions',
+    label: 'Decisions',
+    section: 'control-plane',
+    blurb:
+      'See every typed decision the engine has committed — premises, derivations, the certificate or the reason it abstained — and how well-calibrated each option has been.',
+    icon: Scale,
+    minRole: 'user',
+    mobile: 'adapted',
+    element: lazy(() => import('@/components/views/DecisionsView')),
   },
   {
     id: 'control-plane.llm-templates',
