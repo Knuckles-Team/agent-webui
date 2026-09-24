@@ -48,10 +48,7 @@ export function fetchDecision(recordId: string): Promise<DecisionRecord> {
 
 /** The evaluations/resolutions logged against one record (EH-046 provenance). */
 export function fetchDecisionProvenance(recordId: string): Promise<DecisionProvenance> {
-  return fetchValidated(
-    `/api/enhanced/decisions/${encodeURIComponent(recordId)}/provenance`,
-    decisionProvenanceSchema,
-  )
+  return fetchValidated(`/api/enhanced/decisions/${encodeURIComponent(recordId)}/provenance`, decisionProvenanceSchema)
 }
 
 export interface DecisionAggregateOptions {

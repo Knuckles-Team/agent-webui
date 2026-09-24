@@ -28,15 +28,20 @@ export default function DecisionsView() {
   return (
     <div className="space-y-6">
       <Card className="border-border/40 bg-card/60 backdrop-blur-md">
-        <Tabs value={tab} onValueChange={(value) => setTab(isTabId(value) ? value : tab)} className="w-full">
+        <Tabs
+          value={tab}
+          onValueChange={(value) => {
+            setTab(isTabId(value) ? value : tab)
+          }}
+          className="w-full"
+        >
           <CardHeader>
             <CardTitle className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-400 via-emerald-400 to-green-500">
               Decisions
             </CardTitle>
             <CardDescription>
-              Every typed decision the engine has committed — which mechanism resolved it, the weakest evidence
-              class its conclusion rests on, and, once enough outcomes are in, how well-calibrated each option has
-              been.
+              Every typed decision the engine has committed — which mechanism resolved it, the weakest evidence class
+              its conclusion rests on, and, once enough outcomes are in, how well-calibrated each option has been.
             </CardDescription>
             <TabsList
               aria-label="Decisions sections"

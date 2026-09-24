@@ -77,7 +77,11 @@ function FidelityBreakdownBar({ counts }: { counts: FidelityCounts }) {
   const present = FIDELITY_SEGMENTS.filter((segment) => counts[segment.key] > 0)
   return (
     <div className="space-y-1.5">
-      <div className="flex h-2 rounded-full overflow-hidden gap-[2px]" role="img" aria-label="Trace fidelity breakdown">
+      <div
+        className="flex h-2 rounded-full overflow-hidden gap-[2px]"
+        role="img"
+        aria-label="Trace fidelity breakdown"
+      >
         {present.map((segment) => (
           <div
             key={segment.key}
@@ -189,7 +193,9 @@ export default function DecisionCalibrationTab() {
           variant="outline"
           size="icon"
           className="h-9 w-9 shrink-0 ml-auto"
-          onClick={() => void aggregateQuery.refetch()}
+          onClick={() => {
+            void aggregateQuery.refetch()
+          }}
           disabled={aggregateQuery.isFetching}
           aria-label="Refresh aggregate"
         >

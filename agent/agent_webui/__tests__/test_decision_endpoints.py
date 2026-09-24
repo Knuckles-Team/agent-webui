@@ -82,7 +82,11 @@ def _install_fake_decision_client(responder):
             'tenant_id': tenant_id,
             'record_id': record_id,
         },
-        query_op=lambda tenant_id, sql: {'op': 'query', 'tenant_id': tenant_id, 'sql': sql},
+        query_op=lambda tenant_id, sql: {
+            'op': 'query',
+            'tenant_id': tenant_id,
+            'sql': sql,
+        },
         aggregate_op=lambda tenant_id, window, question_id=None: {
             'op': 'aggregate',
             'tenant_id': tenant_id,
@@ -136,7 +140,13 @@ def test_list_decisions_returns_rows(mock_engine):
         _install_fake_decision_client(lambda op: payload),
     ):
         rows = run(list_decisions())
-    assert rows == [{'record_id': 'decision:abc', 'outcome': 'solved', 'committed_at_ms': 1700000000000}]
+    assert rows == [
+        {
+            'record_id': 'decision:abc',
+            'outcome': 'solved',
+            'committed_at_ms': 1700000000000,
+        }
+    ]
     assert _FAKE_LOG_CALLS[0]['op'] == 'query'
     assert _FAKE_LOG_CALLS[0]['tenant_id'] == 'tenant-a'
     assert 'FROM decisions' in _FAKE_LOG_CALLS[0]['sql']
@@ -174,12 +184,32 @@ def test_list_decisions_requires_a_tenant_session(mock_engine):
     assert exc.value.status_code == 401
 
 
-def test_list_decisions_reports_no_engine_as_unavailable(mock_engine):
+def test_list_decisions_reports_no_decide_module_as_unavailable(mock_engine):
+    """No `epistemic_graph.decision_client` at all (a pre-decide-consumers EG
+    build) -- the guarded single import point in `_decision_client_module`
+    must convert that `ImportError` to a clean 501, never let it propagate
+    as an unhandled `ModuleNotFoundError` (a real bug this test caught: an
+    earlier version imported `query_op` at the top of the route body,
+    outside `_send_decision_log`'s guard)."""
     from agent_webui.api_extensions import list_decisions
     from fastapi import HTTPException
 
-    mock_engine.backend._graph.async_client = None
     with _patched_engine(mock_engine), _patched_session():
+        with pytest.raises(HTTPException) as exc:
+            run(list_decisions())
+    assert exc.value.status_code == 501
+
+
+def test_list_decisions_reports_no_client_as_unavailable(mock_engine):
+    mock_engine.backend._graph.async_client = None
+    from agent_webui.api_extensions import list_decisions
+    from fastapi import HTTPException
+
+    with (
+        _patched_engine(mock_engine),
+        _patched_session(),
+        _install_fake_decision_client(lambda op: _rows_payload(['record_id'], [])),
+    ):
         with pytest.raises(HTTPException) as exc:
             run(list_decisions())
     assert exc.value.status_code == 501
@@ -192,7 +222,11 @@ def test_list_decisions_reports_transport_failure(mock_engine):
     def _boom(_op):
         raise RuntimeError('engine unreachable')
 
-    with _patched_engine(mock_engine), _patched_session(), _install_fake_decision_client(_boom):
+    with (
+        _patched_engine(mock_engine),
+        _patched_session(),
+        _install_fake_decision_client(_boom),
+    ):
         with pytest.raises(HTTPException) as exc:
             run(list_decisions())
     assert exc.value.status_code == 503
@@ -224,7 +258,11 @@ def test_get_decision_reports_a_missing_record_as_not_found(mock_engine):
     from agent_webui.api_extensions import get_decision
     from fastapi import HTTPException
 
-    with _patched_engine(mock_engine), _patched_session(), _install_fake_decision_client(lambda op: None):
+    with (
+        _patched_engine(mock_engine),
+        _patched_session(),
+        _install_fake_decision_client(lambda op: None),
+    ):
         with pytest.raises(HTTPException) as exc:
             run(get_decision('decision:missing'))
     assert exc.value.status_code == 404
@@ -251,7 +289,11 @@ def test_get_decision_provenance_returns_both_relations(mock_engine):
             return _rows_payload(['evaluation_id', 'success'], [['eval-1', True]])
         return _rows_payload(['resolution_id', 'option_id'], [['res-1', 'opt-a']])
 
-    with _patched_engine(mock_engine), _patched_session(), _install_fake_decision_client(_responder):
+    with (
+        _patched_engine(mock_engine),
+        _patched_session(),
+        _install_fake_decision_client(_responder),
+    ):
         result = run(get_decision_provenance('decision:abc'))
     assert result['evaluations'] == [{'evaluation_id': 'eval-1', 'success': True}]
     assert result['resolutions'] == [{'resolution_id': 'res-1', 'option_id': 'opt-a'}]
@@ -288,7 +330,12 @@ def test_get_decision_aggregate_returns_rows(mock_engine):
                 'trials': 40,
                 'successes': 32,
                 'refused': 2,
-                'by_fidelity': {'full_step': 30, 'tool_calls': 8, 'final_output': 2, 'censored': 0},
+                'by_fidelity': {
+                    'full_step': 30,
+                    'tool_calls': 8,
+                    'final_output': 2,
+                    'censored': 0,
+                },
                 'pooled_rate': None,
             }
         ],

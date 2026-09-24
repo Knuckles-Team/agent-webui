@@ -32,7 +32,9 @@ function ListRow({
   return (
     <button
       type="button"
-      onClick={() => onSelect(row.record_id)}
+      onClick={() => {
+        onSelect(row.record_id)
+      }}
       aria-pressed={selected}
       className={`w-full text-left p-3 rounded-lg border transition-all ${
         selected ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-border/30 bg-muted/5 hover:border-border/60'
@@ -103,15 +105,16 @@ export default function DecisionExplorerTab() {
     queryFn: () => fetchDecisions({ questionId: appliedFilter || undefined }),
   })
 
-  const applyFilter = (event: React.FormEvent) => {
-    event.preventDefault()
-    setAppliedFilter(questionFilter.trim())
-  }
-
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-4">
       <div className="space-y-3">
-        <form className="flex items-center gap-2" onSubmit={applyFilter}>
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            setAppliedFilter(questionFilter.trim())
+          }}
+        >
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
@@ -129,7 +132,9 @@ export default function DecisionExplorerTab() {
             variant="outline"
             size="icon"
             className="h-9 w-9 shrink-0"
-            onClick={() => void listQuery.refetch()}
+            onClick={() => {
+              void listQuery.refetch()
+            }}
             disabled={listQuery.isFetching}
             aria-label="Refresh decisions"
           >

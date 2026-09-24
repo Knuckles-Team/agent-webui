@@ -7686,7 +7686,23 @@ def _decision_session_info() -> tuple[str, str | None]:
     return tenant, (graph or None)
 
 
-def _decision_log_client(graph: str | None) -> Any:
+def _decision_client_module() -> Any:
+    """The `epistemic_graph.decision_client` module, or ``None`` when the
+    installed epistemic-graph predates the decide-consumers lane (no
+    `decide` surface yet). The ONE guarded import point: every route below
+    reaches `DecisionClient`/`get_op`/`query_op`/`aggregate_op` through the
+    returned module, never via its own top-level import, so a missing
+    module reports a clean 501 instead of an unhandled `ImportError`.
+    """
+
+    try:
+        import epistemic_graph.decision_client as module
+    except ImportError:
+        return None
+    return module
+
+
+def _decision_log_client(graph: str | None, module: Any) -> Any:
     """The generated `DecisionLog`/`Decide` sender, bound to the process
     engine's async client -- or ``None`` when no engine (or no epistemic-graph
     backend) is available.
@@ -7696,27 +7712,34 @@ def _decision_log_client(graph: str | None) -> Any:
     senders, so this route and the write-side consumer stay on one path.
     """
 
-    from epistemic_graph.decision_client import DecisionClient
-
     engine = IntelligenceGraphEngine.get_active()
     backend = getattr(engine, 'backend', None)
     graph_compute = getattr(backend, '_graph', None)
     client = getattr(graph_compute, 'async_client', None)
     if client is None:
         return None
-    return DecisionClient(client=client, graph=graph)
+    return module.DecisionClient(client=client, graph=graph)
 
 
-async def _send_decision_log(graph: str | None, op: dict[str, Any]) -> Any:
-    """Send one read-only `DecisionLog` op; raise a caller-safe 503/501 on
-    anything the UI cannot act on (no engine, an EG build with no `decide`
-    surface yet, or a transport failure) -- never leak the underlying cause.
+async def _send_decision_log(
+    graph: str | None, build_op: Callable[[Any], dict[str, Any]]
+) -> Any:
+    """Resolve the decision-log client and send one read-only `DecisionLog`
+    op; raise a caller-safe 503/501 on anything the UI cannot act on (no
+    `decide`-capable EG installed, no engine, or a transport failure) --
+    never leak the underlying cause. `build_op(module)` defers building the
+    op dict until the module is known to be importable, using that same
+    module's own `get_op`/`query_op`/`aggregate_op` builders.
     """
 
-    decision_client = _decision_log_client(graph)
+    module = _decision_client_module()
+    if module is None:
+        raise HTTPException(status_code=501, detail=_DECISIONS_UNAVAILABLE)
+    decision_client = _decision_log_client(graph, module)
     if decision_client is None:
         raise HTTPException(status_code=501, detail=_DECISIONS_UNAVAILABLE)
     try:
+        op = build_op(module)
         return await invoke_governed_helper(decision_client.log, op, deadline=10.0)
     except HTTPException:
         raise
@@ -7750,7 +7773,9 @@ def _decision_rows_to_dicts(rows_payload: Any) -> list[dict[str, Any]]:
 
 
 @router.get('/decisions')
-async def list_decisions(question_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+async def list_decisions(
+    question_id: str | None = None, limit: int = 100
+) -> list[dict[str, Any]]:
     """List the caller's visible decision-log entries, newest first (EH-046).
 
     Backed by `DecisionLog.query` (EH-066): a read-only SQL statement over a
@@ -7769,10 +7794,8 @@ async def list_decisions(question_id: str | None = None, limit: int = 100) -> li
         f'SELECT {columns_sql} FROM decisions{where_sql} '
         f'ORDER BY committed_at_ms DESC LIMIT {bounded_limit}'
     )
-    from epistemic_graph.decision_client import query_op
-
     try:
-        payload = await _send_decision_log(graph, query_op(tenant_id, sql))
+        payload = await _send_decision_log(graph, lambda m: m.query_op(tenant_id, sql))
         rows = _decision_rows_to_dicts(payload)
         bounded = _public_external_result(rows)
         return bounded if isinstance(bounded, list) else rows
@@ -7805,11 +7828,10 @@ async def get_decision_aggregate(
     window_end = to_ms if to_ms is not None else int(time.time() * 1000)
     if window_end < from_ms:
         raise HTTPException(status_code=400, detail='to_ms must not precede from_ms')
-    from epistemic_graph.decision_client import aggregate_op
-
     try:
         payload = await _send_decision_log(
-            graph, aggregate_op(tenant_id, (from_ms, window_end), question_id)
+            graph,
+            lambda m: m.aggregate_op(tenant_id, (from_ms, window_end), question_id),
         )
         result = payload if isinstance(payload, dict) else {}
         bounded = _public_external_result(result)
@@ -7831,10 +7853,10 @@ async def get_decision(record_id: str) -> dict[str, Any]:
     if not _SAFE_DELEGATION_TOKEN.fullmatch(record_id):
         raise HTTPException(status_code=400, detail='Invalid record id')
     tenant_id, graph = _decision_session_info()
-    from epistemic_graph.decision_client import get_op
-
     try:
-        payload = await _send_decision_log(graph, get_op(tenant_id, record_id))
+        payload = await _send_decision_log(
+            graph, lambda m: m.get_op(tenant_id, record_id)
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -7858,24 +7880,20 @@ async def get_decision_provenance(record_id: str) -> dict[str, list[dict[str, An
         raise HTTPException(status_code=400, detail='Invalid record id')
     tenant_id, graph = _decision_session_info()
     escaped_id = record_id.replace("'", "''")
-    from epistemic_graph.decision_client import query_op
-
+    evaluations_sql = (
+        'SELECT evaluation_id, class, fidelity, producer, success, recorded_at_ms '
+        f"FROM evaluations WHERE record_id = '{escaped_id}' ORDER BY recorded_at_ms"
+    )
+    resolutions_sql = (
+        'SELECT resolution_id, option_id, resolver, class, producer, recorded_at_ms '
+        f"FROM resolutions WHERE record_id = '{escaped_id}' ORDER BY recorded_at_ms"
+    )
     try:
         evaluations_payload = await _send_decision_log(
-            graph,
-            query_op(
-                tenant_id,
-                'SELECT evaluation_id, class, fidelity, producer, success, recorded_at_ms '
-                f"FROM evaluations WHERE record_id = '{escaped_id}' ORDER BY recorded_at_ms",
-            ),
+            graph, lambda m: m.query_op(tenant_id, evaluations_sql)
         )
         resolutions_payload = await _send_decision_log(
-            graph,
-            query_op(
-                tenant_id,
-                'SELECT resolution_id, option_id, resolver, class, producer, recorded_at_ms '
-                f"FROM resolutions WHERE record_id = '{escaped_id}' ORDER BY recorded_at_ms",
-            ),
+            graph, lambda m: m.query_op(tenant_id, resolutions_sql)
         )
     except HTTPException:
         raise

@@ -95,7 +95,11 @@ function PremisesSection({ premises }: { premises: PremiseRef[] }) {
       <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
         Premises ({premises.length})
       </h4>
-      <div>{premises.map((p, i) => <PremiseRow key={`${p.subject}:${p.fact}:${i}`} premise={p} />)}</div>
+      <div>
+        {premises.map((p, i) => (
+          <PremiseRow key={`${p.subject}:${p.fact}:${i}`} premise={p} />
+        ))}
+      </div>
     </section>
   )
 }
@@ -120,7 +124,11 @@ function EliminatedSection({ eliminated }: { eliminated: Elimination[] }) {
       <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
         Eliminated candidates ({eliminated.length})
       </h4>
-      <div>{eliminated.map((e) => <EliminationRow key={e.component_id} item={e} />)}</div>
+      <div>
+        {eliminated.map((e) => (
+          <EliminationRow key={e.component_id} item={e} />
+        ))}
+      </div>
     </section>
   )
 }
@@ -142,8 +150,7 @@ function DerivationRow({ derivation }: { derivation: CoverageDerivation }) {
         <ol className="mt-1 ml-3 space-y-0.5 text-[10px] text-muted-foreground list-decimal">
           {derivation.chain.map((edge, i) => (
             <li key={`${edge.narrower}-${edge.broader}-${i}`}>
-              {edge.narrower} ⊑ {edge.broader} ({humanize(edge.class)}, via{' '}
-              {humanize(tagOf(edge.source, 'edge'))})
+              {edge.narrower} ⊑ {edge.broader} ({humanize(edge.class)}, via {humanize(tagOf(edge.source, 'edge'))})
             </li>
           ))}
         </ol>
@@ -159,7 +166,11 @@ function DerivationsSection({ derivations }: { derivations: CoverageDerivation[]
       <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
         Coverage derivations ({derivations.length})
       </h4>
-      <div>{derivations.map((d) => <DerivationRow key={d.required} derivation={d} />)}</div>
+      <div>
+        {derivations.map((d) => (
+          <DerivationRow key={d.required} derivation={d} />
+        ))}
+      </div>
     </section>
   )
 }
@@ -242,7 +253,11 @@ function WhyNotSection({ whyNot }: { whyNot: WhyNot[] }) {
       <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
         Why not ({whyNot.length})
       </h4>
-      <div>{whyNot.map((w, i) => <WhyNotRow key={`${w.component_id}-${w.slot}-${i}`} item={w} />)}</div>
+      <div>
+        {whyNot.map((w, i) => (
+          <WhyNotRow key={`${w.component_id}-${w.slot}-${i}`} item={w} />
+        ))}
+      </div>
     </section>
   )
 }
