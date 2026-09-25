@@ -166,10 +166,22 @@ export default function DecisionCalibrationTab() {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-muted-foreground">
-        These are observed outcomes for executed options. Calibration and coverage estimates require independently
-        labeled evaluations and uncertainty intervals; this aggregate does not provide them.
-      </p>
+      <section aria-label="Calibration and coverage status" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="rounded-md border border-border/40 bg-muted/10 p-3 text-xs">
+          <h3 className="font-semibold">Calibration: unavailable</h3>
+          <p className="mt-1 text-muted-foreground">
+            No independently labeled calibration metrics or uncertainty intervals are available from this aggregate.
+          </p>
+        </div>
+        <div className="rounded-md border border-border/40 bg-muted/10 p-3 text-xs">
+          <h3 className="font-semibold">Coverage and act risk: unavailable</h3>
+          <p className="mt-1 text-muted-foreground">
+            The engine must report per-class sample sufficiency and intervals before coverage or act-risk claims
+            appear.
+          </p>
+        </div>
+      </section>
+      <p className="text-xs text-muted-foreground">The rows below are observed outcomes for executed options only.</p>
       <div className="flex flex-wrap items-center gap-2">
         <Input
           aria-label="Filter by question id"
