@@ -10,10 +10,10 @@ import DecisionExplorerTab from '@/components/decisions/DecisionExplorerTab'
  * (`plans/refactor/architecture/DECIDE-LAYER-DESIGN.md` §10 "UIs") — the
  * decision explorer (list/detail over the committed `DecisionLog`, with
  * premises, derivations, the solve certificate or typed abstention, and
- * why-not) and the calibration/coverage dashboard (the outcome aggregate,
- * per option). Both tabs are read-only: this view never commits or resolves
- * a decision, it only renders what `agent/agent_webui/api_extensions.py`'s
- * Decisions section already serves.
+ * why-not) and the outcome dashboard (the per-option outcome aggregate,
+ * with unavailable calibration/coverage states). Both tabs are read-only:
+ * this view never commits or resolves a decision; it renders what
+ * `agent/agent_webui/api_extensions.py`'s Decisions section serves.
  */
 
 type TabId = 'explorer' | 'calibration'
@@ -41,7 +41,8 @@ export default function DecisionsView() {
             </CardTitle>
             <CardDescription>
               Every typed decision the engine has committed — which mechanism resolved it, the weakest evidence class
-              its conclusion rests on, and, once enough outcomes are in, how well-calibrated each option has been.
+              its conclusion rests on, and observed outcomes for executed options. Calibrated coverage needs separate
+              independent-label evidence.
             </CardDescription>
             <TabsList
               aria-label="Decisions sections"
@@ -57,7 +58,7 @@ export default function DecisionsView() {
                 value="calibration"
                 className="rounded-md border border-transparent px-3 py-1.5 text-xs font-semibold data-[state=active]:border-emerald-500/30 data-[state=active]:bg-emerald-500/10 data-[state=active]:font-bold data-[state=active]:text-emerald-400"
               >
-                Calibration
+                Outcomes and calibration
               </TabsTrigger>
             </TabsList>
           </CardHeader>
