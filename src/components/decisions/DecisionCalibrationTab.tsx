@@ -45,7 +45,7 @@ function SuccessRateBar({ percent }: { percent: number | null }) {
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-[11px]">
-        <span className="text-muted-foreground">Success rate (uncensored trials)</span>
+        <span className="text-muted-foreground">Observed success rate (uncensored trials)</span>
         <span className="font-mono font-bold">{percent === null ? '—' : `${percent}%`}</span>
       </div>
       <div className="h-2 rounded-full bg-muted/30 overflow-hidden">
@@ -134,7 +134,11 @@ function ResultsGrid({ rows, isLoading, isError }: { rows: OptionAggregate[]; is
   if (isLoading) return <div className="py-12 text-center text-sm text-muted-foreground">Loading aggregate…</div>
   if (isError) return <UnavailableNotice what="The calibration aggregate" />
   if (rows.length === 0) {
-    return <div className="py-12 text-center text-sm text-muted-foreground">No outcome data in this window.</div>
+    return (
+      <div className="py-12 text-center text-sm text-muted-foreground">
+        No reportable outcome rows in this window. Data may be absent or withheld below minimum support.
+      </div>
+    )
   }
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -162,6 +166,10 @@ export default function DecisionCalibrationTab() {
 
   return (
     <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        These are observed outcomes for executed options. Calibration and coverage estimates require independently
+        labeled evaluations and uncertainty intervals; this aggregate does not provide them.
+      </p>
       <div className="flex flex-wrap items-center gap-2">
         <Input
           aria-label="Filter by question id"
@@ -204,7 +212,7 @@ export default function DecisionCalibrationTab() {
       </div>
       {minSupport !== undefined && (
         <p className="text-[11px] text-muted-foreground">
-          Rows below {minSupport} trials are withheld (k-anonymity floor); counts below it report zero.
+          Rows below {minSupport} trials are withheld by the engine. A missing row does not mean zero trials.
         </p>
       )}
       <ResultsGrid rows={rows} isLoading={aggregateQuery.isLoading} isError={aggregateQuery.isError} />
