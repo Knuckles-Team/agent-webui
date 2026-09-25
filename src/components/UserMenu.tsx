@@ -15,6 +15,7 @@
  * new visual pattern.
  */
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { ChevronsUpDown, LogIn, LogOut, User } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -73,9 +74,13 @@ function UserAvatar({
 }
 
 function signOutAndReload(): void {
-  void signOut().finally(() => {
-    window.location.assign('/')
-  })
+  void signOut()
+    .then(() => {
+      window.location.assign('/')
+    })
+    .catch(() => {
+      toast.error('Sign-out was refused. Your session may still be active.')
+    })
 }
 
 function AuthMenuItem({ identity }: { identity: Identity }) {
