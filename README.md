@@ -1,7 +1,7 @@
 # GraphOS
 
 <p align="center">
-  <img src="docs/assets/brands/graph-os-logo-v1.png" alt="GraphOS logo" width="160" />
+  <img src="docs/assets/brands/graph-os-webui-logo-v1.png" alt="GraphOS logo" width="160" />
 </p>
 
 <p align="center">

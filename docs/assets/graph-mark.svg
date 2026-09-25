@@ -1,9 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 768" fill="none" role="img" aria-labelledby="title">
-  <title id="title">GraphOS</title>
-  <path d="M384 64 654 220v328L384 704 114 548V220L384 64Z" stroke="#0640A4" stroke-width="64" stroke-linejoin="round"/>
-  <path d="M386 252v266l105-61V313l-105-61Z" fill="#20E6AC"/>
-  <path d="M112 380h262M160 194c112 0 110 166 214 166M160 566c112 0 110-166 214-166" stroke="#069CFF" stroke-width="42" stroke-linecap="round"/>
-  <path d="M493 384h154" stroke="#20E6AC" stroke-width="34" stroke-linecap="round"/>
-  <g fill="#27D7FA" stroke="#0679F7" stroke-width="20"><circle cx="112" cy="380" r="43"/><circle cx="160" cy="194" r="43"/><circle cx="160" cy="566" r="43"/></g>
-  <circle cx="647" cy="384" r="43" fill="#20E6AC" stroke="#08725B" stroke-width="20"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Knuckles-Team graph mark</title>
+  <g fill="none" stroke="#2a5ca8" stroke-linecap="round" stroke-width="5">
+    <path d="M16 18 32 10l16 9v26l-16 9-16-9z"/>
+    <path d="m16 18 16 9 16-8M32 27v27M16 45l16-18 16 18"/>
+  </g>
+  <g fill="#e6a23a" stroke="#fff" stroke-width="2">
+    <circle cx="16" cy="18" r="6"/><circle cx="32" cy="10" r="6"/>
+    <circle cx="48" cy="19" r="6"/><circle cx="16" cy="45" r="6"/>
+    <circle cx="32" cy="54" r="6"/><circle cx="48" cy="45" r="6"/>
+    <circle cx="32" cy="27" r="6"/>
+  </g>
 </svg>
