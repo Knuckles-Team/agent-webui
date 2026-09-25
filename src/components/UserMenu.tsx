@@ -4,10 +4,10 @@
  * (W-16, W-17): an avatar+name trigger that opens a dropdown with "Profile"
  * and "Log out".
  *
- * `/auth/logout` already exists and works server-side
- * (`agent/agent_webui/oidc_session.py`, `LOGOUT_PATH`) -- it was simply never
- * surfaced anywhere in the UI, which is the entire W-16 defect. This
- * component only links to it; it does not reimplement any session logic.
+ * Sign-out is the server's: under the Graph OS identity broker it is a
+ * `POST /auth/logout` that revokes the session server-side; a standalone
+ * WebUI's single-client OIDC boundary keeps its `/auth/logout` redirect.
+ * This component reimplements no session logic.
  *
  * Follows the same shadcn "NavUser" shape `SidebarMenuButton size="lg"` was
  * already built for (see `sidebarMenuButtonVariants` in `ui/sidebar.tsx`),
@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 import { useIdentity, type Identity } from '@/lib/auth'
+import { signOut } from '@/lib/auth-api'
 import { useProfileOverride } from '@/lib/profile-store'
 import { ProfileDialog } from './ProfileDialog'
 
@@ -40,7 +41,7 @@ function initialsOf(label: string): string {
 function deriveDisplayName(identity: Identity, accountName: string | null, nickname: string | null): string {
   if (nickname) return nickname
   if (accountName) return accountName
-  return identity.ssoConfigured ? identity.userKey : 'Local operator'
+  return identity.needsSignIn ? 'Not signed in' : identity.userKey
 }
 
 function useAccountDisplay(identity: Identity) {
@@ -71,22 +72,37 @@ function UserAvatar({
   )
 }
 
+function signOutAndReload(): void {
+  void signOut().finally(() => {
+    window.location.assign('/')
+  })
+}
+
 function AuthMenuItem({ identity }: { identity: Identity }) {
   if (!identity.ssoConfigured) {
     return (
-      <DropdownMenuItem disabled title="Single sign-on is not configured for this deployment">
+      <DropdownMenuItem disabled title="The sign-in service did not answer">
         <LogOut />
-        Log out (SSO not configured)
+        Log out (identity unavailable)
       </DropdownMenuItem>
     )
   }
   if (identity.needsSignIn) {
     return (
       <DropdownMenuItem asChild>
-        <a href="/auth/login">
+        <a href="/">
           <LogIn />
           Sign in
         </a>
+      </DropdownMenuItem>
+    )
+  }
+  if (identity.raw?.mode) {
+    // Graph OS identity broker: sign-out revokes the session server-side.
+    return (
+      <DropdownMenuItem variant="destructive" onClick={signOutAndReload}>
+        <LogOut />
+        Log out
       </DropdownMenuItem>
     )
   }
@@ -116,7 +132,7 @@ export function UserMenu() {
                 <span className="flex flex-col items-start min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
                   <span className="truncate text-sm font-medium w-full">{displayName}</span>
                   <span className="truncate text-xs text-muted-foreground w-full">
-                    {email ?? (identity.ssoConfigured ? identity.role : 'SSO not configured')}
+                    {email ?? (identity.needsSignIn ? 'Not signed in' : identity.role)}
                   </span>
                 </span>
                 <ChevronsUpDown className="ml-auto size-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
