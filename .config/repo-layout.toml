@@ -1,0 +1,36 @@
+# Repository-root directory-justification manifest, read by
+# scripts/check_root_hygiene.py.
+#
+# This is NOT a ratchet: every tracked root directory and non-dot root file must
+# have a line here (an unlisted one is a gate FAILURE), and a listed entry that
+# stops being tracked is also a failure. Root dot-FILES are enumerated in
+# scripts/check_root_hygiene.py's ALLOWED_DOTFILES. Every tool input that
+# accepts a path override lives in .config/ or is folded into package.json /
+# pyproject.toml; the root keeps only what a tool discovers nowhere else.
+
+[dirs]
+agent = "the agent_webui Python backend package: FastAPI + pydantic-ai orchestrator, RBAC/OIDC session handling, observability, api_extensions -- plus its own README, icon, and mcp_config.json"
+docker = "Dockerfile, its BuildKit-scoped Dockerfile.dockerignore, and build_and_push.sh / deploy.sh for the webui image"
+docs = "mkdocs documentation source (architecture, concepts, capability coverage)"
+e2e = "Playwright end-to-end specs (auth, graph-view, knowledge-base-view, memory-view, routes-smoke, sdd-view)"
+public = "static assets Vite serves as-is from its default publicDir (favicons, apple-touch-icon)"
+scripts = "gate scripts (check_*.py) and release tooling invoked by pre-commit/CI"
+".config" = "tool configuration: pre-commit (pre-commit -c), bump2version (--config-file), eslint/vite/vitest/playwright (--config), cspell (auto-discovered), dependency-cruiser, security-gate contract + harnesses, env example, MkDocs theme overrides (custom_dir), this manifest"
+src = "the React/TypeScript frontend: App/Chat/Part components, assets, component tree, and its own __tests__"
+tests = "the Python backend test suite: characterization tests plus dashboard/health/graph-endpoint tests"
+".github" = "GitHub Actions workflow definitions (GitHub discovers only .github/)"
+
+[files]
+"AGENTS.md" = "agent-facing repo guide (discovered at the root)"
+"CHANGELOG.md" = "release changelog, updated by the bump2version release flow"
+"CLAUDE.md" = "Claude Code project instructions (discovered at the root)"
+"LICENSE" = "license text (GitHub, npm and wheel metadata detect it at the root)"
+"README.md" = "project readme (GitHub/npm/PyPI render the root readme)"
+"components.json" = "shadcn/ui generator config; the shadcn CLI reads it only from the project root (no config-path option)"
+"index.html" = "Vite SPA entry HTML; Vite resolves it at the project root"
+"mkdocs.yml" = "mkdocs site config; mkdocs and the shared pages_pipeline read it only at the root"
+"package.json" = "npm/pnpm package manifest and scripts, plus the folded prettier / semantic-release / commitlint / knip configuration"
+"pnpm-lock.yaml" = "pnpm lockfile (pnpm reads it only beside package.json)"
+"pyproject.toml" = "Python backend (agent/ package) build plus tool config, including [tool.pytest.ini_options]"
+"tsconfig.json" = "TypeScript project config; tsc -b, vite-tsconfig-paths, typescript-eslint projectService and editors discover it at the root"
+"uv.lock" = "uv lockfile for the Python backend (uv reads it only beside pyproject.toml)"

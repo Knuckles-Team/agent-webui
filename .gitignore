@@ -298,3 +298,12 @@ reports/
 # check_root_hygiene.py's FORBIDDEN_ANYWHERE (which catches it if it is ever
 # tracked anyway); this stops it from becoming stageable in the first place.
 .kissconfig
+# Root-hygiene: tool caches and generated output never tracked at any depth
+.kiss/
+*maturin.lock
+.specify/
+# Evidence written by the .config/security/ adversarial harnesses
+security-results/
+# Shared pipelines checkouts the Pages workflow (and a local docs build) creates
+.pipeline-theme/
+.pipeline-contract/

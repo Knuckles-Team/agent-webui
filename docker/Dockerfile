@@ -72,7 +72,7 @@
 # in the final image -- no node_modules/cargo/toolchain/source tree):
 #   1. frontend-build (node)   -- pnpm install --frozen-lockfile && pnpm build
 #      (tsc -b && vite build) emits the SPA into agent/agent_webui/dist/, the
-#      path vite.config.ts's `build.outDir` and this package's
+#      path .config/vite.config.ts's `build.outDir` and this package's
 #      `[tool.setuptools.package-data]` (`agent_webui = ["dist/**", ...]`)
 #      agree on -- the wheel built in stage 2 bundles the built SPA as
 #      package data.
@@ -138,7 +138,8 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 COPY package.json pnpm-lock.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile
-COPY tsconfig.json vite.config.ts components.json index.html ./
+COPY tsconfig.json components.json index.html ./
+COPY .config/vite.config.ts ./.config/vite.config.ts
 COPY public ./public
 COPY src ./src
 # `pnpm build` runs `node scripts/no_fabrication_gate.mjs` before tsc/vite

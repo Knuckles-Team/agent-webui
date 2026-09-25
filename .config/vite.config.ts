@@ -1,14 +1,19 @@
+import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
+
+// This config lives in `.config/`; the Vite project root is the repository root.
+const repoRoot = path.resolve(__dirname, '..')
 
 const BACKEND_DEV_SERVER_PORT = process.env.BACKEND_PORT ?? 38001
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - Vite type mismatch after dependency update
 export default defineConfig(() => ({
-  plugins: [react(), tailwindcss(), tsconfigPaths({ root: __dirname })],
+  root: repoRoot,
+  plugins: [react(), tailwindcss(), tsconfigPaths({ root: repoRoot })],
   base: '',
   resolve: {
     dedupe: ['react', 'react-dom'],

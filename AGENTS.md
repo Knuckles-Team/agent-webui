@@ -64,7 +64,7 @@ pnpm install --frozen-lockfile
 uv venv --python 3.12
 source .venv/bin/activate
 uv pip install -e '.[test]'
-cp .env.example .env
+cp .config/env.example .env
 ```
 
 Run the development services in separate terminals:
@@ -169,7 +169,7 @@ private infrastructure.
 Update documentation with the behavior it describes. Verify local links,
 Markdown style, and `mkdocs build --strict`. Keep commands runnable from the
 repository root and keep environment-variable names aligned with the code and
-`.env.example`.
+`.config/env.example`.
 
 ## Branching & isolation
 

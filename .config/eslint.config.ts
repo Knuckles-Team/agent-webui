@@ -1,3 +1,4 @@
+import path from 'node:path'
 import pluginJs from '@eslint/js'
 import eslintConfigPrettier from 'eslint-config-prettier/flat'
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
@@ -60,7 +61,7 @@ export default defineConfig(
       // Playwright e2e specs + config live outside the app's TS build project
       // (their own tooling/tsconfig), so the typed lint can't resolve them.
       'e2e/**',
-      'playwright.config.ts',
+      '.config/playwright.config.ts',
       // dependency-cruiser's config (WD4-TOOL-02) is CommonJS build tooling,
       // not app source, so it is outside `tsconfig.json`'s `include` and the
       // typed lint cannot resolve it either -- same class as the two above.
@@ -68,16 +69,15 @@ export default defineConfig(
       // file and WD4-WEB-00 wired eslint to lint everything, and neither lane
       // could see the interaction from its own branch. Both were green
       // individually; the combination was not.
-      '.dependency-cruiser.cjs',
+      '.config/dependency-cruiser.cjs',
       // scripts/ (pre-commit hook entries, GOC-28's no-fabrication gate) is
       // plain Node ESM run directly via `node scripts/*.mjs`, not part of
       // `tsconfig.json`'s `include` -- same "outside the TS build project"
       // reason as e2e/ above, not a suppression of anything real (scripts/
       // previously held only .py files, which eslint never covered anyway).
       'scripts/**',
-      'commitlint.config.js',
-      'vitest.config.ts',
-      'vite.config.ts',
+      '.config/vitest.config.ts',
+      '.config/vite.config.ts',
     ],
   },
   {
@@ -112,7 +112,8 @@ export default defineConfig(
     languageOptions: {
       parserOptions: {
         projectService: true,
-        tsconfigRootDir: import.meta.dirname,
+        // This config lives in `.config/`; the TypeScript project is the repository root.
+        tsconfigRootDir: path.resolve(import.meta.dirname, '..'),
       },
     },
   },
@@ -127,7 +128,7 @@ export default defineConfig(
       '**/*.spec.{ts,tsx}',
       'src/**/setup.ts',
       'e2e/**',
-      'playwright.config.ts',
+      '.config/playwright.config.ts',
     ],
     rules: {
       '@typescript-eslint/no-unsafe-assignment': 'off',

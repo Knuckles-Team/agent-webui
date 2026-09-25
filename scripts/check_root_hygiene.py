@@ -12,7 +12,7 @@ directory carried workspace-level program content into a package repo.
 This gate enforces an **allowlist**, not a denylist. A denylist only catches the
 junk somebody already thought of; an allowlist means a genuinely new root entry
 has to be justified once, deliberately, by someone editing this file (for a
-dotfile) or the sibling ``.repo-layout.toml`` manifest (for everything else).
+dotfile) or the ``.config/repo-layout.toml`` manifest (for everything else).
 
 It reads the **tracked** file set (``git ls-files``), never the filesystem --
 walking the filesystem makes a gate fire on build output and gitignored
@@ -29,9 +29,8 @@ original from a hardcoded ``ALLOWED_DIRS``/``ALLOWED_FILES`` pair into a
 manifest-driven engine precisely so this port needs ZERO logic changes: the
 only thing that differs between repos is ``ALLOWED_DOTFILES`` immediately
 below (this repo's own tracked dot-files, mostly its JS/TS toolchain's own
-conventions -- ``.node-version``, ``.npmrc``, ``.prettierignore``,
-``.prettierrc.json``, ``.releaserc.json`` -- rather than agent-utilities'
-Python/Rust ones) and the contents of this repo's own ``.repo-layout.toml``.
+conventions -- ``.node-version``, ``.npmrc``, ``.mergequeue.yaml`` -- rather than agent-utilities'
+Python/Rust ones) and the contents of this repo's own ``.config/repo-layout.toml``.
 Two holes this engine closed relative to the pre-CX-HYG-01 original, both of
 which let a real tracked artifact sit unchallenged at a repo root:
 
@@ -78,7 +77,7 @@ from _git_subprocess_env import (  # noqa: E402
 strip_inherited_git_repository_env()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-MANIFEST_PATH = REPO_ROOT / ".repo-layout.toml"
+MANIFEST_PATH = REPO_ROOT / ".config" / "repo-layout.toml"
 
 # Dot-FILES that are conventional and self-describing -- their name alone
 # tells a reader what tool owns them, so (unlike a directory, and unlike the
@@ -88,29 +87,19 @@ MANIFEST_PATH = REPO_ROOT / ".repo-layout.toml"
 # editing the manifest is for everything else.
 ALLOWED_DOTFILES: frozenset[str] = frozenset(
     {
-        # The manifest THIS GATE READS. A bootstrap omission: without it the
-        # gate fails on its own config file, so wiring it as a blocking hook
-        # would have bricked every commit in the repo. Caught by the known-bad
-        # proof, not by review.
-        ".repo-layout.toml",
-        ".bumpversion.cfg",  # release version bump config (bump2version)
-        # WD4-TOOL-02: dependency-cruiser's own conventional config filename
-        # (run via `pnpm dlx dependency-cruiser`, never installed into
-        # package.json -- see .dependency-cruiser.cjs's own header). Same
-        # class as eslint.config.ts/vite.config.ts's toolchain-config
-        # convention, just a dotfile because dependency-cruiser's own
-        # defaults look for the leading dot.
-        ".dependency-cruiser.cjs",
-        ".dockerignore",  # Docker build-context exclusions
-        ".env.example",  # non-secret catalog of explicit process-env keys
-        ".gitattributes",  # git attributes (line endings, diff drivers, ...)
-        ".gitignore",  # git exclusion patterns
-        ".mergequeue.yaml",  # merge-queue config
-        ".node-version",  # pinned Node.js version (Volta/nvm-style)
-        ".npmrc",  # npm/pnpm registry + install config
-        ".prettierignore",  # Prettier formatter exclusions
-        ".prettierrc.json",  # Prettier formatter config
-        ".releaserc.json",  # semantic-release config
+        # Only dot-files a tool discovers exclusively at the repository root.
+        # Every tool input with a path override lives under .config/ instead
+        # (pre-commit, bump2version, dependency-cruiser, cspell, eslint, vite,
+        # vitest, playwright, the security contract, this gate's manifest) or
+        # is folded into package.json (prettier, semantic-release, commitlint,
+        # knip); docker/Dockerfile.dockerignore replaces a root .dockerignore.
+        ".gitattributes",  # git reads attributes only from the root file
+        ".gitignore",  # git reads the root exclusion file
+        # repository-manager's merge queue, lane doctor and validation policy
+        # read <repo>/.mergequeue.yaml only (see .config/repo-layout.toml)
+        ".mergequeue.yaml",
+        ".node-version",  # Node version managers (fnm/nodenv/asdf) discover it at the root
+        ".npmrc",  # pnpm reads project settings only from the project-root .npmrc
     }
 )
 
@@ -166,7 +155,7 @@ class ManifestError(Exception):
 
 
 def load_manifest() -> tuple[dict[str, str], dict[str, str]]:
-    """Load ``.repo-layout.toml``'s ``[dirs]``/``[files]`` tables.
+    """Load ``.config/repo-layout.toml``'s ``[dirs]``/``[files]`` tables.
 
     Every value must be a non-empty string reason -- an empty or missing
     reason defeats the point of the manifest (see its own header: "a manifest
@@ -175,7 +164,7 @@ def load_manifest() -> tuple[dict[str, str], dict[str, str]]:
     if not MANIFEST_PATH.exists():
         raise ManifestError(
             f"{MANIFEST_PATH} does not exist. Every repo this gate runs in "
-            "needs a .repo-layout.toml declaring its tracked root entries "
+            "needs a .config/repo-layout.toml declaring its tracked root entries "
             "(see check_root_hygiene.py's module docstring)."
         )
     try:
@@ -351,13 +340,13 @@ def _print_remediation_hints(v: RootHygieneViolations) -> None:
             "  * it is scratch/proof output   -> delete it (it should never have been committed)\n"
             "  * it belongs to the workspace  -> move it to ${WORKSPACE_ROOT}/, not this package\n"
             "  * it belongs inside a package  -> move it under the package source dir or scripts/\n"
-            "  * it genuinely belongs at root -> add a one-line reason to .repo-layout.toml\n"
+            "  * it genuinely belongs at root -> add a one-line reason to .config/repo-layout.toml\n"
             "    (dirs/files) or, for a conventional self-describing dot-file, to\n"
             "    ALLOWED_DOTFILES in scripts/check_root_hygiene.py\n"
         )
     if v.stale_dirs or v.stale_files:
         print(
-            "\nA declared .repo-layout.toml entry no longer exists in the tracked tree.\n"
+            "\nA declared .config/repo-layout.toml entry no longer exists in the tracked tree.\n"
             "Remove it from the manifest -- a stale entry is exactly the fiction this\n"
             "manifest exists to prevent (see its own header).\n"
         )

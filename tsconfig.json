@@ -22,5 +22,5 @@
     },
     "types": ["vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src", "eslint.config.ts", "vite.config.ts"]
+  "include": ["src", ".config/eslint.config.ts", ".config/vite.config.ts"]
 }
