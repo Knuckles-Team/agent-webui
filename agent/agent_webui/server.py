@@ -49,6 +49,7 @@ from .observability import (
     current_correlation_id,
     new_error_id,
 )
+from .rum import build_rum_router
 
 logger = logging.getLogger(__name__)
 
@@ -2519,6 +2520,7 @@ def create_agent_web_app(
     # `/api/enhanced/chats*`, just remounted; no shim, no alias.
     app.include_router(chats_router, prefix='/api')
     app.include_router(build_contact_router(contact_delivery), prefix='/api')
+    app.include_router(build_rum_router(), prefix='/api')
     app.include_router(build_browser_control_router(browser_control))
     # Hosted application surfaces (EH-429): `/api/apps` plus each app's routes.
     app.include_router(build_apps_router(default_apps()))
