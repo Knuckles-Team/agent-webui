@@ -102,7 +102,9 @@ def served_authority(monkeypatch):
     """
     from agent_utilities.core.config import config
 
-    _configure_verifier(monkeypatch)
+    # The complete JWT verifier comes from the shared autouse
+    # ``_complete_jwt_verifier`` fixture; the module-scoped app below
+    # configures its own (it is built before function-scoped fixtures run).
     monkeypatch.setattr(config, 'kg_policy_version', 'test-1', raising=False)
 
     # Minting a real GraphSession performs a placement read against a live
