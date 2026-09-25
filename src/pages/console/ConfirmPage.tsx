@@ -1,7 +1,7 @@
 /** Attended GraphOS confirmation. The server owns plan validity and authority. */
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
-import { clearConsoleConfirmation, invoke, pendingConsoleConfirmation } from '@/lib/graphos-api/invoke'
+import { invoke } from '@/lib/graphos-api/invoke'
 
 const PLAN_REF = /^graphos_plan:[0-9a-f]{48}$/
 const planSchema = z.object({ plan_ref: z.string(), op: z.string(), preview: z.unknown() }).loose()
@@ -24,7 +24,6 @@ export default function ConfirmPage() {
   const [busy, setBusy] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
   const planRef = refFromPath()
-  const pending = planRef ? pendingConsoleConfirmation(planRef) : null
 
   useEffect(() => {
     if (!planRef) return
@@ -42,15 +41,14 @@ export default function ConfirmPage() {
   }, [planRef])
 
   async function confirm() {
-    if (!planRef || !pending || plan?.op !== pending.opId || busy) return
+    if (!planRef || !plan || busy) return
     setBusy(true)
     setError(null)
     try {
-      await invoke(pending.opId, pending.params, z.unknown(), {
-        planRef,
-        idempotencyKey: pending.idempotencyKey ?? crypto.randomUUID(),
+      const idempotencyKey = crypto.randomUUID()
+      await invoke('plan.confirm', { plan_ref: planRef, idempotency_key: idempotencyKey }, z.unknown(), {
+        idempotencyKey,
       })
-      clearConsoleConfirmation(planRef)
       setConfirmed(true)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Confirmation failed')
@@ -75,13 +73,9 @@ export default function ConfirmPage() {
         <>
           <p>Operation: {plan.op}</p>
           <pre className="overflow-auto rounded-md border p-4 text-sm">{JSON.stringify(plan.preview, null, 2)}</pre>
-          {pending?.opId === plan.op ? (
-            <button type="button" disabled={busy} onClick={handleConfirmClick}>
-              {busy ? 'Confirming…' : 'Confirm this operation'}
-            </button>
-          ) : (
-            <p role="alert">The initiating operation is unavailable in this browser tab. Start it again here.</p>
-          )}
+          <button type="button" disabled={busy} onClick={handleConfirmClick}>
+            {busy ? 'Confirming…' : 'Confirm this operation'}
+          </button>
         </>
       )}
       {confirmed && <p role="status">Operation confirmed.</p>}

@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { z } from 'zod'
-import { invoke } from '@/lib/graphos-api/invoke'
 import { matchRoute } from '@/lib/nav-registry'
 import ConfirmPage from '../ConfirmPage'
 
@@ -44,31 +42,10 @@ describe('console confirmation route', () => {
     expect(screen.queryByRole('button')).toBeNull()
   })
 
-  it('uses the same operation transport for an attended confirmation', async () => {
+  it('confirms a server-side plan without browser-tab replay arguments', async () => {
     const planRef = `graphos_plan:${'b'.repeat(48)}`
     const fetcher = vi
       .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ authenticated: true, csrf_token: 'csrf' }) })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 428,
-        json: async () => ({
-          ok: false,
-          error: {
-            code: 'STEP_UP_REQUIRED',
-            source: 'graphos',
-            message: 'Request refused',
-            retryable: false,
-            details: {
-              plan_ref: planRef,
-              op: 'finance.orders.approve',
-              effect: 'admin',
-              console_url: `/console/confirm/${planRef}`,
-            },
-          },
-          meta: { registry_digest: 'digest', api_version: 'v1' },
-        }),
-      })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ authenticated: true, csrf_token: 'csrf' }) })
       .mockResolvedValueOnce({
         ok: true,
@@ -90,21 +67,17 @@ describe('console confirmation route', () => {
         }),
       })
     vi.stubGlobal('fetch', fetcher)
-    await expect(invoke('finance.orders.approve', { order_id: 'order-1' }, z.unknown())).rejects.toThrow(
-      'STEP_UP_REQUIRED',
-    )
     window.history.replaceState({}, '', `/console/confirm/${planRef}`)
     render(<ConfirmPage />)
     fireEvent.click(await screen.findByRole('button', { name: 'Confirm this operation' }))
     expect((await screen.findByRole('status')).textContent).toContain('Operation confirmed')
     expect(fetcher).toHaveBeenNthCalledWith(
-      6,
-      '/api/v1/ops/finance.orders.approve',
+      4,
+      '/api/v1/ops/plan.confirm',
       expect.objectContaining({
-        body: JSON.stringify({ order_id: 'order-1' }),
+        body: expect.stringContaining(`"plan_ref":"${planRef}"`),
         headers: expect.objectContaining({
           'X-CSRF-Token': 'csrf',
-          'GraphOS-Plan-Ref': planRef,
           'Idempotency-Key': expect.any(String),
         }),
       }),
