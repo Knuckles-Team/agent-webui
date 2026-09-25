@@ -16,7 +16,9 @@ import { Input } from '@/components/ui/input'
 import type { Identity } from '@/lib/auth'
 import {
   createFirstAdministrator,
+  forgotPassword,
   listIdentityProviders,
+  resetPassword,
   signIn,
   verifySecondFactor,
   type IdentityProviderOption,
@@ -58,11 +60,13 @@ function useFormState(): {
   const [busy, setBusy] = useState(false)
   const run = (action: () => Promise<SignInOutcome>, done: ReadonlySet<SignInOutcome>) => {
     setBusy(true)
-    void action().then((outcome) => {
-      setBusy(false)
-      if (done.has(outcome)) reloadHome()
-      else setMessage(messageFor(outcome))
-    })
+    void action()
+      .catch(() => 'error')
+      .then((outcome) => {
+        setBusy(false)
+        if (done.has(outcome)) reloadHome()
+        else setMessage(messageFor(outcome))
+      })
   }
   return { message, busy, run }
 }
@@ -219,12 +223,21 @@ function LocalSignInForm() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [providers, setProviders] = useState<IdentityProviderOption[]>([])
+  const [recovery, setRecovery] = useState(false)
   useEffect(() => {
     void listIdentityProviders().then(setProviders)
   }, [])
   const submit = submitting(() => {
     run(() => signIn(username, password), SIGNED_IN)
   })
+  if (recovery)
+    return (
+      <RecoveryForm
+        onBack={() => {
+          setRecovery(false)
+        }}
+      />
+    )
   return (
     <Shell title="Sign in" description="Sign in to Graph OS.">
       <form className="space-y-3" onSubmit={submit}>
@@ -244,6 +257,69 @@ function LocalSignInForm() {
       {providers.map((provider) => (
         <ProviderChoice key={provider.idp_id} provider={provider} />
       ))}
+      <Button
+        type="button"
+        variant="link"
+        onClick={() => {
+          setRecovery(true)
+        }}
+      >
+        Use a reset token
+      </Button>
+    </Shell>
+  )
+}
+
+function RecoveryForm({ onBack }: { onBack: () => void }) {
+  const [token, setToken] = useState('')
+  const [password, setPassword] = useState('')
+  const [message, setMessage] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    void forgotPassword()
+      .then(({ emailReset }) => {
+        if (!emailReset) setMessage('Email reset is unavailable. Ask an administrator for a one-time reset token.')
+      })
+      .catch(() => {
+        setMessage('Ask an administrator for a one-time reset token.')
+      })
+  }, [])
+  const submit = submitting(() => {
+    setBusy(true)
+    void resetPassword(token, password)
+      .then((ok) => {
+        setMessage(ok ? 'Password changed. Sign in with the new password.' : 'The reset token was refused or expired.')
+        if (ok) {
+          setToken('')
+          setPassword('')
+        }
+      })
+      .catch(() => {
+        setMessage('Password reset is unavailable.')
+      })
+      .finally(() => {
+        setBusy(false)
+      })
+  })
+  return (
+    <Shell title="Reset password" description="Use a one-time token from your administrator.">
+      <form className="space-y-3" onSubmit={submit}>
+        <TextField label="Reset token" value={token} onValue={setToken} />
+        <TextField
+          label="New password"
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onValue={setPassword}
+        />
+        <Message text={message} />
+        <Button type="submit" disabled={busy || !token || !password} className="w-full">
+          Reset password
+        </Button>
+      </form>
+      <Button type="button" variant="link" onClick={onBack}>
+        Back to sign in
+      </Button>
     </Shell>
   )
 }
