@@ -32,9 +32,33 @@ describe('identity operation adapter on shared GraphOS invoke', () => {
     )
   })
 
+  it('gives an administrator mutation a replayable idempotency key', async () => {
+    const fetcher = stubReplies({ status: 200, body: { ok: true, result: { changed: true }, meta } })
+    expect((await invokeIdentity('identity.users.disable', { principal_id: 'usr:1' })).kind).toBe('ready')
+    const init = fetcher.mock.calls[1]?.[1] as RequestInit
+    const key = (init.headers as Record<string, string>)['Idempotency-Key']
+    expect(key).toMatch(/^[0-9a-f-]{36}$/)
+  })
+
   it('rejects malformed list results before any view can map them', async () => {
     stubReplies({ status: 200, body: { ok: true, result: { items: 'bad' }, meta } })
     expect((await invokeIdentity('identity.users.list')).kind).toBe('error')
+  })
+
+  it('validates SCIM client and issuer rotation results', async () => {
+    stubReplies({
+      status: 200,
+      body: {
+        ok: true,
+        result: { items: [{ idp_id: 'scim', principal_id: 'svc:scim', enabled: true }], next_cursor: null },
+        meta,
+      },
+    })
+    expect((await invokeIdentity('identity.scim_clients.list')).kind).toBe('ready')
+    stubReplies({ status: 200, body: { ok: true, result: { epoch: 4, issuer_kid_current: 'kid-2' }, meta } })
+    expect((await invokeIdentity('identity.issuer.rotate')).kind).toBe('ready')
+    stubReplies({ status: 200, body: { ok: true, result: { items: [{ idp_id: 'scim' }] }, meta } })
+    expect((await invokeIdentity('identity.scim_clients.list')).kind).toBe('error')
   })
 
   it('preserves missing operation and scope refusals', async () => {

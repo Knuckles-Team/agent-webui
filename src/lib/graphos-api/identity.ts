@@ -14,6 +14,7 @@ export type IdentityOp =
   | 'identity.users.force_logout'
   | 'identity.users.admin_reset'
   | 'identity.service_accounts.create'
+  | 'identity.service_accounts.list'
   | 'identity.service_accounts.deprovision'
   | 'identity.groups.list'
   | 'identity.groups.upsert'
@@ -35,6 +36,11 @@ export type IdentityOp =
   | 'identity.policy.set'
   | 'identity.mode.status'
   | 'identity.mode.transition'
+  | 'identity.issuer.rotate'
+  | 'identity.scim_clients.list'
+  | 'identity.scim_clients.get'
+  | 'identity.scim_clients.upsert'
+  | 'identity.scim_clients.remove'
 
 export type IdentityReply<T> =
   | { kind: 'ready'; result: T }
@@ -57,6 +63,10 @@ const itemSchema = z
   })
   .loose()
 const pageSchema = z.object({ items: z.array(itemSchema), next_cursor: z.string().nullable().optional() }).loose()
+const scimClientSchema = z.object({ idp_id: z.string(), principal_id: z.string(), enabled: z.boolean() }).loose()
+const scimPageSchema = z
+  .object({ items: z.array(scimClientSchema), next_cursor: z.string().nullable().optional() })
+  .loose()
 const policySchema = z
   .object({
     epoch: z.number(),
@@ -68,11 +78,32 @@ const policySchema = z
 const mappingSchema = z
   .object({ roles: z.array(z.string()), groups: z.array(z.string()), scopes: z.array(z.string()) })
   .loose()
+const readOps = new Set<IdentityOp>([
+  'identity.users.list',
+  'identity.users.search',
+  'identity.service_accounts.list',
+  'identity.groups.list',
+  'identity.roles.list',
+  'identity.idps.list',
+  'identity.sessions.list',
+  'identity.api_keys.list',
+  'identity.audit.list',
+  'identity.audit.export',
+  'identity.audit.verify',
+  'identity.policy.get',
+  'identity.mode.status',
+  'identity.idps.mapping_dry_run',
+  'identity.scim_clients.list',
+  'identity.scim_clients.get',
+])
 
 function resultSchema(op: IdentityOp): z.ZodType {
+  if (op === 'identity.scim_clients.list') return scimPageSchema
   if (op.endsWith('.list') || op === 'identity.users.search' || op === 'identity.audit.export') return pageSchema
   if (op === 'identity.policy.get' || op === 'identity.policy.set') return policySchema
   if (op === 'identity.mode.status' || op === 'identity.mode.transition') return z.object({ mode: z.string() }).loose()
+  if (op === 'identity.issuer.rotate') return z.object({ epoch: z.number(), issuer_kid_current: z.string() }).loose()
+  if (op === 'identity.scim_clients.get') return scimClientSchema
   if (op === 'identity.idps.mapping_dry_run') return mappingSchema
   if (op === 'identity.audit.verify') return z.object({ valid: z.boolean() }).loose()
   if (op === 'identity.users.admin_reset') return z.object({ reset_token: z.string() }).loose()
@@ -104,7 +135,12 @@ export async function invokeIdentity<T>(
   params: Record<string, unknown> = {},
 ): Promise<IdentityReply<T>> {
   try {
-    const result = await invoke(op, params, resultSchema(op))
+    const result = await invoke(
+      op,
+      params,
+      resultSchema(op),
+      readOps.has(op) ? {} : { idempotencyKey: crypto.randomUUID() },
+    )
     return { kind: 'ready', result: result as T }
   } catch (error) {
     if (error instanceof GraphOsApiError) {
