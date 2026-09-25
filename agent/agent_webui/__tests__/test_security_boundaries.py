@@ -649,10 +649,9 @@ async def _drive_http(
     from agent_utilities.core.config import config
     from agent_utilities.knowledge_graph.core.session import use_session
 
-    # All three must be set -- `_identity_enforced()` is an AND of all three, and
-    # when it is False the middleware skips every check (see `__call__`'s
-    # `if not _identity_enforced() ...: return`), which would silently admit
-    # every role and defeat the negative-control (admin-only) assertions below.
+    # A deployment's complete verifier. Identity is always enforced (there is
+    # no unauthenticated path), so the negative-control (admin-only)
+    # assertions below exercise the real role gate.
     monkeypatch.setattr(
         config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
     )
@@ -686,10 +685,9 @@ async def _drive_ws(
     from agent_utilities.core.config import config
     from agent_utilities.knowledge_graph.core.session import use_session
 
-    # All three must be set -- `_identity_enforced()` is an AND of all three, and
-    # when it is False the middleware skips every check (see `__call__`'s
-    # `if not _identity_enforced() ...: return`), which would silently admit
-    # every role and defeat the negative-control (admin-only) assertions below.
+    # A deployment's complete verifier. Identity is always enforced (there is
+    # no unauthenticated path), so the negative-control (admin-only)
+    # assertions below exercise the real role gate.
     monkeypatch.setattr(
         config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
     )

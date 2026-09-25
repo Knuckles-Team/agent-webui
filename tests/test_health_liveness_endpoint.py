@@ -96,11 +96,9 @@ def app(webui_dist_present):
 
 @pytest.fixture
 def client(app):
-    # No identity config is set up (mirrors the default, unenforced posture),
-    # so ``_identity_enforced()`` is False and every route -- not only the
-    # liveness set -- bypasses the actor/authorization middleware. That
-    # matches production too: `/health*` is in ``_PUBLIC_LIVENESS_PATHS`` and
-    # bypasses identity even when it IS enforced.
+    # No credential is presented. Identity is always enforced; `/health*` is
+    # in ``_PUBLIC_LIVENESS_PATHS`` and answers without a credential, exactly
+    # as in production.
     return TestClient(app)
 
 
@@ -192,17 +190,17 @@ def test_bare_root_still_serves_the_spa_shell_authenticated(
     assert 'html' in content_type.lower()
 
 
-def test_bare_root_unauthenticated_is_401_not_404(app):
-    """`/` is not in `_PUBLIC_LIVENESS_PATHS` -- an unauthenticated request
-    must be rejected with 401 by the identity boundary, never reach
-    `SPAStaticFiles` at all, and never come back as the privacy-safe 404
-    JSON shape (`{"detail":"Request failed"}`) that a genuine unmatched
-    route produces. Distinguishes "no credential" from "route not found" for
-    the same live symptom investigated above."""
+def test_bare_root_unauthenticated_serves_only_the_static_shell(app):
+    """`/` without a credential answers the static SPA shell -- the bundle
+    that renders the sign-in and first-run screens -- and nothing else: it
+    never comes back as the privacy-safe 404 JSON shape, and a data route
+    beside it is still rejected with 401 by the identity boundary (IDM-07/08:
+    there is no unauthenticated application path, only the public shell)."""
     from fastapi.testclient import TestClient
 
     client = TestClient(app)
     response = client.get('/')
 
-    assert response.status_code == 401
-    assert response.json() != {'detail': 'Request failed'}
+    assert response.status_code == 200
+    assert 'spa-shell-marker' in response.text
+    assert client.get('/api/chats').status_code == 401

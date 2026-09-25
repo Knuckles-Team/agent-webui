@@ -529,14 +529,30 @@ def served_identity_config(monkeypatch):
     projected into a servable ``GraphSession`` at all:
     ``agent_webui.graph_identity.mint_frontend_graph_session`` raises
     ``PermissionError`` without both ``auth_jwt_audience`` and
-    ``kg_policy_version`` set. Also setting ``auth_jwt_jwks_uri`` /
-    ``auth_jwt_issuer`` makes ``_identity_enforced()`` True, which is what
-    turns on ``WebUIAuthorizationMiddleware``'s per-route role check -- so a
-    test built on this fixture exercises the REAL role gate, not a bypass of
-    it (mirrors ``test_security_boundaries.py``'s ``_drive_http``/``_drive_ws``
+    ``kg_policy_version`` set. Identity (and so
+    ``WebUIAuthorizationMiddleware``'s per-route role check) is always
+    enforced -- so a test built on this fixture exercises the REAL role gate,
+    not a bypass of it (mirrors ``test_security_boundaries.py``'s ``_drive_http``/``_drive_ws``
     helpers and ``test_mcp_delegation_routes.py``'s ``served_authority``
     fixture, both of which set the identical four fields for the identical
     reason).
+    """
+    from agent_utilities.core.config import config
+
+    # The complete verifier itself is configured by ``_complete_jwt_verifier``
+    # (autouse) for every test.
+    monkeypatch.setattr(config, 'kg_policy_version', 'test-1', raising=False)
+    return config
+
+
+@pytest.fixture(autouse=True)
+def _complete_jwt_verifier(monkeypatch):
+    """Every WebUI listener requires an identity verifier (IDM-07).
+
+    There is no unauthenticated loopback path any more, so every app a test
+    builds is configured the way a deployment is: a complete JWT verifier
+    (JWKS URI, issuer, audience). A test that exercises the refusal of an
+    unconfigured verifier clears these fields itself.
     """
     from agent_utilities.core.config import config
 
@@ -547,11 +563,7 @@ def served_identity_config(monkeypatch):
         raising=False,
     )
     monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.test/', raising=False)
-    monkeypatch.setattr(
-        config, 'auth_jwt_audience', 'agent-webui-test', raising=False
-    )
-    monkeypatch.setattr(config, 'kg_policy_version', 'test-1', raising=False)
-    return config
+    monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui-test', raising=False)
 
 
 @pytest.fixture(autouse=True)
