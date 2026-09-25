@@ -64,6 +64,11 @@ interface ConfigureBody {
  * "unknown configuration action" reply (HTTP 200) -- so a test that forgets
  * to configure an action exercises the true default instead of a fetch
  * failure, matching what the live backend actually answers today.
+ *
+ * Any request to the identity-ops endpoint (`/api/v1/ops/identity.*`, used
+ * by the user-roster section) that is not separately stubbed answers 404, so
+ * the roster section renders its own "unavailable" state without affecting
+ * the principals-section assertions below.
  */
 function mockConfigureFetch(
   responses: Partial<Record<'rbac_list' | 'rbac_grant' | 'rbac_revoke', { status?: number; body: unknown }>>,
@@ -244,5 +249,63 @@ describe('UserManagementView', () => {
       expect(screen.getByText(/Forbidden: you are not permitted to grant roles/i)).toBeInTheDocument()
     })
     expect(screen.queryByText(/^Granted /)).not.toBeInTheDocument()
+  })
+})
+
+function identityOpsResponse(status: number, body: unknown): Promise<Response> {
+  return Promise.resolve({ ok: status < 400, status, json: async () => body } as Response)
+}
+
+describe('UserManagementView identity operations', () => {
+  beforeEach(() => {
+    identityResult = { identity: ADMIN_IDENTITY, loading: false }
+  })
+
+  it('distinguishes an unavailable identity-ops API from an empty roster and never calls legacy configure', async () => {
+    const fetcher = vi.fn(() => identityOpsResponse(404, {}))
+    vi.stubGlobal('fetch', fetcher)
+    renderWithProviders(<UserManagementView />)
+    await waitFor(() => {
+      expect(screen.getByTestId('users-unavailable')).toBeInTheDocument()
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/v1/ops/identity.users.list',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetcher.mock.calls.some(([url]) => String(url).includes('/api/graph/configure'))).toBe(false)
+  })
+
+  it('shows a confirmed empty user roster distinctly', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => identityOpsResponse(200, { ok: true, result: { items: [], next_cursor: null } })),
+    )
+    renderWithProviders(<UserManagementView />)
+    await waitFor(() => {
+      expect(screen.getByText('No users matched this search.')).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('users-unavailable')).not.toBeInTheDocument()
+  })
+
+  it('shows roster actions but never reports an unconfirmed mutation as successful', async () => {
+    const fetcher = vi.fn((url: string) =>
+      url.includes('identity.users.list')
+        ? identityOpsResponse(200, {
+            ok: true,
+            result: { items: [{ principal_id: 'u-2', username: 'Bob', roles: ['reader'] }], next_cursor: null },
+          })
+        : identityOpsResponse(403, { ok: false, error: { code: 'SCOPE_REQUIRED' } }),
+    )
+    vi.stubGlobal('fetch', fetcher)
+    const { user } = renderWithProviders(<UserManagementView />)
+    await waitFor(() => {
+      expect(screen.getByText('Bob')).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: 'Disable' }))
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/v1/ops/identity.users.disable',
+      expect.objectContaining({ body: JSON.stringify({ principal_id: 'u-2' }) }),
+    )
+    expect(screen.queryByText('Identity action completed.')).not.toBeInTheDocument()
   })
 })

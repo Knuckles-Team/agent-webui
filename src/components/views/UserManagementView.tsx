@@ -3,29 +3,24 @@
  * @description User Management panel -- "There should be a user panel for
  * user management and roles we can grant."
  *
- * Two sections, each backed by a REAL, distinct data source (never a second
+ * Three sections, each backed by a REAL, distinct data source (never a second
  * fabricated one):
  *
  *  1. "You" -- the signed-in principal's own id, tenant, roles/scopes and
  *     admin-ness, read the SAME way every other identity-aware surface in
  *     this app does: `useIdentity()` (`src/lib/auth.ts`) over the server's
- *     `GET /auth/session`, proven live (HTTP 200) against the deployed
- *     `graph-os` pod on 2026-08-25.
+ *     `GET /auth/session`.
  *
  *  2. "Principals & role grants" -- an admin-only listing of every principal
- *     and their roles, with grant/revoke controls. Empirically, NO REST route
- *     exists for this today (see `src/lib/user-management-api.ts`'s file
- *     docstring for the full probe evidence: `POST /api/graph/configure
- *     {action:"rbac_list"}` -- the closest existing surface -- answers HTTP
- *     200 `{"error":"unknown configuration action"}`; there is no
- *     `/api/registry/identities`, `/api/dashboard/rbac`, or
- *     `/api/enhanced/{identity,users,principals}` route; `openapi.json`'s 191
- *     paths contain none either). This section therefore renders as
- *     `unavailable` against the live backend today, distinct from a
- *     confirmed-empty roster or a confirmed-forbidden read -- the panel is
- *     wired to render `ready` with live data (and enable grant/revoke) the
- *     moment a REST twin for the engine's `RbacAdmin`/`GetIdentity` UDS
- *     methods (EG-092/EG-303) is exposed, with no further frontend change.
+ *     and their roles, with grant/revoke controls, backed by
+ *     `src/lib/user-management-api.ts`. This section renders `unavailable`
+ *     until a REST twin for the engine's RBAC admin methods exists, distinct
+ *     from a confirmed-empty roster or a confirmed-forbidden read.
+ *
+ *  3. "User roster" -- list, search, create, and act on identity-admin users
+ *     and service accounts through the typed Graph OS identity operations in
+ *     `src/lib/graphos-api/identity.ts`. The server alone decides roles,
+ *     scopes, and whether a fresh MFA session is required.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -41,6 +36,13 @@ import { useIdentity } from '@/lib/auth'
 import { ROLE_ORDER, type Role } from '@/lib/nav-registry'
 import { fetchPrincipalsAndRoles, grantRole, revokeRole, type PrincipalsState } from '@/lib/user-management-api'
 import type { AgentIdentity } from '@/lib/admin-api'
+import {
+  invokeIdentity,
+  type IdentityPage,
+  type IdentityReply,
+  type IdentityUser,
+  type IdentityOp,
+} from '@/lib/graphos-api/identity'
 
 function IdentityCard() {
   const { identity, loading } = useIdentity()
@@ -427,6 +429,281 @@ function PrincipalsSection({ isAdmin }: { isAdmin: boolean }) {
   )
 }
 
+const USER_ACTIONS: readonly { label: string; op: IdentityOp }[] = [
+  { label: 'Disable', op: 'identity.users.disable' },
+  { label: 'Enable', op: 'identity.users.enable' },
+  { label: 'Unlock', op: 'identity.users.unlock' },
+  { label: 'Force logout', op: 'identity.users.force_logout' },
+  { label: 'Reset password', op: 'identity.users.admin_reset' },
+  { label: 'Deprovision', op: 'identity.users.deprovision' },
+]
+
+function UserRow({
+  user,
+  onAction,
+  busy,
+}: {
+  user: IdentityUser
+  onAction: (op: IdentityOp, id: string) => void
+  busy: boolean
+}) {
+  return (
+    <li className="rounded-md border p-3 space-y-2" data-testid="identity-user-row">
+      <div className="flex flex-wrap items-center gap-2">
+        <strong>{user.username ?? user.principal_id}</strong>
+        <span className="font-mono text-xs text-muted-foreground">{user.principal_id}</span>
+        {user.status && <Badge variant="outline">{user.status}</Badge>}
+        {user.kind && <Badge variant="secondary">{user.kind}</Badge>}
+      </div>
+      <div className="flex flex-wrap gap-1" aria-label={`Roles for ${user.username ?? user.principal_id}`}>
+        {(user.roles ?? []).map((role) => (
+          <Badge key={role} variant="outline">
+            {role}
+          </Badge>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {USER_ACTIONS.filter(({ op }) => user.kind !== 'service' || op !== 'identity.users.admin_reset').map(
+          ({ label, op }) => (
+            <Button
+              key={op}
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                onAction(
+                  user.kind === 'service' && op === 'identity.users.deprovision'
+                    ? 'identity.service_accounts.deprovision'
+                    : op,
+                  user.principal_id,
+                )
+              }}
+            >
+              {label}
+            </Button>
+          ),
+        )}
+      </div>
+    </li>
+  )
+}
+
+/** The server alone decides roles, scopes, and whether a fresh MFA session is required. */
+function UserRosterSection() {
+  const { identity, loading: identityLoading } = useIdentity()
+  const [username, setUsername] = useState('')
+  const [newKind, setNewKind] = useState<'human' | 'service'>('human')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeQuery, setActiveQuery] = useState('')
+  const [users, setUsers] = useState<IdentityReply<IdentityPage<IdentityUser>> | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [resetToken, setResetToken] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    setBusy(true)
+    setActiveQuery('')
+    setUsers(await invokeIdentity<IdentityPage<IdentityUser>>('identity.users.list', { limit: 50 }))
+    setBusy(false)
+  }, [])
+
+  const search = async () => {
+    const query = searchQuery.trim()
+    if (!query) return refresh()
+    setBusy(true)
+    setActiveQuery(query)
+    setUsers(await invokeIdentity<IdentityPage<IdentityUser>>('identity.users.search', { query, limit: 50 }))
+    setBusy(false)
+  }
+
+  const loadMore = async () => {
+    if (users?.kind !== 'ready' || !users.result.next_cursor) return
+    setBusy(true)
+    const next = await invokeIdentity<IdentityPage<IdentityUser>>(
+      activeQuery ? 'identity.users.search' : 'identity.users.list',
+      {
+        after: users.result.next_cursor,
+        limit: 50,
+        ...(activeQuery ? { query: activeQuery } : {}),
+      },
+    )
+    if (next.kind === 'ready') {
+      setUsers({
+        kind: 'ready',
+        result: { items: [...users.result.items, ...next.result.items], next_cursor: next.result.next_cursor },
+      })
+    } else {
+      toast.error(next.message)
+    }
+    setBusy(false)
+  }
+
+  useEffect(() => {
+    if (!identityLoading && !identity.needsSignIn) void refresh()
+  }, [identityLoading, identity.needsSignIn, refresh])
+
+  const create = async () => {
+    if (!username.trim()) return
+    setBusy(true)
+    const result = await invokeIdentity(
+      newKind === 'service' ? 'identity.service_accounts.create' : 'identity.users.create',
+      {
+        username: username.trim(),
+        ...(newKind === 'human' ? { kind: 'human' } : {}),
+      },
+    )
+    if (result.kind === 'ready') {
+      toast.success('User created.')
+      setUsername('')
+      void refresh()
+    } else {
+      toast.error(result.message)
+      setBusy(false)
+    }
+  }
+
+  const act = async (op: IdentityOp, id: string) => {
+    setBusy(true)
+    setResetToken(null)
+    const result = await invokeIdentity<{ reset_token?: string }>(op, { principal_id: id })
+    if (result.kind === 'ready') {
+      if (op === 'identity.users.admin_reset') setResetToken(result.result.reset_token ?? null)
+      toast.success('Identity action completed.')
+      void refresh()
+    } else {
+      toast.error(result.message)
+      setBusy(false)
+    }
+  }
+
+  if (identity.needsSignIn) {
+    return (
+      <Card data-testid="user-mgmt-roster">
+        <CardHeader>
+          <CardTitle className="text-base">User roster</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p role="status">Sign in to view the user roster.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card data-testid="user-mgmt-roster">
+      <CardHeader>
+        <CardTitle className="text-base">User roster</CardTitle>
+        <CardDescription>Changes require identity administrator authority and a fresh MFA session.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void search()
+          }}
+        >
+          <Input
+            aria-label="Search users"
+            placeholder="Search users"
+            value={searchQuery}
+            onChange={(event) => {
+              setSearchQuery(event.target.value)
+            }}
+          />
+          <Button type="submit" disabled={busy || !searchQuery.trim()}>
+            Search
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              void refresh()
+            }}
+            aria-label="Refresh users"
+          >
+            <RefreshCw className="size-4" />
+          </Button>
+        </form>
+        {users === null ? <p role="status">Loading users…</p> : null}
+        {users?.kind !== 'ready' && users !== null ? (
+          <p role="status" data-testid={`users-${users.kind}`}>
+            {users.message}
+          </p>
+        ) : null}
+        {users?.kind === 'ready' && !Array.isArray(users.result.items) ? (
+          <p role="alert">The identity service returned an invalid user list.</p>
+        ) : null}
+        {users?.kind === 'ready' && Array.isArray(users.result.items) && users.result.items.length === 0 ? (
+          <p role="status">No users matched this search.</p>
+        ) : null}
+        {users?.kind === 'ready' && Array.isArray(users.result.items) ? (
+          <ul className="space-y-2">
+            {users.result.items.map((user) => (
+              <UserRow
+                key={user.principal_id}
+                user={user}
+                busy={busy}
+                onAction={(op, id) => {
+                  void act(op, id)
+                }}
+              />
+            ))}
+          </ul>
+        ) : null}
+        {users?.kind === 'ready' && users.result.next_cursor ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              void loadMore()
+            }}
+          >
+            Load more users
+          </Button>
+        ) : null}
+        {resetToken && (
+          <p role="status" className="rounded border p-3">
+            One-time reset token: <code>{resetToken}</code>. Copy it now; it will not be shown again.
+          </p>
+        )}
+        <form
+          className="flex gap-2 border-t pt-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void create()
+          }}
+        >
+          <Input
+            aria-label="New username"
+            placeholder="New username"
+            value={username}
+            onChange={(e) => {
+              setUsername(e.target.value)
+            }}
+          />
+          <select
+            aria-label="New identity kind"
+            className="rounded border bg-background p-2"
+            value={newKind}
+            onChange={(event) => {
+              setNewKind(event.target.value as 'human' | 'service')
+            }}
+          >
+            <option value="human">Human</option>
+            <option value="service">Service account</option>
+          </select>
+          <Button type="submit" disabled={busy || !username.trim()}>
+            Create {newKind === 'service' ? 'service account' : 'user'}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function UserManagementView() {
   const { identity } = useIdentity()
   const isAdmin = identity.role === 'admin'
@@ -439,12 +716,13 @@ export default function UserManagementView() {
           User Management
         </h1>
         <p className="text-muted-foreground text-sm">
-          Your identity and roles, plus the fleet's principals and the roles granted to them.
+          Your identity and roles, the fleet's principals and role grants, and the identity-admin user roster.
         </p>
       </div>
 
       <IdentityCard />
       <PrincipalsSection isAdmin={isAdmin} />
+      <UserRosterSection />
     </div>
   )
 }
