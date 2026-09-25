@@ -13,6 +13,7 @@ function identity(raw: Partial<AuthSession> | null, ssoConfigured = true): Ident
 interface Call {
   path: string
   body: unknown
+  csrf?: string | null
 }
 
 let calls: Call[] = []
@@ -23,7 +24,13 @@ function answer(outcome: string, status = 200): void {
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input)
       if (path === '/auth/idps') return Promise.resolve(Response.json({ idps: [] }))
-      calls.push({ path, body: init?.body ? JSON.parse(String(init.body)) : null })
+      if (path === '/auth/session')
+        return Promise.resolve(Response.json({ authenticated: false, csrf_token: 'pending-session-csrf' }))
+      calls.push({
+        path,
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+        csrf: new Headers(init?.headers).get('X-CSRF-Token'),
+      })
       return Promise.resolve(Response.json({ outcome }, { status }))
     }),
   )
@@ -51,7 +58,9 @@ describe('SignInPanel', () => {
     await waitFor(() => {
       expect(assign).toHaveBeenCalledWith('/')
     })
-    expect(calls).toEqual([{ path: '/auth/login', body: { username: 'alice', password: 'correct horse battery' } }])
+    expect(calls).toEqual([
+      { path: '/auth/login', body: { username: 'alice', password: 'correct horse battery' }, csrf: null },
+    ])
   })
 
   it('shows the uniform failure message and stays on the form', async () => {
@@ -73,7 +82,11 @@ describe('SignInPanel', () => {
     await waitFor(() => {
       expect(assign).toHaveBeenCalledWith('/')
     })
-    expect(calls[0]).toEqual({ path: '/auth/mfa/verify', body: { method: 'totp', code: '123456' } })
+    expect(calls[0]).toEqual({
+      path: '/auth/mfa/verify',
+      body: { method: 'totp', code: '123456' },
+      csrf: 'pending-session-csrf',
+    })
   })
 
   it('creates the first administrator on a fresh production install', async () => {
@@ -88,6 +101,31 @@ describe('SignInPanel', () => {
       expect(assign).toHaveBeenCalledWith('/')
     })
     expect(calls[0].path).toBe('/auth/setup')
+  })
+
+  it('offers the offline administrator reset-token path without claiming email delivery', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input)
+        if (path === '/auth/idps') return Promise.resolve(Response.json({ idps: [] }))
+        if (path === '/auth/password/forgot')
+          return Promise.resolve(Response.json({ email_reset: false, alternatives: ['admin_reset'] }))
+        calls.push({ path, body: JSON.parse(String(init?.body)) })
+        return Promise.resolve(Response.json({ reset: true }))
+      }),
+    )
+    const { user } = renderWithProviders(<SignInPanel identity={identity({ mode: 'local' })} />)
+    await user.click(screen.getByRole('button', { name: 'Use a reset token' }))
+    expect(await screen.findByText(/Email reset is unavailable/)).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Reset token'), 'one-time-token')
+    await user.type(screen.getByLabelText('New password'), 'new-correct-horse')
+    await user.click(screen.getByRole('button', { name: 'Reset password' }))
+    expect(await screen.findByText(/Password changed/)).toBeInTheDocument()
+    expect(calls[0]).toEqual({
+      path: '/auth/password/reset',
+      body: { purpose: 'admin_reset', token: 'one-time-token', new_password: 'new-correct-horse' },
+    })
   })
 
   it('never renders a form when the identity service is unreachable', () => {

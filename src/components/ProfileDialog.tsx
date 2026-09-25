@@ -16,7 +16,7 @@
  * trade-off `chat-store.ts` already makes for conversation history. Both are
  * clearly labeled as local-only in the UI below.
  */
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type SyntheticEvent } from 'react'
 import { Camera, Mail, RotateCcw, ShieldCheck, User } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -32,6 +32,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import type { Identity } from '@/lib/auth'
+import { changePassword } from '@/lib/auth-api'
 import { setAvatarOverride, setNicknameOverride, useProfileOverride } from '@/lib/profile-store'
 
 export interface ProfileDialogProps {
@@ -268,6 +269,54 @@ function deriveAccountFields(identity: Identity, override: { nickname: string | 
   }
 }
 
+function LocalPasswordSection() {
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [busy, setBusy] = useState(false)
+  const submit = (event: SyntheticEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setBusy(true)
+    void changePassword(current, next)
+      .then((changed) => {
+        if (changed) {
+          setCurrent('')
+          setNext('')
+          toast.success('Password changed')
+        } else toast.error('Password change was refused')
+      })
+      .catch(() => toast.error('Password change is unavailable'))
+      .finally(() => {
+        setBusy(false)
+      })
+  }
+  return (
+    <form className="space-y-2 rounded-md border p-3" onSubmit={submit}>
+      <p className="text-sm font-medium">Local password</p>
+      <Input
+        aria-label="Current password"
+        type="password"
+        autoComplete="current-password"
+        value={current}
+        onChange={(event) => {
+          setCurrent(event.target.value)
+        }}
+      />
+      <Input
+        aria-label="New local password"
+        type="password"
+        autoComplete="new-password"
+        value={next}
+        onChange={(event) => {
+          setNext(event.target.value)
+        }}
+      />
+      <Button type="submit" disabled={busy || !current || !next}>
+        Change password
+      </Button>
+    </form>
+  )
+}
+
 export function ProfileDialog({ open, onOpenChange, identity }: ProfileDialogProps) {
   const override = useProfileOverride(identity.userKey)
   const avatar = useAvatarOverride(identity.userKey)
@@ -299,6 +348,7 @@ export function ProfileDialog({ open, onOpenChange, identity }: ProfileDialogPro
             nickname={nickname}
           />
           <AccountSection accountName={accountName} accountEmail={accountEmail} identity={identity} />
+          {identity.raw?.mode === 'local' && <LocalPasswordSection />}
         </div>
 
         <DialogFooter>

@@ -19,11 +19,25 @@ export interface IdentityProviderOption {
   kind: string
 }
 
-async function postJson(path: string, body: Record<string, unknown>): Promise<Response> {
+async function sessionCsrfToken(): Promise<string> {
+  const response = await fetch('/auth/session', {
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json' },
+  })
+  if (!response.ok) throw new Error('Identity session unavailable')
+  const session = (await response.json()) as { csrf_token?: unknown }
+  if (typeof session.csrf_token !== 'string' || !session.csrf_token)
+    throw new Error('Identity session has no CSRF token')
+  return session.csrf_token
+}
+
+async function postJson(path: string, body: Record<string, unknown>, sessionRequired = false): Promise<Response> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' }
+  if (sessionRequired) headers['X-CSRF-Token'] = await sessionCsrfToken()
   return fetch(path, {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers,
     body: JSON.stringify(body),
   })
 }
@@ -42,7 +56,7 @@ export async function signIn(username: string, password: string): Promise<SignIn
 }
 
 export async function verifySecondFactor(method: 'totp' | 'recovery', code: string): Promise<SignInOutcome> {
-  return outcomeOf(await postJson('/auth/mfa/verify', { method, code }))
+  return outcomeOf(await postJson('/auth/mfa/verify', { method, code }, true))
 }
 
 /** First-run: create the first administrator with the operator's setup code. */
@@ -58,7 +72,35 @@ export async function createFirstAdministrator(
 
 /** Sign out: the broker revokes the session server-side. */
 export async function signOut(): Promise<void> {
-  await postJson('/auth/logout', {})
+  const response = await postJson('/auth/logout', {}, true)
+  if (!response.ok) throw new Error('Identity sign-out was refused')
+}
+
+/** Offline reset choices are uniform for every account; no e-mail claim is made. */
+export async function forgotPassword(): Promise<{ emailReset: boolean; alternatives: string[] }> {
+  const response = await postJson('/auth/password/forgot', {})
+  if (!response.ok) throw new Error('Password recovery is unavailable')
+  const body = (await response.json()) as { email_reset?: unknown; alternatives?: unknown }
+  return {
+    emailReset: body.email_reset === true,
+    alternatives: Array.isArray(body.alternatives)
+      ? body.alternatives.filter((item): item is string => typeof item === 'string')
+      : [],
+  }
+}
+
+export async function resetPassword(token: string, newPassword: string): Promise<boolean> {
+  const response = await postJson('/auth/password/reset', { purpose: 'admin_reset', token, new_password: newPassword })
+  if (!response.ok) return false
+  const body = (await response.json()) as { reset?: unknown }
+  return body.reset === true
+}
+
+export async function changePassword(current: string, next: string): Promise<boolean> {
+  const response = await postJson('/auth/password/change', { current, new: next }, true)
+  if (!response.ok) return false
+  const body = (await response.json()) as { changed?: unknown }
+  return body.changed === true
 }
 
 /** Enabled browser identity providers; an empty list when none (or on error). */
