@@ -21,7 +21,7 @@ function ConsentActions({ record, analyticsConfigured, onChoose, onRevoke, onClo
         type="button"
         variant="outline"
         size="sm"
-        className="min-h-[var(--agent-webui-mobile-cta-button-height)]"
+        className="min-h-[var(--graph-os-webui-mobile-cta-button-height)]"
         onClick={() => {
           onChoose('denied')
         }}
@@ -32,7 +32,7 @@ function ConsentActions({ record, analyticsConfigured, onChoose, onRevoke, onClo
         <Button
           type="button"
           size="sm"
-          className="min-h-[var(--agent-webui-mobile-cta-button-height)]"
+          className="min-h-[var(--graph-os-webui-mobile-cta-button-height)]"
           onClick={() => {
             onChoose('granted')
           }}
@@ -45,7 +45,7 @@ function ConsentActions({ record, analyticsConfigured, onChoose, onRevoke, onClo
           type="button"
           variant="ghost"
           size="sm"
-          className="min-h-[var(--agent-webui-mobile-cta-button-height)]"
+          className="min-h-[var(--graph-os-webui-mobile-cta-button-height)]"
           onClick={onRevoke}
         >
           Revoke
@@ -56,7 +56,7 @@ function ConsentActions({ record, analyticsConfigured, onChoose, onRevoke, onClo
           type="button"
           variant="ghost"
           size="sm"
-          className="min-h-[var(--agent-webui-mobile-cta-button-height)]"
+          className="min-h-[var(--graph-os-webui-mobile-cta-button-height)]"
           onClick={onClose}
         >
           Close
@@ -101,7 +101,7 @@ function ConsentPrompt({
   const copy = analyticsCopy(analyticsConfigured)
   return (
     <aside
-      className="fixed inset-x-3 bottom-[var(--agent-webui-mobile-consent-bottom)] mx-auto max-w-2xl overflow-y-auto rounded-xl border bg-background/95 p-4 shadow-lg backdrop-blur md:bottom-3"
+      className="fixed inset-x-3 bottom-[var(--graph-os-webui-mobile-consent-bottom)] mx-auto max-w-2xl overflow-y-auto rounded-xl border bg-background/95 p-4 shadow-lg backdrop-blur md:bottom-3"
       style={{
         ...mobileSurfaceStyle,
         maxHeight: MOBILE_SURFACE.consentMaxHeight,
@@ -146,7 +146,7 @@ function PrivacySettingsButton({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       type="button"
-      className="fixed bottom-[var(--agent-webui-mobile-consent-bottom)] left-3 rounded-full border bg-background/95 px-3 py-2 text-xs shadow-md backdrop-blur md:bottom-3"
+      className="fixed bottom-[var(--graph-os-webui-mobile-consent-bottom)] left-3 rounded-full border bg-background/95 px-3 py-2 text-xs shadow-md backdrop-blur md:bottom-3"
       style={{ ...mobileSurfaceStyle, zIndex: MOBILE_SURFACE.consentZIndex }}
       data-mobile-surface="consent"
       onClick={onOpen}

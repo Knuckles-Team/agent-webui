@@ -13,7 +13,7 @@ import DecisionExplorerTab from '@/components/decisions/DecisionExplorerTab'
  * why-not) and the outcome dashboard (the per-option outcome aggregate,
  * with unavailable calibration/coverage states). Both tabs are read-only:
  * this view never commits or resolves a decision; it renders what
- * `agent/agent_webui/api_extensions.py`'s Decisions section serves.
+ * `agent/graph_os_webui/api_extensions.py`'s Decisions section serves.
  */
 
 type TabId = 'explorer' | 'calibration'

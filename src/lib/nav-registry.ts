@@ -1,6 +1,6 @@
 /**
  * @file nav-registry.ts
- * @description The single declarative source of truth for every page in agent-webui.
+ * @description The single declarative source of truth for every page in graphos.
  *
  * `ROUTES` is what the sidebar, the router, the mobile layout, and (eventually) the
  * role filter and the agent's page-navigation tool all derive from. Adding a page
@@ -58,7 +58,7 @@ import {
 
 /** Minimum role required to see/use a route. Enforced in two places, both derived from
  * this same field: {@link roleAtLeast} filters the sidebar and gates route rendering in
- * `App.tsx` (UI), and `agent/agent_webui/rbac.py` enforces the equivalent ladder
+ * `App.tsx` (UI), and `agent/graph_os_webui/rbac.py` enforces the equivalent ladder
  * server-side in `WebUIAuthorizationMiddleware` — a hidden nav item alone is not a
  * permission. */
 export type Role = 'reader' | 'user' | 'maintainer' | 'admin'
@@ -77,7 +77,7 @@ export function roleAtLeast(role: Role | null | undefined, minimum: Role): boole
   return roleRank >= ROLE_ORDER.indexOf(minimum)
 }
 
-/** The top-level information-architecture sections (charter: agent-webui IA table),
+/** The top-level information-architecture sections (charter: graph-os-webui IA table),
  * plus `apps`: hosted application surfaces (EH-429), each declared by its own
  * `src/apps/<id>/routes.ts`. */
 export type SectionId =
@@ -863,7 +863,7 @@ export const ROUTES: readonly RouteDef[] = [
 ]
 
 const DEFAULT_PAGE_DESCRIPTION =
-  'Use the Agent WebUI to understand, operate, and safely improve your connected agent system.'
+  'Use GraphOS to understand, operate, and safely improve your connected agent system.'
 
 /**
  * The public/legal pages are registered beside application routes for matching,
@@ -882,12 +882,12 @@ export const PUBLIC_ROUTES: readonly RouteDef[] = [
     mobile: 'full',
     element: lazy(() => import('@/components/public/ThankYouPage')),
     page: {
-      title: 'Thank you | Agent WebUI',
+      title: 'Thank you | GraphOS',
       description: 'Review the bounded confirmation for a submission the service accepted.',
       visibility: 'public',
       indexable: false,
       canonicalPath: '/thank-you',
-      cta: { label: 'Return to Agent WebUI', target: '/', eventName: 'public_thank_you_return' },
+      cta: { label: 'Return to GraphOS', target: '/', eventName: 'public_thank_you_return' },
       webmcpPageId: 'public.thank-you',
       loading: 'inline',
       error: 'inline',
@@ -898,14 +898,14 @@ export const PUBLIC_ROUTES: readonly RouteDef[] = [
     path: '/privacy',
     label: 'Privacy policy',
     section: 'documentation',
-    blurb: 'Read the reviewed privacy policy for this Agent WebUI deployment.',
+    blurb: 'Read the reviewed privacy policy for this GraphOS deployment.',
     icon: ShieldCheck,
     minRole: 'reader',
     mobile: 'full',
     element: lazy(() => import('@/components/public/PrivacyPage')),
     page: {
-      title: 'Privacy policy | Agent WebUI',
-      description: 'Read the reviewed privacy policy for this Agent WebUI deployment.',
+      title: 'Privacy policy | GraphOS',
+      description: 'Read the reviewed privacy policy for this GraphOS deployment.',
       visibility: 'public',
       indexable: true,
       canonicalPath: '/privacy',
@@ -926,7 +926,7 @@ export const PUBLIC_ROUTES: readonly RouteDef[] = [
     mobile: 'full',
     element: lazy(() => import('@/components/public/TermsPage')),
     page: {
-      title: 'Terms and conditions | Agent WebUI',
+      title: 'Terms and conditions | GraphOS',
       description: 'Read the reviewed terms and safe agent-control boundaries for this service.',
       visibility: 'public',
       indexable: true,
@@ -942,18 +942,18 @@ export const PUBLIC_ROUTES: readonly RouteDef[] = [
     path: '/contact',
     label: 'Contact',
     section: 'documentation',
-    blurb: 'Find the reviewed service contact details for this Agent WebUI deployment.',
+    blurb: 'Find the reviewed service contact details for this GraphOS deployment.',
     icon: MessageCircle,
     minRole: 'reader',
     mobile: 'full',
     element: lazy(() => import('@/components/public/ContactPage')),
     page: {
-      title: 'Contact | Agent WebUI',
-      description: 'Find the reviewed service contact details for this Agent WebUI deployment.',
+      title: 'Contact | GraphOS',
+      description: 'Find the reviewed service contact details for this GraphOS deployment.',
       visibility: 'public',
       indexable: true,
       canonicalPath: '/contact',
-      cta: { label: 'Open Agent WebUI', target: '/', eventName: 'public_contact_open_app' },
+      cta: { label: 'Open GraphOS', target: '/', eventName: 'public_contact_open_app' },
       webmcpPageId: 'public.contact',
       loading: 'inline',
       error: 'inline',
@@ -967,17 +967,17 @@ export const NOT_FOUND_ROUTE: RouteDef = {
   path: '*',
   label: 'Page not found',
   section: 'documentation',
-  blurb: 'The requested page was not found in Agent WebUI.',
+  blurb: 'The requested page was not found in GraphOS.',
   icon: Compass,
   minRole: 'reader',
   mobile: 'full',
   element: lazy(() => import('@/components/public/NotFoundPage')),
   page: {
-    title: 'Page not found | Agent WebUI',
-    description: 'The requested page was not found in Agent WebUI.',
+    title: 'Page not found | GraphOS',
+    description: 'The requested page was not found in GraphOS.',
     visibility: 'public',
     indexable: false,
-    cta: { label: 'Open Agent WebUI', target: '/', eventName: 'public_not_found_home' },
+    cta: { label: 'Open GraphOS', target: '/', eventName: 'public_not_found_home' },
     webmcpPageId: 'public.not-found',
     loading: 'inline',
     error: 'inline',
@@ -1011,7 +1011,7 @@ export function getRoutePageMetadata(route: RouteDef): RoutePageMetadata {
   const override = route.page ?? {}
   const canonicalPath = metadataValue(override.canonicalPath, defaultCanonicalPath(route))
   return {
-    title: metadataValue(override.title, `${route.label} | Agent WebUI`),
+    title: metadataValue(override.title, `${route.label} | GraphOS`),
     description: metadataValue(override.description, route.blurb || DEFAULT_PAGE_DESCRIPTION),
     visibility: metadataValue(override.visibility, 'private'),
     indexable: metadataValue(override.indexable, false),

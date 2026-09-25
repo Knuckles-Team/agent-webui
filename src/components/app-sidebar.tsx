@@ -184,7 +184,7 @@ export function AppSidebar() {
             <div className="flex items-center gap-2.5">
               <span className="text-2xl">{agentInfo?.emoji ?? '🤖'}</span>
               <h1 className="text-base font-bold truncate group-data-[state=collapsed]:hidden">
-                {agentInfo?.name ?? 'Agent Web Dashboard'}
+                {agentInfo?.name ?? 'GraphOS'}
               </h1>
             </div>
             {agentInfo?.description && (

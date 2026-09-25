@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Idempotent, re-runnable identity provisioning for the Agent WebUI.
+"""Idempotent, re-runnable identity provisioning for the GraphOS.
 
 Stands up **both** identities the WebUI needs, end to end, with no hand-placed
 credential anywhere:
@@ -8,17 +8,17 @@ credential anywhere:
     Reconciles the realm objects.  Two *separate* confidential clients, because
     the two flows must not share a credential:
 
-    * ``agent-webui`` — standard (authorization-code) flow only, PKCE ``S256``
+    * ``graph-os-webui`` — standard (authorization-code) flow only, PKCE ``S256``
       required, no service account.  This is the **end user's** login client;
       the tokens it issues carry the human's ``sub``/``email``/roles.
-    * ``agent-webui-svc`` — ``client_credentials`` only, no browser flow.  This
+    * ``graph-os-webui-svc`` — ``client_credentials`` only, no browser flow.  This
       is the WebUI **backend's** own service identity for outbound MCP calls.
 
     Both get the ``agent-services`` client scope, which carries the
     ``tenant_id`` and ``aud`` claims the graph session mint requires.  Roles are
     granted at the minimum that works: the service account gets ``kg:write``
     (the gate expands write ⇒ read); human users get ``kg:read`` + ``kg:write``
-    through the ``agent-webui-users`` group.  Neither gets ``kg:admin`` — the
+    through the ``graph-os-webui-users`` group.  Neither gets ``kg:admin`` — the
     WebUI's admin routes stay closed until a realm admin deliberately opens
     them.
 
@@ -35,14 +35,14 @@ credential anywhere:
     Idempotent; safe on every deploy.
 
 ``openbao``
-    Writes the resolved configuration to KV ``apps/agent-webui`` — the single
+    Writes the resolved configuration to KV ``apps/graph-os-webui`` — the single
     source the ``ExternalSecret`` mirrors.  Never writes to the mirrored
     Kubernetes Secret, which external-secrets silently reverts.  A previously
     generated ``WEBUI_SESSION_KEY`` is preserved across runs so re-running does
     not sign every browser out.
 
 ``kubernetes``
-    Ensures the ``agent-webui-oidc`` ExternalSecret and patches the Deployment
+    Ensures the ``graph-os-webui-oidc`` ExternalSecret and patches the Deployment
     to consume it, mounting the homelab CA bundle so JWKS discovery over
     ``https://keycloak.example`` validates.  Uses ``kubectl patch`` throughout;
     it never applies a committed manifest over live state.
@@ -93,9 +93,9 @@ ADMIN_REALM = os.environ.get('KEYCLOAK_ADMIN_REALM', 'master')
 ADMIN_USER = os.environ.get('KEYCLOAK_ADMIN_USER', 'admin')
 
 WEBUI_ORIGIN = os.environ.get('WEBUI_ORIGIN', 'http://au.example').rstrip('/')
-BROWSER_CLIENT = 'agent-webui'
-SERVICE_CLIENT = 'agent-webui-svc'
-USER_GROUP = 'agent-webui-users'
+BROWSER_CLIENT = 'graph-os-webui'
+SERVICE_CLIENT = 'graph-os-webui-svc'
+USER_GROUP = 'graph-os-webui-users'
 
 # The scope that stamps ``tenant_id`` and ``aud`` onto every issued access
 # token.  ``agent_utilities.security.request_identity`` refuses to mint a graph
@@ -131,11 +131,11 @@ GRAPH_ROLES = ('kg:read', 'kg:write', 'kg:admin')
 TIER2_ADMISSION_ROLE = 'webui-cluster-read'
 
 NAMESPACE = os.environ.get('WEBUI_NAMESPACE', 'apps')
-DEPLOYMENT = 'agent-webui'
+DEPLOYMENT = 'graph-os-webui'
 # Name of BOTH the ExternalSecret and the Kubernetes Secret it owns.
-ES_RESOURCE_NAME = 'agent-webui-oidc'
+ES_RESOURCE_NAME = 'graph-os-webui-oidc'
 BAO_MOUNT = os.environ.get('BAO_MOUNT', 'apps')
-BAO_PATH = os.environ.get('BAO_PATH', 'agent-webui')
+BAO_PATH = os.environ.get('BAO_PATH', 'graph-os-webui')
 BAO_NAMESPACE = os.environ.get('BAO_K8S_NAMESPACE', 'platform')
 
 CA_BUNDLE_CONFIGMAP = 'homelab-ca-bundle'
@@ -720,7 +720,7 @@ def stage_keycloak(grant_users: list[str], dry_run: bool) -> dict[str, str]:
         token,
         {
             'clientId': BROWSER_CLIENT,
-            'name': 'Agent WebUI (browser sign-in)',
+            'name': 'GraphOS (browser sign-in)',
             'description': (
                 'Confidential authorization-code client. Issues the END USER a '
                 'token; the WebUI never exceeds the signed-in human authority.'
@@ -761,7 +761,7 @@ def stage_keycloak(grant_users: list[str], dry_run: bool) -> dict[str, str]:
         token,
         {
             'clientId': SERVICE_CLIENT,
-            'name': 'Agent WebUI (backend service identity)',
+            'name': 'GraphOS (backend service identity)',
             'description': (
                 'Confidential client_credentials client for the WebUI backend’s '
                 'own outbound calls. No browser flow, separate secret.'

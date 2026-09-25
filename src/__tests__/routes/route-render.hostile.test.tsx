@@ -12,7 +12,7 @@
  * fails this suite by construction — coverage cannot silently drop.
  *
  * ── The baseline (why this file does NOT just assert "never trips") ────────
- * agent-webui's `.mergequeue.yaml` `vitest` gate is DIFFERENTIAL: a candidate
+ * graph-os-webui's `.mergequeue.yaml` `vitest` gate is DIFFERENTIAL: a candidate
  * that introduces any `^FAIL ` line not already on `main` is rejected. This
  * harness's job is to prove existing views are broken, so an unconditional
  * "every mount must pass" suite is *guaranteed* rejection on first landing —

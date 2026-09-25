@@ -65,7 +65,7 @@ export interface MCPProviderProps {
 /**
  * Loads the caller's policy-filtered tool catalog through the same-origin
  * BFF route (`GET /api/enhanced/mcp/servers/{server}/tools`,
- * `list_mcp_server_tools` in `agent_webui.api_extensions`) — never opens a
+ * `list_mcp_server_tools` in `graph_os_webui.api_extensions`) — never opens a
  * browser-side MCP connection (see `mcp-client.ts`'s module docstring for
  * why that is impossible to do safely, not merely undone). The fetch reruns
  * whenever `server` changes and is aborted on unmount or before a stale

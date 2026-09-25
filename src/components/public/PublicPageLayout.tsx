@@ -58,7 +58,7 @@ export function PublicPageLayout({ route, eyebrow, title, description, children 
         </div>
       </header>
       <main
-        className="mx-auto w-full max-w-5xl px-4 py-10 pb-[var(--agent-webui-mobile-cta-occupied-height)] sm:px-8 sm:py-16"
+        className="mx-auto w-full max-w-5xl px-4 py-10 pb-[var(--graph-os-webui-mobile-cta-occupied-height)] sm:px-8 sm:py-16"
         style={{ scrollPaddingBottom: MOBILE_SURFACE.ctaOccupiedHeight }}
         onFocusCapture={keepMobileFocusVisible}
       >

@@ -63,8 +63,8 @@ function sendEvent(config: AnalyticsConfig, event: SanitizedAnalyticsEvent): voi
     return
   }
 
-  const maybeWindow = window as Window & { agentWebUiAnalytics?: (event: SanitizedAnalyticsEvent) => void }
-  maybeWindow.agentWebUiAnalytics?.(sanitized)
+  const maybeWindow = window as Window & { graphOsWebUiAnalytics?: (event: SanitizedAnalyticsEvent) => void }
+  maybeWindow.graphOsWebUiAnalytics?.(sanitized)
 }
 
 let runtimeHandle: { config: AnalyticsConfig; track: (event: SanitizedAnalyticsEvent) => void } | null = null
@@ -90,7 +90,7 @@ export function loadAnalytics(config: AnalyticsConfig): { status: AnalyticsStatu
 
   if (source) {
     let script = document.head.querySelector<HTMLScriptElement>(
-      `script[data-agent-webui-analytics="${config.provider}"]`,
+      `script[data-graph-os-webui-analytics="${config.provider}"]`,
     )
     if (!script) {
       script = document.createElement('script')

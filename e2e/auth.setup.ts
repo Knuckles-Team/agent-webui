@@ -25,7 +25,7 @@ import { test as setup, expect } from '@playwright/test'
  * Credential source — environment only, never hardcoded or committed:
  *   E2E_KEYCLOAK_USERNAME / E2E_KEYCLOAK_PASSWORD
  *
- * `agent-webui`'s browser client (`agent-webui` in
+ * `graph-os-webui`'s browser client (`graph-os-webui` in
  * `scripts/provision_identity.py`) is provisioned with
  * `directAccessGrantsEnabled: false` — a Resource-Owner-Password grant is
  * not available for this client and is not the intended flow anyway; the
@@ -62,7 +62,7 @@ setup('authenticate against Keycloak', async ({ page }) => {
   await page.goto('/')
 
   // Unauthenticated navigation is redirected by the app's own OIDC gate
-  // (agent/agent_webui/oidc_session.py) to /auth/login, which the app then
+  // (agent/graph_os_webui/oidc_session.py) to /auth/login, which the app then
   // sends on to Keycloak's hosted Authorization Code + PKCE login form.
   await page.waitForURL(/\/realms\/[^/]+\/protocol\/openid-connect\/auth/, {
     timeout: 30_000,

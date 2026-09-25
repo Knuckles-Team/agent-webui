@@ -17,7 +17,7 @@ one this repo no longer carries (see `.github/workflows/release.yml`).
 
 **What it does.** Reads the `epistemic-graph` entry straight out of
 `[project.dependencies]` in the given `pyproject.toml` (agent-utilities' own,
-passed as an argument -- agent-webui does not declare epistemic-graph
+passed as an argument -- graph-os-webui does not declare epistemic-graph
 itself; the floor is transitive, via the `au-src` build context) (no
 `packaging` import -- this runs before any environment is synced,
 deliberately, so a missing floor is caught before any CI time is spent

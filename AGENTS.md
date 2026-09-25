@@ -1,11 +1,11 @@
-# Agent WebUI engineering contract
+# GraphOS engineering contract
 
 This file defines the current repository contract for contributors and
 automation. `CLAUDE.md` imports it, so edit this file when the contract changes.
 
 ## What this repository owns
 
-Agent WebUI owns the browser presentation layer for Graph OS and the FastAPI
+GraphOS owns the browser presentation layer for Graph OS and the FastAPI
 host that safely adapts browser protocols to the platform gateway. Its public
 surface includes:
 
@@ -29,7 +29,7 @@ graph, orchestration, connector, or scheduling implementations.
 The runtime path is:
 
 ```text
-browser -> React application -> Agent WebUI FastAPI host
+browser -> React application -> GraphOS FastAPI host
         -> authenticated Graph OS gateway -> epistemic-graph / agent fleet
 ```
 
@@ -37,17 +37,17 @@ browser -> React application -> Agent WebUI FastAPI host
 - `src/components/`: views, UI primitives, renderers, graphs, and workflows.
 - `src/hooks/`: reusable browser behavior and stateful integrations.
 - `src/lib/`: typed clients, protocol adapters, validation, and state helpers.
-- `agent/agent_webui/server.py`: FastAPI composition, middleware, and assets.
-- `agent/agent_webui/api_extensions.py`: canonical service browser facades.
-- `agent/agent_webui/oidc_session.py`: OIDC flow and protected sessions.
-- `agent/agent_webui/graph_identity.py`: request-scoped graph identity.
-- `agent/agent_webui/graph_admission.py`: graph operation authorization.
-- `agent/agent_webui/browser_control.py`: attended browser-control boundary.
-- `agent/agent_webui/observability.py`: redacted request telemetry.
+- `agent/graph_os_webui/server.py`: FastAPI composition, middleware, and assets.
+- `agent/graph_os_webui/api_extensions.py`: canonical service browser facades.
+- `agent/graph_os_webui/oidc_session.py`: OIDC flow and protected sessions.
+- `agent/graph_os_webui/graph_identity.py`: request-scoped graph identity.
+- `agent/graph_os_webui/graph_admission.py`: graph operation authorization.
+- `agent/graph_os_webui/browser_control.py`: attended browser-control boundary.
+- `agent/graph_os_webui/observability.py`: redacted request telemetry.
 - `public/`: static assets copied into the production build.
 - `docs/` and `mkdocs.yml`: published reference documentation.
 - `docker/`: reproducible image and deployment scripts.
-- `agent/agent_webui/__tests__/`: backend contract and security tests.
+- `agent/graph_os_webui/__tests__/`: backend contract and security tests.
 - `src/**/__tests__/` and `e2e/`: frontend and browser tests.
 
 Frontend server state uses React Query. Chat uses the Vercel AI SDK. Local UI
@@ -88,9 +88,9 @@ pnpm run build
 Backend and repository checks:
 
 ```bash
-uv run --all-extras pytest agent/agent_webui/__tests__
+uv run --all-extras pytest agent/graph_os_webui/__tests__
 pre-commit run --config .config/pre-commit.yaml --all-files
-python -m agent_webui.server --security-doctor --host 0.0.0.0
+python -m graph_os_webui.server --security-doctor --host 0.0.0.0
 ```
 
 Build and deploy only through the repository scripts:
@@ -177,7 +177,7 @@ This is a shared multi-worktree repository. Never edit the canonical checkout.
 Create a distinct branch and a real Git worktree for each lane:
 
 ```bash
-git worktree add "$WORKTREE_ROOT/agent-webui/<branch>" -b <branch> main
+git worktree add "$WORKTREE_ROOT/graph-os-webui/<branch>" -b <branch> main
 ```
 
 Do not use harness-managed worktree isolation for this repository. It can alter

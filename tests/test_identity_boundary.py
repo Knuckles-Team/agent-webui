@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 pytestmark = pytest.mark.integration
 
 _INDEX = (
-    '<!doctype html><html><head><title>Agent Web Dashboard</title></head>'
+    '<!doctype html><html><head><title>GraphOS</title></head>'
     '<body><div id="root">spa-shell-marker</div></body></html>'
 )
 _ASSET = 'console.log("bundle")'
@@ -27,9 +27,9 @@ _ASSET = 'console.log("bundle")'
 @pytest.fixture
 def built_bundle():
     """A throwaway ``dist/`` so the SPA mount (and its public shell) is live."""
-    import agent_webui
+    import graph_os_webui
 
-    dist = Path(agent_webui.__file__).parent / 'dist'
+    dist = Path(graph_os_webui.__file__).parent / 'dist'
     existed = dist.exists()
     assets = dist / 'assets'
     assets_existed = assets.exists()
@@ -52,7 +52,7 @@ def built_bundle():
 
 
 def _build(**kwargs: Any) -> Any:
-    from agent_webui.server import create_agent_web_app
+    from graph_os_webui.server import create_agent_web_app
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
 
@@ -94,7 +94,7 @@ def test_a_host_session_boundary_satisfies_the_verifier_requirement(
 def test_host_boundary_and_webui_oidc_cannot_both_own_auth(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from agent_webui import oidc_session
+    from graph_os_webui import oidc_session
 
     monkeypatch.setattr(oidc_session, 'load_settings', lambda: object())
     with pytest.raises(RuntimeError, match='both own'):

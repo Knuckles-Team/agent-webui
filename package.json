@@ -1,14 +1,10 @@
 {
-  "name": "@pydantic/agent-webui",
+  "name": "@knuckles-team/graph-os-webui",
   "packageManager": "pnpm@10.29.3+sha512.498e1fb4cca5aa06c1dcf2611e6fafc50972ffe7189998c409e90de74566444298ffe43e6cd2acdc775ba1aa7cc5e092a8b7054c811ba8c5770f84693d33d2dc",
-  "private": false,
+  "private": true,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pydantic/ai-chat-ui.git"
-  },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "url": "git+https://github.com/Knuckles-Team/graph-os-webui.git"
   },
   "version": "2.6.2",
   "type": "module",
@@ -24,9 +20,9 @@
     "lint": "eslint --config .config/eslint.config.ts",
     "lint-fix": "eslint --config .config/eslint.config.ts --fix --quiet",
     "dev": "vite --config .config/vite.config.ts",
-    "dev:server": "cd agent && uv run uvicorn chatbot.server:app --port 38001",
+    "dev:server": "uv run python -m graph_os_webui.server --port 38001",
     "build": "node scripts/no_fabrication_gate.mjs && pnpm run site:assets:test && pnpm run site:assets && pnpm run site:assets:check && pnpm run site:config:check && pnpm run site:image-alt:check && tsc -b && vite build --config .config/vite.config.ts && node scripts/publish-dist.mjs",
-    "preview": "vite preview --config .config/vite.config.ts --outDir agent/agent_webui/dist",
+    "preview": "vite preview --config .config/vite.config.ts --outDir agent/graph_os_webui/dist",
     "test": "vitest run --config .config/vitest.config.ts",
     "test:ui": "vitest --config .config/vitest.config.ts --ui",
     "test:coverage": "vitest run --config .config/vitest.config.ts --coverage",
@@ -92,7 +88,6 @@
     "@playwright/test": "^1.61.1",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
-    "@semantic-release/npm": "^13.1.5",
     "@taplo/cli": "^0.7.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -161,7 +156,6 @@
           "changelogFile": "CHANGELOG.md"
         }
       ],
-      "@semantic-release/npm",
       "@semantic-release/github",
       [
         "@semantic-release/git",

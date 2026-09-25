@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build (and optionally push) the agent-webui runtime image (D-WUI-30). Wraps the
+# Build (and optionally push) the graph-os-webui runtime image (D-WUI-30). Wraps the
 # exact build invocation documented in the Dockerfile header so cutting an image
 # is one command, not the multi-step manual process used to reconstruct this
 # pipeline in the first place.
@@ -54,7 +54,7 @@
 # backends' captured output is checked against -- see WHY BUILD-INFO.TXT below
 # for why *how* that text is obtained still differs by backend.
 #
-# WHY THE EXTRA BUILD CONTEXT (au-src): agent-webui's runtime imports
+# WHY THE EXTRA BUILD CONTEXT (au-src): graph-os-webui's runtime imports
 # agent_utilities.security.persistence_privacy and friends at module load,
 # but PyPI's newest agent-utilities (1.26.4) doesn't have that module -- see
 # the Dockerfile header for the full empirical trail. So the build needs
@@ -104,7 +104,7 @@
 #   AU_SRC_PATH         path to an agent-utilities checkout (default: ../agent-utilities)
 #   EG_WHEELHOUSE_PATH  REQUIRED (temporary, see above): a directory containing
 #                        a pre-built epistemic_graph-*.whl at >=2.23.2,<3.0.0
-#   IMAGE               image name:tag prefix (default: knucklessg1/agent-webui)
+#   IMAGE               image name:tag prefix (default: knucklessg1/graph-os-webui)
 #   BUILD_BACKEND       auto (default) | docker | buildkit -- see detection order above
 #   DOCKER               full docker invocation to use verbatim if set (bypasses
 #                        the local-daemon/DOCKER_CONTEXT probe below entirely)
@@ -125,7 +125,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AU_SRC_PATH="${AU_SRC_PATH:-${REPO_ROOT}/../agent-utilities}"
-IMAGE="${IMAGE:-knucklessg1/agent-webui}"
+IMAGE="${IMAGE:-knucklessg1/graph-os-webui}"
 BUILD_BACKEND="${BUILD_BACKEND:-auto}"
 DOCKER_BIN="${DOCKER_BIN:-docker}"
 DOCKER_CONTEXT="${DOCKER_CONTEXT:-r820}"
@@ -297,7 +297,7 @@ fi
 docker_get_build_info() {
   local image_ref="$1"
   ${DOCKER_CMD} run --rm --entrypoint sh "${image_ref}" -c \
-    'cat "$(python3 -c "import agent_webui, os; print(os.path.join(os.path.dirname(agent_webui.__file__), \"dist\", \"build-info.txt\"))")"'
+    'cat "$(python3 -c "import graph_os_webui, os; print(os.path.join(os.path.dirname(graph_os_webui.__file__), \"dist\", \"build-info.txt\"))")"'
 }
 
 build_and_push_docker() {
@@ -345,7 +345,7 @@ build_and_push_buildkit() {
   log "Building ${IMAGE}:${TAG} via buildkitd@${RESOLVED_ADDR}" \
       "(au-src=${AU_SRC_PATH}, eg-wheelhouse=${EG_WHEELHOUSE_PATH}, sha=${BUILD_SHA})"
   local metadata_file
-  metadata_file="$(mktemp /var/tmp/agent-webui-build-meta.XXXXXX.json)"
+  metadata_file="$(mktemp /var/tmp/graph-os-webui-build-meta.XXXXXX.json)"
   # shellcheck disable=SC2064
   trap "rm -f '${metadata_file}'" RETURN
   "${BUILDCTL}" --addr "${RESOLVED_ADDR}" build \
@@ -371,14 +371,14 @@ build_and_push_buildkit() {
   # Verify AFTER push: BuildKit has no local store to run against (see header).
   local verify_ref="${IMAGE}@${PUSHED_DIGEST_RAW}"
   log "Verifying build-info.txt inside the freshly pushed image (${verify_ref})..."
-  local verify_pod="agent-webui-buildcheck-${BUILD_SHA}"
+  local verify_pod="graph-os-webui-buildcheck-${BUILD_SHA}"
   kubectl -n "${BUILDKIT_NAMESPACE}" delete pod "${verify_pod}" --ignore-not-found >&2
   local info
   info="$(kubectl -n "${BUILDKIT_NAMESPACE}" run "${verify_pod}" \
     --image="${verify_ref}" --restart=Never --rm --attach --pod-running-timeout=240s \
     --command -- python3 -c \
-    'import agent_webui, os
-p = os.path.join(os.path.dirname(agent_webui.__file__), "dist", "build-info.txt")
+    'import graph_os_webui, os
+p = os.path.join(os.path.dirname(graph_os_webui.__file__), "dist", "build-info.txt")
 print(open(p).read())')"
   assert_build_info "${info}" || exit 70
 }

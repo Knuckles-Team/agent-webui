@@ -2,7 +2,7 @@
 """Assert this repo's .gitignore carries the fleet-shared REQUIRED set.
 
 Ported identically (CX-HYG-01) across agent-utilities, epistemic-graph, and
-agent-webui -- ``REQUIRED`` below is the SAME literal set in all three copies
+graph-os-webui -- ``REQUIRED`` below is the SAME literal set in all three copies
 on purpose: every rule in it exists because ONE of these three repos got
 burned by exactly the thing it excludes, and the other two are not
 categorically immune just because they have not been burned yet (a JS-less

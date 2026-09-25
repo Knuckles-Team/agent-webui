@@ -1,17 +1,17 @@
 # How the ecosystem fits
 
 The five repositories form one runtime. Each owns one kind of authority, and
-Agent WebUI presents those capabilities without duplicating them.
+GraphOS presents those capabilities without duplicating them.
 
-![Knuckles-Team runtime architecture showing Agent WebUI, GraphOS, agent-utilities, epistemic-graph, and agent-connector-sdk in their owned positions.](assets/runtime-architecture.svg)
+![Knuckles-Team runtime architecture showing GraphOS, GraphOS, agent-utilities, epistemic-graph, and agent-connector-sdk in their owned positions.](assets/runtime-architecture.svg)
 
 ## Component ownership
 
 <div class="site-card-grid">
   <article class="site-card">
-    <h3 class="site-card__title">Agent WebUI</h3>
+    <h3 class="site-card__title">GraphOS</h3>
     <p class="site-card__body">The operator experience: browser presentation, local interaction state, accessible navigation, and a same-origin server boundary.</p>
-    <p><a href="https://knuckles-team.github.io/agent-webui/">Documentation →</a></p>
+    <p><a href="https://knuckles-team.github.io/graph-os-webui/">Documentation →</a></p>
   </article>
   <article class="site-card">
     <h3 class="site-card__title">GraphOS</h3>
@@ -40,7 +40,7 @@ Agent WebUI presents those capabilities without duplicating them.
 <ol class="site-flow">
   <li class="site-flow__step">
     <h3 class="site-flow__title">Present</h3>
-    <p class="site-flow__body">Agent WebUI collects the operator's intent and renders typed events and results.</p>
+    <p class="site-flow__body">GraphOS collects the operator's intent and renders typed events and results.</p>
   </li>
   <li class="site-flow__step">
     <h3 class="site-flow__title">Admit</h3>

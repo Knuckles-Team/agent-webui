@@ -126,7 +126,7 @@ function resolveLoadError(error: unknown): LoadState {
     return {
       kind: 'unavailable',
       reason:
-        'This backend does not serve GET /api/enhanced/graph/graph3d yet. The route ships with this view; the agent-webui process has to be restarted to pick it up.',
+        'This backend does not serve GET /api/enhanced/graph/graph3d yet. The route ships with this view; the graph-os-webui process has to be restarted to pick it up.',
     }
   }
   const reason = error instanceof Error ? error.message : 'Unknown failure'

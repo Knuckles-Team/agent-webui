@@ -70,13 +70,13 @@ describe('WebMCP tool annotations', () => {
     })
 
     expect(pageTools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
-      ['agent-webui.get-page-context', true],
-      ['agent-webui.navigate', false],
+      ['graphos.get-page-context', true],
+      ['graphos.navigate', false],
     ])
     expect(atlasTools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
-      ['agent-webui.atlas.get-state', true],
-      ['agent-webui.atlas.set-filters', false],
-      ['agent-webui.atlas.select', false],
+      ['graphos.atlas.get-state', true],
+      ['graphos.atlas.set-filters', false],
+      ['graphos.atlas.select', false],
     ])
   })
 })
@@ -101,7 +101,7 @@ describe('WebMCP mutation validation', () => {
       dispatch,
       select: () => undefined,
     })
-    const setFilters = tools.find((tool) => tool.name === 'agent-webui.atlas.set-filters')
+    const setFilters = tools.find((tool) => tool.name === 'graphos.atlas.set-filters')
     if (!setFilters) throw new Error('Atlas filter tool was not registered')
     const clauses = Array.from({ length: 16 }, (_, index) => ({
       id: `clause-${index}`,

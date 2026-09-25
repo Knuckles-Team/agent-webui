@@ -9,13 +9,13 @@ export default function NotFoundPage() {
       route={route}
       eyebrow="404"
       title="That page was not found"
-      description="The address does not match a registered Agent WebUI route. Use the safe home link to continue."
+      description="The address does not match a registered GraphOS route. Use the safe home link to continue."
     >
       <a
         href="/"
         className="inline-flex min-h-11 items-center rounded-md bg-primary px-5 py-3 text-sm font-medium text-primary-foreground"
       >
-        Open Agent WebUI
+        Open GraphOS
       </a>
     </PublicPageLayout>
   )

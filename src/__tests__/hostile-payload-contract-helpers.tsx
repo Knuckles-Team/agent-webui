@@ -50,7 +50,7 @@ export const HOSTILE_FIXTURES: [string, unknown, { ok?: boolean; status?: number
   ['error envelope', { detail: 'internal error' }, { ok: false, status: 500 }],
   // D-WUI (2026-08-06): the root cause of the "12 broken pages" incident — an
   // OIDC misconfiguration made every authenticated route 401 with exactly
-  // this shaped body (`agent/agent_webui/server.py`'s identity gate). Several
+  // this shaped body (`agent/graph_os_webui/server.py`'s identity gate). Several
   // views stored this object straight into state and a later `.filter()`/
   // `.map()` crashed with "m.filter is not a function" — one auth failure,
   // a dozen broken pages, and this fixture class did not catch it because it

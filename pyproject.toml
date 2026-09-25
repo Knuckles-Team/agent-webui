@@ -3,9 +3,9 @@ requires = ["setuptools>=80.9.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-webui"
+name = "graph-os-webui"
 version = "2.6.2"
-description = "Agent Web Interface for Pydantic AI Agents"
+description = "GraphOS browser workspace for governed agents, knowledge, and workflows"
 readme = "README.md"
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -62,7 +62,7 @@ test = [
     # skip it rather than error), so this floor was quietly installing without
     # the agent runtime closure. Caught building docker/Dockerfile (D-WUI-30).
     # `agent-runtime` -> `agent-headless`: `agent-runtime` self-references
-    # agent-utilities' own `ag-ui` extra (agent-webui -- THIS repo -- as a
+    # agent-utilities' own `ag-ui` extra (graph-os-webui -- THIS repo -- as a
     # dependency of its own dependency closure) and `terminal`
     # (agent-terminal-ui), neither of which this serving-plane package
     # renders or needs; `agent-headless` is agent-utilities' purpose-built
@@ -88,7 +88,7 @@ test = [
     # agent-utilities' hard base dependency to the opt-in `graphos` extra;
     # before GOC-73 this repo got the engine CLIENT for free as a transitive
     # base dep, so nobody had to name it. This app's own KG/MCP surface
-    # (`agent_webui.api_extensions`'s `/graph/*` routes, the MCP-servers
+    # (`graph_os_webui.api_extensions`'s `/graph/*` routes, the MCP-servers
     # inventory panel) resolves the engine at CALL time via
     # `agent_utilities.knowledge_graph.core.graph_compute.GraphComputeEngine`,
     # which needs `epistemic_graph.client` importable to reach the deployed
@@ -114,15 +114,15 @@ text = "MIT"
 members = ["."]
 
 [tool.pipelines_hooks.public_surface]
-repository = "Knuckles-Team/agent-webui"
-distribution = "agent-webui"
-pages_url = "https://knuckles-team.github.io/agent-webui/"
+repository = "Knuckles-Team/graph-os-webui"
+distribution = "graph-os-webui"
+pages_url = "https://knuckles-team.github.io/graph-os-webui/"
 mcp_server = false
 
 [tool.pytest.ini_options]
-testpaths = ["agent/agent_webui/__tests__", "tests"]
+testpaths = ["agent/graph_os_webui/__tests__", "tests"]
 # Always import the in-repo backend package: without this, a pip-installed
-# agent_webui in site-packages shadows agent/agent_webui at collection time
+# graph_os_webui in site-packages shadows agent/graph_os_webui at collection time
 # and the suite exercises stale code.
 pythonpath = ["agent"]
 python_files = ["test_*.py"]
@@ -148,15 +148,15 @@ quote-style = "single"
 include-package-data = true
 
 [tool.setuptools.package-data]
-agent_webui = ["dist/**", "icon.png", "skills/**/*"]
+graph_os_webui = ["dist/**", "icon.png", "skills/**/*"]
 
 [tool.setuptools.packages.find]
 where = ["agent"]
 
-# CONCEPT:AU-ECO.ui.agent-webui-skill-provider — contribute the kg-webui-* skills to the agent-utilities hub via
+# CONCEPT:AU-ECO.ui.graph-os-webui-skill-provider — contribute the graphos-webui-* skills to the agent-utilities hub via
 # the shared skill-provider entry-point group (resolved by core/providers.py).
 [project.entry-points."agent_utilities.skill_providers"]
-agent-webui = "agent_webui.skills"
+graph-os-webui = "graph_os_webui.skills"
 
 # D-W6-BSF-1: the SAME narrow, protocol-compat override agent-utilities'
 # own pyproject.toml declares for itself (see that file's `[tool.uv]`

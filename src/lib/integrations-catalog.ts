@@ -1,7 +1,7 @@
 /**
  * @file integrations-catalog.ts
  * @description GOC-25: typed, testable catalog of every live MCP server /
- * agent package agent-webui discovers -- the shared client the dynamic
+ * agent package graph-os-webui discovers -- the shared client the dynamic
  * `/integrations` page (`IntegrationsView.tsx`) is built on.
  *
  * This generalizes BUG-018's fix (`EcosystemView.tsx`'s "Other Integrations"
@@ -16,7 +16,7 @@
  * reported:
  *
  * 1. `GET /api/enhanced/ecosystem/services` (`list_ecosystem_services`,
- *    `agent/agent_webui/api_extensions.py`) -- the live PARITY authority: a
+ *    `agent/graph_os_webui/api_extensions.py`) -- the live PARITY authority: a
  *    raw `list[str]` of every agent-package directory the backend actually
  *    discovered. Same endpoint/shape BUG-018 already validates in
  *    `EcosystemView.tsx`; this module re-validates it independently rather

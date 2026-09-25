@@ -11,15 +11,15 @@ pytest.importorskip(
 )
 
 
-def test_import_agent_webui():
-    """Test that the agent_webui package can be imported."""
+def test_import_graph_os_webui():
+    """Test that the graph_os_webui package can be imported."""
 
     pass
 
 
 def test_server_import():
     """Test that the server module can be imported."""
-    from agent_webui import server
+    from graph_os_webui import server
 
     assert server is not None
 
@@ -28,7 +28,7 @@ def test_main():
     """Test that main() can be executed."""
     from unittest.mock import patch
 
-    from agent_webui import server
+    from graph_os_webui import server
 
     with patch('uvicorn.run'):
         # Simulate a call to main without starting the server for real
@@ -42,7 +42,7 @@ def test_server_env_vars(monkeypatch):
     pytest.importorskip('anthropic')
     pytest.importorskip('openai')
 
-    from agent_webui import server
+    from graph_os_webui import server
 
     monkeypatch.setenv('ANTHROPIC_API_KEY', 'test')
     monkeypatch.setenv('OPENAI_API_KEY', 'test')

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 
-export const CONSENT_VERSION = 'agent-webui-consent-v1'
-export const CONSENT_STORAGE_KEY = 'agent-webui.consent'
-export const CONSENT_CHANGED_EVENT = 'agent-webui-consent-changed'
+export const CONSENT_VERSION = 'graphos-consent-v2'
+export const CONSENT_STORAGE_KEY = 'graphos.consent'
+export const CONSENT_CHANGED_EVENT = 'graph-os-webui-consent-changed'
 
 export type ConsentChoice = 'granted' | 'denied'
 

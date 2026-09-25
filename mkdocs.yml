@@ -1,10 +1,10 @@
 INHERIT: .pipeline-theme/templates/mkdocs-theme/base.mkdocs.yml
 
-site_name: Agent Web UI
+site_name: GraphOS
 site_description: The browser workspace for governed agents, workflows, and knowledge in Graph OS.
-site_url: https://knuckles-team.github.io/agent-webui/
-repo_name: Knuckles-Team/agent-webui
-repo_url: https://github.com/Knuckles-Team/agent-webui
+site_url: https://knuckles-team.github.io/graph-os-webui/
+repo_name: Knuckles-Team/graph-os-webui
+repo_url: https://github.com/Knuckles-Team/graph-os-webui
 edit_uri: edit/main/docs/
 docs_dir: docs
 strict: true
@@ -12,7 +12,7 @@ copyright: Copyright &copy; Knuckles-Team — MIT licensed
 
 extra:
   ecosystem:
-    current: agent-webui
+    current: graph-os-webui
 
 nav:
   - Home: index.md

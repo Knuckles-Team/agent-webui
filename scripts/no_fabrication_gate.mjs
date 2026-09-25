@@ -20,7 +20,7 @@
  * three other workers are concurrently editing `nav-registry.ts`,
  * `SkillsView.tsx`, `GraphView.tsx`, `mcp-context.tsx`, and the backend
  * `server.py`/`api_extensions.py` in this same repo right now (see
- * `agent-webui/AGENTS.md` "Branching & isolation" / GOC-28 lane file
+ * `graph-os-webui/AGENTS.md` "Branching & isolation" / GOC-28 lane file
  * ownership); making this gate commit-blocking repo-wide would fail every
  * other worker's unrelated commit on fabrication these rules were never
  * reviewed against, and isn't this lane's file to fix. Broadening it to the

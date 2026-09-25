@@ -9,15 +9,15 @@ WebMCP and does not use the older `navigator.modelContext` spelling.
 
 The initial namespaced surface is deliberately UI-local:
 
-- `agent-webui.get-page-context` reads the route, view, selection, and filter
+- `graphos.get-page-context` reads the route, view, selection, and filter
   context, excluding page action affordances and credential-shaped query keys.
-- `agent-webui.navigate` visits a registered same-origin route after the
+- `graphos.navigate` visits a registered same-origin route after the
   current role is checked against `nav-registry`.
-- `agent-webui.atlas.get-state` reads bounded Atlas adapter/filter/selection
+- `graphos.atlas.get-state` reads bounded Atlas adapter/filter/selection
   state, excluding console text, submitted queries, result payloads, and
   adapter options. Credential-shaped route/filter names are redacted from
   state echoes as an additional boundary safeguard.
-- `agent-webui.atlas.set-filters` and `agent-webui.atlas.select` update only
+- `graphos.atlas.set-filters` and `graphos.atlas.select` update only
   local Atlas editor/selection state. They do not run a query or write data.
 
 All tool inputs and outputs pass strict Zod validation. The executor accepts an

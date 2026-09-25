@@ -6,13 +6,13 @@ import type { CSSProperties, FocusEvent as ReactFocusEvent } from 'react'
  * drift into separate bottom-offset calculations.
  */
 export const MOBILE_SURFACE = {
-  safeAreaBottom: 'var(--agent-webui-mobile-safe-area-bottom)',
-  ctaButtonHeight: 'var(--agent-webui-mobile-cta-button-height)',
-  ctaPadding: 'var(--agent-webui-mobile-cta-padding)',
-  gap: 'var(--agent-webui-mobile-surface-gap)',
-  ctaOccupiedHeight: 'var(--agent-webui-mobile-cta-occupied-height)',
-  consentBottom: 'var(--agent-webui-mobile-consent-bottom)',
-  consentMaxHeight: 'calc(100dvh - var(--agent-webui-mobile-consent-bottom) - var(--agent-webui-mobile-surface-gap))',
+  safeAreaBottom: 'var(--graph-os-webui-mobile-safe-area-bottom)',
+  ctaButtonHeight: 'var(--graph-os-webui-mobile-cta-button-height)',
+  ctaPadding: 'var(--graph-os-webui-mobile-cta-padding)',
+  gap: 'var(--graph-os-webui-mobile-surface-gap)',
+  ctaOccupiedHeight: 'var(--graph-os-webui-mobile-cta-occupied-height)',
+  consentBottom: 'var(--graph-os-webui-mobile-consent-bottom)',
+  consentMaxHeight: 'calc(100dvh - var(--graph-os-webui-mobile-consent-bottom) - var(--graph-os-webui-mobile-surface-gap))',
   breakpoint: 768,
   ctaZIndex: 40,
   consentZIndex: 50,
@@ -22,14 +22,14 @@ export type MobileSurfaceStyle = CSSProperties & Record<`--${string}`, string>
 
 /** Shared CSS/env variables consumed by every fixed mobile surface. */
 export const mobileSurfaceStyle: MobileSurfaceStyle = {
-  '--agent-webui-mobile-safe-area-bottom': 'env(safe-area-inset-bottom, 0px)',
-  '--agent-webui-mobile-cta-button-height': '2.75rem',
-  '--agent-webui-mobile-cta-padding': '0.75rem',
-  '--agent-webui-mobile-surface-gap': '0.5rem',
-  '--agent-webui-mobile-cta-occupied-height':
-    'calc(var(--agent-webui-mobile-cta-button-height) + (2 * var(--agent-webui-mobile-cta-padding)) + var(--agent-webui-mobile-safe-area-bottom))',
-  '--agent-webui-mobile-consent-bottom':
-    'calc(var(--agent-webui-mobile-cta-occupied-height) + var(--agent-webui-mobile-surface-gap))',
+  '--graph-os-webui-mobile-safe-area-bottom': 'env(safe-area-inset-bottom, 0px)',
+  '--graph-os-webui-mobile-cta-button-height': '2.75rem',
+  '--graph-os-webui-mobile-cta-padding': '0.75rem',
+  '--graph-os-webui-mobile-surface-gap': '0.5rem',
+  '--graph-os-webui-mobile-cta-occupied-height':
+    'calc(var(--graph-os-webui-mobile-cta-button-height) + (2 * var(--graph-os-webui-mobile-cta-padding)) + var(--graph-os-webui-mobile-safe-area-bottom))',
+  '--graph-os-webui-mobile-consent-bottom':
+    'calc(var(--graph-os-webui-mobile-cta-occupied-height) + var(--graph-os-webui-mobile-surface-gap))',
 }
 
 /** Keep a focused page control above the fixed CTA while the mobile keyboard opens. */

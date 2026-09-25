@@ -12,9 +12,9 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-import agent_webui.api_extensions as mod
+import graph_os_webui.api_extensions as mod
 import pytest
-from agent_webui.api_extensions import router
+from graph_os_webui.api_extensions import router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -443,7 +443,7 @@ def test_repository_inventory_does_not_invent_standard_repos(
 
     assert resp.status_code == 200
     assert resp.json() == []
-    assert 'agent-webui' not in resp.text
+    assert 'graph-os-webui' not in resp.text
     assert 'epistemic-graph' not in resp.text
 
 
@@ -515,7 +515,7 @@ def test_slash_kb_list_honest_empty(client, monkeypatch):
     engine = MagicMock()
     _patch_engine(monkeypatch, engine)
     monkeypatch.setattr(
-        'agent_webui.api_extensions.KBIngestionEngine',
+        'graph_os_webui.api_extensions.KBIngestionEngine',
         lambda *a, **k: MagicMock(list_knowledge_bases=lambda: []),
     )
     resp = client.post('/commands/execute', json={'command': '/kb list'})
@@ -526,7 +526,7 @@ def test_slash_kb_list_honest_empty(client, monkeypatch):
 
 def test_slash_sdd_specs_honest_empty(client, monkeypatch):
     monkeypatch.setattr(
-        'agent_webui.api_extensions.SDDManager',
+        'graph_os_webui.api_extensions.SDDManager',
         lambda *a, **k: MagicMock(list_specs=lambda: []),
     )
     resp = client.post('/commands/execute', json={'command': '/sdd specs'})

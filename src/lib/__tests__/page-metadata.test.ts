@@ -4,10 +4,10 @@ import { buildRobotsTxt, buildSitemapXml, projectPageHead, publicIndexableRoutes
 import { isIndexableSiteConfigReady, validateSiteConfig, type SiteConfig } from '@/lib/site-config'
 
 const COMPLETE_CONFIG: SiteConfig = {
-  siteName: 'Configured Agent WebUI',
+  siteName: 'Configured GraphOS',
   canonicalOrigin: 'https://agents.example.invalid',
   indexableEnvironment: true,
-  openGraphImagePath: '/og/agent-webui-v1.png',
+  openGraphImagePath: '/og/graph-os-webui-v1.png',
   legalOwner: 'Configured Owner',
   contactAddress: '1 Reviewed Way\nExample City',
   contactEmail: 'owner@example.invalid',

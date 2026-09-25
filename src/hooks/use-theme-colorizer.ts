@@ -36,14 +36,14 @@ export function normalizeBaseColor(value: string): string | null {
 export function useThemeColorizer(defaultBaseColor = DEFAULT_BASE_COLOR) {
   const fallbackColor = normalizeBaseColor(defaultBaseColor) ?? DEFAULT_BASE_COLOR
   const [baseColor, setStoredBaseColor] = useState<string>(() => {
-    return normalizeBaseColor(localStorage.getItem('pydantic-brand-color') ?? '') ?? fallbackColor
+    return normalizeBaseColor(localStorage.getItem('graphos-brand-color') ?? '') ?? fallbackColor
   })
   const setBaseColor = (color: string) => {
     setStoredBaseColor(normalizeBaseColor(color) ?? fallbackColor)
   }
 
   useEffect(() => {
-    localStorage.setItem('pydantic-brand-color', baseColor)
+    localStorage.setItem('graphos-brand-color', baseColor)
 
     // Parse the base OKLCH string (e.g., "0.52 0.18 260")
     // We can assume it's valid for now or fallback to default
@@ -54,7 +54,7 @@ export function useThemeColorizer(defaultBaseColor = DEFAULT_BASE_COLOR) {
     if (!l || !c || !h) return
 
     // Apply primary brand colors
-    root.style.setProperty('--pydantic-brand', `oklch(${baseColor})`)
+    root.style.setProperty('--graphos-brand', `oklch(${baseColor})`)
 
     // Light mode dynamic adjustments
     // We adjust primary to be similar to brand

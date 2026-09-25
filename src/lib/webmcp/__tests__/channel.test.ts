@@ -15,7 +15,7 @@ const BINDING: WebMcpCatalogBinding = {
   role: 'operator',
 }
 
-function readTool(id = 'agent-webui.read'): WebMcpToolDefinition {
+function readTool(id = 'graphos.read'): WebMcpToolDefinition {
   return {
     name: id,
     title: 'Read page',
@@ -26,7 +26,7 @@ function readTool(id = 'agent-webui.read'): WebMcpToolDefinition {
       outputSchema: { type: 'object', properties: { ok: { type: 'boolean' } }, additionalProperties: false },
       mutationClass: 'read',
       confirmationPolicy: 'none',
-      source: 'agent-webui:test',
+      source: 'graph-os-webui:test',
     },
     execute: createValidatedExecutor(z.record(z.string(), z.unknown()), z.unknown(), async () => ({ ok: true })),
   }
@@ -221,11 +221,11 @@ describe('attended WebMCP control channel', () => {
       protocol: WEBMCP_CONTROL_PROTOCOL,
       type: 'catalog.register',
       route_id: 'graph',
-      tools: [{ tool_id: 'agent-webui.read' }],
+      tools: [{ tool_id: 'graphos.read' }],
     })
     expect(socket.sent.join('')).not.toMatch(/operator-1|document-1|bearer|token/i)
     await vi.waitFor(() => {
-      expect(channel.getView()).toMatchObject({ status: 'armed', toolIds: ['agent-webui.read'] })
+      expect(channel.getView()).toMatchObject({ status: 'armed', toolIds: ['graphos.read'] })
     })
   })
 
@@ -288,7 +288,7 @@ describe('attended WebMCP control channel', () => {
       registration_generation: snapshot.generation,
       catalog_digest: snapshot.catalog.catalogDigest,
       tool_scope_digest: snapshot.catalog.toolScopeDigest,
-      tools: [{ tool_id: 'agent-webui.read', schema_digest: snapshot.catalog.tools[0].schemaDigest }],
+      tools: [{ tool_id: 'graphos.read', schema_digest: snapshot.catalog.tools[0].schemaDigest }],
     })
     socket.open()
     expect(socket.sent.map((frame) => (JSON.parse(frame) as { type: unknown }).type)).toEqual([
@@ -433,7 +433,7 @@ describe('attended WebMCP control channel', () => {
     const registry = registryWithTool()
     const { channel, socket } = await openChannel(registry)
 
-    registry.replaceToolSet('page', [readTool('agent-webui.changed')])
+    registry.replaceToolSet('page', [readTool('graphos.changed')])
 
     expect(socket.close).toHaveBeenCalledWith(1000, 'generation-change')
     await vi.waitFor(() => {
@@ -449,7 +449,7 @@ describe('attended WebMCP control channel', () => {
       registry,
       armClient: readyArmClient(registry),
       socketFactory: (() => {
-        registry.replaceToolSet('page', [readTool('agent-webui.changed-during-open')])
+        registry.replaceToolSet('page', [readTool('graphos.changed-during-open')])
         return socket
       }) as unknown as WebMcpSocketFactory,
     })
@@ -480,7 +480,7 @@ describe('attended WebMCP control channel', () => {
     firstSocket.open()
     firstSocket.ready()
     await Promise.resolve()
-    registry.replaceToolSet('page', [readTool('agent-webui.current')])
+    registry.replaceToolSet('page', [readTool('graphos.current')])
     await channel.arm()
     secondSocket.open()
     secondSocket.ready()
@@ -491,7 +491,7 @@ describe('attended WebMCP control channel', () => {
       type: 'control.call',
       call_id: 'stale-call',
       lease_id: 'stale-lease',
-      tool_id: 'agent-webui.current',
+      tool_id: 'graphos.current',
       arguments: {},
       authorization: 'read',
     })
@@ -543,7 +543,7 @@ describe('attended WebMCP control channel', () => {
       type: 'control.call',
       call_id: 'premature-call',
       lease_id: 'premature-lease',
-      tool_id: 'agent-webui.read',
+      tool_id: 'graphos.read',
       arguments: {},
       authorization: 'read',
     })

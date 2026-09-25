@@ -163,7 +163,7 @@ export function jitteredReconnectDelayMs(delayMs: number, random: () => number =
 
 /* ── GOC-29: backend wire-protocol consumption (closing BUG-019's deferred half) ──
  *
- * `/ws/dashboard` (`agent_webui/server.py::_dashboard_ws`) now carries
+ * `/ws/dashboard` (`graph_os_webui/server.py::_dashboard_ws`) now carries
  * `stream_id` (minted fresh per accepted connection) and `sequence`
  * (monotonic within that connection) on every message. This endpoint has no
  * durable backlog to resume from -- every push is a fresh full poll, not a
@@ -620,7 +620,7 @@ export default function DashboardView() {
   //
   // BUG-019 (GOC-29): the frontend-only half (jittered exponential backoff +
   // connection-generation guard) landed first. This closes the backend half
-  // that left open: `/ws/dashboard` (`agent_webui/server.py::_dashboard_ws`)
+  // that left open: `/ws/dashboard` (`graph_os_webui/server.py::_dashboard_ws`)
   // now carries `stream_id` (minted fresh per accepted connection) and
   // `sequence` (monotonic within that connection) on every message. The
   // endpoint still has no durable backlog to replay -- each push is a fresh

@@ -1,6 +1,6 @@
 /**
  * @file api.ts
- * @description Centralized API client for the Agent Web UI.
+ * @description Centralized API client for the GraphOS.
  *
  * Provides a standardized wrapper around the Fetch API for interacting with
  * the agent backend. Includes typing for request/response cycles and
@@ -35,7 +35,7 @@ export interface SaveWorkflowPayload {
 // ---------------------------------------------------------------------------
 // Ontology (KG-2.x) — types shared between the api client adapters and the
 // operator views (ObjectExplorerView / ObjectView / VertexView). The backend
-// routes live under /api/enhanced/ontology/* in agent_webui/api_extensions.py
+// routes live under /api/enhanced/ontology/* in graph_os_webui/api_extensions.py
 // and serialize raw ontology shapes (properties/derived as dicts, links as
 // {out,in}, edits as the EditLedger model). The client methods below adapt
 // those raw shapes into the view-facing shapes declared here so the views are
@@ -582,7 +582,7 @@ class ApiClient {
   runSweBench = (body: { instances: unknown[]; ingest?: boolean; remediate?: boolean }) =>
     this.post<{ run_id: string; report: SweBenchReport; remediation: unknown }>('/api/swebench/run', body)
 
-  // Workspace IDE (R4 — openvscode-server embed): the `agent-webui-bridge`
+  // Workspace IDE (R4 — openvscode-server embed): the `graph-os-webui-bridge`
   // extension polls-publishes here; the Workspace IDE view polls it back.
   getEditorContext = () => this.getValidated('/api/enhanced/editor-context', editorContextSchema)
 
@@ -1328,7 +1328,7 @@ const ontologyActionSchema = z.object({
   acts_on: looseArray(z.string()),
 })
 
-// Workspace IDE editor context, published by the agent-webui-bridge
+// Workspace IDE editor context, published by the graph-os-webui-bridge
 // openvscode-server extension (R4). Every field is optional -- the bridge
 // has nothing to report before an editor is open or before the workbench has
 // loaded, and the backend returns an empty shape in that case.

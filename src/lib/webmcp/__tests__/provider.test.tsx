@@ -131,7 +131,7 @@ describe('WebMCP provider remote projection', () => {
     await waitFor(() => {
       expect(registered).toHaveLength(2)
     })
-    expect(registered.map(({ tool }) => tool.name)).toEqual(['agent-webui.get-page-context', 'agent-webui.navigate'])
+    expect(registered.map(({ tool }) => tool.name)).toEqual(['graphos.get-page-context', 'graphos.navigate'])
     expect(registered.every(({ tool }) => !('capability' in tool))).toBe(true)
     expect(TestSocket.instances).toHaveLength(0)
 
@@ -141,8 +141,8 @@ describe('WebMCP provider remote projection', () => {
     expect(frames[1]).toMatchObject({
       route_id: 'graph',
       tools: [
-        { tool_id: 'agent-webui.get-page-context' },
-        { tool_id: 'agent-webui.navigate', confirmation_policy: 'exact-request' },
+        { tool_id: 'graphos.get-page-context' },
+        { tool_id: 'graphos.navigate', confirmation_policy: 'exact-request' },
       ],
     })
   })

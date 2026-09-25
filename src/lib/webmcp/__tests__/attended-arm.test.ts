@@ -6,7 +6,7 @@ const SCOPE: AttendedArmScope = {
   registration_generation: 7,
   catalog_digest: `sha256:${'a'.repeat(64)}`,
   tool_scope_digest: `sha256:${'b'.repeat(64)}`,
-  tools: [{ tool_id: 'agent-webui.read', schema_digest: `sha256:${'c'.repeat(64)}` }],
+  tools: [{ tool_id: 'graphos.read', schema_digest: `sha256:${'c'.repeat(64)}` }],
 }
 
 afterEach(() => {

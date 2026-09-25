@@ -9,7 +9,7 @@ import { test, expect } from '@playwright/test'
  * land in this same train and are not yet installed anywhere this suite
  * could reach, so a stub is the only way to exercise the real frontend
  * end-to-end today. Every response shape here mirrors
- * `agent/agent_webui/api_extensions.py`'s Decisions section exactly (see
+ * `agent/graph_os_webui/api_extensions.py`'s Decisions section exactly (see
  * that file's own docstrings and `test_decision_endpoints.py`'s fixtures).
  */
 

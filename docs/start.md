@@ -1,6 +1,6 @@
-# Start Agent WebUI
+# Start GraphOS
 
-Agent WebUI is served as a GraphOS co-service. This is the shortest path to a
+GraphOS is served as a GraphOS co-service. This is the shortest path to a
 browser surface with the correct routing and authority boundaries.
 
 ## Requirements
@@ -22,7 +22,7 @@ Open <http://127.0.0.1:8080>. The MCP transport listens on port `8000`; the
 WebUI co-service uses port `8080`. Set `GRAPH_OS_WEBUI_PORT` when that port is
 already in use.
 
-The successful first screen shows the Agent WebUI navigation and dashboard.
+The successful first screen shows the GraphOS navigation and dashboard.
 Atlas at `/explore` presents the graph, object, schema, data, document, and
 memory entry points exposed by the connected runtime.
 
@@ -38,8 +38,8 @@ Use the packaged GraphOS process for the backend, then run Vite for frontend
 changes:
 
 ```bash
-git clone https://github.com/Knuckles-Team/agent-webui.git
-cd agent-webui
+git clone https://github.com/Knuckles-Team/graph-os-webui.git
+cd graph-os-webui
 pnpm install --frozen-lockfile
 BACKEND_PORT=8080 pnpm run dev
 ```

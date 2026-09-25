@@ -127,7 +127,7 @@ export const PromptInputSubmit = ({
 
   return (
     <Button
-      className={cn('gap-1.5 rounded-lg bg-pydantic-brand text-white hover:bg-pydantic-brand/90', className)}
+      className={cn('gap-1.5 rounded-lg bg-graphos-brand text-white hover:bg-graphos-brand/90', className)}
       size={size}
       type="submit"
       variant={variant}

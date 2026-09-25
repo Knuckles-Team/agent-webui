@@ -2,13 +2,13 @@
  * @file decisions-api.ts
  * @description Typed client for `/api/enhanced/decisions*` — the read-only
  * projection of epistemic-graph's committed `DecisionLog`
- * (`agent/agent_webui/api_extensions.py`'s Decisions section, EH-046/047).
+ * (`agent/graph_os_webui/api_extensions.py`'s Decisions section, EH-046/047).
  *
  * Every call goes through `fetchValidated` (`./api-validation.ts`), the
  * repo's one runtime-validation boundary: a shape violation throws loudly
  * instead of handing a caller a value it can misread. Callers use these
  * through React Query (`@tanstack/react-query`, already the server-state
- * convention here — see `agent-webui/AGENTS.md`), not a bespoke fetch/abort
+ * convention here — see `graph-os-webui/AGENTS.md`), not a bespoke fetch/abort
  * hook, so request de-duplication, cancellation-on-unmount and retries stay
  * in one place.
  */

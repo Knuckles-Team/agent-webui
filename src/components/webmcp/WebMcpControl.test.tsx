@@ -48,10 +48,10 @@ describe('attended WebMCP controls', () => {
     expect(controlled.channel.arm).toHaveBeenCalledOnce()
 
     act(() => {
-      controlled.update({ status: 'armed', toolIds: ['agent-webui.read', 'agent-webui.navigate'] })
+      controlled.update({ status: 'armed', toolIds: ['graphos.read', 'graphos.navigate'] })
     })
     expect(screen.getByRole('status')).toHaveTextContent('Armed for 2 local browser tools')
-    expect(screen.getByRole('list', { name: 'Armed browser tools' })).toHaveTextContent('agent-webui.navigate')
+    expect(screen.getByRole('list', { name: 'Armed browser tools' })).toHaveTextContent('graphos.navigate')
     await user.click(screen.getByRole('button', { name: 'Revoke browser control' }))
     expect(controlled.channel.revoke).toHaveBeenCalledOnce()
   })
@@ -60,12 +60,12 @@ describe('attended WebMCP controls', () => {
     const controlled = fakeChannel({
       ...IDLE,
       status: 'armed',
-      toolIds: ['agent-webui.navigate'],
+      toolIds: ['graphos.navigate'],
       pendingConfirmation: {
         callId: 'call-1',
         leaseId: 'lease-1',
-        toolId: 'agent-webui.navigate',
-        toolTitle: 'Navigate in Agent WebUI',
+        toolId: 'graphos.navigate',
+        toolTitle: 'Navigate in GraphOS',
         toolVersion: '1.0.0',
         schemaDigest: `sha256:${'a'.repeat(64)}`,
         argumentDigest: `sha256:${'b'.repeat(64)}`,
@@ -76,7 +76,7 @@ describe('attended WebMCP controls', () => {
     render(<WebMcpControl visible channel={controlled.channel} isAttendedGesture={() => true} />)
 
     expect(screen.getByRole('dialog', { name: 'Confirm browser action' })).toBeVisible()
-    expect(screen.getByText('agent-webui.navigate@1.0.0')).toBeVisible()
+    expect(screen.getByText('graphos.navigate@1.0.0')).toBeVisible()
     expect(screen.getByText(`sha256:${'a'.repeat(64)}`)).toBeVisible()
     expect(screen.getByText(`sha256:${'b'.repeat(64)}`)).toBeVisible()
     expect(document.body).not.toHaveTextContent('/private/raw/argument')
@@ -91,7 +91,7 @@ describe('attended WebMCP controls', () => {
       pendingConfirmation: {
         callId: 'call-2',
         leaseId: 'lease-2',
-        toolId: 'agent-webui.mutate',
+        toolId: 'graphos.mutate',
         toolTitle: 'Mutate',
         toolVersion: '1.0.0',
         schemaDigest: `sha256:${'d'.repeat(64)}`,
@@ -124,7 +124,7 @@ describe('attended WebMCP controls', () => {
       pendingConfirmation: {
         callId: 'call-untrusted',
         leaseId: 'lease-untrusted',
-        toolId: 'agent-webui.navigate',
+        toolId: 'graphos.navigate',
         toolTitle: 'Navigate',
         toolVersion: '1.0.0',
         schemaDigest: `sha256:${'1'.repeat(64)}`,

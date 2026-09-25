@@ -1,5 +1,5 @@
 /**
- * ACP Provider for agent-webui using @mcpc-tech/acp-ai-provider.
+ * ACP Provider for graph-os-webui using @mcpc-tech/acp-ai-provider.
  * Standardizes communication with the Pydantic AI agent via the native ACP protocol.
  */
 

@@ -13,7 +13,7 @@ name: Release
 #       release-intent -- skips release-neutral commits when this version is
 #                         already published, while retaining exact artifact
 #                         verification for the tagged release commit.
-#       publish-pypi   -- builds the agent-webui wheel and sdist, verifies an
+#       publish-pypi   -- builds the graph-os-webui wheel and sdist, verifies an
 #                         existing immutable PyPI release byte-for-byte,
 #                         publishes only when absent, then tags/releases the
 #                         source commit. It consumes the fleet's shared release
@@ -37,7 +37,7 @@ name: Release
 # decoupled workflows reacting to two separate push events, not something
 # this repo declared on purpose -- exactly what the owner asked to fix
 # ("it should all be one pipeline -- first builds the pypi image for
-# agent-webui, then runs the docker build job to include the newly
+# graph-os-webui, then runs the docker build job to include the newly
 # published pypi package"). `needs: publish-pypi` below makes that ordering
 # structural instead of incidental.
 #
@@ -91,7 +91,7 @@ jobs:
             --release-intent --repository . --head-sha "${GITHUB_SHA}" \
             --github-output "${GITHUB_OUTPUT}"
 
-  # ── STAGE 1: build + publish the agent-webui wheel to PyPI, then tag the
+  # ── STAGE 1: build + publish the graph-os-webui wheel to PyPI, then tag the
   # release commit. This remains structurally equivalent to the fleet's
   # shared Python publication pipeline, while owning WebUI's stricter
   # immutable-version preflight: an existing release is success only when
@@ -234,7 +234,7 @@ jobs:
           fi
           echo "release tag verified: $tags"
 
-      - name: Checkout agent-webui
+      - name: Checkout graph-os-webui
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
@@ -290,7 +290,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
-          images: ${{ secrets.DOCKER_USERNAME }}/agent-webui
+          images: ${{ secrets.DOCKER_USERNAME }}/graph-os-webui
           tags: |
             type=semver,pattern={{version}}
             type=sha
@@ -321,6 +321,6 @@ jobs:
           set -euo pipefail
           IMAGE_REF="$(head -n1 <<<"${{ steps.meta.outputs.tags }}")"
           INFO="$(docker run --rm --entrypoint sh "${IMAGE_REF}" -c \
-            'cat "$(python3 -c "import agent_webui, os; print(os.path.join(os.path.dirname(agent_webui.__file__), \"dist\", \"build-info.txt\"))")"')"
+            'cat "$(python3 -c "import graph_os_webui, os; print(os.path.join(os.path.dirname(graph_os_webui.__file__), \"dist\", \"build-info.txt\"))")"')"
           echo "${INFO}"
           grep -q "sha=${{ steps.meta_build.outputs.sha }}$" <<<"${INFO}"

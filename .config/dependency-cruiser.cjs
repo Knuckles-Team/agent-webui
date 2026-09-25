@@ -1,6 +1,6 @@
 /**
  * dependency-cruiser config — advisory boundary + cycle measurement for
- * agent-webui's ~290 .ts/.tsx sources.
+ * graph-os-webui's ~290 .ts/.tsx sources.
  *
  * Rules chosen from what the codebase actually does today, not an invented
  * layering:

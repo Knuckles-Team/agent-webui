@@ -19,7 +19,7 @@ export default defineConfig(() => ({
     dedupe: ['react', 'react-dom'],
   },
   build: {
-    // BUG-PE-062: `agent/agent_webui/dist` is the LIVE, NFS-mounted
+    // BUG-PE-062: `agent/graph_os_webui/dist` is the LIVE, NFS-mounted
     // production artifact -- vite empties `outDir` and writes files into
     // it over the whole build, `index.html` last, so building straight
     // into that path let any interrupted build (Ctrl-C, OOM, a `git push`
@@ -29,7 +29,7 @@ export default defineConfig(() => ({
     // build`) verifies the staged build is complete and swaps it into
     // `dist` atomically. Never point this at `dist` directly -- see that
     // script's header for why.
-    outDir: 'agent/agent_webui/dist.tmp',
+    outDir: 'agent/graph_os_webui/dist.tmp',
     emptyOutDir: true,
     assetsDir: 'assets',
   },

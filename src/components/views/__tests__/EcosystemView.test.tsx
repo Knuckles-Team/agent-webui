@@ -129,7 +129,7 @@ describe('EcosystemView (BUG-008 truthful-state proof)', () => {
   })
 
   it('BUG-018: every server the live catalog reports appears somewhere in the UI, or carries an explicit blocked/unavailable reason -- an unknown MCP server is never silently omitted', async () => {
-    // `GET /api/enhanced/ecosystem/services` (agent_webui/api_extensions.py
+    // `GET /api/enhanced/ecosystem/services` (graph_os_webui/api_extensions.py
     // `list_ecosystem_services`) is the runtime catalog authority: it
     // dynamically scans `agent-packages/agents/*` plus a small guaranteed
     // set. Prior to BUG-018's fix, EcosystemView never fetched this endpoint
@@ -214,7 +214,7 @@ describe('EcosystemView (BUG-012 GitHub/GitLab contract-mismatch proof)', () => 
             JSON.stringify({
               status: 'success',
               source: 'live',
-              repo: 'Knuckles-Team/agent-webui',
+              repo: 'Knuckles-Team/graph-os-webui',
               prs: [
                 {
                   id: 1,
@@ -222,7 +222,7 @@ describe('EcosystemView (BUG-012 GitHub/GitLab contract-mismatch proof)', () => 
                   author: 'Knucklessg1',
                   branch: 'feat/ontology-operator-ui',
                   status: 'closed',
-                  web_url: 'https://github.com/Knuckles-Team/agent-webui/pull/1',
+                  web_url: 'https://github.com/Knuckles-Team/graph-os-webui/pull/1',
                 },
               ],
               workflows: [
@@ -290,7 +290,7 @@ describe('EcosystemView (BUG-012 GitHub/GitLab contract-mismatch proof)', () => 
     const prLink = screen.getByRole('link', {
       name: /Operator UI for the ontology system/i,
     })
-    expect(prLink).toHaveAttribute('href', 'https://github.com/Knuckles-Team/agent-webui/pull/1')
+    expect(prLink).toHaveAttribute('href', 'https://github.com/Knuckles-Team/graph-os-webui/pull/1')
 
     const mrLink = screen.getByRole('link', {
       name: /Document save_ tool action-fold exception/i,

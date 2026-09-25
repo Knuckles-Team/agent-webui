@@ -1,7 +1,7 @@
-# Agent WebUI Python host
+# GraphOS Python host
 
 The packaged FastAPI boundary and built React assets for
-[Agent WebUI](../README.md).
+[GraphOS](../README.md).
 
 ## Overview
 
@@ -20,9 +20,9 @@ injects the platform gateway and verified runtime context through the public
 
 ## Documentation
 
-Use the [published documentation](https://knuckles-team.github.io/agent-webui/)
+Use the [published documentation](https://knuckles-team.github.io/graph-os-webui/)
 for setup, architecture, feature reference, and operations. The
-[ecosystem map](https://knuckles-team.github.io/agent-webui/ecosystem/) explains
+[ecosystem map](https://knuckles-team.github.io/graph-os-webui/ecosystem/) explains
 the boundary between this host and GraphOS.
 
 ## Architecture
@@ -52,4 +52,4 @@ routing, fleet supervision, and runtime policy in GraphOS. Follow the root
 
 ## License
 
-Agent WebUI is available under the [MIT License](../LICENSE).
+GraphOS is available under the [MIT License](../LICENSE).

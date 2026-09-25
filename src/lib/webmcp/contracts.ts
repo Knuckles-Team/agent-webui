@@ -26,7 +26,7 @@ function isSensitiveName(name: string): boolean {
 
 function redactRoute(route: string): string {
   try {
-    const url = new URL(route, 'http://agent-webui.local')
+    const url = new URL(route, 'http://graphos.local')
     for (const key of [...url.searchParams.keys()]) {
       if (isSensitiveName(key)) url.searchParams.delete(key)
     }

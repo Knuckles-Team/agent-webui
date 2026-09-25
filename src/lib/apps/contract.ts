@@ -24,7 +24,7 @@ import type { AtlasRenderer } from '@/lib/atlas/renderers'
 import type { RouteDef } from '@/lib/nav-registry'
 
 /** Namespace of every app's WebMCP tools: `<namespace>.<app>.<tool>`. */
-export const APP_TOOL_NAMESPACE = 'agent-webui.apps'
+export const APP_TOOL_NAMESPACE = 'graphos.apps'
 
 export interface AppSurface {
   readonly id: string

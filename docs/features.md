@@ -10,8 +10,8 @@
 
 | Variable                             | Default | Description                                                                                                           |
 | ------------------------------------ | ------- | --------------------------------------------------------------------------------------------------------------------- |
-| `AGENT_WEBUI_CONTACT_DESTINATION`    | unset   | Fixed server-side destination passed only to the injected governed delivery adapter. Invalid values disable delivery. |
-| `AGENT_WEBUI_CONTACT_RETENTION_DAYS` | unset   | Explicit PII retention decision from `0` (delivery only) through `3650`. Missing or invalid values disable delivery.  |
+| `GRAPH_OS_WEBUI_CONTACT_DESTINATION`    | unset   | Fixed server-side destination passed only to the injected governed delivery adapter. Invalid values disable delivery. |
+| `GRAPH_OS_WEBUI_CONTACT_RETENTION_DAYS` | unset   | Explicit PII retention decision from `0` (delivery only) through `3650`. Missing or invalid values disable delivery.  |
 
 The host must also pass a `ContactDeliveryPort` implementation to
 `create_agent_web_app(contact_delivery=...)`. An enabling implementation must

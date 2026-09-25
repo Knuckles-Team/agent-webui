@@ -1,6 +1,6 @@
 /**
  * @file Chat.tsx
- * @description Main Chat interface for the Agent Web Quickstart.
+ * @description Main Chat interface for the GraphOS.
  *
  * Implements a high-fidelity conversational UI using @ai-sdk/react, featuring:
  * - Real-time streaming with sideband graph activity visualization.
@@ -95,7 +95,7 @@ interface AttachmentItem {
  * One checkpoint of the core orchestrator's progress stream
  * (`agent_utilities.orchestration.agent_runner.ProgressEvent`, CONCEPT:AU-ORCH.execution.
  * messaging-orchestration-transparency), as adapted onto the wire by
- * `agent/agent_webui/orchestrator_model.py::_progress_event_payload`.
+ * `agent/graph_os_webui/orchestrator_model.py::_progress_event_payload`.
  *
  * `_reply_stream` cannot emit a distinct SSE frame type for this (pydantic-ai's
  * `FunctionModel.stream_function` only supports text/tool/thinking deltas), so each event
@@ -1149,7 +1149,7 @@ const Chat = ({ pageContext }: ChatProps) => {
         prepareSendMessagesRequest: ({ id, messages, body, trigger, messageId }) => {
           const context = pageContextRef.current
           const contextMessage: UIMessage = {
-            id: 'agent-webui-page-context',
+            id: 'graph-os-webui-page-context',
             role: 'system',
             parts: [{ type: 'text', text: pageContextSystemPrompt(context) }],
           }
@@ -1412,7 +1412,7 @@ const Chat = ({ pageContext }: ChatProps) => {
   }
 
   /** Body of the `/help` slash command. */
-  const slashHelp = (): string => `### 💻 Agent WebUI Slash Commands
+  const slashHelp = (): string => `### 💻 GraphOS Slash Commands
 
 Available commands:
 - **\`/help\`**: Show this help summary.

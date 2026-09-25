@@ -3,7 +3,7 @@ import { titleForMode, type AuthMode } from '@/lib/auth'
 import { NOT_FOUND_ROUTE, type RouteDef } from '@/lib/nav-registry'
 import { projectPageHead } from '@/lib/page-metadata'
 
-const MANAGED_ATTRIBUTE = 'data-agent-webui-head'
+const MANAGED_ATTRIBUTE = 'data-graph-os-webui-head'
 
 function upsertMeta(name: string, content: string): void {
   const matches = Array.from(document.head.querySelectorAll<HTMLMetaElement>(`meta[name="${name}"]`))
@@ -75,7 +75,7 @@ export function PageHead({
     document.title = titleForMode(projection.title, authMode)
     upsertMeta('description', projection.description)
     upsertMeta('robots', projection.robots)
-    upsertMeta('agent-webui-page', projection.webmcpPageId)
+    upsertMeta('graph-os-webui-page', projection.webmcpPageId)
     upsertLink('canonical', projection.canonicalUrl)
     // Favicon, Apple touch, and manifest links belong to the static document
     // head. Route transitions must leave that complete size-specific asset set

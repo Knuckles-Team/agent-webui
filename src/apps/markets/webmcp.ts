@@ -15,7 +15,7 @@ import { ASSET_CLASSES, DATA_STATUSES, LAYERS, RANGES, TIMEFRAMES } from './sche
 import type { ChartSettings, ScannerFilters } from './view-state'
 
 const APP = 'markets'
-const SOURCE = 'agent-webui:src/apps/markets/webmcp.ts'
+const SOURCE = 'graph-os-webui:src/apps/markets/webmcp.ts'
 /** The host's listing-id grammar: no path traversal, no leading slash. */
 const LISTING_ID = /^(?!.*\.\.)[A-Za-z0-9:._@+-][A-Za-z0-9:._/@+-]{0,255}$/
 

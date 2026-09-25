@@ -3,7 +3,7 @@
  * @description Microphone dictation control for the chat prompt toolbar.
  *
  * Records one clip via `getUserMedia`/`MediaRecorder`, uploads it whole to
- * agent-webui's `POST /api/enhanced/voice/transcribe` on stop, and calls
+ * graph-os-webui's `POST /api/enhanced/voice/transcribe` on stop, and calls
  * `onTranscript` with the resulting text — see `useVoiceDictation` for the
  * full state machine and why this is single-shot rather than streaming (no
  * streaming ASR backend exists to stream against today).

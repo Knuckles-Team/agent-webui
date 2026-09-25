@@ -48,10 +48,10 @@ describe('ConsentBanner', () => {
     render(<ConsentBanner />)
     const consent = document.querySelector('[data-mobile-surface="consent"]')
     expect(consent).toHaveStyle({
-      '--agent-webui-mobile-safe-area-bottom': 'env(safe-area-inset-bottom, 0px)',
-      '--agent-webui-mobile-consent-bottom':
-        'calc(var(--agent-webui-mobile-cta-occupied-height) + var(--agent-webui-mobile-surface-gap))',
+      '--graph-os-webui-mobile-safe-area-bottom': 'env(safe-area-inset-bottom, 0px)',
+      '--graph-os-webui-mobile-consent-bottom':
+        'calc(var(--graph-os-webui-mobile-cta-occupied-height) + var(--graph-os-webui-mobile-surface-gap))',
     })
-    expect(consent).toHaveClass('bottom-[var(--agent-webui-mobile-consent-bottom)]')
+    expect(consent).toHaveClass('bottom-[var(--graph-os-webui-mobile-consent-bottom)]')
   })
 })

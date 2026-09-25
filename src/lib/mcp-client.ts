@@ -1,5 +1,5 @@
 /**
- * The browser-side MCP client for agent-webui.
+ * The browser-side MCP client for graphos.
  *
  * CONCEPT:AU-ECO.ui.mcp-apps-client
  *
@@ -21,7 +21,7 @@
  * So the transport here is the one every agent-utilities frontend already
  * uses: **same-origin HTTP to this app's own backend** (`geniusbot` →
  * `agent_utilities.gateway_client.GatewayClient`; `agent-terminal-ui` →
- * `AgentClient` over `{base_url}/…`; agent-webui → `lib/gateway.ts` over
+ * `AgentClient` over `{base_url}/…`; graph-os-webui → `lib/gateway.ts` over
  * `/api/*`). The backend holds the governed MCP delegation seam
  * (`api_extensions._call_mcp_tool` → the host-injected `call_mcp_tool`
  * helper), which is where the allow-list, actor policy, credential
@@ -121,7 +121,7 @@ export interface McpAppResource {
 /**
  * One tool descriptor from the governed catalog
  * (`GET /api/enhanced/mcp/servers/{server}/tools`, `list_mcp_server_tools` in
- * `agent_webui.api_extensions`). `enabled` reflects this deployment's own
+ * `graph_os_webui.api_extensions`). `enabled` reflects this deployment's own
  * toggle state, not caller authorization — a disabled tool is still listed so
  * an operator can see and re-enable it, but `MCPProvider` treats it exactly
  * like any other entry (no policy is inferred client-side; the server

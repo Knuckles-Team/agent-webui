@@ -1,6 +1,6 @@
 # Deployment and operations
 
-Agent WebUI ships as a Python wheel and a container image. In a complete Graph OS
+GraphOS ships as a Python wheel and a container image. In a complete Graph OS
 deployment it runs as the browser-facing presentation service and composes the
 canonical gateway routes supplied by Graph OS and Agent Utilities.
 
@@ -21,20 +21,20 @@ audited, host-injected delegation ports.
 Before exposing a listener, inspect the effective contract:
 
 ```bash
-python -m agent_webui.server --security-doctor --host 0.0.0.0
+python -m graph_os_webui.server --security-doctor --host 0.0.0.0
 ```
 
 The CLI disables Uvicorn access logging because raw query strings can contain searches,
 graph symbols, and other sensitive values. An embedding ASGI server must set
-`AGENT_WEBUI_ACCESS_LOG_POLICY=disabled` or provide a redacting logger and
-attest with `AGENT_WEBUI_ACCESS_LOG_POLICY=redacted`.
+`GRAPH_OS_WEBUI_ACCESS_LOG_POLICY=disabled` or provide a redacting logger and
+attest with `GRAPH_OS_WEBUI_ACCESS_LOG_POLICY=redacted`.
 
 Content Security Policy defaults to self-hosted content with frames denied.
 Additional script, style, image, font, connection, media, worker, and frame
 sources must be exact origins in the corresponding
-`AGENT_WEBUI_CSP_*_SOURCES` variables. Wildcards, credentials, paths, and
+`GRAPH_OS_WEBUI_CSP_*_SOURCES` variables. Wildcards, credentials, paths, and
 directive injection are rejected. Custom HTML rendering also requires
-`AGENT_WEBUI_CSP_CUSTOM_RENDERING=1`.
+`GRAPH_OS_WEBUI_CSP_CUSTOM_RENDERING=1`.
 
 ## Build and deploy
 
@@ -73,7 +73,7 @@ updates and verifies both.
 
 ## Concurrent operators
 
-Only one Agent WebUI Kubernetes Deployment is active for a given environment. When
+Only one GraphOS Kubernetes Deployment is active for a given environment. When
 another operator is deploying, build and push without changing the cluster:
 
 ```bash

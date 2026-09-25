@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const CONTACT_RECEIPT_KEY = 'agent-webui.confirmed-receipt'
+export const CONTACT_RECEIPT_KEY = 'graphos.confirmed-receipt'
 export const CONTACT_SUBMISSION_TIMEOUT_MS = 15_000
 const CONTACT_RECEIPT_PATTERN = /^contact_[A-Za-z0-9_-]{16,56}$/
 const CONTACT_IDEMPOTENCY_PATTERN = /^contactreq_[a-f0-9]{32}$/

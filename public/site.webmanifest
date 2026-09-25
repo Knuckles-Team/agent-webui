@@ -1,12 +1,12 @@
 {
-  "name": "Graph OS Agent WebUI",
-  "short_name": "Graph OS",
+  "name": "GraphOS",
+  "short_name": "GraphOS",
   "description": "A governed web interface for Graph OS agents, knowledge, and workflows.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0d1117",
-  "theme_color": "#0d1117",
+  "background_color": "#0d1526",
+  "theme_color": "#0d1526",
   "icons": [
     {
       "src": "/icon-192x192.png",

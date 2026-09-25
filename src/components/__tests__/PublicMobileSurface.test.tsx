@@ -7,7 +7,7 @@ import { routeById } from '@/lib/nav-registry'
 import type { SiteConfig } from '@/lib/site-config'
 
 const CONFIG: SiteConfig = {
-  siteName: 'Agent WebUI',
+  siteName: 'GraphOS',
   canonicalOrigin: 'https://agents.example.invalid',
   indexableEnvironment: false,
   openGraphImagePath: '/og-image-v1.png',
@@ -35,13 +35,13 @@ describe('public mobile surface contract', () => {
     )
 
     const main = screen.getByRole('main')
-    expect(main).toHaveClass('pb-[var(--agent-webui-mobile-cta-occupied-height)]')
-    expect(main).toHaveStyle({ scrollPaddingBottom: 'var(--agent-webui-mobile-cta-occupied-height)' })
+    expect(main).toHaveClass('pb-[var(--graph-os-webui-mobile-cta-occupied-height)]')
+    expect(main).toHaveStyle({ scrollPaddingBottom: 'var(--graph-os-webui-mobile-cta-occupied-height)' })
     expect(document.querySelector('[data-mobile-surface="cta"]')).toHaveStyle({
-      '--agent-webui-mobile-safe-area-bottom': 'env(safe-area-inset-bottom, 0px)',
+      '--graph-os-webui-mobile-safe-area-bottom': 'env(safe-area-inset-bottom, 0px)',
     })
     expect(document.querySelector('[data-mobile-surface="cta"] a')).toHaveStyle({
-      minHeight: 'var(--agent-webui-mobile-cta-button-height)',
+      minHeight: 'var(--graph-os-webui-mobile-cta-button-height)',
     })
   })
 
@@ -81,6 +81,6 @@ describe('public mobile surface contract', () => {
     const route = routeById('public.contact')
     expect(route).toBeDefined()
     render(<MobileCta route={route!} />)
-    expect(screen.getByRole('link', { name: 'Open Agent WebUI' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: 'Open GraphOS' })).toHaveAttribute('href', '/')
   })
 })

@@ -7,7 +7,7 @@
  * display name, email, and (if Keycloak has one) a picture — comes from the
  * signed-in session's IdP claims (`useIdentity()` / `AuthSession` in
  * `auth.ts`) and is read-only in this app: there is no Keycloak Admin API
- * credential wired into agent-webui, so a "Save" here could never actually
+ * credential wired into graph-os-webui, so a "Save" here could never actually
  * change the account, and pretending it did would misinform the operator
  * about what happened when they next look at Keycloak. What CAN honestly be
  * offered is a local override that changes only how this browser renders

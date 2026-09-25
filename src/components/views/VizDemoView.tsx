@@ -4,7 +4,7 @@
  * `ViewSpec` through the eg-viz LOD ColumnStore/export pipeline running inside
  * the epistemic-graph engine (`Method::Viz`) and displays the resulting PNG.
  *
- * This is the first real "views over engine data" surface in agent-webui: the
+ * This is the first real "views over engine data" surface in graph-os-webui: the
  * image is drawn server-side (Rust), at a bounded primitive/byte budget, and the
  * response tells you exactly what tier was chosen (`Direct` = every point,
  * `Density` = a screen-bounded reduction) so a caller can see the LOD ladder

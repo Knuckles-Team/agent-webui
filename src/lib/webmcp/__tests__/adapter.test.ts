@@ -27,7 +27,7 @@ describe('experimental WebMCP adapter', () => {
       },
     }
     const tool: WebMcpToolDefinition = {
-      name: 'agent-webui.test',
+      name: 'graphos.test',
       description: 'test',
       inputSchema: { type: 'object' },
       execute: async () => ({ ok: true }),
@@ -44,7 +44,7 @@ describe('experimental WebMCP adapter', () => {
     expect(signal.aborted).toBe(true)
     await Promise.resolve()
     expect(registration.getSnapshot().activeToolNames).toEqual([])
-    expect(registration.getSnapshot().statusByTool['agent-webui.test']).toBe('aborted')
+    expect(registration.getSnapshot().statusByTool['graphos.test']).toBe('aborted')
   })
 
   it('acknowledges only settled registrations and keeps pending tools unavailable', async () => {
@@ -57,7 +57,7 @@ describe('experimental WebMCP adapter', () => {
         }),
     }
     const tool: WebMcpToolDefinition = {
-      name: 'agent-webui.pending',
+      name: 'graphos.pending',
       description: 'pending',
       inputSchema: { type: 'object' },
       execute: async () => ({ ok: true }),
@@ -66,16 +66,16 @@ describe('experimental WebMCP adapter', () => {
     const registration = registerWebMcpTools(adapter, [tool])
     expect(registration.getSnapshot()).toMatchObject({
       activeToolNames: [],
-      unavailableToolNames: ['agent-webui.pending'],
-      statusByTool: { 'agent-webui.pending': 'pending' },
+      unavailableToolNames: ['graphos.pending'],
+      statusByTool: { 'graphos.pending': 'pending' },
     })
 
     acknowledge?.()
     await expect(registration.acknowledged).resolves.toMatchObject({
       generation: registration.generation,
-      activeToolNames: ['agent-webui.pending'],
+      activeToolNames: ['graphos.pending'],
       unavailableToolNames: [],
-      statusByTool: { 'agent-webui.pending': 'active' },
+      statusByTool: { 'graphos.pending': 'active' },
     })
   })
 
@@ -87,7 +87,7 @@ describe('experimental WebMCP adapter', () => {
       },
     }
     const tool: WebMcpToolDefinition = {
-      name: 'agent-webui.failed',
+      name: 'graphos.failed',
       description: 'failed',
       inputSchema: { type: 'object' },
       execute: async () => ({ ok: true }),
@@ -96,14 +96,14 @@ describe('experimental WebMCP adapter', () => {
     const registration = registerWebMcpTools(adapter, [tool])
     const snapshot = await registration.acknowledged
     expect(snapshot.activeToolNames).toEqual([])
-    expect(snapshot.unavailableToolNames).toEqual(['agent-webui.failed'])
-    expect(snapshot.statusByTool['agent-webui.failed']).toBe('failed')
-    expect(snapshot.errorByTool['agent-webui.failed']).toBe('permission denied')
+    expect(snapshot.unavailableToolNames).toEqual(['graphos.failed'])
+    expect(snapshot.statusByTool['graphos.failed']).toBe('failed')
+    expect(snapshot.errorByTool['graphos.failed']).toBe('permission denied')
   })
 
   it('makes unsupported registration explicit instead of fabricating active evidence', async () => {
     const tool: WebMcpToolDefinition = {
-      name: 'agent-webui.unsupported',
+      name: 'graphos.unsupported',
       description: 'unsupported',
       inputSchema: { type: 'object' },
       execute: async () => ({ ok: true }),
@@ -111,8 +111,8 @@ describe('experimental WebMCP adapter', () => {
     const registration = createUnavailableWebMcpRegistration([tool])
     await expect(registration.acknowledged).resolves.toMatchObject({
       activeToolNames: [],
-      unavailableToolNames: ['agent-webui.unsupported'],
-      statusByTool: { 'agent-webui.unsupported': 'unavailable' },
+      unavailableToolNames: ['graphos.unsupported'],
+      statusByTool: { 'graphos.unsupported': 'unavailable' },
     })
   })
 })

@@ -17,13 +17,13 @@ describe('Markets WebMCP tools', () => {
   it('are namespaced, validated and bound to the page that mounted them', () => {
     const names = createMarketsTools(controller()).map((tool) => tool.name)
     expect(names).toEqual([
-      'agent-webui.apps.markets.get-view',
-      'agent-webui.apps.markets.search-listings',
-      'agent-webui.apps.markets.open-listing',
-      'agent-webui.apps.markets.set-scanner-filters',
+      'graphos.apps.markets.get-view',
+      'graphos.apps.markets.search-listings',
+      'graphos.apps.markets.open-listing',
+      'graphos.apps.markets.set-scanner-filters',
     ])
     expect(createMarketsTools(controller({ setFilters: undefined, setChart: vi.fn() })).at(-1)?.name).toBe(
-      'agent-webui.apps.markets.set-chart',
+      'graphos.apps.markets.set-chart',
     )
   })
 

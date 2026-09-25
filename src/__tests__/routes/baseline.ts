@@ -4,7 +4,7 @@
  * (route × fixture × viewport) combinations the D-WUI-2 hostile-payload
  * harness (`route-render.hostile.test.tsx`) exercises against.
  *
- * WHY THIS FILE EXISTS: the merge queue's `vitest` gate (agent-webui's
+ * WHY THIS FILE EXISTS: the merge queue's `vitest` gate (graph-os-webui's
  * `.mergequeue.yaml`) is DIFFERENTIAL — it fails a candidate that introduces
  * any `^FAIL ` line not already present on `main`. This harness's entire
  * purpose is to expose bugs that already exist in `main`'s view components
@@ -47,7 +47,7 @@ export interface BaselineEntry {
   registerId: string
 }
 
-// Captured 2026-08-06, re-verified against agent-webui @ 98e6886 (main, after
+// Captured 2026-08-06, re-verified against graph-os-webui @ 98e6886 (main, after
 // w1-webui-api-contract's first two fix batches) + this lane's harness.
 //
 // STALE_BASELINE_CLOSED — BUG-011 (GOC-28), 2026-08-16, `fix/L1-webui-surfaces`

@@ -5,13 +5,18 @@ import { loadAnalytics, sanitizeAnalyticsEvent } from '@/lib/analytics'
 describe('consent and analytics boundaries', () => {
   afterEach(() => {
     window.localStorage.removeItem(CONSENT_STORAGE_KEY)
-    document.head.querySelectorAll('script[data-agent-webui-analytics]').forEach((script) => {
+    document.head.querySelectorAll('script[data-graph-os-webui-analytics]').forEach((script) => {
       script.remove()
     })
     vi.restoreAllMocks()
   })
 
   it('stores versioned choices and rejects stale or malformed records', () => {
+    expect(readConsent()).toBeNull()
+    window.localStorage.setItem(
+      'agent-webui.consent',
+      JSON.stringify({ version: 'agent-webui-consent-v1', choice: 'granted', decidedAt: '2026-09-14T00:00:00.000Z' }),
+    )
     expect(readConsent()).toBeNull()
     writeConsent('granted', '2026-09-14T00:00:00.000Z')
     expect(readConsent()).toEqual({

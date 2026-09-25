@@ -6,9 +6,9 @@
  *
  * ⚠ **Provisional against a not-yet-merged interface.** `WD10-A-CORE` (sibling lane,
  * same wave) owns `src/lib/atlas/` and had not merged `adapter.ts`/`types.ts`/
- * `transport.ts`/`projection.ts`/`filters.ts` to `agent-webui` `main` when this file
+ * `transport.ts`/`projection.ts`/`filters.ts` to `graph-os-webui` `main` when this file
  * was written — this lane read them directly out of A-CORE's own in-progress
- * worktree (`${XDG_STATE_HOME}/repository-worktrees/agent-webui/wD10-a-core`) rather
+ * worktree (`${XDG_STATE_HOME}/repository-worktrees/graph-os-webui/wD10-a-core`) rather
  * than inventing a competing shape, per the wave brief. This file therefore only
  * type-checks once A-CORE's core files land; the lane report has the exact
  * verification story (a temporary local copy of those files was used to confirm this

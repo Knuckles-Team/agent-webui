@@ -265,7 +265,7 @@ guardrails = [
 ]
 
 [[package]]
-name = "agent-webui"
+name = "graph-os-webui"
 version = "2.6.2"
 source = { editable = "." }
 dependencies = [

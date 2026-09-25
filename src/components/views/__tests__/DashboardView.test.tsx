@@ -298,7 +298,7 @@ describe('DashboardView WebSocket end-to-end (BUG-019 forced-disconnect gap/dupl
 /**
  * GOC-29: closing BUG-019's deferred backend half.
  *
- * `/ws/dashboard` (`agent_webui/server.py::_dashboard_ws`) now carries
+ * `/ws/dashboard` (`graph_os_webui/server.py::_dashboard_ws`) now carries
  * `stream_id` (minted fresh per accepted connection) and `sequence`
  * (monotonic within a connection) on every message. These tests pin the two
  * known-bad proofs the wire-protocol addition exists to satisfy:

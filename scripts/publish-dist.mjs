@@ -3,9 +3,9 @@
  * @file publish-dist.mjs
  * @description BUG-PE-062: publish the frontend build ATOMICALLY.
  *
- * `agent/agent_webui/dist` is not just a build artifact -- the production
+ * `agent/graph_os_webui/dist` is not just a build artifact -- the production
  * deployment live-mounts it (over NFS) straight into the running
- * `agent-webui` pod, and `server.py` resolves it fresh on every request
+ * `graph-os-webui` pod, and `server.py` resolves it fresh on every request
  * (`SPAStaticFiles(directory=str(dist_path))`). Vite empties `outDir` and
  * writes hundreds of files into it over the course of a build, `index.html`
  * LAST. Building straight into `dist` (the old behavior) meant any
@@ -39,7 +39,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const base = join(here, '..', 'agent', 'agent_webui')
+const base = join(here, '..', 'agent', 'graph_os_webui')
 const staging = join(base, 'dist.tmp')
 const live = join(base, 'dist')
 const backup = join(base, 'dist.prev')

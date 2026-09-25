@@ -1,6 +1,6 @@
 /**
  * @file App.tsx
- * @description Root application component for the Agent Web Quickstart.
+ * @description Root application component for the GraphOS.
  *
  * Orchestrates the overall layout, theme management, sidebar navigation,
  * and routing between different views (Chat, Files, Skills, Scheduling, etc.).

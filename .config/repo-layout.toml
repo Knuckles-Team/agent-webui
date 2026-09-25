@@ -9,7 +9,7 @@
 # pyproject.toml; the root keeps only what a tool discovers nowhere else.
 
 [dirs]
-agent = "the agent_webui Python backend package: FastAPI + pydantic-ai orchestrator, RBAC/OIDC session handling, observability, api_extensions -- plus its own README, icon, and mcp_config.json"
+agent = "the graph_os_webui Python backend package: FastAPI + pydantic-ai orchestrator, RBAC/OIDC session handling, observability, api_extensions -- plus its own README, icon, and mcp_config.json"
 docker = "Dockerfile, its BuildKit-scoped Dockerfile.dockerignore, and build_and_push.sh / deploy.sh for the webui image"
 docs = "mkdocs documentation source (architecture, concepts, capability coverage)"
 e2e = "Playwright end-to-end specs (auth, graph-view, knowledge-base-view, memory-view, routes-smoke, sdd-view)"
