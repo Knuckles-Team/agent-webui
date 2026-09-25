@@ -12,6 +12,7 @@ Every concept and component this repo's own registries and documentation nav dec
 - **Architecture** — `architecture.md`
 - **Agents and events** — `agents.md`
 - **Atlas workspace** — `atlas.md`
+- **Apps and Markets** — `apps.md`
 - **Capability Workbench** — `capability-workbench.md`
 
 ## Home
