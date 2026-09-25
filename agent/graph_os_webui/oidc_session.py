@@ -292,8 +292,8 @@ def _is_secure(scope: Any) -> bool:
 
     ``Secure`` cookies are silently dropped by browsers on plain HTTP, so the
     flag is set from the observed scheme (including the ingress' forwarded
-    scheme) rather than hardcoded.  See the module's deployment notes: the
-    homelab ingress currently serves ``http://au.example``.
+    scheme) rather than hardcoded. The GraphOS ingress serves HTTPS; its
+    transitional au.arpa ingress redirects to that origin before sign-in.
     """
 
     if str(scope.get('scheme') or '').lower() in {'https', 'wss'}:
@@ -595,23 +595,18 @@ def _opaque_ref(settings: OIDCSettings, label: str, *parts: str) -> str:
 def _request_scheme_redirect_uri(configured_redirect_uri: str, scope: Any) -> str:
     """``configured_redirect_uri`` with its scheme swapped to match `scope`.
 
-    D-WUI-31: ``WEBUI_OIDC_REDIRECT_URI`` is one fixed scheme (currently
-    ``http://au.example/auth/callback``). The ingress now also serves TLS
-    (D-WA-5), and a caller starting the login flow over https sets the
-    pre-login flow cookie ``Secure`` — correctly, per ``_is_secure`` — but
-    was then bounced to the *statically configured* http callback, so the
-    browser silently dropped that Secure cookie before ``_handle_callback``
-    could read it back, and every https login failed closed with "Sign-in
-    could not be verified".
+    D-WUI-31: when the configured callback was HTTP, an HTTPS login set a
+    Secure flow cookie but returned through HTTP, losing the cookie and
+    failing verification. The GraphOS callback is now configured as HTTPS,
+    and its ingress redirects HTTP to HTTPS before login begins.
 
     The host/path stay exactly as configured (never derived from a
     request-controlled ``Host`` header — that would make the callback URL
     attacker-influenceable); only the scheme varies, to whichever one the
-    live request actually used. This is safe precisely because
-    ``scripts/provision_identity.py`` already registers BOTH the http and
-    https variant of this same host+path as valid Keycloak redirect URIs —
-    this function can only ever produce one of those two already-trusted
-    values, never a third one.
+    live request actually used. ``scripts/provision_identity.py`` registers
+    only the HTTPS GraphOS callback, so a proxy that incorrectly reports an
+    HTTP GraphOS login produces an unregistered callback and fails closed.
+    The old au.arpa callbacks remain registered for the one-train migration.
     """
 
     parsed = urlsplit(configured_redirect_uri)

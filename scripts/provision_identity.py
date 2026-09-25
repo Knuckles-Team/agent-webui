@@ -53,6 +53,7 @@ Usage::
     python3 scripts/provision_identity.py --stage keycloak
     python3 scripts/provision_identity.py --grant-user alice
     python3 scripts/provision_identity.py --dry-run
+    python3 scripts/provision_identity.py --stage keycloak --retire-legacy-origin
 
 Credentials this script needs (read, never printed):
 
@@ -92,7 +93,8 @@ REALM = os.environ.get('KEYCLOAK_REALM', 'homelab')
 ADMIN_REALM = os.environ.get('KEYCLOAK_ADMIN_REALM', 'master')
 ADMIN_USER = os.environ.get('KEYCLOAK_ADMIN_USER', 'admin')
 
-WEBUI_ORIGIN = os.environ.get('WEBUI_ORIGIN', 'http://au.example').rstrip('/')
+WEBUI_ORIGIN = os.environ.get('WEBUI_ORIGIN', 'https://graphos.arpa').rstrip('/')
+LEGACY_WEBUI_ORIGINS = ('https://au.arpa', 'http://au.arpa')
 BROWSER_CLIENT = 'graph-os-webui'
 SERVICE_CLIENT = 'graph-os-webui-svc'
 USER_GROUP = 'graph-os-webui-users'
@@ -145,7 +147,8 @@ CA_BUNDLE_FILE = f'{CA_BUNDLE_MOUNT}/ca-bundle.pem'
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OPENBAO_ENV = Path(
     os.environ.get(
-        'OPENBAO_ENV_FILE', str(REPO_ROOT.parent.parent / 'services' / 'openbao' / '.env')
+        'OPENBAO_ENV_FILE',
+        str(REPO_ROOT.parent.parent / 'services' / 'openbao' / '.env'),
     )
 )
 
@@ -356,7 +359,9 @@ def _ensure_fleet_scope(token: str, dry_run: bool) -> str:
     return next(s['id'] for s in scopes if s['name'] == FLEET_SCOPE)
 
 
-def _create_client(token: str, client_id: str, desired: dict[str, Any], dry_run: bool) -> dict[str, Any] | None:
+def _create_client(
+    token: str, client_id: str, desired: dict[str, Any], dry_run: bool
+) -> dict[str, Any] | None:
     """Create a Keycloak client that does not exist yet. Returns ``None`` for
     a dry run (nothing was actually created to return)."""
     if dry_run:
@@ -370,7 +375,9 @@ def _create_client(token: str, client_id: str, desired: dict[str, Any], dry_run:
     return created
 
 
-def _resolve_client_field(existing: dict[str, Any], key: str, wanted: Any) -> tuple[bool, Any]:
+def _resolve_client_field(
+    existing: dict[str, Any], key: str, wanted: Any
+) -> tuple[bool, Any]:
     """Decide whether one client field has drifted, and what it should become.
 
     Keycloak normalizes and reorders list-valued fields, so an order-sensitive
@@ -391,7 +398,9 @@ def _resolve_client_field(existing: dict[str, Any], key: str, wanted: Any) -> tu
     return not have >= want, sorted(have | want)
 
 
-def _compute_client_drift(existing: dict[str, Any], desired: dict[str, Any]) -> dict[str, Any]:
+def _compute_client_drift(
+    existing: dict[str, Any], desired: dict[str, Any]
+) -> dict[str, Any]:
     drift: dict[str, Any] = {}
     for key, value in desired.items():
         if key in {'clientId', 'attributes'}:
@@ -406,7 +415,11 @@ def _compute_client_drift(existing: dict[str, Any], desired: dict[str, Any]) -> 
 
 
 def _apply_client_drift(
-    token: str, client_id: str, existing: dict[str, Any], drift: dict[str, Any], dry_run: bool
+    token: str,
+    client_id: str,
+    existing: dict[str, Any],
+    drift: dict[str, Any],
+    dry_run: bool,
 ) -> dict[str, Any] | None:
     if not drift:
         log(f'  client {client_id}: present, in sync')
@@ -708,7 +721,57 @@ def stage_tier2_admission(dry_run: bool) -> None:
         )
 
 
-def stage_keycloak(grant_users: list[str], dry_run: bool) -> dict[str, str]:
+def _browser_client_config(*, retire_legacy_origin: bool) -> dict[str, Any]:
+    """Use an exact, bounded callback set for the one-train hostname cutover.
+
+    The old host remains registered while its ingress redirects to GraphOS.
+    Removing it requires an explicit later Keycloak-only cleanup invocation;
+    arbitrary pre-existing callbacks are never retained by reconciliation.
+    """
+    origins = [WEBUI_ORIGIN]
+    if not retire_legacy_origin:
+        origins.extend(
+            origin for origin in LEGACY_WEBUI_ORIGINS if origin != WEBUI_ORIGIN
+        )
+    return {
+        'clientId': BROWSER_CLIENT,
+        'name': 'GraphOS (browser sign-in)',
+        'description': (
+            'Confidential authorization-code client. Issues the END USER a '
+            'token; the WebUI never exceeds the signed-in human authority.'
+        ),
+        'enabled': True,
+        'protocol': 'openid-connect',
+        'publicClient': False,
+        'clientAuthenticatorType': 'client-secret',
+        'standardFlowEnabled': True,
+        'serviceAccountsEnabled': False,
+        'directAccessGrantsEnabled': False,
+        'implicitFlowEnabled': False,
+        'redirectUris': [f'{origin}/auth/callback' for origin in origins],
+        'webOrigins': origins,
+        'rootUrl': WEBUI_ORIGIN,
+        'baseUrl': '/',
+        'defaultClientScopes': [
+            'web-origins',
+            'acr',
+            'profile',
+            'roles',
+            'email',
+            FLEET_SCOPE,
+        ],
+        'attributes': {
+            # PKCE is mandatory even though the exchange is confidential:
+            # the code travels through the user agent.
+            'pkce.code.challenge.method': 'S256',
+            'post.logout.redirect.uris': f'{WEBUI_ORIGIN}/*',
+        },
+    }
+
+
+def stage_keycloak(
+    grant_users: list[str], dry_run: bool, *, retire_legacy_origin: bool = False
+) -> dict[str, str]:
     """Reconcile every realm object and return the resolved configuration."""
 
     log(f'[keycloak] realm={REALM} at {KEYCLOAK_URL}')
@@ -718,43 +781,7 @@ def stage_keycloak(grant_users: list[str], dry_run: bool) -> dict[str, str]:
 
     browser = _reconcile_client(
         token,
-        {
-            'clientId': BROWSER_CLIENT,
-            'name': 'GraphOS (browser sign-in)',
-            'description': (
-                'Confidential authorization-code client. Issues the END USER a '
-                'token; the WebUI never exceeds the signed-in human authority.'
-            ),
-            'enabled': True,
-            'protocol': 'openid-connect',
-            'publicClient': False,
-            'clientAuthenticatorType': 'client-secret',
-            'standardFlowEnabled': True,
-            'serviceAccountsEnabled': False,
-            'directAccessGrantsEnabled': False,
-            'implicitFlowEnabled': False,
-            'redirectUris': [
-                f'{WEBUI_ORIGIN}/auth/callback',
-                f'{WEBUI_ORIGIN.replace("http://", "https://", 1)}/auth/callback',
-            ],
-            'webOrigins': [WEBUI_ORIGIN],
-            'rootUrl': WEBUI_ORIGIN,
-            'baseUrl': '/',
-            'defaultClientScopes': [
-                'web-origins',
-                'acr',
-                'profile',
-                'roles',
-                'email',
-                FLEET_SCOPE,
-            ],
-            'attributes': {
-                # PKCE is mandatory even though the exchange is confidential:
-                # the code travels through the user agent.
-                'pkce.code.challenge.method': 'S256',
-                'post.logout.redirect.uris': f'{WEBUI_ORIGIN}/*',
-            },
-        },
+        _browser_client_config(retire_legacy_origin=retire_legacy_origin),
         dry_run,
     )
     service = _reconcile_client(
@@ -1077,13 +1104,26 @@ def main() -> int:
         action='store_true',
         help='Report what would change without writing anything.',
     )
+    parser.add_argument(
+        '--retire-legacy-origin',
+        action='store_true',
+        help='After the redirect train, remove au.arpa from the browser Keycloak client.',
+    )
     args = parser.parse_args()
     stages = args.stage or ['keycloak', 'tier2-admission', 'openbao', 'kubernetes']
+    if args.retire_legacy_origin and stages != ['keycloak']:
+        parser.error('--retire-legacy-origin requires --stage keycloak alone')
+    if args.retire_legacy_origin and WEBUI_ORIGIN in LEGACY_WEBUI_ORIGINS:
+        parser.error('--retire-legacy-origin requires a new primary WEBUI_ORIGIN')
 
     try:
         values: dict[str, str] = {}
         if 'keycloak' in stages:
-            values = stage_keycloak(args.grant_user, args.dry_run)
+            values = stage_keycloak(
+                args.grant_user,
+                args.dry_run,
+                retire_legacy_origin=args.retire_legacy_origin,
+            )
         if 'tier2-admission' in stages:
             # Self-sufficient: re-resolves the service account's Keycloak
             # identity itself (does not consume `values`), so it runs
