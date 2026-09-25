@@ -252,8 +252,11 @@ describe('UserManagementView', () => {
   })
 })
 
-function identityOpsResponse(status: number, body: unknown): Promise<Response> {
-  return Promise.resolve({ ok: status < 400, status, json: async () => body } as Response)
+const meta = { registry_digest: 'digest', api_version: 'v1' }
+const session = { authenticated: true, csrf_token: 'session-csrf' }
+
+function response(status: number, body: unknown): Promise<Response> {
+  return Promise.resolve(Response.json(body, { status }))
 }
 
 describe('UserManagementView identity operations', () => {
@@ -261,8 +264,8 @@ describe('UserManagementView identity operations', () => {
     identityResult = { identity: ADMIN_IDENTITY, loading: false }
   })
 
-  it('distinguishes an unavailable identity-ops API from an empty roster and never calls legacy configure', async () => {
-    const fetcher = vi.fn(() => identityOpsResponse(404, {}))
+  it('distinguishes an unavailable API from an empty roster and never calls legacy configure', async () => {
+    const fetcher = vi.fn((url: string) => (url === '/auth/session' ? response(200, session) : response(404, {})))
     vi.stubGlobal('fetch', fetcher)
     renderWithProviders(<UserManagementView />)
     await waitFor(() => {
@@ -272,13 +275,17 @@ describe('UserManagementView identity operations', () => {
       '/api/v1/ops/identity.users.list',
       expect.objectContaining({ method: 'POST' }),
     )
-    expect(fetcher.mock.calls.some(([url]) => String(url).includes('/api/graph/configure'))).toBe(false)
+    expect(fetcher.mock.calls.some(([url]) => url.includes('/api/graph/configure'))).toBe(false)
   })
 
   it('shows a confirmed empty user roster distinctly', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(() => identityOpsResponse(200, { ok: true, result: { items: [], next_cursor: null } })),
+      vi.fn((url: string) =>
+        url === '/auth/session'
+          ? response(200, session)
+          : response(200, { ok: true, result: { items: [], next_cursor: null }, meta }),
+      ),
     )
     renderWithProviders(<UserManagementView />)
     await waitFor(() => {
@@ -289,12 +296,19 @@ describe('UserManagementView identity operations', () => {
 
   it('shows roster actions but never reports an unconfirmed mutation as successful', async () => {
     const fetcher = vi.fn((url: string) =>
-      url.includes('identity.users.list')
-        ? identityOpsResponse(200, {
-            ok: true,
-            result: { items: [{ principal_id: 'u-2', username: 'Bob', roles: ['reader'] }], next_cursor: null },
-          })
-        : identityOpsResponse(403, { ok: false, error: { code: 'SCOPE_REQUIRED' } }),
+      url === '/auth/session'
+        ? response(200, session)
+        : url.includes('identity.users.list')
+          ? response(200, {
+              ok: true,
+              result: { items: [{ principal_id: 'u-2', username: 'Bob', roles: ['reader'] }], next_cursor: null },
+              meta,
+            })
+          : response(403, {
+              ok: false,
+              error: { code: 'SCOPE_REQUIRED', source: 'graphos', message: 'denied', retryable: false },
+              meta,
+            }),
     )
     vi.stubGlobal('fetch', fetcher)
     const { user } = renderWithProviders(<UserManagementView />)
