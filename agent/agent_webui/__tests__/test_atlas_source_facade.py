@@ -72,7 +72,7 @@ async def test_ui_catalog_projects_only_the_canonical_sources_leg() -> None:
 
     api_extensions.set_atlas_source_dispatcher(catalog)
     try:
-        response = await api_extensions.atlas_source_catalog()
+        response = await api_extensions._atlas_execute_ui_catalog()
     finally:
         api_extensions.set_atlas_source_dispatcher(None)
 
@@ -119,7 +119,7 @@ async def test_ui_catalog_translates_current_au_source_catalog_shape() -> None:
 
     api_extensions.set_atlas_source_dispatcher(catalog)
     try:
-        response = await api_extensions.atlas_source_catalog()
+        response = await api_extensions._atlas_execute_ui_catalog()
     finally:
         api_extensions.set_atlas_source_dispatcher(None)
 

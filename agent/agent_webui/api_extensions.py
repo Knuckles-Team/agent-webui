@@ -13209,6 +13209,35 @@ AtlasSourceDispatcher = Callable[[str, dict[str, Any]], Any]
 _atlas_source_dispatcher: AtlasSourceDispatcher | None = None
 
 
+async def _graphos_route_op(
+    request: Request, op_id: str, params: dict[str, Any]
+) -> Any:
+    """Invoke a GraphOS operation through the embedding host's authority port.
+
+    The WebUI host must not construct an engine session or carry a service
+    credential on behalf of a browser user. GraphOS installs this request-scoped
+    port while composing the application, so its shared invoke pipeline sees
+    the verified caller, scope, confirmation and audit context. A standalone
+    WebUI has no such port and reports the capability as unavailable.
+    """
+
+    invoke_op = getattr(request.app.state, 'graphos_invoke_op', None)
+    if not callable(invoke_op):
+        raise HTTPException(status_code=501, detail='GraphOS operation unavailable')
+    try:
+        result = invoke_op(request, op_id, _bounded_external_value(params))
+        if inspect.isawaitable(result):
+            result = await result
+        return _public_external_result(result)
+    except HTTPException:
+        raise
+    except Exception as error:  # noqa: BLE001 - redact host/backend details
+        _log_failure(f'graphos_op.{op_id}', error, level=logging.WARNING)
+        raise HTTPException(
+            status_code=503, detail='GraphOS operation failed'
+        ) from error
+
+
 def set_atlas_source_dispatcher(dispatcher: AtlasSourceDispatcher | None) -> None:
     """Install an injectable decoded-tool dispatcher for tests/embedded hosts.
 
@@ -14014,10 +14043,17 @@ def _atlas_sync_kwargs(request: AtlasSourceSync) -> dict[str, Any]:
 
 
 @router.get('/atlas/sources')
-async def atlas_source_catalog() -> JSONResponse:
-    """Return the server-owned provider/source catalog used by Atlas."""
+async def atlas_source_catalog(request: Request) -> JSONResponse:
+    """Return GraphOS's caller-filtered provider/source catalog for Atlas."""
 
-    return await _atlas_execute_ui_catalog()
+    result = await _graphos_route_op(request, 'atlas.sources.list', {})
+    if not isinstance(result, dict) or not (
+        isinstance(result.get('catalog_version'), str)
+        and isinstance(result.get('observed_at'), str)
+        and isinstance(result.get('providers'), list)
+    ):
+        raise HTTPException(status_code=502, detail='Invalid Atlas source catalog')
+    return JSONResponse(content=result)
 
 
 @router.get('/atlas/sources/{source_id}/connection')
