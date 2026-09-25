@@ -3,6 +3,7 @@ import base64
 import contextlib
 import contextvars
 import hashlib
+import importlib
 import inspect
 import itertools
 import json
@@ -7757,11 +7758,13 @@ def _decision_client_module() -> Any:
     missing module reports a clean 501 instead of an unhandled `ImportError`.
     """
 
+    # ``import_module`` answers from ``sys.modules``; ``import a.b as m`` binds
+    # the parent package's attribute instead, which is the real module as soon
+    # as any other importer (AU's decide consumers) has loaded it.
     try:
-        import epistemic_graph.decision_client as module
+        return importlib.import_module('epistemic_graph.decision_client')
     except ImportError:
         return None
-    return module
 
 
 async def _send_decision_log(

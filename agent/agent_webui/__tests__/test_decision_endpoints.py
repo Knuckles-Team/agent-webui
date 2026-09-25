@@ -108,6 +108,12 @@ def run(coro):
     return asyncio.run(coro)
 
 
+def _without_decision_client():
+    """A pre-decide-consumers EG: importing `epistemic_graph.decision_client`
+    raises `ImportError` whatever EG build the test environment carries."""
+    return patch.dict(sys.modules, {'epistemic_graph.decision_client': None})
+
+
 @pytest.fixture
 def mock_engine():
     from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
@@ -276,7 +282,7 @@ def test_get_decision_reports_no_decide_module_as_unavailable(mock_engine):
     from agent_webui.api_extensions import get_decision
     from fastapi import HTTPException
 
-    with _patched_engine(mock_engine), _patched_session():
+    with _patched_engine(mock_engine), _patched_session(), _without_decision_client():
         with pytest.raises(HTTPException) as exc:
             run(get_decision('decision:abc'))
     assert exc.value.status_code == 501
@@ -367,7 +373,7 @@ def test_get_decision_aggregate_reports_no_decide_module_as_unavailable(mock_eng
     from agent_webui.api_extensions import get_decision_aggregate
     from fastapi import HTTPException
 
-    with _patched_engine(mock_engine), _patched_session():
+    with _patched_engine(mock_engine), _patched_session(), _without_decision_client():
         with pytest.raises(HTTPException) as exc:
             run(get_decision_aggregate())
     assert exc.value.status_code == 501
