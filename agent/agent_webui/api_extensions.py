@@ -2515,7 +2515,7 @@ async def _execute_mcp_tool_call(
 
 
 @router.post('/mcp/tools/call')
-async def call_mcp_tool_route(data: dict[str, Any]) -> dict[str, Any]:
+async def call_mcp_tool_route(data: dict[str, Any], request: Request) -> dict[str, Any]:
     """Invoke one MCP tool through the host's governed delegation seam.
 
     CONCEPT:AU-ECO.mcp.webui-governed-mcp-delegation
@@ -2528,11 +2528,9 @@ async def call_mcp_tool_route(data: dict[str, Any]) -> dict[str, Any]:
     hold — so the call is made here, same-origin, under the session identity
     every ``/api/*`` route already requires.
 
-    The WebUI adds NO authority of its own: it validates the shape of the
-    request and hands it to the host-injected ``call_mcp_tool`` helper, which
-    owns the allowlist, actor policy, credential references, and audit
-    envelope. With no host injection the route reports 501 rather than
-    inventing a delegation path.
+    The WebUI validates the shape and invokes GraphOS ``fleet.call`` with the
+    verified request. Standalone hosts retain the existing governed helper
+    until the API cutover. With neither injection the route reports 501.
     """
     server_name, tool_name, arguments = _mcp_tool_request(data)
     timeout = _validated_mcp_timeout(
@@ -2540,6 +2538,19 @@ async def call_mcp_tool_route(data: dict[str, Any]) -> dict[str, Any]:
         default_ms=_MCP_CALL_TIMEOUT_DEFAULT_MS,
         max_ms=_MCP_CALL_TIMEOUT_MAX_MS,
     )
+    # The composed GraphOS host supplies the caller-bound operation port. Its
+    # fleet.call executor owns admission, child policy, effects and audit. Keep
+    # the existing helper path for standalone hosts until the single-wave API
+    # cutover; it must never run when the operation port is present.
+    if callable(getattr(request.app.state, 'graphos_invoke_op', None)):
+        result = await _graphos_route_op(
+            request,
+            'fleet.call',
+            {'server': server_name, 'tool': tool_name, 'arguments': arguments},
+        )
+        if not isinstance(result, dict) or 'value' not in result:
+            raise HTTPException(status_code=502, detail='Invalid GraphOS fleet result')
+        return {'status': 'success', 'result': result['value']}
     _require_mcp_helper('call_mcp_tool', 'Governed MCP delegation is not configured')
     result = await _execute_mcp_tool_call(server_name, tool_name, arguments, timeout)
     return {'status': 'success', 'result': result}
