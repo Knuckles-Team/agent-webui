@@ -46,9 +46,9 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.getByText('40')).toBeInTheDocument()
     expect(screen.getByText(/below 10 trials are withheld/i)).toBeInTheDocument()
     expect(screen.getByText(/a missing row does not mean zero trials/i)).toBeInTheDocument()
-    expect(
-      screen.getByText(/calibration and coverage estimates require independently labeled evaluations/i),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Calibration: unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Coverage and act risk: unavailable')).toBeInTheDocument()
+    expect(screen.getByText(/per-class sample sufficiency and intervals/i)).toBeInTheDocument()
   })
 
   it('does not interpret an empty aggregate as proof of zero outcomes', async () => {
