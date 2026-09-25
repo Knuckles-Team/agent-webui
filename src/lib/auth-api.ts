@@ -103,6 +103,32 @@ export async function changePassword(current: string, next: string): Promise<boo
   return body.changed === true
 }
 
+/** TOTP material and recovery codes are one-time responses; callers keep them in component memory only. */
+export async function beginTotpEnrollment(): Promise<{ secret: string; provisioningUri: string }> {
+  const response = await postJson('/auth/mfa/totp/enroll', {}, true)
+  if (!response.ok) throw new Error('TOTP enrollment was refused')
+  const body = (await response.json()) as { secret?: unknown; provisioning_uri?: unknown }
+  if (typeof body.secret !== 'string' || typeof body.provisioning_uri !== 'string')
+    throw new Error('TOTP enrollment answer was incomplete')
+  return { secret: body.secret, provisioningUri: body.provisioning_uri }
+}
+
+export async function confirmTotpEnrollment(code: string): Promise<boolean> {
+  const response = await postJson('/auth/mfa/totp/confirm', { code }, true)
+  if (!response.ok) return false
+  const body = (await response.json()) as { confirmed?: unknown }
+  return body.confirmed === true
+}
+
+export async function regenerateRecoveryCodes(): Promise<string[]> {
+  const response = await postJson('/auth/mfa/recovery-codes', {}, true)
+  if (!response.ok) throw new Error('Recovery-code rotation was refused')
+  const body = (await response.json()) as { codes?: unknown }
+  if (!Array.isArray(body.codes) || !body.codes.every((code) => typeof code === 'string'))
+    throw new Error('Recovery-code response was invalid')
+  return body.codes
+}
+
 /** Enabled browser identity providers; an empty list when none (or on error). */
 export async function listIdentityProviders(): Promise<IdentityProviderOption[]> {
   try {

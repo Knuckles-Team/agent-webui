@@ -32,7 +32,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import type { Identity } from '@/lib/auth'
-import { changePassword } from '@/lib/auth-api'
+import { beginTotpEnrollment, changePassword, confirmTotpEnrollment, regenerateRecoveryCodes } from '@/lib/auth-api'
 import { setAvatarOverride, setNicknameOverride, useProfileOverride } from '@/lib/profile-store'
 
 export interface ProfileDialogProps {
@@ -317,6 +317,105 @@ function LocalPasswordSection() {
   )
 }
 
+function LocalMfaSection({ enrolled }: { enrolled: boolean }) {
+  const [confirmed, setConfirmed] = useState(enrolled)
+  const [secret, setSecret] = useState<string | null>(null)
+  const [code, setCode] = useState('')
+  const [codes, setCodes] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  const start = () => {
+    setBusy(true)
+    void beginTotpEnrollment()
+      .then(({ secret: value }) => {
+        setSecret(value)
+      })
+      .catch(() => toast.error('Authenticator enrollment is unavailable'))
+      .finally(() => {
+        setBusy(false)
+      })
+  }
+  const confirm = () => {
+    setBusy(true)
+    void confirmTotpEnrollment(code)
+      .then((ok) => {
+        if (ok) {
+          setSecret(null)
+          setCode('')
+          setConfirmed(true)
+          toast.success('Authenticator confirmed')
+        } else toast.error('Authenticator code was refused')
+      })
+      .catch(() => toast.error('Authenticator confirmation is unavailable'))
+      .finally(() => {
+        setBusy(false)
+      })
+  }
+  const rotate = () => {
+    setBusy(true)
+    void regenerateRecoveryCodes()
+      .then((value) => {
+        setCodes(value)
+      })
+      .catch(() => toast.error('Recovery-code rotation is unavailable'))
+      .finally(() => {
+        setBusy(false)
+      })
+  }
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <p className="text-sm font-medium">Local second factor</p>
+      {!confirmed && !secret && (
+        <Button type="button" disabled={busy} onClick={start}>
+          Set up authenticator
+        </Button>
+      )}
+      {secret && (
+        <div className="space-y-2">
+          <p className="text-xs">Add this secret to your authenticator. It is shown only for this enrollment.</p>
+          <code className="block break-all text-xs" data-testid="totp-enrollment-secret">
+            {secret}
+          </code>
+          <Input
+            aria-label="Authenticator confirmation code"
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(event) => {
+              setCode(event.target.value)
+            }}
+          />
+          <Button type="button" disabled={busy || !code} onClick={confirm}>
+            Confirm authenticator
+          </Button>
+        </div>
+      )}
+      {confirmed && (
+        <Button type="button" variant="outline" disabled={busy} onClick={rotate}>
+          Generate new recovery codes
+        </Button>
+      )}
+      {codes.length > 0 && (
+        <div className="space-y-1" role="status">
+          <p className="text-xs">Save these codes now. Generating new codes invalidates the old set.</p>
+          {codes.map((value) => (
+            <code key={value} className="block text-xs">
+              {value}
+            </code>
+          ))}
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setCodes([])
+            }}
+          >
+            I saved these codes
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ProfileDialog({ open, onOpenChange, identity }: ProfileDialogProps) {
   const override = useProfileOverride(identity.userKey)
   const avatar = useAvatarOverride(identity.userKey)
@@ -349,6 +448,7 @@ export function ProfileDialog({ open, onOpenChange, identity }: ProfileDialogPro
           />
           <AccountSection accountName={accountName} accountEmail={accountEmail} identity={identity} />
           {identity.raw?.mode === 'local' && <LocalPasswordSection />}
+          {identity.raw?.mode === 'local' && <LocalMfaSection enrolled={identity.raw.mfa_enrolled === true} />}
         </div>
 
         <DialogFooter>
