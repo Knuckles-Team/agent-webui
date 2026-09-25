@@ -36,48 +36,7 @@ export interface InvokeOptions {
 }
 
 const OP_ID = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/
-const PLAN_REF = /^graphos_plan:[0-9a-f]{48}$/
 const sessionSchema = z.object({ authenticated: z.literal(true), csrf_token: z.string().min(1) })
-interface PendingConfirmation {
-  planRef: string
-  opId: string
-  params: Record<string, unknown>
-  idempotencyKey?: string
-  expiresAt: number
-}
-let pendingConfirmation: PendingConfirmation | null = null
-
-/** Only the initiating tab retains the replay arguments; the lease retains digests. */
-export function pendingConsoleConfirmation(planRef: string): Readonly<PendingConfirmation> | null {
-  const pending = pendingConfirmation
-  if (pending?.planRef !== planRef) return null
-  if (Date.now() >= pending.expiresAt) return null
-  return pending
-}
-
-export function clearConsoleConfirmation(planRef: string): void {
-  if (pendingConfirmation?.planRef === planRef) pendingConfirmation = null
-}
-
-function rememberConsoleConfirmation(
-  code: string,
-  details: Record<string, unknown>,
-  opId: string,
-  params: Record<string, unknown>,
-  idempotencyKey?: string,
-): void {
-  const planRef = details.plan_ref
-  if (code !== 'STEP_UP_REQUIRED' || typeof planRef !== 'string' || !PLAN_REF.test(planRef)) return
-  if (details.console_url !== `/console/confirm/${planRef}`) return
-  if (details.op !== opId) return
-  pendingConfirmation = {
-    planRef,
-    opId,
-    params: structuredClone(params),
-    idempotencyKey,
-    expiresAt: Date.now() + 5 * 60_000,
-  }
-}
 
 async function csrfToken(signal?: AbortSignal): Promise<string> {
   const response = await fetch('/auth/session', {
@@ -99,6 +58,7 @@ export async function invoke<T>(
 ): Promise<T> {
   if (!OP_ID.test(opId)) throw new Error('Invalid GraphOS operation id')
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' }
+  headers['X-Request-ID'] = crypto.randomUUID()
   headers['X-CSRF-Token'] = await csrfToken(options.signal)
   if (options.planRef) headers['GraphOS-Plan-Ref'] = options.planRef
   if (options.idempotencyKey) headers['Idempotency-Key'] = options.idempotencyKey
@@ -114,22 +74,13 @@ export async function invoke<T>(
   try {
     envelope = validateShape(envelopeSchema, await response.json(), endpoint)
   } catch (error) {
-    // An older server may not mount the registry route at all. Keep that
-    // distinct from a malformed successful operation response.
+    // Older servers may not mount the registry route. Preserve that absence
+    // without treating a malformed successful response as unavailable.
     if ([404, 501, 503].includes(response.status))
       throw new GraphOsApiError('HTTP_UNAVAILABLE', response.status, response.status === 503, {})
     throw error
   }
   if (!envelope.ok) {
-    if (envelope.error.source === 'graphos') {
-      rememberConsoleConfirmation(
-        envelope.error.code,
-        envelope.error.details ?? {},
-        opId,
-        params,
-        options.idempotencyKey,
-      )
-    }
     throw new GraphOsApiError(
       envelope.error.code,
       response.status,
