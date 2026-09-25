@@ -622,7 +622,7 @@ def _trusted_attended_arm(websocket: WebSocket) -> _AttendedArmState | None:
 
 
 def _current_graph_session() -> Any | None:
-    from agent_utilities.knowledge_graph.core.session import current_session
+    from agent_utilities.api.session import current_session
 
     try:
         return current_session()
