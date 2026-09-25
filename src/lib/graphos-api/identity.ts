@@ -2,7 +2,7 @@
 import { z } from 'zod'
 import { ApiShapeError } from '@/lib/api-validation'
 import { matchRoute } from '@/lib/nav-registry'
-import { GraphOsApiError, invoke, pendingConsoleConfirmation } from './invoke'
+import { GraphOsApiError, invoke } from './invoke'
 export type IdentityOp =
   | 'identity.users.list'
   | 'identity.users.search'
@@ -48,6 +48,7 @@ export type IdentityReply<T> =
   | { kind: 'unavailable' | 'forbidden' | 'step_up' | 'error'; message: string }
 
 const recordSchema = z.record(z.string(), z.unknown())
+const PLAN_REF = /^graphos_plan:[0-9a-f]{48}$/
 const itemSchema = z
   .object({
     principal_id: z.string().optional(),
@@ -115,11 +116,14 @@ function refusal(error: GraphOsApiError, op: IdentityOp): IdentityReply<never> {
     return { kind: 'unavailable', message: 'This identity operation is not available on this server.' }
   if (error.code === 'STEP_UP_REQUIRED') {
     const planRef = error.details.plan_ref
-    if (typeof planRef === 'string' && pendingConsoleConfirmation(planRef)?.opId === op) {
-      const url = error.details.console_url
-      if (typeof url === 'string')
-        return { kind: 'confirmation', message: 'Review and confirm this action in the console.', url }
-    }
+    const url = error.details.console_url
+    if (
+      typeof planRef === 'string' &&
+      PLAN_REF.test(planRef) &&
+      url === `/console/confirm/${planRef}` &&
+      error.details.op === op
+    )
+      return { kind: 'confirmation', message: 'Review and confirm this action in the console.', url }
     return { kind: 'step_up', message: 'A fresh administrator MFA confirmation is required.' }
   }
   if (error.code === 'CONFIRMATION_REQUIRED')
