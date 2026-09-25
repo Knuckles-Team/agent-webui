@@ -93,6 +93,32 @@ function Message({ text }: { text: string | null }) {
   )
 }
 
+function TextField({
+  label,
+  value,
+  onValue,
+  type,
+  autoComplete,
+}: {
+  label: string
+  value: string
+  onValue: (value: string) => void
+  type?: string
+  autoComplete?: string
+}) {
+  return (
+    <Input
+      aria-label={label}
+      type={type}
+      autoComplete={autoComplete}
+      value={value}
+      onChange={(event) => {
+        onValue(event.target.value)
+      }}
+    />
+  )
+}
+
 function submitting(handler: () => void) {
   return (event: SyntheticEvent) => {
     event.preventDefault()
@@ -111,29 +137,14 @@ function SetupForm() {
   return (
     <Shell title="Create the first administrator" description="Enter the setup code from the Graph OS log.">
       <form className="space-y-3" onSubmit={submit}>
-        <Input
-          aria-label="Setup code"
-          value={code}
-          onChange={(e) => {
-            setCode(e.target.value)
-          }}
-        />
-        <Input
-          aria-label="Username"
-          autoComplete="username"
-          value={username}
-          onChange={(e) => {
-            setUsername(e.target.value)
-          }}
-        />
-        <Input
-          aria-label="Password"
+        <TextField label="Setup code" value={code} onValue={setCode} />
+        <TextField label="Username" autoComplete="username" value={username} onValue={setUsername} />
+        <TextField
+          label="Password"
           type="password"
           autoComplete="new-password"
           value={password}
-          onChange={(e) => {
-            setPassword(e.target.value)
-          }}
+          onValue={setPassword}
         />
         <Message text={message} />
         <Button type="submit" disabled={busy} className="w-full">
@@ -158,13 +169,11 @@ function SecondFactorForm() {
       description={recovery ? 'Enter one of your recovery codes.' : 'Enter the code from your authenticator app.'}
     >
       <form className="space-y-3" onSubmit={submit}>
-        <Input
-          aria-label={recovery ? 'Recovery code' : 'Authenticator code'}
+        <TextField
+          label={recovery ? 'Recovery code' : 'Authenticator code'}
           autoComplete="one-time-code"
           value={code}
-          onChange={(e) => {
-            setCode(e.target.value)
-          }}
+          onValue={setCode}
         />
         <Message text={message} />
         <Button type="submit" disabled={busy} className="w-full">
@@ -219,22 +228,13 @@ function LocalSignInForm() {
   return (
     <Shell title="Sign in" description="Sign in to Graph OS.">
       <form className="space-y-3" onSubmit={submit}>
-        <Input
-          aria-label="Username"
-          autoComplete="username"
-          value={username}
-          onChange={(e) => {
-            setUsername(e.target.value)
-          }}
-        />
-        <Input
-          aria-label="Password"
+        <TextField label="Username" autoComplete="username" value={username} onValue={setUsername} />
+        <TextField
+          label="Password"
           type="password"
           autoComplete="current-password"
           value={password}
-          onChange={(e) => {
-            setPassword(e.target.value)
-          }}
+          onValue={setPassword}
         />
         <Message text={message} />
         <Button type="submit" disabled={busy} className="w-full">
