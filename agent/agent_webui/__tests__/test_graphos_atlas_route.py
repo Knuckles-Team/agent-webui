@@ -41,3 +41,13 @@ def test_atlas_catalog_rejects_malformed_host_result() -> None:
     with _client(lambda *_args: {'providers': []}) as client:
         response = client.get('/api/enhanced/atlas/sources')
     assert response.status_code == 502
+
+
+def test_atlas_catalog_redacts_host_failure() -> None:
+    def broken_host(*_args):
+        raise RuntimeError('provider secret must stay server-side')
+
+    with _client(broken_host) as client:
+        response = client.get('/api/enhanced/atlas/sources')
+    assert response.status_code == 503
+    assert 'provider secret' not in response.text
