@@ -12,6 +12,7 @@ import BackupPanel from './admin/BackupPanel'
 import IdentityPolicyPanel from './admin/IdentityPolicyPanel'
 
 interface ListedItem {
+  principal_id?: string
   id?: string
   handle?: string
   key_id?: string
@@ -113,9 +114,18 @@ function ListPanel({
         {state?.kind === 'ready' && Array.isArray(state.result.items) && (
           <ul className="space-y-2">
             {state.result.items.map((item, index) => (
-              <li key={item.id ?? item.handle ?? item.key_id ?? index} className="rounded border p-2">
+              <li
+                key={item.principal_id ?? item.id ?? item.handle ?? item.key_id ?? index}
+                className="rounded border p-2"
+              >
                 <strong>
-                  {item.name ?? item.username ?? item.id ?? item.handle ?? item.key_id ?? `Record ${index + 1}`}
+                  {item.name ??
+                    item.username ??
+                    item.principal_id ??
+                    item.id ??
+                    item.handle ??
+                    item.key_id ??
+                    `Record ${index + 1}`}
                 </strong>
                 {item.status && <span className="ml-2 text-muted-foreground">{item.status}</span>}
                 {item.description && <p className="text-sm text-muted-foreground">{item.description}</p>}
@@ -574,6 +584,145 @@ function ModePanel() {
   )
 }
 
+function IssuerRotationPanel() {
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [result, setResult] = useState<IdentityReply<{ epoch: number; issuer_kid_current: string }> | null>(null)
+  const rotate = async () => {
+    setResult(await invokeIdentity<{ epoch: number; issuer_kid_current: string }>('identity.issuer.rotate'))
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Issuer key rotation</CardTitle>
+        <CardDescription>
+          Rotate the Graph OS signer with overlap. A fresh administrator MFA confirmation is required.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            onChange={(event) => {
+              setAcknowledged(event.target.checked)
+            }}
+          />
+          I understand issuer rotation changes the signing key.
+        </label>
+        <Button
+          type="button"
+          disabled={!acknowledged}
+          onClick={() => {
+            void rotate()
+          }}
+        >
+          Request issuer rotation
+        </Button>
+        {result && (
+          <p role="status">
+            {result.kind === 'ready'
+              ? `Issuer key rotated (epoch ${result.result.epoch}, key ${result.result.issuer_kid_current}).`
+              : result.message}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+interface ScimClient {
+  idp_id: string
+  principal_id: string
+  enabled: boolean
+}
+
+function ScimClientPanel() {
+  const [idpId, setIdpId] = useState('')
+  const [principalId, setPrincipalId] = useState('')
+  const [clients, setClients] = useState<IdentityReply<IdentityPage<ScimClient>> | null>(null)
+  const [outcome, setOutcome] = useState<IdentityReply<unknown> | null>(null)
+  const refresh = async () => {
+    setClients(await invokeIdentity<IdentityPage<ScimClient>>('identity.scim_clients.list'))
+  }
+  useEffect(() => {
+    void refresh()
+  }, [])
+  const bind = async () => {
+    const reply = await invokeIdentity('identity.scim_clients.upsert', {
+      idp_id: idpId.trim(),
+      principal_id: principalId.trim(),
+    })
+    setOutcome(reply)
+    if (reply.kind === 'ready') void refresh()
+  }
+  const remove = async (id: string) => {
+    const reply = await invokeIdentity('identity.scim_clients.remove', { idp_id: id })
+    setOutcome(reply)
+    if (reply.kind === 'ready') void refresh()
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>SCIM clients</CardTitle>
+        <CardDescription>Bind an enabled SCIM provider to an active service principal.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {clients === null && <p role="status">Loading SCIM clients…</p>}
+        {clients && clients.kind !== 'ready' && <p role="status">{clients.message}</p>}
+        {clients?.kind === 'ready' && (
+          <ul className="space-y-2">
+            {clients.result.items.map((client) => (
+              <li key={client.idp_id} className="flex items-center justify-between rounded border p-2">
+                <span>
+                  {client.idp_id}: <code>{client.principal_id}</code> ({client.enabled ? 'enabled' : 'disabled'})
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void remove(client.idp_id)
+                  }}
+                >
+                  Remove
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Input
+          aria-label="SCIM provider id"
+          placeholder="Provider id"
+          value={idpId}
+          onChange={(event) => {
+            setIdpId(event.target.value)
+          }}
+        />
+        <Input
+          aria-label="SCIM service principal id"
+          placeholder="Service principal id"
+          value={principalId}
+          onChange={(event) => {
+            setPrincipalId(event.target.value)
+          }}
+        />
+        <Button
+          type="button"
+          disabled={!idpId.trim() || !principalId.trim()}
+          onClick={() => {
+            void bind()
+          }}
+        >
+          Bind SCIM client
+        </Button>
+        {outcome && (
+          <p role="status">{outcome.kind === 'ready' ? 'SCIM client change confirmed.' : outcome.message}</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 function AuditPanel() {
   const [verified, setVerified] = useState<IdentityReply<{ valid: boolean; first_broken_seq?: number }> | null>(null)
   const [exported, setExported] = useState<IdentityReply<IdentityPage<unknown>> | null>(null)
@@ -650,6 +799,7 @@ export default function AdminView() {
         <TabsList className="flex h-auto flex-wrap justify-start">
           {[
             'users',
+            'service-accounts',
             'groups',
             'roles',
             'idps',
@@ -669,6 +819,13 @@ export default function AdminView() {
         </TabsList>
         <TabsContent value="users">
           <UserManagementView />
+        </TabsContent>
+        <TabsContent value="service-accounts">
+          <ListPanel
+            title="Service accounts"
+            op="identity.service_accounts.list"
+            description="Active service principals from Graph OS identity."
+          />
         </TabsContent>
         <TabsContent value="groups" className="space-y-4">
           <ListPanel
@@ -694,6 +851,7 @@ export default function AdminView() {
           />
           <IdentityProviderEditor />
           <MappingDryRun />
+          <ScimClientPanel />
         </TabsContent>
         <TabsContent value="sessions">
           <PrincipalRecordsPanel kind="sessions" />
@@ -704,8 +862,9 @@ export default function AdminView() {
         <TabsContent value="audit">
           <AuditPanel />
         </TabsContent>
-        <TabsContent value="security-mode">
+        <TabsContent value="security-mode" className="space-y-4">
           <ModePanel />
+          <IssuerRotationPanel />
         </TabsContent>
         <TabsContent value="policy">
           <IdentityPolicyPanel />
