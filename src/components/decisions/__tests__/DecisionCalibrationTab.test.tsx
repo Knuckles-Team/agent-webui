@@ -45,16 +45,21 @@ describe('DecisionCalibrationTab', () => {
     expect(await screen.findByText('80%')).toBeInTheDocument()
     expect(screen.getByText('40')).toBeInTheDocument()
     expect(screen.getByText(/below 10 trials are withheld/i)).toBeInTheDocument()
+    expect(screen.getByText(/a missing row does not mean zero trials/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/calibration and coverage estimates require independently labeled evaluations/i),
+    ).toBeInTheDocument()
   })
 
-  it('shows the genuine empty-window state distinctly from an unavailable aggregate', async () => {
+  it('does not interpret an empty aggregate as proof of zero outcomes', async () => {
     vi.spyOn(decisionsApi, 'fetchDecisionAggregate').mockResolvedValue({
       schema_version: 1,
       min_support: 10,
       rows: [],
     })
     renderWithProviders(<DecisionCalibrationTab />)
-    expect(await screen.findByText(/no outcome data in this window/i)).toBeInTheDocument()
+    expect(await screen.findByText(/no reportable outcome rows in this window/i)).toBeInTheDocument()
+    expect(screen.getByText(/data may be absent or withheld below minimum support/i)).toBeInTheDocument()
   })
 
   it('shows an honest unavailable notice on a failed fetch', async () => {
