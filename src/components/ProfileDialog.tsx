@@ -239,9 +239,10 @@ function AccountSection({
         <span className="capitalize">{identity.role}</span>
         <span className="text-xs text-muted-foreground">webui role</span>
       </div>
-      {!identity.ssoConfigured && (
+      {identity.raw?.mode === 'none' && (
         <p className="text-xs text-muted-foreground pt-1 border-t">
-          Single sign-on is not configured for this deployment — this is the local single-operator profile.
+          Unauthenticated demo mode — this is the bootstrap administrator. Secure the install with{' '}
+          <code className="font-mono">graph-os-identity claim</code>.
         </p>
       )}
     </div>

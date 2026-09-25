@@ -23,12 +23,12 @@ const SSO_IDENTITY: Identity = {
   },
 }
 
-const LOCAL_IDENTITY: Identity = {
-  userKey: 'local',
+const DEMO_IDENTITY: Identity = {
+  userKey: 'usr:bootstrap',
   role: 'admin',
-  ssoConfigured: false,
+  ssoConfigured: true,
   needsSignIn: false,
-  raw: null,
+  raw: { authenticated: true, subject: 'usr:bootstrap', roles: ['kg:admin'], webui_role: 'admin', mode: 'none' },
 }
 
 describe('ProfileDialog', () => {
@@ -47,14 +47,14 @@ describe('ProfileDialog', () => {
     expect(screen.getByText('from your identity provider')).toBeInTheDocument()
   })
 
-  it('explains the local-only posture when SSO is not configured', async () => {
-    renderWithProviders(<ProfileDialog open onOpenChange={vi.fn()} identity={LOCAL_IDENTITY} />)
+  it('explains the unauthenticated demo posture of the bootstrap administrator', async () => {
+    renderWithProviders(<ProfileDialog open onOpenChange={vi.fn()} identity={DEMO_IDENTITY} />)
 
     await waitFor(() => {
-      expect(screen.getByText(/Single sign-on is not configured/)).toBeInTheDocument()
+      expect(screen.getByText(/Unauthenticated demo mode/)).toBeInTheDocument()
     })
     // Both the display-name row and the email row fall back to the same
-    // "not provided" copy when there is no IdP session at all.
+    // "not provided" copy when the principal has no name or e-mail.
     expect(screen.getAllByText('Not provided by identity provider')).toHaveLength(2)
   })
 

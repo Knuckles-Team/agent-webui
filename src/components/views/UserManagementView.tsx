@@ -67,14 +67,10 @@ function IdentityCard() {
         <CardDescription>Your own signed-in identity, as the server resolved it.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
-        {!identity.ssoConfigured ? (
-          <p className="text-muted-foreground">
-            Single sign-on is not configured on this deployment; you are the local operator with full access.
-          </p>
-        ) : identity.needsSignIn ? (
+        {identity.needsSignIn ? (
           <p className="text-amber-600 dark:text-amber-500">
             Your session has expired or was never established.{' '}
-            <a href="/auth/login" className="underline">
+            <a href="/" className="underline">
               Sign in
             </a>{' '}
             to see your live identity.

@@ -51,9 +51,9 @@ const EXPIRED: Identity = { ...AUTHENTICATED, needsSignIn: true }
 
 const NO_SSO: Identity = {
   userKey: 'local',
-  role: 'admin',
+  role: 'reader',
   ssoConfigured: false,
-  needsSignIn: false,
+  needsSignIn: true,
   raw: null,
 }
 
@@ -96,18 +96,18 @@ describe('UserMenu', () => {
     const menu = await screen.findByRole('menu')
     const signIn = within(menu).getByRole('menuitem', { name: /Sign in/ })
     expect(signIn.tagName).toBe('A')
-    expect(signIn).toHaveAttribute('href', '/auth/login')
+    expect(signIn).toHaveAttribute('href', '/')
     expect(within(menu).queryByRole('menuitem', { name: /^Log out$/ })).not.toBeInTheDocument()
   })
 
-  it('disables Log out and explains why when SSO is not configured for this deployment', async () => {
+  it('disables Log out and explains why when the identity service is unavailable', async () => {
     identityResult = { identity: NO_SSO, loading: false }
     const { user } = renderUserMenu()
 
-    await user.click(screen.getByRole('button', { name: /Local operator/ }))
+    await user.click(screen.getByRole('button', { name: /Not signed in/ }))
 
     const menu = await screen.findByRole('menu')
-    const logoutItem = within(menu).getByText(/Log out \(SSO not configured\)/)
+    const logoutItem = within(menu).getByText(/Log out \(identity unavailable\)/)
     expect(logoutItem.closest('[data-slot="dropdown-menu-item"]')).toHaveAttribute('data-disabled')
   })
 
