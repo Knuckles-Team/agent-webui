@@ -48,8 +48,12 @@ from .observability import (
     current_correlation_id,
     new_error_id,
 )
+from .public_shell import PublicShell, public_shell_of
 
 logger = logging.getLogger(__name__)
+
+#: A host-owned browser session boundary: installs its middleware on the app.
+SessionBoundary = Callable[[FastAPI], None]
 
 # LANE F: structured, level-configurable logging for the WHOLE `agent_webui.*`
 # namespace (AGENT_WEBUI_LOG_LEVEL / AGENT_WEBUI_LOG_FORMAT — see
@@ -269,11 +273,7 @@ _WEBSOCKET_READ_ONLY_PATHS = frozenset({'/ws/dashboard'})
 # (``WebUIAuthorizationMiddleware``) in the stack, so any path it already
 # treats as unauthenticated reaches this layer regardless of what this set
 # says -- if this set omits one (as it omitted ``/health/ready`` until this
-# fix), `_identity_enforced()` still gates it here inconsistently with the
-# outer layer, and with identity unenforced it falls through routing
-# unauthenticated with no exempt SPA route to answer it, landing on
-# ``SPAStaticFiles``'s 404-to-``index.html`` fallback like ``/health``
-# itself did.
+# fix), this layer gates it inconsistently with the outer layer.
 _PUBLIC_LIVENESS_PATHS = frozenset(
     {'/health', '/health/ready', '/healthz', '/api/health', '/api/healthz'}
 )
@@ -1225,15 +1225,18 @@ class WebUIAuthorizationMiddleware:
         return scope_type == 'websocket' or required != 'kg:read'
 
     @staticmethod
-    def _authorization_exempt(path: str) -> bool:
+    def _authorization_exempt(scope: Any, path: str) -> bool:
         """Whether this route bypasses scope enforcement altogether.
 
-        Either identity is not enforced at all on this deployment, or the path
-        is one of the public liveness probes that must answer without a
-        credential.
+        Only the public liveness probes and the static application shell (the
+        built bundle that renders the sign-in screens; no application route
+        claims it) answer without a credential.
         """
 
-        return not _identity_enforced() or path in _PUBLIC_LIVENESS_PATHS
+        if path in _PUBLIC_LIVENESS_PATHS:
+            return True
+        shell = public_shell_of(scope)
+        return shell is not None and shell.admits(scope)
 
     def _role_shortfall(
         self,
@@ -1349,7 +1352,7 @@ class WebUIAuthorizationMiddleware:
                 ws_denial={'reason': 'origin-rejected', 'required': required},
             )
             return
-        if self._authorization_exempt(path):
+        if self._authorization_exempt(scope, path):
             await self._call_with_transport_bounds(scope, receive, send)
             return
 
@@ -1583,31 +1586,40 @@ def _jwt_verifier_fields() -> tuple[Any, Any, Any]:
     )
 
 
-def _require_complete_jwt_verifier(
+def _require_identity_verifier(
     jwt_fields: tuple[Any, ...],
-    *,
-    host: str,
+    session_boundary: 'SessionBoundary | None',
 ) -> None:
-    """Fail closed on a half-configured verifier or an unauthenticated listener."""
+    """Fail closed on a half-configured verifier or an unauthenticated listener.
+
+    Identity is enforced on EVERY listener, loopback included: there is no
+    unauthenticated development path. A deployment either configures a
+    complete JWT verifier or its host injects a session boundary (Graph OS's
+    identity gate, whose ``none`` auth mode is the demo posture and still
+    resolves a real principal).
+    """
 
     if any(jwt_fields) and not all(jwt_fields):
         raise RuntimeError(
             'Agent WebUI JWT authentication requires JWKS URI, issuer, and audience'
         )
-    if not _is_loopback_listener(host) and not all(jwt_fields):
+    if not all(jwt_fields) and session_boundary is None:
         raise RuntimeError(
-            'Refusing a non-loopback Agent WebUI listener without complete JWT '
-            'authentication in AgentConfig'
+            'Agent WebUI requires an identity verifier on every listener: '
+            'complete JWT authentication in AgentConfig or a host session boundary'
         )
 
 
-def _configure_served_boundary(listener_host: str | None) -> str:
+def _configure_served_boundary(
+    listener_host: str | None,
+    session_boundary: 'SessionBoundary | None' = None,
+) -> str:
     """Resolve the bind host and fail closed for incomplete served identity.
 
-    Loopback remains the zero-configuration development boundary. Any other
-    listener requires a complete JWT verifier in ``AgentConfig``; issuer and
-    audience checks are mandatory so a valid token for another service cannot
-    be replayed against the WebUI.
+    Every listener requires a verifier: a complete JWT verifier in
+    ``AgentConfig`` (issuer and audience checks are mandatory so a valid token
+    for another service cannot be replayed against the WebUI) or a
+    host-injected session boundary.
     """
 
     from agent_utilities.core.config import config
@@ -1615,36 +1627,17 @@ def _configure_served_boundary(listener_host: str | None) -> str:
     host = (listener_host or config.host or '127.0.0.1').strip() or '127.0.0.1'
 
     jwt_fields = _jwt_verifier_fields()
-    _require_complete_jwt_verifier(jwt_fields, host=host)
+    _require_identity_verifier(jwt_fields, session_boundary)
 
     if not _is_loopback_listener(host) and float(config.gateway_rate_limit or 0) <= 0:
         config.gateway_rate_limit = _REMOTE_DEFAULT_RATE
         config.gateway_rate_burst = _REMOTE_DEFAULT_BURST
 
-    if all(jwt_fields):
-        # ``AgentConfig`` has no ``kg_auth_required``/``kg_brain_enforce`` field
-        # in any shipped agent-utilities, so assigning them raised
-        # ``ValueError: "AgentConfig" object has no field`` and killed startup —
-        # but only once all three JWT fields were present, i.e. only once
-        # authentication was actually configured. Enforcement is derived from
-        # that same configuration instead (see ``_identity_enforced``); the
-        # environment-backed accessors stay, since they are what the graph
-        # enforcement layers read.
-        os.environ['KG_AUTH_REQUIRED'] = '1'
-        os.environ['KG_BRAIN_ENFORCE'] = '1'
+    # Identity is always enforced (see ``_require_identity_verifier``). The
+    # environment-backed accessors are what the graph enforcement layers read.
+    os.environ['KG_AUTH_REQUIRED'] = '1'
+    os.environ['KG_BRAIN_ENFORCE'] = '1'
     return host
-
-
-def _identity_enforced() -> bool:
-    """Return whether a complete JWT verifier makes identity mandatory.
-
-    This is the single predicate the WebUI's own authorization and websocket
-    boundaries consult. It is derived, not stored, so an embedder that composes
-    the app without going through :func:`_configure_served_boundary` still gets
-    the fail-closed answer whenever a verifier is configured.
-    """
-
-    return all(_jwt_verifier_fields())
 
 
 def _authorization_header_values(scope: Any) -> list[bytes]:
@@ -1701,6 +1694,25 @@ async def _admit_websocket_tenant(
         await send({'type': 'websocket.close', 'code': 4503})
         return False
     return True
+
+
+async def _serve_public_shell(app: Any, scope: Any, receive: Any, send: Any) -> None:
+    """Serve a static shell request under NO authority.
+
+    The WebUI co-service thread may carry its host's ambient process session;
+    a request that proved no identity must never observe or reuse it, so the
+    shell is served under an explicit non-authoritative actor with any
+    inherited graph session suspended (the shared liveness-path posture).
+    """
+
+    from agent_utilities.knowledge_graph.core.session import suspend_session
+    from agent_utilities.security.brain_context import ActorContext, use_actor
+
+    anonymous = ActorContext(
+        actor_id='public-shell', tenant_id='public', authenticated=False
+    )
+    with use_actor(anonymous), suspend_session():
+        await app(scope, receive, send)
 
 
 def _ensure_actor_identity_middleware(
@@ -1811,6 +1823,10 @@ def _ensure_actor_identity_middleware(
                 return
             actor = await _authenticated_http_actor(scope)
             if actor is None:
+                shell = public_shell_of(scope)
+                if shell is not None and shell.admits(scope):
+                    await _serve_public_shell(self.app, scope, receive, send)
+                    return
                 # Unauthenticated, unverifiable, or invalid: the shared
                 # boundary owns that decision end to end, including which
                 # paths may proceed without a credential.
@@ -1847,27 +1863,28 @@ def _ensure_actor_identity_middleware(
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
 
-            if token and not config.auth_jwt_jwks_uri:
+            prevalidated = _prevalidated_jwt_claims(scope)
+            if token and prevalidated is None and not config.auth_jwt_jwks_uri:
                 _log_ws_denial(scope, reason='verifier-unconfigured')
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
             if not token:
-                if _identity_enforced():
-                    # W-18: no Authorization header reached this middleware at
-                    # all. For a browser session this means
-                    # OIDCBrowserSessionMiddleware did not forward a bearer —
-                    # most commonly because no usable session cookie arrived
-                    # on the websocket handshake (missing, expired with a
-                    # failed refresh, or never established). Check the cookie
-                    # delivery path first when this reason fires repeatedly.
-                    _log_ws_denial(scope, reason='no-credential-resolved')
-                    await send({'type': 'websocket.close', 'code': 4401})
-                    return
-                await self.app(scope, receive, send)
+                # W-18: no Authorization header reached this middleware at
+                # all. For a browser session this means the host session
+                # boundary did not forward a bearer — most commonly because no
+                # usable session cookie arrived on the websocket handshake
+                # (missing, expired, or never established). Check the cookie
+                # delivery path first when this reason fires repeatedly.
+                _log_ws_denial(scope, reason='no-credential-resolved')
+                await send({'type': 'websocket.close', 'code': 4401})
                 return
 
             try:
-                actor = await actor_from_bearer_token(token)
+                actor = (
+                    actor_from_claims(prevalidated)
+                    if prevalidated is not None
+                    else await actor_from_bearer_token(token)
+                )
                 session = mint_graph_session(actor)
             except Exception as exc:  # noqa: BLE001 - any credential failure is denied
                 _log_ws_denial(
@@ -2026,6 +2043,7 @@ def _ensure_browser_sso_middleware(
     *,
     browser_control: BrowserControlPort | None,
     mint_graph_session: Any,
+    session_boundary: 'SessionBoundary | None' = None,
 ) -> None:
     """Install the browser authorization-code boundary outside the identity gate.
 
@@ -2049,6 +2067,14 @@ def _ensure_browser_sso_middleware(
     ):
         return
     settings = load_settings()
+    if session_boundary is not None:
+        if settings is not None:
+            raise RuntimeError(
+                'WEBUI_OIDC_* browser SSO and a host session boundary both own '
+                '/auth/*; configure identity providers in the host instead'
+            )
+        session_boundary(app)
+        return
     if settings is None:
         logger.info(
             'Agent WebUI browser SSO is not configured — API clients must '
@@ -2354,6 +2380,7 @@ def create_agent_web_app(
     contact_delivery: ContactDeliveryPort | None = None,
     browser_control: BrowserControlPort | None = None,
     application_composer: ApplicationComposer | None = None,
+    session_boundary: SessionBoundary | None = None,
 ) -> FastAPI:
     """Create the agent-web FastAPI application.
 
@@ -2381,12 +2408,17 @@ def create_agent_web_app(
             this public port to add its gateway routes without WebUI importing
             Graph OS or gateway internals. Composition happens after WebUI
             routes and before the catch-all SPA mount.
+        session_boundary: Optional host-owned browser session boundary. Graph
+            OS installs its identity gate through this port: it owns
+            ``/auth/*`` and presents every admitted request to the WebUI's
+            identity gate as a verified bearer. Mutually exclusive with the
+            ``WEBUI_OIDC_*`` single-client browser SSO.
 
     Returns:
         A fully configured FastAPI application instance.
     """
 
-    resolved_listener_host = _configure_served_boundary(listener_host)
+    resolved_listener_host = _configure_served_boundary(listener_host, session_boundary)
     content_security_policy, mint_graph_session, security_contract = (
         _startup_security_contract(
             resolved_listener_host,
@@ -2611,14 +2643,21 @@ def create_agent_web_app(
 
     # Fallback to serving the built React dashboard if no custom source provided
     if not html_source and _dashboard_build_is_servable(dist_path):
-        app.mount(
+        route_patterns = _load_spa_route_patterns(dist_path)
+        spa_mount = Mount(
             '/',
-            SPAStaticFiles(
+            app=SPAStaticFiles(
                 directory=str(dist_path),
                 html=True,
-                route_patterns=_load_spa_route_patterns(dist_path),
+                route_patterns=route_patterns,
             ),
             name='dashboard',
+        )
+        app.router.routes.append(spa_mount)
+        app.state.public_shell = PublicShell(
+            dist_path,
+            lambda path: _matches_spa_route(path, route_patterns),
+            spa_mount,
         )
 
     if _LOGFIRE_ENABLED:
@@ -2635,6 +2674,7 @@ def create_agent_web_app(
         app,
         browser_control=browser_control,
         mint_graph_session=mint_graph_session,
+        session_boundary=session_boundary,
     )
     _ensure_security_headers_middleware(
         app,
