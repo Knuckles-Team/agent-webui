@@ -84,4 +84,21 @@ describe('DecisionCalibrationTab', () => {
     const lastCall = vi.mocked(decisionsApi.fetchDecisionAggregate).mock.calls.at(-1)?.[0]
     expect(lastCall?.fromMs).toBe(0)
   })
+
+  it('labels policy cohorts and warns against comparing changed policies', async () => {
+    vi.spyOn(decisionsApi, 'fetchDecisionAggregate').mockResolvedValue({
+      ...baseAggregate,
+      rows: [
+        { ...baseAggregate.rows[0], policy_digest: 'policy-a-123456789', option_id: 'agent:writer' },
+        { ...baseAggregate.rows[0], policy_digest: 'policy-b-123456789', option_id: 'agent:reviewer' },
+      ],
+    })
+    renderWithProviders(<DecisionCalibrationTab />)
+
+    expect(await screen.findByText('agent:reviewer')).toBeInTheDocument()
+    expect(screen.getByText('policy-a-123…')).toBeInTheDocument()
+    expect(screen.getByText('policy-b-123…')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('multiple policy versions')
+    expect(screen.getAllByText(/no uncertainty interval or act-risk bound/i)).toHaveLength(2)
+  })
 })

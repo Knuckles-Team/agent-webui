@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 import { fetchDecisionAggregate } from '@/lib/decisions-api'
 import type { FidelityCounts, OptionAggregate } from './decision-schemas'
-import { fidelityTone, successRatePercent } from './decision-format'
+import { fidelityTone, shortenId, successRatePercent } from './decision-format'
 
 /**
  * @file DecisionCalibrationTab.tsx
@@ -52,6 +52,28 @@ function SuccessRateBar({ percent }: { percent: number | null }) {
         <div className="h-full rounded-full bg-emerald-500" style={{ width: `${percent ?? 0}%` }} />
       </div>
     </div>
+  )
+}
+
+function PolicyLabel({ digest }: { digest: string | null | undefined }) {
+  return (
+    <p className="text-[11px] text-muted-foreground">
+      Policy:{' '}
+      <span className="font-mono" title={digest ?? undefined}>
+        {digest ? shortenId(digest) : 'unavailable'}
+      </span>
+    </p>
+  )
+}
+
+function PolicyCohortNotice({ rows }: { rows: OptionAggregate[] }) {
+  const policies = new Set(rows.map((row) => row.policy_digest).filter(Boolean))
+  if (policies.size <= 1) return null
+  return (
+    <p role="status" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+      This window includes multiple policy versions. Their observed rates are separate cohorts and are not directly
+      comparable without re-evaluation.
+    </p>
   )
 }
 
@@ -119,12 +141,16 @@ function OptionCard({ option }: { option: OptionAggregate }) {
           </Badge>
         )}
       </div>
+      <PolicyLabel digest={option.policy_digest} />
       <div className="grid grid-cols-3 gap-2 text-[11px]">
         <StatTile label="Trials" value={option.trials} />
         <StatTile label="Successes" value={option.successes} />
         <StatTile label="Refused" value={option.refused} />
       </div>
       <SuccessRateBar percent={percent} />
+      <p className="text-[10px] text-muted-foreground">
+        Executed options only. This observed rate has no uncertainty interval or act-risk bound.
+      </p>
       <FidelityBreakdownBar counts={option.by_fidelity} />
     </div>
   )
@@ -182,6 +208,7 @@ export default function DecisionCalibrationTab() {
         </div>
       </section>
       <p className="text-xs text-muted-foreground">The rows below are observed outcomes for executed options only.</p>
+      <PolicyCohortNotice rows={rows} />
       <div className="flex flex-wrap items-center gap-2">
         <Input
           aria-label="Filter by question id"
