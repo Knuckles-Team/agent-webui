@@ -185,7 +185,48 @@ describe('DecisionCalibrationTab', () => {
     await user.click(screen.getByRole('button', { name: 'Load history' }))
     expect(await screen.findByText(/evaluation job submitted/i)).toBeInTheDocument()
     expect(screen.getByText(/failed gates: coverage_floor/i)).toBeInTheDocument()
-    expect(screen.getByText(/alert status is unavailable/i)).toBeInTheDocument()
+    expect(screen.getByText(/policy threshold status unavailable/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/statistical drift detection and LGTM alert delivery remain unavailable/i),
+    ).toBeInTheDocument()
     expect(screen.queryByText('70.0%–90.0%')).not.toBeInTheDocument()
+  })
+
+  it('reports only explicit stored policy breaches and withholds low-support claims', async () => {
+    vi.spyOn(decisionsApi, 'fetchDecisionAggregate').mockResolvedValue(baseAggregate)
+    const receipt = {
+      receipt_digest: 'sha256:failed',
+      policy_digest: 'sha256:policy',
+      n_records: 40,
+      passed: false,
+      synthetic: false,
+      failed_gates: ['coverage_floor'],
+      metrics: null,
+    }
+    const threshold = {
+      policy_digest: 'sha256:policy',
+      alpha: { numerator: 1, denominator: 10 },
+      epsilon: { numerator: 1, denominator: 20 },
+      delta: { numerator: 1, denominator: 20 },
+      n_min: 30,
+      insufficient_support: false,
+      coverage_below_policy: true,
+      act_risk_above_policy: null,
+    }
+    vi.spyOn(decisionsApi, 'fetchDecisionEvalTimeline').mockResolvedValue({
+      entries: [
+        { submitted_at_ms: 1700000000000, receipt, threshold_alert: threshold },
+        {
+          submitted_at_ms: 1700000000001,
+          receipt: { ...receipt, receipt_digest: 'sha256:low' },
+          threshold_alert: { ...threshold, insufficient_support: true, coverage_below_policy: null },
+        },
+      ],
+    })
+    const { user } = renderWithProviders(<DecisionCalibrationTab />)
+    await user.click(screen.getByRole('button', { name: 'Load history' }))
+    expect(await screen.findByText(/policy threshold breached: coverage below policy target/i)).toBeInTheDocument()
+    expect(screen.getByText(/insufficient labeled support \(minimum 30\); no threshold claim/i)).toBeInTheDocument()
+    expect(screen.queryByText(/statistical drift detected/i)).not.toBeInTheDocument()
   })
 })

@@ -467,16 +467,29 @@ def test_evaluation_timeline_uses_server_time_cursor_and_verified_tenant(mock_en
     from agent_webui.api_extensions import list_decision_evaluation_timeline
 
     cursor = '00000001700000000000:sha256:' + 'a' * 64
-    sender = AsyncMock(
-        return_value=types.SimpleNamespace(payload={'entries': [], 'next_after': None})
-    )
+    page = {
+        'entries': [
+            {
+                'submitted_at_ms': 1700000000000,
+                'receipt': {'receipt_digest': 'sha256:' + 'b' * 64},
+                'threshold_alert': {
+                    'policy_digest': 'sha256:' + 'c' * 64,
+                    'insufficient_support': False,
+                    'coverage_below_policy': True,
+                    'act_risk_above_policy': None,
+                },
+            }
+        ],
+        'next_after': None,
+    }
+    sender = AsyncMock(return_value=types.SimpleNamespace(payload=page))
     with (
         _patched_engine(mock_engine),
         _patched_session(tenant='verified-tenant'),
         patch('epistemic_graph.generated.coordination.send_decision_eval', sender),
     ):
         result = run(list_decision_evaluation_timeline(after=cursor, limit=2))
-    assert result == {'entries': [], 'next_after': None}
+    assert result == page
     assert sender.await_args is not None
     assert sender.await_args.args[1]['op'] == {
         'op': 'timeline',

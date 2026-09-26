@@ -6,6 +6,32 @@ import type { DecisionEvalTimelinePage } from './decision-schemas'
 import { formatEpochMs } from './decision-format'
 import { ReceiptCard } from './DecisionEvaluationReceipts'
 
+type TimelineEntry = DecisionEvalTimelinePage['entries'][number]
+
+function thresholdSummary(entry: TimelineEntry): string {
+  const alert = entry.threshold_alert
+  if (alert?.policy_digest !== entry.receipt.policy_digest) return 'Policy threshold status unavailable.'
+  if (alert.insufficient_support) return `Insufficient labeled support (minimum ${alert.n_min}); no threshold claim.`
+  const breaches = [
+    alert.coverage_below_policy === true && 'coverage below policy target',
+    alert.act_risk_above_policy === true && 'act risk above policy limit',
+  ].filter(Boolean)
+  if (breaches.length) return `Policy threshold breached: ${breaches.join(' and ')}.`
+  if (alert.coverage_below_policy === false && alert.act_risk_above_policy === false) {
+    return 'No reported policy threshold breach for this evaluation.'
+  }
+  return 'Policy threshold evaluation incomplete.'
+}
+
+function ThresholdStatus({ entry }: { entry: TimelineEntry }) {
+  const message = thresholdSummary(entry)
+  return (
+    <p role="status" className="text-xs">
+      {message}
+    </p>
+  )
+}
+
 function TimelineResults({
   page,
   isLoading,
@@ -28,6 +54,7 @@ function TimelineResults({
     <div key={`${entry.submitted_at_ms}:${entry.receipt.receipt_digest}`} className="space-y-1">
       <p className="text-xs text-muted-foreground">Evaluation job submitted {formatEpochMs(entry.submitted_at_ms)}</p>
       <ReceiptCard receipt={entry.receipt} />
+      <ThresholdStatus entry={entry} />
     </div>
   ))
 }
@@ -49,8 +76,8 @@ export default function DecisionEvaluationTimeline() {
         <h3 className="font-semibold text-sm">Full-label evaluation history</h3>
         <p className="text-xs text-muted-foreground">
           Server job-submission order for independently labeled evaluations, including failed promotion gates. Older
-          receipts without a time index remain in the digest list above. Alert status is unavailable until policy
-          thresholds and LGTM wiring exist; a change between these measurements alone is not a drift alert.
+          receipts without a time index remain in the digest list above. A policy threshold breach is specific to one
+          evaluation. Statistical drift detection and LGTM alert delivery remain unavailable.
         </p>
       </div>
       {!enabled && (

@@ -208,6 +208,19 @@ export const decisionEvalTimelinePageSchema = z.object({
     z.object({
       submitted_at_ms: z.number().int().nonnegative(),
       receipt: decisionEvalReceiptSchema,
+      threshold_alert: z
+        .object({
+          policy_digest: z.string(),
+          alpha: unitRationalSchema,
+          epsilon: unitRationalSchema,
+          delta: unitRationalSchema,
+          n_min: z.number().int().nonnegative(),
+          insufficient_support: z.boolean(),
+          coverage_below_policy: z.boolean().nullable().optional(),
+          act_risk_above_policy: z.boolean().nullable().optional(),
+        })
+        .nullable()
+        .optional(),
     }),
   ),
   next_after: z.string().nullable().optional(),
