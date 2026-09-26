@@ -25,22 +25,27 @@ export function ReceiptCard({ receipt }: { receipt: DecisionEvalReceipt }) {
       {receipt.synthetic && <p>Includes synthetic data; no production coverage or risk claim.</p>}
       {!receipt.passed && <p>Failed gates: {receipt.failed_gates.join(', ') || 'unspecified'}.</p>}
       {certified && receipt.metrics && (
-        <dl className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <div>
-            <dt>Labeled items</dt>
-            <dd className="font-semibold">{receipt.metrics.n_items}</dd>
-          </div>
-          <div>
-            <dt>Coverage interval</dt>
-            <dd className="font-semibold">
-              {percent(receipt.metrics.coverage_lower)}–{percent(receipt.metrics.coverage_upper)}
-            </dd>
-          </div>
-          <div>
-            <dt>Act-risk upper bound</dt>
-            <dd className="font-semibold">{percent(receipt.metrics.act_risk_upper)}</dd>
-          </div>
-        </dl>
+        <>
+          <p className="text-muted-foreground">
+            Bounds apply to this labeled evaluation set; this receipt provides no per-class breakdown.
+          </p>
+          <dl className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div>
+              <dt>Labeled items</dt>
+              <dd className="font-semibold">{receipt.metrics.n_items}</dd>
+            </div>
+            <div>
+              <dt>Coverage interval</dt>
+              <dd className="font-semibold">
+                {percent(receipt.metrics.coverage_lower)}–{percent(receipt.metrics.coverage_upper)}
+              </dd>
+            </div>
+            <div>
+              <dt>Act-risk upper bound</dt>
+              <dd className="font-semibold">{percent(receipt.metrics.act_risk_upper)}</dd>
+            </div>
+          </dl>
+        </>
       )}
     </article>
   )
@@ -84,7 +89,7 @@ export default function DecisionEvaluationReceipts() {
         <h3 className="font-semibold text-sm">Independent evaluation receipts</h3>
         <p className="text-xs text-muted-foreground">
           Admin decision-eval scope is required. Only passing, non-synthetic full-label receipts carry coverage and
-          act-risk bounds. Receipt order is by digest; drift alerts require a separate time-series feed.
+          act-risk bounds. Receipt order is by digest; drift alerts require policy thresholds and LGTM monitoring.
         </p>
       </div>
       {!enabled && (

@@ -46,9 +46,9 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.getByText('40')).toBeInTheDocument()
     expect(screen.getByText(/below 10 trials are withheld/i)).toBeInTheDocument()
     expect(screen.getByText(/a missing row does not mean zero trials/i)).toBeInTheDocument()
-    expect(screen.getByText('Calibration: unavailable')).toBeInTheDocument()
-    expect(screen.getByText('Coverage and act risk: unavailable')).toBeInTheDocument()
-    expect(screen.getByText(/per-class sample sufficiency and intervals/i)).toBeInTheDocument()
+    expect(screen.getByText('Outcome aggregate calibration: unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Outcome aggregate coverage and act risk: unavailable')).toBeInTheDocument()
+    expect(screen.getByText(/bounds for their evaluation set below/i)).toBeInTheDocument()
   })
 
   it('does not interpret an empty aggregate as proof of zero outcomes', async () => {
@@ -148,6 +148,7 @@ describe('DecisionCalibrationTab', () => {
     expect(await screen.findByText('Passed independent-label evaluation')).toBeInTheDocument()
     expect(screen.getByText('90.0%–99.0%')).toBeInTheDocument()
     expect(screen.getByText('10.0%')).toBeInTheDocument()
+    expect(screen.getByText(/no per-class breakdown/i)).toBeInTheDocument()
     expect(screen.getByText(/includes synthetic data/i)).toBeInTheDocument()
     expect(screen.getAllByText('Coverage interval')).toHaveLength(1)
   })

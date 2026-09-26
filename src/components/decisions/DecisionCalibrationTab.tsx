@@ -196,16 +196,16 @@ export default function DecisionCalibrationTab() {
     <div className="space-y-4">
       <section aria-label="Calibration and coverage status" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="rounded-md border border-border/40 bg-muted/10 p-3 text-xs">
-          <h3 className="font-semibold">Calibration: unavailable</h3>
+          <h3 className="font-semibold">Outcome aggregate calibration: unavailable</h3>
           <p className="mt-1 text-muted-foreground">
             No independently labeled calibration metrics or uncertainty intervals are available from this aggregate.
           </p>
         </div>
         <div className="rounded-md border border-border/40 bg-muted/10 p-3 text-xs">
-          <h3 className="font-semibold">Coverage and act risk: unavailable</h3>
+          <h3 className="font-semibold">Outcome aggregate coverage and act risk: unavailable</h3>
           <p className="mt-1 text-muted-foreground">
-            The engine must report per-class sample sufficiency and intervals before coverage or act-risk claims
-            appear.
+            Observed outcomes cannot establish coverage or act-risk bounds. Independently labeled evaluation receipts
+            may report bounds for their evaluation set below.
           </p>
         </div>
       </section>
