@@ -2,7 +2,7 @@
 
 > **Prefix**: `CONCEPT:WEBUI-*`
 > **Version**: 0.17.0
-> **Bridge**: [`CONCEPT:AU-ECO.messaging.native-backend-abstraction`](https://github.com/Knuckles-Team/agent-utilities/blob/main/docs/concepts.md) (Unified Toolkit Ingestion)
+> **Bridge**: [`CONCEPT:AU-ECO.messaging.native-backend-abstraction`](https://github.com/Knuckles-Team/agent-utilities/blob/main/pages/concepts.md) (Unified Toolkit Ingestion)
 
 ---
 
