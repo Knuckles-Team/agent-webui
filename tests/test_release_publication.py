@@ -139,7 +139,7 @@ def test_release_intent_skips_later_release_neutral_commit() -> None:
         changed_paths=[
             '.github/workflows/advisory.yml',
             'README.md',
-            'docs/status.md',
+            'pages/status.md',
             'mkdocs.yml',
             'scripts/release/check_pypi_artifacts.py',
             'tests/test_release_publication.py',
@@ -154,7 +154,7 @@ def test_release_intent_requires_version_bump_for_runtime_change() -> None:
             {'package.whl': _sha(b'wheel')},
             tag_target='release-commit',
             head_sha='runtime-commit',
-            changed_paths=['agent/agent_webui/server.py', 'docs/status.md'],
+            changed_paths=['agent/agent_webui/server.py', 'pages/status.md'],
         )
 
 

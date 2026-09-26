@@ -28,7 +28,7 @@ PUBLISHABLE_SUFFIXES = ('.whl', '.tar.gz')
 RELEASE_NEUTRAL_FILES = frozenset({'README.md', 'mkdocs.yml'})
 RELEASE_NEUTRAL_PREFIXES = (
     '.github/',
-    'docs/',
+    'pages/',
     'overrides/',
     'scripts/release/',
     'tests/',
