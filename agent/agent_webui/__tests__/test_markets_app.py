@@ -10,6 +10,7 @@ itself -- and how it shapes, caches, verifies and refuses.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from typing import Any
@@ -107,7 +108,7 @@ class FakeEngine:
         return created
 
     async def _range(self, series_id: str, frm: int, to: int) -> list:
-        return [(bar['open_time'], [float(len(series_id))]) for bar in self.bars]
+        return _bars_in_range(self.bars, series_id, frm, to)
 
     async def _issue(self, **request: Any) -> dict:
         view = {**request, 'status': 'active', 'revision': 1}
@@ -280,8 +281,16 @@ _ANSWERS: dict[str, Any] = {
 }
 
 
+def _bars_in_range(bars: list[dict], series_id: str, frm: int, to: int) -> list:
+    return [
+        (bar['open_time'], [float(len(series_id))])
+        for bar in bars
+        if frm <= bar['open_time'] <= to
+    ]
+
+
 async def _invoke(method: Any, *args: Any, deadline: float, **kwargs: Any) -> Any:
-    return await method(*args, **kwargs)
+    return await asyncio.wait_for(method(*args, **kwargs), timeout=deadline)
 
 
 def _client(engine: FakeEngine | None) -> TestClient:

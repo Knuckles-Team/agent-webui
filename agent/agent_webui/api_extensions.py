@@ -5106,7 +5106,7 @@ def _normalize_lod_expand(value: Any) -> dict[str, Any]:
     }
 
 
-@router.get('/graph/graph3d/scope')
+@router.get('/graph/graph3d/scope', summary='Get authorized Graph 3D LOD scope')
 async def get_graph_3d_lod_scope() -> dict[str, Any]:
     """Return the one graph name this verified WebUI session may read.
 
@@ -5137,7 +5137,11 @@ async def get_graph_3d_lod_scope() -> dict[str, Any]:
         ) from exc
 
 
-@router.get('/graph/graph3d/refresh', response_model=None)
+@router.get(
+    '/graph/graph3d/refresh',
+    response_model=None,
+    summary='Refresh Graph 3D LOD hierarchy',
+)
 async def get_graph_3d_lod_refresh(
     request: Request,
 ) -> dict[str, Any] | JSONResponse:
@@ -5190,7 +5194,11 @@ async def get_graph_3d_lod_refresh(
         )
 
 
-@router.get('/graph/graph3d/clusters', response_model=None)
+@router.get(
+    '/graph/graph3d/clusters',
+    response_model=None,
+    summary='Get Graph 3D LOD clusters',
+)
 async def get_graph_3d_lod_clusters(
     request: Request,
     level: int,
@@ -5257,7 +5265,11 @@ async def get_graph_3d_lod_clusters(
         )
 
 
-@router.get('/graph/graph3d/expand', response_model=None)
+@router.get(
+    '/graph/graph3d/expand',
+    response_model=None,
+    summary='Expand Graph 3D LOD cluster',
+)
 async def get_graph_3d_lod_expand(
     request: Request,
     cluster_id: str,
