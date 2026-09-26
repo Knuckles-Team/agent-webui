@@ -1663,14 +1663,85 @@ def _authorization_header_values(scope: Any) -> list[bytes]:
     ]
 
 
+_TRUSTED_JWT_CLAIMS_MARKER = object()
+
+
+def bind_prevalidated_jwt_claims(scope: dict[str, Any], claims: dict[str, Any]) -> None:
+    """Mark claims verified by a trusted, in-process outer auth boundary.
+
+    The only intended caller is a deployment-owned ASGI authentication
+    middleware after it validates signature, issuer, audience and expiry.
+    Do not call from a proxy-header adapter or request handler. Browser SSO
+    presents a bearer token and uses WebUI's own JWT verifier instead. An
+    ASGI state value supplied without this process-owned object is never
+    authority. The trusted external handoff requires served integration proof.
+    """
+
+    state = dict(scope.get('state') or {})
+    state['user_claims'] = claims
+    state['_webui_verified_jwt_marker'] = _TRUSTED_JWT_CLAIMS_MARKER
+    scope['state'] = state
+
+
 def _prevalidated_jwt_claims(scope: Any) -> dict[str, Any] | None:
-    """Claims an outer HTTP authentication boundary already verified, if any."""
+    """Return claims vouched for by a trusted outer HTTP boundary, if any."""
 
     state = scope.get('state') or {}
     prevalidated = state.get('user_claims') if isinstance(state, dict) else None
-    if isinstance(prevalidated, dict) and prevalidated.get('auth_type') == 'jwt':
+    if _is_trusted_prevalidated_jwt(prevalidated, state):
         return prevalidated
     return None
+
+
+def _is_trusted_prevalidated_jwt(claims: Any, state: dict[str, Any]) -> bool:
+    """Require JWT claims and the private marker, never state text alone."""
+
+    return (
+        isinstance(claims, dict)
+        and claims.get('auth_type') == 'jwt'
+        and state.get('_webui_verified_jwt_marker') is _TRUSTED_JWT_CLAIMS_MARKER
+    )
+
+
+def _prepare_http_auth_scope(scope: dict[str, Any]) -> dict[str, Any]:
+    """Discard unproven ASGI authority before this and shared auth run."""
+
+    prepared = dict(scope)
+    state = dict(prepared.get('state') or {})
+    bearer_token, _ = _validated_bearer_header(prepared)
+    if bearer_token is not None or _prevalidated_jwt_claims(prepared) is None:
+        # A presented bearer is the sole authority even when a trusted outer
+        # boundary also marked claims. Never leave conflicting claims for a
+        # downstream consumer or for the shared fallback middleware.
+        state.pop('user_claims', None)
+        state.pop('_webui_verified_jwt_marker', None)
+    state.pop('verified_token_scopes', None)
+    prepared['state'] = state
+    return prepared
+
+
+async def _verified_http_claims(
+    token: str | None,
+    prevalidated: dict[str, Any] | None,
+    *,
+    jwks_uri: str | None,
+    issuer: str | None,
+    audience: str | None,
+) -> dict[str, Any] | None:
+    """Use a presented bearer as sole authority, including over marked claims."""
+
+    if token is None:
+        return prevalidated
+    if not jwks_uri or not str(audience or '').strip():
+        return None
+    from agent_utilities.security.auth import _decode_jwt, _fetch_jwks
+
+    return _decode_jwt(
+        token,
+        await _fetch_jwks(jwks_uri),
+        issuer=issuer,
+        audience=audience,
+    )
 
 
 async def _admit_websocket_tenant(
@@ -1737,31 +1808,36 @@ def _ensure_actor_identity_middleware(
         reason — absent credential, unusable verifier, or a credential that
         failed validation. Every such case is handed straight back to the
         shared middleware, which owns the exempt-path allowance and the exact
-        401 body for each. This mirrors the shared actor projection rather
-        than replacing it: both branches call the shared
-        ``actor_from_claims`` / ``actor_from_bearer_token``.
+        401 body for each. Preserve the JWT's verified scope/scp claims
+        separately: ``ActorContext.roles`` merges roles, scopes and groups,
+        so it cannot prove scope provenance for narrow admin capabilities.
         """
 
         from agent_utilities.core.config import config
         from agent_utilities.security.auth import parse_bearer_authorization
+        from agent_utilities.security.identity import normalize_identity
 
         try:
             token = parse_bearer_authorization(_authorization_header_values(scope))
         except PermissionError:
             return None
 
-        prevalidated = _prevalidated_jwt_claims(scope)
-        if prevalidated is not None:
-            # An outer HTTP authentication boundary already verified this
-            # credential; reuse its claims rather than re-verifying.
-            try:
-                return actor_from_claims(prevalidated)
-            except (TypeError, ValueError):
-                return None
-        if not token or not config.auth_jwt_jwks_uri:
-            return None
         try:
-            return await actor_from_bearer_token(token)
+            claims = await _verified_http_claims(
+                token,
+                _prevalidated_jwt_claims(scope),
+                jwks_uri=config.auth_jwt_jwks_uri,
+                issuer=config.auth_jwt_issuer,
+                audience=config.auth_jwt_audience,
+            )
+            if claims is None:
+                return None
+            actor = actor_from_claims(claims)
+            verified_scopes = frozenset(normalize_identity(claims).scopes)
+            state = dict(scope.get('state') or {})
+            state['verified_token_scopes'] = verified_scopes
+            scope['state'] = state
+            return actor
         except Exception:
             # Any verification failure — malformed token, bad signature,
             # unreachable JWKS — means "not authenticated here". The shared
@@ -1811,8 +1887,18 @@ def _ensure_actor_identity_middleware(
                     body=b'{"detail":"Authentication required"}',
                 )
                 return
+            # Remove caller-supplied ASGI authority before this boundary or
+            # the shared fallback sees it. Only our opaque process-owned
+            # marker permits the explicit prevalidated handoff.
+            scope = _prepare_http_auth_scope(scope)
             actor = await _authenticated_http_actor(scope)
             if actor is None:
+                # An invalid token cannot revive a supplied proof through
+                # ActorIdentityMiddleware's unauthenticated fallback.
+                state = scope['state']
+                state.pop('user_claims', None)
+                state.pop('_webui_verified_jwt_marker', None)
+                state.pop('verified_token_scopes', None)
                 # Unauthenticated, unverifiable, or invalid: the shared
                 # boundary owns that decision end to end, including which
                 # paths may proceed without a credential.

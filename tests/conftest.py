@@ -547,9 +547,7 @@ def served_identity_config(monkeypatch):
         raising=False,
     )
     monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.test/', raising=False)
-    monkeypatch.setattr(
-        config, 'auth_jwt_audience', 'agent-webui-test', raising=False
-    )
+    monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui-test', raising=False)
     monkeypatch.setattr(config, 'kg_policy_version', 'test-1', raising=False)
     return config
 
@@ -597,7 +595,7 @@ def authenticated_asgi_app(
     """Wrap ``app`` so every HTTP request arrives with a verified identity.
 
     This is NOT a second, weaker auth path: it projects prevalidated JWT
-    claims onto ``scope['state']['user_claims']``, which is exactly the "an
+    claims through ``bind_prevalidated_jwt_claims``, the explicit "an
     outer HTTP authentication boundary already verified this credential" leg
     ``WebUIActorIdentityMiddleware._authenticated_http_actor`` (server.py
     ~1242) and the shared ``ActorIdentityMiddleware.__call__`` (agent_utilities
@@ -628,15 +626,18 @@ def authenticated_asgi_app(
 
     async def with_identity(asgi_scope, receive, send):
         if asgi_scope.get('type') == 'http':
+            from agent_webui.server import bind_prevalidated_jwt_claims
+
             asgi_scope = dict(asgi_scope)
-            state = dict(asgi_scope.get('state') or {})
-            state['user_claims'] = {
-                'auth_type': 'jwt',
-                'sub': sub,
-                'tenant_id': tenant,
-                'scope': scope,
-            }
-            asgi_scope['state'] = state
+            bind_prevalidated_jwt_claims(
+                asgi_scope,
+                {
+                    'auth_type': 'jwt',
+                    'sub': sub,
+                    'tenant_id': tenant,
+                    'scope': scope,
+                },
+            )
         await app(asgi_scope, receive, send)
 
     return with_identity

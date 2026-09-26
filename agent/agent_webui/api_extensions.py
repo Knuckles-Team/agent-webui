@@ -7861,7 +7861,7 @@ async def get_decision_aggregate(
 
 @router.get('/decisions/evaluation-receipts')
 async def list_decision_evaluation_receipts(
-    after: str | None = None, limit: int = 20
+    request: Request, after: str | None = None, limit: int = 20
 ) -> dict[str, Any]:
     """Page independently evaluated receipts for the admin calibration view.
 
@@ -7875,7 +7875,7 @@ async def list_decision_evaluation_receipts(
     if not 1 <= limit <= 50:
         raise HTTPException(status_code=400, detail='Receipt page limit must be 1..50')
     tenant_id, graph = _decision_session_info()
-    _require_decision_eval_scope()
+    _require_decision_eval_scope(request)
     payload = await _send_decision_eval_page(tenant_id, graph, 'receipts', after, limit)
     bounded = _public_external_result(payload)
     if not isinstance(bounded, dict) or not isinstance(bounded.get('receipts'), list):
@@ -7883,22 +7883,25 @@ async def list_decision_evaluation_receipts(
     return bounded
 
 
-def _require_decision_eval_scope() -> None:
-    """Require the verified admin role before forwarding the EG admin read."""
+def _require_decision_eval_scope(request: Request) -> None:
+    """Require a scope/scp claim retained by the verified HTTP JWT boundary."""
 
-    from agent_utilities.knowledge_graph.core.session import current_session
-
-    session = current_session()
-    roles = getattr(getattr(session, 'actor', None), 'roles', ())
-    if 'admin:decision-eval' not in roles:
+    scopes = getattr(request.state, 'verified_token_scopes', None)
+    if 'admin:decision-eval' not in _verified_decision_scope_set(scopes):
         raise HTTPException(
             status_code=403, detail='Decision evaluation admin scope required'
         )
 
 
+def _verified_decision_scope_set(scopes: Any) -> frozenset[str]:
+    """Keep only the immutable set written by the verified HTTP boundary."""
+
+    return scopes if isinstance(scopes, frozenset) else frozenset()
+
+
 @router.get('/decisions/evaluation-timeline')
 async def list_decision_evaluation_timeline(
-    after: str | None = None, limit: int = 20
+    request: Request, after: str | None = None, limit: int = 20
 ) -> dict[str, Any]:
     """Page full-label evaluation jobs in server submission-time order."""
 
@@ -7911,7 +7914,7 @@ async def list_decision_evaluation_timeline(
     if not 1 <= limit <= 50:
         raise HTTPException(status_code=400, detail='Timeline page limit must be 1..50')
     tenant_id, graph = _decision_session_info()
-    _require_decision_eval_scope()
+    _require_decision_eval_scope(request)
     payload = await _send_decision_eval_page(tenant_id, graph, 'timeline', after, limit)
     bounded = _public_external_result(payload)
     if not isinstance(bounded, dict) or not isinstance(bounded.get('entries'), list):

@@ -177,15 +177,18 @@ def _authenticated(app: Any) -> Any:
 
     async def with_identity(scope: Any, receive: Any, send: Any) -> None:
         if scope.get('type') == 'http':
+            from agent_webui.server import bind_prevalidated_jwt_claims
+
             scope = dict(scope)
-            state = dict(scope.get('state') or {})
-            state['user_claims'] = {
-                'auth_type': 'jwt',
-                'sub': 'mcp-delegation-test',
-                'tenant_id': 'test-tenant',
-                'scope': 'kg:read kg:write kg:admin',
-            }
-            scope['state'] = state
+            bind_prevalidated_jwt_claims(
+                scope,
+                {
+                    'auth_type': 'jwt',
+                    'sub': 'mcp-delegation-test',
+                    'tenant_id': 'test-tenant',
+                    'scope': 'kg:read kg:write kg:admin',
+                },
+            )
         await app(scope, receive, send)
 
     return with_identity

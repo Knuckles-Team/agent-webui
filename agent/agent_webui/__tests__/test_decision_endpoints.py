@@ -35,6 +35,7 @@ story):
 import asyncio
 import sys
 import types
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -109,6 +110,14 @@ def _install_fake_decision_client(responder):
 
 def run(coro):
     return asyncio.run(coro)
+
+
+def _verified_request(*scopes: str):
+    from starlette.requests import Request
+
+    return Request(
+        {'type': 'http', 'state': {'verified_token_scopes': frozenset(scopes)}}
+    )
 
 
 def _without_decision_client():
@@ -393,7 +402,11 @@ def test_evaluation_receipts_bind_tenant_and_bound_page(mock_engine):
         _patched_session(tenant='verified-tenant'),
         patch('epistemic_graph.generated.coordination.send_decision_eval', sender),
     ):
-        result = run(list_decision_evaluation_receipts(limit=2))
+        result = run(
+            list_decision_evaluation_receipts(
+                _verified_request('admin:decision-eval'), limit=2
+            )
+        )
     assert result == {'receipts': [], 'next_after': None}
     assert sender.await_args is not None
     assert sender.await_args.args[1] == {
@@ -410,7 +423,11 @@ def test_evaluation_receipts_reject_bad_cursor_before_engine(mock_engine):
 
     with _patched_engine(mock_engine), _patched_session():
         with pytest.raises(HTTPException) as exc:
-            run(list_decision_evaluation_receipts(after='not-a-digest'))
+            run(
+                list_decision_evaluation_receipts(
+                    _verified_request('admin:decision-eval'), after='not-a-digest'
+                )
+            )
     assert exc.value.status_code == 400
 
 
@@ -425,9 +442,20 @@ def test_evaluation_receipts_reject_verified_reader_without_admin_scope(mock_eng
         patch('epistemic_graph.generated.coordination.send_decision_eval', sender),
     ):
         with pytest.raises(HTTPException) as exc:
-            run(list_decision_evaluation_receipts())
+            run(list_decision_evaluation_receipts(_verified_request('kg:read')))
     assert exc.value.status_code == 403
     sender.assert_not_awaited()
+
+
+def test_evaluation_scope_guard_ignores_role_named_like_scope():
+    from agent_webui.api_extensions import _require_decision_eval_scope
+    from fastapi import HTTPException
+
+    with _patched_session(roles=('kg:read', 'admin:decision-eval')):
+        with pytest.raises(HTTPException) as exc:
+            _require_decision_eval_scope(_verified_request('kg:read'))
+    assert exc.value.status_code == 403
+    _require_decision_eval_scope(_verified_request('admin:decision-eval'))
 
 
 def test_evaluation_receipts_real_browser_route_requires_verified_admin(
@@ -463,6 +491,145 @@ def test_evaluation_receipts_real_browser_route_requires_verified_admin(
     assert sender.await_args.args[1]['op']['request']['tenant_id'] == 'test-tenant'
 
 
+@pytest.mark.parametrize(
+    'path',
+    [
+        '/api/enhanced/decisions/evaluation-receipts',
+        '/api/enhanced/decisions/evaluation-timeline',
+    ],
+)
+@pytest.mark.parametrize('claim_kind', ['role', 'group'])
+def test_evaluation_routes_reject_role_or_group_named_like_scope(
+    path,
+    claim_kind,
+    mock_agent,
+    mock_workspace_helpers,
+    mock_engine,
+):
+    from agent_webui.server import create_agent_web_app
+    from fastapi.testclient import TestClient
+
+    app = create_agent_web_app(mock_agent, mock_workspace_helpers)
+    claims: dict[str, Any] = {
+        'auth_type': 'jwt',
+        'sub': 'test-suite',
+        'tenant_id': 'test-tenant',
+        'scope': 'kg:read',
+    }
+    if claim_kind == 'role':
+        claims['realm_access'] = {'roles': ['admin:decision-eval']}
+    else:
+        claims['groups'] = ['admin:decision-eval']
+
+    async def with_identity(asgi_scope, receive, send):
+        from agent_webui.server import bind_prevalidated_jwt_claims
+
+        asgi_scope = dict(asgi_scope)
+        state = dict(asgi_scope.get('state') or {})
+        # A caller-provided state key must not replace the middleware's proof.
+        state['verified_token_scopes'] = frozenset({'admin:decision-eval'})
+        asgi_scope['state'] = state
+        bind_prevalidated_jwt_claims(asgi_scope, claims)
+        await app(asgi_scope, receive, send)
+
+    sender = AsyncMock()
+    with (
+        _patched_engine(mock_engine),
+        patch('epistemic_graph.generated.coordination.send_decision_eval', sender),
+    ):
+        response = TestClient(with_identity, raise_server_exceptions=False).get(path)
+    assert response.status_code == 403
+    sender.assert_not_awaited()
+
+
+def test_forged_asgi_state_does_not_prove_prevalidated_jwt():
+    from agent_webui.server import (
+        _prepare_http_auth_scope,
+        _prevalidated_jwt_claims,
+        bind_prevalidated_jwt_claims,
+    )
+
+    claims = {
+        'auth_type': 'jwt',
+        'sub': 'forged',
+        'tenant_id': 'test-tenant',
+        'scope': 'kg:read admin:decision-eval',
+    }
+    forged = {
+        'type': 'http',
+        'state': {
+            'user_claims': claims,
+            'verified_token_scopes': frozenset({'admin:decision-eval'}),
+            '_webui_verified_jwt_marker': 'jwt',
+        },
+    }
+    assert _prevalidated_jwt_claims(forged) is None
+    stripped = _prepare_http_auth_scope(forged)
+    assert 'user_claims' not in stripped['state']
+    assert 'verified_token_scopes' not in stripped['state']
+    assert '_webui_verified_jwt_marker' not in stripped['state']
+
+    trusted = {'type': 'http'}
+    bind_prevalidated_jwt_claims(trusted, claims)
+    assert _prevalidated_jwt_claims(trusted) is claims
+    assert _prepare_http_auth_scope(trusted)['state']['user_claims'] is claims
+
+    # A bearer token presented alongside marked claims must be verified on
+    # its own terms; the marked claims cannot override that credential.
+    conflicting = {
+        **trusted,
+        'headers': [(b'authorization', b'Bearer different-signed-token')],
+    }
+    bearer_scope = _prepare_http_auth_scope(conflicting)
+    assert 'user_claims' not in bearer_scope['state']
+    assert '_webui_verified_jwt_marker' not in bearer_scope['state']
+    assert 'verified_token_scopes' not in bearer_scope['state']
+
+
+def test_bearer_claims_override_marked_outer_claims():
+    from agent_webui.server import _verified_http_claims
+
+    marked = {'sub': 'admin', 'scope': 'admin:decision-eval'}
+    decoded = {'sub': 'reader', 'scope': 'kg:read'}
+    with (
+        patch(
+            'agent_utilities.security.auth._fetch_jwks', new_callable=AsyncMock
+        ) as fetch_jwks,
+        patch(
+            'agent_utilities.security.auth._decode_jwt', return_value=decoded
+        ) as decode_jwt,
+    ):
+        actual = run(
+            _verified_http_claims(
+                'signed-reader-token',
+                marked,
+                jwks_uri='https://issuer.example/jwks',
+                issuer='https://issuer.example',
+                audience='webui',
+            )
+        )
+    assert actual is decoded
+    fetch_jwks.assert_awaited_once_with('https://issuer.example/jwks')
+    decode_jwt.assert_called_once_with(
+        'signed-reader-token',
+        fetch_jwks.return_value,
+        issuer='https://issuer.example',
+        audience='webui',
+    )
+    assert (
+        run(
+            _verified_http_claims(
+                'signed-reader-token',
+                marked,
+                jwks_uri=None,
+                issuer='https://issuer.example',
+                audience='webui',
+            )
+        )
+        is None
+    )
+
+
 def test_evaluation_timeline_uses_server_time_cursor_and_verified_tenant(mock_engine):
     from agent_webui.api_extensions import list_decision_evaluation_timeline
 
@@ -488,7 +655,11 @@ def test_evaluation_timeline_uses_server_time_cursor_and_verified_tenant(mock_en
         _patched_session(tenant='verified-tenant'),
         patch('epistemic_graph.generated.coordination.send_decision_eval', sender),
     ):
-        result = run(list_decision_evaluation_timeline(after=cursor, limit=2))
+        result = run(
+            list_decision_evaluation_timeline(
+                _verified_request('admin:decision-eval'), after=cursor, limit=2
+            )
+        )
     assert result == page
     assert sender.await_args is not None
     assert sender.await_args.args[1]['op'] == {
@@ -503,7 +674,12 @@ def test_evaluation_timeline_rejects_unverified_cursor_before_engine(mock_engine
 
     with _patched_engine(mock_engine), _patched_session():
         with pytest.raises(HTTPException) as exc:
-            run(list_decision_evaluation_timeline(after='sha256:' + 'a' * 64))
+            run(
+                list_decision_evaluation_timeline(
+                    _verified_request('admin:decision-eval'),
+                    after='sha256:' + 'a' * 64,
+                )
+            )
     assert exc.value.status_code == 400
 
 
