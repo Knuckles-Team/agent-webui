@@ -16,10 +16,12 @@ import { z } from 'zod'
 import { fetchValidated } from './api-validation'
 import {
   decisionAggregateSchema,
+  decisionEvalReceiptPageSchema,
   decisionListRowSchema,
   decisionProvenanceSchema,
   decisionRecordSchema,
   type DecisionAggregate,
+  type DecisionEvalReceipt,
   type DecisionListRow,
   type DecisionProvenance,
   type DecisionRecord,
@@ -65,4 +67,12 @@ export function fetchDecisionAggregate(options: DecisionAggregateOptions = {}): 
   if (options.toMs !== undefined) params.set('to_ms', String(options.toMs))
   const query = params.toString()
   return fetchValidated(`/api/enhanced/decisions/aggregate${query ? `?${query}` : ''}`, decisionAggregateSchema)
+}
+
+/** Admin-only independently labeled evaluation receipts, digest ordered. */
+export function fetchDecisionEvalReceipts(
+  after?: string,
+): Promise<{ receipts: DecisionEvalReceipt[]; next_after?: string | null }> {
+  const query = after ? `?after=${encodeURIComponent(after)}` : ''
+  return fetchValidated(`/api/enhanced/decisions/evaluation-receipts${query}`, decisionEvalReceiptPageSchema)
 }

@@ -8,6 +8,7 @@ import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 import { fetchDecisionAggregate } from '@/lib/decisions-api'
 import type { FidelityCounts, OptionAggregate } from './decision-schemas'
 import { fidelityTone, shortenId, successRatePercent } from './decision-format'
+import DecisionEvaluationReceipts from './DecisionEvaluationReceipts'
 
 /**
  * @file DecisionCalibrationTab.tsx
@@ -255,6 +256,7 @@ export default function DecisionCalibrationTab() {
         </p>
       )}
       <ResultsGrid rows={rows} isLoading={aggregateQuery.isLoading} isError={aggregateQuery.isError} />
+      <DecisionEvaluationReceipts />
     </div>
   )
 }

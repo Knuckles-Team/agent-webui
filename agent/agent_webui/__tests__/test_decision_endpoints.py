@@ -377,3 +377,35 @@ def test_get_decision_aggregate_reports_no_decide_module_as_unavailable(mock_eng
         with pytest.raises(HTTPException) as exc:
             run(get_decision_aggregate())
     assert exc.value.status_code == 501
+
+
+def test_evaluation_receipts_bind_tenant_and_bound_page(mock_engine):
+    from agent_webui.api_extensions import list_decision_evaluation_receipts
+
+    sender = AsyncMock(
+        return_value=types.SimpleNamespace(payload={'receipts': [], 'next_after': None})
+    )
+    with (
+        _patched_engine(mock_engine),
+        _patched_session(tenant='verified-tenant'),
+        patch('epistemic_graph.generated.coordination.send_decision_eval', sender),
+    ):
+        result = run(list_decision_evaluation_receipts(limit=2))
+    assert result == {'receipts': [], 'next_after': None}
+    assert sender.await_args is not None
+    assert sender.await_args.args[1] == {
+        'op': {
+            'op': 'receipts',
+            'request': {'tenant_id': 'verified-tenant', 'after': None, 'limit': 2},
+        }
+    }
+
+
+def test_evaluation_receipts_reject_bad_cursor_before_engine(mock_engine):
+    from agent_webui.api_extensions import list_decision_evaluation_receipts
+    from fastapi import HTTPException
+
+    with _patched_engine(mock_engine), _patched_session():
+        with pytest.raises(HTTPException) as exc:
+            run(list_decision_evaluation_receipts(after='not-a-digest'))
+    assert exc.value.status_code == 400

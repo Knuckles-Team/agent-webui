@@ -7859,6 +7859,60 @@ async def get_decision_aggregate(
     return bounded if isinstance(bounded, dict) else result
 
 
+@router.get('/decisions/evaluation-receipts')
+async def list_decision_evaluation_receipts(
+    after: str | None = None, limit: int = 20
+) -> dict[str, Any]:
+    """Page independently evaluated receipts for the admin calibration view.
+
+    EG enforces ``admin:decision-eval`` and the verified tenant. The cursor is
+    a receipt digest, not a timestamp: callers must not derive drift from page
+    order. This route deliberately does not use the observational log aggregate.
+    """
+
+    if after is not None and not re.fullmatch(r'sha256:[0-9a-fA-F]{64}', after):
+        raise HTTPException(status_code=400, detail='Invalid receipt cursor')
+    if not 1 <= limit <= 50:
+        raise HTTPException(status_code=400, detail='Receipt page limit must be 1..50')
+    tenant_id, graph = _decision_session_info()
+    payload = await _send_decision_receipts(tenant_id, graph, after, limit)
+    bounded = _public_external_result(payload)
+    if not isinstance(bounded, dict) or not isinstance(bounded.get('receipts'), list):
+        raise HTTPException(status_code=503, detail=_DECISIONS_UNAVAILABLE)
+    return bounded
+
+
+async def _send_decision_receipts(
+    tenant_id: str, graph: str | None, after: str | None, limit: int
+) -> Any:
+    client = _eg_client()
+    if client is None:
+        raise HTTPException(status_code=501, detail=_DECISIONS_UNAVAILABLE)
+    try:
+        from epistemic_graph.generated.coordination import send_decision_eval
+
+        result = await invoke_governed_helper(
+            send_decision_eval,
+            client,
+            {
+                'op': {
+                    'op': 'receipts',
+                    'request': {'tenant_id': tenant_id, 'after': after, 'limit': limit},
+                }
+            },
+            graph,
+            deadline=10.0,
+        )
+    except ImportError as e:
+        raise HTTPException(status_code=501, detail=_DECISIONS_UNAVAILABLE) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log_failure('decision_receipts', e)
+        raise HTTPException(status_code=503, detail=_DECISIONS_UNAVAILABLE) from e
+    return result.payload if hasattr(result, 'payload') else result
+
+
 @router.get('/decisions/{record_id}')
 async def get_decision(record_id: str) -> dict[str, Any]:
     """One committed `DecisionRecord` in full (EH-046 detail view): premises

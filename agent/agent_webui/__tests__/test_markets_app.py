@@ -67,6 +67,10 @@ class _Namespace:
             setattr(self, name, method)
 
 
+def _window_bars(bars: list[dict[str, Any]], frm: int, to: int) -> list[dict[str, Any]]:
+    return [bar for bar in bars if frm <= bar['open_time'] < to]
+
+
 class FakeEngine:
     """The engine client surface the Markets gateway reaches."""
 
@@ -107,7 +111,10 @@ class FakeEngine:
         return created
 
     async def _range(self, series_id: str, frm: int, to: int) -> list:
-        return [(bar['open_time'], [float(len(series_id))]) for bar in self.bars]
+        return [
+            (bar['open_time'], [float(len(series_id))])
+            for bar in _window_bars(self.bars, frm, to)
+        ]
 
     async def _issue(self, **request: Any) -> dict:
         view = {**request, 'status': 'active', 'revision': 1}

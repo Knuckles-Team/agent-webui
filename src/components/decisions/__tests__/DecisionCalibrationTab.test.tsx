@@ -101,4 +101,54 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.getByRole('status')).toHaveTextContent('multiple policy versions')
     expect(screen.getAllByText(/no uncertainty interval or act-risk bound/i)).toHaveLength(2)
   })
+
+  it('shows certified bounds only from a passing real full-label receipt', async () => {
+    vi.spyOn(decisionsApi, 'fetchDecisionAggregate').mockResolvedValue(baseAggregate)
+    const receipts = vi.spyOn(decisionsApi, 'fetchDecisionEvalReceipts').mockResolvedValue({
+      receipts: [
+        {
+          receipt_digest: 'sha256:real',
+          policy_digest: 'sha256:policy',
+          n_records: 40,
+          passed: true,
+          synthetic: false,
+          failed_gates: [],
+          metrics: {
+            n_items: 40,
+            covered: 38,
+            coverage_lower: { numerator: 9, denominator: 10 },
+            coverage_upper: { numerator: 99, denominator: 100 },
+            acted: 30,
+            acted_wrong: 1,
+            act_risk_upper: { numerator: 1, denominator: 10 },
+          },
+        },
+        {
+          receipt_digest: 'sha256:synthetic',
+          policy_digest: 'sha256:policy',
+          n_records: 40,
+          passed: true,
+          synthetic: true,
+          failed_gates: [],
+          metrics: {
+            n_items: 40,
+            covered: 38,
+            coverage_lower: { numerator: 9, denominator: 10 },
+            coverage_upper: { numerator: 99, denominator: 100 },
+            acted: 30,
+            acted_wrong: 1,
+            act_risk_upper: { numerator: 1, denominator: 10 },
+          },
+        },
+      ],
+    })
+    const { user } = renderWithProviders(<DecisionCalibrationTab />)
+    expect(receipts).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Load receipts' }))
+    expect(await screen.findByText('Passed independent-label evaluation')).toBeInTheDocument()
+    expect(screen.getByText('90.0%–99.0%')).toBeInTheDocument()
+    expect(screen.getByText('10.0%')).toBeInTheDocument()
+    expect(screen.getByText(/includes synthetic data/i)).toBeInTheDocument()
+    expect(screen.getAllByText('Coverage interval')).toHaveLength(1)
+  })
 })

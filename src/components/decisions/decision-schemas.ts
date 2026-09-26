@@ -167,6 +167,40 @@ export const decisionAggregateSchema = z.object({
 })
 export type DecisionAggregate = z.infer<typeof decisionAggregateSchema>
 
+/** Independently labeled full-label evaluation receipt, distinct from the
+ * observational DecisionLog aggregate. The engine owns all intervals. */
+const unitRationalSchema = z.object({
+  numerator: z.number().int().nonnegative(),
+  denominator: z.number().int().positive(),
+})
+
+export const decisionEvalReceiptSchema = z.object({
+  receipt_digest: z.string(),
+  policy_digest: z.string(),
+  n_records: z.number().int().nonnegative(),
+  passed: z.boolean(),
+  synthetic: z.boolean(),
+  failed_gates: z.array(z.string()),
+  metrics: z
+    .object({
+      n_items: z.number().int().nonnegative(),
+      covered: z.number().int().nonnegative(),
+      coverage_lower: unitRationalSchema,
+      coverage_upper: unitRationalSchema,
+      acted: z.number().int().nonnegative(),
+      acted_wrong: z.number().int().nonnegative(),
+      act_risk_upper: unitRationalSchema,
+    })
+    .nullable()
+    .optional(),
+})
+export type DecisionEvalReceipt = z.infer<typeof decisionEvalReceiptSchema>
+
+export const decisionEvalReceiptPageSchema = z.object({
+  receipts: z.array(decisionEvalReceiptSchema),
+  next_after: z.string().nullable().optional(),
+})
+
 /** The discriminant tag of an adjacently-tagged union payload validated only
  * as an open record (e.g. `{"violation": "denied"}`), or `null` when this
  * particular value carries none under that key. */
