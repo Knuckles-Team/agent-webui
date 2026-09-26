@@ -505,3 +505,44 @@ def test_evaluation_timeline_rejects_unverified_cursor_before_engine(mock_engine
         with pytest.raises(HTTPException) as exc:
             run(list_decision_evaluation_timeline(after='sha256:' + 'a' * 64))
     assert exc.value.status_code == 400
+
+
+def test_evaluation_timeline_real_browser_route_preserves_admin_boundary(
+    mock_agent, mock_workspace_helpers, authenticated_client_factory, mock_engine
+):
+    from agent_webui.server import create_agent_web_app
+    from fastapi.testclient import TestClient
+
+    app = create_agent_web_app(mock_agent, mock_workspace_helpers)
+    path = '/api/enhanced/decisions/evaluation-timeline'
+    bare = TestClient(app, raise_server_exceptions=False)
+    assert bare.get(path).status_code == 401
+
+    page = {
+        'entries': [
+            {
+                'submitted_at_ms': 1700000000000,
+                'receipt': {'receipt_digest': 'sha256:' + 'a' * 64},
+                'threshold_alert': None,
+            }
+        ],
+        'next_after': None,
+    }
+    sender = AsyncMock(return_value=types.SimpleNamespace(payload=page))
+    with (
+        _patched_engine(mock_engine),
+        patch('epistemic_graph.generated.coordination.send_decision_eval', sender),
+    ):
+        reader = authenticated_client_factory(
+            app, scope='kg:read', raise_server_exceptions=False
+        )
+        assert reader.get(path).status_code == 403
+        sender.assert_not_awaited()
+        admin = authenticated_client_factory(
+            app, scope='kg:read admin:decision-eval', raise_server_exceptions=False
+        )
+        response = admin.get(path)
+    assert response.status_code == 200
+    assert response.json() == page
+    assert sender.await_args is not None
+    assert sender.await_args.args[1]['op']['request']['tenant_id'] == 'test-tenant'
