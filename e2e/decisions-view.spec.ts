@@ -84,6 +84,64 @@ const aggregateResponse = {
   ],
 }
 
+const evaluationTimelineResponse = {
+  entries: [
+    {
+      submitted_at_ms: 1_700_000_000_000,
+      receipt: {
+        receipt_digest: 'sha256:independent-e2e',
+        policy_digest: 'sha256:policy-e2e',
+        n_records: 40,
+        passed: true,
+        synthetic: false,
+        failed_gates: [],
+        metrics: {
+          n_items: 40,
+          covered: 38,
+          coverage_lower: { numerator: 9, denominator: 10 },
+          coverage_upper: { numerator: 99, denominator: 100 },
+          acted: 30,
+          acted_wrong: 1,
+          act_risk_upper: { numerator: 1, denominator: 10 },
+        },
+      },
+      threshold_alert: {
+        policy_digest: 'sha256:policy-e2e',
+        alpha: { numerator: 1, denominator: 10 },
+        epsilon: { numerator: 1, denominator: 20 },
+        delta: { numerator: 1, denominator: 20 },
+        n_min: 20,
+        insufficient_support: false,
+        coverage_below_policy: true,
+        act_risk_above_policy: false,
+      },
+    },
+    {
+      submitted_at_ms: 1_700_000_001_000,
+      receipt: {
+        receipt_digest: 'sha256:synthetic-e2e',
+        policy_digest: 'sha256:policy-e2e',
+        n_records: 40,
+        passed: true,
+        synthetic: true,
+        failed_gates: [],
+        metrics: null,
+      },
+      threshold_alert: {
+        policy_digest: 'sha256:policy-e2e',
+        alpha: { numerator: 1, denominator: 10 },
+        epsilon: { numerator: 1, denominator: 20 },
+        delta: { numerator: 1, denominator: 20 },
+        n_min: 20,
+        insufficient_support: false,
+        coverage_below_policy: true,
+        act_risk_above_policy: true,
+      },
+    },
+  ],
+  next_after: null,
+}
+
 /**
  * Playwright matches the MOST RECENTLY registered pattern first, so the two
  * patterns that can both match the exact same URL (`/decisions/aggregate`
@@ -130,5 +188,25 @@ test.describe('DecisionsView E2E (stubbed API)', () => {
     await page.getByRole('tab', { name: 'Calibration' }).click()
     await expect(page.getByText('agent:writer')).toBeVisible()
     await expect(page.getByText('80%')).toBeVisible()
+  })
+
+  test('renders only independently labeled bounds and the policy threshold state', async ({ page }) => {
+    await page.route('**/api/enhanced/decisions/evaluation-timeline**', async (route) => {
+      await route.fulfill({ json: evaluationTimelineResponse })
+    })
+
+    await page.getByRole('tab', { name: 'Calibration' }).click()
+    await expect(page.getByText('Outcome aggregate coverage and act risk: unavailable')).toBeVisible()
+    await page.getByRole('button', { name: 'Load history' }).click()
+
+    await expect(page.getByText('90.0%–99.0%')).toBeVisible()
+    await expect(page.getByText('Policy threshold breached: coverage below policy target.')).toBeVisible()
+    await expect(page.getByText('Includes synthetic data; no production coverage or risk claim.')).toBeVisible()
+    await expect(page.getByText('Synthetic evaluation; production threshold status unavailable.')).toBeVisible()
+    await expect(page.getByText('Policy threshold breached: coverage below policy target.')).toHaveCount(1)
+    await expect(
+      page.getByText('Statistical drift detection and LGTM alert delivery remain unavailable.'),
+    ).toBeVisible()
+    await expect(page.getByText('Coverage interval')).toHaveCount(1)
   })
 })

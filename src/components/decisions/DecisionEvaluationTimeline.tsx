@@ -23,8 +23,14 @@ function thresholdSummary(entry: TimelineEntry): string {
   return 'Policy threshold evaluation incomplete.'
 }
 
+function displayThresholdSummary(entry: TimelineEntry): string {
+  return entry.receipt.synthetic
+    ? 'Synthetic evaluation; production threshold status unavailable.'
+    : thresholdSummary(entry)
+}
+
 function ThresholdStatus({ entry }: { entry: TimelineEntry }) {
-  const message = thresholdSummary(entry)
+  const message = displayThresholdSummary(entry)
   return (
     <p role="status" className="text-xs">
       {message}

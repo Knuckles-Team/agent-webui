@@ -221,12 +221,19 @@ describe('DecisionCalibrationTab', () => {
           receipt: { ...receipt, receipt_digest: 'sha256:low' },
           threshold_alert: { ...threshold, insufficient_support: true, coverage_below_policy: null },
         },
+        {
+          submitted_at_ms: 1700000000002,
+          receipt: { ...receipt, receipt_digest: 'sha256:synthetic', synthetic: true },
+          threshold_alert: threshold,
+        },
       ],
     })
     const { user } = renderWithProviders(<DecisionCalibrationTab />)
     await user.click(screen.getByRole('button', { name: 'Load history' }))
     expect(await screen.findByText(/policy threshold breached: coverage below policy target/i)).toBeInTheDocument()
     expect(screen.getByText(/insufficient labeled support \(minimum 30\); no threshold claim/i)).toBeInTheDocument()
+    expect(screen.getByText(/synthetic evaluation; production threshold status unavailable/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/policy threshold breached: coverage below policy target/i)).toHaveLength(1)
     expect(screen.queryByText(/statistical drift detected/i)).not.toBeInTheDocument()
   })
 })
