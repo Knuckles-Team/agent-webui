@@ -113,6 +113,42 @@ describe('DecisionCalibrationTab', () => {
           passed: true,
           synthetic: false,
           failed_gates: [],
+          calibration: { method: 'conformal', n_calibration: 100, synthetic: false },
+          promotion: {
+            per_class: [
+              {
+                class_key: 'routing',
+                n_items: 35,
+                covered: 34,
+                n_min: 30,
+                metrics: {
+                  top1_hits: 34,
+                  delta: { numerator: 1, denominator: 20 },
+                  coverage_lower: { numerator: 8, denominator: 10 },
+                  coverage_upper: { numerator: 99, denominator: 100 },
+                  acted: 30,
+                  acted_wrong: 1,
+                  act_risk_upper: { numerator: 1, denominator: 10 },
+                },
+              },
+              { class_key: 'rare', n_items: 5, covered: 4, n_min: 30, metrics: null },
+              {
+                class_key: 'stale-partial',
+                n_items: 5,
+                covered: 4,
+                n_min: 30,
+                metrics: {
+                  top1_hits: 4,
+                  delta: { numerator: 1, denominator: 20 },
+                  coverage_lower: { numerator: 1, denominator: 2 },
+                  coverage_upper: { numerator: 3, denominator: 4 },
+                  acted: 4,
+                  acted_wrong: 1,
+                  act_risk_upper: { numerator: 1, denominator: 2 },
+                },
+              },
+            ],
+          },
           metrics: {
             n_items: 40,
             covered: 38,
@@ -140,6 +176,60 @@ describe('DecisionCalibrationTab', () => {
             act_risk_upper: { numerator: 1, denominator: 10 },
           },
         },
+        {
+          receipt_digest: 'sha256:uncalibrated',
+          policy_digest: 'sha256:policy',
+          n_records: 40,
+          passed: true,
+          synthetic: false,
+          calibration: null,
+          failed_gates: [],
+          metrics: {
+            n_items: 40,
+            covered: 0,
+            coverage_lower: { numerator: 0, denominator: 1 },
+            coverage_upper: { numerator: 1, denominator: 10 },
+            acted: 0,
+            acted_wrong: 0,
+            act_risk_upper: { numerator: 1, denominator: 1 },
+          },
+        },
+        {
+          receipt_digest: 'sha256:temperature-only',
+          policy_digest: 'sha256:policy',
+          n_records: 40,
+          passed: true,
+          synthetic: false,
+          calibration: { method: 'temperature', n_calibration: 100, synthetic: false },
+          failed_gates: [],
+          metrics: {
+            n_items: 40,
+            covered: 0,
+            coverage_lower: { numerator: 0, denominator: 1 },
+            coverage_upper: { numerator: 1, denominator: 10 },
+            acted: 0,
+            acted_wrong: 0,
+            act_risk_upper: { numerator: 1, denominator: 1 },
+          },
+        },
+        {
+          receipt_digest: 'sha256:empty-calibration',
+          policy_digest: 'sha256:policy',
+          n_records: 40,
+          passed: true,
+          synthetic: false,
+          calibration: { method: 'conformal', n_calibration: 0, synthetic: false },
+          failed_gates: [],
+          metrics: {
+            n_items: 40,
+            covered: 38,
+            coverage_lower: { numerator: 9, denominator: 10 },
+            coverage_upper: { numerator: 99, denominator: 100 },
+            acted: 30,
+            acted_wrong: 1,
+            act_risk_upper: { numerator: 1, denominator: 10 },
+          },
+        },
       ],
     })
     const { user } = renderWithProviders(<DecisionCalibrationTab />)
@@ -148,8 +238,15 @@ describe('DecisionCalibrationTab', () => {
     expect(await screen.findByText('Passed independent-label evaluation')).toBeInTheDocument()
     expect(screen.getByText('90.0%–99.0%')).toBeInTheDocument()
     expect(screen.getByText('10.0%')).toBeInTheDocument()
-    expect(screen.getByText(/no per-class breakdown/i)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Per-class evaluation bounds' })).toBeInTheDocument()
+    expect(screen.getByText(/routing · 35 labeled items/i)).toBeInTheDocument()
+    expect(screen.getByText(/stale-partial · 5 labeled items/i)).toBeInTheDocument()
+    expect(screen.getByText(/coverage 80.0%–99.0%; act-risk upper bound 10.0%; confidence 95.0%/i)).toBeInTheDocument()
+    expect(
+      screen.getAllByText(/insufficient labeled support \(minimum 30\); no class coverage or risk claim/i),
+    ).toHaveLength(2)
     expect(screen.getByText(/includes synthetic data/i)).toBeInTheDocument()
+    expect(screen.getAllByText('No deployable calibration claim')).toHaveLength(4)
     expect(screen.getAllByText('Coverage interval')).toHaveLength(1)
   })
 

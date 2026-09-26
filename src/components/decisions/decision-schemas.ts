@@ -169,9 +169,31 @@ export type DecisionAggregate = z.infer<typeof decisionAggregateSchema>
 
 /** Independently labeled full-label evaluation receipt, distinct from the
  * observational DecisionLog aggregate. The engine owns all intervals. */
-const unitRationalSchema = z.object({
-  numerator: z.number().int().nonnegative(),
-  denominator: z.number().int().positive(),
+const unitRationalSchema = z
+  .object({
+    numerator: z.number().int().nonnegative(),
+    denominator: z.number().int().positive().max(1_000_000_000_000),
+  })
+  .refine(({ numerator, denominator }) => numerator <= denominator, {
+    message: 'Unit rational must be between zero and one',
+  })
+
+const classLabelMetricsSchema = z.object({
+  top1_hits: z.number().int().nonnegative(),
+  delta: unitRationalSchema,
+  coverage_lower: unitRationalSchema,
+  coverage_upper: unitRationalSchema,
+  acted: z.number().int().nonnegative(),
+  acted_wrong: z.number().int().nonnegative(),
+  act_risk_upper: unitRationalSchema.nullable(),
+})
+
+const classCoverageSchema = z.object({
+  class_key: z.string(),
+  n_items: z.number().int().nonnegative(),
+  covered: z.number().int().nonnegative(),
+  n_min: z.number().int().nonnegative().nullable().optional(),
+  metrics: classLabelMetricsSchema.nullable().optional(),
 })
 
 export const decisionEvalReceiptSchema = z.object({
@@ -181,6 +203,18 @@ export const decisionEvalReceiptSchema = z.object({
   passed: z.boolean(),
   synthetic: z.boolean(),
   failed_gates: z.array(z.string()),
+  calibration: z
+    .object({
+      method: z.string(),
+      n_calibration: z.number().int().nonnegative(),
+      synthetic: z.boolean(),
+    })
+    .nullable()
+    .optional(),
+  promotion: z
+    .object({ per_class: z.array(classCoverageSchema) })
+    .nullable()
+    .optional(),
   metrics: z
     .object({
       n_items: z.number().int().nonnegative(),
