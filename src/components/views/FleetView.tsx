@@ -3,7 +3,7 @@
  * @description Swarm supervisory dashboard — the single pane of glass over the
  * running agent fleet (CONCEPT:OS-5.10).
  *
- * Surfaces the gateway's native /api/fleet/* endpoints: per-domain swarm health
+ * Surfaces GraphOS fleet operations: per-domain swarm health
  * and error rates, live session topology, one-click emergency containment
  * (pause / kill a whole domain), and the mutation/risk approval queue. No
  * separate supervisor service — these are native gateway endpoints.
@@ -17,9 +17,18 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 import { toast } from 'sonner'
-import { api, type FleetHealth, type FleetTopology } from '@/lib/api'
+import { api, type FleetApproval, type FleetDomainHealth, type FleetHealth, type FleetTopology } from '@/lib/api'
+import { GraphOsApiError } from '@/lib/graphos-api/invoke'
 
 const REFRESH_MS = 5000
+
+function goToConfirmation(error: unknown): boolean {
+  if (!(error instanceof GraphOsApiError) || error.code !== 'STEP_UP_REQUIRED') return false
+  const url = error.details.console_url
+  if (typeof url !== 'string' || !/^\/console\/confirm\/graphos_plan:[0-9a-f]{48}$/.test(url)) return false
+  window.location.assign(url)
+  return true
+}
 
 // BUG-008 (dashboard-wide follow-on, GOC-28-W06): a failed `getFleetHealth`/
 // `getFleetTopology`/`getFleetApprovals` call used to be swallowed by
@@ -39,7 +48,7 @@ function renderDomainRow({
   onContain,
 }: {
   domain: string
-  d: FleetHealth['domains'][string]
+  d: FleetDomainHealth
   onContain: (domain: string, action: 'pause' | 'kill') => void
 }) {
   return (
@@ -82,7 +91,7 @@ function renderHealthTab({
   onContain,
 }: {
   healthStatus: FleetSectionStatus
-  domains: [string, FleetHealth['domains'][string]][]
+  domains: [string, FleetDomainHealth][]
   onContain: (domain: string, action: 'pause' | 'kill') => void
 }) {
   return (
@@ -110,7 +119,7 @@ function sessionBadgeVariant(s: { status: string; needs_input: boolean }): 'dest
   return 'outline'
 }
 
-function renderTopologyDomain(dom: FleetTopology['domains'][number]) {
+function renderTopologyDomain(dom: NonNullable<FleetTopology['domains']>[number]) {
   return (
     <div key={dom.domain}>
       <div className="font-medium mb-1">{dom.domain}</div>
@@ -150,24 +159,19 @@ function renderTopologyTab({
 }
 
 function renderApprovalRow({
-  raw,
-  index,
+  approval,
   onGrant,
 }: {
-  raw: unknown
-  index: number
-  onGrant: (jobId: string, decision: 'approved' | 'denied') => void
+  approval: FleetApproval
+  onGrant: (approvalId: string, revision: number, decision: 'approved' | 'denied') => void
 }) {
-  const item = raw as Record<string, unknown>
-  const idVal = item.id ?? item.job_id
-  const jobId = typeof idVal === 'string' ? idVal : `job-${index}`
   return (
-    <div key={jobId} className="flex items-center justify-between border rounded-md px-3 py-2">
+    <div key={approval.approval_id} className="flex items-center justify-between border rounded-md px-3 py-2">
       <div className="flex items-center gap-2 min-w-0">
         <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-        <span className="font-mono text-xs truncate">{jobId}</span>
+        <span className="font-mono text-xs truncate">{approval.approval_id}</span>
         <span className="text-sm text-muted-foreground truncate">
-          {typeof item.description === 'string' ? item.description : ''}
+          {approval.kind}: {approval.target}
         </span>
       </div>
       <div className="flex gap-2">
@@ -175,7 +179,7 @@ function renderApprovalRow({
           size="sm"
           variant="outline"
           onClick={() => {
-            onGrant(jobId, 'approved')
+            onGrant(approval.approval_id, approval.revision, 'approved')
           }}
         >
           Approve
@@ -184,7 +188,7 @@ function renderApprovalRow({
           size="sm"
           variant="ghost"
           onClick={() => {
-            onGrant(jobId, 'denied')
+            onGrant(approval.approval_id, approval.revision, 'denied')
           }}
         >
           Deny
@@ -200,8 +204,8 @@ function renderApprovalsTab({
   onGrant,
 }: {
   approvalsStatus: FleetSectionStatus
-  approvals: unknown[]
-  onGrant: (jobId: string, decision: 'approved' | 'denied') => void
+  approvals: FleetApproval[]
+  onGrant: (approvalId: string, revision: number, decision: 'approved' | 'denied') => void
 }) {
   return (
     <Card>
@@ -218,7 +222,7 @@ function renderApprovalsTab({
             <ShieldCheck className="h-4 w-4" /> No pending approvals.
           </p>
         )}
-        {approvals.map((raw, i) => renderApprovalRow({ raw, index: i, onGrant }))}
+        {approvals.map((approval) => renderApprovalRow({ approval, onGrant }))}
       </CardContent>
     </Card>
   )
@@ -226,7 +230,7 @@ function renderApprovalsTab({
 
 function totalErrored(health: FleetHealth | null): number | '—' {
   if (!health) return '—'
-  return Object.values(health.domains).reduce((n, d) => n + d.errored, 0)
+  return health.domains ? Object.values(health.domains).reduce((n, d) => n + d.errored, 0) : '—'
 }
 
 function renderFleetSummaryCards({
@@ -238,8 +242,8 @@ function renderFleetSummaryCards({
 }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <SummaryCard label="Sessions" value={health?.sessions.total ?? '—'} />
-      <SummaryCard label="Active goal loops" value={health?.goals.active ?? '—'} />
+      <SummaryCard label="Sessions" value={health?.sessions?.total ?? '—'} />
+      <SummaryCard label="Active goal loops" value={health?.goals?.active ?? '—'} />
       <SummaryCard label="Domains" value={topology?.totals.domains ?? '—'} />
       <SummaryCard label="Failed / cancelled" value={totalErrored(health)} />
     </div>
@@ -251,7 +255,7 @@ export default function FleetView() {
   const [healthStatus, setHealthStatus] = useState<FleetSectionStatus>('loading')
   const [topology, setTopology] = useState<FleetTopology | null>(null)
   const [topologyStatus, setTopologyStatus] = useState<FleetSectionStatus>('loading')
-  const [approvals, setApprovals] = useState<unknown[]>([])
+  const [approvals, setApprovals] = useState<FleetApproval[]>([])
   const [approvalsStatus, setApprovalsStatus] = useState<FleetSectionStatus>('loading')
   const [loading, setLoading] = useState(false)
 
@@ -274,13 +278,13 @@ export default function FleetView() {
       ])
       if (h.ok) {
         setHealth(h.v)
-        setHealthStatus('ready')
+        setHealthStatus(h.v.domains ? 'ready' : 'unavailable')
       } else {
         setHealthStatus('unavailable')
       }
       if (t.ok) {
         setTopology(t.v)
-        setTopologyStatus('ready')
+        setTopologyStatus(t.v.domains ? 'ready' : 'unavailable')
       } else {
         setTopologyStatus('unavailable')
       }
@@ -312,21 +316,23 @@ export default function FleetView() {
       toast.success(`${action === 'pause' ? 'Paused' : 'Killed'} ${res.count} session(s) in "${domain}"`)
       void refresh()
     } catch (e) {
+      if (goToConfirmation(e)) return
       toast.error(`Failed to ${action} domain: ${String(e)}`)
     }
   }
 
-  const grant = async (jobId: string, decision: 'approved' | 'denied') => {
+  const grant = async (approvalId: string, revision: number, decision: 'approved' | 'denied') => {
     try {
-      await api.grantFleetApproval(jobId, decision)
+      await api.grantFleetApproval(approvalId, revision, decision)
       toast.success(`Approval ${decision}`)
       void refresh()
     } catch (e) {
+      if (goToConfirmation(e)) return
       toast.error(`Failed to ${decision}: ${String(e)}`)
     }
   }
 
-  const domains = health ? Object.entries(health.domains) : []
+  const domains = health?.domains ? Object.entries(health.domains) : []
 
   return (
     <div className="p-4 space-y-4">
@@ -336,7 +342,7 @@ export default function FleetView() {
             <Activity className="h-6 w-6" /> Fleet Supervisor
           </h2>
           <p className="text-sm text-muted-foreground">
-            Live swarm health, topology, and emergency containment across the enterprise.
+            Live health, topology, and emergency containment for your tenant.
           </p>
         </div>
         <Button
@@ -380,8 +386,8 @@ export default function FleetView() {
           {renderApprovalsTab({
             approvalsStatus,
             approvals,
-            onGrant: (jobId, decision) => {
-              void grant(jobId, decision)
+            onGrant: (approvalId, revision, decision) => {
+              void grant(approvalId, revision, decision)
             },
           })}
         </TabsContent>

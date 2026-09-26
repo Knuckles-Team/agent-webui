@@ -7,6 +7,7 @@ import globals from 'globals'
 import neostandard from 'neostandard'
 import tseslint from 'typescript-eslint'
 import { defineConfig } from 'eslint/config'
+import { noDirectGraphosApiCall, noDirectLegacyApiCall } from './eslint-rules/no-direct-api-call.mjs'
 
 export default defineConfig(
   pluginJs.configs.recommended,
@@ -43,6 +44,24 @@ export default defineConfig(
   },
   eslintPluginPrettierRecommended,
   eslintConfigPrettier,
+  {
+    files: ['src/**/*.{ts,tsx,js,jsx}'],
+    ignores: ['src/lib/graphos-api/**'],
+    plugins: {
+      'graphos-api': {
+        rules: {
+          'no-direct-call': noDirectGraphosApiCall,
+          'legacy-direct-call': noDirectLegacyApiCall,
+        },
+      },
+    },
+    rules: {
+      'graphos-api/no-direct-call': 'error',
+      // The existing /api/enhanced calls remain visible while their GraphOS
+      // operation contracts are built. Promote this to error at cutover.
+      'graphos-api/legacy-direct-call': 'warn',
+    },
+  },
   { files: ['src/**/*.{js,mjs,cjs,ts,tsx}', '*.{js,mjs,cjs,ts,tsx}'] },
   {
     languageOptions: {

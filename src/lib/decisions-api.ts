@@ -1,10 +1,8 @@
 /**
  * @file decisions-api.ts
- * @description Typed client for `/api/enhanced/decisions*` — the read-only
- * projection of epistemic-graph's committed `DecisionLog`
- * (`agent/agent_webui/api_extensions.py`'s Decisions section, EH-046/047).
+ * @description Typed client for GraphOS decision operations.
  *
- * Every call goes through `fetchValidated` (`./api-validation.ts`), the
+ * Every call goes through `invoke` (`./graphos-api/invoke.ts`), the
  * repo's one runtime-validation boundary: a shape violation throws loudly
  * instead of handing a caller a value it can misread. Callers use these
  * through React Query (`@tanstack/react-query`, already the server-state
@@ -13,7 +11,7 @@
  * in one place.
  */
 import { z } from 'zod'
-import { fetchValidated } from './api-validation'
+import { invoke } from './graphos-api/invoke'
 import {
   decisionAggregateSchema,
   decisionListRowSchema,
@@ -30,25 +28,23 @@ export interface ListDecisionsOptions {
   limit?: number
 }
 
-function questionIdParam(questionId: string | undefined): string {
-  return questionId ? `question_id=${encodeURIComponent(questionId)}&` : ''
-}
-
 /** Newest-first page of the caller's visible decision log (EH-046 list). */
 export function fetchDecisions(options: ListDecisionsOptions = {}): Promise<DecisionListRow[]> {
-  const limit = options.limit ?? 100
-  const path = `/api/enhanced/decisions?${questionIdParam(options.questionId)}limit=${limit}`
-  return fetchValidated(path, z.array(decisionListRowSchema))
+  return invoke(
+    'decisions.list',
+    { question_id: options.questionId ?? null, limit: options.limit ?? 100 },
+    z.array(decisionListRowSchema),
+  )
 }
 
 /** One committed `DecisionRecord` in full (EH-046 detail). */
 export function fetchDecision(recordId: string): Promise<DecisionRecord> {
-  return fetchValidated(`/api/enhanced/decisions/${encodeURIComponent(recordId)}`, decisionRecordSchema)
+  return invoke('decisions.get', { record_id: recordId }, decisionRecordSchema)
 }
 
 /** The evaluations/resolutions logged against one record (EH-046 provenance). */
 export function fetchDecisionProvenance(recordId: string): Promise<DecisionProvenance> {
-  return fetchValidated(`/api/enhanced/decisions/${encodeURIComponent(recordId)}/provenance`, decisionProvenanceSchema)
+  return invoke('decisions.provenance', { record_id: recordId }, decisionProvenanceSchema)
 }
 
 export interface DecisionAggregateOptions {
@@ -59,10 +55,13 @@ export interface DecisionAggregateOptions {
 
 /** The calibration/coverage outcome aggregate (EH-047 dashboard). */
 export function fetchDecisionAggregate(options: DecisionAggregateOptions = {}): Promise<DecisionAggregate> {
-  const params = new URLSearchParams()
-  if (options.questionId) params.set('question_id', options.questionId)
-  if (options.fromMs !== undefined) params.set('from_ms', String(options.fromMs))
-  if (options.toMs !== undefined) params.set('to_ms', String(options.toMs))
-  const query = params.toString()
-  return fetchValidated(`/api/enhanced/decisions/aggregate${query ? `?${query}` : ''}`, decisionAggregateSchema)
+  const toMs = options.toMs ?? Date.now()
+  return invoke(
+    'decisions.aggregate',
+    {
+      question_id: options.questionId ?? null,
+      window: { from_ms: options.fromMs ?? 0, to_ms: toMs },
+    },
+    decisionAggregateSchema,
+  )
 }

@@ -17,6 +17,7 @@ import type {
 } from './workflow'
 import type { OntologySchemaGraph } from '@/components/knowledge-graph/GraphAdapter'
 import { ApiError, validateShape, looseArray } from './api-validation'
+import { invoke } from './graphos-api/invoke'
 
 // Re-exported for backward compatibility — every existing `import { ApiError }
 // from '@/lib/api'` call site keeps working unchanged. The class now lives in
@@ -795,6 +796,19 @@ class ApiClient {
     object_type?: string
     filters?: { property: string; op: string; value: unknown }[]
   }): Promise<OntologyObjectSetResult> => {
+    // Concrete-label browsing has a served GraphOS authority. Full text and
+    // typed-filter search remain on the legacy route until objects.search is
+    // backed by an engine method with the same permission and union semantics.
+    if (payload.object_type && !payload.query?.trim() && !payload.filters?.length) {
+      const raw = await this.post<RawObjectSet>('/api/enhanced/ontology/object-set/by-label', {
+        label: payload.object_type,
+        limit: 50,
+      })
+      return adaptObjectSet({
+        ...raw,
+        rows: raw.rows?.map((row) => ({ ...row, type: payload.object_type })),
+      })
+    }
     const raw = await this.post<RawObjectSet>('/api/enhanced/ontology/object-set/search', {
       query: payload.query ?? '',
       kind: payload.object_type,
@@ -973,15 +987,29 @@ class ApiClient {
 
   // Fleet supervisory plane (CONCEPT:OS-5.10) — swarm health, topology,
   // emergency containment, and the mutation/risk approval queue.
-  getFleetHealth = () => this.getValidated('/api/fleet/health', fleetHealthSchema)
-  getFleetTopology = () => this.getValidated('/api/fleet/topology', fleetTopologySchema)
+  getFleetHealth = () => invoke('fleet.health', {}, fleetHealthSchema)
+  getFleetTopology = () => invoke('fleet.topology', {}, fleetTopologySchema)
+  getFleetTrace = (correlationId: string, limit = 100) =>
+    invoke('fleet.trace', { correlation_id: correlationId, limit }, fleetTraceSchema)
+  getFleetTouched = (resource: string, limit = 100) => invoke('fleet.touched', { resource, limit }, fleetTouchedSchema)
+  verifyFleetAction = (intent: { kind: string; target: string; params?: Record<string, unknown>; reason?: string }) =>
+    invoke('fleet.actions.verify', intent, z.object({ value: fleetActionPreviewSchema })).then(
+      (response) => response.value,
+    )
   pauseFleet = (target: { domain?: string; session_ids?: string[] }) =>
-    this.post<FleetActionResult>('/api/fleet/pause', target)
+    invoke('fleet.pause', target, fleetActionResultSchema)
   killFleet = (target: { domain?: string; session_ids?: string[] }) =>
-    this.post<FleetActionResult>('/api/fleet/kill', target)
-  getFleetApprovals = () => this.getValidated('/api/fleet/approvals', fleetApprovalsSchema)
-  grantFleetApproval = (jobId: string, decision: string) =>
-    this.post<unknown>('/api/fleet/approvals/grant', { job_id: jobId, decision })
+    invoke('fleet.kill', target, fleetActionResultSchema)
+  getFleetApprovals = () =>
+    invoke('approvals.list', { limit: 200 }, z.object({ value: fleetApprovalsSchema })).then(
+      (response) => response.value,
+    )
+  grantFleetApproval = (approvalId: string, expectedRevision: number, decision: 'approved' | 'denied') =>
+    invoke(
+      decision === 'approved' ? 'approvals.grant' : 'approvals.deny',
+      { approval_id: approvalId, expected_revision: expectedRevision },
+      z.object({ value: z.unknown() }),
+    )
 
   // Usage / cost / observability (CONCEPT:ECO-4.41) — assimilated agentsview.
   // One surface over both ingested agent logs and our own runtime telemetry.
@@ -1123,9 +1151,9 @@ export interface FleetDomainHealth {
 }
 export interface FleetHealth {
   generated_at: number
-  sessions: { total: number; by_status: Record<string, number> }
-  goals: { active: number; tracked: number }
-  domains: Record<string, FleetDomainHealth>
+  sessions: { total: number; by_status: Record<string, number> } | null
+  goals: { active: number; tracked: number } | null
+  domains: Record<string, FleetDomainHealth> | null
 }
 export interface FleetTopologySession {
   id: string
@@ -1135,15 +1163,49 @@ export interface FleetTopologySession {
   updated_at: number
 }
 export interface FleetTopology {
-  domains: { domain: string; sessions: FleetTopologySession[] }[]
-  goals: unknown[]
-  totals: { domains: number; sessions: number }
+  domains: { domain: string; sessions: FleetTopologySession[] }[] | null
+  goals: unknown[] | null
+  totals: { domains: number | null; sessions: number | null }
 }
 export interface FleetActionResult {
   status: string
   action: string
   affected: string[]
   count: number
+}
+export interface FleetApproval {
+  approval_id: string
+  status: string
+  revision: number
+  kind: string
+  target: string
+  expires_at_ms: number | null
+}
+export interface FleetEvent {
+  event_id: string | null
+  subject: string
+  received_at: string | null
+  correlation_id: string | null
+  actor_id: string | null
+  status: string | null
+  severity: string | null
+  source_type: string | null
+}
+export interface FleetTrace {
+  correlation_id: string
+  events: FleetEvent[]
+}
+export interface FleetTouched {
+  resource: string
+  events: FleetEvent[]
+  actors: string[]
+}
+export interface FleetActionPreview {
+  decision: 'allow' | 'allow_notify' | 'queue_approval' | 'deny' | 'unavailable'
+  tier: 'auto' | 'auto_notify' | 'approval_required' | 'forbidden'
+  reason: string
+  invariant: string
+  allowed: false
 }
 
 // ---------------------------------------------------------------------------
@@ -1248,9 +1310,9 @@ const fleetDomainHealthSchema: z.ZodType<FleetDomainHealth> = z.object({
 })
 const fleetHealthSchema: z.ZodType<FleetHealth> = z.object({
   generated_at: z.number(),
-  sessions: z.object({ total: z.number(), by_status: z.record(z.string(), z.number()) }),
-  goals: z.object({ active: z.number(), tracked: z.number() }),
-  domains: z.record(z.string(), fleetDomainHealthSchema),
+  sessions: z.object({ total: z.number(), by_status: z.record(z.string(), z.number()) }).nullable(),
+  goals: z.object({ active: z.number(), tracked: z.number() }).nullable(),
+  domains: z.record(z.string(), fleetDomainHealthSchema).nullable(),
 })
 const fleetTopologySessionSchema: z.ZodType<FleetTopologySession> = z.object({
   id: z.string(),
@@ -1260,11 +1322,51 @@ const fleetTopologySessionSchema: z.ZodType<FleetTopologySession> = z.object({
   updated_at: z.number(),
 })
 const fleetTopologySchema: z.ZodType<FleetTopology> = z.object({
-  domains: looseArray(z.object({ domain: z.string(), sessions: looseArray(fleetTopologySessionSchema) })),
-  goals: looseArray(z.unknown()),
-  totals: z.object({ domains: z.number(), sessions: z.number() }),
+  domains: looseArray(z.object({ domain: z.string(), sessions: looseArray(fleetTopologySessionSchema) })).nullable(),
+  goals: looseArray(z.unknown()).nullable(),
+  totals: z.object({ domains: z.number().nullable(), sessions: z.number().nullable() }),
 })
-const fleetApprovalsSchema = z.object({ pending: looseArray(z.unknown()) })
+const fleetActionResultSchema: z.ZodType<FleetActionResult> = z.object({
+  status: z.literal('success'),
+  action: z.enum(['paused', 'cancelled']),
+  affected: looseArray(z.string()),
+  count: z.number().int().nonnegative(),
+})
+const fleetApprovalSchema: z.ZodType<FleetApproval> = z.object({
+  approval_id: z.string().startsWith('action_approval:'),
+  status: z.string(),
+  revision: z.number().int().nonnegative(),
+  kind: z.string(),
+  target: z.string(),
+  expires_at_ms: z.number().nullable(),
+})
+const fleetApprovalsSchema = z.object({ pending: looseArray(fleetApprovalSchema) })
+const fleetEventSchema: z.ZodType<FleetEvent> = z.object({
+  event_id: z.string().nullable(),
+  subject: z.string(),
+  received_at: z.string().nullable(),
+  correlation_id: z.string().nullable(),
+  actor_id: z.string().nullable(),
+  status: z.string().nullable(),
+  severity: z.string().nullable(),
+  source_type: z.string().nullable(),
+})
+const fleetTraceSchema: z.ZodType<FleetTrace> = z.object({
+  correlation_id: z.string(),
+  events: looseArray(fleetEventSchema),
+})
+const fleetTouchedSchema: z.ZodType<FleetTouched> = z.object({
+  resource: z.string(),
+  events: looseArray(fleetEventSchema),
+  actors: looseArray(z.string()),
+})
+const fleetActionPreviewSchema: z.ZodType<FleetActionPreview> = z.object({
+  decision: z.enum(['allow', 'allow_notify', 'queue_approval', 'deny', 'unavailable']),
+  tier: z.enum(['auto', 'auto_notify', 'approval_required', 'forbidden']),
+  reason: z.string(),
+  invariant: z.string(),
+  allowed: z.literal(false),
+})
 
 // Usage / cost / observability (D-WUI-17 — UsageView: tools.length / tools.map, etc.)
 const usageSummarySchema: z.ZodType<UsageSummary> = z.object({

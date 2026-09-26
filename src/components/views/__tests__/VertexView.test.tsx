@@ -67,7 +67,8 @@ interface RequestBody {
   direction?: string
   metric?: string
   field?: string
-  kind?: string
+  label?: string
+  limit?: number
   link_type?: string
 }
 
@@ -96,7 +97,7 @@ function mockFetch() {
     if (objId) body = OBJECT_PAYLOADS[objId] ?? { id: objId, links: { out: [], in: [] }, derived: {} }
     else if (url.includes('/ontology/object-set/search-around')) body = AROUND_SET
     else if (url.includes('/ontology/object-set/aggregate')) body = AGG_RESULT
-    else if (url.includes('/ontology/object-set/search')) body = SEED_SET
+    else if (url.includes('/ontology/object-set/by-label')) body = SEED_SET
     return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))
   })
 }
@@ -116,14 +117,14 @@ describe('VertexView', () => {
     expect(() => render(<VertexView />)).not.toThrow()
   })
 
-  it('loads a seed object set from the object-set/search route (nodes come from the fetch)', async () => {
+  it('loads a seed object set from the governed concrete-label route', async () => {
     const res = await fetchObjectSet('Position')
 
-    // The seed type is sent as `kind` on the real object-set/search route.
-    const searchCall = calls.find((c) => c.url.includes('/ontology/object-set/search'))
+    const searchCall = calls.find((c) => c.url.includes('/ontology/object-set/by-label'))
     expect(searchCall).toBeDefined()
     expect(searchCall?.init?.method).toBe('POST')
-    expect(parseBody(searchCall!).kind).toBe('Position')
+    expect(parseBody(searchCall!).label).toBe('Position')
+    expect(parseBody(searchCall!).limit).toBe(50)
     // The graph nodes are derived from the fetched set (not invented).
     expect(res.objects).toHaveLength(2)
     const nodes = (res.objects ?? []).map(toGraphNode)

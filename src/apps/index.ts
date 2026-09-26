@@ -6,5 +6,6 @@
  */
 import type { RouteDef } from '@/lib/nav-registry'
 import { APP_ROUTES as MARKETS_ROUTES } from './markets/routes'
+import { CONSOLE_ROUTES } from './console/routes'
 
-export const APP_ROUTES: readonly RouteDef[] = [...MARKETS_ROUTES]
+export const APP_ROUTES: readonly RouteDef[] = [...MARKETS_ROUTES, ...CONSOLE_ROUTES]

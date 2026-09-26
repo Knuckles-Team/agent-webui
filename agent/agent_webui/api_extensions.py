@@ -2515,7 +2515,7 @@ async def _execute_mcp_tool_call(
 
 
 @router.post('/mcp/tools/call')
-async def call_mcp_tool_route(data: dict[str, Any]) -> dict[str, Any]:
+async def call_mcp_tool_route(data: dict[str, Any], request: Request) -> dict[str, Any]:
     """Invoke one MCP tool through the host's governed delegation seam.
 
     CONCEPT:AU-ECO.mcp.webui-governed-mcp-delegation
@@ -2528,11 +2528,9 @@ async def call_mcp_tool_route(data: dict[str, Any]) -> dict[str, Any]:
     hold — so the call is made here, same-origin, under the session identity
     every ``/api/*`` route already requires.
 
-    The WebUI adds NO authority of its own: it validates the shape of the
-    request and hands it to the host-injected ``call_mcp_tool`` helper, which
-    owns the allowlist, actor policy, credential references, and audit
-    envelope. With no host injection the route reports 501 rather than
-    inventing a delegation path.
+    The WebUI validates the shape and invokes GraphOS ``fleet.call`` with the
+    verified request. Standalone hosts retain the existing governed helper
+    until the API cutover. With neither injection the route reports 501.
     """
     server_name, tool_name, arguments = _mcp_tool_request(data)
     timeout = _validated_mcp_timeout(
@@ -2540,6 +2538,19 @@ async def call_mcp_tool_route(data: dict[str, Any]) -> dict[str, Any]:
         default_ms=_MCP_CALL_TIMEOUT_DEFAULT_MS,
         max_ms=_MCP_CALL_TIMEOUT_MAX_MS,
     )
+    # The composed GraphOS host supplies the caller-bound operation port. Its
+    # fleet.call executor owns admission, child policy, effects and audit. Keep
+    # the existing helper path for standalone hosts until the single-wave API
+    # cutover; it must never run when the operation port is present.
+    if callable(getattr(request.app.state, 'graphos_invoke_op', None)):
+        result = await _graphos_route_op(
+            request,
+            'fleet.call',
+            {'server': server_name, 'tool': tool_name, 'arguments': arguments},
+        )
+        if not isinstance(result, dict) or 'value' not in result:
+            raise HTTPException(status_code=502, detail='Invalid GraphOS fleet result')
+        return {'status': 'success', 'result': result['value']}
     _require_mcp_helper('call_mcp_tool', 'Governed MCP delegation is not configured')
     result = await _execute_mcp_tool_call(server_name, tool_name, arguments, timeout)
     return {'status': 'success', 'result': result}
@@ -4035,7 +4046,9 @@ def _build_canvas_nodes(
 
 
 @router.get('/graph/nodes')
-async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
+async def get_graph_nodes(
+    request: Request, node_type: str | None = None
+) -> list[dict[str, Any]]:
     """Query Knowledge Graph for nodes of a specific type or all nodes.
 
     Args:
@@ -4045,19 +4058,35 @@ async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
     Returns:
         List of node dictionaries with properties.
 
-    This does not go through Cypher at all. `properties(n)` asked the engine's
+    Concrete-label reads use GraphOS's verified caller bound `objects.by_label`
+    operation. The unfiltered canvas still uses the legacy label enumeration
+    path pending a governed label-discovery operation.
+
+    Neither path goes through Cypher. `properties(n)` asked the engine's
     Cypher RETURN clause to call a function it does not implement
     (`eg-query`'s `parse_proj_expr` recognizes only a fixed aggregate set plus
     the special-cased `type(r)`), and `RETURN n` is the ORIGINAL, still-broken
     whole-object projection documented at `get_graph_stats`. There is no
     scalar-column way to ask Cypher for "all of a node's properties" (the
-    grammar has no wildcard/`RETURN n.*`), so this uses `nodes_by_label` --
-    the engine's OWN purpose-built native replacement for exactly this
-    `MATCH (n[:Label]) ... LIMIT k` shape -- fanned out across every
-    accessible graph by `_collect_graph_node_rows`.
+    grammar has no wildcard/`RETURN n.*`), so both paths use EG's native
+    `nodes_by_label` replacement for this `MATCH (n[:Label]) ... LIMIT k`
+    shape. The unfiltered path fans out across accessible graphs through
+    `_collect_graph_node_rows`.
     """
     if node_type and not _SAFE_GRAPH_LABEL.fullmatch(node_type):
         raise HTTPException(status_code=400, detail='Invalid graph node type')
+    if node_type:
+        result = await ontology_object_set_by_label(
+            {'label': node_type, 'limit': _MAX_EXTERNAL_COLLECTION_ITEMS}, request
+        )
+        rows = [
+            (row['id'], {key: value for key, value in row.items() if key != 'id'})
+            for row in result['rows']
+        ]
+        budget_bytes = (_MAX_EXTERNAL_RESULT_BYTES * 3) // 4
+        return _public_external_result(
+            _build_canvas_nodes(rows, node_type, budget_bytes)
+        )
     try:
         engine = await _graph_read_engine()
         if engine is None:
@@ -14997,6 +15026,42 @@ async def ontology_object_set_search(
     except Exception as e:  # noqa: BLE001
         _log_failure('api_extension', e)
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+@router.post('/ontology/object-set/by-label')
+async def ontology_object_set_by_label(
+    data: dict[str, Any], request: Request
+) -> dict[str, Any]:
+    """Read one concrete label through GraphOS's verified-caller union."""
+
+    label = data.get('label')
+    limit = data.get('limit', 50)
+    if (
+        not isinstance(label, str)
+        or not label
+        or len(label.encode('utf-8')) > 128
+        or isinstance(limit, bool)
+        or not isinstance(limit, int)
+        or not 1 <= limit <= 256
+    ):
+        raise HTTPException(status_code=400, detail='Invalid object label or limit')
+    result = await _graphos_route_op(
+        request, 'objects.by_label', {'label': label, 'limit': limit}
+    )
+    if (
+        not isinstance(result, dict)
+        or not isinstance(result.get('ids'), list)
+        or not isinstance(result.get('rows'), list)
+        or result.get('count') != len(result['rows'])
+        or len(result['rows']) > limit
+        or any(not isinstance(node_id, str) or not node_id for node_id in result['ids'])
+        or len(set(result['ids'])) != len(result['ids'])
+        or result['ids']
+        != [row.get('id') if isinstance(row, dict) else None for row in result['rows']]
+        or any(not isinstance(row, dict) for row in result['rows'])
+    ):
+        raise HTTPException(status_code=502, detail='Invalid object set result')
+    return result
 
 
 def _search_around_bounds(data: dict[str, Any]) -> tuple[Any, int, int, str]:

@@ -184,13 +184,13 @@ function edgesTouchingNeighborAndSeed(
 }
 
 /**
- * Seed the graph from an object type / interface. Backed by the real
- * POST /ontology/object-set/search route (`{kind}` → `{ids, rows, count}`),
+ * Seed the graph from a concrete object type. Backed by GraphOS's
+ * caller-scoped `objects.by_label` operation (`{label}` → `{ids, rows, count}`),
  * then materializes the intra-set edges from each object's typed links.
  */
 export async function fetchObjectSet(type: string): Promise<ObjectSetResponse> {
-  const raw = await postJson<RawObjectSet>('/api/enhanced/ontology/object-set/search', { kind: type, query: '' })
-  const objects = (raw.rows ?? []).map(rowToObject)
+  const raw = await postJson<RawObjectSet>('/api/enhanced/ontology/object-set/by-label', { label: type, limit: 50 })
+  const objects = (raw.rows ?? []).map((row) => rowToObject({ ...row, type }))
   const idSet = new Set(objects.map((o) => o.id))
   const linkResults = await Promise.all(objects.map((o) => fetchObjectLinks(o.id).catch(() => null)))
   const links = dedupeEdges(edgesWithinSet(collectLinkEdges(linkResults), idSet))
@@ -620,7 +620,7 @@ export default function VertexView() {
 
   const loadSeedSet = async () => {
     if (!seedType.trim()) {
-      toast.error('Enter an object type or interface to seed the graph')
+      toast.error('Enter a concrete object type to seed the graph')
       return
     }
     setLoading(true)
@@ -776,7 +776,7 @@ export default function VertexView() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             aria-label="Seed object type"
-            placeholder="Seed object type or interface (e.g. Position)"
+            placeholder="Seed concrete object type (e.g. Position)"
             className="pl-9"
             value={seedType}
             onChange={(e) => {
