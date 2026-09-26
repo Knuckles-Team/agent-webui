@@ -9,7 +9,7 @@ function percent(value: { numerator: number; denominator: number }): string {
   return `${((value.numerator / value.denominator) * 100).toFixed(1)}%`
 }
 
-function ReceiptCard({ receipt }: { receipt: DecisionEvalReceipt }) {
+export function ReceiptCard({ receipt }: { receipt: DecisionEvalReceipt }) {
   const certified = receipt.passed && !receipt.synthetic && receipt.metrics !== null && receipt.metrics !== undefined
   return (
     <article className="rounded-md border border-border/40 p-3 text-xs space-y-2">

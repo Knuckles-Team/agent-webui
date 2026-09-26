@@ -9,6 +9,7 @@ import { fetchDecisionAggregate } from '@/lib/decisions-api'
 import type { FidelityCounts, OptionAggregate } from './decision-schemas'
 import { fidelityTone, shortenId, successRatePercent } from './decision-format'
 import DecisionEvaluationReceipts from './DecisionEvaluationReceipts'
+import DecisionEvaluationTimeline from './DecisionEvaluationTimeline'
 
 /**
  * @file DecisionCalibrationTab.tsx
@@ -257,6 +258,7 @@ export default function DecisionCalibrationTab() {
       )}
       <ResultsGrid rows={rows} isLoading={aggregateQuery.isLoading} isError={aggregateQuery.isError} />
       <DecisionEvaluationReceipts />
+      <DecisionEvaluationTimeline />
     </div>
   )
 }

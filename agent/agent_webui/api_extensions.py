@@ -7876,7 +7876,7 @@ async def list_decision_evaluation_receipts(
         raise HTTPException(status_code=400, detail='Receipt page limit must be 1..50')
     tenant_id, graph = _decision_session_info()
     _require_decision_eval_scope()
-    payload = await _send_decision_receipts(tenant_id, graph, after, limit)
+    payload = await _send_decision_eval_page(tenant_id, graph, 'receipts', after, limit)
     bounded = _public_external_result(payload)
     if not isinstance(bounded, dict) or not isinstance(bounded.get('receipts'), list):
         raise HTTPException(status_code=503, detail=_DECISIONS_UNAVAILABLE)
@@ -7896,8 +7896,31 @@ def _require_decision_eval_scope() -> None:
         )
 
 
-async def _send_decision_receipts(
-    tenant_id: str, graph: str | None, after: str | None, limit: int
+@router.get('/decisions/evaluation-timeline')
+async def list_decision_evaluation_timeline(
+    after: str | None = None, limit: int = 20
+) -> dict[str, Any]:
+    """Page full-label evaluation jobs in server submission-time order."""
+
+    if after is not None and not re.fullmatch(
+        r'[0-9]{20}:sha256:[0-9a-fA-F]{64}', after
+    ):
+        raise HTTPException(
+            status_code=400, detail='Invalid evaluation timeline cursor'
+        )
+    if not 1 <= limit <= 50:
+        raise HTTPException(status_code=400, detail='Timeline page limit must be 1..50')
+    tenant_id, graph = _decision_session_info()
+    _require_decision_eval_scope()
+    payload = await _send_decision_eval_page(tenant_id, graph, 'timeline', after, limit)
+    bounded = _public_external_result(payload)
+    if not isinstance(bounded, dict) or not isinstance(bounded.get('entries'), list):
+        raise HTTPException(status_code=503, detail=_DECISIONS_UNAVAILABLE)
+    return bounded
+
+
+async def _send_decision_eval_page(
+    tenant_id: str, graph: str | None, variant: str, after: str | None, limit: int
 ) -> Any:
     client = _eg_client()
     if client is None:
@@ -7910,7 +7933,7 @@ async def _send_decision_receipts(
             client,
             {
                 'op': {
-                    'op': 'receipts',
+                    'op': variant,
                     'request': {'tenant_id': tenant_id, 'after': after, 'limit': limit},
                 }
             },

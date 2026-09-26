@@ -151,4 +151,40 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.getByText(/includes synthetic data/i)).toBeInTheDocument()
     expect(screen.getAllByText('Coverage interval')).toHaveLength(1)
   })
+
+  it('shows server job time and failed gates without inventing a drift alert', async () => {
+    vi.spyOn(decisionsApi, 'fetchDecisionAggregate').mockResolvedValue(baseAggregate)
+    const timeline = vi.spyOn(decisionsApi, 'fetchDecisionEvalTimeline').mockResolvedValue({
+      entries: [
+        {
+          submitted_at_ms: 1700000000000,
+          receipt: {
+            receipt_digest: 'sha256:failed',
+            policy_digest: 'sha256:policy',
+            n_records: 40,
+            passed: false,
+            synthetic: false,
+            failed_gates: ['coverage_floor'],
+            metrics: {
+              n_items: 40,
+              covered: 34,
+              coverage_lower: { numerator: 7, denominator: 10 },
+              coverage_upper: { numerator: 9, denominator: 10 },
+              acted: 30,
+              acted_wrong: 4,
+              act_risk_upper: { numerator: 2, denominator: 10 },
+            },
+          },
+        },
+      ],
+      next_after: null,
+    })
+    const { user } = renderWithProviders(<DecisionCalibrationTab />)
+    expect(timeline).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Load history' }))
+    expect(await screen.findByText(/evaluation job submitted/i)).toBeInTheDocument()
+    expect(screen.getByText(/failed gates: coverage_floor/i)).toBeInTheDocument()
+    expect(screen.getByText(/alert status is unavailable/i)).toBeInTheDocument()
+    expect(screen.queryByText('70.0%–90.0%')).not.toBeInTheDocument()
+  })
 })

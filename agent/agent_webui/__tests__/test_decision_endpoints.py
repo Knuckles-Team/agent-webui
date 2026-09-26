@@ -461,3 +461,34 @@ def test_evaluation_receipts_real_browser_route_requires_verified_admin(
     assert response.json() == {'receipts': [], 'next_after': None}
     assert sender.await_args is not None
     assert sender.await_args.args[1]['op']['request']['tenant_id'] == 'test-tenant'
+
+
+def test_evaluation_timeline_uses_server_time_cursor_and_verified_tenant(mock_engine):
+    from agent_webui.api_extensions import list_decision_evaluation_timeline
+
+    cursor = '00000001700000000000:sha256:' + 'a' * 64
+    sender = AsyncMock(
+        return_value=types.SimpleNamespace(payload={'entries': [], 'next_after': None})
+    )
+    with (
+        _patched_engine(mock_engine),
+        _patched_session(tenant='verified-tenant'),
+        patch('epistemic_graph.generated.coordination.send_decision_eval', sender),
+    ):
+        result = run(list_decision_evaluation_timeline(after=cursor, limit=2))
+    assert result == {'entries': [], 'next_after': None}
+    assert sender.await_args is not None
+    assert sender.await_args.args[1]['op'] == {
+        'op': 'timeline',
+        'request': {'tenant_id': 'verified-tenant', 'after': cursor, 'limit': 2},
+    }
+
+
+def test_evaluation_timeline_rejects_unverified_cursor_before_engine(mock_engine):
+    from agent_webui.api_extensions import list_decision_evaluation_timeline
+    from fastapi import HTTPException
+
+    with _patched_engine(mock_engine), _patched_session():
+        with pytest.raises(HTTPException) as exc:
+            run(list_decision_evaluation_timeline(after='sha256:' + 'a' * 64))
+    assert exc.value.status_code == 400

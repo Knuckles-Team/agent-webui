@@ -17,11 +17,13 @@ import { fetchValidated } from './api-validation'
 import {
   decisionAggregateSchema,
   decisionEvalReceiptPageSchema,
+  decisionEvalTimelinePageSchema,
   decisionListRowSchema,
   decisionProvenanceSchema,
   decisionRecordSchema,
   type DecisionAggregate,
   type DecisionEvalReceipt,
+  type DecisionEvalTimelinePage,
   type DecisionListRow,
   type DecisionProvenance,
   type DecisionRecord,
@@ -75,4 +77,10 @@ export function fetchDecisionEvalReceipts(
 ): Promise<{ receipts: DecisionEvalReceipt[]; next_after?: string | null }> {
   const query = after ? `?after=${encodeURIComponent(after)}` : ''
   return fetchValidated(`/api/enhanced/decisions/evaluation-receipts${query}`, decisionEvalReceiptPageSchema)
+}
+
+/** Admin-only full-label history ordered by server evaluation-job submission time. */
+export function fetchDecisionEvalTimeline(after?: string): Promise<DecisionEvalTimelinePage> {
+  const query = after ? `?after=${encodeURIComponent(after)}` : ''
+  return fetchValidated(`/api/enhanced/decisions/evaluation-timeline${query}`, decisionEvalTimelinePageSchema)
 }

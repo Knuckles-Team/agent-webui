@@ -201,6 +201,19 @@ export const decisionEvalReceiptPageSchema = z.object({
   next_after: z.string().nullable().optional(),
 })
 
+/** Server-submission-time ordered full-label receipts. Legacy receipts remain
+ * on the digest read and never receive a fabricated timestamp. */
+export const decisionEvalTimelinePageSchema = z.object({
+  entries: z.array(
+    z.object({
+      submitted_at_ms: z.number().int().nonnegative(),
+      receipt: decisionEvalReceiptSchema,
+    }),
+  ),
+  next_after: z.string().nullable().optional(),
+})
+export type DecisionEvalTimelinePage = z.infer<typeof decisionEvalTimelinePageSchema>
+
 /** The discriminant tag of an adjacently-tagged union payload validated only
  * as an open record (e.g. `{"violation": "denied"}`), or `null` when this
  * particular value carries none under that key. */
