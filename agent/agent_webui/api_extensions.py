@@ -21,7 +21,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from ipaddress import ip_address
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypedDict
 from urllib.parse import quote, urlsplit
 
 from agent_utilities.core.config import config
@@ -5106,8 +5106,18 @@ def _normalize_lod_expand(value: Any) -> dict[str, Any]:
     }
 
 
+class _Graph3DLODScopeRequired(TypedDict):
+    available: bool
+    status: Literal['ready', 'unavailable']
+    graph: str | None
+
+
+class Graph3DLODScopeResponse(_Graph3DLODScopeRequired, total=False):
+    reason: str
+
+
 @router.get('/graph/graph3d/scope', summary='Get authorized Graph 3D LOD scope')
-async def get_graph_3d_lod_scope() -> dict[str, Any]:
+async def get_graph_3d_lod_scope() -> Graph3DLODScopeResponse:
     """Return the one graph name this verified WebUI session may read.
 
     This is only graph identity. The JSON hierarchy preview remains disabled
