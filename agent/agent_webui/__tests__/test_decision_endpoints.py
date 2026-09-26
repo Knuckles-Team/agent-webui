@@ -47,7 +47,9 @@ def _patched_engine(engine):
     )
 
 
-def _patched_session(tenant='tenant-a', graph='tenant-a__graph'):
+def _patched_session(
+    tenant='tenant-a', graph='tenant-a__graph', roles=('admin:decision-eval',)
+):
     if tenant is None:
         return patch(
             'agent_utilities.knowledge_graph.core.session.current_session',
@@ -56,6 +58,7 @@ def _patched_session(tenant='tenant-a', graph='tenant-a__graph'):
     session = MagicMock()
     session.tenant = tenant
     session.graph = graph
+    session.actor.roles = roles
     return patch(
         'agent_utilities.knowledge_graph.core.session.current_session',
         return_value=session,
@@ -409,3 +412,52 @@ def test_evaluation_receipts_reject_bad_cursor_before_engine(mock_engine):
         with pytest.raises(HTTPException) as exc:
             run(list_decision_evaluation_receipts(after='not-a-digest'))
     assert exc.value.status_code == 400
+
+
+def test_evaluation_receipts_reject_verified_reader_without_admin_scope(mock_engine):
+    from agent_webui.api_extensions import list_decision_evaluation_receipts
+    from fastapi import HTTPException
+
+    sender = AsyncMock()
+    with (
+        _patched_engine(mock_engine),
+        _patched_session(roles=('kg:read',)),
+        patch('epistemic_graph.generated.coordination.send_decision_eval', sender),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            run(list_decision_evaluation_receipts())
+    assert exc.value.status_code == 403
+    sender.assert_not_awaited()
+
+
+def test_evaluation_receipts_real_browser_route_requires_verified_admin(
+    mock_agent, mock_workspace_helpers, authenticated_client_factory, mock_engine
+):
+    from agent_webui.server import create_agent_web_app
+    from fastapi.testclient import TestClient
+
+    app = create_agent_web_app(mock_agent, mock_workspace_helpers)
+    bare = TestClient(app, raise_server_exceptions=False)
+    assert bare.get('/api/enhanced/decisions/evaluation-receipts').status_code == 401
+
+    sender = AsyncMock(
+        return_value=types.SimpleNamespace(payload={'receipts': [], 'next_after': None})
+    )
+    with (
+        _patched_engine(mock_engine),
+        patch('epistemic_graph.generated.coordination.send_decision_eval', sender),
+    ):
+        reader = authenticated_client_factory(
+            app, scope='kg:read', raise_server_exceptions=False
+        )
+        assert (
+            reader.get('/api/enhanced/decisions/evaluation-receipts').status_code == 403
+        )
+        admin = authenticated_client_factory(
+            app, scope='kg:read admin:decision-eval', raise_server_exceptions=False
+        )
+        response = admin.get('/api/enhanced/decisions/evaluation-receipts')
+    assert response.status_code == 200
+    assert response.json() == {'receipts': [], 'next_after': None}
+    assert sender.await_args is not None
+    assert sender.await_args.args[1]['op']['request']['tenant_id'] == 'test-tenant'

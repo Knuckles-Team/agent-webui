@@ -7875,11 +7875,25 @@ async def list_decision_evaluation_receipts(
     if not 1 <= limit <= 50:
         raise HTTPException(status_code=400, detail='Receipt page limit must be 1..50')
     tenant_id, graph = _decision_session_info()
+    _require_decision_eval_scope()
     payload = await _send_decision_receipts(tenant_id, graph, after, limit)
     bounded = _public_external_result(payload)
     if not isinstance(bounded, dict) or not isinstance(bounded.get('receipts'), list):
         raise HTTPException(status_code=503, detail=_DECISIONS_UNAVAILABLE)
     return bounded
+
+
+def _require_decision_eval_scope() -> None:
+    """Require the verified admin role before forwarding the EG admin read."""
+
+    from agent_utilities.knowledge_graph.core.session import current_session
+
+    session = current_session()
+    roles = getattr(getattr(session, 'actor', None), 'roles', ())
+    if 'admin:decision-eval' not in roles:
+        raise HTTPException(
+            status_code=403, detail='Decision evaluation admin scope required'
+        )
 
 
 async def _send_decision_receipts(
