@@ -1,7 +1,7 @@
 # Agent Web UI
 
 <p align="center">
-  <img src="docs/assets/brands/agent-webui-logo-v1.png" alt="Agent Web UI logo" width="160" />
+  <img src="pages/assets/brands/agent-webui-logo-v1.png" alt="Agent Web UI logo" width="160" />
 </p>
 
 <p align="center">
@@ -41,7 +41,7 @@
   <a href="https://knuckles-team.github.io/agent-webui/status/">Status</a>
 </p>
 
-![The Agent Web UI Atlas workspace presents graph, object, schema, data, document, and memory entry points in one browser surface.](docs/assets/screenshots/atlas-workspace.png)
+![The Agent Web UI Atlas workspace presents graph, object, schema, data, document, and memory entry points in one browser surface.](pages/assets/screenshots/atlas-workspace.png)
 
 ## Overview
 
@@ -83,7 +83,7 @@ then use the shared platform map to move between components:
 
 ## Architecture
 
-![Runtime architecture: people use Agent Web UI, Agent Terminal UI, Geniusbot, and Graph OS-hosted messaging; MCP, REST, and A2A clients enter through Graph OS; source systems flow through Agent Connector SDK into Epistemic Graph.](docs/assets/runtime-architecture.svg)
+![Runtime architecture: people use Agent Web UI, Agent Terminal UI, Geniusbot, and Graph OS-hosted messaging; MCP, REST, and A2A clients enter through Graph OS; source systems flow through Agent Connector SDK into Epistemic Graph.](pages/assets/runtime-architecture.svg)
 
 People also enter through Agent Terminal UI and Geniusbot or Graph OS-hosted
 messaging; Agent Terminal UI exposes REST operations, with no ACP conversational

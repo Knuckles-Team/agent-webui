@@ -5,8 +5,8 @@ site_description: The browser workspace for governed agents, workflows, and know
 site_url: https://knuckles-team.github.io/agent-webui/
 repo_name: Knuckles-Team/agent-webui
 repo_url: https://github.com/Knuckles-Team/agent-webui
-edit_uri: edit/main/docs/
-docs_dir: docs
+edit_uri: edit/main/pages/
+docs_dir: pages
 strict: true
 copyright: Copyright &copy; Knuckles-Team — MIT licensed
 

@@ -18,5 +18,5 @@ jobs:
       id-token: write
     uses: Knuckles-Team/pipelines/.github/workflows/pages_pipeline.yml@main
     with:
-      content_source: docs
+      content_source: pages
       shared_theme_enabled: true

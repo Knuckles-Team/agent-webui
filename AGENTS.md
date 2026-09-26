@@ -45,7 +45,7 @@ browser -> React application -> Agent WebUI FastAPI host
 - `agent/agent_webui/browser_control.py`: attended browser-control boundary.
 - `agent/agent_webui/observability.py`: redacted request telemetry.
 - `public/`: static assets copied into the production build.
-- `docs/` and `mkdocs.yml`: published reference documentation.
+- `pages/` and `mkdocs.yml`: published reference documentation.
 - `docker/`: reproducible image and deployment scripts.
 - `agent/agent_webui/__tests__/`: backend contract and security tests.
 - `src/**/__tests__/` and `e2e/`: frontend and browser tests.
@@ -161,7 +161,7 @@ and test gates are release requirements. Treat a clean baseline as an invariant.
 ## Documentation
 
 README.md is the concise public entry point. Keep feature inventories, protocol
-details, security guidance, and operator procedures in `docs/`, and add each
+details, security guidance, and operator procedures in `pages/`, and add each
 published page to `mkdocs.yml`. Public documentation describes the current
 product and must not expose internal planning notes, local filesystem paths, or
 private infrastructure.
