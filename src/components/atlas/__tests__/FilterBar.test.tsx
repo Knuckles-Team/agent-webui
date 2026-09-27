@@ -38,6 +38,8 @@ describe('FilterBar', () => {
     expect(within(second).getByRole('combobox', { name: 'Filter 2 operator' })).toBeInTheDocument()
     expect(within(first).getByRole('textbox', { name: 'Filter 1 value' })).toHaveValue('Ada')
     expect(within(second).getByRole('textbox', { name: 'Filter 2 value' })).toHaveValue('Grace')
+    expect(screen.getByRole('button', { name: 'Add filter' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Match all filters; switch to match any' })).toBeInTheDocument()
 
     await userEvent.setup().click(within(second).getByRole('button', { name: 'Remove filter 2' }))
     expect(onChange).toHaveBeenCalledWith({ ...filters, clauses: [filters.clauses[0]] })

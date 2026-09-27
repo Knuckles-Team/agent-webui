@@ -116,6 +116,10 @@ function replaceClause(clauses: FilterClause[], next: FilterClause): FilterClaus
   return clauses.map((clause) => (clause.id === next.id ? next : clause))
 }
 
+function matchButtonLabel(combinator: FilterSet['combinator']): string {
+  return combinator === 'and' ? 'Match all filters; switch to match any' : 'Match any filters; switch to match all'
+}
+
 export function FilterBar({ filters, fields, capabilities, onChange }: FilterBarProps) {
   const canAdd = fields.length > 0 && capabilities.filters.length > 0
   return (
@@ -150,6 +154,7 @@ export function FilterBar({ filters, fields, capabilities, onChange }: FilterBar
         variant="outline"
         size="sm"
         className="h-8"
+        aria-label="Add filter"
         disabled={!canAdd}
         onClick={() => {
           onChange({
@@ -166,6 +171,7 @@ export function FilterBar({ filters, fields, capabilities, onChange }: FilterBar
           variant="ghost"
           size="sm"
           className="h-8 text-xs"
+          aria-label={matchButtonLabel(filters.combinator)}
           onClick={() => {
             onChange({ ...filters, combinator: filters.combinator === 'and' ? 'or' : 'and' })
           }}

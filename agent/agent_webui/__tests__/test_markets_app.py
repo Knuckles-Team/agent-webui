@@ -42,6 +42,14 @@ def _bar(index: int, status: str = 'final') -> dict[str, Any]:
     }
 
 
+def _range_rows(bars: list[dict[str, Any]], series_id: str, frm: int, to: int) -> list:
+    return [
+        (bar['open_time'], [float(len(series_id))])
+        for bar in bars
+        if frm <= bar['open_time'] <= to
+    ]
+
+
 def _state(key_digest: str, direction: str = 'bullish') -> dict[str, Any]:
     return {
         'key': {
@@ -107,7 +115,7 @@ class FakeEngine:
         return created
 
     async def _range(self, series_id: str, frm: int, to: int) -> list:
-        return [(bar['open_time'], [float(len(series_id))]) for bar in self.bars]
+        return _range_rows(self.bars, series_id, frm, to)
 
     async def _issue(self, **request: Any) -> dict:
         view = {**request, 'status': 'active', 'revision': 1}
