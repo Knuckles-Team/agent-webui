@@ -28,6 +28,39 @@ test('G7 catches direct GraphOS fetch and axios calls', () => {
     ).length,
     1,
   )
+  assert.equal(reports(noDirectGraphosApiCall, { type: 'Identifier', name: 'fetchValidated' }, path).length, 1)
+  assert.equal(
+    reports(
+      noDirectGraphosApiCall,
+      { type: 'Identifier', name: 'fetch' },
+      {
+        type: 'NewExpression',
+        callee: { type: 'Identifier', name: 'Request' },
+        arguments: [{ type: 'NewExpression', callee: { type: 'Identifier', name: 'URL' }, arguments: [path] }],
+      },
+    ).length,
+    1,
+  )
+  assert.equal(
+    reports(
+      noDirectGraphosApiCall,
+      { type: 'Identifier', name: 'fetch' },
+      { type: 'BinaryExpression', operator: '+', left: path, right: { type: 'Identifier', name: 'id' } },
+    ).length,
+    1,
+  )
+  assert.equal(
+    reports(
+      noDirectGraphosApiCall,
+      {
+        type: 'MemberExpression',
+        object: { type: 'Identifier', name: 'axios' },
+        property: { type: 'Literal', value: 'get' },
+      },
+      path,
+    ).length,
+    1,
+  )
   assert.equal(
     reports(
       noDirectGraphosApiCall,
@@ -35,6 +68,33 @@ test('G7 catches direct GraphOS fetch and axios calls', () => {
       {
         type: 'TemplateLiteral',
         quasis: [{ value: { cooked: '/api/v1/ops/' } }],
+      },
+    ).length,
+    1,
+  )
+  assert.equal(
+    reports(
+      noDirectGraphosApiCall,
+      {
+        type: 'MemberExpression',
+        object: { type: 'Identifier', name: 'window' },
+        property: { type: 'Identifier', name: 'fetch' },
+      },
+      path,
+    ).length,
+    1,
+  )
+  assert.equal(
+    reports(
+      noDirectGraphosApiCall,
+      {
+        type: 'MemberExpression',
+        object: { type: 'Identifier', name: 'axios' },
+        property: { type: 'Identifier', name: 'request' },
+      },
+      {
+        type: 'ObjectExpression',
+        properties: [{ type: 'Property', computed: false, key: { name: 'url' }, value: path }],
       },
     ).length,
     1,
@@ -48,4 +108,16 @@ test('legacy debt is visible without blocking the new GraphOS gate', () => {
   assert.equal(reports(noDirectLegacyApiCall, fetch, legacy).length, 1)
   assert.equal(reports(noDirectLegacyApiCall, fetch, { type: 'Literal', value: '/api/v1/ops/search' }).length, 0)
   assert.equal(reports(noDirectGraphosApiCall, fetch, { type: 'Literal', value: 'https://example.test' }).length, 0)
+  assert.equal(reports(noDirectLegacyApiCall, fetch, { type: 'Literal', value: '/apiary' }).length, 0)
+})
+
+test('G7 rejects query and fragment variants without matching a lookalike path', () => {
+  const fetch = { type: 'Identifier', name: 'fetch' }
+  for (const path of ['/api/v1', '/api/v1?search=1', '/api/v1#route', '/api/v1/ops/search']) {
+    assert.equal(reports(noDirectGraphosApiCall, fetch, { type: 'Literal', value: path }).length, 1)
+    assert.equal(reports(noDirectLegacyApiCall, fetch, { type: 'Literal', value: path }).length, 0)
+  }
+  for (const path of ['/api/v10/ops', '/api/v1extra', '/assets/api/v1', 'https://example.test/api/v1']) {
+    assert.equal(reports(noDirectGraphosApiCall, fetch, { type: 'Literal', value: path }).length, 0)
+  }
 })
