@@ -88,6 +88,19 @@ describe('ObjectExplorerView (component handlers, real api singleton)', () => {
     })
   })
 
+  it('opens a result through a keyboard-accessible control without selecting it', async () => {
+    const onOpenObject = vi.fn()
+    const { user } = renderWithProviders(<ObjectExplorerView onOpenObject={onOpenObject} />)
+    const openObject = await screen.findByRole('button', { name: 'Open object obj-1' })
+
+    openObject.focus()
+    await user.keyboard('{Enter}')
+
+    expect(onOpenObject).toHaveBeenCalledOnce()
+    expect(onOpenObject).toHaveBeenCalledWith('obj-1')
+    expect(screen.getByRole('checkbox', { name: 'Select obj-1' })).not.toBeChecked()
+  })
+
   it('"Save Set" button drives api.ontologySaveObjectSet with the prompted name', async () => {
     const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('my saved set')
     renderWithProviders(<ObjectExplorerView />)

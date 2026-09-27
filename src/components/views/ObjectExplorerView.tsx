@@ -170,8 +170,8 @@ function renderExplorerHeader({
   onSave: () => void
 }) {
   return (
-    <div className="flex items-center justify-between">
-      <div>
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="min-w-0">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Boxes className="size-6" />
           Object Explorer
@@ -180,7 +180,7 @@ function renderExplorerHeader({
           Faceted search, pivot and bulk actions across the ontology object set
         </p>
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {renderSavedSetsSelect({ savedSets, onLoad: onLoadSavedSet })}
         <Button variant="outline" disabled={isSaving} onClick={onSave}>
           {isSaving ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Save className="size-4 mr-2" />}
@@ -244,8 +244,8 @@ function renderSearchFacetsCard(props: SearchFacetsCardProps) {
         <CardDescription>Full-text query plus type facet and property filters</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
+        <div className="flex flex-wrap gap-2">
+          <div className="relative min-w-48 flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
               aria-label="Search objects"
@@ -258,7 +258,7 @@ function renderSearchFacetsCard(props: SearchFacetsCardProps) {
             />
           </div>
           <Select value={objectType} onValueChange={onObjectTypeChange}>
-            <SelectTrigger className="w-44" aria-label="Object type">
+            <SelectTrigger className="w-full sm:w-44" aria-label="Object type">
               <SelectValue placeholder="Type" />
             </SelectTrigger>
             <SelectContent>
@@ -472,7 +472,7 @@ function renderResultsTableBody({
           key={obj.id}
           data-testid="object-row"
           className={cn(
-            'border-b transition-colors hover:bg-muted/50 cursor-pointer',
+            'border-b cursor-pointer transition-colors hover:bg-muted/50',
             selected.has(obj.id) ? 'bg-muted/40' : '',
           )}
           onClick={() => {
@@ -493,7 +493,19 @@ function renderResultsTableBody({
               }}
             />
           </td>
-          <td className="px-3 py-2 align-middle font-mono text-xs">{obj.id}</td>
+          <td className="px-3 py-2 align-middle font-mono text-xs">
+            <button
+              type="button"
+              aria-label={`Open object ${obj.id}`}
+              className="text-left text-primary underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenObject(obj.id)
+              }}
+            >
+              {obj.id}
+            </button>
+          </td>
           <td className="px-3 py-2 align-middle">
             <Badge variant="outline">{obj.type}</Badge>
           </td>
