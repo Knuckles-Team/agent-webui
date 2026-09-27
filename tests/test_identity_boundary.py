@@ -102,10 +102,12 @@ def test_host_boundary_and_webui_oidc_cannot_both_own_auth(
 
 
 def test_uncredentialed_browser_gets_only_the_static_shell(built_bundle: Path) -> None:
+    asset_file = built_bundle / 'assets' / 'identity-test.js'
+    assert asset_file.is_file()
     client = TestClient(_build())
     root = client.get('/')
     assert root.status_code == 200 and 'spa-shell-marker' in root.text
-    asset = client.get('/assets/identity-test.js')
+    asset = client.get(f'/assets/{asset_file.name}')
     assert asset.status_code == 200 and asset.text == _ASSET
     assert client.get('/api/chats').status_code == 401
     assert client.post('/').status_code in {401, 405}

@@ -106,8 +106,14 @@ class FakeEngine:
         self.nodes_store.setdefault(node_id, props)
         return created
 
+    def _bounded_bars(self, frm: int, to: int) -> list[dict[str, Any]]:
+        return [bar for bar in self.bars if frm <= bar['open_time'] <= to]
+
     async def _range(self, series_id: str, frm: int, to: int) -> list:
-        return [(bar['open_time'], [float(len(series_id))]) for bar in self.bars]
+        return [
+            (bar['open_time'], [float(len(series_id))])
+            for bar in self._bounded_bars(frm, to)
+        ]
 
     async def _issue(self, **request: Any) -> dict:
         view = {**request, 'status': 'active', 'revision': 1}

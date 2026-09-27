@@ -7,6 +7,7 @@
  * session's token where one exists. Answers are the server's fixed outcome
  * codes — nothing here interprets a role or a principal.
  */
+import { createPasskey, usePasskey } from './passkeys'
 
 /** A sign-in or second-factor outcome, as the engine decided it. */
 export type SignInOutcome =
@@ -57,6 +58,25 @@ export async function signIn(username: string, password: string): Promise<SignIn
 
 export async function verifySecondFactor(method: 'totp' | 'recovery', code: string): Promise<SignInOutcome> {
   return outcomeOf(await postJson('/auth/mfa/verify', { method, code }, true))
+}
+
+/** A pending session completes only after GraphOS verifies the signed assertion. */
+export async function verifyPasskey(): Promise<SignInOutcome> {
+  const begin = await postJson('/auth/mfa/webauthn/authenticate', {}, true)
+  if (!begin.ok) return 'error'
+  const options = (await begin.json()) as PublicKeyCredentialRequestOptions
+  const credential = await usePasskey(options)
+  return outcomeOf(await postJson('/auth/mfa/webauthn/authenticate-complete', { credential }, true))
+}
+
+/** Enrollment is available only to an existing GraphOS browser session. */
+export async function enrollPasskey(name: string): Promise<boolean> {
+  const begin = await postJson('/auth/mfa/webauthn/register', {}, true)
+  if (!begin.ok) return false
+  const options = (await begin.json()) as PublicKeyCredentialCreationOptions
+  const credential = await createPasskey(options)
+  const completed = await postJson('/auth/mfa/webauthn/register-complete', { name, credential }, true)
+  return completed.status === 201
 }
 
 /** First-run: create the first administrator with the operator's setup code. */

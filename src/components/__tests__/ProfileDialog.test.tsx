@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { ProfileDialog } from '@/components/ProfileDialog'
 import type { Identity } from '@/lib/auth'
@@ -31,9 +31,83 @@ const DEMO_IDENTITY: Identity = {
   raw: { authenticated: true, subject: 'usr:bootstrap', roles: ['kg:admin'], webui_role: 'admin', mode: 'none' },
 }
 
+interface PasskeyCall {
+  path: string
+  body: unknown
+  csrf: string | null
+}
+
+function stubPasskeyRegistration(calls: PasskeyCall[]): void {
+  vi.stubGlobal('isSecureContext', true)
+  vi.stubGlobal('navigator', {
+    credentials: {
+      create: vi.fn(() =>
+        Promise.resolve({
+          id: 'credential',
+          rawId: new Uint8Array([1]).buffer,
+          type: 'public-key',
+          response: {
+            attestationObject: new Uint8Array([2]).buffer,
+            clientDataJSON: new Uint8Array([3]).buffer,
+            getTransports: () => ['internal'],
+          },
+        }),
+      ),
+    },
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input)
+      if (path === '/auth/session') return Promise.resolve(Response.json({ csrf_token: 'local-csrf' }))
+      calls.push({
+        path,
+        body: JSON.parse(String(init?.body)),
+        csrf: new Headers(init?.headers).get('X-CSRF-Token'),
+      })
+      if (path.endsWith('/register'))
+        return Promise.resolve(
+          Response.json({
+            challenge: 'AQ',
+            user: { id: 'Ag', name: 'alice', displayName: 'Alice' },
+            rp: { name: 'GraphOS' },
+            pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+          }),
+        )
+      return Promise.resolve(Response.json({}, { status: 201 }))
+    }),
+  )
+}
+
 describe('ProfileDialog', () => {
   beforeEach(() => {
     window.localStorage.clear()
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('offers passkey enrollment to a signed-in local user through the protected broker route', async () => {
+    const calls: PasskeyCall[] = []
+    stubPasskeyRegistration(calls)
+    const local = { ...SSO_IDENTITY, raw: { ...SSO_IDENTITY.raw!, mode: 'local' as const } }
+    const { user } = renderWithProviders(<ProfileDialog open onOpenChange={vi.fn()} identity={local} />)
+    await user.click(screen.getByRole('button', { name: 'Add passkey' }))
+    await waitFor(() => {
+      expect(screen.getByText('Passkey added')).toBeInTheDocument()
+    })
+    expect(calls.map((call) => call.path)).toEqual([
+      '/auth/mfa/webauthn/register',
+      '/auth/mfa/webauthn/register-complete',
+    ])
+    expect(calls.every((call) => call.csrf === 'local-csrf')).toBe(true)
+    expect(calls[1].body).toEqual({
+      name: 'Browser passkey',
+      credential: {
+        id: 'credential',
+        rawId: 'AQ',
+        type: 'public-key',
+        response: { attestationObject: 'Ag', clientDataJSON: 'Aw', transports: ['internal'] },
+      },
+    })
   })
 
   it('shows the account name, email, and role read-only from IdP claims', async () => {

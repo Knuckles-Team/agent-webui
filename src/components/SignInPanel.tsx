@@ -15,11 +15,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import type { Identity } from '@/lib/auth'
 import {
+  beginTotpEnrollment,
+  confirmTotpEnrollment,
   createFirstAdministrator,
+  enrollPasskey,
   forgotPassword,
   listIdentityProviders,
   resetPassword,
   signIn,
+  verifyPasskey,
   verifySecondFactor,
   type IdentityProviderOption,
   type SignInOutcome,
@@ -61,7 +65,7 @@ function useFormState(): {
   const run = (action: () => Promise<SignInOutcome>, done: ReadonlySet<SignInOutcome>) => {
     setBusy(true)
     void action()
-      .catch(() => 'error')
+      .catch((): SignInOutcome => 'error')
       .then((outcome) => {
         setBusy(false)
         if (done.has(outcome)) reloadHome()
@@ -185,6 +189,17 @@ function SecondFactorForm() {
         </Button>
         <Button
           type="button"
+          variant="outline"
+          disabled={busy}
+          className="w-full"
+          onClick={() => {
+            run(verifyPasskey, FACTOR_DONE)
+          }}
+        >
+          Use a passkey
+        </Button>
+        <Button
+          type="button"
           variant="link"
           onClick={() => {
             setRecovery(!recovery)
@@ -193,6 +208,83 @@ function SecondFactorForm() {
           {recovery ? 'Use an authenticator code' : 'Use a recovery code'}
         </Button>
       </form>
+    </Shell>
+  )
+}
+
+function EnrollmentForm() {
+  const [secret, setSecret] = useState<string | null>(null)
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  const startTotp = () => {
+    setBusy(true)
+    void beginTotpEnrollment()
+      .then(({ secret: issued }) => {
+        setSecret(issued)
+        setMessage(null)
+      })
+      .catch(() => {
+        setMessage('Authenticator setup is unavailable.')
+      })
+      .finally(() => {
+        setBusy(false)
+      })
+  }
+  const confirm = submitting(() => {
+    setBusy(true)
+    void confirmTotpEnrollment(code)
+      .then((ok) => {
+        if (ok) reloadHome()
+        else setMessage('That authenticator code was refused.')
+      })
+      .catch(() => {
+        setMessage('Authenticator confirmation is unavailable.')
+      })
+      .finally(() => {
+        setBusy(false)
+      })
+  })
+  const registerPasskey = () => {
+    setBusy(true)
+    void enrollPasskey('My passkey')
+      .then((ok) => {
+        if (ok) reloadHome()
+        else setMessage('Passkey setup was refused.')
+      })
+      .catch(() => {
+        setMessage('Passkey setup is unavailable.')
+      })
+      .finally(() => {
+        setBusy(false)
+      })
+  }
+  return (
+    <Shell
+      title="Set up a second factor"
+      description="Your account requires a second factor before sign-in can finish."
+    >
+      {secret === null ? (
+        <Button type="button" disabled={busy} className="w-full" onClick={startTotp}>
+          Set up an authenticator app
+        </Button>
+      ) : (
+        <form className="space-y-3" onSubmit={confirm}>
+          <p className="text-sm">Enter this setup key in your authenticator app:</p>
+          <code className="block break-all text-sm" aria-label="Authenticator setup key">
+            {secret}
+          </code>
+          <TextField label="Authenticator code" autoComplete="one-time-code" value={code} onValue={setCode} />
+          <Button type="submit" disabled={busy || !code} className="w-full">
+            Confirm authenticator
+          </Button>
+        </form>
+      )}
+      <Button type="button" variant="outline" disabled={busy} className="w-full" onClick={registerPasskey}>
+        Set up a passkey
+      </Button>
+      <Message text={message} />
     </Shell>
   )
 }
@@ -325,6 +417,14 @@ function RecoveryForm({ onBack }: { onBack: () => void }) {
 }
 
 /** The screen for a browser with no usable session. */
+function requiresEnrollment(raw: Identity['raw']): boolean {
+  return raw?.second_factor_required === true && raw.mfa_required === true && raw.mfa_enrolled === false
+}
+
+function secondFactorScreen(raw: Identity['raw']): ReactNode {
+  return requiresEnrollment(raw) ? <EnrollmentForm /> : <SecondFactorForm />
+}
+
 export function SignInPanel({ identity }: { identity: Identity }) {
   const raw = identity.raw
   if (!identity.ssoConfigured) {
@@ -335,7 +435,7 @@ export function SignInPanel({ identity }: { identity: Identity }) {
     )
   }
   if (raw?.setup_required) return <SetupForm />
-  if (raw?.second_factor_required) return <SecondFactorForm />
+  if (raw?.second_factor_required) return secondFactorScreen(raw)
   if (raw?.mode === undefined) {
     // A standalone WebUI's single-client OIDC boundary owns a redirect login.
     return (

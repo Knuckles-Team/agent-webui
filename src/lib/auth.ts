@@ -53,6 +53,8 @@ export interface AuthSession {
   csrf_token?: string | null
   is_bootstrap?: boolean
   mfa_enrolled?: boolean
+  /** Privileged group policy, even before a factor has been enrolled. */
+  mfa_required?: boolean
 }
 
 /** The one thing the rest of the app needs: who, and what they may do. */

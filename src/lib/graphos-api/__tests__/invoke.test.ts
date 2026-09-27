@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { GraphOsApiError, invoke } from '../invoke'
+import { invoke } from '../invoke'
 
 const meta = { registry_digest: 'digest', api_version: 'v1' }
 const session = { authenticated: true, csrf_token: 'csrf-secret' }
@@ -48,7 +48,7 @@ describe('GraphOS browser invocation', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => session })
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ok: true, result: {}, meta }) })
     vi.stubGlobal('fetch', fetcher)
-    await expect(invoke('decisions.list', {}, z.unknown())).rejects.toMatchObject<Partial<GraphOsApiError>>({
+    await expect(invoke('decisions.list', {}, z.unknown())).rejects.toMatchObject({
       code: 'UNKNOWN_OP',
       status: 404,
     })

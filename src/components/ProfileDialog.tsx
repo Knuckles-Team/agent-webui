@@ -32,7 +32,13 @@ import {
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import type { Identity } from '@/lib/auth'
-import { beginTotpEnrollment, changePassword, confirmTotpEnrollment, regenerateRecoveryCodes } from '@/lib/auth-api'
+import {
+  beginTotpEnrollment,
+  changePassword,
+  confirmTotpEnrollment,
+  enrollPasskey,
+  regenerateRecoveryCodes,
+} from '@/lib/auth-api'
 import { setAvatarOverride, setNicknameOverride, useProfileOverride } from '@/lib/profile-store'
 
 export interface ProfileDialogProps {
@@ -361,6 +367,22 @@ function LocalMfaSection({ enrolled }: { enrolled: boolean }) {
         setBusy(false)
       })
   }
+  const addPasskey = () => {
+    setBusy(true)
+    void enrollPasskey('Browser passkey')
+      .then((ok) => {
+        if (!ok) {
+          toast.error('Passkey enrollment was refused')
+          return
+        }
+        setConfirmed(true)
+        toast.success('Passkey added')
+      })
+      .catch(() => toast.error('Passkey enrollment is unavailable'))
+      .finally(() => {
+        setBusy(false)
+      })
+  }
   return (
     <div className="space-y-2 rounded-md border p-3">
       <p className="text-sm font-medium">Local second factor</p>
@@ -369,6 +391,9 @@ function LocalMfaSection({ enrolled }: { enrolled: boolean }) {
           Set up authenticator
         </Button>
       )}
+      <Button type="button" variant="outline" disabled={busy} onClick={addPasskey}>
+        Add passkey
+      </Button>
       {secret && (
         <div className="space-y-2">
           <p className="text-xs">Add this secret to your authenticator. It is shown only for this enrollment.</p>
