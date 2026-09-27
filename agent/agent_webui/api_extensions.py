@@ -15028,6 +15028,37 @@ async def ontology_object_set_search(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
+def _valid_label_result_shape(result: Any, limit: int) -> bool:
+    """Check the bounded GraphOS envelope before inspecting row contents."""
+
+    if not isinstance(result, dict):
+        return False
+    ids = result.get('ids')
+    rows = result.get('rows')
+    count = result.get('count')
+    return (
+        isinstance(ids, list)
+        and isinstance(rows, list)
+        and type(count) is int
+        and count == len(rows)
+        and len(ids) <= limit
+        and len(rows) <= limit
+    )
+
+
+def _valid_label_result_rows(result: dict[str, Any]) -> bool:
+    """Require unique string ids that exactly match the returned rows."""
+
+    ids = result['ids']
+    rows = result['rows']
+    return (
+        all(isinstance(node_id, str) and node_id for node_id in ids)
+        and len(set(ids)) == len(ids)
+        and all(isinstance(row, dict) for row in rows)
+        and ids == [row.get('id') for row in rows]
+    )
+
+
 @router.post('/ontology/object-set/by-label')
 async def ontology_object_set_by_label(
     data: dict[str, Any], request: Request
@@ -15048,17 +15079,8 @@ async def ontology_object_set_by_label(
     result = await _graphos_route_op(
         request, 'objects.by_label', {'label': label, 'limit': limit}
     )
-    if (
-        not isinstance(result, dict)
-        or not isinstance(result.get('ids'), list)
-        or not isinstance(result.get('rows'), list)
-        or result.get('count') != len(result['rows'])
-        or len(result['rows']) > limit
-        or any(not isinstance(node_id, str) or not node_id for node_id in result['ids'])
-        or len(set(result['ids'])) != len(result['ids'])
-        or result['ids']
-        != [row.get('id') if isinstance(row, dict) else None for row in result['rows']]
-        or any(not isinstance(row, dict) for row in result['rows'])
+    if not _valid_label_result_shape(result, limit) or not _valid_label_result_rows(
+        result
     ):
         raise HTTPException(status_code=502, detail='Invalid object set result')
     return result

@@ -59,10 +59,47 @@ async def test_label_read_requires_host_and_validates_bounds() -> None:
 
 
 @pytest.mark.asyncio
+async def test_label_read_without_host_never_uses_local_engine(monkeypatch) -> None:
+    def unexpected_engine():
+        raise AssertionError('local engine must not answer a GraphOS read')
+
+    monkeypatch.setattr('agent_webui.api_extensions.get_engine', unexpected_engine)
+    async with AsyncClient(
+        transport=ASGITransport(app=_app()), base_url='http://test'
+    ) as client:
+        response = await client.post(
+            '/api/enhanced/ontology/object-set/by-label',
+            json={'label': 'Position'},
+        )
+    assert response.status_code == 501
+    assert response.json()['detail'] == 'Capability is not available'
+
+
+@pytest.mark.asyncio
 async def test_label_read_rejects_malformed_host_result() -> None:
     async with AsyncClient(
         transport=ASGITransport(
             app=_app(lambda *_args: {'ids': ['a'], 'rows': [], 'count': 0})
+        ),
+        base_url='http://test',
+    ) as client:
+        response = await client.post(
+            '/api/enhanced/ontology/object-set/by-label', json={'label': 'Position'}
+        )
+    assert response.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_label_read_rejects_boolean_count_from_host() -> None:
+    async with AsyncClient(
+        transport=ASGITransport(
+            app=_app(
+                lambda *_args: {
+                    'ids': ['a'],
+                    'rows': [{'id': 'a'}],
+                    'count': True,
+                }
+            )
         ),
         base_url='http://test',
     ) as client:

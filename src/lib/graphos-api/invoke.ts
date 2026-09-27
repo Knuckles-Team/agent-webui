@@ -18,14 +18,18 @@ const envelopeSchema = z.discriminatedUnion('ok', [
 ])
 
 export class GraphOsApiError extends Error {
-  constructor(
-    readonly code: string,
-    readonly status: number,
-    readonly retryable: boolean,
-    readonly details: Record<string, unknown>,
-  ) {
+  readonly code: string
+  readonly status: number
+  readonly retryable: boolean
+  readonly details: Record<string, unknown>
+
+  constructor(code: string, status: number, retryable: boolean, details: Record<string, unknown>) {
     super(`GraphOS operation refused: ${code}`)
     this.name = 'GraphOsApiError'
+    this.code = code
+    this.status = status
+    this.retryable = retryable
+    this.details = details
   }
 }
 

@@ -141,6 +141,7 @@ function renderTopologyTab({
   topologyStatus: FleetSectionStatus
   topology: FleetTopology | null
 }) {
+  const domains = topology?.domains ?? []
   return (
     <Card>
       <CardHeader>
@@ -149,10 +150,10 @@ function renderTopologyTab({
       </CardHeader>
       <CardContent className="space-y-3">
         {topologyStatus === 'unavailable' && <UnavailableNotice what="Topology" />}
-        {topologyStatus === 'ready' && (topology?.domains.length ?? 0) === 0 && (
+        {topologyStatus === 'ready' && domains.length === 0 && (
           <p className="text-sm text-muted-foreground">No active sessions.</p>
         )}
-        {(topology?.domains ?? []).map(renderTopologyDomain)}
+        {domains.map(renderTopologyDomain)}
       </CardContent>
     </Card>
   )

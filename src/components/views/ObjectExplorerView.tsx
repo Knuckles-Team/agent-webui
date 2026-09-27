@@ -29,7 +29,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { api } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 /** A single ontology object returned by an object-set query. */
@@ -419,6 +419,12 @@ function renderResultsToolbar(props: ResultsToolbarProps) {
   )
 }
 
+function searchErrorMessage(error: unknown): string {
+  return error instanceof ApiError && error.status === 501
+    ? 'Object browsing is unavailable until GraphOS is connected'
+    : 'Failed to load objects'
+}
+
 function renderResultsTableBody({
   searchLoading,
   searchError,
@@ -429,7 +435,7 @@ function renderResultsTableBody({
   onOpenObject,
 }: {
   searchLoading: boolean
-  searchError: boolean
+  searchError: unknown
   rows: OntologyObject[]
   columns: string[]
   selected: Set<string>
@@ -451,7 +457,7 @@ function renderResultsTableBody({
     return (
       <tr>
         <td colSpan={colSpan} className="p-6 text-center text-destructive">
-          Failed to load objects
+          <div role="alert">{searchErrorMessage(searchError)}</div>
         </td>
       </tr>
     )
@@ -526,7 +532,7 @@ function renderResultsTable(props: {
   allSelected: boolean
   onToggleAll: () => void
   searchLoading: boolean
-  searchError: boolean
+  searchError: unknown
   rows: OntologyObject[]
   selected: Set<string>
   onToggleRow: (id: string) => void
@@ -762,7 +768,7 @@ export default function ObjectExplorerView({ onOpenObject = defaultOpenObject }:
   const {
     data: searchResult,
     isLoading: searchLoading,
-    isError: searchError,
+    error: searchError,
   } = useQuery<ObjectSetResult>({
     queryKey: ['ontology-object-set', searchPayload],
     queryFn: () => api.ontologySearch(searchPayload),

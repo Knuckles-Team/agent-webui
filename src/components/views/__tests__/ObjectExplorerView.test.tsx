@@ -7,7 +7,7 @@ import ObjectExplorerView, {
   isBulkApplicableAction,
   type ObjectSetResult,
 } from '@/components/views/ObjectExplorerView'
-import { api } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
 import { renderWithProviders } from '@/__tests__/fixtures'
 
 /**
@@ -99,6 +99,29 @@ describe('ObjectExplorerView (component handlers, real api singleton)', () => {
     expect(onOpenObject).toHaveBeenCalledOnce()
     expect(onOpenObject).toHaveBeenCalledWith('obj-1')
     expect(screen.getByRole('checkbox', { name: 'Select obj-1' })).not.toBeChecked()
+  })
+
+  it('opens a focused result with Space exactly once', async () => {
+    const onOpenObject = vi.fn()
+    const { user } = renderWithProviders(<ObjectExplorerView onOpenObject={onOpenObject} />)
+    const openObject = await screen.findByRole('button', { name: 'Open object obj-1' })
+
+    openObject.focus()
+    expect(openObject).toHaveFocus()
+    await user.keyboard(' ')
+
+    expect(onOpenObject).toHaveBeenCalledExactlyOnceWith('obj-1')
+    expect(screen.getByRole('checkbox', { name: 'Select obj-1' })).not.toBeChecked()
+  })
+
+  it('announces an unavailable GraphOS read without exposing a result row', async () => {
+    vi.mocked(api.ontologySearch).mockRejectedValue(new ApiError(501, 'GraphOS operation unavailable'))
+    renderWithProviders(<ObjectExplorerView />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Object browsing is unavailable until GraphOS is connected',
+    )
+    expect(screen.queryByTestId('object-row')).not.toBeInTheDocument()
   })
 
   it('"Save Set" button drives api.ontologySaveObjectSet with the prompted name', async () => {
