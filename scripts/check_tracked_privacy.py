@@ -529,6 +529,8 @@ def derive_local_identifiers(root: Path = ROOT) -> frozenset[str]:
     override = _declared_identifier_override()
     if override is not None:
         return override
+    if _is_platform_identity():
+        return frozenset()
     candidates = _ambient_os_identifier_candidates()
     candidates.update(_ambient_git_identifier_candidates(root))
     return _finalize_identifier_candidates(candidates)
@@ -540,6 +542,18 @@ def _finalize_identifier_candidates(candidates: set[str]) -> frozenset[str]:
         for value in candidates
         if value and len(value) >= 4 and value.casefold() not in _GENERIC_IDENTIFIERS
     )
+
+
+def _is_platform_identity() -> bool:
+    """True on CI runners and Claude Code cloud sessions.
+
+    Their ambient user, host and git identity belong to the platform (for
+    example git ``user.name`` "Claude"), not to a person, so deriving
+    identifiers from them only manufactures leaks out of ordinary prose.
+    There only the declared ``AGENT_UTILITIES_PRIVACY_IDENTIFIERS`` override
+    applies; the home-path, internal-host and author detectors run everywhere.
+    """
+    return bool(os.environ.get("CI")) or os.environ.get("CLAUDE_CODE_REMOTE") == "true"
 
 
 def _declared_identifier_override() -> frozenset[str] | None:

@@ -35,11 +35,13 @@ src = "the React/TypeScript frontend: App/Chat/Part components, assets, componen
 tests = "the Python backend test suite: characterization tests plus dashboard/health/graph-endpoint tests"
 ".github" = "GitHub Actions workflow definitions"
 ".security" = "adversarial security-gate scripts (authenticated_negative.py, repository_fuzz.py) and security-contract.json read by the security CI gate"
+".claude" = "Claude Code project settings and the SessionStart hook that runs scripts/bootstrap.sh in cloud sessions"
 
 [files]
 "AGENTS.md" = "agent-facing repo guide"
 "CHANGELOG.md" = "release changelog, updated by the bump2version release flow"
 "CLAUDE.md" = "Claude Code project instructions"
+"CONTRIBUTING.md" = "contributor quick start: bootstrap, checks, branch and pull-request flow"
 "LICENSE" = "license text"
 "README.md" = "project readme"
 "commitlint.config.js" = "commitlint rules enforcing Conventional Commits, run by the commit-msg hook"

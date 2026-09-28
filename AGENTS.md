@@ -56,16 +56,21 @@ gateway routes instead of maintaining a separate browser-only implementation.
 
 ## Commands
 
-Use Python 3.12–3.14, the Node.js version in `.node-version`, `pnpm`, and `uv`.
-Bootstrap a source checkout with:
+Use Python 3.12–3.14, the Node.js version in `.node-version`, `pnpm`, and `uv`
+0.9 or newer. Bootstrap a fresh clone (locally, or automatically in a Claude
+Code cloud session through `.claude/hooks/session-start.sh`) with:
 
 ```bash
-pnpm install --frozen-lockfile
-uv venv --python 3.12
-source .venv/bin/activate
-uv pip install -e '.[test]'
+scripts/bootstrap.sh            # pinned siblings, uv >= 0.9, Python, locked .venv, pnpm deps, git hooks
+scripts/bootstrap.sh --engine   # also build epistemic-graph from source (slow)
 cp .env.example .env
 ```
+
+`uv.lock` references agent-utilities and epistemic-graph as editable sources
+under `.uv-workspace-siblings/`; `scripts/siblings.lock` pins their commits and
+the bootstrap checks them out (an existing workspace symlink is left alone).
+Bump a pin there, run `uv lock`, and commit both files together. Tests that
+import the knowledge-graph or numeric layers need the `--engine` build.
 
 Run the development services in separate terminals:
 
@@ -88,8 +93,9 @@ pnpm run build
 Backend and repository checks:
 
 ```bash
-uv run --all-extras pytest agent/agent_webui/__tests__
-pre-commit run --config .config/pre-commit.yaml --all-files
+uv run --no-sync pytest tests
+uvx pre-commit run --config .config/pre-commit.yaml --all-files
+uvx pre-commit run --config .config/pre-commit.yaml --all-files --hook-stage manual
 python -m agent_webui.server --security-doctor --host 0.0.0.0
 ```
 
@@ -103,13 +109,23 @@ docker/deploy.sh
 
 ## Quality gates
 
-Install the commit and push hooks with
-`pre-commit install --config .config/pre-commit.yaml`. Run focused tests while
-developing, then run
-`pre-commit run --config .config/pre-commit.yaml --all-files` before committing.
-Automatic pre-push checks are bounded; full pytest, typecheck, wheel builds,
-dependency readiness, and repository-wide lint remain manual/hosted checks. Do
-not bypass a gate with `--no-verify`, `SKIP`, diagnostic ignores,
+`scripts/bootstrap.sh` installs the commit and push hooks. Run focused tests
+while developing, then run
+`uvx pre-commit run --config .config/pre-commit.yaml --all-files` before
+committing. Hosted CI (the `gates` job in `.github/workflows/release.yml`, also
+the pull-request check) runs the same file after the same bootstrap, so the
+hook list is the one definition of the gate. Automatic pre-push checks are
+bounded; full pytest, typecheck, wheel builds, and repository-wide lint remain
+manual checks.
+
+A hook whose tool or sibling checkout is missing prints
+`SKIPPED (<gate>): <reason>` and passes locally; with `CI` set it fails closed
+with exit status 2 (`CANNOT RUN`). Gates never call external services such as
+package indexes or advisory databases at run time. The privacy gate derives
+local identities from the ambient account only on a developer machine; on CI
+and in cloud sessions only the declared `AGENT_UTILITIES_PRIVACY_IDENTIFIERS`
+list applies, while the home-path and internal-host detectors run everywhere.
+Do not bypass a gate with `--no-verify`, `SKIP`, diagnostic ignores,
 or warning suppression. Fix the source of each finding or report a genuine
 environmental blocker.
 
@@ -173,7 +189,12 @@ repository root and keep environment-variable names aligned with the code and
 
 ## Branching & isolation
 
-This is a shared multi-worktree repository. Never edit the canonical checkout.
+Work on a topic branch and open a pull request against `main`; the `gates` job
+must pass before merge. Keep commits logical and conventional, push with
+`git push -u origin <branch>`, and open the pull request as a draft until the
+gates and review are complete.
+
+On a maintainer workstation this is a shared multi-worktree repository. Never edit the canonical checkout.
 Create a distinct branch and a real Git worktree for each lane:
 
 ```bash
