@@ -2,7 +2,7 @@
   "schema_version": 1,
   "spec_id": "WEBUI-DECIDE-001",
   "owner_repo": "agent-webui",
-  "requirement_ids": ["DEC-01", "DEC-02", "DEC-03", "DEC-04", "DEC-05", "DEC-06"],
+  "requirement_ids": ["EH-047", "DEC-01", "DEC-02", "DEC-03", "DEC-04", "DEC-05", "DEC-06"],
   "delivery_state": "SPECIFIED",
   "acceptance_state": "NOT_AUDITED",
   "evidence": []

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "spec_id": "FIN-UI-001",
   "owner_repo": "agent-webui",
-  "requirement_ids": ["FUI-01", "FUI-02", "FUI-03", "FUI-04", "FUI-05", "FUI-06", "FUI-07", "FUI-08", "FUI-09", "FUI-10", "FUI-11", "FUI-12", "FUI-13"],
+  "requirement_ids": ["EH-710", "EH-711", "FUI-01", "FUI-02", "FUI-03", "FUI-04", "FUI-05", "FUI-06", "FUI-07", "FUI-08", "FUI-09", "FUI-10", "FUI-11", "FUI-12", "FUI-13"],
   "delivery_state": "SPECIFIED",
   "acceptance_state": "NOT_AUDITED",
   "evidence": []

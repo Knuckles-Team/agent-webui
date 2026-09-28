@@ -9,5 +9,7 @@
 | Motion and touch | Reduced-motion and touch profile | Equivalent action/feedback without gesture or animation |
 | States | Loading/empty/stale/denied/error/success fixtures | Text distinctions, no color-only meaning |
 | Reuse/privacy | Source/asset/dependency audit | No duplicate primitive, real-user data or telemetry request |
+| Skill distillation | Compare each adopted rule with existing public skill and component ownership | Distinct rule has license record, owner, example and failing/passing UI check; duplicate names and copied text rejected |
+| Offline review | Disable network except local test host and run synthetic journeys | Review and accessibility checks complete without remote critique or telemetry request |
 
 Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`, and `pre-commit run --config .config/pre-commit.yaml --all-files` on the exact commit. E2E provisions local fixtures and browser; no live hosted environment is required for a PR. CCCC's configured staged rule rejects new functions above cyclomatic 10/cognitive 15 and regressions. Use configured jscpd and Dupehound if available; missing configuration is a gap. KISS requires adapting existing components and tokens before adding a primitive. Record automated accessibility findings plus manual keyboard/screen-reader notes and screenshot artifact digests in `tasks.md`.

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "spec_id": "WEBUI-DESIGN-001",
   "owner_repo": "agent-webui",
-  "requirement_ids": ["DS-01", "DS-02", "DS-03", "DS-04", "DS-05", "DS-06"],
+  "requirement_ids": ["EH-653", "DS-01", "DS-02", "DS-03", "DS-04", "DS-05", "DS-06"],
   "delivery_state": "SPECIFIED",
   "acceptance_state": "NOT_AUDITED",
   "evidence": []
