@@ -45,4 +45,5 @@ with the [SDD full lifecycle](https://github.com/Knuckles-Team/universal-skills/
 
 ## Local specifications
 
+- [`FIN-UI-001` Finance Asset Manager](finance-asset-manager/spec.md) — Train 8 browser contract; specified, implementation unverified.
 - [`delete-past-chats.md`](delete-past-chats.md), [`update-color-scheme.md`](update-color-scheme.md), and [`update-tools-dropdown.md`](update-tools-dropdown.md) are existing brief feature drafts. Preserve them; expand to the shared feature directory format when resumed.
