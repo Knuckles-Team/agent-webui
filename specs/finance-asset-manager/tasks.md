@@ -1,31 +1,34 @@
-# Finance Asset Manager — delivery and evidence tracker
+# FIN-UI-001 — Delivery and evidence tracker
 
-**Spec state:** specified; implementation not verified. **Baseline:** 2026-09-27 ledger EH-698–EH-713 and EH-715 all QUEUED. This file does not update the canonical ledger. Change row state only after checking merged owner code and tests, recording PR/commit evidence, and reconciling `plans/refactor/LEDGER.md`.
+**Spec status:** SPECIFIED. **Implementation status:** UNVERIFIED. **Owner:** `agent-webui`. The related EH identifiers are stable cross-repository IDs. Status changes only when linked merged code and the tests in [test-spec.md](test-spec.md) prove the behavior.
 
-| Work item | Owner | Ledger | State | Completion evidence required |
+| Work package | Owner | IDs | Current state | Required evidence |
 |---|---|---|---|---|
-| Finance ontology, accounting, reference data and fixtures | epistemic-graph | EH-698–EH-700, EH-715 | waiting for verification | finance-v1 and golden fixtures merged; no-float invariant |
-| Stocks and other asset data, account import | SDK / Emerald | EH-701, EH-709, EH-713 | waiting for verification | qualified data paths, mapping/idempotency tests |
-| Strategies, backtests, recommendations and leverage | epistemic-graph / AU | EH-702–EH-704, EH-706 | waiting for verification | deterministic runs, scorecards, abstention and risk gates |
-| Scheduled DCA and finance alerts | graph-os / Emerald | EH-705, EH-712 | waiting for verification | replay-safe scheduling and outbox receipts |
-| Leverage guide and media skills | Emerald / media-downloader | EH-707, EH-708 | waiting for verification | authoritative citations, claims separated from rules |
-| Markets responsive navigation, groups, detail, portfolio view | agent-webui | EH-710 | specified | PR/commit, visual and accessibility evidence |
-| Shared ChartRenderer and overlays in Finance and Atlas | agent-webui | EH-711 | specified | PR/commit, fixture parity and mobile performance evidence |
+| Finance ontology, accounting, sessions and golden fixtures | epistemic-graph | EH-698–EH-700, EH-715 | PENDING | Merged owner spec/code, fixed-point and provenance fixture output |
+| Provider data, account reads and CSV import | agent-connector-sdk / emerald-exchange | EH-701, EH-709, EH-713 | PENDING | Qualified source coverage, entitlement, preview/idempotency contract tests |
+| Strategy, backtest, recommendation and leverage | epistemic-graph / agent-utilities | EH-702–EH-704, EH-706 | PENDING | Versioned deterministic outputs, abstention, scorecard and risk-policy proof |
+| DCA scheduling and alert delivery | graph-os / emerald-exchange | EH-705, EH-712 | PENDING | Replay-safe event and delivery receipts |
+| Source intake and leverage guide | media-downloader / emerald-exchange | EH-707, EH-708 | PENDING | Public citations, source capture time, claims separated from executable rules |
+| Responsive Markets route and views | agent-webui | EH-710 | SPECIFIED | PR/commit, FIN-T01–T04, T07–T14, served-path and visual evidence |
+| Shared Finance/Atlas ChartRenderer | agent-webui | EH-711 | SPECIFIED | PR/commit, FIN-T05–T06, T13–T14 and mobile performance evidence |
 
-## Work packages
+## Build sequence
 
-- [ ] Capture served gateway capabilities and real provider/permission evidence; select one venue and bounded initial universe.
-- [ ] Agree owner API/schema contracts in `plan.md`; resolve links to the corresponding owner-native specs when published.
-- [ ] Implement a Finance route through existing shell/permission wiring and a typed browser-safe gateway adapter.
-- [ ] Implement the shared ChartRenderer via Atlas registry; certify candles, scalar series, volume, overlays, gaps and keyboard/text access.
-- [ ] Implement group/holding, detail, performance, recommendation, alert, DCA and import views as each owner contract lands.
-- [ ] Execute `test-spec.md` and record CI, mobile visual, accessibility, performance and owner fixture results.
-- [ ] Link merged PRs/commits for each ledger row; reconcile canonical ledger statuses and set this spec to built only when all owner and WebUI acceptance criteria pass.
+- [ ] Confirm the owner services' actual served capabilities, source entitlements, and account permissions. Start with one venue and a bounded instrument universe; record unavailable paths.
+- [ ] Agree and version the API/data shapes in [plan.md](plan.md) with owner repositories. Publish owner-native specs that cite FIN-UI-001 and the relevant EH IDs.
+- [ ] Add a Finance route in `src/lib/nav-registry.ts` and use the existing shell, route role filter, FastAPI host checks and gateway validation.
+- [ ] Implement one venue → persisted candles → scanner → shared ChartRenderer → finalized flip history. Keep source, as-of, session and quality metadata visible.
+- [ ] Add groups, holdings, performance, account import, strategy, DCA, alerts, News and Calendar only as certified owner contracts become available. Use explicit unavailable states meanwhile.
+- [ ] Add the accessibility, contract, browser and negative tests listed in [test-spec.md](test-spec.md). Verify import idempotency, offline staleness, denied access and no direct order path.
+- [ ] Run all repository gates and report CCCC, jscpd, dupehound and KISS findings. Where jscpd or dupehound lacks a configured command, establish a reviewed command/threshold before claiming green.
+- [ ] Record mobile and desktop visual review, provider-backed integration evidence, test results and merged PR/commit links. Reconcile each owner ID independently; update this spec to BUILT only when every owned and dependency gate is proven.
 
-## Source and related program records
+## Evidence log
 
-- `plans/finance/recommended_plan.md` — finance workspace architecture and first vertical slice.
-- `plans/refactor/proposals/FINANCE-EXTENSION-20260927.md` — T8 finance extension design.
-- `plans/refactor/TRAINS-8-9.md` — T8 lanes and dependencies; EH-714 Ghostfolio is T9.
-- `plans/refactor/LEDGER.md` — authoritative row state and evidence.
-- Owner-native specs in `epistemic-graph`, `agent-connector-sdk`, `agents/emerald-exchange`, `graph-os`, `agent-utilities` and `agents/media-downloader` should cross-reference this spec by `FIN-UI-001`; add direct repository links once those files exist.
+| Date | Commit/PR | Environment and fixture/service revision | Tests/gates | Decision |
+|---|---|---|---|---|
+| Pending | Pending | Pending | Pending | No implementation verified |
+
+## Status rules
+
+`SPECIFIED` means the intended behavior and design are reviewable. `BUILDING` requires a linked implementation PR. `BUILT` requires merged code plus passing served-path and quality evidence for the owned behavior. `BLOCKED` names an unmet dependency or unavailable capability. A mock view or documentation commit does not promote any EH ID to BUILT. If a dependency remains unavailable, keep its row PENDING/BLOCKED and show the corresponding honest state in the UI.

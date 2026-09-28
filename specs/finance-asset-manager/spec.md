@@ -1,44 +1,53 @@
-# Finance Asset Manager — WebUI product specification
+# FIN-UI-001 — Finance Asset Manager
 
-**Spec ID:** FIN-UI-001
-**Owner:** `agent-webui`
-**State:** specified; implementation unverified
-**Source baseline:** `plans/finance/recommended_plan.md` and `plans/refactor/proposals/FINANCE-EXTENSION-20260927.md` (2026-09-27)
-**Program:** train 8 `fin-app`, EH-710 and EH-711; consumer coverage for EH-698–EH-709, EH-712, EH-713 and EH-715.
+**Status:** SPECIFIED; implementation and deployment unverified. **Owner:** `agent-webui`. **Related identifiers:** EH-698–EH-713, EH-715. These identifiers support cross-repository tracking; this document contains the complete WebUI requirements. A specification is not evidence that its feature is built.
 
-This is the owner-native contract for the browser presentation of Finance. A spec is a build request, not evidence that a feature has landed. The source ledger marked all 17 T8 rows **QUEUED** on 2026-09-27. A maintainer must reconcile that state with merged code and passing acceptance evidence before changing any row to **BUILT**. `tasks.md` tracks that distinction.
+## Purpose, actors, and priority
 
-## User outcomes
+The primary actor is an authenticated investor managing personal accounts. They need one place to inspect multi-asset holdings, market context, strategy proposals, alerts, and charts without confusing historical analysis with live execution. A contributor can build the WebUI from this repository and mock the explicit contracts in [plan.md](plan.md); integration with owner services remains a separate acceptance gate.
 
-1. An authenticated user sees a mobile-first Markets workspace for a selected universe, account and currency. They can move among Markets, News, Calendar, Portfolio and Menu without losing their selection. Desktop uses the same information architecture in a side rail.
-2. They can browse user-defined instrument groups in Basic or Holdings mode, search by instrument and venue, distinguish regular from pre/post-market prices, and see data freshness, source and session on each displayed figure.
-3. An instrument detail view presents Chart, Rates, News, Notes, Dividends and Analysis tabs, a 1D/5D/1M/6M/1Y/5Y/MAX range selector, and line/candle display where the underlying data permits it. Charts expose volume, trend flips, DCA events, cost basis, margin levels and provenance where authorized and available.
-4. Portfolio performance compares 1D/1M/YTD/1Y/5Y/ALL returns with explicitly named benchmarks. A benchmark comparison says how cash flows, currency, taxes, missing prices and corporate actions were treated.
-5. The user can inspect and configure alerts and DCA proposals. Recommendations are labeled informational, cite evidence and strategy version, and display an explicit abstention state. No browser control can turn a proposal or signal into an order without the existing governed execution path.
-6. CSV import provides a column-mapping preview, validation errors and a stable import receipt. Re-import of the same source has an idempotent outcome. The UI never computes authoritative holdings or cost basis from imported rows.
+**P1:** a readable Markets workspace and one reusable financial chart. **P2:** portfolio, import, strategy, alert, and DCA views as the corresponding service contracts become available. **P3:** optional research panels. Release P1 only with honest unavailable states for unfinished P2 capabilities.
 
-## Scope and ownership
+## User stories and acceptance scenarios
 
-`agent-webui` owns route composition, accessible interactions, chart drawing, browser-safe adapters and display state. Reuse its existing application shell, route/permission model, gateway client, Atlas renderer registry and WebMCP controller pattern. `graph-os` owns authenticated API projection and delivery. `epistemic-graph` owns finance-v1 ontology, time-series, reference data, fixed-point accounting, strategies, backtests, recommendations, leverage calculations and evidence. `agent-connector-sdk` and Emerald Exchange own provider and account transport and governed effects. Agent Utilities owns orchestration. The WebUI must not duplicate provider clients, money math, strategy evaluation, alert schedulers or order policy.
+1. **Browse markets.** From a phone, the user opens Markets, switches among Markets/News/Calendar/Portfolio/Menu, selects a named group and Basic or Holdings, and opens one instrument. Desktop shows the same destinations in a side rail. Keyboard and screen reader users can perform the same actions. The route preserves selected group, instrument, range, and tab across normal navigation and refresh without putting account secrets in the URL.
+2. **Understand a price.** An instrument row and detail view identify the listing, venue, quote currency, regular/pre/post session, source, as-of time, and whether the price is stale or delayed. The row has a licensed logo or text fallback, sparkline, previous-close reference, and change with both text and color. A missing quote is labeled unavailable, never displayed as zero.
+3. **Inspect one chart.** The detail view offers Chart/Rates/News/Notes/Dividends/Analysis, 1D/5D/1M/6M/1Y/5Y/MAX ranges, and line/candle mode where valid. The same renderer handles Finance and Atlas series. Volume and available overlays align to source bars; unsupported modes explain why they cannot be shown.
+4. **Assess holdings.** Portfolio groups have Basic/Holdings views. A performance card supports 1D/1M/YTD/1Y/5Y/ALL and named benchmarks, with return method, currency, cash-flow and tax treatment, as-of, source, and session. A dated real-estate valuation is labeled stale when applicable and has no trade control.
+5. **Review proposals safely.** DCA, trend, rebalancing and leverage analysis show strategy version, evidence, paper/live state, and proposed actions. Recommendations are informational: accumulate/hold/de-risk or explicit abstention. A proposal, alert, or chart marker grants no order authority.
+6. **Import and monitor.** The user previews CSV column mapping and row errors before import, receives a stable receipt and sees an idempotent re-import result. They can inspect price, trend-flip, DCA-due and margin-threshold alert states, including retries and failures.
 
-The screen references are interaction inspiration; do not copy Stoxy branding or unlicensed imagery. Logos require a licensed source and an accessible text fallback. Real estate holdings show dated valuations and staleness, with no trade affordance. Ghostfolio is optional T9 import EH-714, outside this spec's completion criteria.
+## Numbered requirements
 
-## Functional requirements
-
-| ID | Required behavior | Primary ledger row |
+| ID | Observable requirement | Related IDs |
 |---|---|---|
-| FUI-01 | Responsive bottom navigation/desktop rail, accessible keyboard and touch behavior, durable route and selection state | EH-710 |
-| FUI-02 | Group tabs and Basic/Holdings toggle with explicit empty, loading, stale and unavailable states | EH-698, EH-710 |
-| FUI-03 | Instrument rows show licensed logo or fallback, venue, ticker, session clock, sparkline, prior close, change pill and separate post-market line where applicable | EH-700, EH-701, EH-710 |
-| FUI-04 | Detail tabs, range selector, line/candle toggle and volume pane; disable unsupported chart modes with a reason | EH-710, EH-711 |
-| FUI-05 | One reusable ChartRenderer draws typed series for all asset classes in Finance and Atlas; indicators are computed before display decimation | EH-711 |
-| FUI-06 | Chart overlays align to their own versioned source bars: trend line/flips, DCA buys, cost basis and margin/liquidation levels | EH-699, EH-702, EH-706, EH-711 |
-| FUI-07 | Portfolio return and benchmark card displays method, period, currency, as-of, source and session; unavailable comparisons are explicit | EH-699, EH-700, EH-710, EH-715 |
-| FUI-08 | Strategy/recommendation panels show proposed actions, version, scorecard and evidence or abstention; paper/live status is unmistakable | EH-702–EH-706 |
-| FUI-09 | Alerts support price, trend flip, DCA due and margin threshold through existing finance outbox channels | EH-712 |
-| FUI-10 | Account read and CSV import UI show mapping preview, digest, per-row errors and idempotent receipt | EH-713 |
-| FUI-11 | PWA install and offline shell never present cached prices, portfolio totals, alerts or orders as current data | EH-710, EH-715 |
+| FUI-01 | Responsive five-destination navigation uses a bottom bar on narrow viewports and a side rail on desktop; selected route and focus remain coherent. | EH-710 |
+| FUI-02 | User-defined instrument groups and Basic/Holdings mode preserve selection and distinguish loading, genuinely empty, stale, partial, denied, and unavailable results. | EH-698, EH-710 |
+| FUI-03 | Search keys selection by stable instrument and listing IDs, venue and quote basis; ticker text alone never identifies an instrument. | EH-700, EH-701 |
+| FUI-04 | Rows and details show price/session/provenance, previous close, change, sparkline, licensed logo or fallback, and separate after-hours value where supplied. | EH-700, EH-701, EH-710 |
+| FUI-05 | Detail tabs, range controls, line/candle toggle and separate volume pane expose only supported intervals and data types. | EH-710, EH-711 |
+| FUI-06 | One typed ChartRenderer is shared with Atlas. It draws scalar line/area and complete OHLC candles, preserves gaps and revisions, and computes no authoritative indicators. | EH-711 |
+| FUI-07 | Available overlays include trend line/flips, DCA buys, cost basis and margin/liquidation levels; each displays strategy/source version and simulation status. | EH-699, EH-702, EH-706, EH-711 |
+| FUI-08 | Performance and benchmark cards render owner-calculated fixed-point values with method, currency, source, as-of, session and explicit unavailable states. | EH-699, EH-715 |
+| FUI-09 | Strategy and recommendation views cite versioned evidence and scorecards, show abstention reasons, and never directly submit orders. | EH-702–EH-706 |
+| FUI-10 | DCA and alert views distinguish due, missed, failed, replayed, paper-filled and delivered states. | EH-705, EH-712 |
+| FUI-11 | CSV import previews mapping and validation, shows source digest and idempotent receipt, and reads authoritative accounting after import. | EH-713 |
+| FUI-12 | PWA offline shell marks cached financial facts stale; it cannot imply current market, account or order state. | EH-710, EH-715 |
+| FUI-13 | Every chart and control works with keyboard, screen reader summary, 200% zoom, reduced motion and non-color state labels. | EH-653, EH-710, EH-711 |
 
-## Completion rule
+## Boundaries and failure behavior
 
-The spec becomes **built** only after the T8 dependencies have landed, the WebUI and owner-contract tests in `test-spec.md` pass, mobile and desktop visual review is recorded, and a merged commit/PR is linked in `tasks.md`. Individual ledger rows retain their own owner and evidence; this UI spec cannot mark an EG or Emerald row built merely because a screen renders.
+The WebUI draws and adapts data; it does not calculate lots, cost basis, P&L, benchmark returns, strategies, leverage, signal flips, or provider history. `epistemic-graph` is the durable data and compute authority; Emerald Exchange and `agent-connector-sdk` transport market/account data and governed effects; `graph-os` authenticates and projects APIs, schedules and delivers; `agent-utilities` orchestrates workflows. The browser uses its own FastAPI host and authenticated gateway path. No vendor credential, broker export, approval lease, or raw account data enters browser storage.
+
+Missing permission, route absence, stale data, partial coverage, bad contract shape, network failure and empty account are distinct states. No fabricated quote, timeframe, logo, account total, recommendation, or success message is allowed. A live leveraged order requires a separate per-instrument policy, pre-trade checks and authorized approval in the owner service; WebUI controls must remain incapable of bypassing it. CFDs unavailable to a US retail account are refused by the owner service and labeled unavailable in the UI. News or video claims never become deterministic strategy rules without a versioned evaluation and evidence.
+
+## Success and completion criteria
+
+- Every FUI requirement has the corresponding passing test in [test-spec.md](test-spec.md) and a linked merged commit/PR in [tasks.md](tasks.md).
+- Scanner, chart and alert views agree on the same finalized, versioned trend event; viewport decimation cannot change an indicator output.
+- Mobile and desktop visual review, accessibility checks, owner contract fixtures, build, and applicable quality gates pass. Performance is recorded for a 1,000-instrument paged universe on the agreed device profile; no target is declared passed without a measured baseline and published threshold.
+- A demo or mock is labeled as such. The feature is **BUILT** only when the served, authenticated path and negative cases pass, not when this document or a mock UI merges.
+
+## Scope exclusions
+
+This release does not implement a broker, investment-adviser service, proprietary TradingView studies, direct browser-to-provider connections, automatic live trading, trading of manually valued real estate, a Ghostfolio database, or a new frontend shell. A future public product requires separate data-display licensing and regulatory decisions.

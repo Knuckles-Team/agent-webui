@@ -1,33 +1,48 @@
-# Finance Asset Manager — acceptance and test specification
+# FIN-UI-001 — Test and acceptance specification
 
-**Evidence rule:** every test result links to a commit, fixture/source revision, environment and date in `tasks.md`. A passing mock-only WebUI suite does not certify live provider coverage, accounting or execution policy.
+**Status:** SPECIFIED. Requirements: [spec.md](spec.md). Tests use deterministic public/synthetic fixtures with no credentials or private account exports. Live integration evidence must identify commit, service versions, environment class, date and provider entitlement without disclosing secrets.
 
-## Contract and correctness
+| Test | Requirement | Level and setup | Expected observation |
+|---|---|---|---|
+| FIN-T01 | FUI-01, FUI-13 | Browser at 375px, 768px, 1440px; keyboard, touch and screen reader | Mobile bottom bar/desktop rail offer five destinations; selected group/tab/range persists; focus and labels are coherent. |
+| FIN-T02 | FUI-02 | Component and API fixture for loading, empty, stale, partial, 401/403, 404/501 and network failure | Each is distinct and announced; unavailable or denied never appears as an empty portfolio. |
+| FIN-T03 | FUI-03 | Two identical tickers on different venues and quote currencies | Search and detail retain stable listing/venue IDs; no mixed quote, candle or account association. |
+| FIN-T04 | FUI-04 | Quote fixtures for regular/pre/post, delayed, missing and licensed/unlicensed logos | Session/as-of/source and previous close remain correct; after-hours value is separate; unlicensed logo has text fallback; missing price is not zero. |
+| FIN-T05 | FUI-05, FUI-06 | Unit and browser fixture with scalar, complete OHLC, invalid OHLC, gaps, corrections and unsupported timeframe | One renderer works in Finance and Atlas; candle mode only accepts valid OHLC; gaps persist; revised bar replaces by ID; unsupported mode states why. |
+| FIN-T06 | FUI-06, FUI-07 | Owner fixture with finalized trend flip, DCA buy, cost basis and simulated margin level; compare full and M4 display views | Markers align to bar IDs and versions; trend output does not change with viewport decimation; simulation is labeled. |
+| FIN-T07 | FUI-08 | Contract fixture with multi-currency cash flows, dividend, split, fees, stale property valuation, and two named benchmarks | UI equals owner decimal-string outputs; no JS finance recomputation; method/currency/source/as-of/session and stale label visible. |
+| FIN-T08 | FUI-09 | Recommendation fixture: calibrated proposal, thin history, warmup, drift and missing scorecard | Evidence/strategy version shown; abstention reason explicit; no order request can originate from panel. |
+| FIN-T09 | FUI-10 | DCA and alert fixtures: due, missed, failed, replayed, paper fill, channel retry | States and receipts are distinct; duplicate event ID appears once logically; paper fill is never live. |
+| FIN-T10 | FUI-11 | CSV fixture with mapped/unmapped columns, malformed row and duplicate digest; preview then retry import | Preview reports counts/errors; same digest returns same logical receipt; holdings refresh from owner response, not UI math. |
+| FIN-T11 | FUI-12 | Offline PWA shell after a previously valid finance view | Cached quote, account and alert state marked stale; current-data actions unavailable. |
+| FIN-T12 | FUI-09, FUI-13 | Authenticated/unauthenticated and wrong-account requests, malformed wire payload, invalid decimal, prohibited instrument and missing approval lease | Host denies unauthorized scope; UI handles shape failure; no client path bypasses governed execution. |
+| FIN-T13 | FUI-01–FUI-13 | 200% zoom, reduced motion, keyboard-only chart, high contrast and screen reader inspection | No clipped controls, focus traps or color-only meaning; chart has text/table equivalent and accessible summary. |
+| FIN-T14 | FUI-01, FUI-05, FUI-06 | Paged 1,000-instrument fixture and multi-month series on an agreed mobile device/network | Capture payload, memory, interaction latency and frame rate; no full-universe history fetch or frozen UI. Threshold and device profile must be approved before calling this pass. |
 
-| ID | Acceptance case | Expected result |
-|---|---|---|
-| FIN-T01 | Gateway returns missing, empty, stale, partial, unauthorized and unavailable data for each Finance projection | Distinct, accessible UI state; no invented zero or success; source/as-of/session remains visible where data exists |
-| FIN-T02 | Search identical ticker on two venues and quote currencies | Distinct instrument/listing choices; selection and price never cross streams |
-| FIN-T03 | Candles cross pre/regular/post sessions, holiday, DST and a late correction | Session and revision shown correctly; chart gap and prior close are not fabricated |
-| FIN-T04 | Switch line/candle, range and asset class; request unsupported intervals | One renderer supports valid series; unavailable chart mode explains why; no silent timeframe substitution |
-| FIN-T05 | Compare EG trend/strategy fixture to chart and scanner | Identical versioned flips and proposal timestamps; overlays align to finalized bars; M4 viewport decimation cannot change indicator output |
-| FIN-T06 | Import CSV twice, with duplicate/malformed/corporate-action rows | Preview reports errors and counts; same digest yields idempotent receipt; UI displays EG's resulting holdings and cost basis, not its own arithmetic |
-| FIN-T07 | Portfolio fixture includes fees, dividends, FX, split, multiple lots and benchmark | Displayed totals and returns equal EG golden outputs; every figure has source, as-of, currency, session and method |
-| FIN-T08 | DCA due, missed, failed, replayed and paper-filled cases | Plan and event states are distinct; no contribution silently skipped/doubled; paper fill never appears live |
-| FIN-T09 | Recommendation has thin history, warmup, drift or missing scorecard | Explicit abstention and evidence reason; no buy/sell command from recommendation view |
-| FIN-T10 | Leverage policy absent, approval lease absent, denied approver, prohibited jurisdiction and allowed paper simulation | No live order affordance or request bypass; backend denial remains authoritative; risk levels labeled simulation |
-| FIN-T11 | Alert event is redelivered or channel fails | One visible logical alert with delivery/retry status; outbox identity preserved |
-| FIN-T12 | Offline PWA opens with cached screen state | Shell works; stale prices, account totals and order status are marked stale and cannot be mistaken for current |
+## Fixtures and contract rules
 
-## Interaction and visual acceptance
+Place small synthetic fixtures under normal test directories, with stable IDs and ISO UTC times. Cover exchange holidays and DST, pre/post sessions, source correction revision, duplicate/out-of-order bars, unsupported intervals, missing history, same ticker on two venues, decimal money, CSV idempotency, and unavailable provider capability. Owner golden fixtures certify accounting, futures rolls, leveraged-ETF decay and broker statement parity; the WebUI tests assert only faithful display and refusal to fabricate. No fixture is presented as live data.
 
-- Exercise mobile viewport and touch hardware as well as desktop: bottom navigation/side rail, group tabs, Basic/Holdings, detail tabs, chart gestures, keyboard equivalents, range controls and modal focus return.
-- Compare each Markets, News, Calendar, Portfolio and detail state against the interaction reference screenshots. Record screenshots and a review decision; use original branding and licensed logos only.
-- Run accessibility checks for names/roles, focus order, 200% zoom, reduced motion, contrast, screen reader chart summary and non-color trend labels. Follow EH-653 guidance. Ensure missing data is announced without repeatedly interrupting the user.
-- Verify chart performance with representative 1,000-instrument paged scanner data and several months of history on an agreed mobile profile. Record memory, frame rate, response latency and payload size. Failure must be visible and bounded, never a browser freeze.
+Consumer contract tests validate the exact Zod schemas and structured errors in [plan.md](plan.md). The served-path suite must exercise browser → FastAPI host → authenticated gateway projection with a test tenant; mock-only component tests cannot satisfy this gate. Record the owner revision and fixture ID used by both sides.
 
-## Integration and quality gates
+## Visual, accessibility and security review
 
-Run the repository's prescribed lint, typecheck, unit, browser, accessibility and build gates on changed code. The Finance vertical slice additionally requires provider entitlement/capability evidence and EH-715 owner golden fixtures. Use CCCC, jscpd and dupehound on touched source; inspect reports for new high-complexity or duplicate paths. A KISS review must trace each new adapter/component to a required contract and identify existing wiring reused. Changes to owner APIs need consumer-driven contract tests and backward compatibility review.
+Review Markets, News, Calendar, Portfolio, group Basic/Holdings and instrument detail on phone and desktop. Use the interaction layout described in [spec.md](spec.md). Capture screenshots and a reviewer decision in a PR. Verify a real touch device or emulator for crosshair/pinch/scroll interaction. Check keyboard focus, role/name, 200% zoom, reduced motion, non-color trend labels, chart table summary and polite status announcements.
 
-No acceptance gate is satisfied by a placeholder Emerald widget, paper quote or fixture masquerading as live data. Record exact provenance for any provider-backed test and keep secrets/account exports out of test artifacts.
+Exercise denial at both route and host, cross-account URL editing, hostile strings in news/notes, import errors, stream disconnect/reconnect, stale cache and no credential leakage. A service denial must remain authoritative even if the UI state is manipulated.
+
+## Commands and evidence
+
+For implementation, run from the repository root:
+
+```bash
+pnpm run typecheck
+pnpm run lint
+pnpm run test
+pnpm run test:e2e
+pnpm run build
+uv run --all-extras pytest agent/agent_webui/__tests__
+pre-commit run --config .config/pre-commit.yaml --all-files
+```
+
+Run `python3 scripts/check_complexity_staged.py` through the staged hook for supported source changes. Record CCCC output. jscpd and dupehound have no configured repository command or threshold at this revision; document the agreed command/threshold and result before marking source implementation green. KISS review records which existing route, gateway, Atlas renderer and auth mechanisms were reused. Tests or gates omitted because a capability is absent remain PENDING, with a reason and owner in [tasks.md](tasks.md). Every pass must link a commit/PR and output artifact; no self-updating baseline or suppression substitutes for a fix.
