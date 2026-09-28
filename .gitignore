@@ -55,6 +55,11 @@ playwright/.auth/
 /.claude/settings.local.json
 /scratch/
 /.specify/
+!/.specify/
+/.specify/*
+!/.specify/memory/
+/.specify/memory/*
+!/.specify/memory/constitution.md
 /agent/.venv/
 /tsconfig.tsbuildinfo
 .env

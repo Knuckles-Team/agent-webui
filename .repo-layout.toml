@@ -21,6 +21,7 @@
 # this gate per CX-HYG-01.
 
 [dirs]
+".specify" = "tracked Spec Kit constitution; generated tooling files remain ignored"
 agent = "the agent_webui Python backend package: FastAPI + pydantic-ai orchestrator, RBAC/OIDC session handling, observability, api_extensions -- plus its own README, icon, and mcp_config.json"
 docker = "Dockerfile plus build_and_push.sh / deploy.sh for the webui image"
 docs = "mkdocs documentation source (architecture, concepts, capability coverage)"
@@ -29,7 +30,7 @@ e2e = "Playwright end-to-end specs (auth, graph-view, knowledge-base-view, memor
 public = "static assets Vite serves as-is (favicons, apple-touch-icon)"
 scripts = "gate scripts (check_*.py) and release tooling invoked by pre-commit/CI"
 ".config" = "tracked directory for explicitly located tool configuration (pre-commit and codespell ignore words)"
-specs = "lightweight per-feature spec markdown (delete-past-chats, update-color-scheme, update-tools-dropdown) -- distinct from the spec-kit-generated specs under .specify/specs/"
+specs = "tracked feature specifications, shared templates, and preserved earlier per-feature drafts"
 src = "the React/TypeScript frontend: App/Chat/Part components, assets, component tree, and its own __tests__"
 tests = "the Python backend test suite: characterization tests plus dashboard/health/graph-endpoint tests"
 ".github" = "GitHub Actions workflow definitions"
