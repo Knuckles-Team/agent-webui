@@ -10,7 +10,7 @@ Delivery status is recorded here with exact merged revision and test evidence.
 
 Create `specs/<stable-id>/` with `spec.md` (user outcome, requirements, acceptance), `plan.md`
 (architecture, reuse, interfaces, live wiring, decisions), `test-spec.md` (positive, negative,
-integration, quality and release proof), and `tasks.md` (ordered implementation and verification).
+integration, quality and release proof), and `tasks.md` (ordered implementation and verification), plus `status.json` (machine-readable delivery, acceptance, and public receipts).
 Start from [`_template/`](_template/). Keep status and evidence explicit; a planned or tested item
 is not a landed item. Put durable evidence links in the spec directory, never local scratch output.
 This follows GitHub Spec Kit's specify/plan/tasks flow with an explicit test contract. The tracked [constitution](../.specify/memory/constitution.md) records this repository's governing principles.
@@ -24,13 +24,17 @@ no-duplicate-authority check.
 
 ## Status and evidence
 
-Use `PROPOSED` for a draft, `PLANNED` for a complete contract awaiting construction,
-`PARTIAL` for implementation with limited proof, and `IN REVIEW` for an open change.
-`LANDED` requires the exact merged owner-repository revision. `ACCEPTED` requires the
-consumer, runtime, quality, and release receipts named in the owner spec. Record an
-explicit `BLOCKED` reason when progress depends on an unresolved decision or dependency.
-An obligation can be landed while acceptance remains open. Record evidence in tracked
-spec files or public issue, PR, and check links.
+The tracked `status.json` is the source for the public HTML report. It uses delivery states
+`UNKNOWN`, `SPECIFIED`, `BUILDING`, `BUILT`, `LANDED`, `CLOSED`, `DEFERRED`, and `REJECTED`,
+and acceptance states `NOT_AUDITED`, `PENDING`, `ACCEPTED`, and `FAILED`. Use
+`SPECIFIED/NOT_AUDITED` for a complete design awaiting build; use `UNKNOWN/NOT_AUDITED`
+when existing code has not received an exact-revision audit. Prose labels such as `PARTIAL`
+or `IN REVIEW` may describe current work, but they do not prove delivery.
+
+`LANDED` requires a public merged-head receipt for the exact owning-repository revision.
+`ACCEPTED` additionally requires the checked-in test and consumer or release receipts.
+Record public issue, PR, check, and commit links in the owner spec and evidence array.
+An obligation can be landed while acceptance remains open.
 
 ## Graph OS owner map
 
@@ -57,4 +61,9 @@ bootstrap skill, together with the [SDD full lifecycle](https://github.com/Knuck
 ## Local specifications
 
 - [`FIN-UI-001` Finance Asset Manager](finance-asset-manager/spec.md) — Train 8 browser contract; specified, implementation unverified.
+- [`WEBUI-DESIGN-001` Browser design system](browser-design-system/spec.md) — shared accessible UI primitives and visual contracts.
+- [`WEBUI-DECIDE-001` Decision evidence](decision-evidence/spec.md) — governed decision explanation and calibration views.
+- [`WEBUI-API-001` Graph OS API consumer](graphos-api-consumer/spec.md) — typed browser client and response-state handling.
+- [`WEBUI-APPS-001` Graph OS app surface](graphos-app-surface/spec.md) — application routes and integrated navigation.
+- [`WEBUI-IDENTITY-001` Identity and access](identity-access/spec.md) — authentication state and tenant-safe browser behavior.
 - [`delete-past-chats.md`](delete-past-chats.md), [`update-color-scheme.md`](update-color-scheme.md), and [`update-tools-dropdown.md`](update-tools-dropdown.md) are existing brief feature drafts. Preserve them; expand to the shared feature directory format when resumed.
