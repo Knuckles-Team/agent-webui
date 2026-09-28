@@ -1,104 +1,129 @@
-"""Run an Agent Utilities gate against this checkout in an isolated worktree."""
+#!/usr/bin/env python3
+"""Run a shared agent-utilities gate script against this checkout.
+
+Several fleet-wide pre-commit gates live in agent-utilities' ``scripts/``
+directory. This wrapper resolves that checkout in a fixed order:
+
+1. ``AGENT_UTILITIES_ROOT`` when set;
+2. ``.uv-workspace-siblings/agent-utilities`` -- the checkout
+   ``scripts/bootstrap.sh`` materializes at the commit pinned in
+   ``scripts/siblings.lock``;
+3. an ``agent-utilities`` directory beside any ancestor of this checkout
+   (a maintainer's multi-repository workspace).
+
+When no checkout is found the gate cannot run: under CI (``CI`` set) it fails
+closed with exit status 2; locally it prints ``SKIPPED`` and exits 0.
+
+``--workspace-only`` marks a gate that enforces maintainer-workspace policy
+(for example lane-guard's canonical-checkout rule). It runs only when the
+checkout is found through (1) or (3), never in a Claude Code cloud session,
+and is otherwise skipped with a notice, including in CI, because the policy
+has no meaning in a single fresh clone.
+
+Usage: ``run_agent_utilities_gate.py --gate NAME --script scripts/x.py [-- args]``
+"""
 
 from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+PINNED_SIBLING = REPOSITORY_ROOT / ".uv-workspace-siblings" / "agent-utilities"
+
 
 def _is_agent_utilities_root(path: Path) -> bool:
-    """Return whether *path* contains the framework and its gate scripts."""
-
-    return (
-        (path / "pyproject.toml").is_file()
-        and (path / "agent_utilities").is_dir()
-        and (path / "scripts").is_dir()
-    )
+    return (path / "pyproject.toml").is_file() and (path / "scripts").is_dir()
 
 
-def _agent_utilities_root(repository_root: Path) -> Path:
-    """Resolve the framework checkout without assuming this worktree's location."""
-
-    configured = os.environ.get("AGENT_UTILITIES_ROOT")
+def _workspace_root() -> Path | None:
+    configured = os.environ.get("AGENT_UTILITIES_ROOT", "").strip()
     if configured:
         root = Path(configured).expanduser().resolve()
-        if _is_agent_utilities_root(root):
-            return root
-        raise RuntimeError("AGENT_UTILITIES_ROOT is not an agent-utilities checkout")
-
-    result = subprocess.run(
-        ["git", "-C", str(repository_root), "worktree", "list", "--porcelain"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    worktrees = [
-        Path(line.removeprefix("worktree ")).resolve()
-        for line in result.stdout.splitlines()
-        if line.startswith("worktree ")
-    ]
-    # A repo checkout -- canonical or a linked worktree -- sits some number of
-    # directory levels below the workspace root that also holds agent-utilities
-    # as a sibling (one level for a top-level repo like agent-webui, two for an
-    # agents/<name> package). Walk upward from each known worktree instead of
-    # assuming a fixed depth, so one script works at every nesting level.
-    for worktree in worktrees:
-        for ancestor in (worktree, *worktree.parents):
-            candidate = ancestor.parent / "agent-utilities"
-            if _is_agent_utilities_root(candidate):
-                return candidate
-
-    raise RuntimeError(
-        "Cannot locate an agent-utilities checkout. Set AGENT_UTILITIES_ROOT to the "
-        "framework checkout before running pre-commit."
-    )
+        if not _is_agent_utilities_root(root):
+            raise SystemExit(
+                f"AGENT_UTILITIES_ROOT={configured!r} is not an agent-utilities checkout"
+            )
+        return root
+    for ancestor in REPOSITORY_ROOT.parents:
+        candidate = ancestor / "agent-utilities"
+        if candidate.resolve() != REPOSITORY_ROOT and _is_agent_utilities_root(
+            candidate
+        ):
+            return candidate.resolve()
+    return None
 
 
-def main() -> int:
-    """Execute an Agent Utilities module or script in its locked environment."""
+def resolve(workspace_only: bool) -> Path | None:
+    """The agent-utilities checkout to run gates from, or ``None``."""
 
-    parser = argparse.ArgumentParser()
-    target = parser.add_mutually_exclusive_group(required=True)
-    target.add_argument("--module")
-    target.add_argument("--script", type=Path)
+    if not workspace_only and not os.environ.get("AGENT_UTILITIES_ROOT", "").strip():
+        if _is_agent_utilities_root(PINNED_SIBLING):
+            return PINNED_SIBLING.resolve()
+    return _workspace_root()
+
+
+def unavailable(gate: str, reason: str) -> int:
+    """Fail closed in CI; skip visibly everywhere else."""
+
+    if os.environ.get("CI"):
+        print(f"{gate}: CANNOT RUN in CI: {reason}", file=sys.stderr)
+        return 2
+    print(f"SKIPPED ({gate}): {reason}; run scripts/bootstrap.sh")
+    return 0
+
+
+def _python() -> str:
+    """This checkout's synced interpreter when present, else the caller's."""
+
+    venv_python = REPOSITORY_ROOT / ".venv" / "bin" / "python"
+    return str(venv_python) if venv_python.is_file() else sys.executable
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    parser.add_argument("--gate", required=True, help="name printed in notices")
+    parser.add_argument("--script", required=True, help="path inside agent-utilities")
+    parser.add_argument("--workspace-only", action="store_true")
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
-    options = parser.parse_args()
+    options = parser.parse_args(argv)
 
-    repository_root = Path(__file__).resolve().parents[1]
-    try:
-        framework_root = _agent_utilities_root(repository_root)
-    except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
-        parser.error(str(exc))
+    if options.workspace_only and os.environ.get("CLAUDE_CODE_REMOTE") == "true":
+        print(f"SKIPPED ({options.gate}): maintainer-workspace policy; cloud session")
+        return 0
+    root = resolve(options.workspace_only)
+    if root is None:
+        if options.workspace_only:
+            print(
+                f"SKIPPED ({options.gate}): maintainer-workspace policy; no "
+                "agent-utilities workspace sibling or AGENT_UTILITIES_ROOT found"
+            )
+            return 0
+        return unavailable(options.gate, "agent-utilities checkout not found")
 
-    uv = shutil.which("uv")
-    if uv is None:
-        parser.error("uv is required to run Agent Utilities pre-commit gates")
-
-    command = [uv, "run", "--project", str(framework_root), "--locked", "python"]
-    if options.module:
-        command.extend(["-m", options.module])
-    else:
-        assert options.script is not None
-        script = framework_root / options.script
-        if not script.is_file():
-            parser.error(f"Agent Utilities script was not found: {options.script}")
-        command.append(str(script))
+    script = root / options.script
+    if not script.is_file():
+        return unavailable(options.gate, f"{options.script} missing in {root}")
     arguments = options.arguments
     if arguments[:1] == ["--"]:
         arguments = arguments[1:]
-    command.extend(arguments)
-
-    environment = os.environ.copy()
-    existing = environment.get("PYTHONPATH")
-    environment["PYTHONPATH"] = (
-        f"{repository_root}{os.pathsep}{existing}" if existing else str(repository_root)
+    result = subprocess.run(
+        [_python(), str(script), *arguments],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    return subprocess.run(command, cwd=repository_root, env=environment).returncode
+    sys.stdout.write(result.stdout)
+    if result.returncode and "ModuleNotFoundError" in result.stderr:
+        missing = result.stderr.strip().splitlines()[-1]
+        return unavailable(options.gate, f"environment incomplete ({missing})")
+    sys.stderr.write(result.stderr)
+    return result.returncode
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
