@@ -717,6 +717,7 @@ source = { editable = ".uv-workspace-siblings/agent-utilities/.uv-workspace-sibl
 dependencies = [
     { name = "httpx", marker = "sys_platform == 'linux'" },
     { name = "msgpack", marker = "sys_platform == 'linux'" },
+    { name = "pydantic", marker = "sys_platform == 'linux'" },
     { name = "pyoxigraph", marker = "sys_platform == 'linux'" },
 ]
 
@@ -726,6 +727,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'lmcache'", specifier = ">=0.24.0" },
     { name = "maturin", marker = "extra == 'test'", specifier = ">=1.0,<2.0" },
     { name = "msgpack", specifier = ">=1.2.1" },
+    { name = "pydantic", specifier = ">=2,<3" },
     { name = "pyoxigraph", specifier = ">=0.3.22" },
     { name = "pyoxigraph", marker = "extra == 'owl'", specifier = ">=0.3.22" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0.0" },

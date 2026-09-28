@@ -1,0 +1,16 @@
+# Pinned sibling source checkouts under `.uv-workspace-siblings/`.
+#
+# uv.lock records agent-utilities (and, through it, epistemic-graph) as
+# editable path sources (see [tool.uv.sources] in pyproject.toml), so a fresh
+# clone cannot sync or check the lock until they exist on disk. This file is
+# the one source of truth for which commit each is checked out at;
+# scripts/bootstrap.sh reads it. Bump a pin by editing its commit here, then
+# run `uv lock` and commit both files together.
+#
+# Columns: path  repository  commit  when
+#   when = always -> needed for `uv sync --frozen` and the shared gates
+#   when = lock   -> read for its metadata (`uv lock`, the uv-lock hook);
+#                    built only by `scripts/bootstrap.sh --engine`
+# bootstrap checks out every row.
+.uv-workspace-siblings/agent-utilities  https://github.com/Knuckles-Team/agent-utilities  446e0cf11b5bce3e4b09488035800b91a7d60b25  always
+.uv-workspace-siblings/agent-utilities/.uv-workspace-siblings/epistemic-graph  https://github.com/Knuckles-Team/epistemic-graph  6a795577dff539da06c52f467220422bf23e0b03  lock

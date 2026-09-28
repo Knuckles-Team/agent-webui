@@ -35,6 +35,7 @@ src = "the React/TypeScript frontend: App/Chat/Part components, assets, componen
 tests = "the Python backend test suite: characterization tests plus dashboard/health/graph-endpoint tests"
 ".github" = "GitHub Actions workflow definitions"
 ".security" = "adversarial security-gate scripts (authenticated_negative.py, repository_fuzz.py) and security-contract.json read by the security CI gate"
+".claude" = "Claude Code project settings and the SessionStart hook that runs scripts/bootstrap.sh in cloud sessions"
 
 [files]
 "AGENTS.md" = "agent-facing repo guide"
