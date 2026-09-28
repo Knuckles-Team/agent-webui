@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "spec_id": "WEBUI-APPS-001",
+  "owner_repo": "agent-webui",
+  "requirement_ids": ["APP-01", "APP-02", "APP-03", "APP-04", "APP-05", "APP-06", "APP-07"],
+  "delivery_state": "SPECIFIED",
+  "acceptance_state": "NOT_AUDITED",
+  "evidence": []
+}
