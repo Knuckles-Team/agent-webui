@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.3] - 2026-09-29
+
+### Fixed
+- **Privacy guard** — platform identity is ignored on CI and cloud sessions.
+- **Release intent** — release-neutral commits after a published version are
+  skipped instead of re-entering the publication pipeline.
+
+### Changed
+- **Development gates** — hooks skip missing tools locally and fail closed in
+  CI; the release workflow gates on the repository's own pre-commit config.
+- **Bootstrap** — one-command setup from a fresh clone (`scripts/bootstrap.sh`).
+- **Specifications** — WebUI program specs, requirement delivery states, and
+  the finance asset manager specification were added under `specs/`.
+
 ## [2.6.0] - 2026-09-14
 
 ### Added
