@@ -249,14 +249,16 @@
 
 
 /* ── Global micro-animations ──────────────────────────────────────── */
-button,
-a,
-[role="button"],
-[role="tab"],
-input,
-textarea,
-select {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+@media (prefers-reduced-motion: no-preference) {
+  button,
+  a,
+  [role="button"],
+  [role="tab"],
+  input,
+  textarea,
+  select {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
 }
 
 /* Card hover lift */

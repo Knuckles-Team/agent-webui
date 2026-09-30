@@ -26,12 +26,14 @@ export interface FilterBarProps {
 
 function ClauseRow({
   clause,
+  position,
   fields,
   capabilities,
   onChange,
   onRemove,
 }: {
   clause: FilterClause
+  position: number
   fields: SchemaNode[]
   capabilities: AdapterCapabilities
   onChange: (clause: FilterClause) => void
@@ -39,14 +41,22 @@ function ClauseRow({
 }) {
   const operators = operatorsForType(fieldType(fields, clause.field), capabilities.filters)
   return (
-    <div className="flex items-center gap-1.5" data-testid="atlas-filter-clause">
+    <div
+      className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto"
+      role="group"
+      aria-label={`Filter ${position}`}
+      data-testid="atlas-filter-clause"
+    >
       <Select
         value={clause.field}
         onValueChange={(field) => {
           onChange({ ...clause, field })
         }}
       >
-        <SelectTrigger className="h-8 w-40 text-xs" aria-label="Filter field">
+        <SelectTrigger
+          className="h-8 min-w-0 flex-1 text-xs sm:w-40 sm:flex-none"
+          aria-label={`Filter ${position} field`}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -63,7 +73,10 @@ function ClauseRow({
           onChange({ ...clause, op: op as FilterOperator })
         }}
       >
-        <SelectTrigger className="h-8 w-28 text-xs" aria-label="Filter operator">
+        <SelectTrigger
+          className="h-8 min-w-0 flex-1 text-xs sm:w-28 sm:flex-none"
+          aria-label={`Filter ${position} operator`}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -76,16 +89,22 @@ function ClauseRow({
       </Select>
       {!isValuelessOperator(clause.op) && (
         <Input
-          aria-label="Filter value"
+          aria-label={`Filter ${position} value`}
           value={String(clause.value ?? '')}
           onChange={(event) => {
             onChange({ ...clause, value: event.target.value })
           }}
-          className="h-8 w-44 text-xs"
+          className="h-8 min-w-0 flex-1 text-xs sm:w-44 sm:flex-none"
           placeholder="value"
         />
       )}
-      <Button variant="ghost" size="icon" className="size-8" aria-label="Remove filter" onClick={onRemove}>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-8"
+        aria-label={`Remove filter ${position}`}
+        onClick={onRemove}
+      >
         <X className="size-3.5" />
       </Button>
     </div>
@@ -97,10 +116,14 @@ function replaceClause(clauses: FilterClause[], next: FilterClause): FilterClaus
   return clauses.map((clause) => (clause.id === next.id ? next : clause))
 }
 
+function matchButtonLabel(combinator: FilterSet['combinator']): string {
+  return combinator === 'and' ? 'Match all filters; switch to match any' : 'Match any filters; switch to match all'
+}
+
 export function FilterBar({ filters, fields, capabilities, onChange }: FilterBarProps) {
   const canAdd = fields.length > 0 && capabilities.filters.length > 0
   return (
-    <div className="flex flex-wrap items-center gap-2" data-testid="atlas-filter-bar">
+    <div className="flex min-w-0 flex-wrap items-center gap-2" data-testid="atlas-filter-bar">
       {capabilities.freeTextSearch && (
         <Input
           aria-label="Search results"
@@ -112,10 +135,11 @@ export function FilterBar({ filters, fields, capabilities, onChange }: FilterBar
           className="h-8 w-48 text-xs"
         />
       )}
-      {filters.clauses.map((clause) => (
+      {filters.clauses.map((clause, index) => (
         <ClauseRow
           key={clause.id}
           clause={clause}
+          position={index + 1}
           fields={fields}
           capabilities={capabilities}
           onChange={(next) => {
@@ -130,6 +154,7 @@ export function FilterBar({ filters, fields, capabilities, onChange }: FilterBar
         variant="outline"
         size="sm"
         className="h-8"
+        aria-label="Add filter"
         disabled={!canAdd}
         onClick={() => {
           onChange({
@@ -146,6 +171,7 @@ export function FilterBar({ filters, fields, capabilities, onChange }: FilterBar
           variant="ghost"
           size="sm"
           className="h-8 text-xs"
+          aria-label={matchButtonLabel(filters.combinator)}
           onClick={() => {
             onChange({ ...filters, combinator: filters.combinator === 'and' ? 'or' : 'and' })
           }}

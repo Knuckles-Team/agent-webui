@@ -47,6 +47,19 @@ interface FieldRenderContext {
   update: (name: string, value: SchemaFormValue) => void
 }
 
+function fieldDescriptionIds(id: string, description: string | undefined, hasIssue: boolean): string | undefined {
+  const ids = [description && `${id}-description`, hasIssue && `${id}-error`].filter(Boolean).join(' ')
+  return ids || undefined
+}
+
+function fieldError(issue: { message: string } | undefined, id: string) {
+  return issue ? (
+    <p id={`${id}-error`} className="text-xs text-destructive">
+      {issue.message}
+    </p>
+  ) : null
+}
+
 function renderConstField(name: string, label: string, field: JsonSchema) {
   return (
     <div key={name} className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2">
@@ -69,18 +82,25 @@ function renderBooleanField(name: string, label: string, field: JsonSchema, ctx:
         <Checkbox
           id={id}
           checked={Boolean(state[name])}
+          aria-labelledby={`${id}-label`}
+          aria-invalid={Boolean(issue)}
+          aria-describedby={fieldDescriptionIds(id, field.description, Boolean(issue))}
           onCheckedChange={(checked) => {
             update(name, checked === true)
           }}
         />
         <span>
-          <span className="block text-sm font-medium">
+          <span id={`${id}-label`} className="block text-sm font-medium">
             {label} {required.has(name) && <span className="text-destructive">*</span>}
           </span>
-          {field.description && <span className="block text-xs text-muted-foreground">{field.description}</span>}
+          {field.description && (
+            <span id={`${id}-description`} className="block text-xs text-muted-foreground">
+              {field.description}
+            </span>
+          )}
         </span>
       </label>
-      {issue && <p className="text-xs text-destructive">{issue.message}</p>}
+      {fieldError(issue, id)}
     </div>
   )
 }
@@ -197,7 +217,7 @@ function renderValueField(
     name,
     value: String(state[name] ?? ''),
     'aria-invalid': Boolean(issue),
-    'aria-describedby': field.description ? `${id}-description` : undefined,
+    'aria-describedby': fieldDescriptionIds(id, field.description, Boolean(issue)),
   }
 
   return (
@@ -211,7 +231,7 @@ function renderValueField(
           {field.description}
         </p>
       )}
-      {issue && <p className="text-xs text-destructive">{issue.message}</p>}
+      {fieldError(issue, id)}
     </div>
   )
 }

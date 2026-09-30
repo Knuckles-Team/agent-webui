@@ -3,7 +3,7 @@
   "spec_id": "WEBUI-DESIGN-001",
   "owner_repo": "agent-webui",
   "requirement_ids": ["EH-653", "DS-01", "DS-02", "DS-03", "DS-04", "DS-05", "DS-06"],
-  "delivery_state": "SPECIFIED",
+  "delivery_state": "BUILDING",
   "acceptance_state": "NOT_AUDITED",
   "evidence": []
 }
