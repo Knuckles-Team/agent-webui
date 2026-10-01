@@ -10,7 +10,7 @@
 | Other domain families | Route-census table tests | Every old route classified and required op mapped |
 | Streaming/cancel | Host and browser fixture | Auth retained; cancel stops stream and repeats safely |
 | Architecture | Static import/route census on changed tree | Zero direct AU-internal imports and zero unclassified domain routes |
-| G7 route introduction | Add a synthetic unclassified domain handler, then a declared UI-local handler | Lint rejects the domain route and accepts only the explicitly inventoried UI-local route |
+| Architecture lint route introduction | Add a synthetic unclassified domain handler, then a declared UI-local handler | Lint rejects the domain route and accepts only the explicitly inventoried UI-local route |
 | Registry unavailable or mismatched | Remove an operation or change pinned digest in local fixture | Caller presents unavailable/upgrade state; no legacy endpoint, guessed payload or effect request |
 | Confirmation replay | Expired and reused `plan_ref`, changed principal/tenant, missing step-up | Host and Graph OS refuse action; no side effect and no sensitive body in logs |
 

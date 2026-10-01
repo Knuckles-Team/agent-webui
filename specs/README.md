@@ -10,7 +10,12 @@ Delivery status is recorded here with exact merged revision and test evidence.
 
 Create `specs/<stable-id>/` with `spec.md` (user outcome, requirements, acceptance), `plan.md`
 (architecture, reuse, interfaces, live wiring, decisions), `test-spec.md` (positive, negative,
-integration, quality and release proof), and `tasks.md` (ordered implementation and verification), plus `status.json` (machine-readable delivery, acceptance, and public receipts).
+integration, quality and release proof), `tasks.md` (ordered implementation and verification),
+`requirements.md` (one entry per requirement ID this spec owns, defining what each ID means and
+the proof that closes it), and `status.json` (machine-readable delivery, acceptance, and public
+receipts). `status.json` carries a `requirements` array with one entry per requirement ID,
+each with its own `delivery_state` and evidence, in addition to the spec-level
+`delivery_state`/`acceptance_state`.
 Start from [`_template/`](_template/). Keep status and evidence explicit; a planned or tested item
 is not a landed item. Put durable evidence links in the spec directory, never local scratch output.
 This follows GitHub Spec Kit's specify/plan/tasks flow with an explicit test contract. The tracked [constitution](../.specify/memory/constitution.md) records this repository's governing principles.
@@ -60,10 +65,10 @@ bootstrap skill, together with the [SDD full lifecycle](https://github.com/Knuck
 
 ## Local specifications
 
-- [`FIN-UI-001` Finance Asset Manager](finance-asset-manager/spec.md) — EH-710 and EH-711 Markets and shared chart; specified, implementation unverified.
-- [`WEBUI-DESIGN-001` Browser design system](browser-design-system/spec.md) — EH-653 accessible UI primitives, visual contracts and design-guidance assimilation.
-- [`WEBUI-DECIDE-001` Decision evidence](decision-evidence/spec.md) — EH-047 calibration dashboard and governed decision explanation.
-- [`WEBUI-API-001` Graph OS API consumer](graphos-api-consumer/spec.md) — EH-618–EH-620 generated client and domain-family migration.
+- [`FIN-UI-001` Finance Asset Manager](finance-asset-manager/spec.md) — FIN-UI-R001 and FIN-UI-R002 Markets and shared chart; specified, implementation unverified.
+- [`WEBUI-DESIGN-001` Browser design system](browser-design-system/spec.md) — WEBUI-DESIGN-R001 accessible UI primitives, visual contracts and design-guidance assimilation.
+- [`WEBUI-DECIDE-001` Decision evidence](decision-evidence/spec.md) — WEBUI-DECIDE-R001 calibration dashboard and governed decision explanation.
+- [`WEBUI-API-001` Graph OS API consumer](graphos-api-consumer/spec.md) — WEBUI-API-R001–WEBUI-API-R003 generated client and domain-family migration.
 - [`WEBUI-APPS-001` Graph OS app surface](graphos-app-surface/spec.md) — application routes and integrated navigation.
 - [`WEBUI-IDENTITY-001` Identity and access](identity-access/spec.md) — authentication state and tenant-safe browser behavior.
 - [`delete-past-chats.md`](delete-past-chats.md), [`update-color-scheme.md`](update-color-scheme.md), and [`update-tools-dropdown.md`](update-tools-dropdown.md) are existing brief feature drafts. Preserve them; expand to the shared feature directory format when resumed.

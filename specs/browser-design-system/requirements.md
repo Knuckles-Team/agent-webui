@@ -1,0 +1,16 @@
+# WEBUI-DESIGN-001 requirements
+
+Every requirement this specification owns, with the proof that closes it. Delivery state and
+public evidence for each ID are recorded in [`status.json`](status.json); this file defines what
+each ID means. The design is in [`spec.md`](spec.md) and [`plan.md`](plan.md), the test contract
+in [`test-spec.md`](test-spec.md), and the work order in [`tasks.md`](tasks.md).
+
+| ID | Requirement | Verification |
+|---|---|---|
+| `WEBUI-DESIGN-R001` | **Design guidance distilled into component system and skills.** agent-webui distills license-reviewed accessibility, responsive, interaction and visual guidance from outside sources into the `src/components/ui/` primitives, the `src/index.css` tokens, and the public universal design and accessibility skills, ranking keyboard and screen-reader failures highest in its review rubric. The assimilation never installs a duplicate skill name, copies unlicensed skill text, adds a remote critique service, or introduces telemetry beyond what already exists. | Source diff and dependency audit confirm no duplicate skill names, unlicensed text, or new telemetry were introduced. |
+| `DS-01` | **Design tokens documented with contrast targets.** The component system documents semantic color, typography, spacing, focus, density and state tokens sourced from `src/index.css`, including light and dark contrast targets for each. | Token audit and snapshot tests confirm documented tokens match `src/index.css` and meet the stated contrast targets. |
+| `DS-02` | **Controls have accessible names and visible focus.** Every interactive control exposes an accessible name and a visible focus indicator, repeated filter rows label each individual clause distinctly, and dialogs trap keyboard focus while open and restore it to the triggering element on close. | Keyboard end-to-end tests cover the chat, Atlas and an operational form flow. |
+| `DS-03` | **Responsive layout covers 320px mobile through desktop.** Layout patterns render correctly from 320px mobile width through desktop without horizontal overflow and without hiding any required action behind an unreachable control. | Viewport matrix tests with screenshot diffing across the mobile-to-desktop range. |
+| `DS-04` | **Gesture actions have alternatives and respect reduced motion.** Every gesture-driven action also has a click or keyboard alternative, and when `prefers-reduced-motion` is set, nonessential animation is disabled while status feedback remains visible. | Touch-alternative and reduced-motion end-to-end tests. |
+| `DS-05` | **Status states are distinguishable by text, not only color.** Loading, empty, stale, denied, error, success and pending states each render with distinct text in addition to color, and a long-running operation can be interrupted where doing so is safe. | Rendered tests against fixtures for each named state. |
+| `DS-06` | **No duplicate primitives or unsolicited telemetry introduced.** No new component duplicates an existing UI primitive, no unsolicited telemetry is added, and any idea drawn from a third-party source is paraphrased in original wording only after its license has been reviewed and cleared. | Source diff and dependency audit confirm no duplicate primitives, no new telemetry, and license clearance for paraphrased content. |

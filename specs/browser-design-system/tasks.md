@@ -8,3 +8,5 @@
 - [ ] Repair defects by reusing existing components, including distinct repeated-filter labels and mobile wrapping.
 - [ ] Run tests/quality gates and capture after screenshots on exact commit; verify no telemetry, duplicate primitives or unlicensed text.
 - [ ] Attach merged commit, CI artifact digests and manual review, then mark ACCEPTED only if every listed test passes.
+
+No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `WEBUI-DESIGN-R001`, `DS-01`, `DS-02`, `DS-03`, `DS-04`, `DS-05`, `DS-06`.

@@ -2,8 +2,98 @@
   "schema_version": 1,
   "spec_id": "WEBUI-API-001",
   "owner_repo": "agent-webui",
-  "requirement_ids": ["EH-618", "EH-619", "EH-620", "APIUI-01", "APIUI-02", "APIUI-03", "APIUI-04", "APIUI-05", "APIUI-06"],
+  "requirement_ids": [
+    "WEBUI-API-R001",
+    "WEBUI-API-R002",
+    "WEBUI-API-R003",
+    "APIUI-01",
+    "APIUI-02",
+    "APIUI-03",
+    "APIUI-04",
+    "APIUI-05",
+    "APIUI-06"
+  ],
   "delivery_state": "SPECIFIED",
   "acceptance_state": "NOT_AUDITED",
-  "evidence": []
+  "evidence": [],
+  "requirements": [
+    {
+      "id": "WEBUI-API-R001",
+      "title": "Generated GraphOS API client with typed decisions and confirmation flows",
+      "delivery_state": "BUILDING",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "6d01ec0fd1b572b3f2ebbda70202e38f984d69be",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/6d01ec0fd1b572b3f2ebbda70202e38f984d69be",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
+    },
+    {
+      "id": "WEBUI-API-R002",
+      "title": "Typed ontology, graph, Atlas and object-set operations replace host routes",
+      "delivery_state": "BUILDING",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "1a4f6bbf2cd3d76d58d38e3d9e6e26199ae56664",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1a4f6bbf2cd3d76d58d38e3d9e6e26199ae56664",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
+    },
+    {
+      "id": "WEBUI-API-R003",
+      "title": "Remaining domain routes migrate to generated operations with a route census",
+      "delivery_state": "BUILDING",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "085195e275653918bf974ce2bee4c097f8413f08",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/085195e275653918bf974ce2bee4c097f8413f08",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
+    },
+    {
+      "id": "APIUI-01",
+      "title": "Generated TypeScript client from a pinned Graph OS schema",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "APIUI-02",
+      "title": "Typed operations preserve preview-confirm-step-up for effects",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "APIUI-03",
+      "title": "Ontology, graph, Atlas and object-set operations preserve tenant semantics",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "APIUI-04",
+      "title": "Prompts, SDD, knowledge base, sessions and goals migrate to typed calls",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "APIUI-05",
+      "title": "Host drops direct internal imports once replacement operations are proven",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "APIUI-06",
+      "title": "Shared auth and streaming are preserved without exposing a service bearer",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    }
+  ]
 }

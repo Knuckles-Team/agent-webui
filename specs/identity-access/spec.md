@@ -2,9 +2,11 @@
 
 **ID:** WEBUI-IDENTITY-001
 **Owner:** agent-webui
-**Program IDs:** EH-405, EH-543, EH-544, EH-545, EH-546, EH-621
+**Related IDs:** AU-SEC-R006, GRAPHOS-IDENTITY-R004, GRAPHOS-IDENTITY-R005, GRAPHOS-IDENTITY-R006, GRAPHOS-IDENTITY-R007, WEBUI-IDENTITY-R002
 **Delivery:** specified; current source requires audit
 **Acceptance:** open
+
+Every requirement ID in this spec is defined in [requirements.md](requirements.md); its current delivery and acceptance state, with evidence, is recorded in [status.json](status.json).
 
 ## Outcome and actors
 
@@ -14,14 +16,14 @@ Actors are visitor, authenticated member, identity administrator, elevation requ
 
 ## Requirements and acceptance
 
-| ID | Required behavior | Program IDs | Acceptance |
+| ID | Required behavior | Related IDs | Acceptance |
 |---|---|---|---|
-| IDUI-01 | Mode wizard shows configured OIDC, local or loopback bootstrap and doctor result; no invisible auth bypass | EH-543, EH-546 | Mode-specific rendered + server tests |
-| IDUI-02 | Local register/login/logout/forgot/reset/change-password use server sessions and anti-CSRF; no credential or bearer is stored in browser persistence | EH-544 | End-to-end session/fixation/CSRF probes |
-| IDUI-03 | MFA enrollment, challenge and recovery cover TOTP and WebAuthn, with one-time recovery code handling | EH-545 | Positive, replay, lost-device tests |
-| IDUI-04 | Admin tabs cover users, roles, groups, auth modes and mapping-rule dry run through typed `identity.*` operations | EH-546, EH-621 | Authorized/denied generated-client tests |
-| IDUI-05 | Elevation request, approval and revocation display scope, reason, expiry and receipt; confirmation and step-up bind to the same caller and action | EH-405 | A2A/chat/UI parity and adversarial tests |
-| IDUI-06 | Identity mode, tenant or session change invalidates cached protected data and closes active privileged interactions | EH-543–EH-546 | Two-principal browser test |
+| IDUI-01 | Mode wizard shows configured OIDC, local or loopback bootstrap and doctor result; no invisible auth bypass | GRAPHOS-IDENTITY-R004, GRAPHOS-IDENTITY-R007 | Mode-specific rendered + server tests |
+| IDUI-02 | Local register/login/logout/forgot/reset/change-password use server sessions and anti-CSRF; no credential or bearer is stored in browser persistence | GRAPHOS-IDENTITY-R005 | End-to-end session/fixation/CSRF probes |
+| IDUI-03 | MFA enrollment, challenge and recovery cover TOTP and WebAuthn, with one-time recovery code handling | GRAPHOS-IDENTITY-R006 | Positive, replay, lost-device tests |
+| IDUI-04 | Admin tabs cover users, roles, groups, auth modes and mapping-rule dry run through typed `identity.*` operations | GRAPHOS-IDENTITY-R007, WEBUI-IDENTITY-R002 | Authorized/denied generated-client tests |
+| IDUI-05 | Elevation request, approval and revocation display scope, reason, expiry and receipt; confirmation and step-up bind to the same caller and action | AU-SEC-R006 | A2A/chat/UI parity and adversarial tests |
+| IDUI-06 | Identity mode, tenant or session change invalidates cached protected data and closes active privileged interactions | GRAPHOS-IDENTITY-R004–GRAPHOS-IDENTITY-R007 | Two-principal browser test |
 | IDUI-07 | All forms, errors, tab panels and modal confirmations are keyboard and screen-reader usable, with equivalent mobile behavior | all | Accessibility E2E |
 
 Errors must avoid disclosing whether a username, tenant or protected record exists. A failed step-up never turns into a successful action after retry unless a new valid confirmation and receipt are obtained. The UI's role labels are explanatory; authorization comes from Graph OS and its delegated database scopes.
