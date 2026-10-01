@@ -75,7 +75,13 @@ new color.
 
 Loading, empty, stale, denied, error, success and pending states are each
 written out in text; color reinforces but never carries the distinction alone
-(DS-05). The existing convention, used by `BlockedState.tsx` and the view
+(DS-05). `src/components/ui/status-message.tsx` (`StatusMessage`) is the
+shared primitive for exactly this seven-state vocabulary, covering the one
+case `BlockedState.tsx` does not (whole-panel/integration availability) —
+the outcome of a single item, field or operation. Each state's label is
+fixture-tested in `src/components/ui/__tests__/status-message.test.tsx` to
+confirm every state renders text distinct from every other state. The
+existing convention, used by `StatusMessage`, `BlockedState.tsx` and the view
 loading/error fallbacks:
 
 | State | Color cue | Required text |

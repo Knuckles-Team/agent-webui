@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { Response } from '@/components/ai-elements/response'
 import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
 import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
+import { StatusMessage } from '@/components/ui/status-message'
 
 interface Skill {
   id: string
@@ -116,9 +117,13 @@ export default function KnowledgeView() {
             <ScrollArea className="h-full">
               <div className="p-2 space-y-1">
                 {loading ? (
-                  <p className="text-center py-4 text-xs text-muted-foreground">Loading...</p>
+                  <div className="flex justify-center py-4">
+                    <StatusMessage status="loading" className="text-xs" />
+                  </div>
                 ) : filteredSkills.length === 0 ? (
-                  <p className="text-center py-4 text-xs text-muted-foreground">No documentation found.</p>
+                  <div className="flex justify-center py-4">
+                    <StatusMessage status="empty" label="No documentation found." className="text-xs" />
+                  </div>
                 ) : (
                   filteredSkills.map((skill) => (
                     <button

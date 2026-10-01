@@ -81,9 +81,9 @@
     {
       "id": "DS-05",
       "title": "Status states are distinguishable by text, not only color",
-      "delivery_state": "SPECIFIED",
+      "delivery_state": "BUILDING",
       "evidence": [],
-      "remaining": "The status vocabulary is documented; fixture-rendered tests that each state is distinguishable by text are still to be written."
+      "remaining": "The shared status primitive is on the default branch and eight routed views use it, each with rendered state tests. Remaining: convert the views that still render loading, empty and error states ad hoc (usage, agent library, observability, operations panel, readiness, data analyst, overview, user management, graph, configuration, skills, object explorer, sessions), and wire interruption where a view has a safe cancel path."
     },
     {
       "id": "DS-06",

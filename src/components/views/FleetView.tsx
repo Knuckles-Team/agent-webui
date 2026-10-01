@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { UnavailableNotice } from '@/components/ui/unavailable-notice'
+import { StatusMessage } from '@/components/ui/status-message'
 import { toast } from 'sonner'
 import { api, type FleetHealth, type FleetTopology } from '@/lib/api'
 
@@ -96,7 +97,7 @@ function renderHealthTab({
       <CardContent className="space-y-2">
         {healthStatus === 'unavailable' && <UnavailableNotice what="Domain health" />}
         {healthStatus === 'ready' && domains.length === 0 && (
-          <p className="text-sm text-muted-foreground">No active sessions.</p>
+          <StatusMessage status="empty" label="No active sessions." />
         )}
         {domains.map(([domain, d]) => renderDomainRow({ domain, d, onContain }))}
       </CardContent>
@@ -141,7 +142,7 @@ function renderTopologyTab({
       <CardContent className="space-y-3">
         {topologyStatus === 'unavailable' && <UnavailableNotice what="Topology" />}
         {topologyStatus === 'ready' && (topology?.domains.length ?? 0) === 0 && (
-          <p className="text-sm text-muted-foreground">No active sessions.</p>
+          <StatusMessage status="empty" label="No active sessions." />
         )}
         {(topology?.domains ?? []).map(renderTopologyDomain)}
       </CardContent>
@@ -214,9 +215,7 @@ function renderApprovalsTab({
       <CardContent className="space-y-2">
         {approvalsStatus === 'unavailable' && <UnavailableNotice what="The mutation/risk approval queue" />}
         {approvalsStatus === 'ready' && approvals.length === 0 && (
-          <p className="text-sm text-muted-foreground flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4" /> No pending approvals.
-          </p>
+          <StatusMessage status="empty" label="No pending approvals." />
         )}
         {approvals.map((raw, i) => renderApprovalRow({ raw, index: i, onGrant }))}
       </CardContent>

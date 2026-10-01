@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { UnavailableNotice } from '@/components/ui/unavailable-notice'
+import { StatusMessage } from '@/components/ui/status-message'
 import { toast } from 'sonner'
 import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
 import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
@@ -310,14 +311,23 @@ function renderLoadedPromptSidebar({ filteredPrompts, selectedName, onSelect, un
     )
   }
   if (filteredPrompts.length === 0) {
-    return <div className="text-center py-8 text-sm text-muted-foreground">No prompts found</div>
+    return (
+      <div className="flex justify-center py-8">
+        <StatusMessage status="empty" label="No prompts found" />
+      </div>
+    )
   }
   return <>{filteredPrompts.map((prompt) => renderPromptSidebarItem(prompt, selectedName, onSelect))}</>
 }
 
 function renderPromptSidebarList(props: PromptSidebarProps) {
   const { loading } = props
-  if (loading) return <div className="text-center py-8 text-sm text-muted-foreground">Loading...</div>
+  if (loading)
+    return (
+      <div className="flex justify-center py-8">
+        <StatusMessage status="loading" />
+      </div>
+    )
   return renderLoadedPromptSidebar(props)
 }
 

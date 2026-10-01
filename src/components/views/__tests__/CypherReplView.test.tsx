@@ -90,4 +90,12 @@ describe('CypherReplView Component', () => {
       expect(screen.getByText(/destructive/i, { selector: 'span' })).toBeInTheDocument()
     })
   })
+
+  it('shows the shared empty-state message before any query has run', () => {
+    global.fetch = createFetchMock() as unknown as typeof fetch
+    render(<CypherReplView />)
+
+    expect(screen.getByText('No results.')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
+  })
 })

@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { fetchValidated, looseArray } from '@/lib/api-validation'
+import { StatusMessage } from '@/components/ui/status-message'
 
 interface KnowledgeBase {
   id: string
@@ -286,9 +287,13 @@ function BrowseTab({
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading ? (
-          <p className="text-center text-muted-foreground col-span-3">Loading...</p>
+          <div className="col-span-3 flex justify-center">
+            <StatusMessage status="loading" />
+          </div>
         ) : filteredKBs.length === 0 ? (
-          <p className="text-center text-muted-foreground col-span-3">No knowledge bases found</p>
+          <div className="col-span-3 flex justify-center">
+            <StatusMessage status="empty" label="No knowledge bases found" />
+          </div>
         ) : (
           filteredKBs.map((kb) => (
             <KBCard

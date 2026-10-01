@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import SchemaView from '@/components/views/SchemaView'
 import { ontologySchemaGraphToGraphNodes, type OntologySchemaGraph } from '@/components/knowledge-graph/GraphAdapter'
 
@@ -107,6 +107,30 @@ describe('SchemaView', () => {
       vi.fn(() => Promise.resolve(new Response('boom', { status: 500 }))),
     )
     expect(() => render(<SchemaView />)).not.toThrow()
+  })
+
+  it('shows the shared loading status message before the schema graph resolves', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise(() => undefined)),
+    ) // never resolves
+    render(<SchemaView />)
+    expect(screen.getByText(/Loading ontology schema/)).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
+  })
+
+  it('shows the shared empty status message when the schema graph has no nodes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch({
+        status: 'success',
+        result: { nodes: [], edges: [], counts: { interfaces: 0, object_types: 0, edges: 0 } },
+      }),
+    )
+    render(<SchemaView />)
+    await vi.waitFor(() => {
+      expect(screen.getByText('No ontology schema loaded.')).toBeInTheDocument()
+    })
   })
 })
 

@@ -28,6 +28,7 @@ import {
 import { cn } from '@/lib/utils'
 import { safeExternalUrl } from '@/lib/safe-url'
 import { fetchValidated, looseArray } from '@/lib/api-validation'
+import { StatusMessage } from '@/components/ui/status-message'
 import DashboardSettings from './DashboardSettings'
 import DefaultOverviewPanel from './DefaultOverviewPanel'
 
@@ -319,7 +320,7 @@ function widgetCardAccentClassName(status: WidgetData['status']): string {
   )
 }
 
-function widgetCardBody(isLoading: boolean, data: WidgetData | undefined): ReactNode {
+export function widgetCardBody(isLoading: boolean, data: WidgetData | undefined): ReactNode {
   if (isLoading && !data) {
     return (
       <div className="flex items-center justify-center py-4 w-full">
@@ -333,8 +334,8 @@ function widgetCardBody(isLoading: boolean, data: WidgetData | undefined): React
   }
   if (data?.status === 'error') {
     return (
-      <div className="flex items-center justify-center py-3 w-full text-xs text-red-400/80">
-        {data.error ?? 'Connection failed'}
+      <div className="flex items-center justify-center py-3 w-full">
+        <StatusMessage status="error" label={data.error ?? 'Connection failed'} className="text-xs" />
       </div>
     )
   }
@@ -349,8 +350,8 @@ function widgetCardBody(isLoading: boolean, data: WidgetData | undefined): React
     ))
   }
   return (
-    <div className="flex items-center justify-center py-3 w-full text-xs text-muted-foreground/50">
-      No data available
+    <div className="flex items-center justify-center py-3 w-full">
+      <StatusMessage status="empty" label="No data available" className="text-xs" />
     </div>
   )
 }
