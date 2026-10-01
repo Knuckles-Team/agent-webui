@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import UserManagementView from '@/components/views/UserManagementView'
 import { renderWithProviders } from '@/__tests__/fixtures'
 import type { Identity } from '@/lib/auth'
@@ -101,6 +101,26 @@ function mockConfigureFetch(
 describe('UserManagementView', () => {
   beforeEach(() => {
     identityResult = null
+  })
+
+  it('shows the shared loading status message (DS-05) while the identity hook is still resolving', () => {
+    identityResult = { identity: READER_IDENTITY, loading: true }
+    global.fetch = mockConfigureFetch({}) as unknown as typeof fetch
+
+    renderWithProviders(<UserManagementView />)
+
+    const selfCard = within(screen.getByTestId('user-mgmt-self'))
+    expect(selfCard.getByText('Loading your identity…')).toBeInTheDocument()
+    expect(selfCard.getByRole('status')).toBeInTheDocument()
+  })
+
+  it('shows the shared loading status message (DS-05) while the principals roster is still loading', () => {
+    identityResult = { identity: ADMIN_IDENTITY, loading: false }
+    global.fetch = vi.fn(() => new Promise(() => undefined)) as unknown as typeof fetch
+
+    renderWithProviders(<UserManagementView />)
+
+    expect(screen.getByText('Loading principals…')).toBeInTheDocument()
   })
 
   it("renders the signed-in principal's own identity/roles from a real /auth/session-shaped response", async () => {

@@ -162,6 +162,28 @@ describe('ObjectExplorerView (component handlers, real api singleton)', () => {
   })
 })
 
+describe('ObjectExplorerView — DS-05 status language', () => {
+  it('shows the shared loading status message while the object-set search is in flight', async () => {
+    vi.spyOn(api, 'ontologySearch').mockReturnValue(new Promise(() => undefined))
+    renderWithProviders(<ObjectExplorerView />)
+    expect(await screen.findByText('Loading objects...')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
+  })
+
+  it('shows the shared empty status message when the search returns zero objects', async () => {
+    vi.spyOn(api, 'ontologySearch').mockResolvedValue({ total: 0, objects: [] })
+    renderWithProviders(<ObjectExplorerView />)
+    expect(await screen.findByText('No objects found')).toBeInTheDocument()
+  })
+
+  it('shows the shared error status message when the object-set search rejects', async () => {
+    vi.spyOn(api, 'ontologySearch').mockRejectedValue(new Error('boom'))
+    renderWithProviders(<ObjectExplorerView />)
+    expect(await screen.findByText('Failed to load objects')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+  })
+})
+
 describe('ObjectExplorerView (pure helpers + contracts)', () => {
   it('exports a renderable component', () => {
     expect(typeof ObjectExplorerView).toBe('function')

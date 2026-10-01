@@ -166,4 +166,37 @@ describe('SkillsView MCP server catalog', () => {
     })
     expect(screen.getByText(/authoritative fleet catalog has no live server registrations/)).toBeInTheDocument()
   })
+
+  it('shows the shared loading status message (DS-05) before the catalog resolves', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise(() => undefined)),
+    )
+    render(<SkillsView />)
+    expect(screen.getByText('Querying graph registry...')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
+  })
+
+  it('shows the shared empty status message (DS-05) when an expanded server exposes no tools', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/mcp/servers/') && url.includes('/tools')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ tools: [], total: 0, offset: 0, limit: 100, has_more: false }), {
+            status: 200,
+          }),
+        )
+      }
+      return Promise.resolve(new Response(JSON.stringify(CATALOG), { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<SkillsView />)
+    await waitFor(() => {
+      expect(screen.getByText('search-mcp')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('Manage MCP Tools'))
+    await waitFor(() => {
+      expect(screen.getByText('No tools exposed by this MCP server.')).toBeInTheDocument()
+    })
+  })
 })

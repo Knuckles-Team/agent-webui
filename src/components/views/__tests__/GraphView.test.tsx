@@ -86,6 +86,11 @@ describe('GraphView Component', () => {
       expect(screen.getByText('Query Editor')).toBeInTheDocument()
       expect(screen.getByText('Execution Output')).toBeInTheDocument()
     })
+    // DS-05: the shared empty status message before any query has been run.
+    expect(
+      screen.getByText('No active execution dataset found. Submit a query to inspect live nodes.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
   })
 
   it('switches to the MAGMA context tab', async () => {
@@ -100,6 +105,10 @@ describe('GraphView Component', () => {
     await waitFor(() => {
       expect(screen.getByText('Retrieved Perspectives Context')).toBeInTheDocument()
     })
+    // DS-05: the shared empty status message before any retrieval has run.
+    expect(
+      screen.getByText('No active MAGMA orthogonal context slices retrieved. Submit keywords above.'),
+    ).toBeInTheDocument()
   })
 
   it('defaults to the visual canvas tab', async () => {
