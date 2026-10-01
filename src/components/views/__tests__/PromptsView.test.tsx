@@ -373,3 +373,20 @@ describe('PromptsView — create a new prompt (Lane 4)', () => {
     })
   })
 })
+
+describe('PromptsView — sidebar status language (DS-05)', () => {
+  it('shows the shared loading status message while the prompt list is in flight', () => {
+    global.fetch = vi.fn(() => new Promise(() => undefined)) as unknown as typeof fetch
+    render(<PromptsView />)
+    expect(screen.getByText(/loading/i)).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
+  })
+
+  it('shows the shared empty status message when no prompts are returned', async () => {
+    mockFetch({ list: () => jsonResponse([]) })
+    render(<PromptsView />)
+    await waitFor(() => {
+      expect(screen.getByText('No prompts found')).toBeInTheDocument()
+    })
+  })
+})

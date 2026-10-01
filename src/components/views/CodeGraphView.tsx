@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { StatusMessage } from '@/components/ui/status-message'
 import { toast } from 'sonner'
 import { GraphCanvas } from '../knowledge-graph/GraphCanvas'
 import {
@@ -207,7 +208,7 @@ export default function CodeGraphView() {
             <CardContent>
               <ScrollArea className="h-[480px]">
                 {rows.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No results yet — enter a symbol and pick an action.</p>
+                  <StatusMessage status="empty" label="No results yet — enter a symbol and pick an action." />
                 ) : (
                   <table className="w-full text-sm">
                     <thead className="text-left text-muted-foreground">
@@ -390,7 +391,7 @@ function CallGraphCanvas() {
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-muted-foreground">No data yet.</p>
+                <StatusMessage status="empty" label="No data yet." />
               )}
             </ScrollArea>
           </CardContent>

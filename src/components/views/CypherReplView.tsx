@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { StatusMessage } from '@/components/ui/status-message'
 import { toast } from 'sonner'
 
 const DEFAULT_QUERY = 'MATCH (n) RETURN n LIMIT 10'
@@ -279,7 +280,7 @@ export default function CypherReplView() {
                   {lastError}
                 </pre>
               ) : results.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No results.</p>
+                <StatusMessage status="empty" label="No results." />
               ) : (
                 <div className="space-y-2">
                   {results.map((row, idx) => (

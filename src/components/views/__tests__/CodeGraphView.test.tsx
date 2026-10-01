@@ -62,4 +62,18 @@ describe('CodeGraphView Component', () => {
       expect(screen.getByText('analyzer.go')).toBeInTheDocument()
     })
   })
+
+  it('shows the shared empty status message for results before any action runs', () => {
+    renderWithProviders(<CodeGraphView />)
+    expect(screen.getByText('No results yet — enter a symbol and pick an action.')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
+  })
+
+  it('shows the shared empty status message for god nodes on the Call Graph tab', async () => {
+    const { user } = renderWithProviders(<CodeGraphView />)
+    await user.click(screen.getByRole('tab', { name: /Call Graph/i }))
+    await waitFor(() => {
+      expect(screen.getByText('No data yet.')).toBeInTheDocument()
+    })
+  })
 })

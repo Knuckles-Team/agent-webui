@@ -19,11 +19,12 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Shapes, RefreshCw, Loader2, Component, Boxes, Link2, X, Upload } from 'lucide-react'
+import { Shapes, RefreshCw, Component, Boxes, Link2, X, Upload } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { StatusMessage } from '@/components/ui/status-message'
 import { toast } from 'sonner'
 import { GraphCanvas } from '../knowledge-graph/GraphCanvas'
 import type { GraphNode, OntologySchemaEdgeData, OntologySchemaGraph } from '../knowledge-graph/GraphAdapter'
@@ -46,17 +47,15 @@ function renderCanvasPanel({
 }) {
   if (loading && nodes.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
-        <Loader2 className="size-8 animate-spin mb-3" />
-        <p className="text-sm">Loading ontology schema...</p>
+      <div className="flex h-full items-center justify-center">
+        <StatusMessage status="loading" label="Loading ontology schema..." />
       </div>
     )
   }
   if (nodes.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
-        <Shapes className="size-12 text-muted-foreground/30 mb-3" />
-        <p className="text-sm">No ontology schema loaded.</p>
+      <div className="flex h-full items-center justify-center">
+        <StatusMessage status="empty" label="No ontology schema loaded." />
       </div>
     )
   }

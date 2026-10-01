@@ -96,4 +96,13 @@ describe('StatusMessage (DS-05 state-fixture rendered tests)', () => {
     render(<StatusMessage status="error" detail="required" id="email-error" />)
     expect(screen.getByTestId('status-message')).toHaveAttribute('id', 'email-error')
   })
+
+  it('uses a caller-supplied label in place of the default, keeping the status icon/role/color', () => {
+    render(<StatusMessage status="empty" label="No knowledge bases found" />)
+    const node = screen.getByTestId('status-message')
+    expect(node).toHaveTextContent('No knowledge bases found')
+    expect(node).not.toHaveTextContent('Nothing here yet')
+    expect(node).toHaveAttribute('data-status', 'empty')
+    expect(screen.getByRole('status')).toBeInTheDocument()
+  })
 })

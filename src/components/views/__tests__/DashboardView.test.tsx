@@ -8,6 +8,7 @@ import DashboardView, {
   jitteredReconnectDelayMs,
   ConnectionGeneration,
   DATA_FRESHNESS_BANNER_ID,
+  widgetCardBody,
 } from '@/components/views/DashboardView'
 
 /**
@@ -59,6 +60,36 @@ describe('DashboardView reconnect backoff (pure logic, BUG-019)', () => {
     // Cap and floor hold even under jitter.
     expect(jitteredReconnectDelayMs(RECONNECT_MAX_DELAY_MS, () => 1)).toBeLessThanOrEqual(RECONNECT_MAX_DELAY_MS)
     expect(jitteredReconnectDelayMs(100, () => 0)).toBeGreaterThanOrEqual(0)
+  })
+})
+
+describe('widgetCardBody status language (DS-05)', () => {
+  it('shows the shared empty status message when a widget has no data yet', () => {
+    const { container } = render(<>{widgetCardBody(false, undefined)}</>)
+    expect(container).toHaveTextContent('No data available')
+    expect(container.querySelector('[role="status"]')).not.toBeNull()
+  })
+
+  it("shows the shared error status message with the widget's own error text", () => {
+    const { container } = render(
+      <>
+        {widgetCardBody(false, {
+          fields: {},
+          status: 'error',
+          error: 'upstream timed out',
+          timestamp: '2026-01-01T00:00:00Z',
+        })}
+      </>,
+    )
+    expect(container).toHaveTextContent('upstream timed out')
+    expect(container.querySelector('[role="alert"]')).not.toBeNull()
+  })
+
+  it('falls back to a generic "Connection failed" label when the widget reports no error text', () => {
+    const { container } = render(
+      <>{widgetCardBody(false, { fields: {}, status: 'error', error: null, timestamp: '2026-01-01T00:00:00Z' })}</>,
+    )
+    expect(container).toHaveTextContent('Connection failed')
   })
 })
 

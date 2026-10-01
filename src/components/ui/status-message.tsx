@@ -48,6 +48,14 @@ const STATUS_META: Record<StatusKind, StatusMeta> = {
 
 export interface StatusMessageProps {
   status: StatusKind
+  /**
+   * Overrides the default per-status label when a caller already has more
+   * specific copy (an existing view's "No knowledge bases found" instead of
+   * the generic "Nothing here yet."). The icon, role and color still come
+   * from `status`, so the state stays visually and semantically consistent
+   * even though the exact wording differs per view.
+   */
+  label?: string
   /** Natural-language detail shown after the label (an error's actual
    * message, a stale timestamp, who denied it, ...). Optional: the label
    * alone already satisfies DS-05 for a state with nothing more to say. */
@@ -66,7 +74,7 @@ export interface StatusMessageProps {
   className?: string
 }
 
-export function StatusMessage({ status, detail, onCancel, id, className }: StatusMessageProps) {
+export function StatusMessage({ status, label, detail, onCancel, id, className }: StatusMessageProps) {
   const meta = STATUS_META[status]
   const Icon = meta.icon
   return (
@@ -82,7 +90,7 @@ export function StatusMessage({ status, detail, onCancel, id, className }: Statu
         aria-hidden="true"
       />
       <span>
-        <strong>{meta.label}</strong>
+        <strong>{label ?? meta.label}</strong>
         {detail ? ` ${detail}` : null}
       </span>
       {onCancel && (
