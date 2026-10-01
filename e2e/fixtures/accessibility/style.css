@@ -1,0 +1,4 @@
+@import '../../../src/index.css';
+
+/* The fixture has its own Vite root; scan the production component classes. */
+@source '../../../src';

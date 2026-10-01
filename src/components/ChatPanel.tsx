@@ -7,7 +7,7 @@
  * what page the user is looking at.
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, type RefObject } from 'react'
 import Chat from '../Chat'
 import { cn } from '../lib/utils'
 import { MessageCircle, X, Minimize2, Maximize2 } from 'lucide-react'
@@ -57,24 +57,43 @@ function fabClassName(isOpen: boolean, isPrimary: boolean): string {
     'w-14 h-14 rounded-full shadow-2xl',
     'bg-gradient-to-br from-violet-600 to-indigo-700',
     'text-white hover:scale-110 active:scale-95',
-    'transition-all duration-300 ease-out',
+    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500',
+    'transition-all duration-300 ease-out motion-reduce:transition-none',
     'hover:shadow-violet-500/40 hover:shadow-lg',
     (isOpen || isPrimary) && 'scale-0 pointer-events-none opacity-0',
   )
 }
 
-function ChatFab({ isOpen, isPrimary, onClick }: { isOpen: boolean; isPrimary: boolean; onClick: () => void }) {
+function fabDisabled(isOpen: boolean, isPrimary: boolean): boolean {
+  return isOpen || isPrimary
+}
+
+function ChatFab({
+  isOpen,
+  isPrimary,
+  onClick,
+  buttonRef,
+}: {
+  isOpen: boolean
+  isPrimary: boolean
+  onClick: () => void
+  buttonRef: RefObject<HTMLButtonElement | null>
+}) {
   return (
     <button
       id="chat-panel-toggle"
+      ref={buttonRef}
       onClick={onClick}
-      disabled={isPrimary}
+      disabled={fabDisabled(isOpen, isPrimary)}
       className={fabClassName(isOpen, isPrimary)}
       aria-label="Open chat"
+      aria-expanded={isOpen}
+      aria-controls="agent-chat-drawer"
     >
       <MessageCircle className="w-6 h-6" />
       <span
-        className={cn('absolute inset-0 rounded-full', 'bg-violet-500/30 animate-ping')}
+        className={cn('absolute inset-0 rounded-full', 'bg-violet-500/30 animate-ping motion-reduce:animate-none')}
+        aria-hidden="true"
         style={{ animationDuration: '3s' }}
       />
     </button>
@@ -85,7 +104,7 @@ function ChatBackdrop({ isOpen, isPrimary, onClick }: { isOpen: boolean; isPrima
   return (
     <div
       className={cn(
-        'fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px] transition-opacity duration-300',
+        'fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none',
         isOpen && !isPrimary ? 'opacity-100' : 'opacity-0 pointer-events-none',
       )}
       onClick={onClick}
@@ -95,7 +114,8 @@ function ChatBackdrop({ isOpen, isPrimary, onClick }: { isOpen: boolean; isPrima
 }
 
 function panelClassName(isPrimary: boolean, isOpen: boolean, isExpanded: boolean): string {
-  const base = 'flex flex-col bg-background/95 transition-all duration-400 ease-[cubic-bezier(0.32,0.72,0,1)]'
+  const base =
+    'flex flex-col bg-background/95 transition-all duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none'
   if (isPrimary) {
     return cn(base, 'relative z-0 flex-1 min-h-0 w-full border-0 shadow-none translate-x-0')
   }
@@ -130,7 +150,10 @@ function ChatHeader({
       )}
     >
       <div className="flex items-center gap-2">
-        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+        <div
+          className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse motion-reduce:animate-none"
+          aria-hidden="true"
+        />
         <span className="text-sm font-semibold text-foreground/80">Agent Chat</span>
         <span className="text-xs text-muted-foreground px-1.5 py-0.5 rounded-md bg-muted/50">{currentView}</span>
         {pageContext.selection.length > 0 && (
@@ -142,14 +165,14 @@ function ChatHeader({
       <div className="flex items-center gap-1">
         <button
           onClick={onToggleExpand}
-          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+          className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={isExpanded ? 'Minimize' : 'Maximize'}
         >
           {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
         </button>
         <button
           onClick={onClose}
-          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+          className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Close chat"
         >
           <X className="w-4 h-4" />
@@ -159,20 +182,51 @@ function ChatHeader({
   )
 }
 
+function useChatDrawerFocus(isPrimary: boolean, isOpen: boolean) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  const fabRef = useRef<HTMLButtonElement>(null)
+  const wasOpenRef = useRef(false)
+  useEffect(() => {
+    if (isPrimary) {
+      wasOpenRef.current = false
+      return
+    }
+    if (isOpen) {
+      panelRef.current?.querySelector<HTMLButtonElement>('[aria-label="Close chat"]')?.focus()
+    } else if (wasOpenRef.current) {
+      fabRef.current?.focus()
+    }
+    wasOpenRef.current = isOpen
+  }, [isOpen, isPrimary])
+
+  return { panelRef, fabRef }
+}
+
+function drawerRole(isPrimary: boolean): 'complementary' | undefined {
+  return isPrimary ? undefined : 'complementary'
+}
+
+function drawerLabel(isPrimary: boolean): string | undefined {
+  return isPrimary ? undefined : 'Agent Chat'
+}
+
 export default function ChatPanel({ currentView, isPrimary }: ChatPanelProps) {
   const { isOpen, isExpanded, toggle, toggleExpand } = useChatPanelState()
-  const panelRef = useRef<HTMLDivElement>(null)
+  const { panelRef, fabRef } = useChatDrawerFocus(isPrimary, isOpen)
   const pageContext = usePageContextEnvelope()
 
   return (
     <>
-      <ChatFab isOpen={isOpen} isPrimary={isPrimary} onClick={toggle} />
+      <ChatFab isOpen={isOpen} isPrimary={isPrimary} onClick={toggle} buttonRef={fabRef} />
       <ChatBackdrop isOpen={isOpen} isPrimary={isPrimary} onClick={toggle} />
 
       <div
+        id="agent-chat-drawer"
         ref={panelRef}
         inert={!isPrimary && !isOpen}
         aria-hidden={!isPrimary && !isOpen}
+        role={drawerRole(isPrimary)}
+        aria-label={drawerLabel(isPrimary)}
         className={panelClassName(isPrimary, isOpen, isExpanded)}
       >
         <ChatHeader

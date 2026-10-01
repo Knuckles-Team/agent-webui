@@ -249,14 +249,16 @@
 
 
 /* ── Global micro-animations ──────────────────────────────────────── */
-button,
-a,
-[role="button"],
-[role="tab"],
-input,
-textarea,
-select {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+@media (prefers-reduced-motion: no-preference) {
+  button,
+  a,
+  [role="button"],
+  [role="tab"],
+  input,
+  textarea,
+  select {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
 }
 
 /* Card hover lift */
@@ -339,4 +341,23 @@ body,
   outline: 2px solid var(--ring);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
+}
+
+/* ── Reduced motion ────────────────────────────────────────────────── */
+/* A floor under every animation/transition in the app (decorative hover
+ * lift, status pulses, card entrance, the global micro-animations above),
+ * not only the ones a component explicitly guards with Tailwind's
+ * `motion-reduce:` variant. Collapsing durations to effectively zero (rather
+ * than removing the rules) keeps every element at its final, fully visible
+ * state -- text and icons stay on screen, only the motion between states is
+ * removed. See docs/design-system.md#reduced-motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

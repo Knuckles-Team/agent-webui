@@ -107,6 +107,7 @@ nav:
       - Agents and events: agents.md
       - Atlas workspace: atlas.md
       - Capability Workbench: capability-workbench.md
+      - Design system: design-system.md
   - Reference:
       - Features and APIs: features.md
       - Knowledge extraction: kg-extraction.md
