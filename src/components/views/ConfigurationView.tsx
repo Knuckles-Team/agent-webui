@@ -64,6 +64,7 @@ import { Switch } from '@/components/ui/switch'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { UnavailableNotice } from '@/components/ui/unavailable-notice'
+import { StatusMessage } from '@/components/ui/status-message'
 import { toast } from 'sonner'
 import { ApiError, fetchValidated } from '@/lib/api-validation'
 import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
@@ -892,9 +893,8 @@ function configurationScrollAreaBody(props: {
 }): ReactNode {
   if (props.loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-3">
-        <RefreshCw className="size-8 text-emerald-500 animate-spin" />
-        <span className="text-sm text-muted-foreground">Reading AgentConfig schema and values...</span>
+      <div className="flex items-center justify-center py-20">
+        <StatusMessage status="loading" label="Reading AgentConfig schema and values..." />
       </div>
     )
   }
@@ -911,8 +911,8 @@ function configurationScrollAreaBody(props: {
   }
   if (props.fields.length === 0) {
     return (
-      <div className="py-20 text-center text-sm text-muted-foreground">
-        The schema was fetched successfully but declared zero editable fields.
+      <div className="flex items-center justify-center py-20">
+        <StatusMessage status="empty" label="The schema was fetched successfully but declared zero editable fields." />
       </div>
     )
   }

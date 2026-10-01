@@ -6,7 +6,6 @@ import {
   RefreshCw,
   Database,
   Play,
-  Layers,
   Sparkles,
   ShieldAlert,
   AlertTriangle,
@@ -17,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
+import { StatusMessage } from '@/components/ui/status-message'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -524,9 +524,11 @@ function CypherTab({
                 {JSON.stringify(cypherResults, null, 2)}
               </pre>
             ) : (
-              <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground">
-                <Database className="size-10 text-muted-foreground/30 mb-2" />
-                <p className="text-xs">No active execution dataset found. Submit a query to inspect live nodes.</p>
+              <div className="flex items-center justify-center py-20">
+                <StatusMessage
+                  status="empty"
+                  label="No active execution dataset found. Submit a query to inspect live nodes."
+                />
               </div>
             )}
           </ScrollArea>
@@ -629,9 +631,11 @@ function MagmaTab({
                 {JSON.stringify(magmaResults, null, 2)}
               </pre>
             ) : (
-              <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground">
-                <Layers className="size-10 text-muted-foreground/30 mb-2" />
-                <p className="text-xs">No active MAGMA orthogonal context slices retrieved. Submit keywords above.</p>
+              <div className="flex items-center justify-center py-20">
+                <StatusMessage
+                  status="empty"
+                  label="No active MAGMA orthogonal context slices retrieved. Submit keywords above."
+                />
               </div>
             )}
           </ScrollArea>

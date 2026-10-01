@@ -183,4 +183,21 @@ describe('ConfigurationView (1:1 AgentConfig form)', () => {
     expect(await screen.findByText('Status unknown')).toBeInTheDocument()
     expect(screen.queryByText('Not set')).not.toBeInTheDocument()
   })
+
+  it('shows the shared loading status message (DS-05) before the schema resolves', () => {
+    global.fetch = vi.fn(() => new Promise(() => undefined)) as unknown as typeof fetch
+    render(<ConfigurationView />)
+
+    expect(screen.getByText('Reading AgentConfig schema and values...')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
+  })
+
+  it('shows the shared empty status message (DS-05) when the schema declares zero fields', async () => {
+    mockFetch({ schema: () => jsonResponse({ ...AGENT_CONFIG_SCHEMA, schema: { properties: {}, required: [] } }) })
+    render(<ConfigurationView />)
+
+    expect(
+      await screen.findByText('The schema was fetched successfully but declared zero editable fields.'),
+    ).toBeInTheDocument()
+  })
 })

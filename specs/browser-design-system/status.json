@@ -81,9 +81,16 @@
     {
       "id": "DS-05",
       "title": "Status states are distinguishable by text, not only color",
-      "delivery_state": "BUILDING",
-      "evidence": [],
-      "remaining": "The shared status primitive is on the default branch and eight routed views use it, each with rendered state tests. Remaining: convert the views that still render loading, empty and error states ad hoc (usage, agent library, observability, operations panel, readiness, data analyst, overview, user management, graph, configuration, skills, object explorer, sessions), and wire interruption where a view has a safe cancel path."
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "cde8dccc2b1b92041b0695930db7b8313477dcc4",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/cde8dccc2b1b92041b0695930db7b8313477dcc4",
+          "description": "Implemented on the default branch; exercised by src/components/ui/__tests__/status-message.test.tsx"
+        }
+      ]
     },
     {
       "id": "DS-06",

@@ -92,4 +92,13 @@ describe('DefaultOverviewPanel', () => {
     // indistinguishable from a genuinely empty graph.
     expect(screen.getAllByText('unavailable')).toHaveLength(1)
   })
+
+  it('shows the shared loading status message (DS-05), not a textless skeleton, before any tile resolves', () => {
+    global.fetch = vi.fn(() => new Promise(() => undefined)) as unknown as typeof fetch
+
+    render(<DefaultOverviewPanel />)
+
+    expect(screen.getAllByText('Loading…').length).toBe(5)
+    expect(screen.getAllByRole('status').length).toBe(5)
+  })
 })

@@ -20,6 +20,7 @@ import { useEffect, useState, type ComponentType } from 'react'
 import { FileText, Wrench, Layers, Cpu, Share2, HeartPulse, RefreshCw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { StatusMessage } from '@/components/ui/status-message'
 import { apiGet, type GatewayResult } from '@/lib/gateway'
 import { looseArray } from '@/lib/api-validation'
 import { z } from 'zod'
@@ -97,7 +98,7 @@ function StatTile({
       </CardHeader>
       <CardContent>
         {state.loading ? (
-          <div className="h-8 w-16 rounded bg-muted/50 animate-pulse" />
+          <StatusMessage status="loading" label="Loading…" className="text-sm" />
         ) : state.unavailable ? (
           <div className="flex items-center gap-2">
             <span className="text-2xl font-bold text-muted-foreground">—</span>

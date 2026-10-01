@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { StatusMessage } from '@/components/ui/status-message'
 import { gatewayPost } from '@/lib/gateway'
 
 /** A single metric time-series distilled from the PromQL response. */
@@ -133,7 +134,7 @@ function LineChart({ series }: { series: MetricSeries[] }) {
   const pad = 24
 
   const flat = series.flatMap((s) => s.points)
-  if (flat.length === 0) return <p className="text-muted-foreground text-sm">No data points.</p>
+  if (flat.length === 0) return <StatusMessage status="empty" label="No data points." />
 
   const ts = flat.map((p) => p.t)
   const vs = flat.map((p) => p.v)
@@ -361,7 +362,7 @@ function formatDagCost(costUsd: number | undefined): string {
 
 function RunDag({ waterfall }: { waterfall: RunWaterfall }) {
   const { trace, nodes } = waterfall
-  if (nodes.length === 0) return <p className="text-muted-foreground text-sm">No spans recorded for this run.</p>
+  if (nodes.length === 0) return <StatusMessage status="empty" label="No spans recorded for this run." />
 
   const { childrenByParent, roots } = partitionDagNodes(nodes, trace.id)
 
@@ -418,13 +419,7 @@ function metricsTabContent({
   series: MetricSeries[]
 }): ReactNode {
   if (metricUnavailable) return <CapabilityNotice label="/graph/promql" />
-  if (metricError) {
-    return (
-      <pre className="rounded border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive whitespace-pre-wrap break-words">
-        {metricError}
-      </pre>
-    )
-  }
+  if (metricError) return <StatusMessage status="error" label={metricError} />
   return (
     <>
       <LineChart series={series} />
@@ -505,23 +500,11 @@ function runDagPanelContent({
   dagError: string | null
   dag: RunWaterfall | null
 }): ReactNode {
-  if (dagLoading) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" /> Loading run DAG…
-      </div>
-    )
-  }
+  if (dagLoading) return <StatusMessage status="loading" label="Loading run DAG…" />
   if (dagUnavailable) return <CapabilityNotice label="/graph/traces (waterfall)" />
-  if (dagError) {
-    return (
-      <pre className="rounded border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive whitespace-pre-wrap break-words">
-        {dagError}
-      </pre>
-    )
-  }
+  if (dagError) return <StatusMessage status="error" label={dagError} />
   if (dag) return <RunDag waterfall={dag} />
-  return <p className="text-muted-foreground text-sm">Select a run to see its execution DAG.</p>
+  return <StatusMessage status="empty" label="Select a run to see its execution DAG." />
 }
 
 /** The Runs tab's body below the search input: an unavailable-route notice,
@@ -550,9 +533,13 @@ function runsTabContent({
   if (runsUnavailable) return <CapabilityNotice label="/graph/traces" />
   if (runs.length === 0) {
     return (
-      <p className="text-muted-foreground text-sm" data-testid="observability-runs-empty">
-        {runsLoading ? 'Loading runs…' : 'No runs found.'}
-      </p>
+      <div data-testid="observability-runs-empty">
+        {runsLoading ? (
+          <StatusMessage status="loading" label="Loading runs…" />
+        ) : (
+          <StatusMessage status="empty" label="No runs found." />
+        )}
+      </div>
     )
   }
   return (

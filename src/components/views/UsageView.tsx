@@ -11,7 +11,7 @@
  * chart library.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Activity, BarChart3, Coins, Cpu, Info, RefreshCw, Search, Users, Wrench } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -24,6 +24,7 @@ import { safeExternalUrl } from '@/lib/safe-url'
 import { useIdentity } from '@/lib/auth'
 import { roleAtLeast } from '@/lib/nav-registry'
 import { UnavailableNotice } from '@/components/ui/unavailable-notice'
+import { StatusMessage } from '@/components/ui/status-message'
 import {
   api,
   type UsageActivityCell,
@@ -214,8 +215,15 @@ function Heatmap({ cells }: { cells: UsageActivityCell[] }) {
   )
 }
 
-function Empty({ children }: { children: ReactNode }) {
-  return <div className="py-8 text-center text-sm text-muted-foreground">{children}</div>
+/** The shared DS-05 empty-state primitive, centered the way this view's
+ * tab bodies already were -- every call site below passes its own specific
+ * copy via `label`, so the visible text is unchanged. */
+function Empty({ children }: { children: string }) {
+  return (
+    <div className="py-8 flex justify-center">
+      <StatusMessage status="empty" label={children} />
+    </div>
+  )
 }
 
 function toolBadgeVariant(successRate: number): 'default' | 'secondary' | 'destructive' {

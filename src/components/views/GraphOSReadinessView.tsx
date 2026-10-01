@@ -17,6 +17,7 @@ import { AlertTriangle, CheckCircle2, Clock, HelpCircle, Loader2, RefreshCw, XCi
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { StatusMessage } from '@/components/ui/status-message'
 import {
   fetchReadinessSnapshot,
   isReadinessReady,
@@ -144,9 +145,8 @@ function UnavailableRouteNotice() {
 function ErrorNotice({ error }: { error: string }) {
   return (
     <Card>
-      <CardContent className="flex items-center gap-2 p-4 text-sm text-destructive">
-        <XCircle className="size-4 shrink-0" />
-        {error}
+      <CardContent className="p-4">
+        <StatusMessage status="error" label={error} />
       </CardContent>
     </Card>
   )
@@ -249,9 +249,8 @@ function SnapshotSection({ snapshot }: { snapshot: ReadinessSnapshot }) {
 function LoadingProbeNotice() {
   return (
     <Card>
-      <CardContent className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" />
-        Running the live readiness probe…
+      <CardContent className="p-6">
+        <StatusMessage status="loading" label="Running the live readiness probe…" />
       </CardContent>
     </Card>
   )

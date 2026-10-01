@@ -72,6 +72,25 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('ObservabilityView — DS-05 status language', () => {
+  it('shows the shared empty status message for a metrics query with no series', async () => {
+    mockGatewayFetch({})
+    renderWithProviders(<ObservabilityView />)
+    expect(await screen.findByText('No data points.')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
+  })
+
+  it('shows the shared empty status message when the selected run has no spans', async () => {
+    mockGatewayFetch({
+      searchBody: tracesSearchBody([{ trace_id: 'trace-1', name: 'empty-run', status: 'ok' }]),
+      waterfallBody: tracesWaterfallBody({ trace: { id: 'trace-1' }, nodes: [] }),
+    })
+    const { user } = renderWithProviders(<ObservabilityView />)
+    await user.click(await screen.findByRole('tab', { name: /Runs/i }))
+    expect(await screen.findByText('No spans recorded for this run.')).toBeInTheDocument()
+  })
+})
+
 describe('ObservabilityView — Runs (Phase D: no /api/runs platform)', () => {
   it('renders a run list from graph_traces action=search and its execution DAG with real parent/child nesting', async () => {
     mockGatewayFetch({
