@@ -20,7 +20,7 @@
     {
       "id": "WEBUI-API-R001",
       "title": "Generated GraphOS API client with typed decisions and confirmation flows",
-      "delivery_state": "BUILDING",
+      "delivery_state": "BUILT",
       "evidence": [
         {
           "kind": "branch",
@@ -48,7 +48,7 @@
     {
       "id": "WEBUI-API-R003",
       "title": "Remaining domain routes migrate to generated operations with a route census",
-      "delivery_state": "BUILDING",
+      "delivery_state": "BUILT",
       "evidence": [
         {
           "kind": "branch",
@@ -68,8 +68,16 @@
     {
       "id": "APIUI-02",
       "title": "Typed operations preserve preview-confirm-step-up for effects",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "6d01ec0fd1b572b3f2ebbda70202e38f984d69be",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/6d01ec0fd1b572b3f2ebbda70202e38f984d69be",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "APIUI-03",

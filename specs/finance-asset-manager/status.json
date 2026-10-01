@@ -51,8 +51,16 @@
     {
       "id": "FUI-03",
       "title": "Search resolves by stable identity, not ticker text",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "FUI-04",
@@ -117,8 +125,16 @@
     {
       "id": "FIN-UI-R003",
       "title": "GraphOS Markets app with scanner, search, and layered chart",
-      "delivery_state": "UNKNOWN",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     }
   ]
 }
