@@ -38,6 +38,8 @@ const KNOWN_NON_ROUTE_COMPONENTS: Record<string, string> = {
   'admin/RbacPanel.tsx': 'rendered by AdminView',
   'admin/ShardsPanel.tsx': 'rendered by AdminView',
   'admin/TenantsPanel.tsx': 'rendered by AdminView',
+  'DecisionsView.tsx':
+    'not yet routed: requires a DecisionsTransport (src/components/decisions/decisions-transport.ts) that the authenticated Graph OS decision-read client has not landed on this repository to supply; land a route once a real transport exists',
 }
 
 /** Recursively lists `*.tsx` files under `dir`, as paths relative to `dir`. */
