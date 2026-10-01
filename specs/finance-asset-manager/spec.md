@@ -1,6 +1,6 @@
 # FIN-UI-001 — Finance Asset Manager
 
-**Status:** SPECIFIED; implementation and deployment unverified. **Owner:** `agent-webui`. **Related identifiers:** EH-698–EH-713, EH-715. These identifiers support cross-repository tracking; this document contains the complete WebUI requirements. A specification is not evidence that its feature is built.
+**Status:** SPECIFIED; implementation and deployment unverified. **Owner:** `agent-webui`. Every requirement ID this spec owns, and the cross-repository IDs it depends on, are defined in [requirements.md](requirements.md); their current delivery and acceptance state, with evidence, is recorded in [status.json](status.json). These identifiers support cross-repository tracking; this document contains the complete WebUI requirements. A specification is not evidence that its feature is built.
 
 ## Purpose, actors, and priority
 
@@ -21,19 +21,19 @@ The primary actor is an authenticated investor managing personal accounts. They 
 
 | ID | Observable requirement | Related IDs |
 |---|---|---|
-| FUI-01 | Responsive five-destination navigation uses a bottom bar on narrow viewports and a side rail on desktop; selected route and focus remain coherent. | EH-710 |
-| FUI-02 | User-defined instrument groups and Basic/Holdings mode preserve selection and distinguish loading, genuinely empty, stale, partial, denied, and unavailable results. | EH-698, EH-710 |
-| FUI-03 | Search keys selection by stable instrument and listing IDs, venue and quote basis; ticker text alone never identifies an instrument. | EH-700, EH-701 |
-| FUI-04 | Rows and details show price/session/provenance, previous close, change, sparkline, licensed logo or fallback, and separate after-hours value where supplied. | EH-700, EH-701, EH-710 |
-| FUI-05 | Detail tabs, range controls, line/candle toggle and separate volume pane expose only supported intervals and data types. | EH-710, EH-711 |
-| FUI-06 | One typed ChartRenderer is shared with Atlas. It draws scalar line/area and complete OHLC candles, preserves gaps and revisions, and computes no authoritative indicators. | EH-711 |
-| FUI-07 | Available overlays include trend line/flips, DCA buys, cost basis and margin/liquidation levels; each displays strategy/source version and simulation status. | EH-699, EH-702, EH-706, EH-711 |
-| FUI-08 | Performance and benchmark cards render owner-calculated fixed-point values with method, currency, source, as-of, session and explicit unavailable states. | EH-699, EH-715 |
-| FUI-09 | Strategy and recommendation views cite versioned evidence and scorecards, show abstention reasons, and never directly submit orders. | EH-702–EH-706 |
-| FUI-10 | DCA and alert views distinguish due, missed, failed, replayed, paper-filled and delivered states. | EH-705, EH-712 |
-| FUI-11 | CSV import previews mapping and validation, shows source digest and idempotent receipt, and reads authoritative accounting after import. | EH-713 |
-| FUI-12 | PWA offline shell marks cached financial facts stale; it cannot imply current market, account or order state. | EH-710, EH-715 |
-| FUI-13 | Every chart and control works with keyboard, screen reader summary, 200% zoom, reduced motion and non-color state labels. | EH-653, EH-710, EH-711 |
+| FUI-01 | Responsive five-destination navigation uses a bottom bar on narrow viewports and a side rail on desktop; selected route and focus remain coherent. | FIN-UI-R001 |
+| FUI-02 | User-defined instrument groups and Basic/Holdings mode preserve selection and distinguish loading, genuinely empty, stale, partial, denied, and unavailable results. | EG-FINANCE-PRIMITIVES-R004, FIN-UI-R001 |
+| FUI-03 | Search keys selection by stable instrument and listing IDs, venue and quote basis; ticker text alone never identifies an instrument. | EG-FINANCE-PRIMITIVES-R006, SDK-FINANCE-SOURCES-R002 |
+| FUI-04 | Rows and details show price/session/provenance, previous close, change, sparkline, licensed logo or fallback, and separate after-hours value where supplied. | EG-FINANCE-PRIMITIVES-R006, SDK-FINANCE-SOURCES-R002, FIN-UI-R001 |
+| FUI-05 | Detail tabs, range controls, line/candle toggle and separate volume pane expose only supported intervals and data types. | FIN-UI-R001, FIN-UI-R002 |
+| FUI-06 | One typed ChartRenderer is shared with Atlas. It draws scalar line/area and complete OHLC candles, preserves gaps and revisions, and computes no authoritative indicators. | FIN-UI-R002 |
+| FUI-07 | Available overlays include trend line/flips, DCA buys, cost basis and margin/liquidation levels; each displays strategy/source version and simulation status. | EG-FINANCE-PRIMITIVES-R005, EG-FINANCE-PRIMITIVES-R007, EG-FINANCE-PRIMITIVES-R010, FIN-UI-R002 |
+| FUI-08 | Performance and benchmark cards render owner-calculated fixed-point values with method, currency, source, as-of, session and explicit unavailable states. | EG-FINANCE-PRIMITIVES-R005, EG-FINANCE-PRIMITIVES-R013 |
+| FUI-09 | Strategy and recommendation views cite versioned evidence and scorecards, show abstention reasons, and never directly submit orders. | EG-FINANCE-PRIMITIVES-R007–EG-FINANCE-PRIMITIVES-R010 |
+| FUI-10 | DCA and alert views distinguish due, missed, failed, replayed, paper-filled and delivered states. | GRAPHOS-DATA-MARKET-R006, EG-FINANCE-PRIMITIVES-R011 |
+| FUI-11 | CSV import previews mapping and validation, shows source digest and idempotent receipt, and reads authoritative accounting after import. | SDK-FINANCE-SOURCES-R004 |
+| FUI-12 | PWA offline shell marks cached financial facts stale; it cannot imply current market, account or order state. | FIN-UI-R001, EG-FINANCE-PRIMITIVES-R013 |
+| FUI-13 | Every chart and control works with keyboard, screen reader summary, 200% zoom, reduced motion and non-color state labels. | WEBUI-DESIGN-R001, FIN-UI-R001, FIN-UI-R002 |
 
 ## Boundaries and failure behavior
 
@@ -51,3 +51,5 @@ Missing permission, route absence, stale data, partial coverage, bad contract sh
 ## Scope exclusions
 
 This release does not implement a broker, investment-adviser service, proprietary TradingView studies, direct browser-to-provider connections, automatic live trading, trading of manually valued real estate, a Ghostfolio database, or a new frontend shell. A future public product requires separate data-display licensing and regulatory decisions.
+
+Requirement IDs are defined in [requirements.md](requirements.md); delivery state per ID is in `status.json`.

@@ -2,8 +2,97 @@
   "schema_version": 1,
   "spec_id": "WEBUI-APPS-001",
   "owner_repo": "agent-webui",
-  "requirement_ids": ["APP-01", "APP-02", "APP-03", "APP-04", "APP-05", "APP-06", "APP-07"],
+  "requirement_ids": [
+    "APP-01",
+    "APP-02",
+    "APP-03",
+    "APP-04",
+    "APP-05",
+    "APP-06",
+    "APP-07",
+    "WEBUI-APPS-R001",
+    "WEBUI-APPS-R002",
+    "WEBUI-APPS-R003"
+  ],
   "delivery_state": "SPECIFIED",
   "acceptance_state": "NOT_AUDITED",
-  "evidence": []
+  "evidence": [],
+  "requirements": [
+    {
+      "id": "APP-01",
+      "title": "Browser identity consistently reads GraphOS across titles and assets",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "APP-02",
+      "title": "Package, import and environment naming use the new public identity",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "APP-03",
+      "title": "AppSurface contract declares each app's route, capability and client",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "APP-04",
+      "title": "Contributed app descriptors cannot escalate privilege beyond the contract",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "APP-05",
+      "title": "Markets consumes the AppSurface contract without shell-side duplication",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "APP-06",
+      "title": "Legacy browser state migrates safely with renewed consent",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "APP-07",
+      "title": "App navigation supports accessibility and layout states across devices",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "WEBUI-APPS-R001",
+      "title": "Apps information-architecture section and AppSurface contract",
+      "delivery_state": "UNKNOWN",
+      "evidence": []
+    },
+    {
+      "id": "WEBUI-APPS-R002",
+      "title": "GraphOS brand layer covers titles, assets, theme and documentation",
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "677a27e0f701eca99cad20887a0b5c4b8ec9734e",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/677a27e0f701eca99cad20887a0b5c4b8ec9734e",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R003",
+      "title": "Repository, package and runtime identifiers rename to graph-os-webui",
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "677a27e0f701eca99cad20887a0b5c4b8ec9734e",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/677a27e0f701eca99cad20887a0b5c4b8ec9734e",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
+    }
+  ]
 }

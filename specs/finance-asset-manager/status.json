@@ -2,8 +2,123 @@
   "schema_version": 1,
   "spec_id": "FIN-UI-001",
   "owner_repo": "agent-webui",
-  "requirement_ids": ["EH-710", "EH-711", "FUI-01", "FUI-02", "FUI-03", "FUI-04", "FUI-05", "FUI-06", "FUI-07", "FUI-08", "FUI-09", "FUI-10", "FUI-11", "FUI-12", "FUI-13"],
+  "requirement_ids": [
+    "FIN-UI-R001",
+    "FIN-UI-R002",
+    "FUI-01",
+    "FUI-02",
+    "FUI-03",
+    "FUI-04",
+    "FUI-05",
+    "FUI-06",
+    "FUI-07",
+    "FUI-08",
+    "FUI-09",
+    "FUI-10",
+    "FUI-11",
+    "FUI-12",
+    "FUI-13",
+    "FIN-UI-R003"
+  ],
   "delivery_state": "SPECIFIED",
   "acceptance_state": "NOT_AUDITED",
-  "evidence": []
+  "evidence": [],
+  "requirements": [
+    {
+      "id": "FIN-UI-R001",
+      "title": "Mobile-first Markets app with five-destination navigation",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FIN-UI-R002",
+      "title": "Shared ChartRenderer for line, candle, and overlay data",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FUI-01",
+      "title": "Responsive five-destination navigation",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FUI-02",
+      "title": "Instrument groups with distinct data states",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FUI-03",
+      "title": "Search resolves by stable identity, not ticker text",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FUI-04",
+      "title": "Instrument rows show price, provenance, after-hours value",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FUI-05",
+      "title": "Detail tabs and range controls expose only supported data",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FUI-06",
+      "title": "Shared ChartRenderer preserves gaps and revisions",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FUI-07",
+      "title": "Chart overlays show strategy version and simulation state",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FUI-08",
+      "title": "Performance cards render owner-calculated values verbatim",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FUI-09",
+      "title": "Strategy views cite evidence and never submit orders",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FUI-10",
+      "title": "DCA and alert views distinguish delivery states",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FUI-11",
+      "title": "CSV import preview with idempotent receipt",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FUI-12",
+      "title": "Offline PWA shell marks cached data stale",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FUI-13",
+      "title": "Charts and controls meet accessibility requirements",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "FIN-UI-R003",
+      "title": "GraphOS Markets app with scanner, search, and layered chart",
+      "delivery_state": "UNKNOWN",
+      "evidence": []
+    }
+  ]
 }

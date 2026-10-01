@@ -2,7 +2,7 @@
 
 **ID:** WEBUI-DECIDE-001
 **Owner:** agent-webui
-**Program IDs:** EH-046, EH-047
+**Related IDs:** WEBUI-DECIDE-R002, WEBUI-DECIDE-R001
 **Delivery:** specified; existing source requires current-main and browser acceptance audit
 **Acceptance:** open
 
@@ -21,15 +21,17 @@ Actors are a tenant reader, an operator investigating a decision, and an accessi
 
 ## Functional requirements
 
-| Requirement | Behavior | Program ID | Acceptance evidence |
+| Requirement | Behavior | Related ID | Acceptance evidence |
 |---|---|---|---|
-| DEC-01 | Typed explorer renders chosen and excluded options with cited premise/derivation identifiers, certificate and violations | EH-046 | Contract fixture and rendered route test |
-| DEC-02 | Why-not is requested on demand with a bounded solve budget; timeout or refusal is visible without mutating the original decision | EH-046 | Timeout/refusal integration fixture |
-| DEC-03 | Evaluation dashboard labels cohort, sample count, source class, window, target/observed coverage, risk and receipt version independently | EH-047 | Independent-label fixture and rendered test |
-| DEC-04 | No numeric coverage, calibration or deployment claim appears for synthetic-only, missing or underpowered evaluation | EH-047 | Negative fixtures for each case |
-| DEC-05 | Tenant and purpose changes invalidate cached decision/evaluation queries, and stale responses cannot overwrite a newer selection | EH-046, EH-047 | Two-tenant browser test |
-| DEC-06 | All explanation structure is usable without color, hover or pointer-only controls | EH-046, EH-047 | Keyboard and accessibility test |
+| DEC-01 | Typed explorer renders chosen and excluded options with cited premise/derivation identifiers, certificate and violations | WEBUI-DECIDE-R002 | Contract fixture and rendered route test |
+| DEC-02 | Why-not is requested on demand with a bounded solve budget; timeout or refusal is visible without mutating the original decision | WEBUI-DECIDE-R002 | Timeout/refusal integration fixture |
+| DEC-03 | Evaluation dashboard labels cohort, sample count, source class, window, target/observed coverage, risk and receipt version independently | WEBUI-DECIDE-R001 | Independent-label fixture and rendered test |
+| DEC-04 | No numeric coverage, calibration or deployment claim appears for synthetic-only, missing or underpowered evaluation | WEBUI-DECIDE-R001 | Negative fixtures for each case |
+| DEC-05 | Tenant and purpose changes invalidate cached decision/evaluation queries, and stale responses cannot overwrite a newer selection | WEBUI-DECIDE-R002, WEBUI-DECIDE-R001 | Two-tenant browser test |
+| DEC-06 | All explanation structure is usable without color, hover or pointer-only controls | WEBUI-DECIDE-R002, WEBUI-DECIDE-R001 | Keyboard and accessibility test |
 
 ## Completion
 
 `BUILT` requires a merged WebUI commit containing the real route, typed client and tests. `ACCEPTED` additionally requires a browser run against a provisioned Graph OS test service with an independent labeled evaluation fixture and authorized/denied identities, plus recorded exact commit and test evidence in `tasks.md`. Source existing on a branch is not acceptance. Graph OS or database rows must be accepted by their respective owners.
+
+Requirement IDs are defined in [requirements.md](requirements.md); delivery state per ID is in `status.json`.

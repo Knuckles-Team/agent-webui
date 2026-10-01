@@ -2,7 +2,7 @@
 
 **ID:** WEBUI-DESIGN-001
 **Owner:** agent-webui
-**Program ID:** EH-653
+**Related ID:** WEBUI-DESIGN-R001
 **Delivery:** specified; acceptance audit open
 **Acceptance:** open
 
@@ -25,8 +25,10 @@ The review covers one chat flow, Atlas query/filter/result flow, and one operati
 
 ## Design guidance assimilation
 
-EH-653 distills useful outside accessibility, responsive, interaction and visual guidance into this component system and the public universal design/accessibility skills. Review each candidate pattern for license, overlap and observable user benefit before adding it. Keep the existing `src/components/ui/` primitives and `src/index.css` tokens as the implementation seams; use a workflow across the current atomic skills if a review spans several disciplines. The review rubric ranks keyboard and screen-reader failure first, then hidden mobile actions, unclear feedback, motion sensitivity and visual polish. It must include a documented before/after review of chat, Atlas and an operational form at phone and desktop widths. Do not install duplicate skill names, copy unlicensed skill text, add a remote critique service, or introduce unsolicited telemetry. A design review is local and reproducible from synthetic fixtures.
+WEBUI-DESIGN-R001 distills useful outside accessibility, responsive, interaction and visual guidance into this component system and the public universal design/accessibility skills. Review each candidate pattern for license, overlap and observable user benefit before adding it. Keep the existing `src/components/ui/` primitives and `src/index.css` tokens as the implementation seams; use a workflow across the current atomic skills if a review spans several disciplines. The review rubric ranks keyboard and screen-reader failure first, then hidden mobile actions, unclear feedback, motion sensitivity and visual polish. It must include a documented before/after review of chat, Atlas and an operational form at phone and desktop widths. Do not install duplicate skill names, copy unlicensed skill text, add a remote critique service, or introduce unsolicited telemetry. A design review is local and reproducible from synthetic fixtures.
 
 ## Completion
 
 BUILT requires merged token/interaction guidance and any source adjustments. ACCEPTED requires measured WCAG 2.2 AA checks on the three named journeys, human review of screenshots, responsive/reduced-motion tests and exact commit/CI evidence. The absence of telemetry and duplicate primitives must be verified, not assumed.
+
+Requirement IDs are defined in [requirements.md](requirements.md); delivery state per ID is in `status.json`.

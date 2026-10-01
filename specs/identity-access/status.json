@@ -2,8 +2,82 @@
   "schema_version": 1,
   "spec_id": "WEBUI-IDENTITY-001",
   "owner_repo": "agent-webui",
-  "requirement_ids": ["IDUI-01", "IDUI-02", "IDUI-03", "IDUI-04", "IDUI-05", "IDUI-06", "IDUI-07"],
+  "requirement_ids": [
+    "IDUI-01",
+    "IDUI-02",
+    "IDUI-03",
+    "IDUI-04",
+    "IDUI-05",
+    "IDUI-06",
+    "IDUI-07",
+    "WEBUI-IDENTITY-R001",
+    "WEBUI-IDENTITY-R002"
+  ],
   "delivery_state": "SPECIFIED",
   "acceptance_state": "NOT_AUDITED",
-  "evidence": []
+  "evidence": [],
+  "requirements": [
+    {
+      "id": "IDUI-01",
+      "title": "Identity mode wizard shows the active auth mode with no hidden bypass",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "IDUI-02",
+      "title": "Local account flows use server sessions with no stored credentials",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "IDUI-03",
+      "title": "MFA enrollment and recovery cover TOTP and WebAuthn",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "IDUI-04",
+      "title": "Identity admin tabs cover users, roles, groups and mapping dry run",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "IDUI-05",
+      "title": "Elevation requests display scope, expiry and a bound receipt",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "IDUI-06",
+      "title": "Identity or tenant change invalidates cached protected data",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "IDUI-07",
+      "title": "Identity forms and confirmations are accessible on desktop and mobile",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "WEBUI-IDENTITY-R001",
+      "title": "Release-qualification identity test client supports a live sign-in probe",
+      "delivery_state": "UNKNOWN",
+      "evidence": []
+    },
+    {
+      "id": "WEBUI-IDENTITY-R002",
+      "title": "Admin UI surfaces identity operations for users, roles and navigation",
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
+    }
+  ]
 }

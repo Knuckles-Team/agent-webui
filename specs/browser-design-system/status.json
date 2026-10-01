@@ -2,8 +2,68 @@
   "schema_version": 1,
   "spec_id": "WEBUI-DESIGN-001",
   "owner_repo": "agent-webui",
-  "requirement_ids": ["EH-653", "DS-01", "DS-02", "DS-03", "DS-04", "DS-05", "DS-06"],
+  "requirement_ids": [
+    "WEBUI-DESIGN-R001",
+    "DS-01",
+    "DS-02",
+    "DS-03",
+    "DS-04",
+    "DS-05",
+    "DS-06"
+  ],
   "delivery_state": "SPECIFIED",
   "acceptance_state": "NOT_AUDITED",
-  "evidence": []
+  "evidence": [],
+  "requirements": [
+    {
+      "id": "WEBUI-DESIGN-R001",
+      "title": "Design guidance distilled into component system and skills",
+      "delivery_state": "BUILDING",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "a30da6ebacc6fc2be7b39d41da72eeb858aab05b",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/a30da6ebacc6fc2be7b39d41da72eeb858aab05b",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
+    },
+    {
+      "id": "DS-01",
+      "title": "Design tokens documented with contrast targets",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "DS-02",
+      "title": "Controls have accessible names and visible focus",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "DS-03",
+      "title": "Responsive layout covers 320px mobile through desktop",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "DS-04",
+      "title": "Gesture actions have alternatives and respect reduced motion",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "DS-05",
+      "title": "Status states are distinguishable by text, not only color",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "DS-06",
+      "title": "No duplicate primitives or unsolicited telemetry introduced",
+      "delivery_state": "SPECIFIED",
+      "evidence": []
+    }
+  ]
 }

@@ -45,7 +45,7 @@ The Markets workspace uses bottom navigation at mobile widths and the existing s
 
 Build one typed `ChartRenderer` component and register its Atlas wrapper in the existing registry. It draws line/area for scalar portfolios, funds and indices and candles for tradables only when complete OHLC exists. Volume is a separate pane. Trend, DCA, cost-basis and margin overlays share the time axis but retain their own evidence and simulation labels. A touch crosshair and pinch zoom must coexist with page scroll; keyboard navigation and a text/table representation expose equivalent facts. Keep the chart library behind the component; Lightweight Charts is a candidate, subject to attribution and capability review. Advanced Charts and Pine compatibility are separate products.
 
-Indicators are computed by the owner from full required history before viewport clipping or EG M4 display decimation. The browser requests capped pages and bounded deltas, never full-universe history. A 1,000-instrument scanner loads pages rather than one request per symbol. Presets are versioned user configuration; migrate or reject incompatible versions explicitly.
+Indicators are computed by the owner from full required history before viewport clipping or the owning engine's large-dataset display decimation. The browser requests capped pages and bounded deltas, never full-universe history. A 1,000-instrument scanner loads pages rather than one request per symbol. Presets are versioned user configuration; migrate or reject incompatible versions explicitly.
 
 ## Failure, security and compatibility
 
@@ -76,9 +76,9 @@ Run `pnpm run typecheck`, `pnpm run lint`, `pnpm run test`, `pnpm run test:e2e`,
 
 | Repository | Owner-native deliverable; interface consumed here | IDs |
 |---|---|---|
-| [epistemic-graph](https://github.com/Knuckles-Team/epistemic-graph) | finance-v1 accounts, activities, lots, reference sessions, fixed-point accounting, strategy/backtest/recommendation/leverage outputs and golden fixtures | EH-698–EH-700, EH-702–EH-704, EH-706, EH-715 |
-| [agent-connector-sdk](https://github.com/Knuckles-Team/agent-connector-sdk) and [emerald-exchange](https://github.com/Knuckles-Team/emerald-exchange) | qualified stock/FX/commodity source and account/import transport; governed effect boundary | EH-701, EH-709, EH-713 |
-| [graph-os](https://github.com/Knuckles-Team/graph-os) | authenticated finance projection, replay-safe DCA scheduling and outbox alert delivery | EH-705, EH-712 |
-| [agent-utilities](https://github.com/Knuckles-Team/agent-utilities) | workflow orchestration without a duplicate finance math authority | EH-704, EH-705 |
-| [media-downloader](https://github.com/Knuckles-Team/media-downloader) and Emerald skills | source intake, claim/evidence separation and leveraged-trading guide | EH-707, EH-708 |
-| [agent-webui](https://github.com/Knuckles-Team/agent-webui) | this Markets workspace and shared chart | EH-710, EH-711 |
+| [epistemic-graph](https://github.com/Knuckles-Team/epistemic-graph) | finance-v1 accounts, activities, lots, reference sessions, fixed-point accounting, strategy/backtest/recommendation/leverage outputs and golden fixtures | EG-FINANCE-PRIMITIVES-R004–EG-FINANCE-PRIMITIVES-R006, EG-FINANCE-PRIMITIVES-R007–EG-FINANCE-PRIMITIVES-R009, EG-FINANCE-PRIMITIVES-R010, EG-FINANCE-PRIMITIVES-R013 |
+| [agent-connector-sdk](https://github.com/Knuckles-Team/agent-connector-sdk) and [emerald-exchange](https://github.com/Knuckles-Team/emerald-exchange) | qualified stock/FX/commodity source and account/import transport; governed effect boundary | SDK-FINANCE-SOURCES-R002, SDK-FINANCE-SOURCES-R003, SDK-FINANCE-SOURCES-R004 |
+| [graph-os](https://github.com/Knuckles-Team/graph-os) | authenticated finance projection, replay-safe DCA scheduling and outbox alert delivery | GRAPHOS-DATA-MARKET-R006, EG-FINANCE-PRIMITIVES-R011 |
+| [agent-utilities](https://github.com/Knuckles-Team/agent-utilities) | workflow orchestration without a duplicate finance math authority | EG-FINANCE-PRIMITIVES-R009, GRAPHOS-DATA-MARKET-R006 |
+| [media-downloader](https://github.com/Knuckles-Team/media-downloader) and Emerald skills | source intake, claim/evidence separation and leveraged-trading guide | EMERALD-GUIDE-R001, EMERALD-MEDIA-R001 |
+| [agent-webui](https://github.com/Knuckles-Team/agent-webui) | this Markets workspace and shared chart | FIN-UI-R001, FIN-UI-R002 |
