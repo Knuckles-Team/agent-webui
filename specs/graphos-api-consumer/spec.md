@@ -27,8 +27,6 @@ Out of scope: creating new graph, ontology, finance or agent algorithms, or expo
 
 ## Completion
 
-BUILT requires a merged cutover with zero forbidden imports and zero remaining domain route families in the host inventory. ACCEPTED requires exact-registry digest parity, denial/error/effect tests, generated-client reproducibility and browser proof against a provisioned Graph OS fixture. Each route family may be accepted separately, but the spec is accepted only when all four related requirements — see [requirements.md](requirements.md) — are met and recorded in `tasks.md`.
-
 ## Delivery slices and dependency decisions
 
 WEBUI-API-R001 owns the generated `src/lib/graphos-api/` client, its `invoke` seam, decision and Markets/app callers, WebMCP page tools, and a console confirmation page. The browser sends a typed operation and input to the same-origin session host. The host binds the authenticated caller; the browser never supplies a service token. A write or destructive operation first returns a server-issued preview and `plan_ref`, and the confirmation page sends that exact reference only after the required human action and step-up. A stale reference, changed principal, altered parameters, missing MFA or denial must fail closed. The host's app domain routes retire only after equivalent Graph OS operations and fixtures exist.
