@@ -22,49 +22,106 @@
       "id": "APP-01",
       "title": "Browser identity consistently reads GraphOS across titles and assets",
       "delivery_state": "SPECIFIED",
-      "evidence": []
+      "evidence": [],
+      "remaining": "Title/meta/webmanifest already say GraphOS on main, but mkdocs.yml site_name ('Agent Web UI') and README are not rebranded; full consistent brand layer is only on origin/feat/t6-brand-rename-20260925."
     },
     {
       "id": "APP-02",
       "title": "Package, import and environment naming use the new public identity",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "677a27e0f701eca99cad20887a0b5c4b8ec9734e",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/677a27e0f701eca99cad20887a0b5c4b8ec9734e",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "APP-03",
       "title": "AppSurface contract declares each app's route, capability and client",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "APP-04",
       "title": "Contributed app descriptors cannot escalate privilege beyond the contract",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "APP-05",
       "title": "Markets consumes the AppSurface contract without shell-side duplication",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "APP-06",
       "title": "Legacy browser state migrates safely with renewed consent",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "677a27e0f701eca99cad20887a0b5c4b8ec9734e",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/677a27e0f701eca99cad20887a0b5c4b8ec9734e",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "APP-07",
       "title": "App navigation supports accessibility and layout states across devices",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "WEBUI-APPS-R001",
       "title": "Apps information-architecture section and AppSurface contract",
-      "delivery_state": "UNKNOWN",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/0809b6d3ca727b19b196f2b875a7cf007eb341db",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "WEBUI-APPS-R002",
