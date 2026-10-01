@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { UnavailableNotice } from '@/components/ui/unavailable-notice'
+import { StatusMessage } from '@/components/ui/status-message'
 import { toast } from 'sonner'
 import { fetchValidated } from '@/lib/api-validation'
 
@@ -506,17 +507,18 @@ function renderAgentGrid({
   agentsUnavailable,
   filteredAgents,
   onArchive,
+  onCancelLoading,
 }: {
   loadingAgents: boolean
   agentsUnavailable: boolean
   filteredAgents: LibraryAgent[]
   onArchive: (agent: LibraryAgent) => void
+  onCancelLoading?: () => void
 }) {
   if (loadingAgents) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 gap-3">
-        <RefreshCw className="size-8 text-emerald-500 animate-spin" />
-        <span className="text-sm text-muted-foreground font-medium">Querying the graph...</span>
+      <div className="flex justify-center py-12">
+        <StatusMessage status="loading" label="Querying the graph..." onCancel={onCancelLoading} />
       </div>
     )
   }
@@ -529,8 +531,8 @@ function renderAgentGrid({
   }
   if (filteredAgents.length === 0) {
     return (
-      <div className="text-center py-12 text-muted-foreground text-sm">
-        No agents yet. Compose one, or register an external A2A agent.
+      <div className="flex justify-center py-12">
+        <StatusMessage status="empty" label="No agents yet. Compose one, or register an external A2A agent." />
       </div>
     )
   }
@@ -554,6 +556,7 @@ interface LibraryTabProps {
   agentsUnavailable: boolean
   filteredAgents: LibraryAgent[]
   onArchive: (agent: LibraryAgent) => void
+  onCancelLoadingAgents: () => void
 }
 
 function renderLibraryTab(props: LibraryTabProps) {
@@ -570,6 +573,7 @@ function renderLibraryTab(props: LibraryTabProps) {
     agentsUnavailable,
     filteredAgents,
     onArchive,
+    onCancelLoadingAgents,
   } = props
   return (
     <div className="space-y-6">
@@ -604,7 +608,13 @@ function renderLibraryTab(props: LibraryTabProps) {
       </div>
 
       <ScrollArea className="h-[calc(100vh-32rem)] min-h-[16rem] pr-2">
-        {renderAgentGrid({ loadingAgents, agentsUnavailable, filteredAgents, onArchive })}
+        {renderAgentGrid({
+          loadingAgents,
+          agentsUnavailable,
+          filteredAgents,
+          onArchive,
+          onCancelLoading: onCancelLoadingAgents,
+        })}
       </ScrollArea>
     </div>
   )
@@ -658,7 +668,13 @@ function renderComposeToolPicker({
   selectedToolIds,
   onToggleTool,
 }: Pick<ComposeTabProps, 'loadingTools' | 'toolsUnavailable' | 'tools' | 'selectedToolIds' | 'onToggleTool'>) {
-  if (loadingTools) return <div className="text-xs text-muted-foreground p-2">Loading tools...</div>
+  if (loadingTools) {
+    return (
+      <div className="p-2">
+        <StatusMessage status="loading" label="Loading tools..." className="text-xs" />
+      </div>
+    )
+  }
   if (toolsUnavailable) {
     return (
       <div className="p-2">
@@ -668,8 +684,12 @@ function renderComposeToolPicker({
   }
   if (tools.length === 0) {
     return (
-      <div className="text-xs text-muted-foreground p-2">
-        No tools ingested yet for this filter — the agent can still run prompt-only.
+      <div className="p-2">
+        <StatusMessage
+          status="empty"
+          label="No tools ingested yet for this filter — the agent can still run prompt-only."
+          className="text-xs"
+        />
       </div>
     )
   }
@@ -997,7 +1017,7 @@ function renderChatModelsSection({
     <div>
       <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Chat models</h3>
       {configUnavailable ? null : chatModels.length === 0 ? (
-        <div className="text-xs text-muted-foreground">No chat models configured.</div>
+        <StatusMessage status="empty" label="No chat models configured." className="text-xs" />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{chatModels.map(renderChatModelCard)}</div>
       )}
@@ -1033,7 +1053,7 @@ function renderEmbeddingModelsSection({
     <div>
       <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Embedding models</h3>
       {configUnavailable ? null : embeddingModels.length === 0 ? (
-        <div className="text-xs text-muted-foreground">No embedding models configured.</div>
+        <StatusMessage status="empty" label="No embedding models configured." className="text-xs" />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{embeddingModels.map(renderEmbeddingModelCard)}</div>
       )}
@@ -1053,8 +1073,8 @@ function renderConfigTab({
   if (loadingConfig) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-center py-12 gap-3">
-          <RefreshCw className="size-8 text-emerald-500 animate-spin" />
+        <div className="flex items-center justify-center py-12">
+          <StatusMessage status="loading" label="Loading model configuration..." />
         </div>
       </div>
     )
@@ -1146,6 +1166,20 @@ export default function AgentLibraryView() {
       setUnavailable: setAgentsUnavailable,
       onFailure: reportAgentLibraryFailure,
     })
+  }
+
+  /** DS-05 interruption: the agents list fetch already owns a real
+   * `AbortController` (the same `agentsRequests` sequencing every other
+   * fetch here uses to stay race-safe) -- this exposes a user-facing Cancel
+   * on top of it. `cancelRequests` only aborts and invalidates the request;
+   * it never flips `loadingAgents` back to false (by design, for the
+   * unmount-cleanup caller, which has nothing left to update), so the
+   * Cancel button does that itself rather than waiting on
+   * `loadValidatedRequest`'s `finally`, which skips `setLoading` once the
+   * request it belongs to is no longer current. */
+  const cancelLoadingAgents = () => {
+    cancelRequests([agentsRequests.current])
+    setLoadingAgents(false)
   }
 
   const fetchSuggestions = async () => {
@@ -1422,6 +1456,7 @@ export default function AgentLibraryView() {
                 onArchive: (agent) => {
                   void handleArchive(agent)
                 },
+                onCancelLoadingAgents: cancelLoadingAgents,
               })}
             </TabsContent>
 

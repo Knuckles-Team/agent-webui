@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { StatusMessage } from '@/components/ui/status-message'
 import { toast } from 'sonner'
 import { fetchValidated, ApiError, looseArray } from '@/lib/api-validation'
 import { SessionExpiredNotice } from '@/components/SessionExpiredNotice'
@@ -270,7 +271,9 @@ function CognitiveBox({
 
       <ScrollArea className="h-[calc(100vh-27rem)] pr-2">
         {totalCount === 0 ? (
-          <div className="text-center py-6 text-xs text-muted-foreground">{emptyLabel}</div>
+          <div className="flex justify-center py-6">
+            <StatusMessage status="empty" label={emptyLabel} className="text-xs" />
+          </div>
         ) : (
           <div className="space-y-4">
             {groups.map(([domain, items]) => (
@@ -431,16 +434,21 @@ function renderMcpToolsList({
 } & Pick<McpServerCardHandlers, 'onToggleTool'>) {
   if (isLoadingTools && serverTools.length === 0) {
     return (
-      <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground font-medium">
-        <RefreshCw className="size-3.5 animate-spin text-teal-400" />
-        <span>Discovering tools...</span>
+      <div className="py-3">
+        <StatusMessage status="loading" label="Discovering tools..." className="text-xs" />
       </div>
     )
   }
   if (serverTools.length === 0) {
     return (
-      <div className="text-xs text-muted-foreground py-2">
-        {toolPageError ? 'No tools could be read for this MCP server.' : 'No tools exposed by this MCP server.'}
+      <div className="py-2">
+        <StatusMessage
+          status="empty"
+          label={
+            toolPageError ? 'No tools could be read for this MCP server.' : 'No tools exposed by this MCP server.'
+          }
+          className="text-xs"
+        />
       </div>
     )
   }
@@ -653,11 +661,12 @@ function renderMcpServersList({
 
 function renderMcpEmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-      <span className="text-muted-foreground text-sm">No MCP servers registered.</span>
-      <span className="text-[10px] text-muted-foreground/70">
-        The authoritative fleet catalog has no live server registrations.
-      </span>
+    <div className="flex justify-center py-12">
+      <StatusMessage
+        status="empty"
+        label="No MCP servers registered."
+        detail="The authoritative fleet catalog has no live server registrations."
+      />
     </div>
   )
 }
@@ -1216,9 +1225,8 @@ export default function SkillsView() {
         <CardContent>
           <ScrollArea className="h-[calc(100vh-20rem)] pr-4">
             {loading ? (
-              <div className="flex flex-col items-center justify-center py-12 gap-3">
-                <RefreshCw className="size-8 text-emerald-500 animate-spin" />
-                <span className="text-sm text-muted-foreground font-medium">Querying graph registry...</span>
+              <div className="flex items-center justify-center py-12">
+                <StatusMessage status="loading" label="Querying graph registry..." />
               </div>
             ) : (
               renderActiveTabContent({

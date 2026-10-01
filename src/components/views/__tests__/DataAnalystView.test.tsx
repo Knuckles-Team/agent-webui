@@ -408,6 +408,34 @@ describe('DataAnalystView natural-language query contract', () => {
     expect(screen.queryByText('Stale analyst answer.')).not.toBeInTheDocument()
   })
 
+  it('shows the shared loading status message with a Cancel that aborts the request (DS-05)', async () => {
+    const pendingResponse = deferred<Response>()
+    let signal: AbortSignal | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        signal = init?.signal ?? undefined
+        return pendingResponse.promise
+      }),
+    )
+    const user = userEvent.setup()
+    render(<DataAnalystView />)
+    await user.click(screen.getByRole('tab', { name: /query/i }))
+    await user.type(screen.getByRole('textbox', { name: 'Question' }), 'cancel me')
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+
+    expect(await screen.findByText('Asking...')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /cancel/i }))
+
+    expect(signal?.aborted).toBe(true)
+    expect(screen.queryByText('Asking...')).not.toBeInTheDocument()
+
+    pendingResponse.resolve(jsonResponse(evidenceEnvelope))
+    expect(screen.queryByTestId('natural-language-response')).not.toBeInTheDocument()
+  })
+
   it('aborts the active request when the view unmounts', async () => {
     const pendingResponse = deferred<Response>()
     let signal: AbortSignal | undefined

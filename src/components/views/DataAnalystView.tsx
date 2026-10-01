@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { StatusMessage } from '@/components/ui/status-message'
 import { atlasPost } from '@/lib/atlas/transport'
 import {
   attemptsForDisplay,
@@ -179,7 +180,7 @@ async function askDataAnalyst({ mode, question, signal, callbacks }: AskDataAnal
 }
 
 function ResultTable({ rows }: { rows: Record<string, unknown>[] }) {
-  if (rows.length === 0) return <p className="text-muted-foreground text-sm">No rows returned.</p>
+  if (rows.length === 0) return <StatusMessage status="empty" label="No rows returned." />
   const cols = Array.from(new Set(rows.flatMap((r) => Object.keys(r))))
   return (
     <div className="rounded-md border overflow-x-auto">
@@ -632,6 +633,19 @@ export default function DataAnalystView() {
     })
   }
 
+  /** DS-05 interruption: `ask()` already owns a real `AbortController` (used
+   * today to invalidate a stale in-flight request when the operator starts a
+   * new one or switches modes) -- this exposes the same abort as a
+   * user-facing Cancel while a question is in flight. `invalidateActiveRequest`
+   * only aborts/invalidates; every `setLoading` inside `askDataAnalyst` is
+   * gated on `callbacks.isCurrent()`, which becomes false the instant the
+   * controller is replaced, so the `finally` there would never flip `loading`
+   * back off for a request this handler just cancelled. This sets it directly. */
+  const cancelAsk = () => {
+    invalidateActiveRequest(activeController, requestGeneration)
+    setLoading(false)
+  }
+
   return (
     <div className="space-y-6" data-testid="data-analyst-view" aria-busy={loading}>
       <div>
@@ -701,6 +715,7 @@ export default function DataAnalystView() {
         </CardContent>
       </Card>
 
+      {loading && <StatusMessage status="loading" label="Asking..." onCancel={cancelAsk} />}
       {unavailable && <UnavailableNotice mode={mode} />}
       {error && <ErrorNotice error={error} />}
       <ResponseContent mode={mode} naturalLanguageResponse={naturalLanguageResponse} legacyResponse={legacyResponse} />

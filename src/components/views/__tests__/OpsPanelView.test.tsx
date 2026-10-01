@@ -83,6 +83,27 @@ describe('OpsPanelView Component', () => {
     })
   })
 
+  it('shows the shared loading, then empty, status message for each tab (DS-05)', async () => {
+    global.fetch = mockFetchByUrl({
+      '/api/enhanced/pipeline/status': { status: 'idle', phases: [] },
+      '/api/enhanced/maintenance/status': { status: 'healthy', operations: [] },
+      '/api/enhanced/resources': [],
+    }) as unknown as typeof fetch
+    const user = (await import('@testing-library/user-event')).default.setup()
+    render(<OpsPanelView />)
+
+    await waitFor(() => {
+      expect(screen.getByText('No phases reported.')).toBeInTheDocument()
+    })
+    expect(screen.getAllByRole('status').length).toBeGreaterThan(0)
+
+    await user.click(screen.getByRole('tab', { name: /maintenance/i }))
+    expect(await screen.findByText('No operations reported.')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: /resources/i }))
+    expect(await screen.findByText('No resources available.')).toBeInTheDocument()
+  })
+
   it('triggers the full pipeline via "Run All"', async () => {
     const fetchSpy = global.fetch as unknown as ReturnType<typeof vi.fn>
     render(<OpsPanelView />)

@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { StatusMessage } from '@/components/ui/status-message'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -440,9 +441,10 @@ function renderResultsTableBody({
   if (searchLoading) {
     return (
       <tr>
-        <td colSpan={colSpan} className="p-6 text-center text-muted-foreground">
-          <Loader2 className="size-4 mr-2 inline animate-spin" />
-          Loading objects...
+        <td colSpan={colSpan} className="p-6">
+          <div className="flex justify-center">
+            <StatusMessage status="loading" label="Loading objects..." />
+          </div>
         </td>
       </tr>
     )
@@ -450,8 +452,10 @@ function renderResultsTableBody({
   if (searchError) {
     return (
       <tr>
-        <td colSpan={colSpan} className="p-6 text-center text-destructive">
-          Failed to load objects
+        <td colSpan={colSpan} className="p-6">
+          <div className="flex justify-center">
+            <StatusMessage status="error" label="Failed to load objects" />
+          </div>
         </td>
       </tr>
     )
@@ -459,8 +463,10 @@ function renderResultsTableBody({
   if (rows.length === 0) {
     return (
       <tr>
-        <td colSpan={colSpan} className="p-6 text-center text-muted-foreground">
-          No objects found
+        <td colSpan={colSpan} className="p-6">
+          <div className="flex justify-center">
+            <StatusMessage status="empty" label="No objects found" />
+          </div>
         </td>
       </tr>
     )
@@ -593,9 +599,10 @@ function renderPivotTableBody({
   if (pivotLoading) {
     return (
       <tr>
-        <td colSpan={3} className="p-6 text-center text-muted-foreground">
-          <Loader2 className="size-4 mr-2 inline animate-spin" />
-          Pivoting...
+        <td colSpan={3} className="p-6">
+          <div className="flex justify-center">
+            <StatusMessage status="loading" label="Pivoting..." />
+          </div>
         </td>
       </tr>
     )
@@ -603,8 +610,10 @@ function renderPivotTableBody({
   if (!pivotResult || pivotResult.objects.length === 0) {
     return (
       <tr>
-        <td colSpan={3} className="p-6 text-center text-muted-foreground">
-          No pivot results yet
+        <td colSpan={3} className="p-6">
+          <div className="flex justify-center">
+            <StatusMessage status="empty" label="No pivot results yet" />
+          </div>
         </td>
       </tr>
     )

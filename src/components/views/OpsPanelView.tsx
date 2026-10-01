@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { UnavailableNotice } from '@/components/ui/unavailable-notice'
+import { StatusMessage } from '@/components/ui/status-message'
 import { toast } from 'sonner'
 import { fetchValidated } from '@/lib/api-validation'
 
@@ -216,9 +217,9 @@ function renderPipelineCardBody({
   pendingTrigger: string | null
   onTriggerPhase: (phaseName: string) => void
 }) {
-  if (loadingPipeline) return <p className="text-muted-foreground text-sm">Loading pipeline status...</p>
+  if (loadingPipeline) return <StatusMessage status="loading" label="Loading pipeline status..." />
   if (pipelineUnavailable) return <UnavailableNotice what="Pipeline status" />
-  if (phases.length === 0) return <p className="text-muted-foreground text-sm">No phases reported.</p>
+  if (phases.length === 0) return <StatusMessage status="empty" label="No phases reported." />
   return renderPipelineTable({ phases, pendingTrigger, onTriggerPhase })
 }
 
@@ -291,9 +292,9 @@ function renderMaintenanceStatusBody({
   maintenanceUnavailable: boolean
   operations: MaintenanceOp[]
 }) {
-  if (loadingMaintenance) return <p className="text-muted-foreground text-sm">Loading maintenance status...</p>
+  if (loadingMaintenance) return <StatusMessage status="loading" label="Loading maintenance status..." />
   if (maintenanceUnavailable) return <UnavailableNotice what="Maintenance status" />
-  if (operations.length === 0) return <p className="text-muted-foreground text-sm">No operations reported.</p>
+  if (operations.length === 0) return <StatusMessage status="empty" label="No operations reported." />
   return renderMaintenanceTable(operations)
 }
 
@@ -339,9 +340,9 @@ function renderResourcesCardBody({
   resourcesUnavailable: boolean
   resources: CallableResource[]
 }) {
-  if (loadingResources) return <p className="text-muted-foreground text-sm">Loading resources...</p>
+  if (loadingResources) return <StatusMessage status="loading" label="Loading resources..." />
   if (resourcesUnavailable) return <UnavailableNotice what="Callable resources" />
-  if (resources.length === 0) return <p className="text-muted-foreground text-sm">No resources available.</p>
+  if (resources.length === 0) return <StatusMessage status="empty" label="No resources available." />
   return renderResourcesTable(resources)
 }
 

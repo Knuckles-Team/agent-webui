@@ -128,4 +128,23 @@ describe('GraphOSReadinessView', () => {
       expect(screen.getByText('network exploded')).toBeInTheDocument()
     })
   })
+
+  it('shows the shared loading status message (DS-05) while the first probe is in flight', () => {
+    mockedFetch.mockReturnValue(new Promise(() => undefined))
+
+    render(<GraphOSReadinessView />)
+
+    expect(screen.getByText('Running the live readiness probe…')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
+  })
+
+  it('uses role=alert (not role=status) for an error state (DS-05)', async () => {
+    mockedFetch.mockResolvedValue({ ok: false, data: null, unavailable: false, error: 'response shape mismatch' })
+
+    render(<GraphOSReadinessView />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('response shape mismatch')
+    })
+  })
 })

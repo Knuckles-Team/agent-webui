@@ -30,12 +30,13 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { KeyRound, Loader2, RefreshCw, ShieldAlert, ShieldCheck, ShieldX, UserCog, Users } from 'lucide-react'
+import { KeyRound, RefreshCw, ShieldAlert, ShieldCheck, ShieldX, UserCog, Users } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { UnavailableNotice } from '@/components/ui/unavailable-notice'
+import { StatusMessage } from '@/components/ui/status-message'
 import { useIdentity } from '@/lib/auth'
 import { ROLE_ORDER, type Role } from '@/lib/nav-registry'
 import { fetchPrincipalsAndRoles, grantRole, revokeRole, type PrincipalsState } from '@/lib/user-management-api'
@@ -50,7 +51,7 @@ function IdentityCard() {
     return (
       <Card data-testid="user-mgmt-self">
         <CardContent className="pt-6">
-          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          <StatusMessage status="loading" label="Loading your identity…" />
         </CardContent>
       </Card>
     )
@@ -262,7 +263,7 @@ function PrincipalsListBody({
   onRevoke: (identityId: string, role: string) => void
 }) {
   if (loading || state === null) {
-    return <Loader2 className="size-5 animate-spin text-muted-foreground" />
+    return <StatusMessage status="loading" label="Loading principals…" />
   }
   if (state.kind === 'unavailable') {
     return (

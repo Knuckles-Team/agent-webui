@@ -288,6 +288,47 @@ describe('AgentLibraryView', () => {
     expect(screen.queryByText(/The Agent Library could not be fetched/)).not.toBeInTheDocument()
   })
 
+  it('shows the shared empty status message for no chat/embedding models configured (DS-05)', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    render(<AgentLibraryView />)
+    await user.click(screen.getByRole('tab', { name: 'Model & Config' }))
+    await waitFor(() => {
+      expect(screen.getByText('No chat models configured.')).toBeInTheDocument()
+    })
+    expect(screen.getByText('No embedding models configured.')).toBeInTheDocument()
+  })
+
+  it('shows the shared empty status message for a filter with no ingested tools (DS-05)', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    installFetch([{ matches: (url) => url.includes('/agent-library/tools'), respond: () => jsonResponse([]) }])
+    render(<AgentLibraryView />)
+    await user.click(screen.getByText('Compose an Agent'))
+    await waitFor(() => {
+      expect(
+        screen.getByText('No tools ingested yet for this filter — the agent can still run prompt-only.'),
+      ).toBeInTheDocument()
+    })
+  })
+
+  it('shows the shared loading status message while agents load, with a Cancel that aborts the fetch (DS-05)', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const pendingAgents: PendingAgentRequest[] = []
+    installFetch([{ matches: isAgentListRequest, respond: respondWithPendingAgent.bind(null, pendingAgents) }])
+
+    render(<AgentLibraryView />)
+    await waitFor(() => {
+      expect(pendingAgents).toHaveLength(1)
+    })
+    expect(screen.getByText('Querying the graph...')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /cancel/i }))
+
+    expect(pendingAgents[0].signal).toBeDefined()
+    expect(pendingAgents[0].signal!.aborted).toBe(true)
+    expect(screen.queryByText('Querying the graph...')).not.toBeInTheDocument()
+  })
+
   it('aborts superseded agent fetches and ignores a stale response', async () => {
     const user = (await import('@testing-library/user-event')).default.setup()
     const pendingAgents: PendingAgentRequest[] = []

@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, type MouseEvent } from 'react'
 import { z } from 'zod'
-import { Trash2, Terminal, Loader2, Send, XCircle, RefreshCw, Database, Cpu, Layers, ArrowRight } from 'lucide-react'
+import { Trash2, Terminal, Loader2, Send, XCircle, RefreshCw, Cpu, Layers, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
+import { StatusMessage } from '@/components/ui/status-message'
 import { toast } from 'sonner'
 import { Response } from '@/components/ai-elements/response'
 import { cn } from '@/lib/utils'
@@ -174,10 +175,7 @@ function renderSessionsGrid({
   if (loading) {
     return (
       <div className="h-[300px] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="size-8 animate-spin text-primary/60" />
-          <p className="text-muted-foreground text-sm animate-pulse">Querying session registry...</p>
-        </div>
+        <StatusMessage status="loading" label="Querying session registry..." />
       </div>
     )
   }
@@ -185,14 +183,11 @@ function renderSessionsGrid({
     return (
       <Card className="border-dashed border-border/40 bg-muted/5">
         <CardContent className="flex flex-col items-center justify-center p-12 text-center">
-          <div className="p-4 rounded-full bg-primary/5 text-primary/60 mb-4 border border-primary/10">
-            <Database className="size-8" />
-          </div>
-          <h3 className="font-semibold text-lg">No Durable Sessions Found</h3>
-          <p className="text-muted-foreground text-sm max-w-sm mt-1 mb-6">
-            Start an agent execution loop in the terminal UI or spin up an autonomous goal to view session history and
-            attachment handles here.
-          </p>
+          <StatusMessage
+            status="empty"
+            label="No Durable Sessions Found"
+            detail="Start an agent execution loop in the terminal UI or spin up an autonomous goal to view session history and attachment handles here."
+          />
         </CardContent>
       </Card>
     )
@@ -237,8 +232,12 @@ function renderTurnBubble(turn: Turn, index: number) {
 function renderTurnsLog(turns: Turn[]) {
   if (turns.length === 0) {
     return (
-      <div className="h-48 flex items-center justify-center text-muted-foreground/40 text-xs">
-        Console outputs are empty. Waiting for step results...
+      <div className="h-48 flex items-center justify-center">
+        <StatusMessage
+          status="empty"
+          label="Console outputs are empty. Waiting for step results..."
+          className="text-xs"
+        />
       </div>
     )
   }
@@ -258,11 +257,12 @@ function renderReplyInput({
 }) {
   return (
     <div className="space-y-3 w-full">
-      <div className="flex items-center justify-between text-xs text-amber-500 bg-amber-500/5 border border-amber-500/10 px-3 py-2 rounded-md font-mono">
-        <div className="flex items-center gap-1.5">
-          <Loader2 className="size-3.5 animate-spin" />
-          <span>Agent is suspended waiting for user instructions...</span>
-        </div>
+      <div className="bg-amber-500/5 border border-amber-500/10 px-3 py-2 rounded-md font-mono">
+        <StatusMessage
+          status="pending"
+          label="Agent is suspended waiting for user instructions..."
+          className="text-xs"
+        />
       </div>
 
       <div className="flex gap-2">
@@ -317,9 +317,12 @@ function renderDrawerFooter({
   }
   if (selectedSession?.status === 'running') {
     return (
-      <div className="w-full flex items-center justify-center p-3 text-xs text-muted-foreground bg-muted/10 rounded-md font-mono border border-border/10">
-        <Loader2 className="size-3.5 animate-spin mr-2 text-primary" />
-        Agent execution thread running background iterations...
+      <div className="w-full flex items-center justify-center p-3 bg-muted/10 rounded-md font-mono border border-border/10">
+        <StatusMessage
+          status="loading"
+          label="Agent execution thread running background iterations..."
+          className="text-xs"
+        />
       </div>
     )
   }
