@@ -32,35 +32,58 @@
     {
       "id": "DS-01",
       "title": "Design tokens documented with contrast targets",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "a4c402f68f1b42fd6a3297b7d7ba6c4ffc12de1a",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/a4c402f68f1b42fd6a3297b7d7ba6c4ffc12de1a",
+          "description": "Implemented on the default branch; exercised by src/__tests__/design-tokens.test.ts"
+        }
+      ]
     },
     {
       "id": "DS-02",
       "title": "Controls have accessible names and visible focus",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "Radix-based dialogs (dialog.tsx) trap/restore focus natively and most controls carry aria-label, but src/components/atlas/FilterBar.tsx's ClauseRow gives every repeated filter row the identical generic aria-label ('Filter field'/'Filter operator'/'Filter value'/'Remove filter') rather than a per-cla"
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "a4c402f68f1b42fd6a3297b7d7ba6c4ffc12de1a",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/a4c402f68f1b42fd6a3297b7d7ba6c4ffc12de1a",
+          "description": "Implemented on the default branch; exercised by src/components/atlas/__tests__"
+        }
+      ]
     },
     {
       "id": "DS-03",
       "title": "Responsive layout covers 320px mobile through desktop",
       "delivery_state": "SPECIFIED",
       "evidence": [],
-      "remaining": "e2e/routes-smoke.spec.ts checks document.documentElement horizontal overflow and runs across chromium/firefox/webkit plus Mobile Chrome (Pixel 5, 393px) and Mobile Safari (iPhone 12, 390px) playwright projects, but never at 320px, has no screenshot diffing, and does not check for actions hidden behi"
+      "remaining": "Filter rows now wrap at narrow widths and a 320 to 1440 pixel light and dark overflow check exists in the offline accessibility suite, but that suite has not been run; run it and record the result."
     },
     {
       "id": "DS-04",
       "title": "Gesture actions have alternatives and respect reduced motion",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "a4c402f68f1b42fd6a3297b7d7ba6c4ffc12de1a",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/a4c402f68f1b42fd6a3297b7d7ba6c4ffc12de1a",
+          "description": "Implemented on the default branch; exercised by src/__tests__/design-tokens.test.ts"
+        }
+      ]
     },
     {
       "id": "DS-05",
       "title": "Status states are distinguishable by text, not only color",
       "delivery_state": "SPECIFIED",
       "evidence": [],
-      "remaining": "src/components/renderers/BlockedState.tsx distinguishes blocked/not_configured/degraded/unavailable by text with its own test, but no fixture-tested component covers the requirement's full state vocabulary (loading/empty/stale/denied/error/success/pending), and src/components/ChatPanel.tsx (the obvi"
+      "remaining": "The status vocabulary is documented; fixture-rendered tests that each state is distinguishable by text are still to be written."
     },
     {
       "id": "DS-06",
