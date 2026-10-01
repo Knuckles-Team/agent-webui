@@ -20,44 +20,100 @@
     {
       "id": "IDUI-01",
       "title": "Identity mode wizard shows the active auth mode with no hidden bypass",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "IDUI-02",
       "title": "Local account flows use server sessions with no stored credentials",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "IDUI-03",
       "title": "MFA enrollment and recovery cover TOTP and WebAuthn",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "IDUI-04",
       "title": "Identity admin tabs cover users, roles, groups and mapping dry run",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "IDUI-05",
       "title": "Elevation requests display scope, expiry and a bound receipt",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "IDUI-06",
       "title": "Identity or tenant change invalidates cached protected data",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "IDUI-07",
       "title": "Identity forms and confirmations are accessible on desktop and mobile",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "BUILT",
+      "evidence": [
+        {
+          "kind": "branch",
+          "result": "passed",
+          "commit": "6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/6f1f301be3aecdf517d65d45c1fd23a07fa187aa",
+          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        }
+      ]
     },
     {
       "id": "WEBUI-IDENTITY-R001",
