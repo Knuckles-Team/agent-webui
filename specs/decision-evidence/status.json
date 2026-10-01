@@ -55,30 +55,16 @@
     {
       "id": "DEC-03",
       "title": "Dashboard labels each evaluation field independently",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "959fac1c5beacb59924b5a27b6157e620f8fc3f6",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/959fac1c5beacb59924b5a27b6157e620f8fc3f6",
-          "description": "Implemented on the default branch; exercised by src/components/decisions/__tests__/DecisionCalibrationTab.test.tsx"
-        }
-      ]
+      "delivery_state": "BUILDING",
+      "evidence": [],
+      "remaining": "The dashboard components and their fixture tests are on the default branch behind an injected transport (src/components/decisions/__tests__/DecisionCalibrationTab.test.tsx). Remaining: a production transport over the generated Graph OS client and a registered route, so the dashboard is reachable in the product."
     },
     {
       "id": "DEC-04",
       "title": "No coverage claim shown for inadequate evaluation data",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "959fac1c5beacb59924b5a27b6157e620f8fc3f6",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/959fac1c5beacb59924b5a27b6157e620f8fc3f6",
-          "description": "Implemented on the default branch; exercised by src/components/decisions/__tests__/DecisionCalibrationTab.test.tsx"
-        }
-      ]
+      "delivery_state": "BUILDING",
+      "evidence": [],
+      "remaining": "The dashboard components and their fixture tests are on the default branch behind an injected transport (src/components/decisions/__tests__/DecisionCalibrationTab.test.tsx). Remaining: a production transport over the generated Graph OS client and a registered route, so the dashboard is reachable in the product."
     },
     {
       "id": "DEC-05",
