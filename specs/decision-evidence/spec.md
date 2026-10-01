@@ -6,8 +6,6 @@
 **Delivery:** specified; existing source requires current-main and browser acceptance audit
 **Acceptance:** open
 
-Every requirement ID in this spec is defined in [requirements.md](requirements.md); its current delivery and acceptance state, with evidence, is recorded in [status.json](status.json).
-
 ## Outcome and boundaries
 
 A reader can inspect why a governed decision selected an option, why an alternative lost, which premises and constraints were used, and whether independently evaluated calibration supports a claimed risk or coverage level. The view presents evidence returned by the authenticated Graph OS API; it never recomputes an authoritative decision, invents confidence, or converts a diagnostic into permission to act.
@@ -35,3 +33,5 @@ Actors are a tenant reader, an operator investigating a decision, and an accessi
 ## Completion
 
 `BUILT` requires a merged WebUI commit containing the real route, typed client and tests. `ACCEPTED` additionally requires a browser run against a provisioned Graph OS test service with an independent labeled evaluation fixture and authorized/denied identities, plus recorded exact commit and test evidence in `tasks.md`. Source existing on a branch is not acceptance. Graph OS or database rows must be accepted by their respective owners.
+
+Requirement IDs are defined in [requirements.md](requirements.md); delivery state per ID is in `status.json`.

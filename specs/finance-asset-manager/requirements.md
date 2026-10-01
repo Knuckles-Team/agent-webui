@@ -1,10 +1,5 @@
 # FIN-UI-001 requirements
 
-Every requirement this specification owns, with the proof that closes it. Delivery state and
-public evidence for each ID are recorded in [`status.json`](status.json); this file defines what
-each ID means. The design is in [`spec.md`](spec.md) and [`plan.md`](plan.md), the test contract
-in [`test-spec.md`](test-spec.md), and the work order in [`tasks.md`](tasks.md).
-
 | ID | Requirement | Verification |
 |---|---|---|
 | `FIN-UI-R001` | **Mobile-first Markets app with five-destination navigation.** The Markets app provides a mobile bottom navigation bar for Markets, News, Calendar, Portfolio, and Menu (a side rail on desktop), instrument groups with Basic and Holdings views, sparkline rows with change indicators and a post-market value, a detail view with Chart, Rates, News, Notes, Dividends, and Analysis tabs, a range selector, and a performance-versus-benchmark card; it installs as a PWA, supports dark and light themes, and is keyboard and screen-reader accessible. | Verified by a responsive browser test across phone and desktop viewports confirming the navigation, group and detail views, and accessibility behavior. |

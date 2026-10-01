@@ -1,10 +1,5 @@
 # WEBUI-APPS-001 requirements
 
-Every requirement this specification owns, with the proof that closes it. Delivery state and
-public evidence for each ID are recorded in [`status.json`](status.json); this file defines what
-each ID means. The design is in [`spec.md`](spec.md) and [`plan.md`](plan.md), the test contract
-in [`test-spec.md`](test-spec.md), and the work order in [`tasks.md`](tasks.md).
-
 | ID | Requirement | Verification |
 |---|---|---|
 | `APP-01` | **Browser identity consistently reads GraphOS across titles and assets.** Agent-webui's page titles, metadata, web manifest, generated assets, theme tokens, UI copy and published Pages site consistently present the GraphOS product identity. | Asset regeneration, a rendered snapshot test and the Pages build confirm consistent branding. |

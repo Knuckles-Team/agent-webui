@@ -1,10 +1,5 @@
 # WEBUI-DESIGN-001 requirements
 
-Every requirement this specification owns, with the proof that closes it. Delivery state and
-public evidence for each ID are recorded in [`status.json`](status.json); this file defines what
-each ID means. The design is in [`spec.md`](spec.md) and [`plan.md`](plan.md), the test contract
-in [`test-spec.md`](test-spec.md), and the work order in [`tasks.md`](tasks.md).
-
 | ID | Requirement | Verification |
 |---|---|---|
 | `WEBUI-DESIGN-R001` | **Design guidance distilled into component system and skills.** agent-webui distills license-reviewed accessibility, responsive, interaction and visual guidance from outside sources into the `src/components/ui/` primitives, the `src/index.css` tokens, and the public universal design and accessibility skills, ranking keyboard and screen-reader failures highest in its review rubric. The assimilation never installs a duplicate skill name, copies unlicensed skill text, adds a remote critique service, or introduces telemetry beyond what already exists. | Source diff and dependency audit confirm no duplicate skill names, unlicensed text, or new telemetry were introduced. |

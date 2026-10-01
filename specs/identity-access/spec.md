@@ -6,8 +6,6 @@
 **Delivery:** specified; current source requires audit
 **Acceptance:** open
 
-Every requirement ID in this spec is defined in [requirements.md](requirements.md); its current delivery and acceptance state, with evidence, is recorded in [status.json](status.json).
-
 ## Outcome and actors
 
 A visitor can understand the configured sign-in mode, authenticate or use an explicitly local bootstrap mode, manage their session and MFA, and an authorized administrator can manage identity policy through the Graph OS identity API. A permitted user can request elevation and see an auditable approve/revoke state. Browser controls never grant a role or capability by changing local state alone.
@@ -31,3 +29,5 @@ Errors must avoid disclosing whether a username, tenant or protected record exis
 ## Completion
 
 BUILT requires merged WebUI source for each applicable requirement. ACCEPTED requires a fresh-checkout test identity service, real browser positive/negative probes, server/Graph OS contract tests and exact-commit CI evidence. If a backend operation is not available, that requirement remains open; a mock screen does not count as delivered. State and receipts belong in `tasks.md`.
+
+Requirement IDs are defined in [requirements.md](requirements.md); delivery state per ID is in `status.json`.

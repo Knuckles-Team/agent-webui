@@ -6,8 +6,6 @@
 **Delivery:** specified; acceptance audit open
 **Acceptance:** open
 
-Every requirement ID in this spec is defined in [requirements.md](requirements.md); its current delivery and acceptance state, with evidence, is recorded in [status.json](status.json).
-
 ## Outcome
 
 A contributor builds new GraphOS browser surfaces from one documented set of tokens, responsive patterns and interaction states. Chat, Atlas and an operational form remain usable by keyboard, screen reader, touch and reduced-motion users. Visual review compares a stable before/after screenshot set, and new components reuse the existing UI primitives. The design guidance can be used with the universal spec/design/accessibility skills, but this spec is complete without installing any external skill or reading a private document.
@@ -32,3 +30,5 @@ WEBUI-DESIGN-R001 distills useful outside accessibility, responsive, interaction
 ## Completion
 
 BUILT requires merged token/interaction guidance and any source adjustments. ACCEPTED requires measured WCAG 2.2 AA checks on the three named journeys, human review of screenshots, responsive/reduced-motion tests and exact commit/CI evidence. The absence of telemetry and duplicate primitives must be verified, not assumed.
+
+Requirement IDs are defined in [requirements.md](requirements.md); delivery state per ID is in `status.json`.

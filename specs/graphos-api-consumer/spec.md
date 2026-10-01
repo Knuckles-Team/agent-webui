@@ -6,8 +6,6 @@
 **Delivery:** specified; current adapter inventory requires verification
 **Acceptance:** open
 
-Every requirement ID in this spec is defined in [requirements.md](requirements.md); its current delivery and acceptance state, with evidence, is recorded in [status.json](status.json).
-
 ## Purpose
 
 All domain and administrative actions in the browser use one typed, versioned Graph OS API client. The WebUI host keeps only browser protocol, session, safe asset, consent and narrowly necessary UI-local endpoints. It must stop owning a second graph/ontology/agent/finance domain API or calling Agent Utilities internals. The Graph OS operation registry owns authorization and behavior. This spec is the WebUI cutover and consumer test contract; it does not implement the Graph OS registry.
@@ -40,3 +38,5 @@ WEBUI-API-R002 owns migration of ontology, graph, Atlas and object-set callers, 
 WEBUI-API-R003 owns prompts, SDD, knowledge base, sessions, goals, MCP servers and tools, and LLM/model administration. Inventory every corresponding host route and browser caller before deletion. A checked-in route census must list each old method/path, owning operation ID, caller, scope, effect class, migration state and disposition; UI-local browser routes need an explicit owner and reason. An architecture lint must reject any new unclassified domain route or direct browser domain endpoint, while permitting enumerated session, asset, protocol and UI-local handlers. A missing Graph OS operation blocks that family's cutover; the UI shows unavailable instead of using a hidden fallback.
 
 The migration order is WEBUI-API-R001 client/host seam, WEBUI-API-R002 graph families, then WEBUI-API-R003 remaining families. Each slice can merge independently with its own fixture tests, but the status manifest remains `SPECIFIED` until an exact merged revision and evidence for the applicable slice is recorded. No historical source checkpoint alone establishes current-main delivery.
+
+Requirement IDs are defined in [requirements.md](requirements.md); delivery state per ID is in `status.json`.

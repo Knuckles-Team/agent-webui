@@ -51,3 +51,5 @@ Missing permission, route absence, stale data, partial coverage, bad contract sh
 ## Scope exclusions
 
 This release does not implement a broker, investment-adviser service, proprietary TradingView studies, direct browser-to-provider connections, automatic live trading, trading of manually valued real estate, a Ghostfolio database, or a new frontend shell. A future public product requires separate data-display licensing and regulatory decisions.
+
+Requirement IDs are defined in [requirements.md](requirements.md); delivery state per ID is in `status.json`.

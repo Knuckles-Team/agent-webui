@@ -1,10 +1,5 @@
 # WEBUI-DECIDE-001 requirements
 
-Every requirement this specification owns, with the proof that closes it. Delivery state and
-public evidence for each ID are recorded in [`status.json`](status.json); this file defines what
-each ID means. The design is in [`spec.md`](spec.md) and [`plan.md`](plan.md), the test contract
-in [`test-spec.md`](test-spec.md), and the work order in [`tasks.md`](tasks.md).
-
 | ID | Requirement | Verification |
 |---|---|---|
 | `WEBUI-DECIDE-R001` | **Evaluation dashboard shows calibration and coverage.** A dashboard presents decision evaluation calibration and coverage metrics — cohort, sample count, source class, evaluation window, target versus observed coverage, risk, and receipt version — as independently labeled fields, and shows no numeric coverage, calibration or deployment claim when the evaluation is synthetic-only, missing or underpowered. | Independent-label fixture tests plus negative fixtures for the synthetic-only, missing, and underpowered cases. |

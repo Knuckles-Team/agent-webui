@@ -1,10 +1,5 @@
 # WEBUI-API-001 requirements
 
-Every requirement this specification owns, with the proof that closes it. Delivery state and
-public evidence for each ID are recorded in [`status.json`](status.json); this file defines what
-each ID means. The design is in [`spec.md`](spec.md) and [`plan.md`](plan.md), the test contract
-in [`test-spec.md`](test-spec.md), and the work order in [`tasks.md`](tasks.md).
-
 | ID | Requirement | Verification |
 |---|---|---|
 | `WEBUI-API-R001` | **Generated GraphOS API client with typed decisions and confirmation flows.** Agent-webui generates a versioned TypeScript client and a single invoke adapter from the Graph OS API schema, and migrates decisions, Markets/apps pages and WebMCP tools to call it; the console confirmation page sends only the exact server-issued plan reference required to complete a previewed effect. | Contract tests against the generated client plus positive and negative effect tests on the confirmation flow verify this. |
