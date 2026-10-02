@@ -39,9 +39,7 @@ class FakeSocket {
   onerror: ((event: Event) => void) | null = null
   onclose: ((event: CloseEvent) => void) | null = null
   readonly sent: string[] = []
-  readonly close = vi.fn((code?: number, reason?: string) => {
-    void code
-    void reason
+  readonly close = vi.fn((_code?: number, _reason?: string) => {
     this.readyState = 3
   })
 
