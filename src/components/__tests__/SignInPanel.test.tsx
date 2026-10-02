@@ -25,7 +25,7 @@ function answer(outcome: string, status = 200): void {
       const path = String(input)
       if (path === '/auth/idps') return Promise.resolve(Response.json({ idps: [] }))
       if (path === '/auth/session')
-        return Promise.resolve(Response.json({ authenticated: false, csrf_token: 'pending-session-csrf' }))
+        return Promise.resolve(Response.json({ authenticated: false, csrf_token: 'mock-pending-session-csrf' }))
       calls.push({
         path,
         body: init?.body ? JSON.parse(String(init.body)) : null,
@@ -85,7 +85,7 @@ describe('SignInPanel', () => {
     expect(calls[0]).toEqual({
       path: '/auth/mfa/verify',
       body: { method: 'totp', code: '123456' },
-      csrf: 'pending-session-csrf',
+      csrf: 'mock-pending-session-csrf',
     })
   })
 

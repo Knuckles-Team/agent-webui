@@ -35,7 +35,9 @@ function itemKey(item: ListedItem, index: number): string | number {
 }
 
 function itemLabel(item: ListedItem, index: number): string {
-  return item.name ?? item.username ?? item.principal_id ?? item.id ?? item.handle ?? item.key_id ?? `Record ${index + 1}`
+  return (
+    item.name ?? item.username ?? item.principal_id ?? item.id ?? item.handle ?? item.key_id ?? `Record ${index + 1}`
+  )
 }
 
 function itemRevokeId(item: ListedItem): string {
@@ -172,7 +174,9 @@ function ListPanel({
   revokeOp?: IdentityOp
 }) {
   const panel = useListPanel(op, principalId)
-  const loadingHint = requiresUnsetPrincipal(op, principalId) ? 'Enter a principal id to inspect its records.' : 'Loading…'
+  const loadingHint = requiresUnsetPrincipal(op, principalId)
+    ? 'Enter a principal id to inspect its records.'
+    : 'Loading…'
   return (
     <Card>
       <CardHeader>
@@ -529,7 +533,10 @@ function IdentityProviderEditor() {
   )
 }
 
-type ModeStatus = { mode: string; epoch?: number }
+interface ModeStatus {
+  mode: string
+  epoch?: number
+}
 type LocalFallback = 'off' | 'break_glass' | 'full'
 
 /** Mode-transition state + the request, kept out of the panel's render body. */
