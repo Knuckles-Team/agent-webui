@@ -12,5 +12,6 @@
 #   when = lock   -> read for its metadata (`uv lock`, the uv-lock hook);
 #                    built only by `scripts/bootstrap.sh --engine`
 # bootstrap checks out every row.
-.uv-workspace-siblings/agent-utilities  https://github.com/Knuckles-Team/agent-utilities  446e0cf11b5bce3e4b09488035800b91a7d60b25  always
+.uv-workspace-siblings/agent-utilities  https://github.com/Knuckles-Team/agent-utilities  55f284ea38e39f28f7440971aef2c835ad349184  always
+.uv-workspace-siblings/agent-utilities/.uv-workspace-siblings/agent-connector-sdk  https://github.com/Knuckles-Team/agent-connector-sdk  1bce84eac37dbad563cab42c22b9bb6a7baa1d84  always
 .uv-workspace-siblings/agent-utilities/.uv-workspace-siblings/epistemic-graph  https://github.com/Knuckles-Team/epistemic-graph  6a795577dff539da06c52f467220422bf23e0b03  lock
