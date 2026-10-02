@@ -264,7 +264,7 @@ describe('UserManagementView identity operations', () => {
     identityResult = { identity: ADMIN_IDENTITY, loading: false }
   })
 
-  it('distinguishes an unavailable API from an empty roster and never calls legacy configure', async () => {
+  it('distinguishes an unavailable API from an empty roster and never falls the roster back to legacy configure', async () => {
     const fetcher = vi.fn((url: string) => (url === '/auth/session' ? response(200, session) : response(404, {})))
     vi.stubGlobal('fetch', fetcher)
     renderWithProviders(<UserManagementView />)
@@ -275,7 +275,14 @@ describe('UserManagementView identity operations', () => {
       '/api/v1/ops/identity.users.list',
       expect.objectContaining({ method: 'POST' }),
     )
-    expect(fetcher.mock.calls.some(([url]) => url.includes('/api/graph/configure'))).toBe(false)
+    // The principals-and-grants section legitimately still calls the legacy
+    // `/api/graph/configure` endpoint (it has no typed replacement yet); the
+    // user-roster feature must never fall back to it for its own ops.
+    const legacyConfigureCalls = fetcher.mock.calls.filter(([url]) => String(url).includes('/api/graph/configure'))
+    const rosterFellBackToLegacy = legacyConfigureCalls.some(([, init]) =>
+      String((init as RequestInit | undefined)?.body ?? '').includes('identity.users'),
+    )
+    expect(rosterFellBackToLegacy).toBe(false)
   })
 
   it('shows a confirmed empty user roster distinctly', async () => {

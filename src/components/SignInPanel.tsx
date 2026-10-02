@@ -61,7 +61,7 @@ function useFormState(): {
   const run = (action: () => Promise<SignInOutcome>, done: ReadonlySet<SignInOutcome>) => {
     setBusy(true)
     void action()
-      .catch(() => 'error')
+      .catch((): SignInOutcome => 'error')
       .then((outcome) => {
         setBusy(false)
         if (done.has(outcome)) reloadHome()
