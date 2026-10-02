@@ -1,4 +1,4 @@
-"""IDM-07/08: every WebUI listener has a verifier; only the static shell is public.
+"""Every WebUI listener has a verifier; only the static shell is public.
 
 There is no unauthenticated loopback path any more. A deployment configures a
 complete JWT verifier or its host injects a session boundary (Graph OS's

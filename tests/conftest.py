@@ -547,7 +547,7 @@ def served_identity_config(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _complete_jwt_verifier(monkeypatch):
-    """Every WebUI listener requires an identity verifier (IDM-07).
+    """Every WebUI listener requires an identity verifier.
 
     There is no unauthenticated loopback path any more, so every app a test
     builds is configured the way a deployment is: a complete JWT verifier

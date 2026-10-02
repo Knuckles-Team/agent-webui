@@ -10,7 +10,7 @@
  * `/auth/session` reports is computed server-side (`agent/agent_webui/rbac.py`)
  * from the principal's verified scopes — the frontend never derives a role
  * itself, it only renders what the server decided. There is no
- * "unconfigured means full access" fallback any more (IDM-07): when
+ * "unconfigured means full access" fallback any more: when
  * `/auth/session` does not answer, the identity is unknown, which renders as
  * the least-privilege role with a sign-in prompt. The `none` auth mode is the
  * demo posture, and it is still a real principal the server resolved (the

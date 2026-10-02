@@ -194,8 +194,8 @@ def test_bare_root_unauthenticated_serves_only_the_static_shell(app):
     """`/` without a credential answers the static SPA shell -- the bundle
     that renders the sign-in and first-run screens -- and nothing else: it
     never comes back as the privacy-safe 404 JSON shape, and a data route
-    beside it is still rejected with 401 by the identity boundary (IDM-07/08:
-    there is no unauthenticated application path, only the public shell)."""
+    beside it is still rejected with 401 by the identity boundary: there is
+    no unauthenticated application path, only the public shell."""
     from fastapi.testclient import TestClient
 
     client = TestClient(app)

@@ -10,7 +10,7 @@ const SIGNED_IN: AuthSession = {
   mode: 'local',
 }
 
-describe('resolveIdentity (IDM-07: the frontend never derives a role)', () => {
+describe('resolveIdentity (the frontend never derives a role)', () => {
   it('renders the server-decided role for a signed-in principal', () => {
     const identity = resolveIdentity(SIGNED_IN, true)
     expect(identity).toMatchObject({ userKey: 'usr:0001', role: 'user', needsSignIn: false })
