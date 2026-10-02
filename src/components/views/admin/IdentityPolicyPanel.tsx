@@ -46,9 +46,7 @@ function validDurations(values: Durations): boolean {
 
 /** The duration fields a policy reply actually sets, keyed for `useState`. */
 function readDurations(policy: IdentityPolicy): Durations {
-  return Object.fromEntries(
-    SESSION_FIELDS.flatMap(([key]) => (policy[key] === undefined ? [] : [[key, policy[key]]])),
-  )
+  return Object.fromEntries(SESSION_FIELDS.flatMap(([key]) => (policy[key] === undefined ? [] : [[key, policy[key]]])))
 }
 
 /** Only the duration fields that differ from the last-known server state, so a

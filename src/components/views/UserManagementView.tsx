@@ -542,10 +542,13 @@ function useUserRoster() {
   const create = useCallback(async () => {
     if (!username.trim()) return
     setBusy(true)
-    const result = await invokeIdentity(newKind === 'service' ? 'identity.service_accounts.create' : 'identity.users.create', {
-      username: username.trim(),
-      ...(newKind === 'human' ? { kind: 'human' } : {}),
-    })
+    const result = await invokeIdentity(
+      newKind === 'service' ? 'identity.service_accounts.create' : 'identity.users.create',
+      {
+        username: username.trim(),
+        ...(newKind === 'human' ? { kind: 'human' } : {}),
+      },
+    )
     if (result.kind === 'ready') {
       toast.success('User created.')
       setUsername('')

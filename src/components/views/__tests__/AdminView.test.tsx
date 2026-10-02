@@ -72,9 +72,7 @@ describe('AdminView identity tabs', () => {
 
   it('requires an explicit principal before listing sessions', async () => {
     const fetcher = withSession((url) =>
-      url.includes('identity.sessions.list')
-        ? okReply({ items: [], next_cursor: null })
-        : reply(404, {}),
+      url.includes('identity.sessions.list') ? okReply({ items: [], next_cursor: null }) : reply(404, {}),
     )
     vi.stubGlobal('fetch', fetcher)
     const { user } = renderWithProviders(<AdminView />)
