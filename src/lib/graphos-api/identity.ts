@@ -98,32 +98,47 @@ const readOps = new Set<IdentityOp>([
   'identity.scim_clients.get',
 ])
 
+/** Ops whose result shape is not just "the list/record default" -- a dict dispatch
+ *  table, not an if/elif chain, so neither metric grows with each new op added. */
+const EXACT_RESULT_SCHEMAS: Partial<Record<IdentityOp, z.ZodType>> = {
+  'identity.scim_clients.list': scimPageSchema,
+  'identity.users.search': pageSchema,
+  'identity.audit.export': pageSchema,
+  'identity.policy.get': policySchema,
+  'identity.policy.set': policySchema,
+  'identity.mode.status': z.object({ mode: z.string() }).loose(),
+  'identity.mode.transition': z.object({ mode: z.string() }).loose(),
+  'identity.issuer.rotate': z.object({ epoch: z.number(), issuer_kid_current: z.string() }).loose(),
+  'identity.scim_clients.get': scimClientSchema,
+  'identity.idps.mapping_dry_run': mappingSchema,
+  'identity.audit.verify': z.object({ valid: z.boolean() }).loose(),
+  'identity.users.admin_reset': z.object({ reset_token: z.string() }).loose(),
+}
+
 function resultSchema(op: IdentityOp): z.ZodType {
-  if (op === 'identity.scim_clients.list') return scimPageSchema
-  if (op.endsWith('.list') || op === 'identity.users.search' || op === 'identity.audit.export') return pageSchema
-  if (op === 'identity.policy.get' || op === 'identity.policy.set') return policySchema
-  if (op === 'identity.mode.status' || op === 'identity.mode.transition') return z.object({ mode: z.string() }).loose()
-  if (op === 'identity.issuer.rotate') return z.object({ epoch: z.number(), issuer_kid_current: z.string() }).loose()
-  if (op === 'identity.scim_clients.get') return scimClientSchema
-  if (op === 'identity.idps.mapping_dry_run') return mappingSchema
-  if (op === 'identity.audit.verify') return z.object({ valid: z.boolean() }).loose()
-  if (op === 'identity.users.admin_reset') return z.object({ reset_token: z.string() }).loose()
+  const exact = EXACT_RESULT_SCHEMAS[op]
+  if (exact) return exact
+  if (op.endsWith('.list')) return pageSchema
   return recordSchema
+}
+
+/** The confirm-in-console URL, only when every field it names matches this exact
+ *  operation's plan -- otherwise null, so the caller falls back to a plain step-up. */
+function confirmedStepUpUrl(error: GraphOsApiError, op: IdentityOp): string | null {
+  const planRef = error.details.plan_ref
+  const url = error.details.console_url
+  if (typeof planRef !== 'string' || !PLAN_REF.test(planRef)) return null
+  if (url !== `/console/confirm/${planRef}`) return null
+  if (error.details.op !== op) return null
+  return url
 }
 
 function refusal(error: GraphOsApiError, op: IdentityOp): IdentityReply<never> {
   if ([404, 501, 503].includes(error.status) || ['UNKNOWN_OP', 'UNAVAILABLE', 'NOT_IMPLEMENTED'].includes(error.code))
     return { kind: 'unavailable', message: 'This identity operation is not available on this server.' }
   if (error.code === 'STEP_UP_REQUIRED') {
-    const planRef = error.details.plan_ref
-    const url = error.details.console_url
-    if (
-      typeof planRef === 'string' &&
-      PLAN_REF.test(planRef) &&
-      url === `/console/confirm/${planRef}` &&
-      error.details.op === op
-    )
-      return { kind: 'confirmation', message: 'Review and confirm this action in the console.', url }
+    const url = confirmedStepUpUrl(error, op)
+    if (url) return { kind: 'confirmation', message: 'Review and confirm this action in the console.', url }
     return { kind: 'step_up', message: 'A fresh administrator MFA confirmation is required.' }
   }
   if (error.code === 'CONFIRMATION_REQUIRED')

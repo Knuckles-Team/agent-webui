@@ -489,14 +489,16 @@ function UserRow({
   )
 }
 
-/** The server alone decides roles, scopes, and whether a fresh MFA session is required. */
-function UserRosterSection() {
+type UserRosterReply = IdentityReply<IdentityPage<IdentityUser>> | null
+
+/** All user-roster state + mutations, kept out of the section's render body. */
+function useUserRoster() {
   const { identity, loading: identityLoading } = useIdentity()
   const [username, setUsername] = useState('')
   const [newKind, setNewKind] = useState<'human' | 'service'>('human')
   const [searchQuery, setSearchQuery] = useState('')
   const [activeQuery, setActiveQuery] = useState('')
-  const [users, setUsers] = useState<IdentityReply<IdentityPage<IdentityUser>> | null>(null)
+  const [users, setUsers] = useState<UserRosterReply>(null)
   const [busy, setBusy] = useState(false)
   const [resetToken, setResetToken] = useState<string | null>(null)
 
@@ -507,51 +509,43 @@ function UserRosterSection() {
     setBusy(false)
   }, [])
 
-  const search = async () => {
+  const search = useCallback(async () => {
     const query = searchQuery.trim()
     if (!query) return refresh()
     setBusy(true)
     setActiveQuery(query)
     setUsers(await invokeIdentity<IdentityPage<IdentityUser>>('identity.users.search', { query, limit: 50 }))
     setBusy(false)
-  }
+  }, [searchQuery, refresh])
 
-  const loadMore = async () => {
+  const appendPage = (current: Extract<UserRosterReply, { kind: 'ready' }>, next: IdentityPage<IdentityUser>) => ({
+    kind: 'ready' as const,
+    result: { items: [...current.result.items, ...next.items], next_cursor: next.next_cursor },
+  })
+
+  const loadMore = useCallback(async () => {
     if (users?.kind !== 'ready' || !users.result.next_cursor) return
     setBusy(true)
     const next = await invokeIdentity<IdentityPage<IdentityUser>>(
       activeQuery ? 'identity.users.search' : 'identity.users.list',
-      {
-        after: users.result.next_cursor,
-        limit: 50,
-        ...(activeQuery ? { query: activeQuery } : {}),
-      },
+      { after: users.result.next_cursor, limit: 50, ...(activeQuery ? { query: activeQuery } : {}) },
     )
-    if (next.kind === 'ready') {
-      setUsers({
-        kind: 'ready',
-        result: { items: [...users.result.items, ...next.result.items], next_cursor: next.result.next_cursor },
-      })
-    } else {
-      toast.error(next.message)
-    }
+    if (next.kind === 'ready') setUsers(appendPage(users, next.result))
+    else toast.error(next.message)
     setBusy(false)
-  }
+  }, [users, activeQuery])
 
   useEffect(() => {
     if (!identityLoading && !identity.needsSignIn) void refresh()
   }, [identityLoading, identity.needsSignIn, refresh])
 
-  const create = async () => {
+  const create = useCallback(async () => {
     if (!username.trim()) return
     setBusy(true)
-    const result = await invokeIdentity(
-      newKind === 'service' ? 'identity.service_accounts.create' : 'identity.users.create',
-      {
-        username: username.trim(),
-        ...(newKind === 'human' ? { kind: 'human' } : {}),
-      },
-    )
+    const result = await invokeIdentity(newKind === 'service' ? 'identity.service_accounts.create' : 'identity.users.create', {
+      username: username.trim(),
+      ...(newKind === 'human' ? { kind: 'human' } : {}),
+    })
     if (result.kind === 'ready') {
       toast.success('User created.')
       setUsername('')
@@ -560,23 +554,130 @@ function UserRosterSection() {
       toast.error(result.message)
       setBusy(false)
     }
-  }
+  }, [username, newKind, refresh])
 
-  const act = async (op: IdentityOp, id: string) => {
-    setBusy(true)
-    setResetToken(null)
-    const result = await invokeIdentity<{ reset_token?: string }>(op, { principal_id: id })
-    if (result.kind === 'ready') {
-      if (op === 'identity.users.admin_reset') setResetToken(result.result.reset_token ?? null)
-      toast.success('Identity action completed.')
-      void refresh()
-    } else {
-      toast.error(result.message)
-      setBusy(false)
-    }
-  }
+  const act = useCallback(
+    async (op: IdentityOp, id: string) => {
+      setBusy(true)
+      setResetToken(null)
+      const result = await invokeIdentity<{ reset_token?: string }>(op, { principal_id: id })
+      if (result.kind === 'ready') {
+        if (op === 'identity.users.admin_reset') setResetToken(result.result.reset_token ?? null)
+        toast.success('Identity action completed.')
+        void refresh()
+      } else {
+        toast.error(result.message)
+        setBusy(false)
+      }
+    },
+    [refresh],
+  )
 
-  if (identity.needsSignIn) {
+  return {
+    needsSignIn: identity.needsSignIn,
+    username,
+    setUsername,
+    newKind,
+    setNewKind,
+    searchQuery,
+    setSearchQuery,
+    users,
+    busy,
+    resetToken,
+    refresh,
+    search,
+    loadMore,
+    create,
+    act,
+  }
+}
+
+function UserRosterListBody({
+  users,
+  busy,
+  onAction,
+}: {
+  users: UserRosterReply
+  busy: boolean
+  onAction: (op: IdentityOp, id: string) => void
+}) {
+  if (users === null) return <p role="status">Loading users…</p>
+  if (users.kind !== 'ready') {
+    return (
+      <p role="status" data-testid={`users-${users.kind}`}>
+        {users.message}
+      </p>
+    )
+  }
+  if (!Array.isArray(users.result.items)) {
+    return <p role="alert">The identity service returned an invalid user list.</p>
+  }
+  if (users.result.items.length === 0) {
+    return <p role="status">No users matched this search.</p>
+  }
+  return (
+    <ul className="space-y-2">
+      {users.result.items.map((user) => (
+        <UserRow key={user.principal_id} user={user} busy={busy} onAction={onAction} />
+      ))}
+    </ul>
+  )
+}
+
+function UserCreateForm({
+  username,
+  setUsername,
+  newKind,
+  setNewKind,
+  busy,
+  onCreate,
+}: {
+  username: string
+  setUsername: (v: string) => void
+  newKind: 'human' | 'service'
+  setNewKind: (v: 'human' | 'service') => void
+  busy: boolean
+  onCreate: () => void
+}) {
+  return (
+    <form
+      className="flex gap-2 border-t pt-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        onCreate()
+      }}
+    >
+      <Input
+        aria-label="New username"
+        placeholder="New username"
+        value={username}
+        onChange={(e) => {
+          setUsername(e.target.value)
+        }}
+      />
+      <select
+        aria-label="New identity kind"
+        className="rounded border bg-background p-2"
+        value={newKind}
+        onChange={(event) => {
+          setNewKind(event.target.value as 'human' | 'service')
+        }}
+      >
+        <option value="human">Human</option>
+        <option value="service">Service account</option>
+      </select>
+      <Button type="submit" disabled={busy || !username.trim()}>
+        Create {newKind === 'service' ? 'service account' : 'user'}
+      </Button>
+    </form>
+  )
+}
+
+/** The server alone decides roles, scopes, and whether a fresh MFA session is required. */
+function UserRosterSection() {
+  const roster = useUserRoster()
+
+  if (roster.needsSignIn) {
     return (
       <Card data-testid="user-mgmt-roster">
         <CardHeader>
@@ -600,105 +701,66 @@ function UserRosterSection() {
           className="flex items-center gap-2"
           onSubmit={(event) => {
             event.preventDefault()
-            void search()
+            void roster.search()
           }}
         >
           <Input
             aria-label="Search users"
             placeholder="Search users"
-            value={searchQuery}
+            value={roster.searchQuery}
             onChange={(event) => {
-              setSearchQuery(event.target.value)
+              roster.setSearchQuery(event.target.value)
             }}
           />
-          <Button type="submit" disabled={busy || !searchQuery.trim()}>
+          <Button type="submit" disabled={roster.busy || !roster.searchQuery.trim()}>
             Search
           </Button>
           <Button
             type="button"
             variant="outline"
-            disabled={busy}
+            disabled={roster.busy}
             onClick={() => {
-              void refresh()
+              void roster.refresh()
             }}
             aria-label="Refresh users"
           >
             <RefreshCw className="size-4" />
           </Button>
         </form>
-        {users === null ? <p role="status">Loading users…</p> : null}
-        {users?.kind !== 'ready' && users !== null ? (
-          <p role="status" data-testid={`users-${users.kind}`}>
-            {users.message}
-          </p>
-        ) : null}
-        {users?.kind === 'ready' && !Array.isArray(users.result.items) ? (
-          <p role="alert">The identity service returned an invalid user list.</p>
-        ) : null}
-        {users?.kind === 'ready' && Array.isArray(users.result.items) && users.result.items.length === 0 ? (
-          <p role="status">No users matched this search.</p>
-        ) : null}
-        {users?.kind === 'ready' && Array.isArray(users.result.items) ? (
-          <ul className="space-y-2">
-            {users.result.items.map((user) => (
-              <UserRow
-                key={user.principal_id}
-                user={user}
-                busy={busy}
-                onAction={(op, id) => {
-                  void act(op, id)
-                }}
-              />
-            ))}
-          </ul>
-        ) : null}
-        {users?.kind === 'ready' && users.result.next_cursor ? (
+        <UserRosterListBody
+          users={roster.users}
+          busy={roster.busy}
+          onAction={(op, id) => {
+            void roster.act(op, id)
+          }}
+        />
+        {roster.users?.kind === 'ready' && roster.users.result.next_cursor ? (
           <Button
             type="button"
             variant="outline"
-            disabled={busy}
+            disabled={roster.busy}
             onClick={() => {
-              void loadMore()
+              void roster.loadMore()
             }}
           >
             Load more users
           </Button>
         ) : null}
-        {resetToken && (
+        {roster.resetToken && (
           <p role="status" className="rounded border p-3">
-            One-time reset token: <code>{resetToken}</code>. Copy it now; it will not be shown again.
+            One-time reset token: <code>{roster.resetToken}</code>. Copy it now; it will not be shown again.
           </p>
         )}
-        <form
-          className="flex gap-2 border-t pt-4"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void create()
+        <UserCreateForm
+          username={roster.username}
+          setUsername={roster.setUsername}
+          newKind={roster.newKind}
+          setNewKind={roster.setNewKind}
+          busy={roster.busy}
+          onCreate={() => {
+            void roster.create()
           }}
-        >
-          <Input
-            aria-label="New username"
-            placeholder="New username"
-            value={username}
-            onChange={(e) => {
-              setUsername(e.target.value)
-            }}
-          />
-          <select
-            aria-label="New identity kind"
-            className="rounded border bg-background p-2"
-            value={newKind}
-            onChange={(event) => {
-              setNewKind(event.target.value as 'human' | 'service')
-            }}
-          >
-            <option value="human">Human</option>
-            <option value="service">Service account</option>
-          </select>
-          <Button type="submit" disabled={busy || !username.trim()}>
-            Create {newKind === 'service' ? 'service account' : 'user'}
-          </Button>
-        </form>
+        />
       </CardContent>
     </Card>
   )

@@ -22,6 +22,142 @@ interface ListedItem {
   description?: string
 }
 
+type ListedReply = IdentityReply<IdentityPage<ListedItem>>
+
+/** Sessions and API keys are always scoped to one principal; without one there
+ *  is nothing to list. */
+function requiresUnsetPrincipal(op: IdentityOp, principalId: string | undefined): boolean {
+  return (op === 'identity.sessions.list' || op === 'identity.api_keys.list') && !principalId
+}
+
+function itemKey(item: ListedItem, index: number): string | number {
+  return item.principal_id ?? item.id ?? item.handle ?? item.key_id ?? index
+}
+
+function itemLabel(item: ListedItem, index: number): string {
+  return item.name ?? item.username ?? item.principal_id ?? item.id ?? item.handle ?? item.key_id ?? `Record ${index + 1}`
+}
+
+function itemRevokeId(item: ListedItem): string {
+  return item.handle ?? item.id ?? item.key_id ?? ''
+}
+
+function ListItemRow({
+  item,
+  index,
+  revokeOp,
+  onRevoke,
+}: {
+  item: ListedItem
+  index: number
+  revokeOp: IdentityOp | undefined
+  onRevoke: (id: string) => void
+}) {
+  return (
+    <li className="rounded border p-2">
+      <strong>{itemLabel(item, index)}</strong>
+      {item.status && <span className="ml-2 text-muted-foreground">{item.status}</span>}
+      {item.description && <p className="text-sm text-muted-foreground">{item.description}</p>}
+      {revokeOp && itemRevokeId(item) && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="ml-2"
+          onClick={() => {
+            onRevoke(itemRevokeId(item))
+          }}
+        >
+          Revoke
+        </Button>
+      )}
+    </li>
+  )
+}
+
+function ListPanelBody({
+  state,
+  revokeOp,
+  loadingHint,
+  onRevoke,
+  onLoadMore,
+}: {
+  state: ListedReply | null
+  revokeOp: IdentityOp | undefined
+  loadingHint: string
+  onRevoke: (id: string) => void
+  onLoadMore: () => void
+}) {
+  if (state === null) return <p role="status">{loadingHint}</p>
+  if (state.kind !== 'ready') return <p role="status">{state.message}</p>
+  if (!Array.isArray(state.result.items)) return <p role="alert">The identity service returned an invalid list.</p>
+  if (state.result.items.length === 0) return <p role="status">No records reported.</p>
+  return (
+    <>
+      <ul className="space-y-2">
+        {state.result.items.map((item, index) => (
+          <ListItemRow key={itemKey(item, index)} item={item} index={index} revokeOp={revokeOp} onRevoke={onRevoke} />
+        ))}
+      </ul>
+      {state.result.next_cursor && (
+        <Button type="button" variant="outline" onClick={onLoadMore}>
+          Load more
+        </Button>
+      )}
+    </>
+  )
+}
+
+/** All list-panel state + mutations, kept out of the panel's render body. */
+function useListPanel(op: IdentityOp, principalId: string | undefined) {
+  const [state, setState] = useState<ListedReply | null>(null)
+  const [revision, setRevision] = useState(0)
+  const [mutation, setMutation] = useState<IdentityReply<unknown> | null>(null)
+
+  useEffect(() => {
+    let active = true
+    if (requiresUnsetPrincipal(op, principalId)) return () => undefined
+    const params = op === 'identity.audit.list' || op === 'identity.api_keys.list' ? { limit: 50 } : {}
+    void invokeIdentity<IdentityPage<ListedItem>>(op, {
+      ...params,
+      ...(principalId ? { principal_id: principalId } : {}),
+    }).then((reply) => {
+      if (active) setState(reply)
+    })
+    return () => {
+      active = false
+    }
+  }, [op, principalId, revision])
+
+  const revoke = async (revokeOp: IdentityOp | undefined, id: string) => {
+    if (!revokeOp) return
+    const reply = await invokeIdentity(revokeOp, { id })
+    setMutation(reply)
+    if (reply.kind === 'ready') setRevision((value) => value + 1)
+  }
+
+  const loadMore = async () => {
+    if (state?.kind !== 'ready' || !state.result.next_cursor) return
+    const next = await invokeIdentity<IdentityPage<ListedItem>>(op, {
+      after: state.result.next_cursor,
+      limit: 50,
+      ...(principalId ? { principal_id: principalId } : {}),
+    })
+    if (next.kind === 'ready') {
+      setState({
+        kind: 'ready',
+        result: { items: [...state.result.items, ...next.result.items], next_cursor: next.result.next_cursor },
+      })
+    } else setMutation(next)
+  }
+
+  const refresh = () => {
+    setRevision((value) => value + 1)
+  }
+
+  return { state, mutation, revoke, loadMore, refresh }
+}
+
 function ListPanel({
   title,
   op,
@@ -35,47 +171,8 @@ function ListPanel({
   principalId?: string
   revokeOp?: IdentityOp
 }) {
-  const [state, setState] = useState<IdentityReply<IdentityPage<ListedItem>> | null>(null)
-  const [revision, setRevision] = useState(0)
-  const [mutation, setMutation] = useState<IdentityReply<unknown> | null>(null)
-  useEffect(() => {
-    let active = true
-    if ((op === 'identity.sessions.list' || op === 'identity.api_keys.list') && !principalId)
-      return () => {
-        active = false
-      }
-    const params = op === 'identity.audit.list' || op === 'identity.api_keys.list' ? { limit: 50 } : {}
-    void invokeIdentity<IdentityPage<ListedItem>>(op, {
-      ...params,
-      ...(principalId ? { principal_id: principalId } : {}),
-    }).then((reply) => {
-      if (active) setState(reply)
-    })
-    return () => {
-      active = false
-    }
-  }, [op, principalId, revision])
-  const revoke = async (id: string) => {
-    if (!revokeOp) return
-    const reply = await invokeIdentity(revokeOp, { id })
-    setMutation(reply)
-    if (reply.kind === 'ready') setRevision((value) => value + 1)
-  }
-  const loadMore = async () => {
-    if (state?.kind !== 'ready' || !state.result.next_cursor) return
-    const params = {
-      after: state.result.next_cursor,
-      limit: 50,
-      ...(principalId ? { principal_id: principalId } : {}),
-    }
-    const next = await invokeIdentity<IdentityPage<ListedItem>>(op, params)
-    if (next.kind === 'ready') {
-      setState({
-        kind: 'ready',
-        result: { items: [...state.result.items, ...next.result.items], next_cursor: next.result.next_cursor },
-      })
-    } else setMutation(next)
-  }
+  const panel = useListPanel(op, principalId)
+  const loadingHint = requiresUnsetPrincipal(op, principalId) ? 'Enter a principal id to inspect its records.' : 'Loading…'
   return (
     <Card>
       <CardHeader>
@@ -84,80 +181,25 @@ function ListPanel({
       </CardHeader>
       <CardContent>
         {principalId && <p className="mb-2 text-xs text-muted-foreground">Principal: {principalId}</p>}
-        {state !== null && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="mb-3"
-            onClick={() => {
-              setRevision((value) => value + 1)
-            }}
-          >
+        {panel.state !== null && (
+          <Button type="button" size="sm" variant="outline" className="mb-3" onClick={panel.refresh}>
             Refresh
           </Button>
         )}
-        {state === null && (
-          <p role="status">
-            {(op === 'identity.sessions.list' || op === 'identity.api_keys.list') && !principalId
-              ? 'Enter a principal id to inspect its records.'
-              : 'Loading…'}
-          </p>
+        <ListPanelBody
+          state={panel.state}
+          revokeOp={revokeOp}
+          loadingHint={loadingHint}
+          onRevoke={(id) => {
+            void panel.revoke(revokeOp, id)
+          }}
+          onLoadMore={() => {
+            void panel.loadMore()
+          }}
+        />
+        {panel.mutation && (
+          <p role="status">{panel.mutation.kind === 'ready' ? 'Revocation confirmed.' : panel.mutation.message}</p>
         )}
-        {state !== null && state.kind !== 'ready' && <p role="status">{state.message}</p>}
-        {state?.kind === 'ready' && !Array.isArray(state.result.items) && (
-          <p role="alert">The identity service returned an invalid list.</p>
-        )}
-        {state?.kind === 'ready' && Array.isArray(state.result.items) && state.result.items.length === 0 && (
-          <p role="status">No records reported.</p>
-        )}
-        {state?.kind === 'ready' && Array.isArray(state.result.items) && (
-          <ul className="space-y-2">
-            {state.result.items.map((item, index) => (
-              <li
-                key={item.principal_id ?? item.id ?? item.handle ?? item.key_id ?? index}
-                className="rounded border p-2"
-              >
-                <strong>
-                  {item.name ??
-                    item.username ??
-                    item.principal_id ??
-                    item.id ??
-                    item.handle ??
-                    item.key_id ??
-                    `Record ${index + 1}`}
-                </strong>
-                {item.status && <span className="ml-2 text-muted-foreground">{item.status}</span>}
-                {item.description && <p className="text-sm text-muted-foreground">{item.description}</p>}
-                {revokeOp && (item.handle ?? item.id ?? item.key_id) && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="ml-2"
-                    onClick={() => {
-                      void revoke(item.handle ?? item.id ?? item.key_id ?? '')
-                    }}
-                  >
-                    Revoke
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        {state?.kind === 'ready' && state.result.next_cursor && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              void loadMore()
-            }}
-          >
-            Load more
-          </Button>
-        )}
-        {mutation && <p role="status">{mutation.kind === 'ready' ? 'Revocation confirmed.' : mutation.message}</p>}
       </CardContent>
     </Card>
   )
@@ -487,28 +529,48 @@ function IdentityProviderEditor() {
   )
 }
 
-function ModePanel() {
-  const [state, setState] = useState<IdentityReply<{ mode: string; epoch?: number }> | null>(null)
+type ModeStatus = { mode: string; epoch?: number }
+type LocalFallback = 'off' | 'break_glass' | 'full'
+
+/** Mode-transition state + the request, kept out of the panel's render body. */
+function useModeTransition() {
+  const [state, setState] = useState<IdentityReply<ModeStatus> | null>(null)
   const [target, setTarget] = useState('')
-  const [fallback, setFallback] = useState<'off' | 'break_glass' | 'full'>('break_glass')
+  const [fallback, setFallback] = useState<LocalFallback>('break_glass')
   const [acknowledged, setAcknowledged] = useState(false)
   const [transition, setTransition] = useState<IdentityReply<unknown> | null>(null)
+
   useEffect(() => {
     let active = true
-    void invokeIdentity<{ mode: string; epoch?: number }>('identity.mode.status').then((reply) => {
+    void invokeIdentity<ModeStatus>('identity.mode.status').then((reply) => {
       if (active) setState(reply)
     })
     return () => {
       active = false
     }
   }, [])
+
   const submit = async () => {
     const params = target === 'external' ? { to: target, local_fallback: fallback } : { to: target }
     const reply = await invokeIdentity('identity.mode.transition', params)
     setTransition(reply)
-    if (reply.kind === 'ready')
-      setState(await invokeIdentity<{ mode: string; epoch?: number }>('identity.mode.status'))
+    if (reply.kind === 'ready') setState(await invokeIdentity<ModeStatus>('identity.mode.status'))
   }
+
+  return { state, target, setTarget, fallback, setFallback, acknowledged, setAcknowledged, transition, submit }
+}
+
+function isTransitionDisabled(
+  acknowledged: boolean,
+  target: string,
+  state: IdentityReply<ModeStatus> | null,
+): boolean {
+  if (!acknowledged || !target) return true
+  return state?.kind !== 'ready' || target === state.result.mode
+}
+
+function ModePanel() {
+  const mode = useModeTransition()
   return (
     <Card>
       <CardHeader>
@@ -519,11 +581,11 @@ function ModePanel() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {state === null && <p role="status">Loading mode…</p>}
-        {state !== null && state.kind !== 'ready' && <p role="status">{state.message}</p>}
-        {state?.kind === 'ready' && (
+        {mode.state === null && <p role="status">Loading mode…</p>}
+        {mode.state !== null && mode.state.kind !== 'ready' && <p role="status">{mode.state.message}</p>}
+        {mode.state?.kind === 'ready' && (
           <p>
-            Current mode: <strong>{state.result.mode}</strong>
+            Current mode: <strong>{mode.state.result.mode}</strong>
           </p>
         )}
         <label className="block text-sm" htmlFor="target-mode">
@@ -532,22 +594,22 @@ function ModePanel() {
         <select
           id="target-mode"
           className="rounded border bg-background p-2"
-          value={target}
+          value={mode.target}
           onChange={(e) => {
-            setTarget(e.target.value)
+            mode.setTarget(e.target.value)
           }}
         >
           <option value="">Select a mode</option>
           <option value="local">Local</option>
           <option value="external">External</option>
         </select>
-        {target === 'external' && (
+        {mode.target === 'external' && (
           <select
             aria-label="Local fallback"
             className="rounded border bg-background p-2"
-            value={fallback}
+            value={mode.fallback}
             onChange={(event) => {
-              setFallback(event.target.value as 'off' | 'break_glass' | 'full')
+              mode.setFallback(event.target.value as LocalFallback)
             }}
           >
             <option value="off">No local fallback</option>
@@ -558,25 +620,25 @@ function ModePanel() {
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
-            checked={acknowledged}
+            checked={mode.acknowledged}
             onChange={(event) => {
-              setAcknowledged(event.target.checked)
+              mode.setAcknowledged(event.target.checked)
             }}
           />
           I understand this transition revokes current sessions.
         </label>
         <Button
           type="button"
-          disabled={!acknowledged || !target || state?.kind !== 'ready' || target === state.result.mode}
+          disabled={isTransitionDisabled(mode.acknowledged, mode.target, mode.state)}
           onClick={() => {
-            void submit()
+            void mode.submit()
           }}
         >
           Request transition
         </Button>
-        {transition && (
+        {mode.transition && (
           <p role="status">
-            {transition.kind === 'ready' ? 'Transition completed. Sign in again.' : transition.message}
+            {mode.transition.kind === 'ready' ? 'Transition completed. Sign in again.' : mode.transition.message}
           </p>
         )}
       </CardContent>

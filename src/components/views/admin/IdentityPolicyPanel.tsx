@@ -23,27 +23,163 @@ const SESSION_FIELDS = [
 ] as const
 type SessionField = (typeof SESSION_FIELDS)[number][0]
 
-function validDurations(values: Partial<Record<SessionField, number>>): boolean {
-  if (Object.values(values).some((value) => !Number.isInteger(value) || value < 60000 || value > 2592000000))
-    return false
-  if (values.idle_ms !== undefined && values.absolute_ms !== undefined && values.idle_ms > values.absolute_ms)
-    return false
-  if (
-    values.privileged_idle_ms !== undefined &&
-    values.idle_ms !== undefined &&
-    values.privileged_idle_ms > values.idle_ms
-  )
-    return false
-  if (
-    values.privileged_absolute_ms !== undefined &&
-    values.absolute_ms !== undefined &&
-    values.privileged_absolute_ms > values.absolute_ms
-  )
-    return false
+type Durations = Partial<Record<SessionField, number>>
+
+function allDurationsInRange(values: Durations): boolean {
+  return Object.values(values).every((value) => Number.isInteger(value) && value >= 60000 && value <= 2592000000)
+}
+
+/** `a` must not exceed `b` when both are set; either being unset is not a violation. */
+function doesNotExceed(a: number | undefined, b: number | undefined): boolean {
+  return a === undefined || b === undefined || a <= b
+}
+
+function validDurations(values: Durations): boolean {
   return (
-    values.privileged_idle_ms === undefined ||
-    values.privileged_absolute_ms === undefined ||
-    values.privileged_idle_ms <= values.privileged_absolute_ms
+    allDurationsInRange(values) &&
+    doesNotExceed(values.idle_ms, values.absolute_ms) &&
+    doesNotExceed(values.privileged_idle_ms, values.idle_ms) &&
+    doesNotExceed(values.privileged_absolute_ms, values.absolute_ms) &&
+    doesNotExceed(values.privileged_idle_ms, values.privileged_absolute_ms)
+  )
+}
+
+/** The duration fields a policy reply actually sets, keyed for `useState`. */
+function readDurations(policy: IdentityPolicy): Durations {
+  return Object.fromEntries(
+    SESSION_FIELDS.flatMap(([key]) => (policy[key] === undefined ? [] : [[key, policy[key]]])),
+  )
+}
+
+/** Only the duration fields that differ from the last-known server state, so a
+ *  save never resends an untouched field. */
+function changedDurations(durations: Durations, previous: IdentityPolicy): Durations {
+  return Object.fromEntries(
+    SESSION_FIELDS.flatMap(([key]) => (durations[key] === previous[key] ? [] : [[key, durations[key]]])),
+  )
+}
+
+function DurationField({
+  field,
+  label,
+  valueMs,
+  onChangeMs,
+}: {
+  field: SessionField
+  label: string
+  valueMs: number
+  onChangeMs: (ms: number) => void
+}) {
+  return (
+    <div>
+      <label className="block text-sm" htmlFor={field}>
+        {label} (minutes)
+      </label>
+      <Input
+        id={field}
+        type="number"
+        min={1}
+        max={43200}
+        value={Math.round(valueMs / 60000)}
+        onChange={(event) => {
+          onChangeMs(Number(event.target.value) * 60000)
+        }}
+      />
+    </div>
+  )
+}
+
+function isPolicyInvalid(minimum: number, durations: Durations): boolean {
+  if (!Number.isInteger(minimum) || minimum < 8 || minimum > 256) return true
+  return !validDurations(durations)
+}
+
+function PolicyForm({
+  registration,
+  setRegistration,
+  fallback,
+  setFallback,
+  minimum,
+  setMinimum,
+  durations,
+  setDurations,
+  onSave,
+}: {
+  registration: IdentityPolicy['registration_policy']
+  setRegistration: (v: IdentityPolicy['registration_policy']) => void
+  fallback: IdentityPolicy['local_fallback']
+  setFallback: (v: IdentityPolicy['local_fallback']) => void
+  minimum: number
+  setMinimum: (v: number) => void
+  durations: Durations
+  setDurations: (update: (current: Durations) => Durations) => void
+  onSave: () => void
+}) {
+  return (
+    <>
+      <label className="block text-sm" htmlFor="registration-policy">
+        Registration
+      </label>
+      <select
+        id="registration-policy"
+        className="rounded border bg-background p-2"
+        value={registration}
+        onChange={(event) => {
+          setRegistration(event.target.value as IdentityPolicy['registration_policy'])
+        }}
+      >
+        <option value="disabled">Disabled</option>
+        <option value="admin_only">Administrator only</option>
+        <option value="invite">Invitation</option>
+        <option value="open">Open</option>
+      </select>
+      <label className="block text-sm" htmlFor="policy-fallback">
+        Local fallback
+      </label>
+      <select
+        id="policy-fallback"
+        className="rounded border bg-background p-2"
+        value={fallback}
+        onChange={(event) => {
+          setFallback(event.target.value as IdentityPolicy['local_fallback'])
+        }}
+      >
+        <option value="off">Off</option>
+        <option value="break_glass">Break glass only</option>
+        <option value="full">Full</option>
+      </select>
+      <label className="block text-sm" htmlFor="password-minimum">
+        Minimum password length
+      </label>
+      <Input
+        id="password-minimum"
+        type="number"
+        min={8}
+        max={256}
+        value={minimum}
+        onChange={(event) => {
+          setMinimum(Number(event.target.value))
+        }}
+      />
+      {SESSION_FIELDS.map(([key, label]) => {
+        const valueMs = durations[key]
+        if (valueMs === undefined) return null
+        return (
+          <DurationField
+            key={key}
+            field={key}
+            label={label}
+            valueMs={valueMs}
+            onChangeMs={(ms) => {
+              setDurations((current) => ({ ...current, [key]: ms }))
+            }}
+          />
+        )
+      })}
+      <Button type="button" disabled={isPolicyInvalid(minimum, durations)} onClick={onSave}>
+        Save identity policy
+      </Button>
+    </>
   )
 }
 
@@ -52,39 +188,36 @@ export default function IdentityPolicyPanel() {
   const [registration, setRegistration] = useState<IdentityPolicy['registration_policy']>('disabled')
   const [fallback, setFallback] = useState<IdentityPolicy['local_fallback']>('break_glass')
   const [minimum, setMinimum] = useState(12)
-  const [durations, setDurations] = useState<Partial<Record<SessionField, number>>>({})
+  const [durations, setDurations] = useState<Durations>({})
   const [outcome, setOutcome] = useState<IdentityReply<IdentityPolicy> | null>(null)
+
+  const applyPolicyReply = (reply: IdentityReply<IdentityPolicy>) => {
+    setState(reply)
+    if (reply.kind !== 'ready') return
+    setRegistration(reply.result.registration_policy)
+    setFallback(reply.result.local_fallback)
+    setMinimum(reply.result.password_min_chars)
+    setDurations(readDurations(reply.result))
+  }
+
   useEffect(() => {
     let active = true
     void invokeIdentity<IdentityPolicy>('identity.policy.get').then((reply) => {
-      if (!active) return
-      setState(reply)
-      if (reply.kind === 'ready') {
-        setRegistration(reply.result.registration_policy)
-        setFallback(reply.result.local_fallback)
-        setMinimum(reply.result.password_min_chars)
-        setDurations(
-          Object.fromEntries(
-            SESSION_FIELDS.flatMap(([key]) => (reply.result[key] === undefined ? [] : [[key, reply.result[key]]])),
-          ),
-        )
-      }
+      if (active) applyPolicyReply(reply)
     })
     return () => {
       active = false
     }
   }, [])
+
   const save = async () => {
     if (state?.kind !== 'ready') return
-    const changedDurations = Object.fromEntries(
-      SESSION_FIELDS.flatMap(([key]) => (durations[key] === state.result[key] ? [] : [[key, durations[key]]])),
-    )
     const reply = await invokeIdentity<IdentityPolicy>('identity.policy.set', {
       expected_epoch: state.result.epoch,
       registration_policy: registration,
       local_fallback: fallback,
       password_min_chars: minimum,
-      ...changedDurations,
+      ...changedDurations(durations, state.result),
     })
     setOutcome(reply)
     if (reply.kind === 'ready') setState(reply)
@@ -99,80 +232,19 @@ export default function IdentityPolicyPanel() {
         {state === null && <p role="status">Loading identity policy…</p>}
         {state !== null && state.kind !== 'ready' && <p role="status">{state.message}</p>}
         {state?.kind === 'ready' && (
-          <>
-            <label className="block text-sm" htmlFor="registration-policy">
-              Registration
-            </label>
-            <select
-              id="registration-policy"
-              className="rounded border bg-background p-2"
-              value={registration}
-              onChange={(event) => {
-                setRegistration(event.target.value as IdentityPolicy['registration_policy'])
-              }}
-            >
-              <option value="disabled">Disabled</option>
-              <option value="admin_only">Administrator only</option>
-              <option value="invite">Invitation</option>
-              <option value="open">Open</option>
-            </select>
-            <label className="block text-sm" htmlFor="policy-fallback">
-              Local fallback
-            </label>
-            <select
-              id="policy-fallback"
-              className="rounded border bg-background p-2"
-              value={fallback}
-              onChange={(event) => {
-                setFallback(event.target.value as IdentityPolicy['local_fallback'])
-              }}
-            >
-              <option value="off">Off</option>
-              <option value="break_glass">Break glass only</option>
-              <option value="full">Full</option>
-            </select>
-            <label className="block text-sm" htmlFor="password-minimum">
-              Minimum password length
-            </label>
-            <Input
-              id="password-minimum"
-              type="number"
-              min={8}
-              max={256}
-              value={minimum}
-              onChange={(event) => {
-                setMinimum(Number(event.target.value))
-              }}
-            />
-            {SESSION_FIELDS.map(([key, label]) =>
-              durations[key] === undefined ? null : (
-                <div key={key}>
-                  <label className="block text-sm" htmlFor={key}>
-                    {label} (minutes)
-                  </label>
-                  <Input
-                    id={key}
-                    type="number"
-                    min={1}
-                    max={43200}
-                    value={Math.round(durations[key] / 60000)}
-                    onChange={(event) => {
-                      setDurations((current) => ({ ...current, [key]: Number(event.target.value) * 60000 }))
-                    }}
-                  />
-                </div>
-              ),
-            )}
-            <Button
-              type="button"
-              disabled={!Number.isInteger(minimum) || minimum < 8 || minimum > 256 || !validDurations(durations)}
-              onClick={() => {
-                void save()
-              }}
-            >
-              Save identity policy
-            </Button>
-          </>
+          <PolicyForm
+            registration={registration}
+            setRegistration={setRegistration}
+            fallback={fallback}
+            setFallback={setFallback}
+            minimum={minimum}
+            setMinimum={setMinimum}
+            durations={durations}
+            setDurations={setDurations}
+            onSave={() => {
+              void save()
+            }}
+          />
         )}
         {Object.keys(durations).length > 0 && (
           <p className="text-sm text-muted-foreground">
