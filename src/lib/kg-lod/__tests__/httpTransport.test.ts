@@ -84,7 +84,6 @@ describe('HttpLodTransport', () => {
       (async () => {
         for await (const _tile of transport.clusters(['tenant'], 0)) {
           // The unavailable response must reject before a tile is yielded.
-          void _tile
         }
       })(),
     ).rejects.toBeInstanceOf(LodUnavailableError)
@@ -112,7 +111,6 @@ describe('HttpLodTransport', () => {
       (async () => {
         for await (const _tile of transport.clusters(['tenant'], 0)) {
           // no-op
-          void _tile
         }
       })(),
     ).rejects.toMatchObject({
@@ -129,7 +127,6 @@ describe('HttpLodTransport', () => {
       (async () => {
         for await (const _tile of transport.clusters([], 0)) {
           // no-op
-          void _tile
         }
       })(),
     ).rejects.toThrow('exactly one authorized graph')
@@ -137,7 +134,6 @@ describe('HttpLodTransport', () => {
       (async () => {
         for await (const _tile of transport.clusters(['a', 'b'], 0)) {
           // no-op
-          void _tile
         }
       })(),
     ).rejects.toThrow('exactly one authorized graph')
@@ -145,7 +141,6 @@ describe('HttpLodTransport', () => {
       (async () => {
         for await (const _tile of transport.clusters(['tenant'], -1)) {
           // no-op
-          void _tile
         }
       })(),
     ).rejects.toThrow('LOD level')
@@ -179,7 +174,6 @@ describe('HttpLodTransport', () => {
       (async () => {
         for await (const _tile of transport.expand(['tenant'], '')) {
           // no-op
-          void _tile
         }
       })(),
     ).rejects.toThrow('clusterId')
@@ -199,7 +193,6 @@ describe('HttpLodTransport', () => {
       (async () => {
         for await (const _tile of transport.clusters(['tenant'], 0)) {
           // no-op
-          void _tile
         }
       })(),
     ).rejects.toBeInstanceOf(LodUnavailableError)
@@ -220,7 +213,6 @@ describe('HttpLodTransport', () => {
       (async () => {
         for await (const _tile of transport.clusters(['tenant'], 0)) {
           // no-op
-          void _tile
         }
       })(),
     ).rejects.toBeInstanceOf(LodUnavailableError)

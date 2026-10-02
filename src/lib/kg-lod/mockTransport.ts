@@ -61,12 +61,11 @@ export class MockLodTransport implements LodTransport {
     this.tileDelayMs = options.tileDelayMs ?? 0
   }
 
-  refresh(graph: LodGraphScope, signal?: AbortSignal): Promise<LodHierarchyRefreshResponse> {
+  refresh(_graph: LodGraphScope, signal?: AbortSignal): Promise<LodHierarchyRefreshResponse> {
     signal?.throwIfAborted()
     // Synthetic data has no authenticated EG authority or source version. It
     // remains useful for isolated state-machine tests, but must never be
     // mistaken for a production hierarchy preview receipt.
-    void graph
     return Promise.resolve({
       available: false,
       status: 'unavailable',

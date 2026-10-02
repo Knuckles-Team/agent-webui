@@ -93,6 +93,25 @@ export default defineConfig(
           ignoreRestSiblings: true,
         },
       ],
+      // Core ESLint's own no-unused-vars (neostandard's base, left ON
+      // alongside the typed rule above) checks `vars: 'all'` -- including a
+      // `for await (const _x of ...)` loop binding, which is a variable
+      // declaration, not a function argument (`args: 'none'` already skips
+      // those). It had no `varsIgnorePattern`, so it never recognized this
+      // repo's established `_`-prefix "intentionally unused" convention
+      // (already used for function parameters, e.g. mockTransport.ts's
+      // `_level`) for loop variables specifically. Mirrors neostandard's
+      // other defaults; only `varsIgnorePattern` is added.
+      'no-unused-vars': [
+        'error',
+        {
+          vars: 'all',
+          args: 'none',
+          caughtErrors: 'none',
+          ignoreRestSiblings: true,
+          varsIgnorePattern: '^_',
+        },
+      ],
       '@typescript-eslint/restrict-template-expressions': [
         'error',
         {

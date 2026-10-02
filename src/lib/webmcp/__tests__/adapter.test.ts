@@ -14,14 +14,12 @@ describe('experimental WebMCP adapter', () => {
   })
 
   it('passes the registration signal and aborts it during cleanup', async () => {
-    const registerTool = vi.fn((signal: AbortSignal) => {
-      void signal
+    const registerTool = vi.fn((_signal: AbortSignal) => {
       return Promise.resolve()
     })
     const adapter: WebMcpAdapter = {
       version: 'document-model-context-2026-08-26',
-      registerTool: (tool, signal) => {
-        void tool
+      registerTool: (_tool, signal) => {
         void registerTool(signal)
         return Promise.resolve()
       },

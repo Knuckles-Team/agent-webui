@@ -55,7 +55,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
     // Keep a SINGLE React instance under jsdom (shared with react-dom,
     // @tanstack/react-query, @xyflow/react, etc.). See note below — the real

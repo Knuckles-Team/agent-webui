@@ -1,6 +1,12 @@
-import { expect, afterEach, beforeEach, vi } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
-import * as matchers from '@testing-library/jest-dom/matchers'
+// Vitest's own integration: registers the jest-dom matchers (equivalent to
+// the old explicit `expect.extend(matchers)` below) AND augments `Assertion`
+// with jest-dom's matcher types against vitest 5's `Assertion<T = any>`
+// shape. The previous `@testing-library/jest-dom/matchers` + manual
+// `expect.extend` combination only shipped a two-type-param `Assertion`
+// augmentation, which stopped matching after the vitest 5 major upgrade.
+import '@testing-library/jest-dom/vitest'
 import {
   mockMemoryNode,
   mockKnowledgeBase,
@@ -13,9 +19,6 @@ import {
   mockGraphNodeTypes,
   mockGraphRelationships,
 } from './fixtures'
-
-// Extend Vitest's expect with jest-dom matchers
-expect.extend(matchers)
 
 // Cleanup after each test
 afterEach(() => {
