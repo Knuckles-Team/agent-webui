@@ -77,6 +77,20 @@ def _routes_by_path(app) -> dict[str, set[str]]:
     return out
 
 
+def _configure_verifier(patch: pytest.MonkeyPatch) -> None:
+    """The complete JWT verifier every WebUI listener requires."""
+    from agent_utilities.core.config import config
+
+    patch.setattr(
+        config,
+        'auth_jwt_jwks_uri',
+        'https://idp.test/.well-known/jwks.json',
+        raising=False,
+    )
+    patch.setattr(config, 'auth_jwt_issuer', 'https://idp.test/', raising=False)
+    patch.setattr(config, 'auth_jwt_audience', 'agent-webui-test', raising=False)
+
+
 @pytest.fixture(autouse=True)
 def served_authority(monkeypatch):
     """Give the served boundary the audience + policy revision it requires.
@@ -88,14 +102,9 @@ def served_authority(monkeypatch):
     """
     from agent_utilities.core.config import config
 
-    monkeypatch.setattr(
-        config,
-        'auth_jwt_jwks_uri',
-        'https://idp.test/.well-known/jwks.json',
-        raising=False,
-    )
-    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.test/', raising=False)
-    monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui-test', raising=False)
+    # The complete JWT verifier comes from the shared autouse
+    # ``_complete_jwt_verifier`` fixture; the module-scoped app below
+    # configures its own (it is built before function-scoped fixtures run).
     monkeypatch.setattr(config, 'kg_policy_version', 'test-1', raising=False)
 
     # Minting a real GraphSession performs a placement read against a live
@@ -151,8 +160,15 @@ def _authenticated(app: Any) -> Any:
 
 @pytest.fixture(scope='module')
 def app():
-    """The real FastAPI app, exactly as production builds it (no html_source)."""
-    return _build_app()
+    """The real FastAPI app, exactly as production builds it (no html_source).
+
+    Module-scoped, so it is built before the function-scoped verifier
+    fixtures run: it configures the complete JWT verifier every WebUI
+    listener requires itself.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        _configure_verifier(patch)
+        return _build_app()
 
 
 @pytest.fixture

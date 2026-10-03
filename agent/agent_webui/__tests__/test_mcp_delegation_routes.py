@@ -130,14 +130,8 @@ def served_authority(monkeypatch):
     """
     from agent_utilities.core.config import config
 
-    monkeypatch.setattr(
-        config,
-        'auth_jwt_jwks_uri',
-        'https://idp.test/.well-known/jwks.json',
-        raising=False,
-    )
-    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.test/', raising=False)
-    monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui-test', raising=False)
+    # The complete JWT verifier is configured by the shared autouse
+    # ``_complete_jwt_verifier`` fixture (every listener requires one).
     monkeypatch.setattr(config, 'kg_policy_version', 'test-1', raising=False)
 
     # Minting a real GraphSession performs a placement read against a live

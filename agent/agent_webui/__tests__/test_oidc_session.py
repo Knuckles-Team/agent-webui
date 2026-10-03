@@ -557,6 +557,8 @@ async def test_a_caller_with_its_own_bearer_is_never_given_a_browser_session():
     authorization = [v for k, v in seen['headers'] if k.lower() == b'authorization']
     assert authorization == [b'Bearer service-token']
     assert 'browser_login_session_ref' not in seen['state']
+    assert seen['state'].get('graphos_session_admitted') is not True
+    assert 'graphos_console_mfa_at_ms' not in seen['state']
 
 
 @pytest.mark.anyio
@@ -586,6 +588,10 @@ async def test_a_valid_session_is_forwarded_as_the_users_own_bearer():
     assert login_ref.startswith('login_')
     assert len(login_ref) == 70
     assert 'users-own-token' not in login_ref
+    # This is a legacy sealed Keycloak cookie, not a live GraphOS identity
+    # broker session. Only GraphOS IdentityGate may set the admission marker.
+    assert seen['state'].get('graphos_session_admitted') is not True
+    assert 'graphos_console_mfa_at_ms' not in seen['state']
 
 
 @pytest.mark.anyio

@@ -1,26 +1,858 @@
-/**
- * @file AdminView.tsx
- * @description Admin console — a browser admin surface over the epistemic-graph
- * engine's admin APIs (roadmap: "Admin console UI").
- *
- * Four panels, each a thin renderer over the SAME gateway/backend REST surface
- * every other view uses (via `src/lib/admin-api.ts` → `src/lib/gateway.ts`):
- *   - Tenants  — graphs/tenants, per-tenant node/edge counts, shard placement (REAL, partial).
- *   - Shards   — shard topology / K-way writer layout + per-shard health (REAL).
- *   - RBAC     — roles / grants / agent identities (EG-092 / EG-303) (probe → placeholder).
- *   - Backup   — online backup + PITR status (EG-090) (probe → placeholder).
- *
- * Panels whose engine capability is not yet exposed over the REST surface probe
- * the closest existing route and degrade to a clearly-labeled read-only state —
- * they never fabricate backend data.
- */
-
+import { useEffect, useState } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { invokeIdentity, type IdentityOp, type IdentityPage, type IdentityReply } from '@/lib/graphos-api/identity'
+import UserManagementView from './UserManagementView'
 import TenantsPanel from './admin/TenantsPanel'
 import ShardsPanel from './admin/ShardsPanel'
-import RbacPanel from './admin/RbacPanel'
 import BackupPanel from './admin/BackupPanel'
+import IdentityPolicyPanel from './admin/IdentityPolicyPanel'
+
+interface ListedItem {
+  principal_id?: string
+  id?: string
+  handle?: string
+  key_id?: string
+  name?: string
+  username?: string
+  status?: string
+  description?: string
+}
+
+type ListedReply = IdentityReply<IdentityPage<ListedItem>>
+
+/** Sessions and API keys are always scoped to one principal; without one there
+ *  is nothing to list. */
+function requiresUnsetPrincipal(op: IdentityOp, principalId: string | undefined): boolean {
+  return (op === 'identity.sessions.list' || op === 'identity.api_keys.list') && !principalId
+}
+
+function itemKey(item: ListedItem, index: number): string | number {
+  return item.principal_id ?? item.id ?? item.handle ?? item.key_id ?? index
+}
+
+function itemLabel(item: ListedItem, index: number): string {
+  return (
+    item.name ?? item.username ?? item.principal_id ?? item.id ?? item.handle ?? item.key_id ?? `Record ${index + 1}`
+  )
+}
+
+function itemRevokeId(item: ListedItem): string {
+  return item.handle ?? item.id ?? item.key_id ?? ''
+}
+
+function ListItemRow({
+  item,
+  index,
+  revokeOp,
+  onRevoke,
+}: {
+  item: ListedItem
+  index: number
+  revokeOp: IdentityOp | undefined
+  onRevoke: (id: string) => void
+}) {
+  return (
+    <li className="rounded border p-2">
+      <strong>{itemLabel(item, index)}</strong>
+      {item.status && <span className="ml-2 text-muted-foreground">{item.status}</span>}
+      {item.description && <p className="text-sm text-muted-foreground">{item.description}</p>}
+      {revokeOp && itemRevokeId(item) && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="ml-2"
+          onClick={() => {
+            onRevoke(itemRevokeId(item))
+          }}
+        >
+          Revoke
+        </Button>
+      )}
+    </li>
+  )
+}
+
+function ListPanelBody({
+  state,
+  revokeOp,
+  loadingHint,
+  onRevoke,
+  onLoadMore,
+}: {
+  state: ListedReply | null
+  revokeOp: IdentityOp | undefined
+  loadingHint: string
+  onRevoke: (id: string) => void
+  onLoadMore: () => void
+}) {
+  if (state === null) return <p role="status">{loadingHint}</p>
+  if (state.kind !== 'ready') return <p role="status">{state.message}</p>
+  if (!Array.isArray(state.result.items)) return <p role="alert">The identity service returned an invalid list.</p>
+  if (state.result.items.length === 0) return <p role="status">No records reported.</p>
+  return (
+    <>
+      <ul className="space-y-2">
+        {state.result.items.map((item, index) => (
+          <ListItemRow key={itemKey(item, index)} item={item} index={index} revokeOp={revokeOp} onRevoke={onRevoke} />
+        ))}
+      </ul>
+      {state.result.next_cursor && (
+        <Button type="button" variant="outline" onClick={onLoadMore}>
+          Load more
+        </Button>
+      )}
+    </>
+  )
+}
+
+/** All list-panel state + mutations, kept out of the panel's render body. */
+function useListPanel(op: IdentityOp, principalId: string | undefined) {
+  const [state, setState] = useState<ListedReply | null>(null)
+  const [revision, setRevision] = useState(0)
+  const [mutation, setMutation] = useState<IdentityReply<unknown> | null>(null)
+
+  useEffect(() => {
+    let active = true
+    if (requiresUnsetPrincipal(op, principalId)) return () => undefined
+    const params = op === 'identity.audit.list' || op === 'identity.api_keys.list' ? { limit: 50 } : {}
+    void invokeIdentity<IdentityPage<ListedItem>>(op, {
+      ...params,
+      ...(principalId ? { principal_id: principalId } : {}),
+    }).then((reply) => {
+      if (active) setState(reply)
+    })
+    return () => {
+      active = false
+    }
+  }, [op, principalId, revision])
+
+  const revoke = async (revokeOp: IdentityOp | undefined, id: string) => {
+    if (!revokeOp) return
+    const reply = await invokeIdentity(revokeOp, { id })
+    setMutation(reply)
+    if (reply.kind === 'ready') setRevision((value) => value + 1)
+  }
+
+  const loadMore = async () => {
+    if (state?.kind !== 'ready' || !state.result.next_cursor) return
+    const next = await invokeIdentity<IdentityPage<ListedItem>>(op, {
+      after: state.result.next_cursor,
+      limit: 50,
+      ...(principalId ? { principal_id: principalId } : {}),
+    })
+    if (next.kind === 'ready') {
+      setState({
+        kind: 'ready',
+        result: { items: [...state.result.items, ...next.result.items], next_cursor: next.result.next_cursor },
+      })
+    } else setMutation(next)
+  }
+
+  const refresh = () => {
+    setRevision((value) => value + 1)
+  }
+
+  return { state, mutation, revoke, loadMore, refresh }
+}
+
+function ListPanel({
+  title,
+  op,
+  description,
+  principalId,
+  revokeOp,
+}: {
+  title: string
+  op: IdentityOp
+  description: string
+  principalId?: string
+  revokeOp?: IdentityOp
+}) {
+  const panel = useListPanel(op, principalId)
+  const loadingHint = requiresUnsetPrincipal(op, principalId)
+    ? 'Enter a principal id to inspect its records.'
+    : 'Loading…'
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {principalId && <p className="mb-2 text-xs text-muted-foreground">Principal: {principalId}</p>}
+        {panel.state !== null && (
+          <Button type="button" size="sm" variant="outline" className="mb-3" onClick={panel.refresh}>
+            Refresh
+          </Button>
+        )}
+        <ListPanelBody
+          state={panel.state}
+          revokeOp={revokeOp}
+          loadingHint={loadingHint}
+          onRevoke={(id) => {
+            void panel.revoke(revokeOp, id)
+          }}
+          onLoadMore={() => {
+            void panel.loadMore()
+          }}
+        />
+        {panel.mutation && (
+          <p role="status">{panel.mutation.kind === 'ready' ? 'Revocation confirmed.' : panel.mutation.message}</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function PrincipalRecordsPanel({ kind }: { kind: 'sessions' | 'api-keys' }) {
+  const [draft, setDraft] = useState('')
+  const [principalId, setPrincipalId] = useState('')
+  return (
+    <div className="space-y-3">
+      <form
+        className="flex gap-2"
+        onSubmit={(event) => {
+          event.preventDefault()
+          setPrincipalId(draft.trim())
+        }}
+      >
+        <Input
+          aria-label={`${kind === 'sessions' ? 'Session' : 'API key'} principal id`}
+          placeholder="Principal id"
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value)
+          }}
+        />
+        <Button type="submit" disabled={!draft.trim()}>
+          Load {kind}
+        </Button>
+      </form>
+      <ListPanel
+        title={kind === 'sessions' ? 'Sessions' : 'API keys'}
+        op={kind === 'sessions' ? 'identity.sessions.list' : 'identity.api_keys.list'}
+        principalId={principalId}
+        revokeOp={kind === 'sessions' ? 'identity.sessions.revoke' : 'identity.api_keys.revoke'}
+        description={
+          kind === 'sessions' ? 'Sessions for the selected principal.' : 'Metadata only; secrets are never displayed.'
+        }
+      />
+    </div>
+  )
+}
+
+function RoleGroupEditor({ kind }: { kind: 'role' | 'group' }) {
+  const [id, setId] = useState('')
+  const [name, setName] = useState('')
+  const [entries, setEntries] = useState('')
+  const [principalId, setPrincipalId] = useState('')
+  const [change, setChange] = useState<'add' | 'remove'>('add')
+  const [outcome, setOutcome] = useState<IdentityReply<unknown> | null>(null)
+  const [busy, setBusy] = useState(false)
+  const group = kind === 'group'
+  const title = group ? 'Group' : 'Role'
+  const upsert = async () => {
+    setBusy(true)
+    const values = entries
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+    const params = group ? { group_id: id, name, roles: values } : { role_id: id, name, scopes: values }
+    setOutcome(await invokeIdentity(group ? 'identity.groups.upsert' : 'identity.roles.upsert', params))
+    setBusy(false)
+  }
+  const membership = async () => {
+    setBusy(true)
+    const params = group
+      ? { principal_id: principalId, group_id: id, change }
+      : { principal_id: principalId, role_id: id, change }
+    setOutcome(
+      await invokeIdentity(group ? 'identity.groups.change_membership' : 'identity.roles.change_user_role', params),
+    )
+    setBusy(false)
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title} administration</CardTitle>
+        <CardDescription>Writes require administrator authority and fresh MFA.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Input
+            aria-label={`${title} id`}
+            placeholder={`${title} id`}
+            value={id}
+            onChange={(event) => {
+              setId(event.target.value)
+            }}
+          />
+          <Input
+            aria-label={`${title} name`}
+            placeholder="Display name"
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value)
+            }}
+          />
+          <Input
+            aria-label={group ? 'Group roles' : 'Role scopes'}
+            placeholder={group ? 'Roles, comma separated' : 'Scopes, comma separated'}
+            value={entries}
+            onChange={(event) => {
+              setEntries(event.target.value)
+            }}
+          />
+        </div>
+        <Button
+          type="button"
+          disabled={busy || !id.trim() || !name.trim()}
+          onClick={() => {
+            void upsert()
+          }}
+        >
+          Save {title.toLowerCase()}
+        </Button>
+        <div className="flex flex-wrap gap-2 border-t pt-3">
+          <Input
+            aria-label="Member principal id"
+            className="max-w-xs"
+            placeholder="Principal id"
+            value={principalId}
+            onChange={(event) => {
+              setPrincipalId(event.target.value)
+            }}
+          />
+          <select
+            aria-label="Membership action"
+            className="rounded border bg-background p-2"
+            value={change}
+            onChange={(event) => {
+              setChange(event.target.value as 'add' | 'remove')
+            }}
+          >
+            <option value="add">Add</option>
+            <option value="remove">Remove</option>
+          </select>
+          <Button
+            type="button"
+            disabled={busy || !id.trim() || !principalId.trim()}
+            onClick={() => {
+              void membership()
+            }}
+          >
+            Apply membership
+          </Button>
+        </div>
+        {outcome && (
+          <p role="status">
+            {outcome.kind === 'ready' ? `${title} change confirmed. Refresh the list.` : outcome.message}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function MappingDryRun() {
+  const [idpId, setIdpId] = useState('')
+  const [claimsText, setClaimsText] = useState('{"groups":[]}')
+  const [result, setResult] = useState<IdentityReply<{ roles: string[]; groups: string[]; scopes: string[] }> | null>(
+    null,
+  )
+  const run = async () => {
+    try {
+      const claims = JSON.parse(claimsText) as unknown
+      if (!claims || typeof claims !== 'object' || Array.isArray(claims)) throw new Error('Claims must be an object')
+      if (
+        !Object.values(claims).every(
+          (value) => Array.isArray(value) && value.every((item) => typeof item === 'string'),
+        )
+      ) {
+        throw new Error('Every claim must be a string array')
+      }
+      setResult(await invokeIdentity('identity.idps.mapping_dry_run', { idp_id: idpId, claims }))
+    } catch {
+      setResult({ kind: 'error', message: 'Enter a JSON object whose values are string arrays.' })
+    }
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Mapping rule dry run</CardTitle>
+        <CardDescription>
+          Preview the roles, groups and scopes a sample claim set would receive. This does not change an identity.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Input
+          aria-label="Identity provider id"
+          placeholder="Identity provider id"
+          value={idpId}
+          onChange={(e) => {
+            setIdpId(e.target.value)
+          }}
+        />
+        <textarea
+          aria-label="Sample claims JSON"
+          className="w-full rounded border bg-background p-2 font-mono text-sm"
+          rows={4}
+          value={claimsText}
+          onChange={(e) => {
+            setClaimsText(e.target.value)
+          }}
+        />
+        <Button
+          type="button"
+          disabled={!idpId.trim()}
+          onClick={() => {
+            void run()
+          }}
+        >
+          Evaluate mapping
+        </Button>
+        {result?.kind !== 'ready' && result !== null && <p role="status">{result.message}</p>}
+        {result?.kind === 'ready' && (
+          <dl className="text-sm space-y-1">
+            <dt>Roles</dt>
+            <dd>{result.result.roles.join(', ') || 'None'}</dd>
+            <dt>Groups</dt>
+            <dd>{result.result.groups.join(', ') || 'None'}</dd>
+            <dt>Scopes</dt>
+            <dd>{result.result.scopes.join(', ') || 'None'}</dd>
+          </dl>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function IdentityProviderEditor() {
+  const [idpId, setIdpId] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [kind, setKind] = useState<'oidc' | 'saml' | 'ldap' | 'scim'>('oidc')
+  const [configJson, setConfigJson] = useState('{}')
+  const [secretRef, setSecretRef] = useState('')
+  const [outcome, setOutcome] = useState<IdentityReply<unknown> | null>(null)
+  const save = async () => {
+    try {
+      const config = JSON.parse(configJson) as unknown
+      if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Invalid configuration')
+      setOutcome(
+        await invokeIdentity('identity.idps.upsert', {
+          idp_id: idpId.trim(),
+          kind,
+          display_name: displayName.trim(),
+          enabled: false,
+          config_json: configJson,
+          jit_policy: 'deny',
+          ...(secretRef.trim() ? { secret_ref: secretRef.trim() } : {}),
+        }),
+      )
+    } catch {
+      setOutcome({ kind: 'error', message: 'Configuration must be a JSON object.' })
+    }
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Configure identity provider</CardTitle>
+        <CardDescription>
+          Use a secret reference; do not paste credentials. New providers start disabled with just-in-time provisioning
+          denied until mapping rules are reviewed.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Input
+            aria-label="Provider id"
+            placeholder="Provider id"
+            value={idpId}
+            onChange={(event) => {
+              setIdpId(event.target.value)
+            }}
+          />
+          <Input
+            aria-label="Provider display name"
+            placeholder="Display name"
+            value={displayName}
+            onChange={(event) => {
+              setDisplayName(event.target.value)
+            }}
+          />
+        </div>
+        <select
+          aria-label="Provider kind"
+          className="rounded border bg-background p-2"
+          value={kind}
+          onChange={(event) => {
+            setKind(event.target.value as 'oidc' | 'saml' | 'ldap' | 'scim')
+          }}
+        >
+          <option value="oidc">OIDC</option>
+          <option value="saml">SAML</option>
+          <option value="ldap">LDAP</option>
+          <option value="scim">SCIM</option>
+        </select>
+        <Input
+          aria-label="Provider secret reference"
+          placeholder="Secret reference (optional)"
+          value={secretRef}
+          onChange={(event) => {
+            setSecretRef(event.target.value)
+          }}
+        />
+        <textarea
+          aria-label="Provider configuration JSON"
+          className="w-full rounded border bg-background p-2 font-mono text-sm"
+          rows={5}
+          value={configJson}
+          onChange={(event) => {
+            setConfigJson(event.target.value)
+          }}
+        />
+        <Button
+          type="button"
+          disabled={!idpId.trim() || !displayName.trim()}
+          onClick={() => {
+            void save()
+          }}
+        >
+          Save provider
+        </Button>
+        {outcome && (
+          <p role="status">{outcome.kind === 'ready' ? 'Provider saved. Refresh the list.' : outcome.message}</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+interface ModeStatus {
+  mode: string
+  epoch?: number
+}
+type LocalFallback = 'off' | 'break_glass' | 'full'
+
+/** Mode-transition state + the request, kept out of the panel's render body. */
+function useModeTransition() {
+  const [state, setState] = useState<IdentityReply<ModeStatus> | null>(null)
+  const [target, setTarget] = useState('')
+  const [fallback, setFallback] = useState<LocalFallback>('break_glass')
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [transition, setTransition] = useState<IdentityReply<unknown> | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void invokeIdentity<ModeStatus>('identity.mode.status').then((reply) => {
+      if (active) setState(reply)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const submit = async () => {
+    const params = target === 'external' ? { to: target, local_fallback: fallback } : { to: target }
+    const reply = await invokeIdentity('identity.mode.transition', params)
+    setTransition(reply)
+    if (reply.kind === 'ready') setState(await invokeIdentity<ModeStatus>('identity.mode.status'))
+  }
+
+  return { state, target, setTarget, fallback, setFallback, acknowledged, setAcknowledged, transition, submit }
+}
+
+function isTransitionDisabled(
+  acknowledged: boolean,
+  target: string,
+  state: IdentityReply<ModeStatus> | null,
+): boolean {
+  if (!acknowledged || !target) return true
+  return state?.kind !== 'ready' || target === state.result.mode
+}
+
+function ModePanel() {
+  const mode = useModeTransition()
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Security mode</CardTitle>
+        <CardDescription>
+          Mode transitions require a fresh MFA administrator session. A successful transition revokes existing
+          sessions.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {mode.state === null && <p role="status">Loading mode…</p>}
+        {mode.state !== null && mode.state.kind !== 'ready' && <p role="status">{mode.state.message}</p>}
+        {mode.state?.kind === 'ready' && (
+          <p>
+            Current mode: <strong>{mode.state.result.mode}</strong>
+          </p>
+        )}
+        <label className="block text-sm" htmlFor="target-mode">
+          Target mode
+        </label>
+        <select
+          id="target-mode"
+          className="rounded border bg-background p-2"
+          value={mode.target}
+          onChange={(e) => {
+            mode.setTarget(e.target.value)
+          }}
+        >
+          <option value="">Select a mode</option>
+          <option value="local">Local</option>
+          <option value="external">External</option>
+        </select>
+        {mode.target === 'external' && (
+          <select
+            aria-label="Local fallback"
+            className="rounded border bg-background p-2"
+            value={mode.fallback}
+            onChange={(event) => {
+              mode.setFallback(event.target.value as LocalFallback)
+            }}
+          >
+            <option value="off">No local fallback</option>
+            <option value="break_glass">Break glass only</option>
+            <option value="full">Full local fallback</option>
+          </select>
+        )}
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={mode.acknowledged}
+            onChange={(event) => {
+              mode.setAcknowledged(event.target.checked)
+            }}
+          />
+          I understand this transition revokes current sessions.
+        </label>
+        <Button
+          type="button"
+          disabled={isTransitionDisabled(mode.acknowledged, mode.target, mode.state)}
+          onClick={() => {
+            void mode.submit()
+          }}
+        >
+          Request transition
+        </Button>
+        {mode.transition && (
+          <p role="status">
+            {mode.transition.kind === 'ready' ? 'Transition completed. Sign in again.' : mode.transition.message}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function IssuerRotationPanel() {
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [result, setResult] = useState<IdentityReply<{ epoch: number; issuer_kid_current: string }> | null>(null)
+  const rotate = async () => {
+    setResult(await invokeIdentity<{ epoch: number; issuer_kid_current: string }>('identity.issuer.rotate'))
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Issuer key rotation</CardTitle>
+        <CardDescription>
+          Rotate the Graph OS signer with overlap. A fresh administrator MFA confirmation is required.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            onChange={(event) => {
+              setAcknowledged(event.target.checked)
+            }}
+          />
+          I understand issuer rotation changes the signing key.
+        </label>
+        <Button
+          type="button"
+          disabled={!acknowledged}
+          onClick={() => {
+            void rotate()
+          }}
+        >
+          Request issuer rotation
+        </Button>
+        {result && (
+          <p role="status">
+            {result.kind === 'ready'
+              ? `Issuer key rotated (epoch ${result.result.epoch}, key ${result.result.issuer_kid_current}).`
+              : result.message}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+interface ScimClient {
+  idp_id: string
+  principal_id: string
+  enabled: boolean
+}
+
+function ScimClientPanel() {
+  const [idpId, setIdpId] = useState('')
+  const [principalId, setPrincipalId] = useState('')
+  const [clients, setClients] = useState<IdentityReply<IdentityPage<ScimClient>> | null>(null)
+  const [outcome, setOutcome] = useState<IdentityReply<unknown> | null>(null)
+  const refresh = async () => {
+    setClients(await invokeIdentity<IdentityPage<ScimClient>>('identity.scim_clients.list'))
+  }
+  useEffect(() => {
+    void refresh()
+  }, [])
+  const bind = async () => {
+    const reply = await invokeIdentity('identity.scim_clients.upsert', {
+      idp_id: idpId.trim(),
+      principal_id: principalId.trim(),
+    })
+    setOutcome(reply)
+    if (reply.kind === 'ready') void refresh()
+  }
+  const remove = async (id: string) => {
+    const reply = await invokeIdentity('identity.scim_clients.remove', { idp_id: id })
+    setOutcome(reply)
+    if (reply.kind === 'ready') void refresh()
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>SCIM clients</CardTitle>
+        <CardDescription>Bind an enabled SCIM provider to an active service principal.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {clients === null && <p role="status">Loading SCIM clients…</p>}
+        {clients && clients.kind !== 'ready' && <p role="status">{clients.message}</p>}
+        {clients?.kind === 'ready' && (
+          <ul className="space-y-2">
+            {clients.result.items.map((client) => (
+              <li key={client.idp_id} className="flex items-center justify-between rounded border p-2">
+                <span>
+                  {client.idp_id}: <code>{client.principal_id}</code> ({client.enabled ? 'enabled' : 'disabled'})
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void remove(client.idp_id)
+                  }}
+                >
+                  Remove
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Input
+          aria-label="SCIM provider id"
+          placeholder="Provider id"
+          value={idpId}
+          onChange={(event) => {
+            setIdpId(event.target.value)
+          }}
+        />
+        <Input
+          aria-label="SCIM service principal id"
+          placeholder="Service principal id"
+          value={principalId}
+          onChange={(event) => {
+            setPrincipalId(event.target.value)
+          }}
+        />
+        <Button
+          type="button"
+          disabled={!idpId.trim() || !principalId.trim()}
+          onClick={() => {
+            void bind()
+          }}
+        >
+          Bind SCIM client
+        </Button>
+        {outcome && (
+          <p role="status">{outcome.kind === 'ready' ? 'SCIM client change confirmed.' : outcome.message}</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function AuditPanel() {
+  const [verified, setVerified] = useState<IdentityReply<{ valid: boolean; first_broken_seq?: number }> | null>(null)
+  const [exported, setExported] = useState<IdentityReply<IdentityPage<unknown>> | null>(null)
+  const verify = async () => {
+    setVerified(await invokeIdentity<{ valid: boolean; first_broken_seq?: number }>('identity.audit.verify'))
+  }
+  const exportPage = async () => {
+    const result = await invokeIdentity<IdentityPage<unknown>>('identity.audit.export', { limit: 500 })
+    setExported(result)
+    if (result.kind !== 'ready') return
+    const url = URL.createObjectURL(new Blob([JSON.stringify(result.result, null, 2)], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'identity-audit-page.json'
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+  return (
+    <div className="space-y-4">
+      <ListPanel title="Identity audit" op="identity.audit.list" description="Identity administration events." />
+      <Card>
+        <CardHeader>
+          <CardTitle>Audit integrity and export</CardTitle>
+          <CardDescription>Verify the chain or export a bounded page with its continuation cursor.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void verify()
+              }}
+            >
+              Verify audit chain
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void exportPage()
+              }}
+            >
+              Export first audit page
+            </Button>
+          </div>
+          {verified && (
+            <p role="status">
+              {verified.kind === 'ready'
+                ? verified.result.valid
+                  ? 'Audit chain verified.'
+                  : `Audit chain broken at sequence ${verified.result.first_broken_seq ?? 'unknown'}.`
+                : verified.message}
+            </p>
+          )}
+          {exported && exported.kind !== 'ready' && <p role="status">{exported.message}</p>}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
 export default function AdminView() {
   return (
@@ -30,28 +862,89 @@ export default function AdminView() {
           <ShieldCheck className="size-6" />
           Admin Console
         </h1>
-        <p className="text-muted-foreground text-sm">
-          Tenants, shard topology, RBAC and backup/PITR for the epistemic-graph engine.
-        </p>
+        <p className="text-sm text-muted-foreground">Graph OS identity, security and engine administration.</p>
       </div>
-
-      <Tabs defaultValue="tenants">
-        <TabsList>
-          <TabsTrigger value="tenants">Tenants</TabsTrigger>
-          <TabsTrigger value="shards">Shards</TabsTrigger>
-          <TabsTrigger value="rbac">RBAC</TabsTrigger>
-          <TabsTrigger value="backup">Backup / PITR</TabsTrigger>
+      <Tabs defaultValue="users">
+        <TabsList className="flex h-auto flex-wrap justify-start">
+          {[
+            'users',
+            'service-accounts',
+            'groups',
+            'roles',
+            'idps',
+            'sessions',
+            'api-keys',
+            'audit',
+            'security-mode',
+            'policy',
+            'tenants',
+            'shards',
+            'backup',
+          ].map((tab) => (
+            <TabsTrigger key={tab} value={tab}>
+              {tab.replaceAll('-', ' ')}
+            </TabsTrigger>
+          ))}
         </TabsList>
-        <TabsContent value="tenants" className="mt-4">
+        <TabsContent value="users">
+          <UserManagementView />
+        </TabsContent>
+        <TabsContent value="service-accounts">
+          <ListPanel
+            title="Service accounts"
+            op="identity.service_accounts.list"
+            description="Active service principals from Graph OS identity."
+          />
+        </TabsContent>
+        <TabsContent value="groups" className="space-y-4">
+          <ListPanel
+            title="Groups"
+            op="identity.groups.list"
+            description="Groups and memberships from Graph OS identity."
+          />
+          <RoleGroupEditor kind="group" />
+        </TabsContent>
+        <TabsContent value="roles" className="space-y-4">
+          <ListPanel
+            title="Roles and scopes"
+            op="identity.roles.list"
+            description="Roles and effective scope grants from Graph OS identity."
+          />
+          <RoleGroupEditor kind="role" />
+        </TabsContent>
+        <TabsContent value="idps" className="space-y-4">
+          <ListPanel
+            title="Identity providers"
+            op="identity.idps.list"
+            description="Configured external authorities."
+          />
+          <IdentityProviderEditor />
+          <MappingDryRun />
+          <ScimClientPanel />
+        </TabsContent>
+        <TabsContent value="sessions">
+          <PrincipalRecordsPanel kind="sessions" />
+        </TabsContent>
+        <TabsContent value="api-keys">
+          <PrincipalRecordsPanel kind="api-keys" />
+        </TabsContent>
+        <TabsContent value="audit">
+          <AuditPanel />
+        </TabsContent>
+        <TabsContent value="security-mode" className="space-y-4">
+          <ModePanel />
+          <IssuerRotationPanel />
+        </TabsContent>
+        <TabsContent value="policy">
+          <IdentityPolicyPanel />
+        </TabsContent>
+        <TabsContent value="tenants">
           <TenantsPanel />
         </TabsContent>
-        <TabsContent value="shards" className="mt-4">
+        <TabsContent value="shards">
           <ShardsPanel />
         </TabsContent>
-        <TabsContent value="rbac" className="mt-4">
-          <RbacPanel />
-        </TabsContent>
-        <TabsContent value="backup" className="mt-4">
+        <TabsContent value="backup">
           <BackupPanel />
         </TabsContent>
       </Tabs>
