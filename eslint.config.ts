@@ -130,7 +130,13 @@ export default defineConfig(
   {
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        projectService: {
+          // The route-metadata seam is plain Node ESM shared by the app and
+          // scripts/site-route-registry.mjs, so it sits outside tsconfig's
+          // TypeScript-only project. The default project still lints it with
+          // full type information instead of failing to parse it.
+          allowDefaultProject: ['src/lib/route-metadata-seam.mjs'],
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },
