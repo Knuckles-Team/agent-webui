@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { titleForMode, type AuthMode } from '@/lib/auth'
 import { NOT_FOUND_ROUTE, type RouteDef } from '@/lib/nav-registry'
 import { projectPageHead } from '@/lib/page-metadata'
 
@@ -59,10 +60,19 @@ function removeManagedHead(): void {
 }
 
 /** One projection for title, description, indexability, canonical, and share metadata. */
-export function PageHead({ route = NOT_FOUND_ROUTE, pathname }: { route?: RouteDef; pathname?: string }) {
+export function PageHead({
+  route = NOT_FOUND_ROUTE,
+  pathname,
+  authMode,
+}: {
+  route?: RouteDef
+  pathname?: string
+  /** The server-reported auth mode; `none` marks every title `[DEMO]`. */
+  authMode?: AuthMode | null
+}) {
   useEffect(() => {
     const projection = projectPageHead(route, pathname)
-    document.title = projection.title
+    document.title = titleForMode(projection.title, authMode)
     upsertMeta('description', projection.description)
     upsertMeta('robots', projection.robots)
     upsertMeta('agent-webui-page', projection.webmcpPageId)
@@ -96,7 +106,7 @@ export function PageHead({ route = NOT_FOUND_ROUTE, pathname }: { route?: RouteD
       // stale metadata in isolated route tests or if the shell is removed.
       removeManagedHead()
     }
-  }, [pathname, route])
+  }, [pathname, route, authMode])
 
   return null
 }

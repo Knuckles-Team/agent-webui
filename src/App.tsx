@@ -25,10 +25,12 @@
 import { useEffect, useMemo, useState, Suspense, lazy, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppSidebar } from './components/app-sidebar.tsx'
+import { AuthModeBanner } from './components/AuthModeBanner.tsx'
 import { ConsentBanner } from './components/ConsentBanner.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { PageHead } from './components/PageHead.tsx'
 import { ResponsiveLimitation } from './components/ResponsiveLimitation.tsx'
+import { SignInPanel } from './components/SignInPanel.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
 import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
@@ -318,6 +320,7 @@ function PrivateAppSurface({ route, currentView, ...routeContentProps }: Private
     <SidebarProvider defaultOpen>
       <AppSidebar />
       <div className="flex flex-col justify-center flex-1 h-screen overflow-hidden">
+        <AuthModeBanner identity={routeContentProps.identity} />
         {/* Mobile Header: Only visible on small screens */}
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:hidden">
           <SidebarTrigger className="-ml-1" />
@@ -347,6 +350,7 @@ interface AppSurfaceProps {
   isDashboard: boolean
   routeAccessDenied: boolean
   identity: Identity
+  identityLoading: boolean
   isObjectDetail: boolean
   objectId: string
   currentView: string
@@ -361,11 +365,15 @@ function AppSurface({
   isDashboard,
   routeAccessDenied,
   identity,
+  identityLoading,
   isObjectDetail,
   objectId,
   currentView,
 }: AppSurfaceProps) {
   if (isPublicRoute || isNotFound) return <PublicAppSurface pageRoute={pageRoute} />
+  // No principal (or a session still owing its second factor): the server's
+  // sign-in screens, never a page rendered under a guessed role.
+  if (!identityLoading && identity.needsSignIn) return <SignInPanel identity={identity} />
 
   return (
     <PrivateAppSurface
@@ -430,7 +438,11 @@ export default function App() {
               allowedActions={allowedActions}
             >
               <WebMcpProvider identity={identity} identityLoading={identityLoading}>
-                <PageHead route={pageRoute} pathname={new URL(currentRoute, window.location.origin).pathname} />
+                <PageHead
+                  route={pageRoute}
+                  pathname={new URL(currentRoute, window.location.origin).pathname}
+                  authMode={identity.raw?.mode}
+                />
                 <ConsentBanner />
                 <AppSurface
                   pageRoute={pageRoute}
@@ -441,6 +453,7 @@ export default function App() {
                   isDashboard={isDashboard}
                   routeAccessDenied={routeAccessDenied}
                   identity={identity}
+                  identityLoading={identityLoading}
                   isObjectDetail={isObjectDetail}
                   objectId={objectId}
                   currentView={currentView}

@@ -82,10 +82,10 @@ function AtlasRouteGrid({ routes, loading = false }: { routes: RouteDef[]; loadi
 
 export function AtlasWorkspace() {
   const { identity, loading } = useIdentity()
-  // `useIdentity` starts with a deliberately unresolved admin-shaped identity for
-  // local development. Do not let that sentinel leak privileged Atlas links while
-  // the signed-in role is still being resolved; server-side authorization remains
-  // authoritative, but the index should be fail-closed as well.
+  // `useIdentity` starts unresolved (least privilege) until `/auth/session`
+  // answers. Do not render role-filtered Atlas links while the signed-in role
+  // is still being resolved; server-side authorization remains authoritative,
+  // but the index should be fail-closed as well.
   const guidedRoutes = loading
     ? []
     : routesForAtlas('guided').filter((route) => roleAtLeast(identity.role, route.minRole))

@@ -1,114 +1,131 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import AdminView from '@/components/views/AdminView'
 import { renderWithProviders } from '@/__tests__/fixtures'
 
-const sampleStats = {
-  total_nodes: 4200,
-  total_relationships: 8800,
-  by_type: { Memory: 50, Article: 30 },
+function reply(status: number, body: unknown): Promise<Response> {
+  return Promise.resolve({
+    ok: status < 400,
+    status,
+    json: async () => body,
+    headers: new Headers({ 'content-type': 'application/json' }),
+  } as Response)
 }
 
-const sampleShards = {
-  mode: 'sharded',
-  default_graph: '__commons__',
-  endpoints: [
-    { endpoint: 'ipc:///run/eg.sock', local: true, reachable: true, breaker: 'closed' },
-    { endpoint: 'tcp://shard-2:9701', local: false, reachable: false, breaker: 'open' },
-  ],
+const META = { registry_digest: 'test-digest', api_version: 'v1' }
+
+/** A successful operation envelope, with the `meta` block the envelope schema requires. */
+function okReply(result: unknown): Promise<Response> {
+  return reply(200, { ok: true, result, meta: META })
 }
 
-const sampleDaemon = { role: 'host', running: true, queue_depth: 3 }
-const sampleCodeInstances = { source_systems: ['gitlab/agent-packages', 'gitlab/services'] }
+// The typed Graph OS transport reads a CSRF token from `/auth/session` before
+// every operation call, so every fetcher below must answer it with a valid
+// authenticated session -- a 404 or an unauthenticated session there blocks
+// the operation call before it is ever attempted.
+const AUTHENTICATED_SESSION = { authenticated: true, csrf_token: 'test-csrf-token' }
 
-/**
- * Mock `fetch` keyed by URL substring, returning the canonical `{status,result}`
- * envelope for the gateway routes and bare JSON for the enhanced/dashboard
- * routes — matching how the real backend answers each surface.
- */
-function mockFetchByUrl(map: Record<string, { body: unknown; status?: number; wrap?: boolean }>) {
-  return vi.fn((input: RequestInfo | URL) => {
-    const url = typeof input === 'string' ? input : input.toString()
-    for (const [pattern, cfg] of Object.entries(map)) {
-      if (url.includes(pattern)) {
-        const payload = cfg.wrap ? { status: 'ok', result: cfg.body } : cfg.body
-        return Promise.resolve({
-          ok: (cfg.status ?? 200) < 400,
-          status: cfg.status ?? 200,
-          json: () => Promise.resolve(payload),
-          text: () => Promise.resolve(''),
-        }) as unknown as Promise<Response>
-      }
-    }
-    // Unknown routes → 404 so the gateway helper resolves `unavailable` (mirrors
-    // the RBAC / backup probe degrading to the read-only placeholder).
-    return Promise.resolve({
-      ok: false,
-      status: 404,
-      json: () => Promise.resolve({}),
-      text: () => Promise.resolve('not found'),
-    }) as unknown as Promise<Response>
-  })
+/** Wrap a fetcher that only needs to answer operation calls: `/auth/session`
+ *  is handled here so every test does not have to repeat that branch. */
+function withSession(opFetcher: (url: string) => Promise<Response>) {
+  return vi.fn((url: string) => (url === '/auth/session' ? reply(200, AUTHENTICATED_SESSION) : opFetcher(url)))
 }
 
-describe('AdminView Component', () => {
+describe('AdminView identity tabs', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
-    global.fetch = mockFetchByUrl({
-      '/api/enhanced/graph/stats': { body: sampleStats },
-      '/api/dashboard/daemon/shards': { body: sampleShards },
-      '/api/dashboard/daemon/status': { body: sampleDaemon },
-      '/api/enhanced/code/instances': { body: sampleCodeInstances },
-      // /api/graph/configure (rbac_list / backup_status) intentionally 404 →
-      // placeholder path.
-    }) as unknown as typeof fetch
+    vi.stubGlobal(
+      'fetch',
+      withSession((url) => (url.includes('/api/v1/ops/') ? reply(404, {}) : reply(200, { authenticated: false }))),
+    )
   })
 
-  it('renders the four admin tabs', () => {
+  it('renders the identity and engine admin destinations', () => {
     renderWithProviders(<AdminView />)
-
-    expect(screen.getByRole('tab', { name: /tenants/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /shards/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /rbac/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /backup/i })).toBeInTheDocument()
+    for (const label of [
+      'users',
+      'groups',
+      'roles',
+      'idps',
+      'sessions',
+      'api keys',
+      'audit',
+      'security mode',
+      'tenants',
+      'shards',
+      'backup',
+    ]) {
+      expect(screen.getByRole('tab', { name: label })).toBeInTheDocument()
+    }
   })
 
-  it('loads real tenant stats + indexed source tenants on mount', async () => {
-    renderWithProviders(<AdminView />)
-
-    await waitFor(() => {
-      // total_nodes 4200 formatted as "4.2k" by the panel's fmt().
-      expect(screen.getByText('4.2k')).toBeInTheDocument()
-    })
-    // Active graph name + an indexed source tenant.
-    expect(screen.getByText('__commons__')).toBeInTheDocument()
-    await waitFor(() => {
-      expect(screen.getByText('gitlab/agent-packages')).toBeInTheDocument()
-    })
-  })
-
-  it('shows shard topology + per-shard health when the Shards tab is opened', async () => {
+  it('requires an explicit principal before listing key metadata', async () => {
     const { user } = renderWithProviders(<AdminView />)
-
-    await user.click(screen.getByRole('tab', { name: /shards/i }))
-
+    await user.click(screen.getByRole('tab', { name: 'api keys' }))
+    expect(screen.getByText(/Enter a principal id/)).toBeInTheDocument()
+    await user.type(screen.getByLabelText('API key principal id'), 'u-1')
+    await user.click(screen.getByRole('button', { name: 'Load api-keys' }))
     await waitFor(() => {
-      expect(screen.getByTestId('admin-shards-panel')).toBeInTheDocument()
-      expect(screen.getByText('ipc:///run/eg.sock')).toBeInTheDocument()
+      expect(screen.getByText(/not available on this server/)).toBeInTheDocument()
     })
-    // Reachability derived from the mocked topology: 1 of 2 shards up.
-    expect(screen.getByText('1/2')).toBeInTheDocument()
-    expect(screen.getByText('tcp://shard-2:9701')).toBeInTheDocument()
   })
 
-  it('degrades RBAC to a read-only placeholder when the REST twin is not wired', async () => {
+  it('requires an explicit principal before listing sessions', async () => {
+    const fetcher = withSession((url) =>
+      url.includes('identity.sessions.list') ? okReply({ items: [], next_cursor: null }) : reply(404, {}),
+    )
+    vi.stubGlobal('fetch', fetcher)
     const { user } = renderWithProviders(<AdminView />)
-
-    await user.click(screen.getByRole('tab', { name: /rbac/i }))
-
+    await user.click(screen.getByRole('tab', { name: 'sessions' }))
+    expect(screen.getByText(/Enter a principal id/)).toBeInTheDocument()
+    expect(fetcher.mock.calls.some(([url]) => url.includes('identity.sessions.list'))).toBe(false)
+    await user.type(screen.getByLabelText('Session principal id'), 'u-1')
+    await user.click(screen.getByRole('button', { name: 'Load sessions' }))
     await waitFor(() => {
-      expect(screen.getByText(/not exposed over REST yet/i)).toBeInTheDocument()
+      expect(fetcher.mock.calls.some(([url]) => url.includes('identity.sessions.list'))).toBe(true)
     })
-    expect(screen.getByText(/read-only · not wired/i)).toBeInTheDocument()
+  })
+
+  it('revokes by the opaque session handle and does not render a token', async () => {
+    const fetcher = withSession((url) =>
+      url.includes('identity.sessions.list')
+        ? okReply({ items: [{ handle: 'opaque123456' }], next_cursor: null })
+        : okReply({ changed: true }),
+    )
+    vi.stubGlobal('fetch', fetcher)
+    const { user } = renderWithProviders(<AdminView />)
+    await user.click(screen.getByRole('tab', { name: 'sessions' }))
+    await user.type(screen.getByLabelText('Session principal id'), 'u-1')
+    await user.click(screen.getByRole('button', { name: 'Load sessions' }))
+    await user.click(await screen.findByRole('button', { name: 'Revoke' }))
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/v1/ops/identity.sessions.revoke',
+      expect.objectContaining({ body: JSON.stringify({ id: 'opaque123456' }) }),
+    )
+  })
+
+  it('requires an explicit acknowledgement and surfaces MFA step-up for mode transitions', async () => {
+    const fetcher = withSession((url) =>
+      url.includes('identity.mode.status')
+        ? okReply({ mode: 'none', epoch: 1 })
+        : reply(428, {
+            ok: false,
+            error: { code: 'STEP_UP_REQUIRED', source: 'graphos', message: 'step-up required', retryable: false },
+            meta: META,
+          }),
+    )
+    vi.stubGlobal('fetch', fetcher)
+    const { user } = renderWithProviders(<AdminView />)
+    await user.click(screen.getByRole('tab', { name: 'security mode' }))
+    await waitFor(() => {
+      expect(screen.getByText('none')).toBeInTheDocument()
+    })
+    await user.selectOptions(screen.getByLabelText('Target mode'), 'local')
+    expect(screen.getByRole('button', { name: 'Request transition' })).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: /revokes current sessions/i }))
+    await user.click(screen.getByRole('button', { name: 'Request transition' }))
+    await waitFor(() => {
+      expect(screen.getByText('A fresh administrator MFA confirmation is required.')).toBeInTheDocument()
+    })
   })
 })
