@@ -37,6 +37,9 @@ browser -> React application -> Agent WebUI FastAPI host
 - `src/components/`: views, UI primitives, renderers, graphs, and workflows.
 - `src/hooks/`: reusable browser behavior and stateful integrations.
 - `src/lib/`: typed clients, protocol adapters, validation, and state helpers.
+- `src/lib/nav-registry.ts`: the single declarative route registry
+  (`RouteDef`, `ROUTES`/`PUBLIC_ROUTES`/`ROUTE_REGISTRY`). Adding a page means
+  adding one entry here; `App.tsx` mounts every route generically from it.
 - `agent/agent_webui/server.py`: FastAPI composition, middleware, and assets.
 - `agent/agent_webui/api_extensions.py`: canonical service browser facades.
 - `agent/agent_webui/oidc_session.py`: OIDC flow and protected sessions.
