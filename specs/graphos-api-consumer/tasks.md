@@ -9,6 +9,7 @@
 - [ ] Migrate remaining prompts, SDD, KB, sessions, goals, MCP and model families.
 - [ ] Remove replaced host domain routes and AU-internal imports; add static architecture guard.
 - [ ] Run all test-spec gates on exact merged commit, attach route census and CI/browser evidence, then assess acceptance.
-- [x] Log the sanitized typed error code in `_log_failure` and add tests/test_log_failure_error_code.py (WEBUI-API-R004, APIUI-07).
+- [ ] WEBUI-API-R004: Mint a per-request correlation id in `RequestObservabilityMiddleware`. **State: Building.** Remaining: served log check after rollout.
+- [x] Log the sanitized typed error code in `_log_failure` and add tests/test_log_failure_error_code.py (WEBUI-API-R005).
 
-No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `WEBUI-API-R001`, `WEBUI-API-R002`, `WEBUI-API-R003`, `APIUI-01`, `APIUI-02`, `APIUI-03`, `APIUI-04`, `APIUI-05`, `APIUI-06`.
+No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `WEBUI-API-R001`, `WEBUI-API-R002`, `WEBUI-API-R003`, `WEBUI-API-R004`, `WEBUI-API-R005`, `APIUI-01`, `APIUI-02`, `APIUI-03`, `APIUI-04`, `APIUI-05`, `APIUI-06`.

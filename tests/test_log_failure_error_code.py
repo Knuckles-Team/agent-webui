@@ -1,4 +1,4 @@
-"""WEBUI-API-R004: failure logs carry a sanitized typed error code."""
+"""WEBUI-API-R005: failure logs carry a sanitized typed error code."""
 
 from __future__ import annotations
 
@@ -39,7 +39,12 @@ def test_malformed_or_missing_code_logs_none(caplog):
     assert _logged(caplog, ValueError('boom')).endswith('error_code=none')
 
 
+class _CodedError(OSError):
+    def __init__(self, code: str) -> None:
+        super().__init__('boom')
+        self.code = code
+
+
 def test_plain_code_attribute_is_used(caplog):
-    error = OSError('boom')
-    error.code = 'UNAVAILABLE'
+    error = _CodedError('UNAVAILABLE')
     assert _logged(caplog, error).endswith('error_code=UNAVAILABLE')
