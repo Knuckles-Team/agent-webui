@@ -197,4 +197,3 @@ ignore = ["E402", "E501", "B008", "B904", "F841"]
 python_version = "3.10"
 ignore_missing_imports = true
 check_untyped_defs = true
-
