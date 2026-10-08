@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -27,6 +27,28 @@ vi.mock('../../Chat', async () => {
 })
 
 describe('ChatPanel', () => {
+  it('preserves the drawer and focus when a nested control has consumed Escape', async () => {
+    const user = userEvent.setup()
+    render(
+      <PageContextProvider route="/graph" view="graph">
+        <ChatPanel currentView="graph" isPrimary={false} />
+      </PageContextProvider>,
+    )
+    const open = screen.getByRole('button', { name: 'Open chat' })
+    await user.click(open)
+    const close = screen.getByRole('button', { name: 'Close chat' })
+    const consumedEscape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    consumedEscape.preventDefault()
+    fireEvent(close, consumedEscape)
+    expect(screen.getByRole('complementary', { name: 'Agent Chat' })).toBeInTheDocument()
+    expect(close).toHaveFocus()
+    expect(open).toHaveAttribute('aria-expanded', 'true')
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('complementary', { name: 'Agent Chat' })).not.toBeInTheDocument()
+    expect(open).toHaveFocus()
+  })
+
   it('keeps one Chat instance mounted when switching between drawer and primary layouts', () => {
     lifecycle.mounts = 0
     lifecycle.unmounts = 0
