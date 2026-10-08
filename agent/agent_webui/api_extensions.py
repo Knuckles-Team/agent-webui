@@ -235,15 +235,33 @@ class HTTPException(FastAPIHTTPException):
 def _log_failure(
     operation: str, error: BaseException, *, level: int = logging.ERROR
 ) -> None:
-    """Log only a stable operation label and exception type."""
+    """Log a stable operation label, exception type and sanitized error code.
+
+    The code comes from a typed attribute, never from the message text. A code
+    that is not a short upper-case token is logged as ``none`` (WEBUI-API-R004).
+    """
 
     safe_operation = re.sub(r'[^a-z0-9_.-]+', '_', operation.lower())[:64]
     logger.log(
         level,
-        '%s failed: error_type=%s',
+        '%s failed: error_type=%s error_code=%s',
         safe_operation or 'operation',
         type(error).__name__,
+        _safe_error_code(error),
     )
+
+
+_ERROR_CODE_SHAPE = re.compile(r'[A-Z][A-Z0-9_]{0,63}')
+
+
+def _safe_error_code(error: BaseException) -> str:
+    """Return the typed engine error code when it is a short upper-case token."""
+
+    for attribute in ('engine_error_code', 'code'):
+        code = getattr(error, attribute, None)
+        if isinstance(code, str) and _ERROR_CODE_SHAPE.fullmatch(code):
+            return code
+    return 'none'
 
 
 def _dir_fd_capable() -> bool:

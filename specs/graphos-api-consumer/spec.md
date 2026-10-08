@@ -20,6 +20,7 @@ All domain and administrative actions in the browser use one typed, versioned Gr
 | APIUI-04 | Migrate prompts, SDD, knowledge base, sessions, goals, MCP servers/tools and model management operations | WEBUI-API-R003 | Route-census and contract tests |
 | APIUI-05 | Remove direct AU-internal imports and domain handlers from the WebUI host once replacement operations are proven; preserve browser-local endpoints by explicit inventory | AU-BOUNDARY-R039, WEBUI-API-R001, WEBUI-API-R002, WEBUI-API-R003 | Static dependency and route-census gate |
 | APIUI-06 | Preserve shared auth, credential delegation, streaming/cancel and error handling; never expose a Graph OS service bearer to JavaScript | all | Host integration and adversarial browser tests |
+| APIUI-07 | Log each host failure with its operation label, exception type and sanitized typed error code. The code comes from `engine_error_code` or `code`, never from message text. | WEBUI-API-R004 | Unit tests on `_log_failure` |
 
 User stories: a tenant reader can browse graph and Atlas results without changing identity; an operator can preview and confirm an effect with its exact plan reference; a contributor can regenerate the client from a public schema and see CI fail if a required operation disappears. Unsupported operations present a typed unavailable state rather than silently falling back to a legacy direct route.
 
