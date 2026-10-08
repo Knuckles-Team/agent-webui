@@ -68,7 +68,7 @@ bootstrap skill, together with the [SDD full lifecycle](https://github.com/Knuck
 - [`FIN-UI-001` Finance Asset Manager](finance-asset-manager/spec.md) — FIN-UI-R001 and FIN-UI-R002 Markets and shared chart; specified, implementation unverified.
 - [`WEBUI-DESIGN-001` Browser design system](browser-design-system/spec.md) — WEBUI-DESIGN-R001 accessible UI primitives, visual contracts and design-guidance assimilation.
 - [`WEBUI-DECIDE-001` Decision evidence](decision-evidence/spec.md) — WEBUI-DECIDE-R001 calibration dashboard and governed decision explanation.
-- [`WEBUI-API-001` Graph OS API consumer](graphos-api-consumer/spec.md) — WEBUI-API-R001–WEBUI-API-R003 generated client and domain-family migration.
+- [`WEBUI-API-001` Graph OS API consumer](graphos-api-consumer/spec.md) — WEBUI-API-R001–WEBUI-API-R004 generated client and domain-family migration.
 - [`WEBUI-APPS-001` Graph OS app surface](graphos-app-surface/spec.md) — application routes and integrated navigation.
 - [`WEBUI-IDENTITY-001` Identity and access](identity-access/spec.md) — authentication state and tenant-safe browser behavior.
 - [`delete-past-chats.md`](delete-past-chats.md), [`update-color-scheme.md`](update-color-scheme.md), and [`update-tools-dropdown.md`](update-tools-dropdown.md) are existing brief feature drafts. Preserve them; expand to the shared feature directory format when resumed.
