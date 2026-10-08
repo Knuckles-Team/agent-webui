@@ -11,10 +11,11 @@
  * server-discovered tool rather than a hardcoded URI).
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import McpAppsView from '@/components/views/McpAppsView'
 import { MCPProvider } from '@/lib/mcp-context'
-import { MAX_CATALOG_TOOLS, MCP_APP_RESOURCE_ROUTE, mcpServerToolsRoute } from '@/lib/mcp-client'
+import { MAX_CATALOG_TOOLS, MCP_APP_RESOURCE_ROUTE, MCP_TOOL_CALL_ROUTE, mcpServerToolsRoute } from '@/lib/mcp-client'
 
 // The route is paginated; the client asks for its whole documented budget
 // in one page so MCP Apps discovery is never narrowed to the
@@ -62,42 +63,100 @@ const TOOL_INVENTORY = [
     input_schema: {},
     enabled: true,
   },
+  // agent-utilities PR #54's condensed contract: `ask`/`act` are themselves
+  // listed catalog tools (with real schemas) once the server adopts it, so
+  // `collectAllowedToolSchemas` picks them up like any other discovered tool.
+  {
+    name: 'ask',
+    description: 'Read-oriented intent tool (find/query/explain).',
+    input_schema: { type: 'object', properties: { action: { type: 'string' }, params: { type: 'object' } } },
+    enabled: true,
+  },
+  {
+    name: 'act',
+    description: 'Write/execute-oriented intent tool, reaches graph_jobs/graph_traces operations.',
+    input_schema: { type: 'object', properties: { action: { type: 'string' }, params: { type: 'object' } } },
+    enabled: true,
+  },
 ]
+
+/** The backend's paginated tool-inventory envelope, with the TRUE total. */
+function toolsRouteResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      server: 'graph-os',
+      tools: TOOL_INVENTORY,
+      total: 37,
+      offset: 0,
+      limit: MAX_CATALOG_TOOLS,
+      has_more: true,
+    }),
+    { status: 200 },
+  )
+}
+
+function resourceRouteResponse(body: Record<string, unknown> | undefined): Response {
+  return new Response(
+    JSON.stringify({
+      status: 'success',
+      result: { uri: (body?.uri as string) ?? '', html: APP_HTML, mimeType: 'text/html' },
+    }),
+    { status: 200 },
+  )
+}
+
+function toolCallRouteResponse(): Response {
+  return new Response(JSON.stringify({ status: 'success', result: { status: 'working', jobId: 'orch-1' } }), {
+    status: 200,
+  })
+}
+
+/** Route -> handler dispatch table (each route's own response shape stays a
+ * flat, independently readable function instead of a growing if/else chain). */
+const ROUTE_HANDLERS: Record<string, (body: Record<string, unknown> | undefined) => Response> = {
+  [TOOLS_ROUTE]: toolsRouteResponse,
+  [MCP_APP_RESOURCE_ROUTE]: resourceRouteResponse,
+  [MCP_TOOL_CALL_ROUTE]: toolCallRouteResponse,
+}
 
 function mockFetch() {
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = urlOf(input)
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined
     calls.push({ method: init?.method ?? 'GET', url, body })
+    const handler = ROUTE_HANDLERS[url]
+    return Promise.resolve(handler ? handler(body) : new Response('not found', { status: 404 }))
+  })
+}
 
-    if (url === TOOLS_ROUTE) {
-      // The backend's paginated envelope, with the TRUE total.
-      return Promise.resolve(
-        new Response(
-          JSON.stringify({
-            server: 'graph-os',
-            tools: TOOL_INVENTORY,
-            total: 37,
-            offset: 0,
-            limit: MAX_CATALOG_TOOLS,
-            has_more: true,
-          }),
-          { status: 200 },
-        ),
-      )
-    }
-    if (url === MCP_APP_RESOURCE_ROUTE) {
-      return Promise.resolve(
-        new Response(
-          JSON.stringify({
-            status: 'success',
-            result: { uri: (body?.uri as string) ?? '', html: APP_HTML, mimeType: 'text/html' },
-          }),
-          { status: 200 },
-        ),
-      )
-    }
-    return Promise.resolve(new Response('not found', { status: 404 }))
+interface PostedMessage {
+  message: unknown
+  targetOrigin: unknown
+}
+
+const postMessageRestorers: (() => void)[] = []
+
+/** Capture what the bridge posts INTO a launched app's frame (mirrors
+ * `McpAppHost.test.tsx`'s `recordPosts`): the bridge holds the frame's
+ * `Window` and calls `postMessage` on it directly, so the recorder replaces
+ * that method on the very window the bridge bound to. */
+function recordPosts(frame: HTMLIFrameElement): PostedMessage[] {
+  const win = frame.contentWindow as Window & { postMessage: (...args: unknown[]) => void }
+  const original = win.postMessage
+  const posted: PostedMessage[] = []
+  win.postMessage = (message: unknown, targetOrigin: unknown) => {
+    posted.push({ message, targetOrigin })
+  }
+  postMessageRestorers.push(() => {
+    win.postMessage = original
+  })
+  return posted
+}
+
+/** Send a message AS the app's iframe (exact window identity, as the bridge requires). */
+function postFromApp(frame: HTMLIFrameElement, data: unknown): void {
+  act(() => {
+    window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow }))
   })
 }
 
@@ -116,6 +175,7 @@ describe('McpAppsView (wiring)', () => {
   })
 
   afterEach(() => {
+    while (postMessageRestorers.length > 0) postMessageRestorers.pop()?.()
     vi.unstubAllGlobals()
     vi.clearAllMocks()
   })
@@ -215,6 +275,35 @@ describe('McpAppsView (wiring)', () => {
     )
     renderMcpAppsView()
     expect(await screen.findByText(/could not be fetched/i)).toBeInTheDocument()
+  })
+
+  /** agent-utilities PR #54 condenses the served MCP contract to
+   * `ask`/`find`/`write`/`act`/`manage`/`why`; `graph_jobs`/`graph_traces`
+   * become operations reached through `ask`/`act` rather than listed tools.
+   * This host's allow-list for `graph_task_progress_app` must honor `ask`
+   * and `act` end-to-end -- not merely list them -- so a call for either
+   * reaches the real `tools/call` wire instead of being denied by policy. */
+  it.each(['ask', 'act'])('allows the condensed intent tool %s through to the real tools/call wire', async (name) => {
+    renderMcpAppsView()
+    const card = await screen.findByTestId('mcp-app-card-graph_task_progress_app')
+    card.click()
+    const frame = await findLaunchedFrame()
+    await waitFor(() => {
+      expect(frame).toHaveAttribute('data-mcp-app-attached', 'true')
+    })
+
+    const posted = recordPosts(frame)
+    postFromApp(frame, { type: 'mcpapp/ready' })
+    postFromApp(frame, { type: 'mcpapp/tool-call', id: 'call-1', name, arguments: { action: 'status' } })
+
+    await waitFor(() => {
+      expect(calls.some((c) => c.url === MCP_TOOL_CALL_ROUTE && c.body?.tool === name)).toBe(true)
+    })
+    await waitFor(() => {
+      expect(posted).toContainEqual(
+        expect.objectContaining({ message: expect.objectContaining({ type: 'mcpapp/tool-result', id: 'call-1' }) }),
+      )
+    })
   })
 
   it('is a renderable default export that mounts without throwing', () => {

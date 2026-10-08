@@ -27,10 +27,19 @@ import { DEFAULT_MCP_SERVER, type McpToolDescriptor } from '@/lib/mcp-client'
 import { parseMcpUiMeta, type McpUiMeta } from '@/lib/mcp-apps/types'
 import { useMCP } from '@/lib/mcp-context'
 
-/** This host's own tool-call allow-list per known MCP Apps entry-point tool. */
+/**
+ * This host's own tool-call allow-list per known MCP Apps entry-point tool.
+ *
+ * agent-utilities PR #54 condenses graph-os's served MCP contract down to
+ * `ask`/`find`/`write`/`act`/`manage`/`why`; `graph_jobs`/`graph_traces` are no
+ * longer listed tools themselves -- they are operations reached through
+ * `ask`/`act` (e.g. `action: 'graph_jobs.<op>'` + `params`). Allow `ask` and
+ * `act` so these apps keep working against a post-#54 server, while keeping
+ * the old two tool names for compatibility with a pre-#54 server.
+ */
 const KNOWN_APP_TOOL_POLICY: Record<string, string[]> = {
-  graph_task_progress_app: ['graph_jobs'],
-  graph_trace_waterfall_app: ['graph_traces'],
+  graph_task_progress_app: ['graph_jobs', 'ask', 'act'],
+  graph_trace_waterfall_app: ['graph_traces', 'ask', 'act'],
 }
 
 interface LaunchableApp {
