@@ -12,7 +12,8 @@
     "APIUI-03",
     "APIUI-04",
     "APIUI-05",
-    "APIUI-06"
+    "APIUI-06",
+    "WEBUI-API-R005"
   ],
   "delivery_state": "SPECIFIED",
   "acceptance_state": "NOT_AUDITED",
@@ -110,6 +111,13 @@
       "title": "Shared auth and streaming are preserved without exposing a service bearer",
       "delivery_state": "SPECIFIED",
       "evidence": []
+    },
+    {
+      "id": "WEBUI-API-R005",
+      "title": "Failure logs carry a sanitized typed error code",
+      "delivery_state": "BUILDING",
+      "evidence": [],
+      "remaining": "Merge the PR."
     }
   ]
 }
