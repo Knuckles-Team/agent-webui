@@ -66,6 +66,8 @@ export function useConversationIdFromUrl(): [string, (id: string) => void] {
       if (nextId !== '/') persistActiveConversation(nextId)
     }
 
+    // Adopt an initial deep link before workspace navigation drops its URL context.
+    handleNavigation()
     window.addEventListener('popstate', handleNavigation)
     window.addEventListener('history-state-changed', handleNavigation)
     window.addEventListener(ACTIVE_CONVERSATION_CHANGED_EVENT, handleNavigation)

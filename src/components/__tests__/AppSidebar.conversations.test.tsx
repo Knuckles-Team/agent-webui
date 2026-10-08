@@ -63,3 +63,42 @@ describe('deleting conversations from the sidebar', () => {
     expect(window.location.search).toBe('?conversation=%2Fsession-2')
   })
 })
+
+describe('conversation deep links across workspace navigation', () => {
+  it.each([
+    ['/chat?conversation=%2Fsession-1', null],
+    ['/session-1', null],
+    ['/chat?conversation=%2Fsession-1', '/older-session'],
+    ['/session-1', '/older-session'],
+  ])(
+    'retains %s with prior selection %s across repeated navigation and remount',
+    function retainsDeepLink(path, stored) {
+      window.history.replaceState({}, '', path)
+      if (stored) window.localStorage.setItem(ACTIVE_CONVERSATION_STORAGE_KEY, stored)
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockImplementation(() => Promise.resolve(new Response('[]', { status: 200 }))),
+      )
+      const panel = (
+        <SidebarProvider>
+          <AppSidebar />
+          <ActiveConversation />
+        </SidebarProvider>
+      )
+      const view = render(panel)
+      expect(screen.getByLabelText('Active conversation')).toHaveTextContent('/session-1')
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        fireEvent.click(screen.getByRole('link', { name: 'Atlas' }))
+        expect(window.location.pathname).toBe('/explore')
+        expect(screen.getByLabelText('Active conversation')).toHaveTextContent('/session-1')
+        fireEvent.click(screen.getByRole('link', { name: 'Chat' }))
+        expect(window.location.pathname).toBe('/chat')
+        expect(screen.getByLabelText('Active conversation')).toHaveTextContent('/session-1')
+      }
+      view.unmount()
+      render(panel)
+      expect(screen.getByLabelText('Active conversation')).toHaveTextContent('/session-1')
+      expect(window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY)).toBe('/session-1')
+    },
+  )
+})
