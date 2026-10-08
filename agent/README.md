@@ -7,7 +7,7 @@ The packaged FastAPI boundary and built React assets for
 
 This package creates the browser-facing ASGI application. It owns WebUI routes,
 session behavior, security middleware, and static application serving. GraphOS
-injects the platform gateway and verified runtime context through the public
+injects the platform gateway and checked runtime context through the public
 `ApplicationComposer` seam.
 
 ## Key Capabilities

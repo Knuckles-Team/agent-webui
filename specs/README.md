@@ -3,7 +3,7 @@
 This tracked `specs/` directory is the public build contract for **WEBUI** owned work. Every
 spec must contain the behavior, architecture, interfaces, tests, quality gates, and acceptance
 criteria needed to implement it from this repository. External program notes may inform a draft,
-but no private document or local workspace path is required to build or verify a public spec.
+but no private document or local workspace path is required to build or check a public spec.
 Delivery status is recorded here with exact merged revision and test evidence.
 
 ## Structure
@@ -37,7 +37,7 @@ when existing code has not received an exact-revision audit. Prose labels such a
 or `IN REVIEW` may describe current work, but they do not prove delivery.
 
 `LANDED` requires a public merged-head receipt for the exact owning-repository revision.
-`ACCEPTED` additionally requires the checked-in test and consumer or release receipts.
+`ACCEPTED` also requires the checked-in test and consumer or release receipts.
 Record public issue, PR, check, and commit links in the owner spec and evidence array.
 An obligation can be landed while acceptance remains open.
 
