@@ -537,3 +537,76 @@ def test_agent_config_summary_reports_backend_failure():
     assert exc.value.status_code == 503
     assert exc.value.detail == 'Service unavailable'
     assert 'boom' not in str(exc.value.detail)
+
+
+class _LibraryGraph:
+    """A dict-backed engine that answers the AU Agent Library's reads."""
+
+    def __init__(self):
+        self.nodes = {}
+        self.edges = []
+        self.backend = MagicMock()
+        self.backend.execute.side_effect = self.query_cypher
+
+    def add_node(self, node_id, label, props):
+        self.nodes[node_id] = {'id': node_id, '_label': label, **props}
+
+    def link_nodes(self, source, target, rel):
+        self.edges.append((source, target, rel))
+
+    def query_cypher(self, query, params=None):
+        params = params or {}
+        resources = [
+            n for n in self.nodes.values() if n['_label'] == 'CallableResource'
+        ]
+        if query.startswith('MATCH (r:CallableResource) WHERE'):
+            return [{'r': n} for n in resources]
+        if query.startswith('MATCH (r:CallableResource {id: $id})'):
+            return [{'r': n} for n in resources if n['id'] == params['id']]
+        if '-[:USES_TOOL]->' in query:
+            return [
+                {'id': t, 'name': t}
+                for s, t, rel in self.edges
+                if s == params['id'] and rel == 'USES_TOOL'
+            ]
+        return []
+
+
+def test_an_agent_saved_via_the_au_library_is_listed_by_the_route():
+    """AU-CONTROL-R024: one store; the route lists what the library saved."""
+    from agent_utilities.orchestration.agent_library import AgentLibrary, AgentRecord
+    from agent_webui.api_extensions import get_library_agent, list_library_agents
+
+    graph = _LibraryGraph()
+    saved = AgentLibrary(graph).save(
+        AgentRecord(
+            name='billing-analyst',
+            system_prompt='Analyse billing incidents.',
+            role='Billing Analyst',
+            kind='role',
+            tools=('tool:search',),
+        )
+    )
+    with _patched_engine(graph):
+        listed = run(list_library_agents())
+        detail = run(get_library_agent(saved.agent_id))
+    assert [a['id'] for a in listed] == [saved.agent_id]
+    assert listed[0]['kind'] == 'local'
+    assert listed[0]['library_kind'] == 'role'
+    assert detail['instructions'] == 'Analyse billing incidents.'
+    assert detail['tools'] == [{'id': 'tool:search', 'name': 'tool:search'}]
+
+
+def test_an_agent_composed_by_the_route_is_read_by_the_au_library():
+    from agent_utilities.orchestration.agent_library import AgentLibrary
+    from agent_webui.api_extensions import create_library_agent
+
+    graph = _LibraryGraph()
+    with _patched_engine(graph):
+        data = run(
+            create_library_agent(
+                {'name': 'triage', 'instructions': 'Triage incidents.'}
+            )
+        )
+    record = AgentLibrary(graph).get(data['id'])
+    assert record is not None and record.system_prompt == 'Triage incidents.'
