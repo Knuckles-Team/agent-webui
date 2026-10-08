@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import re
 import sqlite3
 import sys
 import threading
@@ -259,6 +260,84 @@ def test_security_headers_cover_api_responses() -> None:
     assert b"frame-src 'none'" in headers[b'content-security-policy']
     assert b'default-src *' not in headers[b'content-security-policy']
     assert b'frame-ancestors' in headers[b'content-security-policy']
+
+
+def _run_html_document(body_chunks: list[bytes], policy: str | None = None) -> list:
+    async def app(_scope, _receive, send) -> None:
+        await send(
+            {
+                'type': 'http.response.start',
+                'status': 200,
+                'headers': [
+                    (b'content-type', b'text/html; charset=utf-8'),
+                    (b'content-length', str(sum(map(len, body_chunks))).encode()),
+                    (b'etag', b'"static"'),
+                ],
+            }
+        )
+        for index, chunk in enumerate(body_chunks):
+            more = index < len(body_chunks) - 1
+            await send({'type': 'http.response.body', 'body': chunk, 'more_body': more})
+
+    messages: list[dict] = []
+
+    async def receive() -> dict:
+        return {'type': 'http.disconnect'}
+
+    async def send(message: dict) -> None:
+        messages.append(message)
+
+    middleware = (
+        SecurityHeadersMiddleware(app)
+        if policy is None
+        else SecurityHeadersMiddleware(app, content_security_policy=policy)
+    )
+    asyncio.run(middleware({'type': 'http', 'path': '/'}, receive, send))
+    return messages
+
+
+def test_html_documents_carry_a_fresh_style_nonce() -> None:
+    chunks = [b'<meta property="csp-nonce" nonce="AGENT_WEBUI_', b'CSP_NONCE">']
+    first = _run_html_document(chunks)
+    second = _run_html_document(chunks)
+
+    nonces = []
+    for messages in (first, second):
+        assert len(messages) == 2
+        headers = dict(messages[0]['headers'])
+        body = messages[1]['body']
+        nonce = re.search(rb'nonce="([^"]+)"', body).group(1)
+        assert nonce != b'AGENT_WEBUI_CSP_NONCE'
+        policy = headers[b'content-security-policy']
+        assert b"style-src-elem 'self' 'nonce-" + nonce + b"'" in policy
+        assert b"style-src 'self' 'nonce-" + nonce + b"'" in policy
+        assert b'nonce-' not in policy.split(b'script-src ', 1)[1].split(b';')[0]
+        assert (
+            b"'unsafe-inline'"
+            not in policy.split(b'style-src-elem', 1)[1].split(b';')[0]
+        )
+        assert headers[b'content-length'] == str(len(body)).encode()
+        assert headers[b'cache-control'] == b'no-store'
+        assert b'etag' not in headers
+        nonces.append(nonce)
+    assert nonces[0] != nonces[1]
+
+
+def test_html_without_placeholder_keeps_the_static_policy() -> None:
+    messages = _run_html_document([b'<p>plain</p>'])
+    headers = dict(messages[0]['headers'])
+    assert messages[1]['body'] == b'<p>plain</p>'
+    assert b'nonce-' not in headers[b'content-security-policy']
+
+
+def test_style_nonce_does_not_mask_an_acknowledged_unsafe_inline() -> None:
+    policy = (
+        "default-src 'none'; style-src 'self' 'unsafe-inline'; style-src-elem 'self'"
+    )
+    messages = _run_html_document([b'AGENT_WEBUI_CSP_NONCE'], policy)
+    csp = dict(messages[0]['headers'])[b'content-security-policy']
+    assert b"style-src 'self' 'unsafe-inline';" in csp
+    assert b"style-src-elem 'self' 'nonce-" in csp
 
 
 def test_sync_deadline_keeps_capacity_charged_until_worker_exits(

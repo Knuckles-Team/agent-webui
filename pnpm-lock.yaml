@@ -9,6 +9,11 @@ overrides:
   react: 19.3.0
   react-dom: 19.3.0
 
+patchedDependencies:
+  sonner@2.0.8:
+    hash: a84a6d4669cd4ebb56ae55592454415268f325c6419e979f2caa195b3941153d
+    path: patches/sonner@2.0.8.patch
+
 importers:
 
   .:
@@ -126,7 +131,7 @@ importers:
         version: 3.0.3(graphology-types@0.24.8)
       sonner:
         specifier: ^2.0.8
-        version: 2.0.8(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 2.0.8(patch_hash=a84a6d4669cd4ebb56ae55592454415268f325c6419e979f2caa195b3941153d)(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       streamdown:
         specifier: ^2.7.0
         version: 2.7.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -10837,7 +10842,7 @@ snapshots:
 
   smol-toml@1.9.0: {}
 
-  sonner@2.0.8(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+  sonner@2.0.8(patch_hash=a84a6d4669cd4ebb56ae55592454415268f325c6419e979f2caa195b3941153d)(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)

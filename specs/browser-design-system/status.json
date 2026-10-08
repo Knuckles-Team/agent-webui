@@ -9,7 +9,9 @@
     "DS-03",
     "DS-04",
     "DS-05",
-    "DS-06"
+    "DS-06",
+    "DS-07",
+    "DS-08"
   ],
   "delivery_state": "SPECIFIED",
   "acceptance_state": "NOT_AUDITED",
@@ -96,6 +98,18 @@
       "id": "DS-06",
       "title": "No duplicate primitives or unsolicited telemetry introduced",
       "delivery_state": "SPECIFIED",
+      "evidence": []
+    },
+    {
+      "id": "DS-07",
+      "title": "Fonts load from the same origin",
+      "delivery_state": "BUILDING",
+      "evidence": []
+    },
+    {
+      "id": "DS-08",
+      "title": "Runtime style elements satisfy the strict policy",
+      "delivery_state": "BUILDING",
       "evidence": []
     }
   ]

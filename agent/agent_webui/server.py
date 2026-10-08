@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import sys
 import time
 from collections.abc import Callable
@@ -710,8 +711,68 @@ def _hardened_response_headers(
     return hardened
 
 
+# The SPA build (vite ``html.cspNonce``) writes this placeholder into the
+# ``<meta property="csp-nonce">`` tag. Each HTML response replaces it with a
+# fresh nonce that the style directives also carry.
+_CSP_NONCE_PLACEHOLDER = b'AGENT_WEBUI_CSP_NONCE'
+_CSP_NONCE_DIRECTIVES = frozenset({b'style-src', b'style-src-elem'})
+_HTML_NONCE_STRIPPED_HEADERS = frozenset(
+    {b'content-length', b'etag', b'last-modified', b'cache-control'}
+)
+
+
+def _policy_with_style_nonce(policy: bytes, nonce: str) -> bytes:
+    """Add one per-response nonce to the inline-capable style directives.
+
+    A directive that already allows ``'unsafe-inline'`` stays unchanged: a
+    nonce would make browsers ignore that acknowledged relaxation.
+    """
+
+    directives = []
+    for directive in policy.split(b'; '):
+        name = directive.split(b' ', 1)[0]
+        if name in _CSP_NONCE_DIRECTIVES and b"'unsafe-inline'" not in directive:
+            directive += f" 'nonce-{nonce}'".encode('ascii')
+        directives.append(directive)
+    return b'; '.join(directives)
+
+
+def _is_html_response_start(message: Any) -> bool:
+    """Whether a response start message announces an HTML document."""
+
+    if message.get('type') != 'http.response.start':
+        return False
+    return any(
+        name.lower() == b'content-type' and value.lower().startswith(b'text/html')
+        for name, value in message.get('headers') or []
+    )
+
+
+def _nonce_html_document(
+    start: Any, body: bytes, policy: bytes
+) -> tuple[list[tuple[bytes, bytes]], bytes, bytes]:
+    """Bind a fresh style nonce into one buffered HTML document."""
+
+    headers = list(start.get('headers') or [])
+    if _CSP_NONCE_PLACEHOLDER not in body:
+        return headers, body, policy
+    nonce = secrets.token_urlsafe(18)
+    body = body.replace(_CSP_NONCE_PLACEHOLDER, nonce.encode('ascii'))
+    headers = [
+        (name, value)
+        for name, value in headers
+        if name.lower() not in _HTML_NONCE_STRIPPED_HEADERS
+    ]
+    headers.append((b'content-length', str(len(body)).encode('ascii')))
+    headers.append((b'cache-control', b'no-store'))
+    return headers, body, _policy_with_style_nonce(policy, nonce)
+
+
 class SecurityHeadersMiddleware:
-    """Attach browser hardening and prevent API responses from being cached."""
+    """Attach browser hardening and prevent API responses from being cached.
+
+    HTML documents are buffered so each one carries its own style nonce.
+    """
 
     def __init__(
         self,
@@ -730,20 +791,54 @@ class SecurityHeadersMiddleware:
             return
 
         path = str(scope.get('path') or '')
+        no_store = path.startswith(('/api', '/chat', '/configure'))
+        held: list[Any] = []
 
         async def hardened_send(message: Any) -> None:
+            if held or _is_html_response_start(message):
+                held.append(message)
+                if message.get('type') == 'http.response.body' and not message.get(
+                    'more_body'
+                ):
+                    await self._send_html(held, send, no_store=no_store)
+                return
             if message.get('type') == 'http.response.start':
                 message = {
                     **message,
                     'headers': _hardened_response_headers(
                         list(message.get('headers') or []),
                         content_security_policy=self.content_security_policy,
-                        no_store=path.startswith(('/api', '/chat', '/configure')),
+                        no_store=no_store,
                     ),
                 }
             await send(message)
 
-        await self.app(scope, receive, hardened_send)
+        # Buffered HTML needs body messages; a path-send response has none.
+        extensions = dict(scope.get('extensions') or {})
+        extensions.pop('http.response.pathsend', None)
+        await self.app({**scope, 'extensions': extensions}, receive, hardened_send)
+
+    async def _send_html(self, held: list[Any], send: Any, *, no_store: bool) -> None:
+        """Release one buffered HTML document with its per-response nonce."""
+
+        start = held[0]
+        body = b''.join(
+            message.get('body', b'')
+            for message in held[1:]
+            if message.get('type') == 'http.response.body'
+        )
+        headers, body, policy = _nonce_html_document(
+            start, body, self.content_security_policy
+        )
+        await send(
+            {
+                **start,
+                'headers': _hardened_response_headers(
+                    headers, content_security_policy=policy, no_store=no_store
+                ),
+            }
+        )
+        await send({'type': 'http.response.body', 'body': body})
 
 
 def _host_header_is_unambiguous(hosts: list[bytes]) -> bool:
