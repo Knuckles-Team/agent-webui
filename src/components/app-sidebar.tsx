@@ -39,8 +39,12 @@ import type { ConversationEntry } from '@/types'
 import { ModeToggle } from './mode-toggle'
 import { UserMenu } from './UserMenu'
 
+function hasNavigationModifier(e: React.MouseEvent): boolean {
+  return e.metaKey || e.ctrlKey || e.shiftKey || e.altKey
+}
+
 function doLocalNavigation(e: React.MouseEvent) {
-  if (e.button !== 0 || e.metaKey || e.ctrlKey) {
+  if (e.button !== 0 || hasNavigationModifier(e)) {
     return
   }
   const url = new URL((e.currentTarget as HTMLAnchorElement).href)
