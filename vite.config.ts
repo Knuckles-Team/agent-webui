@@ -8,6 +8,8 @@ const BACKEND_DEV_SERVER_PORT = process.env.BACKEND_PORT ?? 38001
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss(), tsconfigPaths({ root: import.meta.dirname })],
   base: '',
+  // The server swaps this placeholder for a per-response CSP nonce (src/lib/csp-nonce.ts).
+  html: { cspNonce: 'AGENT_WEBUI_CSP_NONCE' },
   resolve: {
     dedupe: ['react', 'react-dom'],
   },

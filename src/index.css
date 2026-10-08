@@ -1,6 +1,16 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
+/* sonner's runtime <style> injection is patched out; its stylesheet ships with the bundle. */
+@import 'sonner/dist/styles.css';
+
+/* Self-hosted Inter (SIL OFL 1.1, see assets/fonts/Inter-LICENSE.txt). The CSP allows only same-origin fonts. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/InterVariable.woff2') format('woff2');
+}
 
 @source "../node_modules/streamdown/dist/index.js";
 
