@@ -32,7 +32,7 @@ their complete public result before changing local state.
 
 No raw Cypher, SQL, SPARQL, REST/MCP, credentials, chat sending, workflows,
 goals, configuration, OpenBao, or backend write surface is registered here.
-Tools are same-origin by default: the registration never supplies `exposedTo`.
+Tools are same-origin by default: the registration never provides `exposedTo`.
 Each registration has an `AbortSignal`, and the provider retires it on unmount,
 identity changes, or page-context changes. A registration is only reported as
 active after the browser acknowledges it; pending, failed, aborted, and
@@ -114,7 +114,7 @@ stale cleanup completes before another arm can start.
 Graph OS owns authorization, leases, replay fences, call state, durable receipts,
 and terminal outcomes. The WebUI retains only the active local definitions,
 in-flight abort controllers, and the attended confirmation being displayed. A
-mutation uses two phases: the initial confirmation request never executes; only
+mutation uses two phases: the initial confirmation request never runs; only
 the later `control.call` carrying Graph OS's `confirmed_mutation` authorization
 and the exact approved digest reaches the local definition. Arguments, schemas,
 channel frames, and UTF-8 results are bounded; result errors are reduced to safe

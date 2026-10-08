@@ -119,6 +119,9 @@ distribution = "agent-webui"
 pages_url = "https://knuckles-team.github.io/agent-webui/"
 mcp_server = false
 
+[tool.pipelines_hooks.ste]
+exempt = []
+
 [tool.ruff.format]
 docstring-code-format = false
 quote-style = "single"

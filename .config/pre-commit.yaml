@@ -74,9 +74,13 @@ repos:
   - id: nbqa-ruff
     args: ["--fix"]
 - repo: https://github.com/Knuckles-Team/pipelines
-  rev: 7ae4192 # shared scanner argv fix + public-surface contract
+  rev: main # sanctioned first-party exception; public-surface + ste gates
   hooks:
   - id: public-surface
+  - id: ste-staged
+    stages: [pre-commit, manual]
+  - id: ste-staleness-staged
+    stages: [pre-commit, manual]
 - repo: local
   hooks:
   - id: uv-lock
