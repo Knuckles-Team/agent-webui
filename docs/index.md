@@ -92,3 +92,11 @@
 - [Agents and events](agents.md) — event types, routing, and graph activity.
 - [Feature reference](features.md) — browser configuration and WebUI-owned API surfaces.
 - [Ecosystem map](ecosystem.md) — the five repositories and their exact ownership.
+
+## Specification delivery
+
+<a href="spec-delivery/">Open the specification delivery dashboard</a> for
+current specification status, delivery timelines, velocity and burndown, and
+open pull request and issue snapshots. It refreshes with each main-branch push.
+Unknown completion dates and unavailable history are labeled explicitly;
+individual requirements and pull requests do not count as completed specifications.
