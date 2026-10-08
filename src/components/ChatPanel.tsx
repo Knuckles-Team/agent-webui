@@ -20,6 +20,10 @@ interface ChatPanelProps {
   isPrimary: boolean
 }
 
+function isUnhandledEscape(event: KeyboardEvent): boolean {
+  return event.key === 'Escape' && !event.defaultPrevented
+}
+
 /** Open/expand state + the Escape-to-close keybinding, kept out of the
  * panel's own render body. */
 function useChatPanelState() {
@@ -37,7 +41,7 @@ function useChatPanelState() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (isUnhandledEscape(e) && isOpen) {
         setIsOpen(false)
         setIsExpanded(false)
       }
