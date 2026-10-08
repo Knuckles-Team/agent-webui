@@ -325,6 +325,32 @@ async def test_inbound_correlation_id_is_reused_not_replaced(
 
 
 @pytest.mark.asyncio
+async def test_each_request_gets_its_own_id_despite_an_ambient_one() -> None:
+    """A host thread that bound a correlation id at startup must not leak it.
+
+    The GraphOS co-service thread carries one ambient id for its lifetime.
+    Every request without an inbound header must still get a fresh id.
+    """
+    from agent_utilities.observability.correlation import bind_carrier
+    from agent_webui.server import RequestObservabilityMiddleware
+
+    async def inner(_scope: dict, _receive: Any, send: Any) -> None:
+        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
+        await send({'type': 'http.response.body', 'body': b'{}'})
+
+    middleware = RequestObservabilityMiddleware(inner)
+    first, second = _Recorder(), _Recorder()
+    with bind_carrier({'x-correlation-id': 'process-startup-id'}):
+        await middleware(_http_scope(), _receive, first)
+        await middleware(_http_scope(), _receive, second)
+
+    first_id = first.headers[b'x-correlation-id']
+    second_id = second.headers[b'x-correlation-id']
+    assert b'process-startup-id' not in (first_id, second_id)
+    assert first_id != second_id
+
+
+@pytest.mark.asyncio
 async def test_liveness_paths_log_at_debug_not_info(
     agent_webui_caplog: pytest.LogCaptureFixture,
 ) -> None:
