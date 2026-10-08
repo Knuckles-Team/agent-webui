@@ -59,7 +59,6 @@ function deleteConversation(userKey: string, conversationId: string) {
 
   if (window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY) === conversationId) {
     window.localStorage.removeItem(ACTIVE_CONVERSATION_STORAGE_KEY)
-    window.dispatchEvent(new Event(ACTIVE_CONVERSATION_CHANGED_EVENT))
   }
 
   const url = new URL(window.location.toString())
@@ -68,6 +67,8 @@ function deleteConversation(userKey: string, conversationId: string) {
     window.history.pushState({}, '', '/chat')
     window.dispatchEvent(new Event('history-state-changed'))
   }
+  // Notify only after removing the deep link so listeners cannot restore the deleted session.
+  window.dispatchEvent(new Event(ACTIVE_CONVERSATION_CHANGED_EVENT))
 }
 
 function browserPath(): string {
