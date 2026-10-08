@@ -33,7 +33,7 @@
   </div>
 </div>
 
-## Choose your path
+## Choose the operator's path
 
 <div class="site-card-grid">
   <article class="site-card">
@@ -75,7 +75,7 @@
     <p class="site-flow__body">The same-origin WebUI host and GraphOS verify identity, route the request, and apply policy.</p>
   </li>
   <li class="site-flow__step">
-    <h3 class="site-flow__title">Execute</h3>
+    <h3 class="site-flow__title">Run</h3>
     <p class="site-flow__body">agent-utilities runs agent behavior while epistemic-graph and connector services perform their owned operations.</p>
   </li>
   <li class="site-flow__step">

@@ -7,7 +7,7 @@ new registered action becomes discoverable without adding a static React page.
 
 ## Execution flow
 
-1. `GET /api/capabilities` supplies the searchable catalog, availability,
+1. `GET /api/capabilities` provides the searchable catalog, availability,
    action schemas, side-effect declarations, render hints, and the normative
    governed-invoke contract. Display-only REST projections are labeled and
    never treated as executable frontend routes.
@@ -18,7 +18,7 @@ new registered action becomes discoverable without adding a static React page.
    filters, time range, route, and view. Every inferred value stays visible and
    editable.
 4. `POST /api/capabilities/{capability_id}/preflight` receives only `action`,
-   `inputs`, and the selected `target`. The browser cannot supply an actor
+   `inputs`, and the selected `target`. The browser cannot provide an actor
    identity. Preflight is a non-authoritative preview; identity and policy are
    evaluated again at execution.
 5. Mutating and unknown-side-effect actions require explicit confirmation.
@@ -70,7 +70,7 @@ capability remains visible with the live reasons and missing preconditions. No
 demo result, simulated policy decision, or fabricated run is substituted.
 All API and event requests propagate same-origin browser credentials. A `401` or
 `404` remains an explicit unavailable state; the client neither retries with a
-frontend-supplied identity nor silently changes run IDs.
+frontend-provided identity nor silently changes run IDs.
 
 The machine-readable coverage ledger is
 [`capability-coverage.json`](capability-coverage.json). Dedicated workspaces are

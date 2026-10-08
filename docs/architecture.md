@@ -10,7 +10,7 @@ It renders runtime capabilities; it does not duplicate their authorities.
 GraphOS starts Agent WebUI as a supervised co-service when `ENABLE_WEB_UI=true`.
 The composition path is explicit:
 
-1. GraphOS creates the native gateway application and verified process context.
+1. GraphOS creates the native gateway application and checked process context.
 2. The GraphOS WebUI host creates the Agent WebUI FastAPI application.
 3. GraphOS injects its gateway route composer through `ApplicationComposer`.
 4. Agent WebUI mounts the single-page application after every typed API route.
@@ -32,11 +32,11 @@ the GraphOS-hosted composition for the complete platform surface.
   </li>
   <li class="site-flow__step">
     <h3 class="site-flow__title">GraphOS</h3>
-    <p class="site-flow__body">The injected gateway verifies identity, applies runtime policy, and delegates to the owning service.</p>
+    <p class="site-flow__body">The injected gateway checks identity, applies runtime policy, and delegates to the owning service.</p>
   </li>
   <li class="site-flow__step">
     <h3 class="site-flow__title">Owned authority</h3>
-    <p class="site-flow__body">Agent, graph, or connector code executes the operation and returns typed evidence and receipts.</p>
+    <p class="site-flow__body">Agent, graph, or connector code runs the operation and returns typed evidence and receipts.</p>
   </li>
 </ol>
 
@@ -46,21 +46,21 @@ the GraphOS-hosted composition for the complete platform surface.
 |---|---|---|
 | React application | Presentation, interaction state, route metadata, accessibility | Service credentials, policy truth, durable graph state |
 | Agent WebUI FastAPI host | Same-origin browser endpoints, SPA serving, host checks, request bounds, CSP | GraphOS fleet lifecycle or graph-engine implementation |
-| GraphOS composition | Verified identity, public routing, runtime policy, fleet supervision, injected gateway routes | Agent reasoning, durable knowledge, vendor-specific transport |
+| GraphOS composition | Checked identity, public routing, runtime policy, fleet supervision, injected gateway routes | Agent reasoning, durable knowledge, vendor-specific transport |
 | agent-utilities | Agent decisions, workflows, evaluation, skills | Public gateway hosting or database semantics |
 | epistemic-graph | Durable data, reasoning, provenance, transactions | Agent orchestration or browser presentation |
 | Connector services | Authorized source reads and writes through SDK contracts | Global policy or graph authority |
 
 ## Identity and credentials
 
-The browser never receives a GraphOS service bearer. The WebUI host terminates
-the browser session, derives the request actor from the verified server
+The browser never receives a GraphOS service bearer. The WebUI host stops
+the browser session, derives the request actor from the checked server
 context, and uses host-injected delegation ports for privileged operations.
 Role metadata affects navigation, but the server remains authoritative for
 every permission decision.
 
 A local loopback deployment can run without SSO and resolves to the documented
-single-operator posture. A configured OIDC deployment verifies the session and
+single-operator posture. A configured OIDC deployment checks the session and
 maps its realm roles to the WebUI role ladder before a protected route renders.
 
 ## Streaming and activity

@@ -21,7 +21,7 @@ Pass `--engine` to also build the epistemic-graph engine from source, which the
 knowledge-graph tests need. Claude Code cloud sessions run the same script
 through `.claude/hooks/session-start.sh`.
 
-## Check your change
+## Check the operator's change
 
 ```bash
 uv run --no-sync pytest tests

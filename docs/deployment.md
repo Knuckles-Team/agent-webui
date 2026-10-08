@@ -2,7 +2,7 @@
 
 Agent WebUI ships as a Python wheel and a container image. In a complete Graph OS
 deployment it runs as the browser-facing presentation service and composes the
-canonical gateway routes supplied by Graph OS and Agent Utilities.
+canonical gateway routes provided by Graph OS and Agent Utilities.
 
 ## Security boundary
 
@@ -44,9 +44,9 @@ Use the repository-owned deployment script for local releases:
 docker/deploy.sh
 ```
 
-It selects an available Docker or BuildKit backend, builds and verifies the image,
+It selects an available Docker or BuildKit backend, builds and checks the image,
 pushes it by immutable digest, deploys that digest, waits for availability,
-rebuilds the live-mounted frontend bundle, and verifies the running pod serves
+rebuilds the live-mounted frontend bundle, and checks the running pod serves
 the new assets. It prints the current rollback digest before changing the
 deployment and prints the exact rollback command when it finishes.
 
@@ -69,7 +69,7 @@ The contract covers two independent artifacts:
 
 A rollout restart does not change a digest-pinned image, and an image update
 alone does not refresh a shadowed frontend bundle. The deployment script
-updates and verifies both.
+updates and checks both.
 
 ## Concurrent operators
 
@@ -87,7 +87,7 @@ after the existing operation completes. Never race two `kubectl set image` opera
 
 `.github/workflows/release.yml` is the release authority. It publishes the
 Python package first and builds the container from the same commit only after
-that publication succeeds. The container job verifies that the required
+that publication succeeds. The container job checks that the required
 epistemic-graph release is resolvable before building.
 
 `.github/workflows/advisory.yml` owns documentation publication. Documentation
@@ -98,7 +98,7 @@ unverified release job.
 
 The deployment manifest describes the workload shape, configuration, mounts, probes,
 and readiness policy. Its `image` value is a recorded deployment point, not a mutable
-release channel. Promote a newly verified image by its digest through `docker/deploy.sh`.
+release channel. Promote a newly checked image by its digest through `docker/deploy.sh`.
 
 After deployment, confirm:
 
