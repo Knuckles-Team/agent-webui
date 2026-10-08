@@ -82,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2026-02-16
 
 ### Added
-- display tool error text in modal dialog
+- show tool error text in modal dialog
 
 ## [1.0.0] - 2026-01-09
 

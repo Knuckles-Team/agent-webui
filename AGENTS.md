@@ -143,7 +143,7 @@ For frontend behavior, pair unit coverage with a test that reaches the rendered
 route or component. For backend behavior, prove the real FastAPI entry point and
 the injected service seam. Security changes require positive and adversarial
 tests for authorization, origin/host validation, bounds, redaction, and failure
-behavior. A production build must regenerate and verify packaged assets rather
+behavior. A production build must regenerate and check packaged assets rather
 than relying on an existing `dist/` directory.
 
 The public surface, privacy, root-hygiene, dependency, type, lint, build, wheel,
@@ -162,7 +162,7 @@ and test gates are release requirements. Treat a clean baseline as an invariant.
   `@/` alias for cross-directory frontend imports and relative imports locally.
 - Never place a Graph OS service bearer, provider secret, or raw durable
   credential in browser state. Keep MCP Apps sandboxed and host-mediated.
-- Non-loopback serving must retain verified JWT/OIDC, exact host and origin
+- Non-loopback serving must retain checked JWT/OIDC, exact host and origin
   allowlists, bounded requests, CSP enforcement, and redacted access logging.
 - Keep the repository root clean. Put durable source, tests, and documentation
   in their named directories; keep logs, caches, generated reports, databases,
@@ -185,7 +185,7 @@ published page to `mkdocs.yml`. Public documentation describes the current
 product and must not expose internal planning notes, local filesystem paths, or
 private infrastructure.
 
-Update documentation with the behavior it describes. Verify local links,
+Update documentation with the behavior it describes. Check local links,
 Markdown style, and `mkdocs build --strict`. Keep commands runnable from the
 repository root and keep environment-variable names aligned with the code and
 `.env.example`.
@@ -212,4 +212,4 @@ another lane's uncommitted changes.
 Before delivery, confirm the worktree is clean except for the intended files,
 run the required gates, commit with the repository author identity, and report
 the commit SHA and evidence. Merge, push, tag, deploy, remove a worktree, or
-delete a branch only when the task explicitly authorizes that action.
+remove a branch only when the task explicitly authorizes that action.

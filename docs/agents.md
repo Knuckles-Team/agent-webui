@@ -23,7 +23,7 @@ The `GraphActivity` component renders sideband events emitted by the agent orche
 
 ## Unified Specialist Discovery
 
-The backend uses `discover_all_specialists()` to merge MCP agents and A2A peers into a single `DiscoveredSpecialist` roster during graph bootstrap. Both sources share the same registration and tag-prompt code path. The frontend does not need changes — it consumes the same sideband events regardless of specialist source.
+The backend uses `discover_all_specialists()` to merge MCP agents and A2A peers into a single `DiscoveredSpecialist` roster during graph bootstrap. Both sources share the same registration and tag-prompt code path. The frontend does not need changes — it consumes the same sideband events in either case of specialist source.
 
 ## Tool-Count Telemetry
 

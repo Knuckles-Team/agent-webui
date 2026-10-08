@@ -83,7 +83,7 @@ then use the shared platform map to move between components:
 
 ## Architecture
 
-![Runtime architecture: people use Agent Web UI, Agent Terminal UI, Geniusbot, and Graph OS-hosted messaging; MCP, REST, and A2A clients enter through Graph OS; source systems flow through Agent Connector SDK into Epistemic Graph.](docs/assets/runtime-architecture.svg)
+![Runtime architecture: people use Agent Web UI, Agent Terminal UI, Geniusbot, and Graph OS-hosted messaging. MCP, REST, and A2A clients enter through Graph OS; source systems flow through Agent Connector SDK into Epistemic Graph.](docs/assets/runtime-architecture.svg)
 
 People also enter through Agent Terminal UI and Geniusbot or Graph OS-hosted
 messaging; Agent Terminal UI exposes REST operations, with no ACP conversational
@@ -99,7 +99,7 @@ for the request flow and trust boundaries.
 
 ## Quick start
 
-Generate a local profile and launch Graph OS with Agent Web UI enabled:
+Generate a local profile and start Graph OS with Agent Web UI enabled:
 
 ```bash
 uvx --from "graph-os[webui]" setup-config generate --profile tiny

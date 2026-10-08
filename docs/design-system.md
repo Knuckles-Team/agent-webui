@@ -113,7 +113,7 @@ and layout fully visible:
 
 Components that need an explicit reduced-motion alternative beyond this
 global floor (for example the chat drawer's open/close transition and its
-decorative ping/pulse) additionally use Tailwind's `motion-reduce:` variant,
+decorative ping/pulse) also use Tailwind's `motion-reduce:` variant,
 documented alongside the components it touches in
 [`specs/browser-design-system/interaction-contract.md`](https://github.com/Knuckles-Team/agent-webui/blob/main/specs/browser-design-system/interaction-contract.md).
 Every gesture-driven action in the reviewed journeys also has a plain click or
