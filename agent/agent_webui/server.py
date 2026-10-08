@@ -15,6 +15,7 @@ import os
 import re
 import sys
 import time
+import uuid
 from collections.abc import Callable
 from ipaddress import ip_address
 from pathlib import Path
@@ -1495,10 +1496,11 @@ class RequestObservabilityMiddleware:
             'path': path,
         }
 
+        # Mint a fresh id when the caller sent none. ``bind_carrier(None)``
+        # would reuse any ambient id, and the host thread carries one for its
+        # whole lifetime, so every request would log the same id.
         with bind_carrier(
-            {CORRELATION_HEADER: inbound_correlation_id}
-            if inbound_correlation_id
-            else None
+            {CORRELATION_HEADER: inbound_correlation_id or uuid.uuid4().hex}
         ) as correlation_id:
             log_fields['correlation_id'] = correlation_id
             await self._serve_observed(

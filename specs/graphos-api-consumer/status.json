@@ -6,6 +6,7 @@
     "WEBUI-API-R001",
     "WEBUI-API-R002",
     "WEBUI-API-R003",
+    "WEBUI-API-R004",
     "APIUI-01",
     "APIUI-02",
     "APIUI-03",
@@ -58,6 +59,13 @@
           "description": "Implementation commit is published on a branch; not yet merged to the default branch."
         }
       ]
+    },
+    {
+      "id": "WEBUI-API-R004",
+      "title": "Each request carries its own correlation id",
+      "delivery_state": "BUILDING",
+      "evidence": [],
+      "remaining": "test_each_request_gets_its_own_id_despite_an_ambient_one passes on branch fix/per-request-correlation-id. Merge, roll out graph-os, then confirm distinct correlation_id values across graph-os log lines."
     },
     {
       "id": "APIUI-01",
