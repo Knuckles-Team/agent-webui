@@ -144,6 +144,15 @@ export function deleteConversationEntry(userKey: string, conversationId: string)
   removeConversationMessages(userKey, conversationId)
 }
 
+interface ConversationSnapshot {
+  userKey: string
+  entries: ConversationEntry[]
+}
+
+function entriesForUser(snapshot: ConversationSnapshot, userKey: string): ConversationEntry[] {
+  return snapshot.userKey === userKey ? snapshot.entries : []
+}
+
 /**
  * The ONE hook the nav "Active Chats" list and the floating chat launcher both
  * call. Merges `userKey`'s local index with the server-side conversation list
@@ -151,21 +160,23 @@ export function deleteConversationEntry(userKey: string, conversationId: string)
  * local entries winning only where the server has not (yet) recorded that id.
  */
 export function useConversations(userKey: string): ConversationEntry[] {
-  const [local, setLocal] = useState<ConversationEntry[]>(() => readIndex(userKey))
-  const [remote, setRemote] = useState<ConversationEntry[]>([])
+  const [local, setLocal] = useState<ConversationSnapshot>(() => ({ userKey, entries: readIndex(userKey) }))
+  const [remote, setRemote] = useState<ConversationSnapshot>({ userKey, entries: [] })
 
   useEffect(() => {
-    setLocal(readIndex(userKey))
+    setLocal({ userKey, entries: readIndex(userKey) })
   }, [userKey])
 
   useEffect(() => {
     let cancelled = false
+    setRemote({ userKey, entries: [] })
     const fetchRemote = async () => {
       try {
         const data = await fetchValidated('/api/chats', looseArray(rawConversationEntrySchema))
         if (cancelled) return
-        setRemote(
-          data.map((entry) => {
+        setRemote({
+          userKey,
+          entries: data.map((entry) => {
             // BUG-259: a server record with a missing or unparsable
             // `timestamp` (real shape -- the field is optional per
             // `rawConversationEntrySchema`, and older server-side chat
@@ -182,7 +193,7 @@ export function useConversations(userKey: string): ConversationEntry[] {
                 : NaN
             return { ...entry, timestamp: Number.isFinite(parsed) ? parsed : 0 }
           }),
-        )
+        })
       } catch (err) {
         console.error('Failed to fetch remote conversations', err)
       }
@@ -195,7 +206,7 @@ export function useConversations(userKey: string): ConversationEntry[] {
 
   useEffect(() => {
     const refresh = () => {
-      setLocal(readIndex(userKey))
+      setLocal({ userKey, entries: readIndex(userKey) })
     }
     const handleStorage = (event: StorageEvent) => {
       if (event.key === indexKey(userKey)) refresh()
@@ -210,8 +221,9 @@ export function useConversations(userKey: string): ConversationEntry[] {
 
   return useMemo(() => {
     const map = new Map<string, ConversationEntry>()
-    local.forEach((entry) => map.set(entry.id, entry))
-    remote.forEach((entry) => map.set(entry.id, entry))
+    // Filter during render: effects run too late to prevent a stale-user frame.
+    entriesForUser(local, userKey).forEach((entry) => map.set(entry.id, entry))
+    entriesForUser(remote, userKey).forEach((entry) => map.set(entry.id, entry))
     return Array.from(map.values()).sort((a, b) => b.timestamp - a.timestamp)
-  }, [local, remote])
+  }, [local, remote, userKey])
 }
