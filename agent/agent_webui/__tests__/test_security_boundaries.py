@@ -306,7 +306,9 @@ def test_html_documents_carry_a_fresh_style_nonce() -> None:
         assert len(messages) == 2
         headers = dict(messages[0]['headers'])
         body = messages[1]['body']
-        nonce = re.search(rb'nonce="([^"]+)"', body).group(1)
+        match = re.search(rb'nonce="([^"]+)"', body)
+        assert match is not None
+        nonce = match.group(1)
         assert nonce != b'AGENT_WEBUI_CSP_NONCE'
         policy = headers[b'content-security-policy']
         assert b"style-src-elem 'self' 'nonce-" + nonce + b"'" in policy

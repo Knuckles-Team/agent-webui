@@ -27,6 +27,8 @@ repos:
   - id: check-merge-conflict
   - id: detect-private-key
   - id: trailing-whitespace
+    # pnpm patch files are diffs: a blank context line is a single space.
+    exclude: ^patches/
   - id: end-of-file-fixer
 - repo: https://github.com/astral-sh/ruff-pre-commit
   rev: 6fec9b7edb08fd9989088709d864a7826dc74e80 # v0.15.12
