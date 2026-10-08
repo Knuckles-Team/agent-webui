@@ -32,6 +32,12 @@ from agent_utilities.knowledge_graph.pipeline.phases import PHASES
 from agent_utilities.knowledge_graph.pipeline.runner import PipelineRunner
 from agent_utilities.knowledge_graph.pipeline.types import PipelineContext
 from agent_utilities.models.knowledge_graph import PipelineConfig
+from agent_utilities.orchestration.agent_library import (
+    AGENT_LIBRARY_PROVIDER_REF as _AGENT_LIBRARY_PROVIDER_REF,
+)
+from agent_utilities.orchestration.agent_library import (
+    MAX_INSTRUCTIONS_BYTES as _MAX_INSTRUCTIONS_BYTES,
+)
 from agent_utilities.sdd import SDDManager
 from agent_utilities.security.persistence_privacy import (
     persistence_reference,
@@ -3447,19 +3453,25 @@ async def _read_union_cypher(
     response actually drew from, so a narrowed view can never again look
     identical to a complete one.
     """
+    return await invoke_governed_helper(
+        _union_rows, engine, cypher, params, deadline=deadline
+    )
+
+
+def _union_rows(
+    engine: Any, cypher: str, params: dict[str, Any] | None
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """The synchronous body of `_read_union_cypher` (rows, source graphs)."""
     from agent_utilities.knowledge_graph.core.session import current_session
     from agent_utilities.knowledge_graph.core.tenant_sharing import read_union
 
-    def _run() -> tuple[list[dict[str, Any]], list[str]]:
-        session = current_session()
-        if session is None:
-            return list(engine.query_cypher(cypher, params) or []), []
-        actor = session.actor
-        graphs = _accessible_graphs(actor)
-        rows = read_union(cypher, params, _graph_union_executor(engine), actor)
-        return rows, graphs
-
-    return await invoke_governed_helper(_run, deadline=deadline)
+    session = current_session()
+    if session is None:
+        return list(engine.query_cypher(cypher, params) or []), []
+    actor = session.actor
+    graphs = _accessible_graphs(actor)
+    rows = read_union(cypher, params, _graph_union_executor(engine), actor)
+    return rows, graphs
 
 
 # Bound on concurrent per-graph fan-out (`_rows_per_accessible_graph` below).
@@ -6930,75 +6942,42 @@ async def spawn_agent(data: dict[str, Any]) -> dict[str, Any]:
 # so ``run_agent``'s fail-closed skill-runnable check accepts it; an external
 # agent is written with ``resource_type=A2A_AGENT`` via the engine's own
 # ``ingest_a2a_agent_card``/``ingest_agent_toolkit``, the same primitives an
-# offline A2A config sync uses. ``provider_ref == _AGENT_LIBRARY_PROVIDER_REF``
-# marks a locally composed entry so the Library lists only what was authored
-# here, not every ingested skill in the corpus (that corpus is browsed
-# separately via ``/api/enhanced/skills``).
+# offline A2A config sync uses. ``provider_ref == AGENT_LIBRARY_PROVIDER_REF``
+# (owned by ``agent_utilities.orchestration.agent_library``) marks a library
+# entry so the Library lists only what was authored there, not every ingested
+# skill in the corpus (that corpus is browsed separately via
+# ``/api/enhanced/skills``). Reads and writes go through AU's ``AgentLibrary``.
 # ---------------------------------------------------------------------------
 
-_AGENT_LIBRARY_PROVIDER = 'agent-webui-library'
-_AGENT_LIBRARY_PROVIDER_REF = f'provider://{_AGENT_LIBRARY_PROVIDER}'
-_MAX_INSTRUCTIONS_BYTES = 32_000
 
+def _library(engine: Any, *, union: bool = False) -> Any:
+    """The AU Agent Library over ``engine``; ``union`` reads tenant + commons."""
+    from agent_utilities.orchestration.agent_library import AgentLibrary
 
-def _library_agent_view(row: dict[str, Any]) -> dict[str, Any]:
-    """Shape one ``CallableResource`` row for the Agent Library list/detail views."""
-
-    resource_type = str(row.get('resource_type') or '')
-    return {
-        'id': row.get('id'),
-        'name': row.get('name'),
-        'description': row.get('description') or '',
-        'kind': 'a2a' if resource_type == 'A2A_AGENT' else 'local',
-        'mcp_server': row.get('mcp_server'),
-        'model_preference': row.get('model_preference'),
-        'timestamp': row.get('timestamp'),
-        'status': row.get('status') or 'active',
-        'runnable_bound': bool(row.get('runnable_bound', resource_type == 'A2A_AGENT')),
-    }
+    if not union:
+        return AgentLibrary(engine, read=engine.backend.execute)
+    return AgentLibrary(
+        engine, read=lambda cypher, params: _union_rows(engine, cypher, params)[0]
+    )
 
 
 @router.get('/agent-library/agents')
 async def list_library_agents() -> list[dict[str, Any]]:
-    """List every agent composed or registered through the Agent Library.
+    """List every agent composed, generated or registered in the Agent Library.
 
-    Local agents are ``CallableResource(resource_type=AGENT_SKILL)`` nodes
-    written by this feature (marked by ``provider_ref``); external agents are
-    every ``CallableResource(resource_type=A2A_AGENT)`` node regardless of
-    which pipeline registered it, since the KG — not this endpoint — is the
-    one source of truth for what is externally callable.
-
-    FIX LANE Priority 1: unioned across every graph this actor may read
-    (`_read_union_cypher`), not `engine.backend.execute` alone -- same class
-    of gap as `list_resources` above: an org-shared A2A agent or Library
-    entry living in the commons graph (GOC-61) would otherwise be invisible
-    to a tenant-only read. `_library_agent_view` already projects only
-    display fields (no raw `embedding`), so this endpoint does not hit the
-    oversized-collection defect `list_resources` did; only the read scope
-    needed widening.
+    AU's ``AgentLibrary`` owns the record contract and the list query (local,
+    role and assembled-graph entries it wrote, plus every external
+    ``A2A_AGENT``). The read is unioned across every graph this actor may
+    read (`_union_rows`), so an org-shared entry in the commons graph stays
+    visible to a tenant read.
     """
     try:
         engine = await get_engine_bounded()
-        rows, _source_graphs = await _read_union_cypher(
-            engine,
-            'MATCH (r:CallableResource) WHERE r.resource_type = $a2a '
-            'OR (r.resource_type = $skill AND r.provider_ref = $ref) '
-            f'RETURN r LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
-            {
-                'a2a': 'A2A_AGENT',
-                'skill': 'AGENT_SKILL',
-                'ref': _AGENT_LIBRARY_PROVIDER_REF,
-            },
-            deadline=10.0,
+        library = _library(engine, union=True)
+        records = await invoke_governed_helper(
+            library.list, limit=_MAX_EXTERNAL_COLLECTION_ITEMS, deadline=10.0
         )
-        agents = [
-            _library_agent_view(row['r'])
-            for row in (rows or [])
-            if isinstance(row, dict)
-            and isinstance(row.get('r'), dict)
-            and str(row['r'].get('status') or '') != 'ARCHIVED'
-        ]
-        agents.sort(key=lambda a: str(a.get('name') or '').lower())
+        agents = [record.view() for record in records]
         bounded = _public_external_result(agents[:_MAX_EXTERNAL_COLLECTION_ITEMS])
         return bounded if isinstance(bounded, list) else []
     except HTTPException:
@@ -7159,25 +7138,6 @@ async def suggest_library_agents() -> list[dict[str, Any]]:
         ) from e
 
 
-def _library_agent_tool_refs(tool_rows: Any) -> list[dict[str, Any]]:
-    """The `{id, name}` refs of the tools an Agent Library entry binds."""
-    return [
-        {'id': t.get('id'), 'name': t.get('name')}
-        for t in (tool_rows or [])
-        if isinstance(t, dict) and (t.get('id') or t.get('name'))
-    ]
-
-
-def _library_agent_row(rows: Any) -> dict[str, Any]:
-    """The `CallableResource` row behind an Agent Library entry, or a 404."""
-    if not rows or not isinstance(rows[0].get('r'), dict):
-        raise HTTPException(status_code=404, detail='Agent not found')
-    row = rows[0]['r']
-    if str(row.get('resource_type') or '') not in {'AGENT_SKILL', 'A2A_AGENT'}:
-        raise HTTPException(status_code=404, detail='Agent not found')
-    return row
-
-
 @router.get('/agent-library/agents/{agent_id:path}')
 async def get_library_agent(agent_id: str) -> dict[str, Any]:
     """Return one Agent Library entry with its instructions and bound tools."""
@@ -7185,24 +7145,15 @@ async def get_library_agent(agent_id: str) -> dict[str, Any]:
     agent_id = _validate_runtime_id(agent_id)
     try:
         engine = await get_engine_bounded()
-        rows = await invoke_governed_helper(
-            engine.backend.execute,
-            'MATCH (r:CallableResource {id: $id}) RETURN r',
-            {'id': agent_id},
-            deadline=10.0,
+        record = await invoke_governed_helper(
+            _library(engine).get, agent_id, deadline=10.0
         )
-        row = _library_agent_row(rows)
-        view = _library_agent_view(row)
-        view['instructions'] = row.get('system_prompt') or ''
-        view['endpoint'] = row.get('endpoint')
-        view['agent_card'] = row.get('agent_card')
-        tool_rows = await invoke_governed_helper(
-            engine.backend.execute,
-            'MATCH (r {id: $id})-[:USES_TOOL]->(t) RETURN t.name AS name, t.id AS id',
-            {'id': agent_id},
-            deadline=10.0,
-        )
-        view['tools'] = _library_agent_tool_refs(tool_rows)
+        if record is None:
+            raise HTTPException(status_code=404, detail='Agent not found')
+        view = record.view()
+        view['instructions'] = record.system_prompt
+        view['agent_card'] = record.agent_card
+        view['tools'] = [dict(ref) for ref in record.tool_refs]
         return _public_external_result(view)
     except HTTPException:
         raise
@@ -7262,33 +7213,9 @@ def _library_agent_spec(data: dict[str, Any]) -> _LibraryAgentSpec:
     )
 
 
-def _library_tool_bindings(engine: Any, spec: _LibraryAgentSpec) -> list[str]:
+def _library_tool_ids(library: Any, spec: _LibraryAgentSpec) -> list[str]:
     """The submitted tool ids, plus every ingested tool of a bound MCP server."""
-    resolved_tool_ids = list(spec.tool_ids)
-    if spec.bind_server:
-        server_rows = engine.backend.execute(
-            'MATCH (t:Tool) WHERE t.mcp_server = $s RETURN t.id AS id',
-            {'s': spec.bind_server},
-        )
-        resolved_tool_ids.extend(
-            str(r['id'])
-            for r in (server_rows or [])
-            if isinstance(r, dict) and r.get('id')
-        )
-    return resolved_tool_ids
-
-
-def _bind_agent_tools(
-    engine: Any, resource_id: str, resolved_tool_ids: list[str]
-) -> list[str]:
-    """Link each distinct tool id under ``USES_TOOL``, bounded; returns them sorted."""
-    seen: set[str] = set()
-    for tool_id in resolved_tool_ids:
-        if tool_id in seen or len(seen) >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-            continue
-        seen.add(tool_id)
-        engine.link_nodes(resource_id, tool_id, 'USES_TOOL')
-    return sorted(seen)
+    return library.bound_tools(spec.tool_ids, spec.bind_server)
 
 
 def _library_agent_response(
@@ -7309,42 +7236,21 @@ def _library_agent_response(
 def _persist_library_agent(
     engine: Any, spec: _LibraryAgentSpec
 ) -> tuple[str, list[str]]:
-    """Write the Skill + CallableResource pair and its ``USES_TOOL`` edges."""
-    from agent_utilities.knowledge_graph.ingestion.skill_workflow_ingest import (
-        runnable_skill_digest,
-        skill_reference,
-    )
+    """Save the agent through AU's Agent Library (Skill + CallableResource)."""
+    from agent_utilities.orchestration.agent_library import AgentRecord
 
-    source_ref = skill_reference(spec.name)
-    skill_id = f'skill:{source_ref.removeprefix("skill://")}'
-    resource_id = f'resource:{skill_id}'
-    common: dict[str, Any] = {
-        'name': spec.name,
-        'description': spec.description or spec.name,
-        'source_ref': source_ref,
-        'provider_ref': _AGENT_LIBRARY_PROVIDER_REF,
-        'instruction_digest': runnable_skill_digest(spec.instructions),
-        'timestamp': datetime.now(timezone.utc).isoformat(),
-    }
-    if spec.bind_server:
-        common['mcp_server'] = spec.bind_server
-    resolved_tool_ids = _library_tool_bindings(engine, spec)
-    engine.add_node(
-        skill_id,
-        'Skill',
-        {**common, 'body': spec.instructions, 'instruction': spec.instructions},
+    saved = _library(engine).save(
+        AgentRecord(
+            name=spec.name,
+            system_prompt=spec.instructions,
+            description=spec.description,
+            tools=tuple(spec.tool_ids),
+            model_profile=spec.model_preference,
+            mcp_server=spec.bind_server,
+            source='agent-webui',
+        )
     )
-    resource_props: dict[str, Any] = {
-        **common,
-        'resource_type': 'AGENT_SKILL',
-        'system_prompt': spec.instructions,
-        'runnable_bound': True,
-    }
-    if spec.model_preference:
-        resource_props['model_preference'] = spec.model_preference
-    engine.add_node(resource_id, 'CallableResource', resource_props)
-    engine.link_nodes(skill_id, resource_id, 'BINDS_RUNNABLE')
-    return resource_id, _bind_agent_tools(engine, resource_id, resolved_tool_ids)
+    return saved.agent_id, list(saved.tools)
 
 
 @router.post('/agent-library/agents')
@@ -7443,7 +7349,8 @@ def _persist_library_agent_update(
         'MATCH (r:CallableResource {id: $id})-[e:USES_TOOL]->() DELETE e',
         {'id': agent_id},
     )
-    return _bind_agent_tools(engine, agent_id, _library_tool_bindings(engine, spec))
+    library = _library(engine)
+    return library.bind_tools(agent_id, _library_tool_ids(library, spec))
 
 
 @router.put('/agent-library/agents/{agent_id:path}')
