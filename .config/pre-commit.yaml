@@ -81,6 +81,12 @@ repos:
     stages: [pre-commit, manual]
   - id: ste-staleness-staged
     stages: [pre-commit, manual]
+  - id: spec-status
+    stages: [pre-commit, manual]
+  - id: spec-decomposition
+    stages: [pre-commit, manual]
+  - id: spec-trailers
+    stages: [pre-push, manual]
 - repo: local
   hooks:
   - id: uv-lock

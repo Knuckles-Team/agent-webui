@@ -1,7 +1,8 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "spec_id": "FIN-UI-001",
   "owner_repo": "agent-webui",
+  "delivery_state": "SPECIFIED",
   "requirement_ids": [
     "FIN-UI-R001",
     "FIN-UI-R001.1",
@@ -40,387 +41,342 @@
     "FUI-13.2",
     "FIN-UI-R003"
   ],
-  "delivery_state": "BUILDING",
-  "acceptance_state": "NOT_AUDITED",
-  "evidence": [],
   "requirements": [
     {
       "id": "FIN-UI-R001",
       "title": "Mobile-first Markets app with five-destination navigation (rollup)",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "Split into `FIN-UI-R001.1` (detail-tab support) and `FIN-UI-R001.2` (live wiring), producer first. This row is LANDED only when both children are LANDED."
+      "delivery_state": "LANDED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "FIN-UI-R001.1",
+        "FIN-UI-R001.2"
+      ]
     },
     {
       "id": "FIN-UI-R001.1",
       "title": "Detail-tab support model",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "407ef6a4b6738718d30ac40c374bb79579b9e906",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/407ef6a4b6738718d30ac40c374bb79579b9e906",
-          "description": "FIN-UI-R001.1 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "407ef6a4b673"
+      ],
+      "verified_by": []
     },
     {
       "id": "FIN-UI-R001.2",
       "title": "Live Markets app wiring (remaining)",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "The remaining scope: wiring the five-destination navigation, instrument groups, sparkline rows, the detail view's six tabs gated by `FIN-UI-R001.1`, range selector, and performance-versus-benchmark card into the live Markets app, with PWA install, theming, and accessibility."
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "407ef6a4b673"
+      ],
+      "verified_by": []
     },
     {
       "id": "FIN-UI-R002",
       "title": "Shared ChartRenderer for line, candle, and overlay data (rollup)",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "Split into `FIN-UI-R002.1` (ChartRenderer contract) and `FIN-UI-R002.2` (live wiring), producer first. This row is LANDED only when both children are LANDED."
+      "delivery_state": "LANDED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "FIN-UI-R002.1",
+        "FIN-UI-R002.2"
+      ]
     },
     {
       "id": "FIN-UI-R002.1",
       "title": "Shared ChartRenderer input contract",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "407ef6a4b6738718d30ac40c374bb79579b9e906",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/407ef6a4b6738718d30ac40c374bb79579b9e906",
-          "description": "FIN-UI-R002.1 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "407ef6a4b673"
+      ],
+      "verified_by": []
     },
     {
       "id": "FIN-UI-R002.2",
       "title": "Live ChartRenderer wiring (remaining)",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "The remaining scope: wiring the shared ChartRenderer contract into the live ChartRenderer/ChartPage components \u2014 rendering line/area and candle series with a volume pane, drawing overlays for trend lines/flips, DCA buys, cost basis, and margin/liquidation levels, and touch crosshair/pinch-zoom interaction."
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "407ef6a4b673"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-01",
       "title": "Responsive five-destination navigation",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "a73ac09e3e1c320d670e73e8a02af4b6a5a11335",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/a73ac09e3e1c320d670e73e8a02af4b6a5a11335",
-          "description": "FUI-01 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "00f4b9b08127",
+        "a73ac09e3e1c"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-02",
       "title": "Instrument groups with distinct data states",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "96cd34e3bfa29dcdfdfe4b7e2e8642fdc3fe9ae0",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/96cd34e3bfa29dcdfdfe4b7e2e8642fdc3fe9ae0",
-          "description": "FUI-02 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "96cd34e3bfa2"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-03",
       "title": "Search resolves by stable identity, not ticker text",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "0809b6d3ca727b19b196f2b875a7cf007eb341db",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/0809b6d3ca727b19b196f2b875a7cf007eb341db",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "e05e1230ae72762d01dcee0bdfa3c24358684c11",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/e05e1230ae72762d01dcee0bdfa3c24358684c11",
-          "description": "FUI-03 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "cf2a61dd04a9",
+        "d63ed6f3afb2",
+        "e05e1230ae72"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-04",
       "title": "Instrument rows show price, provenance, after-hours value",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "cff7851b24430b92337b140bdc3b3683b575d5d6",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/cff7851b24430b92337b140bdc3b3683b575d5d6",
-          "description": "FUI-04 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "cff7851b2443",
+        "d63ed6f3afb2"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-05",
       "title": "Detail tabs and range controls expose only supported data (rollup)",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "Split into `FUI-05.1` (supportedChartMode) and `FUI-05.2` (live wiring), producer first. This row is LANDED only when both children are LANDED."
+      "delivery_state": "LANDED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "FUI-05.1",
+        "FUI-05.2"
+      ]
     },
     {
       "id": "FUI-05.1",
       "title": "Pure supportedChartMode gating function",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "407ef6a4b6738718d30ac40c374bb79579b9e906",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/407ef6a4b6738718d30ac40c374bb79579b9e906",
-          "description": "FUI-05.1 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "407ef6a4b673"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-05.2",
       "title": "Live detail-tab/range-control wiring (remaining)",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "The remaining scope: wiring `supportedChartMode` into the live detail view's tabs, range controls, and line/candle/volume toggle so unsupported options are hidden or explained in the running UI rather than only in fixtures."
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "407ef6a4b673"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-06",
       "title": "Shared ChartRenderer preserves gaps and revisions",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "ae5dc947dd51da7c16de13199f6feeeaf0e30c24",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/ae5dc947dd51da7c16de13199f6feeeaf0e30c24",
-          "description": "FUI-06 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "ae5dc947dd51"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-07",
       "title": "Chart overlays show strategy version and simulation state (rollup)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "Split into `FUI-07.1` (overlay marker type) and `FUI-07.2` (live wiring), producer first. This row is LANDED only when both children are LANDED."
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "FUI-07.1",
+        "FUI-07.2"
+      ]
     },
     {
       "id": "FUI-07.1",
       "title": "Overlay marker version/simulation-flag type",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "508e7c11c573e3bd90911cdc550a8a4f3b58c701",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/508e7c11c573e3bd90911cdc550a8a4f3b58c701",
-          "description": "FUI-07.1 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "508e7c11c573"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-07.2",
       "title": "Live chart overlay wiring (remaining)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "The remaining scope: wiring the versioned, simulation-flagged overlay marker type into the live chart overlay rendering for trend lines/flips, DCA buys, cost basis, and margin/liquidation levels."
+      "landed_in": [],
+      "verified_by": []
     },
     {
       "id": "FUI-08",
       "title": "Performance cards render owner-calculated values verbatim (rollup)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "Split into `FUI-08.1` (verbatim-value contract) and `FUI-08.2` (live wiring), producer first. This row is LANDED only when both children are LANDED."
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "FUI-08.1",
+        "FUI-08.2"
+      ]
     },
     {
       "id": "FUI-08.1",
       "title": "Performance/benchmark card verbatim-value contract",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "508e7c11c573e3bd90911cdc550a8a4f3b58c701",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/508e7c11c573e3bd90911cdc550a8a4f3b58c701",
-          "description": "FUI-08.1 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "508e7c11c573"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-08.2",
       "title": "Live performance/benchmark card wiring (remaining)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "The remaining scope: wiring the verbatim-value contract into the live performance and benchmark card components, including return method, currency, source, as-of time, and session display."
+      "landed_in": [],
+      "verified_by": []
     },
     {
       "id": "FUI-09",
       "title": "Strategy views cite evidence and never submit orders (rollup)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "Split into `FUI-09.1` (evidence/abstain contract) and `FUI-09.2` (live wiring), producer first. This row is LANDED only when both children are LANDED."
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "FUI-09.1",
+        "FUI-09.2"
+      ]
     },
     {
       "id": "FUI-09.1",
       "title": "Strategy view evidence/abstain contract type",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "508e7c11c573e3bd90911cdc550a8a4f3b58c701",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/508e7c11c573e3bd90911cdc550a8a4f3b58c701",
-          "description": "FUI-09.1 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "508e7c11c573"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-09.2",
       "title": "Live strategy/recommendation view wiring (remaining)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "The remaining scope: wiring the evidence/abstain contract type into the live strategy and recommendation views, confirming no order-submission path exists in the rendered UI."
+      "landed_in": [],
+      "verified_by": []
     },
     {
       "id": "FUI-10",
       "title": "DCA and alert views distinguish delivery states (rollup)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "Split into `FUI-10.1` (delivery-receipt dedupe) and `FUI-10.2` (live wiring), producer first. This row is LANDED only when both children are LANDED."
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "FUI-10.1",
+        "FUI-10.2"
+      ]
     },
     {
       "id": "FUI-10.1",
       "title": "DCA/alert delivery-receipt dedupe contract",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "508e7c11c573e3bd90911cdc550a8a4f3b58c701",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/508e7c11c573e3bd90911cdc550a8a4f3b58c701",
-          "description": "FUI-10.1 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "508e7c11c573"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-10.2",
       "title": "Live DCA/alert delivery-state wiring (remaining)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "The remaining scope: wiring the delivery-receipt dedupe contract into the live DCA and alert views so each state renders as a visibly distinct outcome."
+      "landed_in": [],
+      "verified_by": []
     },
     {
       "id": "FUI-11",
       "title": "CSV import preview with idempotent receipt (rollup)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "Split into `FUI-11.1` (CSV import contract) and `FUI-11.2` (live wiring), producer first. This row is LANDED only when both children are LANDED."
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "FUI-11.1",
+        "FUI-11.2"
+      ]
     },
     {
       "id": "FUI-11.1",
       "title": "CSV import preview contract mirroring the SDK",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "83e9b629b83e1017a1ba7bdba0a535ca6d04f992",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/83e9b629b83e1017a1ba7bdba0a535ca6d04f992",
-          "description": "FUI-11.1 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "83e9b629b83e"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-11.2",
       "title": "Live CSV import preview wiring (remaining)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "The remaining scope: wiring the CSV import preview contract into the live import flow, including post-import holdings display from the owning service's response."
+      "landed_in": [],
+      "verified_by": []
     },
     {
       "id": "FUI-12",
       "title": "Offline PWA shell marks cached data stale (rollup)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "Split into `FUI-12.1` (offline cache contract) and `FUI-12.2` (live wiring), producer first. This row is LANDED only when both children are LANDED."
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "FUI-12.1",
+        "FUI-12.2"
+      ]
     },
     {
       "id": "FUI-12.1",
       "title": "Offline cache staleness contract",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "83e9b629b83e1017a1ba7bdba0a535ca6d04f992",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/83e9b629b83e1017a1ba7bdba0a535ca6d04f992",
-          "description": "FUI-12.1 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "83e9b629b83e"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-12.2",
       "title": "Live offline PWA shell wiring (remaining)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "The remaining scope: wiring the offline cache staleness contract into the live installed PWA shell so previously cached financial facts display while offline, marked stale, with current-data actions disabled."
+      "landed_in": [],
+      "verified_by": []
     },
     {
       "id": "FUI-13",
       "title": "Charts and controls meet accessibility requirements (rollup)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "Split into `FUI-13.1` (accessibility contract) and `FUI-13.2` (live wiring), producer first. This row is LANDED only when both children are LANDED."
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "FUI-13.1",
+        "FUI-13.2"
+      ]
     },
     {
       "id": "FUI-13.1",
       "title": "Chart accessibility text-summary contract",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "83e9b629b83e1017a1ba7bdba0a535ca6d04f992",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/83e9b629b83e1017a1ba7bdba0a535ca6d04f992",
-          "description": "FUI-13.1 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "83e9b629b83e"
+      ],
+      "verified_by": []
     },
     {
       "id": "FUI-13.2",
       "title": "Live chart/control accessibility wiring (remaining)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "The remaining scope: wiring the accessibility text-summary contract into the live charts and controls \u2014 keyboard operation, 200% zoom, reduced-motion, and non-color state indicators."
+      "landed_in": [],
+      "verified_by": []
     },
     {
       "id": "FIN-UI-R003",
       "title": "GraphOS Markets app with scanner, search, and layered chart",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "0809b6d3ca727b19b196f2b875a7cf007eb341db",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/0809b6d3ca727b19b196f2b875a7cf007eb341db",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "e05e1230ae72762d01dcee0bdfa3c24358684c11",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/e05e1230ae72762d01dcee0bdfa3c24358684c11",
-          "description": "FIN-UI-R003 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "cf2a61dd04a9",
+        "d63ed6f3afb2",
+        "e05e1230ae72"
+      ],
+      "verified_by": []
     }
   ]
 }
