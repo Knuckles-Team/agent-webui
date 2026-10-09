@@ -12,9 +12,17 @@
     "DEC-06",
     "WEBUI-DECIDE-R002"
   ],
-  "delivery_state": "BUILDING",
+  "delivery_state": "LANDED",
   "acceptance_state": "NOT_AUDITED",
-  "evidence": [],
+  "evidence": [
+    {
+      "kind": "merged_head",
+      "result": "passed",
+      "commit": "df208e18c6c80f740a2343d4babe3acf07982424",
+      "url": "https://github.com/Knuckles-Team/agent-webui/commit/df208e18c6c80f740a2343d4babe3acf07982424",
+      "description": "Every requirement in this spec is merged to the default branch."
+    }
+  ],
   "requirements": [
     {
       "id": "WEBUI-DECIDE-R001",
@@ -107,8 +115,16 @@
     {
       "id": "DEC-05",
       "title": "Tenant or purpose change invalidates cached decision queries",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "1c4d40ed1a3f72b5c84c674f7d1d39c8a1ffd4b4",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1c4d40ed1a3f72b5c84c674f7d1d39c8a1ffd4b4",
+          "description": "DEC-05 merged to the default branch in this commit."
+        }
+      ]
     },
     {
       "id": "DEC-06",
