@@ -72,7 +72,10 @@ export interface Identity {
 
 const DEV_USER_KEY = 'local'
 
-async function fetchAuthSession(): Promise<{ session: AuthSession | null; ssoConfigured: boolean }> {
+/** Exported for callers outside the `useIdentity` hook that need the raw
+ * session once (for example a transport module reading the caller's tenant)
+ * without duplicating this same-origin cookie check. */
+export async function fetchAuthSession(): Promise<{ session: AuthSession | null; ssoConfigured: boolean }> {
   try {
     const res = await fetch('/auth/session', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
     const contentType = res.headers.get('content-type') ?? ''
