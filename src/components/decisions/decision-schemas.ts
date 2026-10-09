@@ -121,6 +121,17 @@ export const decisionRecordSchema = z.object({
 })
 export type DecisionRecord = z.infer<typeof decisionRecordSchema>
 
+/** `DecisionLog`'s `get` action wraps the committed record with log-level
+ * metadata the record itself does not carry (commit actor/time, visibility). */
+export const decisionLogEntrySchema = z.object({
+  schema_version: z.number(),
+  record: decisionRecordSchema,
+  committed_by: z.string(),
+  committed_at_ms: z.number(),
+  visibility: z.string(),
+})
+export type DecisionLogEntry = z.infer<typeof decisionLogEntrySchema>
+
 const provenanceRowSchema = z.object({
   evaluation_id: z.string().nullable().optional(),
   resolution_id: z.string().nullable().optional(),
