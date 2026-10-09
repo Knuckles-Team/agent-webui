@@ -42,6 +42,7 @@ from .api_extensions import (
 from .api_extensions import (
     router as enhanced_router,
 )
+from .apps import build_apps_router, default_apps
 from .browser_control import BrowserControlPort, build_browser_control_router
 from .contact_delivery import ContactDeliveryPort, build_contact_router
 from .observability import (
@@ -2648,6 +2649,8 @@ def create_agent_web_app(
     app.include_router(chats_router, prefix='/api')
     app.include_router(build_contact_router(contact_delivery), prefix='/api')
     app.include_router(build_browser_control_router(browser_control))
+    # Hosted application surfaces (EH-429): `/api/apps` plus each app's routes.
+    app.include_router(build_apps_router(default_apps()))
 
     # Current Pydantic AI has no ``builtin_tools`` web-adapter argument.
     # Native tools now belong to the Agent capability contract and are discovered

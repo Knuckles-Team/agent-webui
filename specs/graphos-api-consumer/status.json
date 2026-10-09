@@ -15,14 +15,14 @@
     "APIUI-06",
     "WEBUI-API-R005"
   ],
-  "delivery_state": "SPECIFIED",
+  "delivery_state": "BUILDING",
   "acceptance_state": "NOT_AUDITED",
   "evidence": [],
   "requirements": [
     {
       "id": "WEBUI-API-R001",
       "title": "Generated GraphOS API client with typed decisions and confirmation flows",
-      "delivery_state": "BUILT",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "branch",
@@ -30,6 +30,13 @@
           "commit": "6d01ec0fd1b572b3f2ebbda70202e38f984d69be",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/6d01ec0fd1b572b3f2ebbda70202e38f984d69be",
           "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "0144228da540174efa241101ca6f72777f691799",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/0144228da540174efa241101ca6f72777f691799",
+          "description": "WEBUI-API-R001 merged to the default branch in this commit."
         }
       ]
     },
@@ -85,7 +92,7 @@
     {
       "id": "APIUI-02",
       "title": "Typed operations preserve preview-confirm-step-up for effects",
-      "delivery_state": "BUILT",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "branch",
@@ -93,6 +100,13 @@
           "commit": "6d01ec0fd1b572b3f2ebbda70202e38f984d69be",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/6d01ec0fd1b572b3f2ebbda70202e38f984d69be",
           "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "0144228da540174efa241101ca6f72777f691799",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/0144228da540174efa241101ca6f72777f691799",
+          "description": "APIUI-02 merged to the default branch in this commit."
         }
       ]
     },

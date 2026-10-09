@@ -28,6 +28,7 @@ export function createFixtureTransport(): { [K in keyof DecisionsTransport]: Moc
     getDecisionAggregate: vi.fn<DecisionsTransport['getDecisionAggregate']>(),
     getDecisionEvalReceipts: vi.fn<DecisionsTransport['getDecisionEvalReceipts']>(),
     getDecisionEvalTimeline: vi.fn<DecisionsTransport['getDecisionEvalTimeline']>(),
+    getWhyNotOnDemand: vi.fn<DecisionsTransport['getWhyNotOnDemand']>(),
   }
 }
 
