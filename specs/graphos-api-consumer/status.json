@@ -90,8 +90,16 @@
     {
       "id": "APIUI-01",
       "title": "Generated TypeScript client from a pinned Graph OS schema",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "3fabfbee78e35e7646a6ee3f737bd854e646d60e",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/3fabfbee78e35e7646a6ee3f737bd854e646d60e",
+          "description": "APIUI-01 merged to the default branch in this commit."
+        }
+      ]
     },
     {
       "id": "APIUI-02",

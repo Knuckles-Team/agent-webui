@@ -21,7 +21,7 @@ No task above names a requirement ID individually; together they must close ever
 - [x] Add a per-document style nonce to `SecurityHeadersMiddleware` with tests (DS-08).
 - [x] Pass the nonce to Radix Select and ScrollArea, and to react-remove-scroll through `__webpack_nonce__` (DS-08).
 - [x] Patch out the sonner runtime style injection and import its bundled stylesheet (DS-08).
-- [ ] Add the browser probe as an e2e test that fails on any `securitypolicyviolation` event (DS-07, DS-08).
+- [x] Add the browser probe as an e2e test that fails on any `securitypolicyviolation` event (DS-07, DS-08).
 - [ ] Open a dialog, a select and a toast under the probe; the shell-only probe covers load-time injectors only.
-- [ ] Remove the `script-src` `eval` violation in the `api-validation` chunk; this is outside DS-08 scope.
+- [x] Remove the `script-src` `eval` violation in the `api-validation` chunk; this is outside DS-08 scope.
 - [ ] Rebuild the served bundle on the deployment host after merge.
