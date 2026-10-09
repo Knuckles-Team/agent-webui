@@ -56,7 +56,8 @@
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/1a4f6bbf2cd3d76d58d38e3d9e6e26199ae56664",
           "description": "Implementation commit is published on a branch; not yet merged to the default branch."
         }
-      ]
+      ],
+      "remaining": "Rolls up into APIUI-03.1-03.4, all blocked by the same placeholder EgSchemaRef {path: string} shape in the pinned Graph OS schema (see APIUI-03.1). The branch evidence commit (1a4f6bb...) no longer exists on any remote branch; treat as unreachable, not landed."
     },
     {
       "id": "WEBUI-API-R003",
@@ -70,7 +71,8 @@
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/085195e275653918bf974ce2bee4c097f8413f08",
           "description": "Implementation commit is published on a branch; not yet merged to the default branch."
         }
-      ]
+      ],
+      "remaining": "The route-family census (tasks.md's first unchecked item) has not been produced on main. The branch evidence commit (085195e...) no longer exists on any remote branch; treat as unreachable, not landed. Smallest next slice: a checked-in census file classifying each agent/agent_webui/api_extensions.py route as UI-local/Graph OS/retire."
     },
     {
       "id": "WEBUI-API-R004",
@@ -140,19 +142,22 @@
       "id": "APIUI-03.2",
       "title": "Graph reads and writes use typed Graph OS operations with preserved tenant semantics",
       "delivery_state": "SPECIFIED",
-      "evidence": []
+      "evidence": [],
+      "remaining": "Blocked: eg.query.GraphQl and the eg.compute.Graph*/eg.reasoning.GraphSchema* operations in the pinned Graph OS schema also carry the generic placeholder EgSchemaRef {path: string} request/response (same root cause as APIUI-03.1); no concrete graph-shaped operation exists yet to migrate onto."
     },
     {
       "id": "APIUI-03.3",
       "title": "Atlas reads and writes use typed Graph OS operations with preserved tenant semantics",
       "delivery_state": "SPECIFIED",
-      "evidence": []
+      "evidence": [],
+      "remaining": "Blocked: the pinned Graph OS schema has no eg.*Atlas* operation at all. Agent-webui's Atlas routes (graph_catalog via _ATLAS_SOURCE_CATALOG_TOOL in agent/agent_webui/api_extensions.py) have no typed replacement to migrate onto yet."
     },
     {
       "id": "APIUI-03.4",
       "title": "Object-set reads and writes use typed Graph OS operations with preserved tenant semantics",
       "delivery_state": "SPECIFIED",
-      "evidence": []
+      "evidence": [],
+      "remaining": "Blocked: the pinned Graph OS schema has no eg.*Object*/object-set operation. ObjectExplorerView/ObjectView have no typed replacement to migrate onto yet."
     },
     {
       "id": "APIUI-04",
@@ -172,7 +177,8 @@
       "id": "APIUI-05",
       "title": "Host drops direct internal imports once replacement operations are proven",
       "delivery_state": "SPECIFIED",
-      "evidence": []
+      "evidence": [],
+      "remaining": "Blocked transitively: replacement operations for APIUI-03.1-03.4 are not yet proven (all four blocked on the placeholder-shaped pinned schema), so host routes and AU-internal imports cannot be dropped yet."
     },
     {
       "id": "APIUI-06",
