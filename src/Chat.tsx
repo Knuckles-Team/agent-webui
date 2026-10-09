@@ -1412,7 +1412,7 @@ const Chat = ({ pageContext }: ChatProps) => {
   }
 
   /** Body of the `/help` slash command. */
-  const slashHelp = (): string => `### 💻 Agent WebUI Slash Commands
+  const slashHelp = (): string => `### 💻 Graph OS Slash Commands
 
 Available commands:
 - **\`/help\`**: Show this help summary.

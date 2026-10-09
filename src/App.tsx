@@ -330,7 +330,7 @@ function PrivateAppSurface({ route, currentView, ...routeContentProps }: Private
           <SidebarTrigger className="-ml-1" />
           <div className="flex items-center gap-2 px-3">
             <span className="text-lg">🤖</span>
-            <span className="text-sm font-bold truncate">Genius Agent</span>
+            <span className="text-sm font-bold truncate">Graph OS</span>
           </div>
         </header>
 

@@ -10,7 +10,7 @@
 
 | Concept ID | Name | Description |
 |------------|------|-------------|
-| `CONCEPT:WU-OS.governance.webui` | Core API Client | Primary API client for Agent Web Interface for Pydantic AI Agents |
+| `CONCEPT:WU-OS.governance.webui` | Core API Client | Primary API client for Graph OS for Pydantic AI Agents |
 | `CONCEPT:WU-OS.governance.webui-2` | MCP Server | Model Context Protocol server entry point |
 | `CONCEPT:WU-OS.governance.webui-3` | A2A Agent | Agent-to-Agent protocol server |
 

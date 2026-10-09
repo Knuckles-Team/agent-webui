@@ -17,6 +17,18 @@ interface ConsentActionsProps {
 function ConsentActions({ record, analyticsConfigured, onChoose, onRevoke, onClose }: ConsentActionsProps) {
   return (
     <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+      {!record && (
+        <Button
+          type="button"
+          size="sm"
+          className="min-h-[var(--agent-webui-mobile-cta-button-height)]"
+          onClick={() => {
+            onChoose('granted')
+          }}
+        >
+          Accept
+        </Button>
+      )}
       <Button
         type="button"
         variant="outline"
@@ -101,10 +113,14 @@ function ConsentPrompt({
   const copy = analyticsCopy(analyticsConfigured)
   return (
     <aside
-      className="fixed inset-x-3 bottom-[var(--agent-webui-mobile-consent-bottom)] mx-auto max-w-2xl overflow-y-auto rounded-xl border bg-background/95 p-4 shadow-lg backdrop-blur md:bottom-3"
+      // Anchored to the TOP of the viewport (not bottom): the chat input is a
+      // sticky-bottom element on this same screen, and a bottom-anchored fixed
+      // surface here would sit on top of it and block typing. Top placement
+      // guarantees this prompt never overlaps or intercepts the chat input.
+      className="fixed inset-x-3 top-3 mx-auto max-w-2xl overflow-y-auto rounded-xl border bg-background/95 p-4 shadow-lg backdrop-blur"
       style={{
         ...mobileSurfaceStyle,
-        maxHeight: MOBILE_SURFACE.consentMaxHeight,
+        maxHeight: 'calc(100dvh - 1.5rem - var(--agent-webui-mobile-safe-area-bottom))',
         zIndex: MOBILE_SURFACE.consentZIndex,
       }}
       data-mobile-surface="consent"
@@ -146,7 +162,9 @@ function PrivacySettingsButton({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       type="button"
-      className="fixed bottom-[var(--agent-webui-mobile-consent-bottom)] left-3 rounded-full border bg-background/95 px-3 py-2 text-xs shadow-md backdrop-blur md:bottom-3"
+      // Top-anchored for the same reason as ConsentPrompt above: never share
+      // the chat input's bottom-of-screen region.
+      className="fixed top-3 left-3 rounded-full border bg-background/95 px-3 py-2 text-xs shadow-md backdrop-blur"
       style={{ ...mobileSurfaceStyle, zIndex: MOBILE_SURFACE.consentZIndex }}
       data-mobile-surface="consent"
       onClick={onOpen}
