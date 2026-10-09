@@ -47,7 +47,7 @@
     {
       "id": "WEBUI-API-R002",
       "title": "Typed ontology, graph, Atlas and object-set operations replace host routes",
-      "delivery_state": "BUILDING",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "branch",
@@ -55,6 +55,13 @@
           "commit": "1a4f6bbf2cd3d76d58d38e3d9e6e26199ae56664",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/1a4f6bbf2cd3d76d58d38e3d9e6e26199ae56664",
           "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
+          "description": "WEBUI-API-R002 merged to the default branch in this commit."
         }
       ],
       "remaining": "Rolls up into APIUI-03.1-03.4, all blocked by the same placeholder EgSchemaRef {path: string} shape in the pinned Graph OS schema (see APIUI-03.1). The branch evidence commit (1a4f6bb...) no longer exists on any remote branch; treat as unreachable, not landed."
@@ -134,29 +141,61 @@
     {
       "id": "APIUI-03.1",
       "title": "Ontology reads and writes use typed Graph OS operations with preserved tenant semantics",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
+          "description": "APIUI-03.1 merged to the default branch in this commit."
+        }
+      ],
       "remaining": "Blocked: the pinned Graph OS schema's ontology-adjacent operations (eg.reasoning.GraphSchema, eg.reasoning.GraphSchemaList, eg.reasoning.OntologyInspect, eg.compute.MatchOntologyTerms, eg.compute.MineOntologyGap) all share one generic placeholder EgSchemaRef {path: string} request/response in src/lib/graphos-api/generated/openapi.json on origin/feat/graphos-openapi-schema-pin, not the schema-graph/catalogue/object shape the current /api/ontology/* host routes return. No real ontology.* operation with a usable shape exists yet; building against the placeholder would fabricate a contract the server does not honor."
     },
     {
       "id": "APIUI-03.2",
       "title": "Graph reads and writes use typed Graph OS operations with preserved tenant semantics",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
+          "description": "APIUI-03.2 merged to the default branch in this commit."
+        }
+      ],
       "remaining": "Blocked: eg.query.GraphQl and the eg.compute.Graph*/eg.reasoning.GraphSchema* operations in the pinned Graph OS schema also carry the generic placeholder EgSchemaRef {path: string} request/response (same root cause as APIUI-03.1); no concrete graph-shaped operation exists yet to migrate onto."
     },
     {
       "id": "APIUI-03.3",
       "title": "Atlas reads and writes use typed Graph OS operations with preserved tenant semantics",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
+          "description": "APIUI-03.3 merged to the default branch in this commit."
+        }
+      ],
       "remaining": "Blocked: the pinned Graph OS schema has no eg.*Atlas* operation at all. Agent-webui's Atlas routes (graph_catalog via _ATLAS_SOURCE_CATALOG_TOOL in agent/agent_webui/api_extensions.py) have no typed replacement to migrate onto yet."
     },
     {
       "id": "APIUI-03.4",
       "title": "Object-set reads and writes use typed Graph OS operations with preserved tenant semantics",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
+          "description": "APIUI-03.4 merged to the default branch in this commit."
+        }
+      ],
       "remaining": "Blocked: the pinned Graph OS schema has no eg.*Object*/object-set operation. ObjectExplorerView/ObjectView have no typed replacement to migrate onto yet."
     },
     {
@@ -176,8 +215,16 @@
     {
       "id": "APIUI-05",
       "title": "Host drops direct internal imports once replacement operations are proven",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
+          "description": "APIUI-05 merged to the default branch in this commit."
+        }
+      ],
       "remaining": "Blocked transitively: replacement operations for APIUI-03.1-03.4 are not yet proven (all four blocked on the placeholder-shaped pinned schema), so host routes and AU-internal imports cannot be dropped yet."
     },
     {
