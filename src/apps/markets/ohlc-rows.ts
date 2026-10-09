@@ -53,3 +53,14 @@ export function ohlcBars(rows: readonly Row[]): OhlcBar[] | null {
   bars.sort((a, b) => a.t - b.t)
   return bars.map((bar, index) => ({ ...bar, T: bars[index + 1]?.t ?? bar.t + 1 }))
 }
+
+/**
+ * Merge a bar stream by open time (FUI-06). A later occurrence of an open
+ * time is a revision and replaces the earlier bar at that time; an open time
+ * absent from the stream is a gap and is never synthesized. Ascending order.
+ */
+export function mergeBarRevisions(bars: readonly OhlcBar[]): OhlcBar[] {
+  const byOpenTime = new Map<number, OhlcBar>()
+  for (const bar of bars) byOpenTime.set(bar.t, bar)
+  return [...byOpenTime.values()].sort((a, b) => a.t - b.t)
+}
