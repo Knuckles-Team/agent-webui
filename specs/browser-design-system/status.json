@@ -13,14 +13,22 @@
     "DS-07",
     "DS-08"
   ],
-  "delivery_state": "BUILDING",
+  "delivery_state": "LANDED",
   "acceptance_state": "NOT_AUDITED",
-  "evidence": [],
+  "evidence": [
+    {
+      "kind": "merged_head",
+      "result": "passed",
+      "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
+      "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
+      "description": "Every requirement in this spec is merged to the default branch."
+    }
+  ],
   "requirements": [
     {
       "id": "WEBUI-DESIGN-R001",
       "title": "Design guidance distilled into component system and skills",
-      "delivery_state": "BUILT",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "branch",
@@ -28,6 +36,13 @@
           "commit": "a30da6ebacc6fc2be7b39d41da72eeb858aab05b",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/a30da6ebacc6fc2be7b39d41da72eeb858aab05b",
           "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
+          "description": "WEBUI-DESIGN-R001 merged to the default branch in this commit."
         }
       ]
     },
