@@ -10,7 +10,7 @@
 - [ ] Migrate remaining prompts, SDD, KB, sessions, goals, MCP and model families.
 - [ ] Remove replaced host domain routes and AU-internal imports; add static architecture guard.
 - [ ] Run all test-spec gates on exact merged commit, attach route census and CI/browser evidence, then assess acceptance.
-- [ ] WEBUI-API-R004: Mint a per-request correlation id in `RequestObservabilityMiddleware`. **State: Building.** Remaining: served log check after rollout.
+- [x] WEBUI-API-R004: Mint a per-request correlation id in `RequestObservabilityMiddleware`. **State: Building.** Remaining: served log check after rollout.
 - [x] Log the sanitized typed error code in `_log_failure` and add tests/test_log_failure_error_code.py (WEBUI-API-R005).
 - [x] Add `ConsoleConfirmView` + the `console.confirm` route (`src/lib/nav-registry.ts`), built fresh on current main's `invoke.ts`/`identity.ts::confirmedStepUpUrl` plan-ref primitives: fetches the server-held plan by `plan_ref` alone and confirms by reference, never replaying the original request arguments. Test: `src/components/views/__tests__/ConsoleConfirmView.test.tsx` (APIUI-02; partial WEBUI-API-R001 — the generated TS client and decisions/Markets/WebMCP migration remain open).
 
