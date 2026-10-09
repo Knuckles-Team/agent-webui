@@ -28,6 +28,7 @@
 | Date | Commit/PR | Environment and fixture/service revision | Tests/gates | Decision |
 |---|---|---|---|---|
 | 2026-10-08 | Port of 0809b6d3ca onto `origin/main` (PR pending) | Local worktree, pnpm/uv toolchain, no live provider | `pytest agent/agent_webui/__tests__/test_markets_app.py` 14 passed; `vitest run src/apps/markets src/lib/apps` 26 passed; `tsc --noEmit` clean; `node scripts/generate-site-assets.mjs` + `check-site-assets.mjs` pass; `no_fabrication_gate.mjs` OK | FUI-03 and FIN-UI-R003 code merged to a branch off current main; owner repository dependencies (EG finance primitives, SDK sources) remain PENDING, so this spec stays SPECIFIED overall |
+| 2026-10-09 | Markets five-destination nav, stacked on the 0809b6d3ca port branch (PR pending) | Local worktree, pnpm toolchain | `vitest run src/apps/markets` 29 passed (new `MarketsNav.test.tsx`); `tsc --noEmit` clean; site-assets generate/check and no-fabrication gate pass | FUI-01 code merged to a branch stacked on the still-open Markets-app-port PR; News and Portfolio destinations state their PENDING owner dependency honestly; Calendar reuses the existing macro-events route; spec stays SPECIFIED overall |
 
 ## Unreferenced requirement IDs
 

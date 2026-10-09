@@ -17,6 +17,7 @@ import { chartPath, readFilters, writeFilters, type ScannerFilters } from '../vi
 import type { MarketsToolController } from '../webmcp'
 import { MarketsGate, RequestFailed } from './Availability'
 import { MarketsNotices } from './Notices'
+import { MarketsShell } from './MarketsShell'
 import { MarketsWebMcp } from './MarketsWebMcp'
 import { OverviewTiles } from './OverviewTiles'
 import { ScannerFiltersPanel } from './ScannerFilters'
@@ -135,7 +136,9 @@ function MarketsOverview() {
 export default function MarketsHome() {
   return (
     <MarketsGate>
-      <MarketsOverview />
+      <MarketsShell>
+        <MarketsOverview />
+      </MarketsShell>
     </MarketsGate>
   )
 }

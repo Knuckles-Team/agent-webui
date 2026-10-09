@@ -6,7 +6,7 @@
  * place Markets pages are declared.
  */
 import { lazy } from 'react'
-import { CandlestickChart, Share2, TrendingUp } from 'lucide-react'
+import { CalendarDays, CandlestickChart, Menu as MenuIcon, Newspaper, Share2, TrendingUp, Wallet } from 'lucide-react'
 import type { RouteDef } from '@/lib/nav-registry'
 
 export const APP_ROUTES: readonly RouteDef[] = [
@@ -21,6 +21,58 @@ export const APP_ROUTES: readonly RouteDef[] = [
     capability: 'app:markets',
     mobile: 'adapted',
     element: lazy(() => import('./components/MarketsHome')),
+  },
+  {
+    id: 'apps.markets.news',
+    path: '/apps/markets/news',
+    label: 'Markets: News',
+    section: 'apps',
+    navigation: 'deep-link',
+    blurb: 'The Markets News destination (not available until a source is certified).',
+    icon: Newspaper,
+    minRole: 'user',
+    capability: 'app:markets',
+    mobile: 'adapted',
+    element: lazy(() => import('./components/MarketsNews')),
+  },
+  {
+    id: 'apps.markets.calendar',
+    path: '/apps/markets/calendar',
+    label: 'Markets: Calendar',
+    section: 'apps',
+    navigation: 'deep-link',
+    blurb: 'Documented macro events with their public source.',
+    icon: CalendarDays,
+    minRole: 'user',
+    capability: 'app:markets',
+    mobile: 'adapted',
+    element: lazy(() => import('./components/MarketsCalendar')),
+  },
+  {
+    id: 'apps.markets.portfolio',
+    path: '/apps/markets/portfolio',
+    label: 'Markets: Portfolio',
+    section: 'apps',
+    navigation: 'deep-link',
+    blurb: 'The Markets Portfolio destination (not available until an account provider is connected).',
+    icon: Wallet,
+    minRole: 'user',
+    capability: 'app:markets',
+    mobile: 'adapted',
+    element: lazy(() => import('./components/MarketsPortfolio')),
+  },
+  {
+    id: 'apps.markets.menu',
+    path: '/apps/markets/menu',
+    label: 'Markets: Menu',
+    section: 'apps',
+    navigation: 'deep-link',
+    blurb: 'What Markets is, and the notices every page carries.',
+    icon: MenuIcon,
+    minRole: 'user',
+    capability: 'app:markets',
+    mobile: 'adapted',
+    element: lazy(() => import('./components/MarketsMenu')),
   },
   {
     id: 'apps.markets.chart',
