@@ -1,7 +1,7 @@
 # Graph OS web UI
 
 <p align="center">
-  <img src="docs/assets/brands/agent-webui-logo-v1.png" alt="Graph OS web UI logo" width="160" />
+  <img src="docs/assets/brands/agent-webui-logo-v1.png" alt="Graph OS Agent Web UI logo" width="160" />
 </p>
 
 <p align="center">
@@ -41,16 +41,16 @@
   <a href="https://knuckles-team.github.io/agent-webui/status/">Status</a>
 </p>
 
-![The Graph OS web UI Atlas workspace presents graph, object, schema, data, document, and memory entry points in one browser surface.](docs/assets/screenshots/atlas-workspace.png)
+![The Agent Web UI Atlas workspace presents graph, object, schema, data, document, and memory entry points in one browser surface.](docs/assets/screenshots/atlas-workspace.png)
 
 ## Overview
 
-Graph OS web UI is the browser workspace composed by Graph OS. It brings agent
+Graph OS Agent Web UI is the browser workspace composed by Graph OS. It brings agent
 conversations, approvals, workflows, fleet activity, and Epistemic Graph
 exploration into one React application. Its FastAPI host keeps privileged
 credentials and gateway delegation on the server side.
 
-| Graph OS web UI owns | Other components own |
+| Agent Web UI owns | Other components own |
 |---|---|
 | Browser presentation, local interaction state, accessible route composition, and the FastAPI boundary | Graph OS owns public routing, identity, policy, and fleet supervision; Agent Utilities owns agent behavior; Epistemic Graph owns durable knowledge; connector services own external-system effects |
 
@@ -67,12 +67,12 @@ Current package Version: 2.6.3.
 
 ## Documentation
 
-Start with the [Graph OS web UI documentation](https://knuckles-team.github.io/agent-webui/),
+Start with the [Agent Web UI documentation](https://knuckles-team.github.io/agent-webui/),
 then use the shared platform map to move between components:
 
 | Component | Role | Documentation |
 |---|---|---|
-| Graph OS web UI | Browser operator workspace and Atlas knowledge views | [Docs](https://knuckles-team.github.io/agent-webui/) |
+| Agent Web UI | Browser operator workspace and Atlas knowledge views | [Docs](https://knuckles-team.github.io/agent-webui/) |
 | Agent Terminal UI | Terminal and headless client; REST operations are available, with no ACP conversational path | [Docs](https://knuckles-team.github.io/agent-terminal-ui/) |
 | Geniusbot | Desktop cockpit for chat, graph, fleet, health, and operator workflows | [Docs](https://knuckles-team.github.io/geniusbot/) |
 | Graph OS messaging | Hosts chat and voice entrypoints; Agent Utilities supplies adapter and routing behavior | [Docs](https://knuckles-team.github.io/graph-os/) |
@@ -83,7 +83,7 @@ then use the shared platform map to move between components:
 
 ## Architecture
 
-![Runtime architecture: people use Graph OS web UI, Agent Terminal UI, Geniusbot, and Graph OS-hosted messaging. MCP, REST, and A2A clients enter through Graph OS; source systems flow through Agent Connector SDK into Epistemic Graph.](docs/assets/runtime-architecture.svg)
+![Runtime architecture: people use Agent Web UI, Agent Terminal UI, Geniusbot, and Graph OS-hosted messaging. MCP, REST, and A2A clients enter through Graph OS; source systems flow through Agent Connector SDK into Epistemic Graph.](docs/assets/runtime-architecture.svg)
 
 People also enter through Agent Terminal UI and Geniusbot or Graph OS-hosted
 messaging; Agent Terminal UI exposes REST operations, with no ACP conversational
@@ -91,7 +91,7 @@ path. External applications connect over MCP, REST, or A2A. The browser talks
 only to its same-origin FastAPI host. Graph OS injects gateway routes and
 verified request context, then delegates agent behavior to Agent Utilities and
 durable knowledge to Epistemic Graph. Source systems connect through Agent
-Connector SDK directly to Epistemic Graph. Graph OS web UI renders typed results
+Connector SDK directly to Epistemic Graph. Agent Web UI renders typed results
 and local presentation state while each service retains its own authority.
 
 See the [architecture guide](https://knuckles-team.github.io/agent-webui/architecture/)
@@ -99,7 +99,7 @@ for the request flow and trust boundaries.
 
 ## Quick start
 
-Generate a local profile and start Graph OS with Graph OS web UI enabled:
+Generate a local profile and start Graph OS with Agent Web UI enabled:
 
 ```bash
 uvx --from "graph-os[webui]" setup-config generate --profile tiny
@@ -119,4 +119,4 @@ before opening a pull request.
 
 ## License
 
-Graph OS web UI is available under the [MIT License](LICENSE).
+Graph OS Agent Web UI is available under the [MIT License](LICENSE).

@@ -12,11 +12,11 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-import graph_os_webui.api_extensions as mod
+import agent_webui.api_extensions as mod
 import pytest
+from agent_webui.api_extensions import router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from graph_os_webui.api_extensions import router
 
 
 @pytest.fixture
@@ -515,7 +515,7 @@ def test_slash_kb_list_honest_empty(client, monkeypatch):
     engine = MagicMock()
     _patch_engine(monkeypatch, engine)
     monkeypatch.setattr(
-        'graph_os_webui.api_extensions.KBIngestionEngine',
+        'agent_webui.api_extensions.KBIngestionEngine',
         lambda *a, **k: MagicMock(list_knowledge_bases=lambda: []),
     )
     resp = client.post('/commands/execute', json={'command': '/kb list'})
@@ -526,7 +526,7 @@ def test_slash_kb_list_honest_empty(client, monkeypatch):
 
 def test_slash_sdd_specs_honest_empty(client, monkeypatch):
     monkeypatch.setattr(
-        'graph_os_webui.api_extensions.SDDManager',
+        'agent_webui.api_extensions.SDDManager',
         lambda *a, **k: MagicMock(list_specs=lambda: []),
     )
     resp = client.post('/commands/execute', json={'command': '/sdd specs'})

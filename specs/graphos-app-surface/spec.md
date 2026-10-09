@@ -15,14 +15,14 @@ The browser presents one GraphOS product identity and a first-class Apps section
 | ID | Behavior | Related ID | Evidence |
 |---|---|---|---|
 | APP-01 | Titles, metadata, webmanifest, assets, theme, UI copy and published Pages identity consistently say GraphOS | WEBUI-APPS-R002 | Asset regeneration + rendered snapshot + Pages build |
-| APP-02 | Package/import, npm metadata, release image, WebMCP IDs, skills, browser storage/consent and environment variable names use the new public identity consistently | WEBUI-APPS-R003 | Build, wheel, image and compatibility tests |
+| APP-02 | Package/import, npm metadata, release image, WebMCP IDs, skills, browser storage/consent and environment variable names keep the agent-webui component identity; only user-visible strings are rebranded (operator decision 2026-10-09) | WEBUI-APPS-R003 | Build and wheel tests |
 | APP-03 | `apps` is one section in `nav-registry.ts`; each app declares route, capability, typed client, WebMCP page and optional Atlas renderer in one `AppSurface` | WEBUI-APPS-R001 | Contract and route-census tests |
 | APP-04 | Native and validated package-contributed apps resolve to the same shape; untrusted descriptors cannot register executable code, arbitrary URLs or extra privileges | WEBUI-APPS-R001 | Invalid descriptor and denied capability tests |
 | APP-05 | Markets consumes the contract without duplicating scanner/chart or gateway wiring in the shell | FIN-UI-R003, WEBUI-APPS-R001 | First-consumer integration test |
-| APP-06 | Legacy browser state and controlled grants expire or migrate safely, with explicit renewed consent; inaccessible old links lead to the canonical destination where feasible | WEBUI-APPS-R003 | Migration/browser test |
+| APP-06 | Storage and consent keys are unchanged by the rebrand, so legacy browser state stays valid; any future key change expires or migrates it with explicit renewed consent | WEBUI-APPS-R003 | Browser test |
 | APP-07 | App navigation works with keyboard, touch, reduced motion and mobile/desktop layouts and has loading, unavailable and denied states | WEBUI-APPS-R001 | E2E accessibility suite |
 
-The repo may be renamed only after its package consumers and published links are coordinated. A UI copy change alone does not satisfy APP-02. Public examples and setup instructions must use portable addresses and credentials supplied by a contributor, never a private service or inventory. The shell must not receive a service bearer in JavaScript.
+Operator decision 2026-10-09: only front-end-facing items carry the Graph OS name; the repository, package and runtime identifiers stay `agent-webui`, a Graph OS component. Public examples and setup instructions must use portable addresses and credentials supplied by a contributor, never a private service or inventory. The shell must not receive a service bearer in JavaScript.
 
 ## Completion
 

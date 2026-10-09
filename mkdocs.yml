@@ -73,7 +73,7 @@ extra:
     current: agent-webui
     sites:
       - slug: agent-webui
-        name: Graph OS web UI
+        name: Graph OS Agent Web UI
         role: operator experience
         url: https://knuckles-team.github.io/agent-webui/
       - slug: graph-os
@@ -96,7 +96,7 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/Knuckles-Team/agent-webui
     - icon: fontawesome/brands/python
-      link: https://pypi.org/project/graph-os-webui/
+      link: https://pypi.org/project/agent-webui/
 
 nav:
   - Home: index.md

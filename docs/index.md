@@ -2,7 +2,7 @@
   <p class="site-hero__eyebrow">Operator experience for GraphOS</p>
   <h1 class="site-hero__title" id="webui-hero-title">See the work. Guide the agent. Explore the evidence.</h1>
   <p class="site-hero__summary">
-    Graph OS brings conversations, governed actions, workflows, fleet activity,
+    Agent WebUI brings conversations, governed actions, workflows, fleet activity,
     and epistemic knowledge into one role-aware browser workspace.
   </p>
   <div class="site-hero__actions">
@@ -12,7 +12,7 @@
   </div>
 </section>
 
-![The Graph OS Atlas workspace presents guided knowledge entry points and expert query tools.](assets/screenshots/atlas-workspace.png)
+![The Agent WebUI Atlas workspace presents guided knowledge entry points and expert query tools.](assets/screenshots/atlas-workspace.png)
 
 ## One interface, explicit authority
 

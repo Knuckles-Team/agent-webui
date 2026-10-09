@@ -38,7 +38,7 @@
 #     lookup). This host's `python3` already carries `agent-utilities` editable-installed
 #     at the user site-packages level (`~/.local/lib/python3.14/site-packages`) —
 #     independent of cwd — while `pytest.ini`'s `pythonpath = agent` still makes pytest
-#     import the MERGED TREE's own `agent/graph_os_webui` package, not a stale installed
+#     import the MERGED TREE's own `agent/agent_webui` package, not a stale installed
 #     copy (the ini file says so explicitly). Verified byte-for-byte: `python3 -m pytest`
 #     from a disposable detached worktree reproduces the SAME failing-id set as running
 #     it in the canonical checkout.
@@ -64,7 +64,7 @@ environment_signature: ["bash", "-c", "python3 --version && node --version && pn
 
 gates:
   # ── Python: FastAPI backend + Pydantic AI agent glue ─────────────────────────────────
-  # Full `pytest.ini` `testpaths` (`agent/graph_os_webui/__tests__ tests`), matching the
+  # Full `pytest.ini` `testpaths` (`agent/agent_webui/__tests__ tests`), matching the
   # ALREADY-VERIFIED baseline in the register (D-FE-7's closure evidence: "71 failed / 73
   # errors, all pre-existing, byte-identical between canonical and worktree"; reproduced
   # freshly here as 69 failed / 121 passed / 2 skipped / 73 errors — the small drift from

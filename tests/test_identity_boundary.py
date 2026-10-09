@@ -27,9 +27,9 @@ _ASSET = 'console.log("bundle")'
 @pytest.fixture
 def built_bundle():
     """A throwaway ``dist/`` so the SPA mount (and its public shell) is live."""
-    import graph_os_webui
+    import agent_webui
 
-    dist = Path(graph_os_webui.__file__).parent / 'dist'
+    dist = Path(agent_webui.__file__).parent / 'dist'
     existed = dist.exists()
     assets = dist / 'assets'
     assets_existed = assets.exists()
@@ -52,7 +52,7 @@ def built_bundle():
 
 
 def _build(**kwargs: Any) -> Any:
-    from graph_os_webui.server import create_agent_web_app
+    from agent_webui.server import create_agent_web_app
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
 
@@ -94,7 +94,7 @@ def test_a_host_session_boundary_satisfies_the_verifier_requirement(
 def test_host_boundary_and_webui_oidc_cannot_both_own_auth(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from graph_os_webui import oidc_session
+    from agent_webui import oidc_session
 
     monkeypatch.setattr(oidc_session, 'load_settings', lambda: object())
     with pytest.raises(RuntimeError, match='both own'):

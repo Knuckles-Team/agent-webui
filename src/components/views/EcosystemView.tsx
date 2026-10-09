@@ -216,7 +216,7 @@ const gitlabPipelineItemSchema = z.object({
 })
 
 // `web_url` reaches this endpoint through `_public_external_result`
-// (`graph_os_webui/api_extensions.py`), which runs every governed delegation
+// (`agent_webui/api_extensions.py`), which runs every governed delegation
 // result through `sanitize_for_persistence` -- and that sanitizer
 // blanket-redacts ANY field literally named `web_url`/`html_url`/`url`/etc
 // to the fixed string `"[REDACTED_LOCATION]"` regardless of content,
@@ -245,7 +245,7 @@ interface PortainerStack {
 // shape against the real response either crashed (`.hyperparameters` is
 // undefined) or, worse, silently kept whatever fabricated card was already
 // on screen. `TrainedModel` matches the real backend record exactly; see
-// `agent/graph_os_webui/api_extensions.py:get_datascience_training` and
+// `agent/agent_webui/api_extensions.py:get_datascience_training` and
 // `data_science_mcp/ml_engine.py:ranked_models`.
 interface TrainedModel {
   model_id: string
@@ -272,7 +272,7 @@ const LOADING_STATE: EcoState = { status: 'loading' }
 /**
  * Classify one `/api/enhanced/ecosystem/*` (or similarly enveloped) JSON
  * body into a truthful {@link EcoState} plus the list it carries under
- * `key`. The backend envelope (`agent/graph_os_webui/api_extensions.py`) is
+ * `key`. The backend envelope (`agent/agent_webui/api_extensions.py`) is
  * `status: 'success' | 'error' | 'capability_unavailable' | 'needs_input'`
  * with a human `detail` reason on every non-success status. A response that
  * doesn't carry a recognizable envelope is never treated as "empty" -- an

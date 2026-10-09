@@ -1,6 +1,6 @@
 # Browser design system
 
-Graph OS builds every browser surface from one set of tokens, primitives and
+Agent WebUI builds every browser surface from one set of tokens, primitives and
 interaction rules rather than inventing new ones per view. This page documents
 the current tokens sourced from [`src/index.css`](https://github.com/Knuckles-Team/agent-webui/blob/main/src/index.css)
 and the `src/components/ui/` primitives that consume them, including the

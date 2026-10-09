@@ -9,7 +9,7 @@
  * "Saved" toast for a field that never left the browser, the account fields
  * (display name, username, email, role) are shown READ-ONLY, sourced
  * verbatim from the session's OIDC claims (`useIdentity()` / `AuthSession` in
- * `lib/auth.ts` -> `agent/graph_os_webui/oidc_session.py::_handle_session`).
+ * `lib/auth.ts` -> `agent/agent_webui/oidc_session.py::_handle_session`).
  *
  * What genuinely CAN be offered honestly is a LOCAL override -- an avatar and
  * a nickname stored only in this browser (`lib/profile-store.ts`), the same

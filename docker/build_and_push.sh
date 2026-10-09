@@ -104,7 +104,7 @@
 #   AU_SRC_PATH         path to an agent-utilities checkout (default: ../agent-utilities)
 #   EG_WHEELHOUSE_PATH  REQUIRED (temporary, see above): a directory containing
 #                        a pre-built epistemic_graph-*.whl at >=2.23.2,<3.0.0
-#   IMAGE               image name:tag prefix (default: knucklessg1/graph-os-webui)
+#   IMAGE               image name:tag prefix (default: knucklessg1/agent-webui)
 #   BUILD_BACKEND       auto (default) | docker | buildkit -- see detection order above
 #   DOCKER               full docker invocation to use verbatim if set (bypasses
 #                        the local-daemon/DOCKER_CONTEXT probe below entirely)
@@ -125,7 +125,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AU_SRC_PATH="${AU_SRC_PATH:-${REPO_ROOT}/../agent-utilities}"
-IMAGE="${IMAGE:-knucklessg1/graph-os-webui}"
+IMAGE="${IMAGE:-knucklessg1/agent-webui}"
 BUILD_BACKEND="${BUILD_BACKEND:-auto}"
 DOCKER_BIN="${DOCKER_BIN:-docker}"
 DOCKER_CONTEXT="${DOCKER_CONTEXT:-r820}"
@@ -297,7 +297,7 @@ fi
 docker_get_build_info() {
   local image_ref="$1"
   ${DOCKER_CMD} run --rm --entrypoint sh "${image_ref}" -c \
-    'cat "$(python3 -c "import graph_os_webui, os; print(os.path.join(os.path.dirname(graph_os_webui.__file__), \"dist\", \"build-info.txt\"))")"'
+    'cat "$(python3 -c "import agent_webui, os; print(os.path.join(os.path.dirname(agent_webui.__file__), \"dist\", \"build-info.txt\"))")"'
 }
 
 build_and_push_docker() {
@@ -377,8 +377,8 @@ build_and_push_buildkit() {
   info="$(kubectl -n "${BUILDKIT_NAMESPACE}" run "${verify_pod}" \
     --image="${verify_ref}" --restart=Never --rm --attach --pod-running-timeout=240s \
     --command -- python3 -c \
-    'import graph_os_webui, os
-p = os.path.join(os.path.dirname(graph_os_webui.__file__), "dist", "build-info.txt")
+    'import agent_webui, os
+p = os.path.join(os.path.dirname(agent_webui.__file__), "dist", "build-info.txt")
 print(open(p).read())')"
   assert_build_info "${info}" || exit 70
 }

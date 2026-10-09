@@ -119,7 +119,7 @@ export interface McpAppResource {
 /**
  * One tool descriptor from the governed catalog
  * (`GET /api/enhanced/mcp/servers/{server}/tools`, `list_mcp_server_tools` in
- * `graph_os_webui.api_extensions`). `enabled` reflects this deployment's own
+ * `agent_webui.api_extensions`). `enabled` reflects this deployment's own
  * toggle state, not caller authorization — a disabled tool is still listed so
  * an operator can see and re-enable it, but `MCPProvider` treats it exactly
  * like any other entry (no policy is inferred client-side; the server

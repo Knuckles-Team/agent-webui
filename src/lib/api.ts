@@ -1,6 +1,6 @@
 /**
  * @file api.ts
- * @description Centralized API client for the Graph OS web UI.
+ * @description Centralized API client for the Agent Web UI.
  *
  * Provides a standardized wrapper around the Fetch API for interacting with
  * the agent backend. Includes typing for request/response cycles and
@@ -35,7 +35,7 @@ export interface SaveWorkflowPayload {
 // ---------------------------------------------------------------------------
 // Ontology (KG-2.x) — types shared between the api client adapters and the
 // operator views (ObjectExplorerView / ObjectView / VertexView). The backend
-// routes live under /api/enhanced/ontology/* in graph_os_webui/api_extensions.py
+// routes live under /api/enhanced/ontology/* in agent_webui/api_extensions.py
 // and serialize raw ontology shapes (properties/derived as dicts, links as
 // {out,in}, edits as the EditLedger model). The client methods below adapt
 // those raw shapes into the view-facing shapes declared here so the views are

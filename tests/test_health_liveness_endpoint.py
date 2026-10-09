@@ -14,7 +14,7 @@ web app) was never swallowed -- it starts with ``api`` -- but
 
 These tests reproduce the swallow for real: they write a throwaway
 ``dist/index.html`` at the exact path ``create_agent_web_app`` hard-codes
-(``Path(__file__).parent / 'dist'`` in ``graph_os_webui/server.py``, gitignored,
+(``Path(__file__).parent / 'dist'`` in ``agent_webui/server.py``, gitignored,
 normally produced by the Vite build) so ``SPAStaticFiles`` actually mounts,
 then assert the fix -- explicit routes registered before that mount --
 prevents `/health`, `/healthz`, and `/api/healthz` from ever reaching the
@@ -57,9 +57,9 @@ def webui_dist_present():
     the bug never reproduces -- an unmatched path 404s honestly instead of
     being swallowed. Removes only what it created.
     """
-    import graph_os_webui
+    import agent_webui
 
-    dist_dir = Path(graph_os_webui.__file__).parent / 'dist'
+    dist_dir = Path(agent_webui.__file__).parent / 'dist'
     index_path = dist_dir / 'index.html'
     dist_already_existed = dist_dir.exists()
     dist_dir.mkdir(parents=True, exist_ok=True)
@@ -87,7 +87,7 @@ def app(webui_dist_present):
     # Depended on for its side effect (materializing dist/index.html before
     # ``create_agent_web_app`` checks ``dist_path.exists()``), not a value.
     _ = webui_dist_present
-    from graph_os_webui.server import create_agent_web_app
+    from agent_webui.server import create_agent_web_app
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
 

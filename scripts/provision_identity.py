@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Idempotent, re-runnable identity provisioning for the Graph OS.
+"""Idempotent, re-runnable identity provisioning for the Agent WebUI.
 
 Stands up **both** identities the WebUI needs, end to end, with no hand-placed
 credential anywhere:
@@ -145,8 +145,7 @@ CA_BUNDLE_FILE = f'{CA_BUNDLE_MOUNT}/ca-bundle.pem'
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OPENBAO_ENV = Path(
     os.environ.get(
-        'OPENBAO_ENV_FILE',
-        str(REPO_ROOT.parent.parent / 'services' / 'openbao' / '.env'),
+        'OPENBAO_ENV_FILE', str(REPO_ROOT.parent.parent / 'services' / 'openbao' / '.env')
     )
 )
 
@@ -357,9 +356,7 @@ def _ensure_fleet_scope(token: str, dry_run: bool) -> str:
     return next(s['id'] for s in scopes if s['name'] == FLEET_SCOPE)
 
 
-def _create_client(
-    token: str, client_id: str, desired: dict[str, Any], dry_run: bool
-) -> dict[str, Any] | None:
+def _create_client(token: str, client_id: str, desired: dict[str, Any], dry_run: bool) -> dict[str, Any] | None:
     """Create a Keycloak client that does not exist yet. Returns ``None`` for
     a dry run (nothing was actually created to return)."""
     if dry_run:
@@ -373,9 +370,7 @@ def _create_client(
     return created
 
 
-def _resolve_client_field(
-    existing: dict[str, Any], key: str, wanted: Any
-) -> tuple[bool, Any]:
+def _resolve_client_field(existing: dict[str, Any], key: str, wanted: Any) -> tuple[bool, Any]:
     """Decide whether one client field has drifted, and what it should become.
 
     Keycloak normalizes and reorders list-valued fields, so an order-sensitive
@@ -396,9 +391,7 @@ def _resolve_client_field(
     return not have >= want, sorted(have | want)
 
 
-def _compute_client_drift(
-    existing: dict[str, Any], desired: dict[str, Any]
-) -> dict[str, Any]:
+def _compute_client_drift(existing: dict[str, Any], desired: dict[str, Any]) -> dict[str, Any]:
     drift: dict[str, Any] = {}
     for key, value in desired.items():
         if key in {'clientId', 'attributes'}:
@@ -413,11 +406,7 @@ def _compute_client_drift(
 
 
 def _apply_client_drift(
-    token: str,
-    client_id: str,
-    existing: dict[str, Any],
-    drift: dict[str, Any],
-    dry_run: bool,
+    token: str, client_id: str, existing: dict[str, Any], drift: dict[str, Any], dry_run: bool
 ) -> dict[str, Any] | None:
     if not drift:
         log(f'  client {client_id}: present, in sync')
@@ -731,7 +720,7 @@ def stage_keycloak(grant_users: list[str], dry_run: bool) -> dict[str, str]:
         token,
         {
             'clientId': BROWSER_CLIENT,
-            'name': 'Graph OS (browser sign-in)',
+            'name': 'Agent WebUI (browser sign-in)',
             'description': (
                 'Confidential authorization-code client. Issues the END USER a '
                 'token; the WebUI never exceeds the signed-in human authority.'
@@ -772,7 +761,7 @@ def stage_keycloak(grant_users: list[str], dry_run: bool) -> dict[str, str]:
         token,
         {
             'clientId': SERVICE_CLIENT,
-            'name': 'Graph OS (backend service identity)',
+            'name': 'Agent WebUI (backend service identity)',
             'description': (
                 'Confidential client_credentials client for the WebUI backend’s '
                 'own outbound calls. No browser flow, separate secret.'

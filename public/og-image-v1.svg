@@ -17,6 +17,5 @@
   <!-- Reuse the repository favicon mark; do not maintain a second logo path. -->
   <image href="favicon.svg" x="114" y="161" width="334" height="288" preserveAspectRatio="none" />
   <text x="510" y="282" fill="#ffffff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="62" font-weight="700">Graph OS</text>
-  <text x="514" y="350" fill="#d8deea" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" font-weight="500">web UI</text>
   <text x="514" y="410" fill="#9da9bd" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22">Governed agents · knowledge · workflows</text>
 </svg>

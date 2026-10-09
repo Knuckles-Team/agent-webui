@@ -22,7 +22,7 @@
 
 [dirs]
 ".specify" = "tracked Spec Kit constitution; generated tooling files remain ignored"
-agent = "the graph_os_webui Python backend package: FastAPI + pydantic-ai orchestrator, RBAC/OIDC session handling, observability, api_extensions -- plus its own README, icon, and mcp_config.json"
+agent = "the agent_webui Python backend package: FastAPI + pydantic-ai orchestrator, RBAC/OIDC session handling, observability, api_extensions -- plus its own README, icon, and mcp_config.json"
 docker = "Dockerfile plus build_and_push.sh / deploy.sh for the webui image"
 patches = "pnpm patchedDependencies diffs; pnpm resolves them from the repository root (sonner CSP patch)"
 docs = "mkdocs documentation source (architecture, concepts, capability coverage)"

@@ -4,10 +4,10 @@
  * server-side identity boundary: Graph OS's identity broker
  * (`graph_os/identity`, which owns `/auth/*` whenever the WebUI is served by
  * Graph OS) or, for a standalone WebUI, the single-client OIDC boundary
- * (`agent/graph_os_webui/oidc_session.py`).
+ * (`agent/agent_webui/oidc_session.py`).
  *
  * This is deliberately NOT a second auth path: the `webui_role` that
- * `/auth/session` reports is computed server-side (`agent/graph_os_webui/rbac.py`)
+ * `/auth/session` reports is computed server-side (`agent/agent_webui/rbac.py`)
  * from the principal's verified scopes — the frontend never derives a role
  * itself, it only renders what the server decided. There is no
  * "unconfigured means full access" fallback any more: when
@@ -37,7 +37,7 @@ export interface AuthSession {
   picture?: string | null
   tenant?: string | null
   roles: string[]
-  /** Computed server-side by `agent/graph_os_webui/rbac.py::resolve_webui_role`. */
+  /** Computed server-side by `agent/agent_webui/rbac.py::resolve_webui_role`. */
   webui_role?: string | null
   expires_at?: number | null
   /** Graph OS identity broker only: the stored auth mode (`null` while the

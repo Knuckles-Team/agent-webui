@@ -1,7 +1,7 @@
-# Graph OS Python host
+# Agent WebUI Python host
 
 The packaged FastAPI boundary and built React assets for
-[Graph OS](../README.md).
+[Agent WebUI](../README.md).
 
 ## Overview
 
@@ -52,4 +52,4 @@ routing, fleet supervision, and runtime policy in GraphOS. Follow the root
 
 ## License
 
-Graph OS is available under the [MIT License](../LICENSE).
+Agent WebUI is available under the [MIT License](../LICENSE).

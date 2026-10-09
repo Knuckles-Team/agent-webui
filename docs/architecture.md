@@ -1,22 +1,22 @@
 # Architecture
 
-Graph OS is the browser and same-origin presentation boundary for GraphOS.
+Agent WebUI is the browser and same-origin presentation boundary for GraphOS.
 It renders runtime capabilities; it does not duplicate their authorities.
 
-![Runtime architecture: Graph OS enters GraphOS, which composes agent-utilities, epistemic-graph, and connector services.](assets/runtime-architecture.svg)
+![Runtime architecture: Agent WebUI enters GraphOS, which composes agent-utilities, epistemic-graph, and connector services.](assets/runtime-architecture.svg)
 
 ## Runtime composition
 
-GraphOS starts Graph OS as a supervised co-service when `ENABLE_WEB_UI=true`.
+GraphOS starts Agent WebUI as a supervised co-service when `ENABLE_WEB_UI=true`.
 The composition path is explicit:
 
 1. GraphOS creates the native gateway application and checked process context.
-2. The GraphOS WebUI host creates the Graph OS FastAPI application.
+2. The GraphOS WebUI host creates the Agent WebUI FastAPI application.
 3. GraphOS injects its gateway route composer through `ApplicationComposer`.
-4. Graph OS mounts the single-page application after every typed API route.
+4. Agent WebUI mounts the single-page application after every typed API route.
 5. Security and observability middleware wrap the complete application.
 
-The standalone Graph OS server deliberately omits GraphOS-owned routes. Use
+The standalone Agent WebUI server deliberately omits GraphOS-owned routes. Use
 the GraphOS-hosted composition for the complete platform surface.
 
 ## Browser request path
@@ -45,7 +45,7 @@ the GraphOS-hosted composition for the complete platform surface.
 | Boundary | Owns | Does not own |
 |---|---|---|
 | React application | Presentation, interaction state, route metadata, accessibility | Service credentials, policy truth, durable graph state |
-| Graph OS FastAPI host | Same-origin browser endpoints, SPA serving, host checks, request bounds, CSP | GraphOS fleet lifecycle or graph-engine implementation |
+| Agent WebUI FastAPI host | Same-origin browser endpoints, SPA serving, host checks, request bounds, CSP | GraphOS fleet lifecycle or graph-engine implementation |
 | GraphOS composition | Checked identity, public routing, runtime policy, fleet supervision, injected gateway routes | Agent reasoning, durable knowledge, vendor-specific transport |
 | agent-utilities | Agent decisions, workflows, evaluation, skills | Public gateway hosting or database semantics |
 | epistemic-graph | Durable data, reasoning, provenance, transactions | Agent orchestration or browser presentation |

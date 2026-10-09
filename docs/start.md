@@ -1,6 +1,6 @@
-# Start Graph OS
+# Start Agent WebUI
 
-Graph OS is served as a GraphOS co-service. This is the shortest path to a
+Agent WebUI is served as a GraphOS co-service. This is the shortest path to a
 browser surface with the correct routing and authority boundaries.
 
 ## Requirements
@@ -22,7 +22,7 @@ Open <http://127.0.0.1:8080>. The MCP transport listens on port `8000`; the
 WebUI co-service uses port `8080`. Set `GRAPH_OS_WEBUI_PORT` when that port is
 already in use.
 
-The successful first screen shows the Graph OS navigation and dashboard.
+The successful first screen shows the Agent WebUI navigation and dashboard.
 Atlas at `/explore` presents the graph, object, schema, data, document, and
 memory entry points exposed by the connected runtime.
 

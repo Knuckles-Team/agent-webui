@@ -1,6 +1,6 @@
 # Atlas workspace
 
-Atlas (`/explore`) is the single top-level entry for Knowledge in Graph OS. It
+Atlas (`/explore`) is the single top-level entry for Knowledge in Agent WebUI. It
 provides one place to choose a modality, filter a result, and switch between the
 renderers that can honestly draw it.
 

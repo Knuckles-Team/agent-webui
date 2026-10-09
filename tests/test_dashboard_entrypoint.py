@@ -5,7 +5,7 @@ THE LIVE DEFECT THIS ENCODES
 A signed-in owner landed on ``{"detail": "Request failed"}`` at the
 deployment's dashboard root. The real response was a plain
 **404 "Not Found"**:
-``graph_os_webui/dist/`` on the production mount held all 512 files of a
+``agent_webui/dist/`` on the production mount held all 512 files of a
 complete frontend build EXCEPT ``index.html``. ``create_agent_web_app``
 gated the SPA mount on ``dist_path.exists()`` -- a bare DIRECTORY check --
 so the partial build mounted silently. Hashed assets and favicons served
@@ -43,14 +43,14 @@ def _dist_dir() -> Path:
     """The exact directory ``create_agent_web_app`` serves the dashboard from.
 
     Mirrors ``dist_path = Path(__file__).parent / 'dist'`` in
-    ``graph_os_webui/server.py``. Resolved from the imported package, not from
+    ``agent_webui/server.py``. Resolved from the imported package, not from
     this file, so it follows the same import the server does -- including
     production, where the package is a live NFS mount rather than the
     packaged wheel.
     """
-    import graph_os_webui
+    import agent_webui
 
-    return Path(graph_os_webui.__file__).parent / 'dist'
+    return Path(agent_webui.__file__).parent / 'dist'
 
 
 def test_built_dashboard_dist_has_an_entrypoint():
@@ -82,22 +82,22 @@ def dist_dir_override(tmp_path, monkeypatch):
     """Point the server's ``dist_path`` at a controlled directory.
 
     ``create_agent_web_app`` computes ``Path(__file__).parent / 'dist'`` from
-    ``graph_os_webui/server.py``'s OWN module global, so this patches that
-    global -- patching ``graph_os_webui.__file__`` looks right and does nothing.
+    ``agent_webui/server.py``'s OWN module global, so this patches that
+    global -- patching ``agent_webui.__file__`` looks right and does nothing.
     Returns a callable that materializes the dist state under test; without
     it the result would depend on whether the checkout happens to have a
     build, which is exactly the checkout-dependence that let this bug ship.
     """
-    from graph_os_webui import server as server_module
+    from agent_webui import server as server_module
 
-    pkg_dir = tmp_path / 'graph_os_webui'
+    pkg_dir = tmp_path / 'agent_webui'
     pkg_dir.mkdir()
     monkeypatch.setattr(server_module, '__file__', str(pkg_dir / 'server.py'))
     return pkg_dir / 'dist'
 
 
 def _build_app():
-    from graph_os_webui.server import create_agent_web_app
+    from agent_webui.server import create_agent_web_app
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
 
@@ -106,7 +106,7 @@ def _build_app():
 
 @contextlib.contextmanager
 def _captured_records(level):
-    """Capture ``graph_os_webui`` log records for the block.
+    """Capture ``agent_webui`` log records for the block.
 
     Not ``caplog``: ``configure_structured_logging`` (observability.py) sets
     ``propagate = False`` on this package's logger so its curated JSON lines
@@ -114,7 +114,7 @@ def _captured_records(level):
     lives on the root logger -- it therefore sees NOTHING from these call
     sites and a broken assertion would look like a passing one.
     """
-    package_logger = logging.getLogger('graph_os_webui')
+    package_logger = logging.getLogger('agent_webui')
     records: list[logging.LogRecord] = []
 
     class _Collect(logging.Handler):
