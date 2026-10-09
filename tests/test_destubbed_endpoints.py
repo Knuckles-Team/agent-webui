@@ -14,9 +14,9 @@ from unittest.mock import MagicMock
 
 import graph_os_webui.api_extensions as mod
 import pytest
-from graph_os_webui.api_extensions import router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from graph_os_webui.api_extensions import router
 
 
 @pytest.fixture

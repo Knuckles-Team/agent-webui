@@ -10,9 +10,9 @@ from unittest.mock import MagicMock, patch
 
 import graph_os_webui.api_extensions as api_extensions
 import pytest
-from graph_os_webui.server import create_agent_web_app
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from graph_os_webui.server import create_agent_web_app
 
 
 @pytest.fixture

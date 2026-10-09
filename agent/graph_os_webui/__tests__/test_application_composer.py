@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 from agent_utilities.knowledge_graph.core.session import current_session
-from graph_os_webui.server import create_agent_web_app
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from graph_os_webui.server import create_agent_web_app
 from starlette.routing import Mount
 
 pytestmark = pytest.mark.integration

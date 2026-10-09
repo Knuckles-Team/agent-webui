@@ -149,7 +149,9 @@ def test_release_intent_skips_later_release_neutral_commit() -> None:
 
 def test_release_intent_requires_version_bump_for_runtime_change() -> None:
     module = _load_script()
-    with pytest.raises(module.VersionBumpRequired, match='agent/graph_os_webui/server.py'):
+    with pytest.raises(
+        module.VersionBumpRequired, match='agent/graph_os_webui/server.py'
+    ):
         module.release_intent(
             {'package.whl': _sha(b'wheel')},
             tag_target='release-commit',

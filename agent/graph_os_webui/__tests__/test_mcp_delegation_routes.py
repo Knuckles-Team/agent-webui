@@ -19,8 +19,8 @@ from typing import Any
 
 import pytest
 from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
-from graph_os_webui.server import create_agent_web_app
 from fastapi.testclient import TestClient
+from graph_os_webui.server import create_agent_web_app
 
 fastmcp = pytest.importorskip('fastmcp')
 

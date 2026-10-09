@@ -26,8 +26,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from graph_os_webui.api_extensions import chats_router, router
 from fastapi.routing import APIRoute
+from graph_os_webui.api_extensions import chats_router, router
 
 pytestmark = pytest.mark.integration
 

@@ -3,7 +3,6 @@
 import re
 from pathlib import Path
 
-
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 API_SOURCE = (
     PACKAGE_ROOT / 'agent' / 'graph_os_webui' / 'api_extensions.py'
@@ -39,9 +38,14 @@ def test_durable_identities_use_canonical_persistence_references() -> None:
     assert 'persistence_reference' in API_SOURCE
     assert "persistence_reference('principal', text, namespace='webui')" in API_SOURCE
     assert "'conversation', entry.chat_id, namespace='webui'" in API_SOURCE
-    assert "return str(actor)" not in API_SOURCE
+    assert 'return str(actor)' not in API_SOURCE
 
 
 def test_durable_object_set_payloads_are_sanitized() -> None:
-    assert 'safe_sets, _privacy_report = sanitize_for_persistence(normalized_sets)' in API_SOURCE
-    assert 'safe_record, _privacy_report = sanitize_for_persistence(record)' in API_SOURCE
+    assert (
+        'safe_sets, _privacy_report = sanitize_for_persistence(normalized_sets)'
+        in API_SOURCE
+    )
+    assert (
+        'safe_record, _privacy_report = sanitize_for_persistence(record)' in API_SOURCE
+    )

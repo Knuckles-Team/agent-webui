@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from graph_os_webui.server import SPAStaticFiles, _load_spa_route_patterns
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from graph_os_webui.server import SPAStaticFiles, _load_spa_route_patterns
 
 _REPOSITORY_ROOT = Path(__file__).parents[3]
 _SPA_SHELL_MARKER = '<div id="root"></div>'

@@ -101,8 +101,8 @@ def test_list_library_agents_excludes_archived(mock_engine):
 
 
 def test_list_library_agents_reports_backend_failure(mock_engine):
-    from graph_os_webui.api_extensions import list_library_agents
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import list_library_agents
 
     mock_engine.query_cypher.side_effect = Exception('DB down')
     with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
@@ -121,8 +121,8 @@ def test_list_library_agents_preserves_genuine_empty_result(mock_engine):
 
 
 def test_create_library_agent_requires_name_and_instructions(mock_engine):
-    from graph_os_webui.api_extensions import create_library_agent
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import create_library_agent
 
     with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
         run(create_library_agent({'name': '', 'instructions': ''}))
@@ -197,8 +197,8 @@ def test_create_library_agent_expands_bind_server_to_its_tools(mock_engine):
 
 
 def test_archive_library_agent_rejects_non_library_resource(mock_engine):
-    from graph_os_webui.api_extensions import archive_library_agent
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import archive_library_agent
 
     mock_engine.backend.execute.return_value = [
         {'rtype': 'AGENT_SKILL', 'provider_ref': 'provider://mcp:some-fleet-skill'}
@@ -232,8 +232,8 @@ def test_archive_library_agent_archives_a_library_entry(mock_engine):
 
 
 def test_archive_library_agent_missing_returns_404(mock_engine):
-    from graph_os_webui.api_extensions import archive_library_agent
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import archive_library_agent
 
     mock_engine.backend.execute.return_value = []
     with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
@@ -242,8 +242,8 @@ def test_archive_library_agent_missing_returns_404(mock_engine):
 
 
 def test_update_library_agent_requires_name_and_instructions(mock_engine):
-    from graph_os_webui.api_extensions import update_library_agent
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import update_library_agent
 
     with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
         run(
@@ -255,8 +255,8 @@ def test_update_library_agent_requires_name_and_instructions(mock_engine):
 
 
 def test_update_library_agent_rejects_non_library_resource(mock_engine):
-    from graph_os_webui.api_extensions import update_library_agent
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import update_library_agent
 
     mock_engine.backend.execute.return_value = [
         {
@@ -276,8 +276,8 @@ def test_update_library_agent_rejects_non_library_resource(mock_engine):
 
 
 def test_update_library_agent_missing_returns_404(mock_engine):
-    from graph_os_webui.api_extensions import update_library_agent
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import update_library_agent
 
     mock_engine.backend.execute.return_value = []
     with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
@@ -334,8 +334,8 @@ def test_update_library_agent_edits_fields_and_resyncs_tools(mock_engine):
 
 
 def test_register_a2a_agent_requires_valid_url(mock_engine):
-    from graph_os_webui.api_extensions import register_a2a_agent
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import register_a2a_agent
 
     with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
         run(register_a2a_agent({'url': 'not-a-url'}))
@@ -377,8 +377,8 @@ def test_register_a2a_agent_without_card_fetches_via_toolkit(mock_engine):
 
 
 def test_register_a2a_agent_reports_fetch_failure(mock_engine):
-    from graph_os_webui.api_extensions import register_a2a_agent
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import register_a2a_agent
 
     mock_engine.ingest_agent_toolkit.return_value = {
         'a2a_agents': 0,
@@ -412,8 +412,8 @@ def test_suggest_library_agents_excludes_bound_servers(mock_engine):
 
 
 def test_suggest_library_agents_reports_backend_failure(mock_engine):
-    from graph_os_webui.api_extensions import suggest_library_agents
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import suggest_library_agents
 
     mock_engine.backend.execute.side_effect = RuntimeError('DB down')
     with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
@@ -443,8 +443,8 @@ def test_list_library_tools_filters_by_server(mock_engine):
 
 
 def test_list_library_tools_reports_backend_failure(mock_engine):
-    from graph_os_webui.api_extensions import list_library_tools
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import list_library_tools
 
     mock_engine.backend.execute.side_effect = RuntimeError('DB down')
     with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
@@ -463,8 +463,8 @@ def test_list_library_tools_preserves_genuine_empty_result(mock_engine):
 
 
 def test_list_library_tools_rejects_unsafe_server_filter(mock_engine):
-    from graph_os_webui.api_extensions import list_library_tools
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import list_library_tools
 
     with _patched_engine(mock_engine), pytest.raises(HTTPException) as exc:
         run(list_library_tools(mcp_server='x' * 5 + '$$bad'))
@@ -526,8 +526,8 @@ def test_agent_config_summary_preserves_empty_registry():
 
 
 def test_agent_config_summary_reports_backend_failure():
-    from graph_os_webui.api_extensions import agent_config_summary
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import agent_config_summary
 
     with patch(
         'agent_utilities.core.config.AgentConfig', side_effect=RuntimeError('boom')

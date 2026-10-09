@@ -7,12 +7,12 @@ import inspect
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 from graph_os_webui.contact_delivery import (
     ContactDeliveryRequest,
     ContactDeliveryResult,
 )
 from graph_os_webui.server import create_agent_web_app
-from fastapi.testclient import TestClient
 
 VALID_SUBMISSION = {
     'name': 'Test Operator',

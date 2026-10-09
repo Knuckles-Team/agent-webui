@@ -16,8 +16,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from graph_os_webui.server import create_agent_web_app
 from fastapi.testclient import TestClient
+from graph_os_webui.server import create_agent_web_app
 
 
 def _make_client(mock_agent, helpers: dict) -> TestClient:
@@ -229,8 +229,8 @@ def test_download_rejects_traversal_at_handler_boundary(mock_agent, tmp_path):
     """The resolved download target may never escape through ``..`` or a symlink."""
     import asyncio
 
-    from graph_os_webui.api_extensions import download_file, set_workspace_helpers
     from fastapi import HTTPException
+    from graph_os_webui.api_extensions import download_file, set_workspace_helpers
 
     outside = tmp_path.parent / 'download_secret.txt'
     outside.write_text('classified', encoding='utf-8')

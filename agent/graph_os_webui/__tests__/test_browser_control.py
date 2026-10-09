@@ -12,6 +12,8 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from cryptography.fernet import Fernet
+from fastapi.testclient import TestClient
 from graph_os_webui.browser_control import (
     BrowserControlBinding,
     BrowserMessage,
@@ -19,8 +21,6 @@ from graph_os_webui.browser_control import (
 )
 from graph_os_webui.browser_control_canonical import canonical_protocol_json
 from graph_os_webui.server import create_agent_web_app
-from cryptography.fernet import Fernet
-from fastapi.testclient import TestClient
 from pydantic import BaseModel, ConfigDict
 from starlette.websockets import WebSocketDisconnect
 

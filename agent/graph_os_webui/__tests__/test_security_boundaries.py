@@ -15,6 +15,8 @@ from unittest.mock import MagicMock
 
 import graph_os_webui.api_extensions as api_extensions
 import pytest
+from fastapi import FastAPI
+from fastapi import HTTPException as FastAPIHTTPException
 from graph_os_webui.api_extensions import (
     _actor_context,
     _actor_id_from_request,
@@ -38,8 +40,6 @@ from graph_os_webui.server import (
     _validated_bearer_header,
     create_agent_web_app,
 )
-from fastapi import FastAPI
-from fastapi import HTTPException as FastAPIHTTPException
 
 
 def test_governed_host_helpers_are_public_api() -> None:

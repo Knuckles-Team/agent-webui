@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from cryptography.fernet import Fernet
 from graph_os_webui.oidc_session import (
     ATTENDED_ARM_COOKIE,
     ATTENDED_ARM_FINALIZE_PATH,
@@ -40,7 +41,6 @@ from graph_os_webui.oidc_session import (
     load_settings,
     verify_browser_session,
 )
-from cryptography.fernet import Fernet
 
 ISSUER = 'https://idp.example.test/realms/test'
 # Inert placeholder for the confidential client credential. Kept as a named
