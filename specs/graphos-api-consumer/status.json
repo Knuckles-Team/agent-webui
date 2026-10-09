@@ -69,7 +69,7 @@
     {
       "id": "WEBUI-API-R003",
       "title": "Remaining domain routes migrate to generated operations with a route census",
-      "delivery_state": "BUILT",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "branch",
@@ -77,6 +77,13 @@
           "commit": "085195e275653918bf974ce2bee4c097f8413f08",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/085195e275653918bf974ce2bee4c097f8413f08",
           "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "98dd7d8a354e1af7697caa16dd84761e97a1147a",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/98dd7d8a354e1af7697caa16dd84761e97a1147a",
+          "description": "WEBUI-API-R003 merged to the default branch in this commit."
         }
       ],
       "remaining": "The route-family census (tasks.md's first unchecked item) has not been produced on main. The branch evidence commit (085195e...) no longer exists on any remote branch; treat as unreachable, not landed. Smallest next slice: a checked-in census file classifying each agent/agent_webui/api_extensions.py route as UI-local/Graph OS/retire."
