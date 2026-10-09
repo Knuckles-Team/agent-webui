@@ -62,8 +62,16 @@
     {
       "id": "DS-03",
       "title": "Responsive layout covers 320px mobile through desktop",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "660d19fa4d369c29b2f76b6ef0bdd6b8bfbed5c7",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/660d19fa4d369c29b2f76b6ef0bdd6b8bfbed5c7",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
+        }
+      ],
       "remaining": "Filter rows now wrap at narrow widths and a 320 to 1440 pixel light and dark overflow check exists in the offline accessibility suite, but that suite has not been run; run it and record the result."
     },
     {
@@ -103,14 +111,30 @@
     {
       "id": "DS-07",
       "title": "Fonts load from the same origin",
-      "delivery_state": "BUILDING",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "03cc841a38cecabc0b62a541814512670ebc8774",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/03cc841a38cecabc0b62a541814512670ebc8774",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
+        }
+      ]
     },
     {
       "id": "DS-08",
       "title": "Runtime style elements satisfy the strict policy",
-      "delivery_state": "BUILDING",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "03cc841a38cecabc0b62a541814512670ebc8774",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/03cc841a38cecabc0b62a541814512670ebc8774",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
+        }
+      ]
     }
   ]
 }
