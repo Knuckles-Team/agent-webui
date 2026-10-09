@@ -1,5 +1,5 @@
 {
-  "name": "Graph OS Agent WebUI",
+  "name": "Graph OS",
   "short_name": "Graph OS",
   "description": "A governed web interface for Graph OS agents, knowledge, and workflows.",
   "start_url": "/",

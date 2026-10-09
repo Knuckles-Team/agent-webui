@@ -17,7 +17,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from agent_webui import api_extensions
+from graph_os_webui import api_extensions
 
 
 def make_request(**state: object) -> SimpleNamespace:

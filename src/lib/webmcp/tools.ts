@@ -45,7 +45,7 @@ const NAVIGATE_JSON_SCHEMA: WebMcpJsonSchema = {
       type: 'string',
       minLength: 1,
       maxLength: 512,
-      description: 'A path on this Agent WebUI origin, such as /explore or /graph.',
+      description: 'A path on this Graph OS origin, such as /explore or /graph.',
     },
   },
   required: ['path'],
@@ -196,7 +196,7 @@ export function createPageTools(options: PageToolOptions): readonly WebMcpToolDe
       name: 'agent-webui.get-page-context',
       title: 'Get page context',
       description:
-        'Read the current Agent WebUI route, view, selection, and filter context. ' +
+        'Read the current Graph OS route, view, selection, and filter context. ' +
         'This returns UI context only and cannot invoke backend actions.',
       inputSchema: EmptyToolInputSchema,
       outputSchema: PublicPageContextSchema,
@@ -206,9 +206,9 @@ export function createPageTools(options: PageToolOptions): readonly WebMcpToolDe
     }),
     makeTool({
       name: 'agent-webui.navigate',
-      title: 'Navigate in Agent WebUI',
+      title: 'Navigate in Graph OS',
       description:
-        'Navigate to a registered same-origin Agent WebUI route visible to the current role. ' +
+        'Navigate to a registered same-origin Graph OS route visible to the current role. ' +
         'This changes browser UI state only and never calls a backend API.',
       inputSchema: NavigateInputSchema,
       outputSchema: NavigateOutputSchema,

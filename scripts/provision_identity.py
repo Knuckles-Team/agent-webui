@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Idempotent, re-runnable identity provisioning for the Agent WebUI.
+"""Idempotent, re-runnable identity provisioning for the Graph OS.
 
 Stands up **both** identities the WebUI needs, end to end, with no hand-placed
 credential anywhere:
@@ -720,7 +720,7 @@ def stage_keycloak(grant_users: list[str], dry_run: bool) -> dict[str, str]:
         token,
         {
             'clientId': BROWSER_CLIENT,
-            'name': 'Agent WebUI (browser sign-in)',
+            'name': 'Graph OS (browser sign-in)',
             'description': (
                 'Confidential authorization-code client. Issues the END USER a '
                 'token; the WebUI never exceeds the signed-in human authority.'
@@ -761,7 +761,7 @@ def stage_keycloak(grant_users: list[str], dry_run: bool) -> dict[str, str]:
         token,
         {
             'clientId': SERVICE_CLIENT,
-            'name': 'Agent WebUI (backend service identity)',
+            'name': 'Graph OS (backend service identity)',
             'description': (
                 'Confidential client_credentials client for the WebUI backend’s '
                 'own outbound calls. No browser flow, separate secret.'

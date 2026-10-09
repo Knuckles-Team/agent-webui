@@ -1,10 +1,10 @@
 {
-  "name": "@pydantic/agent-webui",
+  "name": "@knuckles-team/graph-os-webui",
   "packageManager": "pnpm@10.29.3+sha512.498e1fb4cca5aa06c1dcf2611e6fafc50972ffe7189998c409e90de74566444298ffe43e6cd2acdc775ba1aa7cc5e092a8b7054c811ba8c5770f84693d33d2dc",
   "private": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pydantic/ai-chat-ui.git"
+    "url": "git+https://github.com/Knuckles-Team/agent-webui.git"
   },
   "publishConfig": {
     "access": "public",
@@ -26,9 +26,9 @@
     "lint": "eslint",
     "lint-fix": "eslint --fix --quiet",
     "dev": "vite",
-    "dev:server": "uv run python -m agent_webui.server --port 38001",
+    "dev:server": "uv run python -m graph_os_webui.server --port 38001",
     "build": "node scripts/no_fabrication_gate.mjs && pnpm run site:assets:test && pnpm run site:assets && pnpm run site:assets:check && pnpm run site:config:check && pnpm run site:image-alt:check && pnpm run site:brand:check && tsc -b && vite build && node scripts/publish-dist.mjs",
-    "preview": "vite preview --outDir agent/agent_webui/dist",
+    "preview": "vite preview --outDir agent/graph_os_webui/dist",
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",

@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 # agent-webui runtime image: the Vite/React frontend + the FastAPI/Pydantic-AI
-# backend (agent/agent_webui), from THIS source tree -- not a published PyPI
+# backend (agent/graph_os_webui), from THIS source tree -- not a published PyPI
 # release, so a build always carries whatever is on the branch being built,
 # including same-day frontend/backend commits. (D-WUI-30: no Dockerfile existed
-# anywhere in this repo's git history; the live `knucklessg1/agent-webui:latest`
+# anywhere in this repo's git history; the live `knucklessg1/graph-os-webui:latest`
 # was a one-off manual build/push with no reproducible path back to source.)
 #
 # ── Why agent-utilities is ALSO built from source here (not `pip install
 # agent-utilities`) ──────────────────────────────────────────────────────────
-# agent_webui/api_extensions.py imports agent_utilities.security.persistence_privacy,
+# graph_os_webui/api_extensions.py imports agent_utilities.security.persistence_privacy,
 # .knowledge_graph.core.engine.IntelligenceGraphEngine, .sdd.SDDManager, etc. at
 # module load -- a real runtime dependency, even though pyproject.toml declares
 # agent-utilities only under the `test` extra. Verified empirically (2026-08-06):
@@ -71,9 +71,9 @@
 # Stages (build in a builder, ship only the installed package + runtime deps
 # in the final image -- no node_modules/cargo/toolchain/source tree):
 #   1. frontend-build (node)   -- pnpm install --frozen-lockfile && pnpm build
-#      (tsc -b && vite build) emits the SPA into agent/agent_webui/dist/, the
+#      (tsc -b && vite build) emits the SPA into agent/graph_os_webui/dist/, the
 #      path vite.config.ts's `build.outDir` and this package's
-#      `[tool.setuptools.package-data]` (`agent_webui = ["dist/**", ...]`)
+#      `[tool.setuptools.package-data]` (`graph_os_webui = ["dist/**", ...]`)
 #      agree on -- the wheel built in stage 2 bundles the built SPA as
 #      package data.
 #   2. wheel-build (python+uv) -- `uv build --wheel` over the source tree.
@@ -87,13 +87,13 @@
 #      else (fastapi, pydantic-ai, etc.) resolve from the default PyPI index
 #      normally, no local wheelhouse involved.
 #
-# Runtime wiring: uvicorn binds loopback:8000 (agent_webui.server's own default
+# Runtime wiring: uvicorn binds loopback:8000 (graph_os_webui.server's own default
 # absent --host/HOST) and `socat` forwards :80 -> :8000, reproducing the
 # mechanism the live deployment's own manifest documents
 # (inventory/k8s-migration/cutover/apptier/agent-webui.yaml: "the pod
-# entrypoint runs `python -m agent_webui.server` (behind a socat :80->:8000
+# entrypoint runs `python -m graph_os_webui.server` (behind a socat :80->:8000
 # shim)") so this image is a drop-in replacement for
-# `knucklessg1/agent-webui:latest` -- same exposed port, no manifest change
+# `knucklessg1/graph-os-webui:latest` -- same exposed port, no manifest change
 # required for a `:latest` swap + rollout.
 #
 #   docker build -f docker/Dockerfile \
@@ -127,7 +127,7 @@ FROM node:22-slim AS frontend-build
 # specifically to close trap #3 from the 2026-08-07 build-standardization incident:
 # the served frontend `dist/` can go stale independently of the backend (the backend
 # is live-NFS-mounted; the frontend bundle is baked into the image at build time
-# only). `agent_webui.server` mounts `dist/` at the app root via `SPAStaticFiles`, so
+# only). `graph_os_webui.server` mounts `dist/` at the app root via `SPAStaticFiles`, so
 # this file is reachable at `/build-info.txt` on every running deployment -- both the
 # build script (grepping it out of the freshly built image BEFORE push) and a human
 # (`curl https://au.arpa/build-info.txt`) can verify which commit is actually being
@@ -148,7 +148,7 @@ COPY src ./src
 # before reaching any agent-utilities/epistemic-graph stage.
 COPY scripts/no_fabrication_gate.mjs ./scripts/no_fabrication_gate.mjs
 RUN pnpm build \
-    && printf 'sha=%s\nbuilt_at=%s\n' "${BUILD_SHA}" "${BUILD_TIME}" > agent/agent_webui/dist/build-info.txt
+    && printf 'sha=%s\nbuilt_at=%s\n' "${BUILD_SHA}" "${BUILD_TIME}" > agent/graph_os_webui/dist/build-info.txt
 
 FROM python:3.14-slim AS wheel-build
 COPY --from=ghcr.io/astral-sh/uv:0.11.7@sha256:240fb85ab0f263ef12f492d8476aa3a2e4e1e333f7d67fbdd923d00a506a516a /uv /uvx /bin/
@@ -159,7 +159,7 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY agent ./agent
-COPY --from=frontend-build /app/agent/agent_webui/dist ./agent/agent_webui/dist
+COPY --from=frontend-build /app/agent/graph_os_webui/dist ./agent/graph_os_webui/dist
 RUN uv build --wheel --out-dir /dist
 
 # See header: builds agent-utilities from its own source tree (no Rust needed --
@@ -203,7 +203,7 @@ COPY --from=eg-wheelhouse . /tmp/eg-wheelhouse/
 # ADDITIONAL candidate, it does not make uv prefer it over the index, and
 # PyPI's 1.26.4 satisfies the unpinned "agent-utilities[graph,mcp]"
 # requirement just fine even though it predates `agent_utilities.security.
-# persistence_privacy` (an ImportError agent_webui hits at module load).
+# persistence_privacy` (an ImportError graph_os_webui hits at module load).
 #
 # `[graph,mcp]` -> `[agent-headless,graph,mcp,metrics]` -> settled on
 # `[agent-headless,graph,metrics]` (GOC-73 verification pass): `[graph,mcp]`
@@ -280,4 +280,4 @@ RUN AU_WHEEL="$(ls /tmp/wheelhouse/agent_utilities-*.whl)" \
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)" || exit 1
-CMD ["sh", "-c", "socat TCP-LISTEN:80,fork,reuseaddr TCP:127.0.0.1:8000 & exec python -m agent_webui.server --port 8000"]
+CMD ["sh", "-c", "socat TCP-LISTEN:80,fork,reuseaddr TCP:127.0.0.1:8000 & exec python -m graph_os_webui.server --port 8000"]

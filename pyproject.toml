@@ -3,9 +3,9 @@ requires = ["setuptools>=80.9.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-webui"
+name = "graph-os-webui"
 version = "2.6.3"
-description = "Agent Web Interface for Pydantic AI Agents"
+description = "Graph OS web UI: governed browser workspace for agents, knowledge and workflows"
 readme = "README.md"
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -88,7 +88,7 @@ test = [
     # agent-utilities' hard base dependency to the opt-in `graphos` extra;
     # before GOC-73 this repo got the engine CLIENT for free as a transitive
     # base dep, so nobody had to name it. This app's own KG/MCP surface
-    # (`agent_webui.api_extensions`'s `/graph/*` routes, the MCP-servers
+    # (`graph_os_webui.api_extensions`'s `/graph/*` routes, the MCP-servers
     # inventory panel) resolves the engine at CALL time via
     # `agent_utilities.knowledge_graph.core.graph_compute.GraphComputeEngine`,
     # which needs `epistemic_graph.client` importable to reach the deployed
@@ -115,7 +115,7 @@ members = ["."]
 
 [tool.pipelines_hooks.public_surface]
 repository = "Knuckles-Team/agent-webui"
-distribution = "agent-webui"
+distribution = "graph-os-webui"
 pages_url = "https://knuckles-team.github.io/agent-webui/"
 mcp_server = false
 
@@ -130,7 +130,7 @@ quote-style = "single"
 include-package-data = true
 
 [tool.setuptools.package-data]
-agent_webui = ["dist/**", "icon.png", "skills/**/*"]
+graph_os_webui = ["dist/**", "icon.png", "skills/**/*"]
 
 [tool.setuptools.packages.find]
 where = ["agent"]
@@ -138,7 +138,7 @@ where = ["agent"]
 # CONCEPT:AU-ECO.ui.agent-webui-skill-provider — contribute the kg-webui-* skills to the agent-utilities hub via
 # the shared skill-provider entry-point group (resolved by core/providers.py).
 [project.entry-points."agent_utilities.skill_providers"]
-agent-webui = "agent_webui.skills"
+graph-os-webui = "graph_os_webui.skills"
 
 # D-W6-BSF-1: the SAME narrow, protocol-compat override agent-utilities'
 # own pyproject.toml declares for itself (see that file's `[tool.uv]`

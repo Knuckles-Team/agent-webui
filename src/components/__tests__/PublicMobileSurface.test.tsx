@@ -7,7 +7,7 @@ import { routeById } from '@/lib/nav-registry'
 import type { SiteConfig } from '@/lib/site-config'
 
 const CONFIG: SiteConfig = {
-  siteName: 'Agent WebUI',
+  siteName: 'Graph OS',
   canonicalOrigin: 'https://agents.example.invalid',
   indexableEnvironment: false,
   openGraphImagePath: '/og-image-v1.png',
@@ -81,6 +81,6 @@ describe('public mobile surface contract', () => {
     const route = routeById('public.contact')
     expect(route).toBeDefined()
     render(<MobileCta route={route!} />)
-    expect(screen.getByRole('link', { name: 'Open Agent WebUI' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: 'Open Graph OS' })).toHaveAttribute('href', '/')
   })
 })

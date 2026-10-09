@@ -1,6 +1,6 @@
 """Characterization tests for ``list_files`` (WC1-WEB-01).
 
-``agent/agent_webui/__tests__/test_files_endpoints.py`` covers this function
+``agent/graph_os_webui/__tests__/test_files_endpoints.py`` covers this function
 through the HTTP layer, but every test in that file currently fails with a
 401 on an UNMODIFIED, untouched canonical checkout of this repo (confirmed
 identical on both `main` and this worktree before any change) -- the
@@ -24,8 +24,8 @@ import asyncio
 from typing import Any
 
 import pytest
-from agent_webui import api_extensions
-from agent_webui.api_extensions import list_files, set_workspace_helpers
+from graph_os_webui import api_extensions
+from graph_os_webui.api_extensions import list_files, set_workspace_helpers
 
 
 @pytest.fixture(autouse=True)

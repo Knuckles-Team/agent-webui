@@ -95,7 +95,7 @@ interface AttachmentItem {
  * One checkpoint of the core orchestrator's progress stream
  * (`agent_utilities.orchestration.agent_runner.ProgressEvent`, CONCEPT:AU-ORCH.execution.
  * messaging-orchestration-transparency), as adapted onto the wire by
- * `agent/agent_webui/orchestrator_model.py::_progress_event_payload`.
+ * `agent/graph_os_webui/orchestrator_model.py::_progress_event_payload`.
  *
  * `_reply_stream` cannot emit a distinct SSE frame type for this (pydantic-ai's
  * `FunctionModel.stream_function` only supports text/tool/thinking deltas), so each event
@@ -1412,7 +1412,7 @@ const Chat = ({ pageContext }: ChatProps) => {
   }
 
   /** Body of the `/help` slash command. */
-  const slashHelp = (): string => `### 💻 Agent WebUI Slash Commands
+  const slashHelp = (): string => `### 💻 Graph OS Slash Commands
 
 Available commands:
 - **\`/help\`**: Show this help summary.

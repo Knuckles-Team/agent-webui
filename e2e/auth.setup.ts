@@ -62,7 +62,7 @@ setup('authenticate against Keycloak', async ({ page }) => {
   await page.goto('/')
 
   // Unauthenticated navigation is redirected by the app's own OIDC gate
-  // (agent/agent_webui/oidc_session.py) to /auth/login, which the app then
+  // (agent/graph_os_webui/oidc_session.py) to /auth/login, which the app then
   // sends on to Keycloak's hosted Authorization Code + PKCE login form.
   await page.waitForURL(/\/realms\/[^/]+\/protocol\/openid-connect\/auth/, {
     timeout: 30_000,

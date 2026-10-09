@@ -4,7 +4,7 @@ import { test, expect, type Page } from '@playwright/test'
  * Markets app E2E (EH-420/EH-421, on the EH-429 apps section): a real
  * signed-in session (`e2e/auth.setup.ts`) driving the real app. By default the
  * `/api/apps*` host routes are STUBBED with the exact shapes
- * `agent/agent_webui/apps/markets/router.py` serves (see
+ * `agent/graph_os_webui/apps/markets/router.py` serves (see
  * `test_markets_app.py`), so the frontend is exercised end to end before the
  * engine's FinanceMarket ops and bar ingestion are deployed. With
  * `MARKETS_LIVE=1` the stubs are skipped and the same pages run against the

@@ -359,6 +359,6 @@ jobs:
           set -euo pipefail
           IMAGE_REF="$(head -n1 <<<"${{ steps.meta.outputs.tags }}")"
           INFO="$(docker run --rm --entrypoint sh "${IMAGE_REF}" -c \
-            'cat "$(python3 -c "import agent_webui, os; print(os.path.join(os.path.dirname(agent_webui.__file__), \"dist\", \"build-info.txt\"))")"')"
+            'cat "$(python3 -c "import graph_os_webui, os; print(os.path.join(os.path.dirname(graph_os_webui.__file__), \"dist\", \"build-info.txt\"))")"')"
           echo "${INFO}"
           grep -q "sha=${{ steps.meta_build.outputs.sha }}$" <<<"${INFO}"

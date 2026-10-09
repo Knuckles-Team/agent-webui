@@ -527,7 +527,7 @@ def served_identity_config(monkeypatch):
     NOT gated on any config -- see D-WA-1/verified-identity-carrier-contract).
     Two further pieces of config are required *before* a verified actor can be
     projected into a servable ``GraphSession`` at all:
-    ``agent_webui.graph_identity.mint_frontend_graph_session`` raises
+    ``graph_os_webui.graph_identity.mint_frontend_graph_session`` raises
     ``PermissionError`` without both ``auth_jwt_audience`` and
     ``kg_policy_version`` set. Identity (and so
     ``WebUIAuthorizationMiddleware``'s per-route role check) is always
@@ -570,7 +570,7 @@ def _complete_jwt_verifier(monkeypatch):
 def _default_engine_admission_succeeds(monkeypatch):
     """Default the engine-side tenant RBAC admission gate to a silent no-op.
 
-    ``agent_webui.graph_admission.ensure_tenant_admission`` runs a REAL
+    ``graph_os_webui.graph_admission.ensure_tenant_admission`` runs a REAL
     engine round trip (an RBAC-role read plus, on a brand-new principal, a
     signed ``register_identity`` RPC) immediately after a session is minted
     -- see that module's docstring. No unit test has a real epistemic-graph
@@ -585,11 +585,11 @@ def _default_engine_admission_succeeds(monkeypatch):
     A test that wants to exercise admission success/failure behavior itself
     overrides this within its own body -- a ``monkeypatch.setattr`` call
     inside a test function runs after fixture setup, so it wins. See
-    ``agent_webui/__tests__/test_graph_admission.py`` and the "Engine-side
+    ``graph_os_webui/__tests__/test_graph_admission.py`` and the "Engine-side
     tenant admission" section of ``test_identity_middleware_boundary.py``.
     """
     try:
-        from agent_webui import graph_admission
+        from graph_os_webui import graph_admission
     except ImportError:
         return
 

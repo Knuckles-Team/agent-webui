@@ -62,7 +62,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NAMESPACE="${NAMESPACE:-apps}"
 DEPLOYMENT="${DEPLOYMENT:-agent-webui}"
-IMAGE="${IMAGE:-knucklessg1/agent-webui}"
+IMAGE="${IMAGE:-knucklessg1/graph-os-webui}"
 CANONICAL_CHECKOUT="${CANONICAL_CHECKOUT:-${WORKSPACE_ROOT:-.}/agent-packages/agent-webui}"
 ROLLOUT_TIMEOUT="${ROLLOUT_TIMEOUT:-300}"
 INGRESS_HOST="${INGRESS_HOST:-webui.example}"
@@ -194,7 +194,7 @@ kubectl -n "${NAMESPACE}" get events --field-selector involvedObject.name="${DEP
 
 # ── Step 5: rebuild the LIVE-MOUNTED frontend bundle (trap #3) ──────────────────
 # The image rollout above proves the DEPENDENCY closure changed (D-W5WR-1/2's
-# concern). It does NOT prove the frontend changed: agent_webui's own package,
+# concern). It does NOT prove the frontend changed: graph_os_webui's own package,
 # dist/ included, is shadowed by the NFS mount at /webui-src for the life of the
 # pod (see header). Rebuild it on the canonical checkout -- the one path that is
 # actually NFS-exported to the pod -- with the SAME build-info.txt marker the
@@ -212,14 +212,14 @@ log "Rebuilding frontend dist/ on the canonical checkout (${CANONICAL_CHECKOUT})
   pnpm install --frozen-lockfile
   pnpm build
   printf 'sha=%s\nbuilt_at=%s\n' "${BUILD_SHA}" "${BUILD_TIME}" \
-    > agent/agent_webui/dist/build-info.txt
+    > agent/graph_os_webui/dist/build-info.txt
 ) >&2
 
 # ── Step 6: verify the LIVE pod is actually serving it (not an assumption) ──────
 log "Verifying the live pod serves today's build-info.txt (via kubectl exec, not HTTP -- /build-info.txt requires an authenticated session like every other non-health route)..."
 LIVE_BUILD_INFO="$(kubectl -n "${NAMESPACE}" exec "deploy/${DEPLOYMENT}" -- python3 -c \
-  'import agent_webui, os
-p = os.path.join(os.path.dirname(agent_webui.__file__), "dist", "build-info.txt")
+  'import graph_os_webui, os
+p = os.path.join(os.path.dirname(graph_os_webui.__file__), "dist", "build-info.txt")
 print(open(p).read())')"
 echo "${LIVE_BUILD_INFO}" | sed 's/^/  /' >&2
 if ! grep -q "sha=${BUILD_SHA}$" <<<"${LIVE_BUILD_INFO}"; then

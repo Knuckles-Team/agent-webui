@@ -6,9 +6,9 @@ from pathlib import Path
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 API_SOURCE = (
-    PACKAGE_ROOT / 'agent' / 'agent_webui' / 'api_extensions.py'
+    PACKAGE_ROOT / 'agent' / 'graph_os_webui' / 'api_extensions.py'
 ).read_text(encoding='utf-8')
-SERVER_SOURCE = (PACKAGE_ROOT / 'agent' / 'agent_webui' / 'server.py').read_text(
+SERVER_SOURCE = (PACKAGE_ROOT / 'agent' / 'graph_os_webui' / 'server.py').read_text(
     encoding='utf-8'
 )
 

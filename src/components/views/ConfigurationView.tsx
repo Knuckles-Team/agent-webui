@@ -8,7 +8,7 @@
  * Schema-derived, not hand-maintained: the field list, types, `enum`s,
  * defaults, descriptions, and required-ness all come from
  * `GET /api/enhanced/config/schema` (`AgentConfig.model_json_schema()` on the
- * backend, `agent/agent_webui/api_extensions.py::get_agent_config_schema`) —
+ * backend, `agent/graph_os_webui/api_extensions.py::get_agent_config_schema`) —
  * the same discipline BUG-260 established for the LLM model forms
  * (`LLMTemplatesView.tsx`). A field this form cannot render with a rich,
  * typed control (a nested Pydantic model, `dict[str, Any]`, `list[dict]`, …)

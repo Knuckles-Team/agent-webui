@@ -3,7 +3,7 @@
  * @description Pure helpers for turning the flat `/api/enhanced/files` listing
  * into a nested tree `FilesView` renders as a collapsible explorer (W-4).
  *
- * The backend (`agent_webui/api_extensions.py::list_files`) walks the
+ * The backend (`graph_os_webui/api_extensions.py::list_files`) walks the
  * workspace recursively and returns every file AND every directory it visits
  * as its own flat record, `name` carrying the path relative to the workspace
  * root (e.g. `src/components/App.tsx`). Building the nesting is therefore a

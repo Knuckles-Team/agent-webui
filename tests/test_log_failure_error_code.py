@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-import agent_webui.api_extensions as mod
+import graph_os_webui.api_extensions as mod
 
 
 class _EngineError(RuntimeError):

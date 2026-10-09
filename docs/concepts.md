@@ -10,7 +10,7 @@
 
 | Concept ID | Name | Description |
 |------------|------|-------------|
-| `CONCEPT:WU-OS.governance.webui` | Core API Client | Primary API client for Agent Web Interface for Pydantic AI Agents |
+| `CONCEPT:WU-OS.governance.webui` | Core API Client | Primary API client for Graph OS web UI |
 | `CONCEPT:WU-OS.governance.webui-2` | MCP Server | Model Context Protocol server entry point |
 | `CONCEPT:WU-OS.governance.webui-3` | A2A Agent | Agent-to-Agent protocol server |
 
@@ -28,4 +28,4 @@
 
 ## Synergy with agent-utilities
 
-This project integrates with `agent-utilities` via `CONCEPT:AU-ECO.messaging.native-backend-abstraction` (Unified Toolkit Ingestion). The `agent_webui` MCP server registers its tools with the agent-utilities FastMCP middleware, enabling automatic discovery, telemetry, and Knowledge Graph ingestion of all WEBUI-* concepts.
+This project integrates with `agent-utilities` via `CONCEPT:AU-ECO.messaging.native-backend-abstraction` (Unified Toolkit Ingestion). The `graph_os_webui` MCP server registers its tools with the agent-utilities FastMCP middleware, enabling automatic discovery, telemetry, and Knowledge Graph ingestion of all WEBUI-* concepts.
