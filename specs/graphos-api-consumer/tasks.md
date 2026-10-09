@@ -3,7 +3,8 @@
 **States:** SPECIFIED → BUILDING → BUILT → ACCEPTED. Current: **SPECIFIED**. No cutover acceptance is asserted.
 
 - [ ] Inventory all `api_extensions.py` and browser callers; add a checked-in route-family census with UI-local/Graph OS/retire classification.
-- [ ] Pin the Graph OS registry schema and generator; add digest parity and error tests.
+- [x] Pin the Graph OS registry schema (`src/lib/graphos-api/generated/openapi.json`, built from `graph_os.api.http.openapi.document` over the live registry) and a generator (`pnpm run graphos:client:gen`, openapi-typescript, into `src/lib/graphos-api/generated/schema.ts`) (APIUI-01). **Caveat** (see `generated/README.md`): this snapshot's graph-os and epistemic-graph checkouts were not digest-pinned to each other, so EG-bound operations (`eg.*`) carry a placeholder result/params schema; regenerating from a digest-matched pair is still open. Digest parity and error tests remain open.
+- [x] Checked the real registry against `#38`'s `decide.*` op ids (WEBUI-API-R001 follow-up): **no `decide.*` namespace exists.** The real decision operations are `eg.query.Decide`, `eg.coordination.DecisionLog`, `eg.coordination.DecisionEval`, `eg.coordination.DecisionFit`, `eg.storage.DecisionCommit`, each multiplexing several named actions (e.g. `DecisionLog` carries `get`/`aggregate`/`commit`/`evaluate`/`compact`/`learn`/`resolve`/`verify` selected by a request field) rather than one operation id per `DecisionsTransport` method. Retargeting `graphos-decisions-transport.ts` needs the real per-action request/result shapes, not a rename; tracked separately, not patched into `#38`'s branch.
 - [ ] Migrate decisions, apps/Markets, WebMCP and effect confirmation; prove denied and step-up cases.
 - [ ] Migrate ontology, graph, Atlas and object sets with tenant and pagination parity.
 - [ ] Migrate remaining prompts, SDD, KB, sessions, goals, MCP and model families.

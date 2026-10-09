@@ -57,6 +57,9 @@ export default defineConfig(
       '**/.venv/**',
       'scratch/**',
       'agent/**',
+      // openapi-typescript's output (`pnpm run graphos:client:gen`); machine
+      // generated from the pinned GraphOS registry, never hand-edited.
+      'src/lib/graphos-api/generated/schema.ts',
       // Playwright e2e specs + config live outside the app's TS build project
       // (their own tooling/tsconfig), so the typed lint can't resolve them.
       'e2e/**',
