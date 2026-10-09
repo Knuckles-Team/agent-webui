@@ -11,6 +11,10 @@
 
 No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `WEBUI-DESIGN-R001`, `DS-01`, `DS-02`, `DS-03`, `DS-04`, `DS-05`, `DS-06`, `DS-07`, `DS-08`.
 
+## Duplicate-primitive and telemetry audit (DS-06)
+
+- [x] Add `src/components/ui/__tests__/no-duplicate-primitives.test.ts`: every exported primitive name in `src/components/ui/` resolves to exactly one file, and no telemetry/analytics/session-replay dependency is declared in `package.json` (DS-06).
+
 ## Strict style policy (DS-07, DS-08)
 
 - [x] Self-host Inter and remove the remote font import (DS-07).
