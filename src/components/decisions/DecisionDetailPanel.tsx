@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { UnavailableNotice } from '@/components/ui/unavailable-notice'
-import type { DecisionsTransport } from './decisions-transport'
+import type { DecisionsTransport, WhyNotOutcome } from './decisions-transport'
 import type {
   CoverageDerivation,
   DecisionOutcome,
@@ -231,7 +233,78 @@ function OutcomeSection({ outcome }: { outcome: DecisionOutcome }) {
   )
 }
 
-function WhyNotRow({ item }: { item: WhyNot }) {
+/** Within the given budget, the on-demand outcome, or `{ kind: 'timeout' }`
+ * on an abort — the request never writes back to the original record
+ * (DEC-02). */
+async function requestWhyNotOnDemand(
+  transport: DecisionsTransport,
+  recordId: string,
+  componentId: string,
+  slot: string,
+  budgetMs: number,
+): Promise<WhyNotOutcome> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => {
+    controller.abort()
+  }, budgetMs)
+  try {
+    return await transport.getWhyNotOnDemand(recordId, { componentId, slot, budgetMs }, controller.signal)
+  } catch (error) {
+    if (controller.signal.aborted) return { kind: 'timeout' }
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+const WHY_NOT_BUDGET_MS = 5_000
+
+function WhyNotOutcomeNotice({ outcome }: { outcome: WhyNotOutcome }) {
+  if (outcome.kind === 'timeout') return <p role="alert">Explanation timed out within its solve budget.</p>
+  if (outcome.kind === 'refused') return <p role="alert">Explanation refused: {outcome.reason}</p>
+  return <p role="status">{humanize(tagOf(outcome.whyNot.violation, 'violation'))}</p>
+}
+
+function WhyNotOnDemandAction({
+  recordId,
+  transport,
+  componentId,
+  slot,
+}: {
+  recordId: string
+  transport: DecisionsTransport
+  componentId: string
+  slot: string
+}) {
+  const [busy, setBusy] = useState(false)
+  const [outcome, setOutcome] = useState<WhyNotOutcome | null>(null)
+
+  async function explain() {
+    setBusy(true)
+    try {
+      setOutcome(await requestWhyNotOnDemand(transport, recordId, componentId, slot, WHY_NOT_BUDGET_MS))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handleExplainClick() {
+    // `explain` already resets `busy` in its own `finally`; this only
+    // prevents an unhandled-rejection warning for a non-abort transport error.
+    explain().catch(() => undefined)
+  }
+
+  return (
+    <div className="mt-0.5 w-full basis-full">
+      <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={handleExplainClick}>
+        {busy ? 'Explaining…' : 'Explain on demand'}
+      </Button>
+      {outcome && <WhyNotOutcomeNotice outcome={outcome} />}
+    </div>
+  )
+}
+
+function WhyNotRow({ item, recordId, transport }: { item: WhyNot; recordId: string; transport: DecisionsTransport }) {
   return (
     <div className="flex flex-wrap items-center gap-2 py-1 text-xs">
       <span className="font-mono text-muted-foreground">{item.component_id}</span>
@@ -243,11 +316,25 @@ function WhyNotRow({ item }: { item: WhyNot }) {
       ) : item.forced_objective !== undefined && item.forced_objective !== null ? (
         <span className="text-muted-foreground">objective {JSON.stringify(item.forced_objective)}</span>
       ) : null}
+      <WhyNotOnDemandAction
+        recordId={recordId}
+        transport={transport}
+        componentId={item.component_id}
+        slot={item.slot}
+      />
     </div>
   )
 }
 
-function WhyNotSection({ whyNot }: { whyNot: WhyNot[] }) {
+function WhyNotSection({
+  whyNot,
+  recordId,
+  transport,
+}: {
+  whyNot: WhyNot[]
+  recordId: string
+  transport: DecisionsTransport
+}) {
   if (whyNot.length === 0) return null
   return (
     <section>
@@ -256,7 +343,7 @@ function WhyNotSection({ whyNot }: { whyNot: WhyNot[] }) {
       </h4>
       <div>
         {whyNot.map((w, i) => (
-          <WhyNotRow key={`${w.component_id}-${w.slot}-${i}`} item={w} />
+          <WhyNotRow key={`${w.component_id}-${w.slot}-${i}`} item={w} recordId={recordId} transport={transport} />
         ))}
       </div>
     </section>
@@ -358,7 +445,7 @@ export default function DecisionDetailPanel({
         <PremisesSection premises={record.premises} />
         <DerivationsSection derivations={record.derivations} />
         <EliminatedSection eliminated={record.eliminated} />
-        <WhyNotSection whyNot={record.why_not} />
+        <WhyNotSection whyNot={record.why_not} recordId={record.record_id} transport={transport} />
         <ProvenanceSection provenance={provenanceQuery.data} />
       </CardContent>
     </Card>

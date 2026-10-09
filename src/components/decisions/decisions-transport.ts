@@ -5,6 +5,7 @@ import type {
   DecisionListRow,
   DecisionProvenance,
   DecisionRecord,
+  WhyNot,
 } from './decision-schemas'
 
 /**
@@ -32,6 +33,21 @@ export interface DecisionAggregateOptions {
   toMs?: number
 }
 
+/** One eliminated candidate to explain, with a caller-chosen solve budget (DEC-02). */
+export interface WhyNotOnDemandRequest {
+  componentId: string
+  slot: string
+  budgetMs: number
+}
+
+/**
+ * The on-demand why-not outcome (DEC-02): a freshly computed explanation, a
+ * budget timeout, or a server refusal. Never the original decision record —
+ * callers render this beside the record, never into it.
+ */
+export type WhyNotOutcome =
+  { kind: 'explained'; whyNot: WhyNot } | { kind: 'timeout' } | { kind: 'refused'; reason: string }
+
 export interface DecisionsTransport {
   /** Newest-first page of the caller's visible decision log. */
   listDecisions(options?: ListDecisionsOptions, signal?: AbortSignal): Promise<DecisionListRow[]>
@@ -45,4 +61,6 @@ export interface DecisionsTransport {
   getDecisionEvalReceipts(after?: string, signal?: AbortSignal): Promise<DecisionEvalReceiptPage>
   /** The same receipts, server-submission-time ordered, with threshold status. */
   getDecisionEvalTimeline(after?: string, signal?: AbortSignal): Promise<DecisionEvalTimelinePage>
+  /** Compute one why-not explanation on demand, within the caller's solve budget (DEC-02). */
+  getWhyNotOnDemand(recordId: string, request: WhyNotOnDemandRequest, signal?: AbortSignal): Promise<WhyNotOutcome>
 }
