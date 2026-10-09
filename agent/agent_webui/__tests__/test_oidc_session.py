@@ -13,6 +13,7 @@ import json
 import time
 from dataclasses import replace
 from types import SimpleNamespace
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -26,6 +27,7 @@ from agent_webui.oidc_session import (
     RECENT_AUTH_COOKIE,
     SESSION_COOKIE,
     SESSION_PATH,
+    BrowserSessionEvidence,
     OIDCBrowserSessionMiddleware,
     OIDCConfigurationError,
     OIDCSettings,
@@ -36,6 +38,7 @@ from agent_webui.oidc_session import (
     _safe_next,
     _session_cookie_headers,
     load_settings,
+    verify_browser_session,
 )
 from cryptography.fernet import Fernet
 
@@ -1451,3 +1454,264 @@ async def test_finalize_consumes_recent_auth_once_and_mints_exact_arm(monkeypatc
 @pytest.fixture
 def anyio_backend():
     return 'asyncio'
+
+
+# --------------------------------------------------- browser session evidence
+#
+# graph-os's browser identity producer (``graph_os.identity.broker
+# .GraphOSBrowserAuthority``) is the real caller of this port: it verifies a
+# live ``__Host-graphos_session`` cookie, then calls this exact chokepoint to
+# turn its own owner-verified evidence into the MFA timestamp its HTTP/MCP
+# caller projection needs. These tests exercise the webui side of that
+# contract with a synthetic authority fixture standing in for the real
+# producer, which graph-os's own suite covers end to end.
+
+_EVIDENCE_ORIGIN = 'https://console.example.test'
+_NOW_MS = 2_000_000
+
+
+def _evidence_scope(*, origin: str | None = _EVIDENCE_ORIGIN) -> dict[str, Any]:
+    headers = [(b'origin', origin.encode())] if origin is not None else []
+    return _scope('/api/v1/ops/fixture', method='POST', headers=headers)
+
+
+def _bound_session(*, subject: str = 'fixture-human', tenant: str = 'fixture-tenant'):
+    return SimpleNamespace(actor=SimpleNamespace(actor_id=subject), tenant=tenant)
+
+
+class _AuthorityFixture:
+    def __init__(self, evidence_factory):
+        self._evidence_factory = evidence_factory
+        self.calls: list[Any] = []
+
+    async def verify_request(self, scope: Any) -> Any:
+        self.calls.append(scope)
+        return self._evidence_factory(scope)
+
+
+def test_browser_session_evidence_rejects_a_missing_scope():
+    with pytest.raises(PermissionError, match='request scope'):
+        BrowserSessionEvidence(
+            request_scope=None,
+            subject='fixture-human',
+            tenant='fixture-tenant',
+            session_ref='fixture-session',
+            expires_at_ms=_NOW_MS,
+            mfa_at_ms=None,
+        )
+
+
+@pytest.mark.parametrize(
+    ('field', 'value'),
+    [
+        ('subject', ''),
+        ('subject', ' padded '),
+        ('tenant', ''),
+        ('session_ref', ''),
+        ('expires_at_ms', -1),
+        ('expires_at_ms', True),
+        ('mfa_at_ms', -1),
+        ('mfa_at_ms', True),
+    ],
+)
+def test_browser_session_evidence_rejects_malformed_fields(field, value):
+    # A typed, explicit-keyword constructor call -- never `**fields` -- so
+    # each argument is checked against BrowserSessionEvidence's own declared
+    # field type instead of one dict-wide value type unified (and narrowed to
+    # `object`) across every parametrized (field, value) case.
+    fields: dict[str, Any] = {
+        'request_scope': object(),
+        'subject': 'fixture-human',
+        'tenant': 'fixture-tenant',
+        'session_ref': 'fixture-session',
+        'expires_at_ms': _NOW_MS,
+        'mfa_at_ms': None,
+    }
+    fields[field] = value
+    with pytest.raises(PermissionError):
+        BrowserSessionEvidence(
+            request_scope=fields['request_scope'],
+            subject=fields['subject'],
+            tenant=fields['tenant'],
+            session_ref=fields['session_ref'],
+            expires_at_ms=fields['expires_at_ms'],
+            mfa_at_ms=fields['mfa_at_ms'],
+        )
+
+
+@pytest.mark.anyio
+async def test_verify_browser_session_returns_the_verified_mfa_timestamp(monkeypatch):
+    monkeypatch.setattr('agent_webui.oidc_session.time.time', lambda: _NOW_MS / 1000)
+    scope = _evidence_scope()
+    session = _bound_session()
+    authority = _AuthorityFixture(
+        lambda s: BrowserSessionEvidence(
+            request_scope=s,
+            subject='fixture-human',
+            tenant='fixture-tenant',
+            session_ref='fixture-session-ref',
+            expires_at_ms=_NOW_MS + 60_000,
+            mfa_at_ms=_NOW_MS,
+        )
+    )
+    result = await verify_browser_session(
+        scope, session, authority=authority, console_origin=_EVIDENCE_ORIGIN
+    )
+    assert result == _NOW_MS
+    assert authority.calls == [scope]
+
+
+@pytest.mark.anyio
+async def test_verify_browser_session_passes_through_no_mfa(monkeypatch):
+    monkeypatch.setattr('agent_webui.oidc_session.time.time', lambda: _NOW_MS / 1000)
+    scope = _evidence_scope()
+    session = _bound_session()
+    authority = _AuthorityFixture(
+        lambda s: BrowserSessionEvidence(
+            request_scope=s,
+            subject='fixture-human',
+            tenant='fixture-tenant',
+            session_ref='fixture-session-ref',
+            expires_at_ms=_NOW_MS + 60_000,
+            mfa_at_ms=None,
+        )
+    )
+    result = await verify_browser_session(
+        scope, session, authority=authority, console_origin=_EVIDENCE_ORIGIN
+    )
+    assert result is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    'origin',
+    [
+        None,
+        'https://console.example.test.attacker.invalid',
+        'https://console.example.test/',
+        'null',
+        '',
+    ],
+)
+async def test_verify_browser_session_requires_the_exact_console_origin(origin):
+    scope = _evidence_scope(origin=origin)
+    session = _bound_session()
+    authority = _AuthorityFixture(
+        lambda s: BrowserSessionEvidence(
+            request_scope=s,
+            subject='fixture-human',
+            tenant='fixture-tenant',
+            session_ref='fixture-session-ref',
+            expires_at_ms=_NOW_MS + 60_000,
+            mfa_at_ms=_NOW_MS,
+        )
+    )
+    with pytest.raises(PermissionError, match='origin'):
+        await verify_browser_session(
+            scope, session, authority=authority, console_origin=_EVIDENCE_ORIGIN
+        )
+    assert authority.calls == []
+
+
+@pytest.mark.anyio
+async def test_verify_browser_session_requires_a_configured_console_origin():
+    scope = _evidence_scope()
+    session = _bound_session()
+    authority = _AuthorityFixture(lambda s: pytest.fail('must not be reached'))
+    with pytest.raises(PermissionError, match='origin'):
+        await verify_browser_session(
+            scope, session, authority=authority, console_origin=''
+        )
+
+
+@pytest.mark.anyio
+async def test_verify_browser_session_requires_a_callable_authority():
+    scope = _evidence_scope()
+    session = _bound_session()
+    with pytest.raises(PermissionError, match='authority'):
+        await verify_browser_session(
+            scope,
+            session,
+            authority=SimpleNamespace(),
+            console_origin=_EVIDENCE_ORIGIN,
+        )
+
+
+@pytest.mark.anyio
+async def test_verify_browser_session_rejects_evidence_for_a_substituted_scope():
+    scope = _evidence_scope()
+    other_scope = _evidence_scope()
+    session = _bound_session()
+    authority = _AuthorityFixture(
+        lambda s: BrowserSessionEvidence(
+            request_scope=other_scope,
+            subject='fixture-human',
+            tenant='fixture-tenant',
+            session_ref='fixture-session-ref',
+            expires_at_ms=_NOW_MS + 60_000,
+            mfa_at_ms=_NOW_MS,
+        )
+    )
+    with pytest.raises(PermissionError, match='evidence'):
+        await verify_browser_session(
+            scope, session, authority=authority, console_origin=_EVIDENCE_ORIGIN
+        )
+
+
+@pytest.mark.anyio
+async def test_verify_browser_session_rejects_a_non_evidence_return():
+    scope = _evidence_scope()
+    session = _bound_session()
+    authority = _AuthorityFixture(lambda s: SimpleNamespace(mfa_at_ms=None))
+    with pytest.raises(PermissionError, match='evidence'):
+        await verify_browser_session(
+            scope, session, authority=authority, console_origin=_EVIDENCE_ORIGIN
+        )
+
+
+@pytest.mark.anyio
+async def test_verify_browser_session_rejects_expired_evidence(monkeypatch):
+    monkeypatch.setattr('agent_webui.oidc_session.time.time', lambda: _NOW_MS / 1000)
+    scope = _evidence_scope()
+    session = _bound_session()
+    authority = _AuthorityFixture(
+        lambda s: BrowserSessionEvidence(
+            request_scope=s,
+            subject='fixture-human',
+            tenant='fixture-tenant',
+            session_ref='fixture-session-ref',
+            expires_at_ms=_NOW_MS,
+            mfa_at_ms=_NOW_MS,
+        )
+    )
+    with pytest.raises(PermissionError, match='expired'):
+        await verify_browser_session(
+            scope, session, authority=authority, console_origin=_EVIDENCE_ORIGIN
+        )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ('subject', 'tenant'),
+    [('spoofed-subject', 'fixture-tenant'), ('fixture-human', 'spoofed-tenant')],
+)
+async def test_verify_browser_session_rejects_a_principal_mismatch(
+    monkeypatch, subject, tenant
+):
+    monkeypatch.setattr('agent_webui.oidc_session.time.time', lambda: _NOW_MS / 1000)
+    scope = _evidence_scope()
+    session = _bound_session()
+    authority = _AuthorityFixture(
+        lambda s: BrowserSessionEvidence(
+            request_scope=s,
+            subject=subject,
+            tenant=tenant,
+            session_ref='fixture-session-ref',
+            expires_at_ms=_NOW_MS + 60_000,
+            mfa_at_ms=_NOW_MS,
+        )
+    )
+    with pytest.raises(PermissionError, match='mismatch'):
+        await verify_browser_session(
+            scope, session, authority=authority, console_origin=_EVIDENCE_ORIGIN
+        )

@@ -69,7 +69,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from ipaddress import ip_address
-from typing import Any, TypeGuard, cast
+from typing import Any, Protocol, TypeGuard, cast
 from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
 from .browser_control_canonical import canonical_protocol_json, parse_protocol_json
@@ -2311,6 +2311,125 @@ class OIDCBrowserSessionMiddleware:
         await self.app(scope, receive, send)
 
 
+@dataclass(frozen=True, slots=True)
+class BrowserSessionEvidence:
+    """Verified facts for one already-admitted browser session (GRAPHOS-IDENTITY-R005).
+
+    The sole DTO :func:`verify_browser_session` accepts from a
+    :class:`BrowserSessionAuthority`. It carries only facts that authority
+    verified for the EXACT request ``scope`` given to ``verify_request`` --
+    never policy, delegation, or engine authority. A caller needing those
+    must obtain them from its own qualified session authority; this evidence
+    is read-only and is never itself projected into one.
+    """
+
+    request_scope: Any
+    subject: str
+    tenant: str
+    session_ref: str
+    expires_at_ms: int
+    mfa_at_ms: int | None
+
+    def __post_init__(self) -> None:
+        if self.request_scope is None:
+            raise PermissionError(
+                'Verified browser evidence requires its exact request scope'
+            )
+        _require_bounded_evidence_text(self.subject, field_name='subject')
+        _require_bounded_evidence_text(self.tenant, field_name='tenant')
+        _require_bounded_evidence_text(self.session_ref, field_name='session reference')
+        if (
+            isinstance(self.expires_at_ms, bool)
+            or not isinstance(self.expires_at_ms, int)
+            or self.expires_at_ms < 0
+        ):
+            raise PermissionError('Verified browser evidence requires a bounded expiry')
+        if self.mfa_at_ms is not None and (
+            isinstance(self.mfa_at_ms, bool)
+            or not isinstance(self.mfa_at_ms, int)
+            or self.mfa_at_ms < 0
+        ):
+            raise PermissionError(
+                'Verified browser evidence MFA timestamp must be a bounded integer'
+            )
+
+
+class BrowserSessionAuthority(Protocol):
+    """Port a qualified owner implements to verify one live browser session.
+
+    ``verify_request`` must check the live session (cookie, CSRF, and
+    subject/tenant binding) for the EXACT ASGI ``scope`` it receives and
+    return the resulting :class:`BrowserSessionEvidence`, or raise
+    ``PermissionError``. It must never consult ambient process authority or
+    answer for a scope it was not given.
+    """
+
+    async def verify_request(self, scope: Any) -> BrowserSessionEvidence: ...
+
+
+def _require_bounded_evidence_text(value: Any, *, field_name: str) -> str:
+    text = value if isinstance(value, str) else ''
+    if (
+        not text
+        or text != text.strip()
+        or len(text) > 512
+        or any(ord(character) < 32 or ord(character) == 127 for character in text)
+    ):
+        raise PermissionError(f'Verified browser evidence has an invalid {field_name}')
+    return text
+
+
+async def verify_browser_session(
+    scope: Any,
+    session: Any,
+    *,
+    authority: BrowserSessionAuthority,
+    console_origin: str,
+) -> int | None:
+    """Verify one browser session for ``scope`` and return its MFA timestamp.
+
+    This is the one chokepoint a caller projection (graph-os's browser
+    producer bridge) uses to turn a qualified :class:`BrowserSessionAuthority`
+    into the exact verified MFA timestamp (or ``None``) it needs. The caller
+    must already have bound ``session`` to this exact request -- for example
+    by confirming ``authority.session_for_request(request) is session`` --
+    before calling this function. That binding is re-checked here against the
+    evidence ``authority.verify_request`` actually returns, so an authority
+    that answers for a different principal than the bound session cannot
+    silently substitute its authority through this port.
+
+    Raises:
+        PermissionError: the request origin is not the exact configured
+            ``console_origin``, ``authority`` has no callable
+            ``verify_request``, the returned evidence is not a
+            :class:`BrowserSessionEvidence` for the exact ``scope`` supplied,
+            it has expired, or its subject/tenant disagree with ``session``.
+    """
+
+    if not isinstance(console_origin, str) or not console_origin:
+        raise PermissionError('Verified browser origin required')
+    if not callable(getattr(authority, 'verify_request', None)):
+        raise PermissionError('Verified browser session authority required')
+    if _single_header(scope, b'origin') != console_origin:
+        raise PermissionError('Verified browser origin required')
+
+    evidence = await authority.verify_request(scope)
+    if (
+        not isinstance(evidence, BrowserSessionEvidence)
+        or evidence.request_scope is not scope
+    ):
+        raise PermissionError('Verified browser session evidence required')
+    if evidence.expires_at_ms <= int(time.time() * 1000):
+        raise PermissionError('Verified browser session has expired')
+
+    bound_subject = getattr(getattr(session, 'actor', None), 'actor_id', None)
+    bound_tenant = getattr(session, 'tenant', None)
+    if evidence.subject != bound_subject or evidence.tenant != bound_tenant:
+        raise PermissionError('Verified browser session authority mismatch')
+
+    return evidence.mfa_at_ms
+
+
 def _unverified_claims(token: str) -> dict[str, Any]:
     """Read a JWT payload for *display only*.
 
@@ -2333,6 +2452,8 @@ __all__ = [
     'ATTENDED_ARM_COOKIE',
     'ATTENDED_ARM_FINALIZE_PATH',
     'ATTENDED_ARM_PATH',
+    'BrowserSessionAuthority',
+    'BrowserSessionEvidence',
     'CALLBACK_PATH',
     'FLOW_COOKIE',
     'LOGIN_PATH',
@@ -2345,4 +2466,5 @@ __all__ = [
     'SESSION_PATH',
     'load_settings',
     'trusted_request_origin',
+    'verify_browser_session',
 ]
