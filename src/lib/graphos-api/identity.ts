@@ -48,7 +48,9 @@ export type IdentityReply<T> =
   | { kind: 'unavailable' | 'forbidden' | 'step_up' | 'error'; message: string }
 
 const recordSchema = z.record(z.string(), z.unknown())
-const PLAN_REF = /^graphos_plan:[0-9a-f]{48}$/
+/** The server-issued plan-reference shape, shared with the `console.confirm`
+ * route (`ConsoleConfirmView`) so both sides validate the same format. */
+export const PLAN_REF = /^graphos_plan:[0-9a-f]{48}$/
 const itemSchema = z
   .object({
     principal_id: z.string().optional(),
