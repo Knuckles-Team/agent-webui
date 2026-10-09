@@ -13,7 +13,7 @@
     "DS-07",
     "DS-08"
   ],
-  "delivery_state": "SPECIFIED",
+  "delivery_state": "BUILDING",
   "acceptance_state": "NOT_AUDITED",
   "evidence": [],
   "requirements": [
@@ -105,8 +105,16 @@
     {
       "id": "DS-06",
       "title": "No duplicate primitives or unsolicited telemetry introduced",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "f31dead073e184ddf4f2e82d404b385d1c596a96",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/f31dead073e184ddf4f2e82d404b385d1c596a96",
+          "description": "DS-06 merged to the default branch in this commit."
+        }
+      ]
     },
     {
       "id": "DS-07",

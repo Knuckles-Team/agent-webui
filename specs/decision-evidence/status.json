@@ -12,7 +12,7 @@
     "DEC-06",
     "WEBUI-DECIDE-R002"
   ],
-  "delivery_state": "SPECIFIED",
+  "delivery_state": "BUILDING",
   "acceptance_state": "NOT_AUDITED",
   "evidence": [],
   "requirements": [
@@ -63,8 +63,16 @@
     {
       "id": "DEC-02",
       "title": "Why-not explanations run on demand within a bounded budget",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "94fdf68cfbca16ad0d81cc623fe950eca5a014e6",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/94fdf68cfbca16ad0d81cc623fe950eca5a014e6",
+          "description": "DEC-02 merged to the default branch in this commit."
+        }
+      ]
     },
     {
       "id": "DEC-03",

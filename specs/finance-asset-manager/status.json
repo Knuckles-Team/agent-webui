@@ -20,7 +20,7 @@
     "FUI-13",
     "FIN-UI-R003"
   ],
-  "delivery_state": "SPECIFIED",
+  "delivery_state": "BUILDING",
   "acceptance_state": "NOT_AUDITED",
   "evidence": [],
   "requirements": [
@@ -39,8 +39,16 @@
     {
       "id": "FUI-01",
       "title": "Responsive five-destination navigation",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "a73ac09e3e1c320d670e73e8a02af4b6a5a11335",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/a73ac09e3e1c320d670e73e8a02af4b6a5a11335",
+          "description": "FUI-01 merged to the default branch in this commit."
+        }
+      ]
     },
     {
       "id": "FUI-02",
@@ -51,7 +59,7 @@
     {
       "id": "FUI-03",
       "title": "Search resolves by stable identity, not ticker text",
-      "delivery_state": "BUILT",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "branch",
@@ -59,6 +67,13 @@
           "commit": "0809b6d3ca727b19b196f2b875a7cf007eb341db",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/0809b6d3ca727b19b196f2b875a7cf007eb341db",
           "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "e05e1230ae72762d01dcee0bdfa3c24358684c11",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/e05e1230ae72762d01dcee0bdfa3c24358684c11",
+          "description": "FUI-03 merged to the default branch in this commit."
         }
       ]
     },
@@ -125,7 +140,7 @@
     {
       "id": "FIN-UI-R003",
       "title": "GraphOS Markets app with scanner, search, and layered chart",
-      "delivery_state": "BUILT",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "branch",
@@ -133,6 +148,13 @@
           "commit": "0809b6d3ca727b19b196f2b875a7cf007eb341db",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/0809b6d3ca727b19b196f2b875a7cf007eb341db",
           "description": "Implementation commit is published on a branch; not yet merged to the default branch."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "e05e1230ae72762d01dcee0bdfa3c24358684c11",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/e05e1230ae72762d01dcee0bdfa3c24358684c11",
+          "description": "FIN-UI-R003 merged to the default branch in this commit."
         }
       ]
     }
