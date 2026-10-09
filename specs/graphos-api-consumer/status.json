@@ -48,29 +48,15 @@
       "id": "WEBUI-API-R002",
       "title": "Typed ontology, graph, Atlas and object-set operations replace host routes",
       "delivery_state": "BUILDING",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "1a4f6bbf2cd3d76d58d38e3d9e6e26199ae56664",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1a4f6bbf2cd3d76d58d38e3d9e6e26199ae56664",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        }
-      ]
+      "evidence": [],
+      "remaining": "Prior evidence commit 1a4f6bbf2cd3d76d58d38e3d9e6e26199ae56664 is unreachable from any branch; recorded evidence was stale and has been removed. Split per size/scope (4 route families, cross-surface + browser tests): WEBUI-API-R002.1 (typed ontology operation model, result validation and refusal tests -- see branch webui-api-r002-r003) is built; WEBUI-API-R002.2 wires the ontology host routes to the new adapter; WEBUI-API-R002.3/.4/.5 repeat for graph, Atlas and object-set."
     },
     {
       "id": "WEBUI-API-R003",
       "title": "Remaining domain routes migrate to generated operations with a route census",
-      "delivery_state": "BUILT",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "085195e275653918bf974ce2bee4c097f8413f08",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/085195e275653918bf974ce2bee4c097f8413f08",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        }
-      ]
+      "delivery_state": "BUILDING",
+      "evidence": [],
+      "remaining": "Prior evidence commit 085195e275653918bf974ce2bee4c097f8413f08 is unreachable from any branch and the prior BUILT state was unsubstantiated; recorded evidence was stale and has been removed. Split per size/scope (7 domain route families plus a lint rule and a checked-in census, cross-surface): WEBUI-API-R003.1 (typed route-census-entry model, disposition validation and refusal tests -- see branch webui-api-r002-r003) is built; WEBUI-API-R003.2 adds the checked-in census data file and the architecture lint rule that reads it; WEBUI-API-R003.3+ migrate prompts, SDD, knowledge base, sessions, goals, MCP servers/tools and model-management one family per child."
     },
     {
       "id": "WEBUI-API-R004",
