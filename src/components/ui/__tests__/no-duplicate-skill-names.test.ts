@@ -20,6 +20,7 @@ function declaredName(dirName: string): string {
 }
 
 describe('skill name inventory (WEBUI-DESIGN-R001)', () => {
+  // spec: WEBUI-DESIGN-R001, WEBUI-API-R002, APIUI-03.1, APIUI-03.2, APIUI-03.3, APIUI-03.4, APIUI-05
   it('installs no duplicate skill directory or declared skill name', () => {
     const dirs = skillDirNames()
     expect(dirs.length).toBeGreaterThan(0)

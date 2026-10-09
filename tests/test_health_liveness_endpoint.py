@@ -190,6 +190,7 @@ def test_bare_root_still_serves_the_spa_shell_authenticated(
     assert 'html' in content_type.lower()
 
 
+@pytest.mark.spec("IDUI-01")
 def test_bare_root_unauthenticated_serves_only_the_static_shell(app):
     """`/` without a credential answers the static SPA shell -- the bundle
     that renders the sign-in and first-run screens -- and nothing else: it

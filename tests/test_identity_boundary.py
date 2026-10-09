@@ -101,6 +101,7 @@ def test_host_boundary_and_webui_oidc_cannot_both_own_auth(
         _build(session_boundary=lambda app: None)
 
 
+@pytest.mark.spec("IDUI-03", "IDUI-05", "IDUI-07")
 def test_uncredentialed_browser_gets_only_the_static_shell(built_bundle: Path) -> None:
     _ = built_bundle  # fixture is for its filesystem side effect, not its value
     client = TestClient(_build())

@@ -10,6 +10,7 @@ import { baseAggregate, createFixtureTransport, emptyReceiptPage, emptyTimelineP
  */
 
 describe('DecisionCalibrationTab', () => {
+  // spec: WEBUI-DECIDE-R001, DEC-01, DEC-03, DEC-04, DEC-06, WEBUI-DECIDE-R002
   it('renders per-option stat tiles, the success rate, and the min-support caption, labeled independently of the unavailable calibration/coverage notice (DEC-03)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue(baseAggregate)
@@ -29,6 +30,7 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.getByText(/bounds for their evaluation set below/i)).toBeInTheDocument()
   })
 
+  // spec: WEBUI-DECIDE-R001, DEC-01, DEC-03, DEC-04, DEC-06, WEBUI-DECIDE-R002
   it('does not interpret an empty aggregate as proof of zero outcomes (DEC-04)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue({ schema_version: 1, min_support: 10, rows: [] })
@@ -37,6 +39,7 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.getByText(/data may be absent or withheld below minimum support/i)).toBeInTheDocument()
   })
 
+  // spec: WEBUI-DECIDE-R001, DEC-01, DEC-03, DEC-04, DEC-06, WEBUI-DECIDE-R002
   it('shows an honest unavailable notice on a failed fetch', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockRejectedValue(new Error('engine down'))

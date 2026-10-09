@@ -90,6 +90,7 @@ async function sendSlashCommand(text: string) {
 }
 
 describe('Chat handleSlashCommand', () => {
+  // spec: APP-01
   it('/help lists the available slash commands', async () => {
     await sendSlashCommand('/help')
     await waitFor(() => {
@@ -98,6 +99,7 @@ describe('Chat handleSlashCommand', () => {
     expect(screen.getByText((_, el) => el?.tagName === 'CODE' && el.textContent === '/mode')).toBeInTheDocument()
   })
 
+  // spec: APP-01
   it('/clear wipes messages and the input, without appending a reply', async () => {
     await sendSlashCommand('/clear')
     await waitFor(() => {
@@ -272,6 +274,7 @@ describe('Chat handleSlashCommand', () => {
     expect(screen.getAllByText('Model B').length).toBeGreaterThan(0)
   })
 
+  // spec: APP-01
   it('BUG-CX-076 (fixed): a server-returned clear_chat client action is not revived by a stale closure', async () => {
     // Was: `clear_chat` calls `setMessages([])` mid-branch, but the
     // unconditional `setMessages([...messages, userMsg, replyMsg])` that ran

@@ -15,10 +15,12 @@ afterEach(() => {
 })
 
 describe('console confirmation route (APIUI-02)', () => {
+  // spec: APIUI-02
   it('is registered as a deep link', () => {
     expect(matchRoute(`/console/confirm/graphos_plan:${'a'.repeat(48)}`)?.route.id).toBe('console.confirm')
   })
 
+  // spec: APIUI-02
   it('rejects malformed plan refs without a network call', () => {
     const fetcher = vi.fn()
     vi.stubGlobal('fetch', fetcher)
@@ -28,6 +30,7 @@ describe('console confirmation route (APIUI-02)', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
+  // spec: APIUI-02
   it('shows an unavailable operation as a failure', async () => {
     const fetcher = vi
       .fn()

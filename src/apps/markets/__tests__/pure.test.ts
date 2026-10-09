@@ -60,6 +60,7 @@ describe('view state in the URL', () => {
 })
 
 describe('Atlas OHLC recognition', () => {
+  // spec: FUI-06
   it('accepts complete candles and refuses any row that is not one', () => {
     const rows = [
       { time: '2026-01-02', open: 10, high: 12, low: 9, close: 11 },
@@ -85,6 +86,7 @@ describe('bar revisions (FUI-06)', () => {
     final: true,
   })
 
+  // spec: FUI-06
   it('replaces a bar by open time with its later revision and leaves a gap unfilled', () => {
     const original = bar(100, 10)
     const revised = bar(100, 20)

@@ -73,6 +73,7 @@ describe('SignInPanel', () => {
     expect(assign).not.toHaveBeenCalled()
   })
 
+  // spec: IDUI-03, IDUI-05, IDUI-07
   it('asks for the second factor when the session owes one', async () => {
     answer('ok')
     const pending = identity({ mode: 'local', second_factor_required: true })

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 import logging
 
 import agent_webui.api_extensions as mod
@@ -20,6 +21,7 @@ def _logged(caplog, error: BaseException) -> str:
     return caplog.records[-1].getMessage()
 
 
+@pytest.mark.spec("WEBUI-API-R004")
 def test_typed_engine_code_is_logged(caplog):
     message = _logged(caplog, _EngineError('ACCESS_DENIED'))
     assert message == (

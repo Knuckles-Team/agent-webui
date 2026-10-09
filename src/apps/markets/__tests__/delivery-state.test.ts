@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { dedupeByEventId, isLiveFill, type DeliveryReceipt } from '../delivery-state'
 
 describe('delivery-state (FUI-10.1)', () => {
+  // spec: FUI-07.1, FUI-08.1, FUI-09.1, FUI-10.1
   it('keeps every distinct delivery state distinct', () => {
     expect(isLiveFill('delivered')).toBe(true)
     expect(isLiveFill('paper_filled')).toBe(false)
@@ -11,6 +12,7 @@ describe('delivery-state (FUI-10.1)', () => {
     expect(isLiveFill('replayed')).toBe(false)
   })
 
+  // spec: FUI-07.1, FUI-08.1, FUI-09.1, FUI-10.1
   it('collapses a duplicated event ID to its latest-observed receipt', () => {
     const receipts: DeliveryReceipt[] = [
       { event_id: 'evt-1', state: 'due', observed_at: '2026-10-09T00:00:00Z' },
@@ -21,6 +23,7 @@ describe('delivery-state (FUI-10.1)', () => {
     ])
   })
 
+  // spec: FUI-07.1, FUI-08.1, FUI-09.1, FUI-10.1
   it('resolves a channel retry to one receipt rather than two', () => {
     const receipts: DeliveryReceipt[] = [
       { event_id: 'evt-2', state: 'failed', observed_at: '2026-10-09T00:00:00Z' },

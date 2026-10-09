@@ -227,6 +227,7 @@ def test_ontology_identity_ignores_caller_supplied_actor_headers() -> None:
         assert _actor_id_from_request(request) != 'forged-admin'
 
 
+@pytest.mark.spec('DS-07', 'DS-08')
 def test_security_headers_cover_api_responses() -> None:
     async def app(_scope, _receive, send) -> None:
         await send(
@@ -296,6 +297,7 @@ def _run_html_document(body_chunks: list[bytes], policy: str | None = None) -> l
     return messages
 
 
+@pytest.mark.spec('DS-07', 'DS-08')
 def test_html_documents_carry_a_fresh_style_nonce() -> None:
     chunks = [b'<meta property="csp-nonce" nonce="AGENT_WEBUI_', b'CSP_NONCE">']
     first = _run_html_document(chunks)
@@ -325,6 +327,7 @@ def test_html_documents_carry_a_fresh_style_nonce() -> None:
     assert nonces[0] != nonces[1]
 
 
+@pytest.mark.spec('DS-07', 'DS-08')
 def test_html_without_placeholder_keeps_the_static_policy() -> None:
     messages = _run_html_document([b'<p>plain</p>'])
     headers = dict(messages[0]['headers'])

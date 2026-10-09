@@ -301,6 +301,7 @@ async def test_http_request_gets_one_access_log_line_and_a_correlation_header(
     assert record.correlation_id == send.headers[b'x-correlation-id'].decode('ascii')
 
 
+@pytest.mark.spec('WEBUI-API-R004')
 @pytest.mark.asyncio
 async def test_inbound_correlation_id_is_reused_not_replaced(
     agent_webui_caplog: pytest.LogCaptureFixture,
@@ -324,6 +325,7 @@ async def test_inbound_correlation_id_is_reused_not_replaced(
     assert record.correlation_id == 'caller-minted-id'
 
 
+@pytest.mark.spec('WEBUI-API-R004')
 @pytest.mark.asyncio
 async def test_each_request_gets_its_own_id_despite_an_ambient_one() -> None:
     """A host thread that bound a correlation id at startup must not leak it.

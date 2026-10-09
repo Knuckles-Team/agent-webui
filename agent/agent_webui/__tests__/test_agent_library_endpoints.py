@@ -48,6 +48,7 @@ def run(coro):
     return asyncio.run(coro)
 
 
+@pytest.mark.spec('APP-02', 'APP-06', 'WEBUI-APPS-R002', 'WEBUI-APPS-R003')
 def test_list_library_agents_returns_local_and_a2a(mock_engine):
     from agent_webui.api_extensions import list_library_agents
 
@@ -82,6 +83,7 @@ def test_list_library_agents_returns_local_and_a2a(mock_engine):
     assert {d['kind'] for d in data} == {'local', 'a2a'}
 
 
+@pytest.mark.spec('APP-02', 'APP-06', 'WEBUI-APPS-R002', 'WEBUI-APPS-R003')
 def test_list_library_agents_excludes_archived(mock_engine):
     from agent_webui.api_extensions import list_library_agents
 
@@ -100,6 +102,7 @@ def test_list_library_agents_excludes_archived(mock_engine):
         assert run(list_library_agents()) == []
 
 
+@pytest.mark.spec('APP-02', 'APP-06', 'WEBUI-APPS-R002', 'WEBUI-APPS-R003')
 def test_list_library_agents_reports_backend_failure(mock_engine):
     from agent_webui.api_extensions import list_library_agents
     from fastapi import HTTPException

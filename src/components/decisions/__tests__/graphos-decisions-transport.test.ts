@@ -34,6 +34,7 @@ function stubReplies(...opReplies: { status: number; body: unknown }[]) {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('graphosDecisionsTransport on the shared GraphOS invoke adapter', () => {
+  // spec: WEBUI-API-R001
   it('has no bulk decision-record listing operation and refuses rather than fabricate one', async () => {
     stubReplies()
     await expect(graphosDecisionsTransport.listDecisions({ questionId: 'assemble' })).rejects.toThrow(
@@ -41,6 +42,7 @@ describe('graphosDecisionsTransport on the shared GraphOS invoke adapter', () =>
     )
   })
 
+  // spec: WEBUI-API-R001
   it('gets one committed decision record via DecisionLog.get, unwrapping the log entry', async () => {
     const fetcher = stubReplies({
       status: 200,
@@ -67,6 +69,7 @@ describe('graphosDecisionsTransport on the shared GraphOS invoke adapter', () =>
     )
   })
 
+  // spec: WEBUI-API-R001
   it('throws a typed not-found error when DecisionLog.get returns no entry', async () => {
     stubReplies({ status: 200, body: { ok: true, result: null, meta } })
     await expect(graphosDecisionsTransport.getDecision(baseRecord.record_id)).rejects.toThrow(

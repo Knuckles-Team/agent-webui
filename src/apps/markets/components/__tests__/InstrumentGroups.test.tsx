@@ -26,6 +26,7 @@ afterEach(() => {
 })
 
 describe('InstrumentGroups', () => {
+  // spec: FUI-02
   it('shows a distinct loading state before data arrives', () => {
     const transport: InstrumentGroupsTransport = {
       listGroups: vi.fn(
@@ -39,6 +40,7 @@ describe('InstrumentGroups', () => {
     expect(screen.getByText('Loading your instrument groups…')).toBeInTheDocument()
   })
 
+  // spec: FUI-02
   it('shows a distinct genuinely-empty state, not a loading or failure state', async () => {
     const transport = makeTransport({ status: 'empty' })
     renderWithProviders(<InstrumentGroups transport={transport} />)
@@ -46,6 +48,7 @@ describe('InstrumentGroups', () => {
     expect(screen.queryByText('Loading your instrument groups…')).not.toBeInTheDocument()
   })
 
+  // spec: FUI-02
   it('shows a distinct stale state labeled with its as-of time, alongside the groups', async () => {
     const transport = makeTransport({ status: 'stale', groups: readyGroups, asOf: '2026-10-01T00:00:00Z' })
     renderWithProviders(<InstrumentGroups transport={transport} />)

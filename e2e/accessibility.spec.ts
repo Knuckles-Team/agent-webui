@@ -16,6 +16,7 @@ const viewports = [320, 375, 768, 1440].flatMap((width) =>
 )
 
 for (const { width, theme } of viewports) {
+  // spec: DS-01, DS-02, DS-04, DS-05
   test(`keyboard, focus, descriptions and layout at ${width}px (${theme})`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await page.goto('/')
@@ -64,6 +65,7 @@ for (const { width, theme } of viewports) {
   })
 }
 
+// spec: DS-01, DS-02, DS-04, DS-05
 test('reduced motion removes drawer transitions and decorative animation', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/')

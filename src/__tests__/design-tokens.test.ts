@@ -55,6 +55,7 @@ describe('design-system token audit (DS-01)', () => {
     expect(DARK[name]).toBe(doc.dark)
   })
 
+  // spec: DS-01, DS-02, DS-04, DS-05
   it('defines the one spacing/density primitive (--radius) documented in docs/design-system.md', () => {
     expect(LIGHT['--radius']).toBe('0.625rem')
   })

@@ -316,6 +316,7 @@ def engine() -> FakeEngine:
     return FakeEngine()
 
 
+@pytest.mark.spec('FUI-03', 'FIN-UI-R003')
 def test_the_apps_catalog_states_availability() -> None:
     assert _client(FakeEngine()).get('/api/apps').json() == {
         'apps': [{'id': 'markets', 'available': True, 'detail': None}]
@@ -328,6 +329,7 @@ def test_the_apps_catalog_states_availability() -> None:
     }
 
 
+@pytest.mark.spec('FUI-03', 'FIN-UI-R003')
 def test_search_ranks_the_exact_symbol_and_reads_series_only_with_a_tick_size(
     engine: FakeEngine,
 ) -> None:
@@ -349,6 +351,7 @@ def test_search_ranks_the_exact_symbol_and_reads_series_only_with_a_tick_size(
     assert none['listings'] == []
 
 
+@pytest.mark.spec('FUI-03', 'FIN-UI-R003')
 def test_a_chart_is_engine_computed_scaled_by_tick_size_and_decimated(
     engine: FakeEngine,
 ) -> None:

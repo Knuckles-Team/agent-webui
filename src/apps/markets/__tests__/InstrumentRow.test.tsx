@@ -25,6 +25,7 @@ function fixture(overrides: Partial<Quote>): Quote {
 }
 
 describe('InstrumentRow', () => {
+  // spec: FUI-04
   it('renders a regular-session quote with licensed logo, prev close and change', () => {
     const { container } = render(<InstrumentRow quote={fixture({})} now={NOW} />)
     expect(screen.getByText('Regular')).toBeInTheDocument()
@@ -36,12 +37,14 @@ describe('InstrumentRow', () => {
     expect(logo).toHaveAttribute('src', BASE.logoUrl)
   })
 
+  // spec: FUI-04
   it('renders an unlicensed instrument with a text fallback instead of a logo', () => {
     render(<InstrumentRow quote={fixture({ logoUrl: null })} now={NOW} />)
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
     expect(screen.getByText('AC')).toBeInTheDocument()
   })
 
+  // spec: FUI-04
   it('labels a pre-market quote and keeps the after-hours value separate', () => {
     const { container } = render(
       <InstrumentRow
