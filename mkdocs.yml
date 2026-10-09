@@ -1,4 +1,4 @@
-site_name: Graph OS Agent Web UI
+site_name: Graph OS web UI
 site_description: The browser workspace for governed agents, workflows, and knowledge in Graph OS.
 site_url: https://knuckles-team.github.io/agent-webui/
 repo_name: Knuckles-Team/agent-webui

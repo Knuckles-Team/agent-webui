@@ -43,24 +43,10 @@
     },
     {
       "id": "APP-02",
-      "title": "Package, import and environment naming use the new public identity",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "677a27e0f701eca99cad20887a0b5c4b8ec9734e",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/677a27e0f701eca99cad20887a0b5c4b8ec9734e",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "4f0952b8284559156d3739ecfc02db586746f21c",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/4f0952b8284559156d3739ecfc02db586746f21c",
-          "description": "APP-02 merged to the default branch in this commit."
-        }
-      ]
+      "title": "Package, import and environment naming keep the component identity",
+      "delivery_state": "SPECIFIED",
+      "evidence": [],
+      "remaining": "Rescoped by operator decision 2026-10-09: identifiers stay agent-webui; needs a test proving they are unchanged."
     },
     {
       "id": "APP-03",
@@ -127,24 +113,10 @@
     },
     {
       "id": "APP-06",
-      "title": "Legacy browser state migrates safely with renewed consent",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "677a27e0f701eca99cad20887a0b5c4b8ec9734e",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/677a27e0f701eca99cad20887a0b5c4b8ec9734e",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "4f0952b8284559156d3739ecfc02db586746f21c",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/4f0952b8284559156d3739ecfc02db586746f21c",
-          "description": "APP-06 merged to the default branch in this commit."
-        }
-      ]
+      "title": "Browser state stays valid because storage keys are unchanged",
+      "delivery_state": "SPECIFIED",
+      "evidence": [],
+      "remaining": "Rescoped by operator decision 2026-10-09: identifiers stay agent-webui; needs a test proving they are unchanged."
     },
     {
       "id": "APP-07",
@@ -190,45 +162,17 @@
     },
     {
       "id": "WEBUI-APPS-R002",
-      "title": "GraphOS brand layer covers titles, assets, theme and documentation",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "677a27e0f701eca99cad20887a0b5c4b8ec9734e",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/677a27e0f701eca99cad20887a0b5c4b8ec9734e",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "4f0952b8284559156d3739ecfc02db586746f21c",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/4f0952b8284559156d3739ecfc02db586746f21c",
-          "description": "WEBUI-APPS-R002 merged to the default branch in this commit."
-        }
-      ]
+      "title": "Graph OS brand layer covers user-visible strings",
+      "delivery_state": "BUILDING",
+      "evidence": [],
+      "remaining": "User-visible strings rebranded to Graph OS on PR #51; acceptance needs merged commit plus rendered snapshot evidence."
     },
     {
       "id": "WEBUI-APPS-R003",
-      "title": "Repository, package and runtime identifiers rename to graph-os-webui",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "677a27e0f701eca99cad20887a0b5c4b8ec9734e",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/677a27e0f701eca99cad20887a0b5c4b8ec9734e",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "4f0952b8284559156d3739ecfc02db586746f21c",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/4f0952b8284559156d3739ecfc02db586746f21c",
-          "description": "WEBUI-APPS-R003 merged to the default branch in this commit."
-        }
-      ]
+      "title": "Repository, package and runtime identifiers are not renamed",
+      "delivery_state": "SPECIFIED",
+      "evidence": [],
+      "remaining": "Rescoped by operator decision 2026-10-09: identifiers stay agent-webui; needs a test proving they are unchanged."
     }
   ]
 }

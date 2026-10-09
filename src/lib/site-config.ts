@@ -79,7 +79,7 @@ function analyticsConfig(envValues: Env): AnalyticsConfig | null {
 export function getSiteConfig(): SiteConfig {
   const values = env()
   return {
-    siteName: configuredValue(values.VITE_SITE_NAME) ?? 'Agent WebUI',
+    siteName: configuredValue(values.VITE_SITE_NAME) ?? 'Graph OS',
     canonicalOrigin: normalizeOrigin(configuredValue(values.VITE_SITE_ORIGIN)),
     indexableEnvironment:
       configuredValue(values.VITE_SITE_INDEXABLE ?? values.VITE_INDEXABLE_ENVIRONMENT)?.toLowerCase() === 'true',
@@ -171,7 +171,7 @@ export function isIndexableSiteConfigReady(config: SiteConfig = getSiteConfig())
 export function assertSiteConfigReleaseReady(config: SiteConfig = getSiteConfig()): void {
   const validation = validateSiteConfig(config)
   if (!validation.valid) {
-    throw new Error(`Agent WebUI site configuration is not release-ready: ${validation.errors.join('; ')}`)
+    throw new Error(`Graph OS site configuration is not release-ready: ${validation.errors.join('; ')}`)
   }
 }
 

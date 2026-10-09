@@ -852,7 +852,7 @@ export const ROUTES: readonly RouteDef[] = [
 ]
 
 const DEFAULT_PAGE_DESCRIPTION =
-  'Use the Agent WebUI to understand, operate, and safely improve your connected agent system.'
+  'Use the Graph OS to understand, operate, and safely improve your connected agent system.'
 
 /**
  * The public/legal pages are registered beside application routes for matching,
@@ -871,12 +871,12 @@ export const PUBLIC_ROUTES: readonly RouteDef[] = [
     mobile: 'full',
     element: lazy(() => import('@/components/public/ThankYouPage')),
     page: {
-      title: 'Thank you | Agent WebUI',
+      title: 'Thank you | Graph OS',
       description: 'Review the bounded confirmation for a submission the service accepted.',
       visibility: 'public',
       indexable: false,
       canonicalPath: '/thank-you',
-      cta: { label: 'Return to Agent WebUI', target: '/', eventName: 'public_thank_you_return' },
+      cta: { label: 'Return to Graph OS', target: '/', eventName: 'public_thank_you_return' },
       webmcpPageId: 'public.thank-you',
       loading: 'inline',
       error: 'inline',
@@ -887,14 +887,14 @@ export const PUBLIC_ROUTES: readonly RouteDef[] = [
     path: '/privacy',
     label: 'Privacy policy',
     section: 'documentation',
-    blurb: 'Read the reviewed privacy policy for this Agent WebUI deployment.',
+    blurb: 'Read the reviewed privacy policy for this Graph OS deployment.',
     icon: ShieldCheck,
     minRole: 'reader',
     mobile: 'full',
     element: lazy(() => import('@/components/public/PrivacyPage')),
     page: {
-      title: 'Privacy policy | Agent WebUI',
-      description: 'Read the reviewed privacy policy for this Agent WebUI deployment.',
+      title: 'Privacy policy | Graph OS',
+      description: 'Read the reviewed privacy policy for this Graph OS deployment.',
       visibility: 'public',
       indexable: true,
       canonicalPath: '/privacy',
@@ -915,7 +915,7 @@ export const PUBLIC_ROUTES: readonly RouteDef[] = [
     mobile: 'full',
     element: lazy(() => import('@/components/public/TermsPage')),
     page: {
-      title: 'Terms and conditions | Agent WebUI',
+      title: 'Terms and conditions | Graph OS',
       description: 'Read the reviewed terms and safe agent-control boundaries for this service.',
       visibility: 'public',
       indexable: true,
@@ -931,18 +931,18 @@ export const PUBLIC_ROUTES: readonly RouteDef[] = [
     path: '/contact',
     label: 'Contact',
     section: 'documentation',
-    blurb: 'Find the reviewed service contact details for this Agent WebUI deployment.',
+    blurb: 'Find the reviewed service contact details for this Graph OS deployment.',
     icon: MessageCircle,
     minRole: 'reader',
     mobile: 'full',
     element: lazy(() => import('@/components/public/ContactPage')),
     page: {
-      title: 'Contact | Agent WebUI',
-      description: 'Find the reviewed service contact details for this Agent WebUI deployment.',
+      title: 'Contact | Graph OS',
+      description: 'Find the reviewed service contact details for this Graph OS deployment.',
       visibility: 'public',
       indexable: true,
       canonicalPath: '/contact',
-      cta: { label: 'Open Agent WebUI', target: '/', eventName: 'public_contact_open_app' },
+      cta: { label: 'Open Graph OS', target: '/', eventName: 'public_contact_open_app' },
       webmcpPageId: 'public.contact',
       loading: 'inline',
       error: 'inline',
@@ -956,17 +956,17 @@ export const NOT_FOUND_ROUTE: RouteDef = {
   path: '*',
   label: 'Page not found',
   section: 'documentation',
-  blurb: 'The requested page was not found in Agent WebUI.',
+  blurb: 'The requested page was not found in Graph OS.',
   icon: Compass,
   minRole: 'reader',
   mobile: 'full',
   element: lazy(() => import('@/components/public/NotFoundPage')),
   page: {
-    title: 'Page not found | Agent WebUI',
-    description: 'The requested page was not found in Agent WebUI.',
+    title: 'Page not found | Graph OS',
+    description: 'The requested page was not found in Graph OS.',
     visibility: 'public',
     indexable: false,
-    cta: { label: 'Open Agent WebUI', target: '/', eventName: 'public_not_found_home' },
+    cta: { label: 'Open Graph OS', target: '/', eventName: 'public_not_found_home' },
     webmcpPageId: 'public.not-found',
     loading: 'inline',
     error: 'inline',
@@ -1000,7 +1000,7 @@ export function getRoutePageMetadata(route: RouteDef): RoutePageMetadata {
   const override = route.page ?? {}
   const canonicalPath = metadataValue(override.canonicalPath, defaultCanonicalPath(route))
   return {
-    title: metadataValue(override.title, `${route.label} | Agent WebUI`),
+    title: metadataValue(override.title, `${route.label} | Graph OS`),
     description: metadataValue(override.description, route.blurb || DEFAULT_PAGE_DESCRIPTION),
     visibility: metadataValue(override.visibility, 'private'),
     indexable: metadataValue(override.indexable, false),

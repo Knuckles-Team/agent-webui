@@ -7,7 +7,7 @@
  * operator-facing entry point for the IDE.
  *
  * Two things make this more than "an iframe someone bolted on":
- *  - **Shared theme.** The workbench ships the "Agent WebUI Dark" color theme
+ *  - **Shared theme.** The workbench ships the "Graph OS Dark" color theme
  *    (generated from this app's own `.dark` CSS tokens) via the first-party
  *    `agent-webui-bridge` extension baked into the code-server image.
  *  - **Editor context.** The same extension publishes the active file,

@@ -1,4 +1,4 @@
-# Graph OS Agent Web UI
+# Graph OS web UI
 
 <p align="center">
   <img src="docs/assets/brands/agent-webui-logo-v1.png" alt="Graph OS Agent Web UI logo" width="160" />

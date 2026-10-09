@@ -93,7 +93,7 @@ describe('Chat handleSlashCommand', () => {
   it('/help lists the available slash commands', async () => {
     await sendSlashCommand('/help')
     await waitFor(() => {
-      expect(screen.getByText(/Agent WebUI Slash Commands/i)).toBeInTheDocument()
+      expect(screen.getByText(/Graph OS Slash Commands/i)).toBeInTheDocument()
     })
     expect(screen.getByText((_, el) => el?.tagName === 'CODE' && el.textContent === '/mode')).toBeInTheDocument()
   })
@@ -104,7 +104,7 @@ describe('Chat handleSlashCommand', () => {
       const textarea = screen.getByRole('textbox', { name: /message input/i }) as HTMLTextAreaElement
       expect(textarea.value).toBe('')
     })
-    expect(screen.queryByText(/Agent WebUI Slash Commands/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Graph OS Slash Commands/i)).not.toBeInTheDocument()
   })
 
   it('/new starts a fresh conversation with a welcome message', async () => {
@@ -296,7 +296,7 @@ describe('Chat handleSlashCommand', () => {
     }
     const { user, textarea } = await sendSlashCommand('/help')
     await waitFor(() => {
-      expect(screen.getByText(/Agent WebUI Slash Commands/i)).toBeInTheDocument()
+      expect(screen.getByText(/Graph OS Slash Commands/i)).toBeInTheDocument()
     })
 
     await user.type(textarea, '/whatever{Enter}')
@@ -306,7 +306,7 @@ describe('Chat handleSlashCommand', () => {
 
     // The pre-clear `/help` transcript must be gone: `clear_chat` reset the
     // conversation and the stale-closure append must not have brought it back.
-    expect(screen.queryByText(/Agent WebUI Slash Commands/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Graph OS Slash Commands/i)).not.toBeInTheDocument()
     // Only the `/whatever` command echo and its reply should remain visible.
     expect(screen.getByText('/whatever')).toBeInTheDocument()
     expect(screen.getByText(/Clearing now\./)).toBeInTheDocument()
