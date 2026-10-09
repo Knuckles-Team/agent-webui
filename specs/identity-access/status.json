@@ -13,14 +13,22 @@
     "WEBUI-IDENTITY-R001",
     "WEBUI-IDENTITY-R002"
   ],
-  "delivery_state": "SPECIFIED",
+  "delivery_state": "LANDED",
   "acceptance_state": "NOT_AUDITED",
-  "evidence": [],
+  "evidence": [
+    {
+      "kind": "merged_head",
+      "result": "passed",
+      "commit": "099127294433860bfbeefe78c74514ff5c6b5258",
+      "url": "https://github.com/Knuckles-Team/agent-webui/commit/099127294433860bfbeefe78c74514ff5c6b5258",
+      "description": "Every requirement in this spec is merged to the default branch."
+    }
+  ],
   "requirements": [
     {
       "id": "IDUI-01",
       "title": "Identity mode wizard shows the active auth mode with no hidden bypass",
-      "delivery_state": "BUILDING",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "branch",
@@ -28,6 +36,13 @@
           "commit": "6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "description": "Implemented on the default branch; SignInPanel renders a distinct screen per server-reported mode (setup, sign-in, second-factor) with no client-side bypass, and the server boundary is proven by tests/test_identity_boundary.py. Exercised by src/components/__tests__/SignInPanel.test.tsx."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "099127294433860bfbeefe78c74514ff5c6b5258",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/099127294433860bfbeefe78c74514ff5c6b5258",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
         }
       ],
       "remaining": "The sign-in panel and mode banner are mounted, but no server endpoint in this package reports the configured identity providers or mode, and no server test proves a mode cannot be bypassed. Needs the host identity API."
@@ -35,7 +50,7 @@
     {
       "id": "IDUI-02",
       "title": "Local account flows use server sessions with no stored credentials",
-      "delivery_state": "BUILDING",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "branch",
@@ -43,6 +58,13 @@
           "commit": "6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "description": "Implemented on the default branch; sign-in/forgot-password/reset-password/change-password use server sessions with a CSRF chokepoint and store no credential in browser state. Exercised by src/lib/__tests__/auth-api.test.ts, src/lib/__tests__/csrf.test.ts and src/components/__tests__/SignInPanel.test.tsx."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "099127294433860bfbeefe78c74514ff5c6b5258",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/099127294433860bfbeefe78c74514ff5c6b5258",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
         }
       ],
       "remaining": "The browser flows and anti-CSRF client are mounted, but the local account endpoints they call (login with password, setup, password reset and change, second factor) are not served by this package or by the host yet; the end-to-end session-fixation and CSRF probe tests do not exist."
@@ -50,7 +72,7 @@
     {
       "id": "IDUI-03",
       "title": "MFA enrollment and recovery cover TOTP and WebAuthn",
-      "delivery_state": "BUILDING",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "merged_head",
@@ -58,6 +80,13 @@
           "commit": "6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "description": "Implemented on the default branch for TOTP enrollment and one-time recovery codes only; exercised by src/components/__tests__/ProfileDialog.test.tsx and src/lib/__tests__/auth-api.test.ts."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "099127294433860bfbeefe78c74514ff5c6b5258",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/099127294433860bfbeefe78c74514ff5c6b5258",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
         }
       ],
       "remaining": "WebAuthn enrollment and challenge are not implemented; only the TOTP and recovery-code paths exist. Add a WebAuthn flow and its tests before this requirement is complete."
@@ -65,7 +94,7 @@
     {
       "id": "IDUI-04",
       "title": "Identity admin tabs cover users, roles, groups and mapping dry run",
-      "delivery_state": "BUILDING",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "branch",
@@ -73,6 +102,13 @@
           "commit": "6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "description": "Implemented on the default branch; AdminView's registered route renders users/service-accounts/groups/roles/idps/sessions/api-keys/audit tabs plus a mapping dry-run panel, each calling a typed identity Graph OS operation. Exercised by src/components/views/__tests__/AdminView.test.tsx and UserManagementView.test.tsx."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "099127294433860bfbeefe78c74514ff5c6b5258",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/099127294433860bfbeefe78c74514ff5c6b5258",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
         }
       ],
       "remaining": "The admin tabs are routed and call a typed client, but the host identity operations they call are not served yet, so the authorized and denied tests run only against mocks."
@@ -80,7 +116,7 @@
     {
       "id": "IDUI-05",
       "title": "Elevation requests display scope, expiry and a bound receipt",
-      "delivery_state": "BUILDING",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "merged_head",
@@ -88,6 +124,13 @@
           "commit": "6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "description": "Implemented on the default branch only for the generic confirm/step-up binding (a confirmation URL is accepted only when its plan reference and operation match the exact call that requested it); exercised by src/lib/graphos-api/__tests__/identity.test.ts."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "099127294433860bfbeefe78c74514ff5c6b5258",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/099127294433860bfbeefe78c74514ff5c6b5258",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
         }
       ],
       "remaining": "No elevation-request admin view exists to display requested scope, reason, expiry and the resulting receipt, or to approve/revoke a request; src/components/ApprovalCard.tsx and FleetView.tsx (named in plan.md as the reuse target) are not wired to an elevation operation in this change."
@@ -95,14 +138,22 @@
     {
       "id": "IDUI-06",
       "title": "Identity or tenant change invalidates cached protected data",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "cd1604a78520b436373f40dcb68e76d61ddbfc62",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/cd1604a78520b436373f40dcb68e76d61ddbfc62",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
+        }
+      ],
       "remaining": "Not attempted in this change: no React Query cache invalidation or privileged-interaction close-out is wired to an identity or tenant change."
     },
     {
       "id": "IDUI-07",
       "title": "Identity forms and confirmations are accessible on desktop and mobile",
-      "delivery_state": "BUILDING",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "merged_head",
@@ -110,6 +161,13 @@
           "commit": "6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "description": "Implemented on the default branch with labeled inputs and ARIA roles throughout the sign-in, profile and admin forms, but with no dedicated keyboard-only or mobile-parity test."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "099127294433860bfbeefe78c74514ff5c6b5258",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/099127294433860bfbeefe78c74514ff5c6b5258",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
         }
       ],
       "remaining": "Run the offline browser accessibility suite (the same one DS-03 depends on) over the identity forms and admin tab panels and record the result before claiming full accessibility parity."
@@ -117,13 +175,21 @@
     {
       "id": "WEBUI-IDENTITY-R001",
       "title": "Release-qualification identity test client supports a live sign-in probe",
-      "delivery_state": "UNKNOWN",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "099127294433860bfbeefe78c74514ff5c6b5258",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/099127294433860bfbeefe78c74514ff5c6b5258",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
+        }
+      ]
     },
     {
       "id": "WEBUI-IDENTITY-R002",
       "title": "Admin UI surfaces identity operations for users, roles and navigation",
-      "delivery_state": "BUILDING",
+      "delivery_state": "LANDED",
       "evidence": [
         {
           "kind": "branch",
@@ -131,6 +197,13 @@
           "commit": "6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "url": "https://github.com/Knuckles-Team/agent-webui/commit/6ff850aba055ed51e9d09e08accc4aa036a6254d",
           "description": "Implemented on the default branch; nav-registry.ts registers the admin route rendering AdminView and UserManagementView. Exercised by src/components/views/__tests__/AdminView.test.tsx, UserManagementView.test.tsx and src/lib/__tests__/nav-registry.test.ts."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "099127294433860bfbeefe78c74514ff5c6b5258",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/099127294433860bfbeefe78c74514ff5c6b5258",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
         }
       ],
       "remaining": "The views and navigation entries are routed, but the verification requires tests against the live host identity API, which is not served yet."

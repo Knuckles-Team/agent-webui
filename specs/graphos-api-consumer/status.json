@@ -64,8 +64,16 @@
     {
       "id": "WEBUI-API-R004",
       "title": "Each request carries its own correlation id",
-      "delivery_state": "BUILDING",
-      "evidence": [],
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "eb748b7a950d00f9db755e1b04ff7039ee137153",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/eb748b7a950d00f9db755e1b04ff7039ee137153",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
+        }
+      ],
       "remaining": "test_each_request_gets_its_own_id_despite_an_ambient_one passes on branch fix/per-request-correlation-id. Merge, roll out graph-os, then confirm distinct correlation_id values across graph-os log lines."
     },
     {
@@ -97,8 +105,16 @@
     {
       "id": "APIUI-04",
       "title": "Prompts, SDD, knowledge base, sessions and goals migrate to typed calls",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "fe7688de370cce851f4fdf2934f5fabc79a7d659",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/fe7688de370cce851f4fdf2934f5fabc79a7d659",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
+        }
+      ]
     },
     {
       "id": "APIUI-05",
@@ -115,8 +131,16 @@
     {
       "id": "WEBUI-API-R005",
       "title": "Failure logs carry a sanitized typed error code",
-      "delivery_state": "BUILDING",
-      "evidence": [],
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "4924a5237ee787c87e27d42e28c95f0f5670a42d",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/4924a5237ee787c87e27d42e28c95f0f5670a42d",
+          "description": "Implementation merged to the default branch; the commit names this requirement."
+        }
+      ],
       "remaining": "Merge the PR."
     }
   ]
