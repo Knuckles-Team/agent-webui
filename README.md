@@ -1,7 +1,7 @@
-# Agent Web UI
+# Graph OS Agent Web UI
 
 <p align="center">
-  <img src="docs/assets/brands/agent-webui-logo-v1.png" alt="Agent Web UI logo" width="160" />
+  <img src="docs/assets/brands/agent-webui-logo-v1.png" alt="Graph OS Agent Web UI logo" width="160" />
 </p>
 
 <p align="center">
@@ -45,7 +45,7 @@
 
 ## Overview
 
-Agent Web UI is the browser workspace composed by Graph OS. It brings agent
+Graph OS Agent Web UI is the browser workspace composed by Graph OS. It brings agent
 conversations, approvals, workflows, fleet activity, and Epistemic Graph
 exploration into one React application. Its FastAPI host keeps privileged
 credentials and gateway delegation on the server side.
@@ -119,4 +119,4 @@ before opening a pull request.
 
 ## License
 
-Agent Web UI is available under the [MIT License](LICENSE).
+Graph OS Agent Web UI is available under the [MIT License](LICENSE).
