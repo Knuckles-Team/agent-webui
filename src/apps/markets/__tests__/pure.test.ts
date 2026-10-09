@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { barPosition, niceTicks, trailSegments } from '../components/chart-geometry'
 import { formatSince } from '../format'
-import { ohlcBars } from '../ohlc-rows'
+import { mergeBarRevisions, ohlcBars } from '../ohlc-rows'
 import { readChart, readFilters, writeChart, writeFilters, DEFAULT_FILTERS } from '../view-state'
 import { CHART } from './fixtures'
 
@@ -70,5 +70,27 @@ describe('Atlas OHLC recognition', () => {
     expect(bars?.[0].T).toBe(bars?.[1].t)
     expect(ohlcBars([...rows, { time: '2026-01-03', open: 10, high: 9, low: 8, close: 10 }])).toBeNull()
     expect(ohlcBars([{ value: 1 }, { value: 2 }])).toBeNull()
+  })
+})
+
+describe('bar revisions (FUI-06)', () => {
+  const bar = (t: number, c: number): (typeof CHART.bars)[number] => ({
+    t,
+    T: t + 60,
+    o: c,
+    h: c + 1,
+    l: c - 1,
+    c,
+    v: 1,
+    final: true,
+  })
+
+  it('replaces a bar by open time with its later revision and leaves a gap unfilled', () => {
+    const original = bar(100, 10)
+    const revised = bar(100, 20)
+    const nextBar = bar(220, 30)
+    const merged = mergeBarRevisions([original, revised, nextBar])
+    expect(merged.map((candle) => candle.c)).toEqual([20, 30])
+    expect(merged.some((candle) => candle.t > 100 && candle.t < 220)).toBe(false)
   })
 })
