@@ -53,6 +53,9 @@
     "/thank-you",
     "/privacy",
     "/terms",
-    "/contact"
+    "/contact",
+    "/apps/markets",
+    "/apps/markets/chart/:listing",
+    "/apps/markets/share/:lease"
   ]
 }

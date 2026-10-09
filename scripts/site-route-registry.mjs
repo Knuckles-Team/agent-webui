@@ -7,7 +7,7 @@
  * route fields needed by robots/sitemap generation. It accepts no authored
  * route file and fails when the registry shape is not recognizable.
  */
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   concreteCanonicalPath,
@@ -18,6 +18,11 @@ import {
 import { routePathIssue } from './site-assets-contract.mjs'
 
 const ROUTE_ARRAY_NAMES = Object.freeze(['ROUTES', 'PUBLIC_ROUTES'])
+/** Hosted apps declare their pages in `src/apps/<id>/routes.ts` as `APP_ROUTES`
+ * (EH-429); the registry spreads them into ROUTES, so they are read here too. */
+const APPS_DIR = 'src/apps'
+const APP_ROUTES_FILE = 'routes.ts'
+const APP_ROUTE_ARRAY = 'APP_ROUTES'
 
 function skipQuoted(source, start, quote) {
   let escaped = false
@@ -130,11 +135,25 @@ function routeRecord(object, sourceName) {
 }
 
 /** Read scalar route metadata from the same registry used by the application. */
+async function appRouteRecords(root) {
+  const entries = await readdir(join(root, APPS_DIR), { withFileTypes: true }).catch(() => [])
+  const records = []
+  for (const entry of entries.filter((item) => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
+    const file = join(root, APPS_DIR, entry.name, APP_ROUTES_FILE)
+    const source = await readFile(file, 'utf8').catch(() => null)
+    if (source === null) continue
+    const objects = topLevelObjects(exportedArrayBody(source, APP_ROUTE_ARRAY))
+    records.push(...objects.map((object) => routeRecord(object, `${entry.name}/${APP_ROUTES_FILE}`)))
+  }
+  return records
+}
+
 export async function readRouteRegistry(root) {
   const source = await readFile(join(root, 'src/lib/nav-registry.ts'), 'utf8')
   const routes = ROUTE_ARRAY_NAMES.flatMap((name) =>
     topLevelObjects(exportedArrayBody(source, name)).map((object) => routeRecord(object, name)),
   )
+  routes.push(...(await appRouteRecords(root)))
   const ids = new Set()
   const paths = new Set()
   for (const route of routes) {

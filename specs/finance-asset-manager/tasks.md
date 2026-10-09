@@ -27,7 +27,7 @@
 
 | Date | Commit/PR | Environment and fixture/service revision | Tests/gates | Decision |
 |---|---|---|---|---|
-| Pending | Pending | Pending | Pending | No implementation verified |
+| 2026-10-08 | Port of 0809b6d3ca onto `origin/main` (PR pending) | Local worktree, pnpm/uv toolchain, no live provider | `pytest agent/agent_webui/__tests__/test_markets_app.py` 14 passed; `vitest run src/apps/markets src/lib/apps` 26 passed; `tsc --noEmit` clean; `node scripts/generate-site-assets.mjs` + `check-site-assets.mjs` pass; `no_fabrication_gate.mjs` OK | FUI-03 and FIN-UI-R003 code merged to a branch off current main; owner repository dependencies (EG finance primitives, SDK sources) remain PENDING, so this spec stays SPECIFIED overall |
 
 ## Unreferenced requirement IDs
 
