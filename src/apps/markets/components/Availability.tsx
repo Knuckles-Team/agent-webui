@@ -31,3 +31,14 @@ export function RequestFailed({ what, error }: { what: string; error: unknown })
     </p>
   )
 }
+
+/** A Markets destination whose data source has not shipped yet (FUI-01).
+ * States the gap honestly instead of showing an empty page. */
+export function FeaturePending({ feature, reason }: { feature: string; reason: string }) {
+  return (
+    <div role="status" className="rounded-lg border border-dashed border-border/60 p-6 text-sm">
+      <p className="font-medium">{feature} is not available yet.</p>
+      <p className="mt-1 text-muted-foreground">{reason}</p>
+    </div>
+  )
+}
