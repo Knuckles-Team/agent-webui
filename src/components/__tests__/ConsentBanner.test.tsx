@@ -49,9 +49,32 @@ describe('ConsentBanner', () => {
     const consent = document.querySelector('[data-mobile-surface="consent"]')
     expect(consent).toHaveStyle({
       '--agent-webui-mobile-safe-area-bottom': 'env(safe-area-inset-bottom, 0px)',
-      '--agent-webui-mobile-consent-bottom':
-        'calc(var(--agent-webui-mobile-cta-occupied-height) + var(--agent-webui-mobile-surface-gap))',
     })
-    expect(consent).toHaveClass('bottom-[var(--agent-webui-mobile-consent-bottom)]')
+    // Top-anchored, not bottom-anchored: the chat input is a sticky-bottom
+    // element on this same screen, so this surface must never share that
+    // region or it will overlay/block the chat input.
+    expect(consent).toHaveClass('top-3')
+    expect(consent).not.toHaveClass('bottom-[var(--agent-webui-mobile-consent-bottom)]')
+  })
+
+  it('accepting consent dismisses the prompt permanently, including after reload', () => {
+    const { unmount } = render(<ConsentBanner />)
+
+    expect(screen.getByText('Privacy choices')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }))
+
+    // Dismissed: the full prompt is gone, replaced by the small settings pill.
+    expect(screen.queryByText('Privacy choices')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open privacy settings' })).toBeInTheDocument()
+
+    // Recorded under the existing consent storage key.
+    const stored = JSON.parse(window.localStorage.getItem(CONSENT_STORAGE_KEY) ?? 'null')
+    expect(stored?.choice).toBe('granted')
+
+    // Stays dismissed after a reload (new mount reading from storage).
+    unmount()
+    render(<ConsentBanner />)
+    expect(screen.queryByText('Privacy choices')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open privacy settings' })).toBeInTheDocument()
   })
 })

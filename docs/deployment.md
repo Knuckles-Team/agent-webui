@@ -1,6 +1,6 @@
 # Deployment and operations
 
-Agent WebUI ships as a Python wheel and a container image. In a complete Graph OS
+Graph OS ships as a Python wheel and a container image. In a complete Graph OS
 deployment it runs as the browser-facing presentation service and composes the
 canonical gateway routes provided by Graph OS and Agent Utilities.
 
@@ -73,7 +73,7 @@ updates and checks both.
 
 ## Concurrent operators
 
-Only one Agent WebUI Kubernetes Deployment is active for a given environment. When
+Only one Graph OS Kubernetes Deployment is active for a given environment. When
 another operator is deploying, build and push without changing the cluster:
 
 ```bash
