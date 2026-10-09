@@ -53,8 +53,16 @@
     {
       "id": "FUI-02",
       "title": "Instrument groups with distinct data states",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "96cd34e3bfa29dcdfdfe4b7e2e8642fdc3fe9ae0",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/96cd34e3bfa29dcdfdfe4b7e2e8642fdc3fe9ae0",
+          "description": "FUI-02 merged to the default branch in this commit."
+        }
+      ]
     },
     {
       "id": "FUI-03",
@@ -100,8 +108,16 @@
     {
       "id": "FUI-06",
       "title": "Shared ChartRenderer preserves gaps and revisions",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "ae5dc947dd51da7c16de13199f6feeeaf0e30c24",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/ae5dc947dd51da7c16de13199f6feeeaf0e30c24",
+          "description": "FUI-06 merged to the default branch in this commit."
+        }
+      ]
     },
     {
       "id": "FUI-07",
