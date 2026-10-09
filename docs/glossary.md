@@ -1,6 +1,6 @@
 # Ecosystem glossary
 
-## Graph OS
+## Graph OS web UI
 
 The browser operator experience for working with agents and their runtime. Graph OS hosts it as a composed service.
 
