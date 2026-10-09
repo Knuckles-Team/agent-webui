@@ -177,8 +177,16 @@
     {
       "id": "APIUI-06",
       "title": "Shared auth and streaming are preserved without exposing a service bearer",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "19d92fda94cdb923b9c95200719f45ddbdddb0c3",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/19d92fda94cdb923b9c95200719f45ddbdddb0c3",
+          "description": "APIUI-06 merged to the default branch in this commit."
+        }
+      ]
     },
     {
       "id": "WEBUI-API-R005",
