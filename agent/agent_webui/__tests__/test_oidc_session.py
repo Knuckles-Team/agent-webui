@@ -1515,7 +1515,11 @@ def test_browser_session_evidence_rejects_a_missing_scope():
     ],
 )
 def test_browser_session_evidence_rejects_malformed_fields(field, value):
-    fields = {
+    # A typed, explicit-keyword constructor call -- never `**fields` -- so
+    # each argument is checked against BrowserSessionEvidence's own declared
+    # field type instead of one dict-wide value type unified (and narrowed to
+    # `object`) across every parametrized (field, value) case.
+    fields: dict[str, Any] = {
         'request_scope': object(),
         'subject': 'fixture-human',
         'tenant': 'fixture-tenant',
@@ -1525,7 +1529,14 @@ def test_browser_session_evidence_rejects_malformed_fields(field, value):
     }
     fields[field] = value
     with pytest.raises(PermissionError):
-        BrowserSessionEvidence(**fields)
+        BrowserSessionEvidence(
+            request_scope=fields['request_scope'],
+            subject=fields['subject'],
+            tenant=fields['tenant'],
+            session_ref=fields['session_ref'],
+            expires_at_ms=fields['expires_at_ms'],
+            mfa_at_ms=fields['mfa_at_ms'],
+        )
 
 
 @pytest.mark.anyio
