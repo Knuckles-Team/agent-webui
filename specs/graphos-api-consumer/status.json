@@ -6,6 +6,8 @@
     "WEBUI-API-R001",
     "WEBUI-API-R002",
     "WEBUI-API-R003",
+    "WEBUI-API-R003.1",
+    "WEBUI-API-R003.2",
     "WEBUI-API-R004",
     "APIUI-01",
     "APIUI-02",
@@ -68,8 +70,8 @@
     },
     {
       "id": "WEBUI-API-R003",
-      "title": "Remaining domain routes migrate to generated operations with a route census",
-      "delivery_state": "LANDED",
+      "title": "Remaining domain routes migrate to generated operations with a route census (rollup)",
+      "delivery_state": "BUILDING",
       "evidence": [
         {
           "kind": "branch",
@@ -86,7 +88,28 @@
           "description": "WEBUI-API-R003 merged to the default branch in this commit."
         }
       ],
-      "remaining": "The route-family census (tasks.md's first unchecked item) has not been produced on main. The branch evidence commit (085195e...) no longer exists on any remote branch; treat as unreachable, not landed. Smallest next slice: a checked-in census file classifying each agent/agent_webui/api_extensions.py route as UI-local/Graph OS/retire."
+      "remaining": "Split into `WEBUI-API-R003.1` (route-census typed model) and `WEBUI-API-R003.2` (route-census data file and lint rule), producer first. This row is LANDED only when both children are LANDED."
+    },
+    {
+      "id": "WEBUI-API-R003.1",
+      "title": "Route-census typed model",
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "98dd7d8a354e1af7697caa16dd84761e97a1147a",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/98dd7d8a354e1af7697caa16dd84761e97a1147a",
+          "description": "WEBUI-API-R003.1 merged to the default branch in this commit."
+        }
+      ]
+    },
+    {
+      "id": "WEBUI-API-R003.2",
+      "title": "Route-census data file and lint rule (remaining)",
+      "delivery_state": "SPECIFIED",
+      "evidence": [],
+      "remaining": "A checked-in route census data file populated for every api_extensions.py domain route family, plus an architecture lint rule run in CI that rejects any new unclassified domain route."
     },
     {
       "id": "WEBUI-API-R004",

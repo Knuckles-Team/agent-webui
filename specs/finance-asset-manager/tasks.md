@@ -11,6 +11,12 @@
 | Source intake and leverage guide | media-downloader / emerald-exchange | EMERALD-GUIDE-R001, EMERALD-MEDIA-R001 | PENDING | Public citations, source capture time, claims separated from executable rules |
 | Responsive Markets route and views | agent-webui | FIN-UI-R001 | SPECIFIED | PR/commit, FIN-T01–T04, T07–T14, served-path and visual evidence |
 | Shared Finance/Atlas ChartRenderer | agent-webui | FIN-UI-R002 | SPECIFIED | PR/commit, FIN-T05–T06, T13–T14 and mobile performance evidence |
+| Detail-tab/ChartRenderer/supportedChartMode contracts (PR #59) | agent-webui | FIN-UI-R001.1, FIN-UI-R002.1, FUI-05.1 | LANDED | `chart-contract.test.ts`, `detail-support.test.ts` — 11 passed |
+| Overlay/performance/strategy/delivery contracts (PR #60) | agent-webui | FUI-07.1, FUI-08.1, FUI-09.1, FUI-10.1 | LANDED | 4 new vitest files — 19 passed |
+| CSV import/offline-cache/a11y contracts (PR #61) | agent-webui | FUI-11.1, FUI-12.1, FUI-13.1 | LANDED | vitest — 13 passed |
+| Live wiring of detail-tab/ChartRenderer/supportedChartMode (remaining) | agent-webui | FIN-UI-R001.2, FIN-UI-R002.2, FUI-05.2 | SPECIFIED | Live ChartPage/ChartRenderer component wiring, PR pending |
+| Live wiring of overlay/performance/strategy/delivery (remaining) | agent-webui | FUI-07.2, FUI-08.2, FUI-09.2, FUI-10.2 | SPECIFIED | Live component wiring, PR pending |
+| Live wiring of CSV import/offline-cache/a11y (remaining) | agent-webui | FUI-11.2, FUI-12.2, FUI-13.2 | SPECIFIED | Live component wiring, PR pending |
 
 ## Build sequence
 
