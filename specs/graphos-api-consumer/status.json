@@ -19,9 +19,17 @@
     "APIUI-06",
     "WEBUI-API-R005"
   ],
-  "delivery_state": "BUILDING",
+  "delivery_state": "LANDED",
   "acceptance_state": "NOT_AUDITED",
-  "evidence": [],
+  "evidence": [
+    {
+      "kind": "merged_head",
+      "result": "passed",
+      "commit": "0144228da540174efa241101ca6f72777f691799",
+      "url": "https://github.com/Knuckles-Team/agent-webui/commit/0144228da540174efa241101ca6f72777f691799",
+      "description": "Every requirement in this spec is merged to the default branch."
+    }
+  ],
   "requirements": [
     {
       "id": "WEBUI-API-R001",
@@ -141,8 +149,37 @@
     {
       "id": "APIUI-03",
       "title": "Ontology, graph, Atlas and object-set operations preserve tenant semantics (rollup)",
-      "delivery_state": "SPECIFIED",
-      "evidence": [],
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
+          "description": "APIUI-03.1 merged to the default branch in this commit."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
+          "description": "APIUI-03.2 merged to the default branch in this commit."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
+          "description": "APIUI-03.3 merged to the default branch in this commit."
+        },
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
+          "description": "APIUI-03.4 merged to the default branch in this commit."
+        }
+      ],
       "remaining": "Rollup of APIUI-03.1/.2/.3/.4; LANDED only when all four children are LANDED."
     },
     {
