@@ -351,6 +351,20 @@ export const ROUTES: readonly RouteDef[] = [
     mobile: 'unsupported',
     element: lazy(() => import('@/components/views/McpAppsView')),
   },
+  {
+    id: 'console.confirm',
+    path: '/console/confirm/:planRef',
+    label: 'Confirm operation',
+    section: 'control-plane',
+    navigation: 'deep-link',
+    blurb: 'Review and confirm a server-held plan by reference before it runs.',
+    icon: FileCheck2,
+    minRole: 'reader',
+    mobile: 'adapted',
+    // Reads its `:planRef` from `window.location.pathname` itself (see the
+    // file doc), so it needs no App.tsx param-passing special case.
+    element: lazy(() => import('@/components/views/ConsoleConfirmView')),
+  },
 
   // ------------------------------------------------------------- Knowledge
   {
