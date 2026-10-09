@@ -80,8 +80,16 @@
     {
       "id": "FUI-04",
       "title": "Instrument rows show price, provenance, after-hours value",
-      "delivery_state": "SPECIFIED",
-      "evidence": []
+      "delivery_state": "LANDED",
+      "evidence": [
+        {
+          "kind": "merged_head",
+          "result": "passed",
+          "commit": "cff7851b24430b92337b140bdc3b3683b575d5d6",
+          "url": "https://github.com/Knuckles-Team/agent-webui/commit/cff7851b24430b92337b140bdc3b3683b575d5d6",
+          "description": "FUI-04 merged to the default branch in this commit."
+        }
+      ]
     },
     {
       "id": "FUI-05",
