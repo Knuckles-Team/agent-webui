@@ -149,7 +149,15 @@ interface PageToolOptions {
   navigate?: (path: string) => WebUiNavigationResult
 }
 
-function makeTool<Input, Output>(options: {
+/** Resolves the capability `source` file: a hosted app's own file, or the
+ * shared local-tool source when it supplies none. */
+function resolveToolSource(source?: string): string {
+  return source ?? WEBMCP_LOCAL_TOOL_SOURCE
+}
+
+/** One validated local tool. Hosted apps (EH-429) build theirs through this
+ * same function, passing their own `source` file. */
+export function makeTool<Input, Output>(options: {
   name: string
   title: string
   description: string
@@ -157,6 +165,7 @@ function makeTool<Input, Output>(options: {
   outputSchema: z.ZodType<Output>
   jsonSchema: WebMcpJsonSchema
   readOnly: boolean
+  source?: string
   execute: (input: Input) => Output | PromiseLike<Output>
 }): WebMcpToolDefinition {
   const mutationClass = options.readOnly ? 'read' : 'local-ui-mutation'
@@ -171,7 +180,7 @@ function makeTool<Input, Output>(options: {
       outputSchema: z.toJSONSchema(options.outputSchema),
       mutationClass,
       confirmationPolicy: options.readOnly ? 'none' : 'exact-request',
-      source: WEBMCP_LOCAL_TOOL_SOURCE,
+      source: resolveToolSource(options.source),
     },
     execute: createValidatedExecutor(options.inputSchema, options.outputSchema, options.execute),
   }

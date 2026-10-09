@@ -13,6 +13,7 @@ import { InspectorPanel } from './InspectorPanel'
 import { ModalityPicker } from './ModalityPicker'
 import { QueryConsole } from './QueryConsole'
 import { registerBuiltinRenderers } from './renderers'
+import { registerAppRenderers } from '@/apps/surfaces'
 import { ResultCanvas } from './ResultCanvas'
 import { collectFields } from '@/lib/atlas/schema'
 import { SourceTree } from './SourceTree'
@@ -23,6 +24,7 @@ import { WebMcpAtlasRegistrar } from '@/lib/webmcp/atlas'
 // Renderers are a closed, lane-owned set; registering them at import keeps the
 // registry populated before the first render regardless of which entry point mounts.
 registerBuiltinRenderers()
+registerAppRenderers()
 
 function EmptyWorkbench() {
   return (

@@ -12,6 +12,7 @@
  */
 import { createElement, lazy, type ComponentType, type LazyExoticComponent } from 'react'
 import ChatPanel from '@/components/ChatPanel'
+import { APP_ROUTES } from '@/apps'
 import {
   Activity,
   AppWindow,
@@ -74,9 +75,19 @@ export function roleAtLeast(role: Role | null | undefined, minimum: Role): boole
   return roleRank >= ROLE_ORDER.indexOf(minimum)
 }
 
-/** The eight top-level information-architecture sections (charter: agent-webui IA table). */
+/** The top-level information-architecture sections (charter: agent-webui IA table),
+ * plus `apps`: hosted application surfaces (EH-429), each declared by its own
+ * `src/apps/<id>/routes.ts`. */
 export type SectionId =
-  'chat' | 'workspace' | 'control-plane' | 'knowledge' | 'observability' | 'integrations' | 'documentation' | 'admin'
+  | 'chat'
+  | 'workspace'
+  | 'apps'
+  | 'control-plane'
+  | 'knowledge'
+  | 'observability'
+  | 'integrations'
+  | 'documentation'
+  | 'admin'
 
 export interface SectionMeta {
   id: SectionId
@@ -112,6 +123,7 @@ export interface RoutePageMetadata {
 export const SECTIONS: readonly SectionMeta[] = [
   { id: 'chat', label: 'Chat' },
   { id: 'workspace', label: 'Workspace' },
+  { id: 'apps', label: 'Apps' },
   { id: 'control-plane', label: 'Control Plane' },
   { id: 'knowledge', label: 'Knowledge' },
   { id: 'observability', label: 'Observability' },
@@ -833,6 +845,10 @@ export const ROUTES: readonly RouteDef[] = [
     mobile: 'adapted',
     element: lazy(() => import('@/components/views/ConfigurationView')),
   },
+
+  // ---------------------------------------------------------------- Apps
+  // Declared by each app's own `src/apps/<id>/routes.ts` (EH-429 AppSurface).
+  ...APP_ROUTES,
 ]
 
 const DEFAULT_PAGE_DESCRIPTION =
