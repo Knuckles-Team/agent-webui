@@ -41,20 +41,26 @@
     {
       "id": "APP-03",
       "title": "AppSurface contract declares each app's route, capability and client",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
+        "401cec444a5f",
         "e05e1230ae72"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/lib/apps/__tests__/apps.test.ts:9"
+      ]
     },
     {
       "id": "APP-04",
       "title": "Contributed app descriptors cannot escalate privilege beyond the contract",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
+        "401cec444a5f",
         "e05e1230ae72"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/lib/apps/__tests__/apps.test.ts:9"
+      ]
     },
     {
       "id": "APP-05",
@@ -87,11 +93,15 @@
     {
       "id": "WEBUI-APPS-R001",
       "title": "Apps information-architecture section and AppSurface contract",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
+        "401cec444a5f",
         "e05e1230ae72"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/lib/apps/__tests__/apps.test.ts:14",
+        "src/lib/apps/__tests__/apps.test.ts:9"
+      ]
     },
     {
       "id": "WEBUI-APPS-R002",

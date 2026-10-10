@@ -26,14 +26,17 @@
     {
       "id": "WEBUI-API-R001",
       "title": "Generated GraphOS API client with typed decisions and confirmation flows",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "0144228da540",
+        "2d3f1b884e39",
         "406c63f7d322",
         "6df9b8aa2f64",
         "fed13820d806"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/components/decisions/__tests__/graphos-decisions-transport.test.ts:44"
+      ]
     },
     {
       "id": "WEBUI-API-R002",
@@ -78,13 +81,16 @@
     {
       "id": "WEBUI-API-R004",
       "title": "Each request carries its own correlation id",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
+        "2d3f1b884e39",
         "3cc97501bab5",
         "dce5092f45fd",
         "eb748b7a950d"
       ],
-      "verified_by": []
+      "verified_by": [
+        "agent/agent_webui/__tests__/test_observability.py:328"
+      ]
     },
     {
       "id": "APIUI-01",
@@ -179,12 +185,17 @@
     {
       "id": "APIUI-06",
       "title": "Shared auth and streaming are preserved without exposing a service bearer",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "19d92fda94cd",
+        "2d3f1b884e39",
         "d8a6ed888f41"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/lib/graphos-api/__tests__/invoke-no-bearer.test.ts:31",
+        "src/lib/graphos-api/__tests__/invoke-no-bearer.test.ts:45",
+        "src/lib/graphos-api/__tests__/invoke-no-bearer.test.ts:56"
+      ]
     },
     {
       "id": "WEBUI-API-R005",
