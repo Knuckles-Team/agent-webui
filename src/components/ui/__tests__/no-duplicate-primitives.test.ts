@@ -32,6 +32,7 @@ function exportedComponentNames(source: string): string[] {
 }
 
 describe('design-system primitive inventory (DS-06)', () => {
+  // spec: DS-06
   it('names every exported primitive exactly once across src/components/ui', () => {
     const owners = new Map<string, string[]>()
     for (const file of primitiveFiles()) {
@@ -45,6 +46,7 @@ describe('design-system primitive inventory (DS-06)', () => {
     expect(owners.size).toBeGreaterThan(0)
   })
 
+  // spec: DS-06
   it('adds no telemetry, analytics or session-replay dependency', () => {
     const packageJson = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>

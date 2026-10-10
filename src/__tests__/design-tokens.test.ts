@@ -50,6 +50,7 @@ const DOCUMENTED_COLOR: Record<string, { light: string; dark: string }> = {
 }
 
 describe('design-system token audit (DS-01)', () => {
+  // spec: DS-01
   it.each(Object.entries(DOCUMENTED_COLOR))('%s matches docs/design-system.md in :root and .dark', (name, doc) => {
     expect(LIGHT[name]).toBe(doc.light)
     expect(DARK[name]).toBe(doc.dark)
@@ -63,6 +64,7 @@ describe('design-system token audit (DS-01)', () => {
     expect(CSS_SOURCE).toMatch(/:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--ring\)/)
   })
 
+  // spec: DS-04
   it('disables nonessential animation and transition motion under prefers-reduced-motion (DS-04)', () => {
     const reduceBlock = /@media \(prefers-reduced-motion: reduce\)\s*\{([^]*?)\n\}/.exec(CSS_SOURCE)
     expect(reduceBlock).not.toBeNull()
@@ -92,6 +94,7 @@ function contrastCases(theme: 'light' | 'dark'): ContrastCase[] {
 }
 
 describe.each(['light', 'dark'] as const)('%s theme contrast targets (DS-01)', (theme) => {
+  // spec: DS-01
   it.each(contrastCases(theme))('$name clears $target:1', ({ fg, bg, target }) => {
     const ratio = contrastRatio(cssColorToHex(fg, '#000000'), cssColorToHex(bg, '#ffffff'))
     expect(ratio).toBeGreaterThanOrEqual(target)

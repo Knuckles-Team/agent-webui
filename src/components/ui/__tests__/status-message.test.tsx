@@ -15,6 +15,7 @@ const STATES: { status: StatusKind; detail?: string }[] = [
 ]
 
 describe('StatusMessage (DS-05 state-fixture rendered tests)', () => {
+  // spec: DS-05
   it('renders every named state with text that is distinct from every other state', () => {
     const texts = STATES.map(({ status, detail }) => {
       const { unmount } = render(<StatusMessage status={status} detail={detail} />)
@@ -43,6 +44,7 @@ describe('StatusMessage (DS-05 state-fixture rendered tests)', () => {
     expect(node.textContent?.toLowerCase()).toContain(EXPECTED_TEXT[status])
   })
 
+  // spec: DS-05
   it('uses role=alert for denied and error, and role=status for the ambient states', () => {
     const alertStates: StatusKind[] = ['denied', 'error']
     const statusStates: StatusKind[] = ['loading', 'empty', 'stale', 'success', 'pending']
@@ -58,6 +60,7 @@ describe('StatusMessage (DS-05 state-fixture rendered tests)', () => {
     }
   })
 
+  // spec: DS-05
   it('appends the optional detail after the label rather than replacing it', () => {
     render(<StatusMessage status="error" detail="the request timed out" />)
     expect(screen.getByText(/error\./i)).toBeInTheDocument()
@@ -69,6 +72,7 @@ describe('StatusMessage (DS-05 state-fixture rendered tests)', () => {
     expect(screen.queryByRole('button', { name: /cancel/i })).not.toBeInTheDocument()
   })
 
+  // spec: DS-05
   it('renders an interrupt affordance only when the caller confirms cancellation is safe', async () => {
     const onCancel = vi.fn()
     const user = userEvent.setup()

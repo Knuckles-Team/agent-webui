@@ -38,6 +38,7 @@ describe('DecisionExplorerTab', () => {
     expect(screen.queryByText(/no decisions recorded yet/i)).not.toBeInTheDocument()
   })
 
+  // spec: DEC-01
   it('selecting a row loads and renders its premises, outcome, and why-not (DEC-01)', async () => {
     const transport = createFixtureTransport()
     transport.listDecisions.mockResolvedValue([baseRow])
@@ -60,6 +61,7 @@ describe('DecisionExplorerTab', () => {
     expect(within(card as HTMLElement).getAllByText(/retired/i).length).toBeGreaterThanOrEqual(2)
   })
 
+  // spec: DEC-06
   it('selecting a row with the keyboard alone (no pointer) loads its detail (DEC-06)', async () => {
     const transport = createFixtureTransport()
     transport.listDecisions.mockResolvedValue([baseRow])

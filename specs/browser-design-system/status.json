@@ -1,7 +1,8 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "spec_id": "WEBUI-DESIGN-001",
   "owner_repo": "agent-webui",
+  "delivery_state": "LANDED",
   "requirement_ids": [
     "WEBUI-DESIGN-R001",
     "DS-01",
@@ -13,151 +14,106 @@
     "DS-07",
     "DS-08"
   ],
-  "delivery_state": "LANDED",
-  "acceptance_state": "NOT_AUDITED",
-  "evidence": [
-    {
-      "kind": "merged_head",
-      "result": "passed",
-      "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
-      "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
-      "description": "Every requirement in this spec is merged to the default branch."
-    }
-  ],
   "requirements": [
     {
       "id": "WEBUI-DESIGN-R001",
       "title": "Design guidance distilled into component system and skills",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "a30da6ebacc6fc2be7b39d41da72eeb858aab05b",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/a30da6ebacc6fc2be7b39d41da72eeb858aab05b",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
-          "description": "WEBUI-DESIGN-R001 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "1509bdb19bd4"
+      ],
+      "verified_by": []
     },
     {
       "id": "DS-01",
       "title": "Design tokens documented with contrast targets",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "a4c402f68f1b42fd6a3297b7d7ba6c4ffc12de1a",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/a4c402f68f1b42fd6a3297b7d7ba6c4ffc12de1a",
-          "description": "Implemented on the default branch; exercised by src/__tests__/design-tokens.test.ts"
-        }
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "a4c402f68f1b"
+      ],
+      "verified_by": [
+        "src/__tests__/design-tokens.test.ts:53",
+        "src/__tests__/design-tokens.test.ts:97"
       ]
     },
     {
       "id": "DS-02",
       "title": "Controls have accessible names and visible focus",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "a4c402f68f1b42fd6a3297b7d7ba6c4ffc12de1a",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/a4c402f68f1b42fd6a3297b7d7ba6c4ffc12de1a",
-          "description": "Implemented on the default branch; exercised by src/components/atlas/__tests__"
-        }
-      ]
+      "landed_in": [
+        "a4c402f68f1b"
+      ],
+      "verified_by": []
     },
     {
       "id": "DS-03",
       "title": "Responsive layout covers 320px mobile through desktop",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "660d19fa4d369c29b2f76b6ef0bdd6b8bfbed5c7",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/660d19fa4d369c29b2f76b6ef0bdd6b8bfbed5c7",
-          "description": "Implementation merged to the default branch; the commit names this requirement."
-        }
+      "landed_in": [
+        "660d19fa4d36"
       ],
-      "remaining": "Filter rows now wrap at narrow widths and a 320 to 1440 pixel light and dark overflow check exists in the offline accessibility suite, but that suite has not been run; run it and record the result."
+      "verified_by": []
     },
     {
       "id": "DS-04",
       "title": "Gesture actions have alternatives and respect reduced motion",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "a4c402f68f1b42fd6a3297b7d7ba6c4ffc12de1a",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/a4c402f68f1b42fd6a3297b7d7ba6c4ffc12de1a",
-          "description": "Implemented on the default branch; exercised by src/__tests__/design-tokens.test.ts"
-        }
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "a4c402f68f1b"
+      ],
+      "verified_by": [
+        "src/__tests__/design-tokens.test.ts:67"
       ]
     },
     {
       "id": "DS-05",
       "title": "Status states are distinguishable by text, not only color",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "cde8dccc2b1b92041b0695930db7b8313477dcc4",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/cde8dccc2b1b92041b0695930db7b8313477dcc4",
-          "description": "Implemented on the default branch; exercised by src/components/ui/__tests__/status-message.test.tsx"
-        }
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "0267b63100e5",
+        "a4c402f68f1b",
+        "cde8dccc2b1b",
+        "fb030df6518e"
+      ],
+      "verified_by": [
+        "src/components/ui/__tests__/status-message.test.tsx:18",
+        "src/components/ui/__tests__/status-message.test.tsx:47",
+        "src/components/ui/__tests__/status-message.test.tsx:63",
+        "src/components/ui/__tests__/status-message.test.tsx:75"
       ]
     },
     {
       "id": "DS-06",
       "title": "No duplicate primitives or unsolicited telemetry introduced",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "f31dead073e184ddf4f2e82d404b385d1c596a96",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/f31dead073e184ddf4f2e82d404b385d1c596a96",
-          "description": "DS-06 merged to the default branch in this commit."
-        }
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "f31dead073e1",
+        "ff3b1cc28028"
+      ],
+      "verified_by": [
+        "src/components/ui/__tests__/no-duplicate-primitives.test.ts:35",
+        "src/components/ui/__tests__/no-duplicate-primitives.test.ts:49"
       ]
     },
     {
       "id": "DS-07",
       "title": "Fonts load from the same origin",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "03cc841a38cecabc0b62a541814512670ebc8774",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/03cc841a38cecabc0b62a541814512670ebc8774",
-          "description": "Implementation merged to the default branch; the commit names this requirement."
-        }
-      ]
+      "landed_in": [
+        "03cc841a38ce",
+        "1906c2636f82"
+      ],
+      "verified_by": []
     },
     {
       "id": "DS-08",
       "title": "Runtime style elements satisfy the strict policy",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "03cc841a38cecabc0b62a541814512670ebc8774",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/03cc841a38cecabc0b62a541814512670ebc8774",
-          "description": "Implementation merged to the default branch; the commit names this requirement."
-        }
-      ]
+      "landed_in": [
+        "03cc841a38ce",
+        "1906c2636f82"
+      ],
+      "verified_by": []
     }
   ]
 }

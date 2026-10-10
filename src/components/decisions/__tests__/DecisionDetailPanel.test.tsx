@@ -24,6 +24,7 @@ async function renderWithDetail(transport: ReturnType<typeof createFixtureTransp
 }
 
 describe('DecisionDetailPanel why-not on demand (DEC-02)', () => {
+  // spec: DEC-02
   it('shows a freshly computed explanation without altering the original decision', async () => {
     const transport = createFixtureTransport()
     transport.getWhyNotOnDemand.mockResolvedValue({
@@ -44,6 +45,7 @@ describe('DecisionDetailPanel why-not on demand (DEC-02)', () => {
     expect(screen.getAllByText(/retired/i).length).toBeGreaterThanOrEqual(1)
   })
 
+  // spec: DEC-02
   it('shows a refusal reason returned by the engine', async () => {
     const transport = createFixtureTransport()
     transport.getWhyNotOnDemand.mockResolvedValue({ kind: 'refused', reason: 'policy_denied' })
@@ -54,6 +56,7 @@ describe('DecisionDetailPanel why-not on demand (DEC-02)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/policy_denied/i)
   })
 
+  // spec: DEC-02
   it('shows a timeout when the bounded solve budget elapses, and never mutates the record', async () => {
     const transport = createFixtureTransport()
     transport.getWhyNotOnDemand.mockImplementation(

@@ -1,7 +1,8 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "spec_id": "WEBUI-API-001",
   "owner_repo": "agent-webui",
+  "delivery_state": "SPECIFIED",
   "requirement_ids": [
     "WEBUI-API-R001",
     "WEBUI-API-R002",
@@ -21,307 +22,186 @@
     "APIUI-06",
     "WEBUI-API-R005"
   ],
-  "delivery_state": "LANDED",
-  "acceptance_state": "NOT_AUDITED",
-  "evidence": [
-    {
-      "kind": "merged_head",
-      "result": "passed",
-      "commit": "0144228da540174efa241101ca6f72777f691799",
-      "url": "https://github.com/Knuckles-Team/agent-webui/commit/0144228da540174efa241101ca6f72777f691799",
-      "description": "Every requirement in this spec is merged to the default branch."
-    }
-  ],
   "requirements": [
     {
       "id": "WEBUI-API-R001",
       "title": "Generated GraphOS API client with typed decisions and confirmation flows",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "6d01ec0fd1b572b3f2ebbda70202e38f984d69be",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/6d01ec0fd1b572b3f2ebbda70202e38f984d69be",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "0144228da540174efa241101ca6f72777f691799",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/0144228da540174efa241101ca6f72777f691799",
-          "description": "WEBUI-API-R001 merged to the default branch in this commit."
-        }
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "0144228da540",
+        "406c63f7d322",
+        "6df9b8aa2f64",
+        "fed13820d806"
+      ],
+      "verified_by": [
+        "src/components/decisions/__tests__/graphos-decisions-transport.test.ts:44"
       ]
     },
     {
       "id": "WEBUI-API-R002",
       "title": "Typed ontology, graph, Atlas and object-set operations replace host routes",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "1a4f6bbf2cd3d76d58d38e3d9e6e26199ae56664",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1a4f6bbf2cd3d76d58d38e3d9e6e26199ae56664",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
-          "description": "WEBUI-API-R002 merged to the default branch in this commit."
-        }
+      "landed_in": [
+        "1509bdb19bd4",
+        "98dd7d8a354e"
       ],
-      "remaining": "Rolls up into APIUI-03.1-03.4, all blocked by the same placeholder EgSchemaRef {path: string} shape in the pinned Graph OS schema (see APIUI-03.1). The branch evidence commit (1a4f6bb...) no longer exists on any remote branch; treat as unreachable, not landed."
+      "verified_by": []
     },
     {
       "id": "WEBUI-API-R003",
       "title": "Remaining domain routes migrate to generated operations with a route census (rollup)",
-      "delivery_state": "BUILDING",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "085195e275653918bf974ce2bee4c097f8413f08",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/085195e275653918bf974ce2bee4c097f8413f08",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "98dd7d8a354e1af7697caa16dd84761e97a1147a",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/98dd7d8a354e1af7697caa16dd84761e97a1147a",
-          "description": "WEBUI-API-R003 merged to the default branch in this commit."
-        }
+      "delivery_state": "SPECIFIED",
+      "landed_in": [
+        "1509bdb19bd4",
+        "98dd7d8a354e"
       ],
-      "remaining": "Split into `WEBUI-API-R003.1` (route-census typed model) and `WEBUI-API-R003.2` (route-census data file and lint rule), producer first. This row is LANDED only when both children are LANDED."
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-API-R003.1",
+        "WEBUI-API-R003.2"
+      ]
     },
     {
       "id": "WEBUI-API-R003.1",
       "title": "Route-census typed model",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "98dd7d8a354e1af7697caa16dd84761e97a1147a",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/98dd7d8a354e1af7697caa16dd84761e97a1147a",
-          "description": "WEBUI-API-R003.1 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "98dd7d8a354e"
+      ],
+      "verified_by": []
     },
     {
       "id": "WEBUI-API-R003.2",
       "title": "Route-census data file and lint rule (remaining)",
       "delivery_state": "SPECIFIED",
-      "evidence": [],
-      "remaining": "A checked-in route census data file populated for every api_extensions.py domain route family, plus an architecture lint rule run in CI that rejects any new unclassified domain route."
+      "landed_in": [],
+      "verified_by": []
     },
     {
       "id": "WEBUI-API-R004",
       "title": "Each request carries its own correlation id",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "eb748b7a950d00f9db755e1b04ff7039ee137153",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/eb748b7a950d00f9db755e1b04ff7039ee137153",
-          "description": "Implementation merged to the default branch; the commit names this requirement."
-        }
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "3cc97501bab5",
+        "dce5092f45fd",
+        "eb748b7a950d"
       ],
-      "remaining": "test_each_request_gets_its_own_id_despite_an_ambient_one passes on branch fix/per-request-correlation-id. Merge, roll out graph-os, then confirm distinct correlation_id values across graph-os log lines."
+      "verified_by": [
+        "agent/agent_webui/__tests__/test_observability.py:328"
+      ]
     },
     {
       "id": "APIUI-01",
       "title": "Generated TypeScript client from a pinned Graph OS schema",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "3fabfbee78e35e7646a6ee3f737bd854e646d60e",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/3fabfbee78e35e7646a6ee3f737bd854e646d60e",
-          "description": "APIUI-01 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "327ed00ea70e",
+        "3fabfbee78e3",
+        "6394f229b798"
+      ],
+      "verified_by": []
     },
     {
       "id": "APIUI-02",
       "title": "Typed operations preserve preview-confirm-step-up for effects",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "6d01ec0fd1b572b3f2ebbda70202e38f984d69be",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/6d01ec0fd1b572b3f2ebbda70202e38f984d69be",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "0144228da540174efa241101ca6f72777f691799",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/0144228da540174efa241101ca6f72777f691799",
-          "description": "APIUI-02 merged to the default branch in this commit."
-        }
-      ]
+      "landed_in": [
+        "0144228da540",
+        "406c63f7d322"
+      ],
+      "verified_by": []
     },
     {
       "id": "APIUI-03",
       "title": "Ontology, graph, Atlas and object-set operations preserve tenant semantics (rollup)",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
-          "description": "APIUI-03.1 merged to the default branch in this commit."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
-          "description": "APIUI-03.2 merged to the default branch in this commit."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
-          "description": "APIUI-03.3 merged to the default branch in this commit."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
-          "description": "APIUI-03.4 merged to the default branch in this commit."
-        }
+      "landed_in": [
+        "1509bdb19bd4"
       ],
-      "remaining": "Rollup of APIUI-03.1/.2/.3/.4; LANDED only when all four children are LANDED."
+      "verified_by": [],
+      "rollup_of": [
+        "APIUI-03.1",
+        "APIUI-03.2",
+        "APIUI-03.3",
+        "APIUI-03.4"
+      ]
     },
     {
       "id": "APIUI-03.1",
       "title": "Ontology reads and writes use typed Graph OS operations with preserved tenant semantics",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
-          "description": "APIUI-03.1 merged to the default branch in this commit."
-        }
+      "landed_in": [
+        "1509bdb19bd4"
       ],
-      "remaining": "Blocked: the pinned Graph OS schema's ontology-adjacent operations (eg.reasoning.GraphSchema, eg.reasoning.GraphSchemaList, eg.reasoning.OntologyInspect, eg.compute.MatchOntologyTerms, eg.compute.MineOntologyGap) all share one generic placeholder EgSchemaRef {path: string} request/response in src/lib/graphos-api/generated/openapi.json on origin/feat/graphos-openapi-schema-pin, not the schema-graph/catalogue/object shape the current /api/ontology/* host routes return. No real ontology.* operation with a usable shape exists yet; building against the placeholder would fabricate a contract the server does not honor."
+      "verified_by": []
     },
     {
       "id": "APIUI-03.2",
       "title": "Graph reads and writes use typed Graph OS operations with preserved tenant semantics",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
-          "description": "APIUI-03.2 merged to the default branch in this commit."
-        }
+      "landed_in": [
+        "1509bdb19bd4"
       ],
-      "remaining": "Blocked: eg.query.GraphQl and the eg.compute.Graph*/eg.reasoning.GraphSchema* operations in the pinned Graph OS schema also carry the generic placeholder EgSchemaRef {path: string} request/response (same root cause as APIUI-03.1); no concrete graph-shaped operation exists yet to migrate onto."
+      "verified_by": []
     },
     {
       "id": "APIUI-03.3",
       "title": "Atlas reads and writes use typed Graph OS operations with preserved tenant semantics",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
-          "description": "APIUI-03.3 merged to the default branch in this commit."
-        }
+      "landed_in": [
+        "1509bdb19bd4"
       ],
-      "remaining": "Blocked: the pinned Graph OS schema has no eg.*Atlas* operation at all. Agent-webui's Atlas routes (graph_catalog via _ATLAS_SOURCE_CATALOG_TOOL in agent/agent_webui/api_extensions.py) have no typed replacement to migrate onto yet."
+      "verified_by": []
     },
     {
       "id": "APIUI-03.4",
       "title": "Object-set reads and writes use typed Graph OS operations with preserved tenant semantics",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
-          "description": "APIUI-03.4 merged to the default branch in this commit."
-        }
+      "landed_in": [
+        "1509bdb19bd4"
       ],
-      "remaining": "Blocked: the pinned Graph OS schema has no eg.*Object*/object-set operation. ObjectExplorerView/ObjectView have no typed replacement to migrate onto yet."
+      "verified_by": []
     },
     {
       "id": "APIUI-04",
       "title": "Prompts, SDD, knowledge base, sessions and goals migrate to typed calls",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "fe7688de370cce851f4fdf2934f5fabc79a7d659",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/fe7688de370cce851f4fdf2934f5fabc79a7d659",
-          "description": "Implementation merged to the default branch; the commit names this requirement."
-        }
-      ]
+      "landed_in": [
+        "fe7688de370c"
+      ],
+      "verified_by": []
     },
     {
       "id": "APIUI-05",
       "title": "Host drops direct internal imports once replacement operations are proven",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "1509bdb19bd41f4040599f1308fa943ea358e799",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1509bdb19bd41f4040599f1308fa943ea358e799",
-          "description": "APIUI-05 merged to the default branch in this commit."
-        }
+      "landed_in": [
+        "1509bdb19bd4"
       ],
-      "remaining": "Blocked transitively: replacement operations for APIUI-03.1-03.4 are not yet proven (all four blocked on the placeholder-shaped pinned schema), so host routes and AU-internal imports cannot be dropped yet."
+      "verified_by": []
     },
     {
       "id": "APIUI-06",
       "title": "Shared auth and streaming are preserved without exposing a service bearer",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "19d92fda94cdb923b9c95200719f45ddbdddb0c3",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/19d92fda94cdb923b9c95200719f45ddbdddb0c3",
-          "description": "APIUI-06 merged to the default branch in this commit."
-        }
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "19d92fda94cd",
+        "d8a6ed888f41"
+      ],
+      "verified_by": [
+        "src/lib/graphos-api/__tests__/invoke-no-bearer.test.ts:31",
+        "src/lib/graphos-api/__tests__/invoke-no-bearer.test.ts:45",
+        "src/lib/graphos-api/__tests__/invoke-no-bearer.test.ts:56"
       ]
     },
     {
       "id": "WEBUI-API-R005",
       "title": "Failure logs carry a sanitized typed error code",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "4924a5237ee787c87e27d42e28c95f0f5670a42d",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/4924a5237ee787c87e27d42e28c95f0f5670a42d",
-          "description": "Implementation merged to the default branch; the commit names this requirement."
-        }
+      "landed_in": [
+        "4924a5237ee7"
       ],
-      "remaining": "Merge the PR."
+      "verified_by": []
     }
   ]
 }

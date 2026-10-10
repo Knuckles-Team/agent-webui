@@ -41,6 +41,7 @@ describe('graphosDecisionsTransport on the shared GraphOS invoke adapter', () =>
     )
   })
 
+  // spec: WEBUI-API-R001
   it('gets one committed decision record via DecisionLog.get, unwrapping the log entry', async () => {
     const fetcher = stubReplies({
       status: 200,
