@@ -103,27 +103,21 @@
     {
       "id": "FUI-01",
       "title": "Responsive five-destination navigation",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "LANDED",
       "landed_in": [
         "00f4b9b08127",
-        "2d3f1b884e39",
         "a73ac09e3e1c"
       ],
-      "verified_by": [
-        "src/apps/markets/__tests__/MarketsNav.test.tsx:34",
-        "src/apps/markets/__tests__/MarketsNav.test.tsx:47"
-      ]
+      "verified_by": []
     },
     {
       "id": "FUI-02",
       "title": "Instrument groups with distinct data states",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "LANDED",
       "landed_in": [
         "96cd34e3bfa2"
       ],
-      "verified_by": [
-        "src/apps/markets/components/__tests__/InstrumentGroups.test.tsx:42"
-      ]
+      "verified_by": []
     },
     {
       "id": "FUI-03",
@@ -139,14 +133,12 @@
     {
       "id": "FUI-04",
       "title": "Instrument rows show price, provenance, after-hours value",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "LANDED",
       "landed_in": [
         "cff7851b2443",
         "d63ed6f3afb2"
       ],
-      "verified_by": [
-        "src/apps/markets/__tests__/InstrumentRow.test.tsx:45"
-      ]
+      "verified_by": []
     },
     {
       "id": "FUI-05",
@@ -180,15 +172,11 @@
     {
       "id": "FUI-06",
       "title": "Shared ChartRenderer preserves gaps and revisions",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "LANDED",
       "landed_in": [
-        "2d3f1b884e39",
         "ae5dc947dd51"
       ],
-      "verified_by": [
-        "src/apps/markets/__tests__/pure.test.ts:63",
-        "src/apps/markets/__tests__/pure.test.ts:89"
-      ]
+      "verified_by": []
     },
     {
       "id": "FUI-07",

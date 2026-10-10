@@ -66,13 +66,11 @@
     {
       "id": "IDUI-06",
       "title": "Identity or tenant change invalidates cached protected data",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "LANDED",
       "landed_in": [
         "cd1604a78520"
       ],
-      "verified_by": [
-        "src/__tests__/chat-store-identity.test.tsx:39"
-      ]
+      "verified_by": []
     },
     {
       "id": "IDUI-07",
@@ -96,14 +94,11 @@
     {
       "id": "WEBUI-IDENTITY-R002",
       "title": "Admin UI surfaces identity operations for users, roles and navigation",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "LANDED",
       "landed_in": [
         "099127294433"
       ],
-      "verified_by": [
-        "src/components/views/__tests__/UserManagementView.test.tsx:192",
-        "src/components/views/__tests__/UserManagementView.test.tsx:214"
-      ]
+      "verified_by": []
     }
   ]
 }
