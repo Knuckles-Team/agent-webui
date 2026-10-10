@@ -10,7 +10,7 @@ import { baseAggregate, createFixtureTransport, emptyReceiptPage, emptyTimelineP
  */
 
 describe('DecisionCalibrationTab', () => {
-  // spec: DEC-03
+  // spec: DEC-03, WEBUI-DECIDE-R001
   it('renders per-option stat tiles, the success rate, and the min-support caption, labeled independently of the unavailable calibration/coverage notice (DEC-03)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue(baseAggregate)

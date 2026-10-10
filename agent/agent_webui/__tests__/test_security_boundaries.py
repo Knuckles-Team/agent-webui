@@ -296,6 +296,7 @@ def _run_html_document(body_chunks: list[bytes], policy: str | None = None) -> l
     return messages
 
 
+@pytest.mark.spec('DS-08')
 def test_html_documents_carry_a_fresh_style_nonce() -> None:
     chunks = [b'<meta property="csp-nonce" nonce="AGENT_WEBUI_', b'CSP_NONCE">']
     first = _run_html_document(chunks)

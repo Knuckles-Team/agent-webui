@@ -38,7 +38,7 @@ describe('DecisionExplorerTab', () => {
     expect(screen.queryByText(/no decisions recorded yet/i)).not.toBeInTheDocument()
   })
 
-  // spec: DEC-01
+  // spec: DEC-01, WEBUI-DECIDE-R002
   it('selecting a row loads and renders its premises, outcome, and why-not (DEC-01)', async () => {
     const transport = createFixtureTransport()
     transport.listDecisions.mockResolvedValue([baseRow])

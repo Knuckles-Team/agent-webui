@@ -66,11 +66,13 @@
     {
       "id": "IDUI-06",
       "title": "Identity or tenant change invalidates cached protected data",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "cd1604a78520"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/__tests__/chat-store-identity.test.tsx:39"
+      ]
     },
     {
       "id": "IDUI-07",
