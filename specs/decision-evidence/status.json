@@ -2,7 +2,7 @@
   "schema_version": 2,
   "spec_id": "WEBUI-DECIDE-001",
   "owner_repo": "agent-webui",
-  "delivery_state": "LANDED",
+  "delivery_state": "VERIFIED",
   "requirement_ids": [
     "WEBUI-DECIDE-R001",
     "DEC-01",
@@ -17,12 +17,14 @@
     {
       "id": "WEBUI-DECIDE-R001",
       "title": "Evaluation dashboard shows calibration and coverage",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "959fac1c5bea",
         "df208e18c6c8"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/components/decisions/__tests__/DecisionCalibrationTab.test.tsx:13"
+      ]
     },
     {
       "id": "DEC-01",
@@ -113,12 +115,14 @@
     {
       "id": "WEBUI-DECIDE-R002",
       "title": "Decision explorer surfaces premises, derivations and violations",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "959fac1c5bea",
         "df208e18c6c8"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/components/decisions/__tests__/DecisionExplorerTab.test.tsx:41"
+      ]
     }
   ]
 }

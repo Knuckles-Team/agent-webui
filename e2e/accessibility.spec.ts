@@ -16,6 +16,7 @@ const viewports = [320, 375, 768, 1440].flatMap((width) =>
 )
 
 for (const { width, theme } of viewports) {
+  // spec: DS-02, DS-03
   test(`keyboard, focus, descriptions and layout at ${width}px (${theme})`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await page.goto('/')
