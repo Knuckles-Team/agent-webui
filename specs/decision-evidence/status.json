@@ -29,6 +29,7 @@
       "title": "Decision explorer cites premises, derivations and certificate",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "2d3f1b884e39",
         "959fac1c5bea",
         "df208e18c6c8"
       ],
@@ -41,6 +42,7 @@
       "title": "Why-not explanations run on demand within a bounded budget",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "2d3f1b884e39",
         "94fdf68cfbca",
         "ce87bed0d725",
         "fed13820d806"
@@ -56,6 +58,7 @@
       "title": "Dashboard labels each evaluation field independently",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "2d3f1b884e39",
         "959fac1c5bea",
         "df208e18c6c8"
       ],
@@ -69,6 +72,7 @@
       "title": "No coverage claim shown for inadequate evaluation data",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "2d3f1b884e39",
         "959fac1c5bea",
         "df208e18c6c8"
       ],
@@ -83,7 +87,8 @@
       "title": "Tenant or purpose change invalidates cached decision queries",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "1c4d40ed1a3f"
+        "1c4d40ed1a3f",
+        "2d3f1b884e39"
       ],
       "verified_by": [
         "src/components/decisions/__tests__/decision-query-scope.test.ts:27",
@@ -96,6 +101,7 @@
       "title": "Explanation views work without color, hover or pointer",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "2d3f1b884e39",
         "959fac1c5bea",
         "df208e18c6c8"
       ],
