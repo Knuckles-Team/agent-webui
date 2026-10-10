@@ -39,6 +39,7 @@ describe('InstrumentGroups', () => {
     expect(screen.getByText('Loading your instrument groups…')).toBeInTheDocument()
   })
 
+  // spec: FUI-02
   it('shows a distinct genuinely-empty state, not a loading or failure state', async () => {
     const transport = makeTransport({ status: 'empty' })
     renderWithProviders(<InstrumentGroups transport={transport} />)

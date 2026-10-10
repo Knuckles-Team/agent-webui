@@ -6,10 +6,12 @@ import { surfaceProblems } from '../contract'
 import { pathParam } from '../location'
 
 describe('AppSurface contract', () => {
+  // spec: APP-03, APP-04, WEBUI-APPS-R001
   it('every hosted app satisfies the contract', () => {
     for (const surface of APP_SURFACES) expect(surfaceProblems(surface), surface.id).toEqual([])
   })
 
+  // spec: WEBUI-APPS-R001
   it('places app routes in the one registry under the Apps section', () => {
     expect(SECTIONS.map((section) => section.id)).toContain('apps')
     expect(routesBySection('apps').map((route) => route.id)).toEqual(['apps.markets'])

@@ -117,11 +117,13 @@
     {
       "id": "FUI-02",
       "title": "Instrument groups with distinct data states",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "96cd34e3bfa2"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/apps/markets/components/__tests__/InstrumentGroups.test.tsx:42"
+      ]
     },
     {
       "id": "FUI-03",
@@ -137,12 +139,14 @@
     {
       "id": "FUI-04",
       "title": "Instrument rows show price, provenance, after-hours value",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "cff7851b2443",
         "d63ed6f3afb2"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/apps/markets/__tests__/InstrumentRow.test.tsx:45"
+      ]
     },
     {
       "id": "FUI-05",

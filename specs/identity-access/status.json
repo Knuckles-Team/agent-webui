@@ -96,11 +96,14 @@
     {
       "id": "WEBUI-IDENTITY-R002",
       "title": "Admin UI surfaces identity operations for users, roles and navigation",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "099127294433"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/components/views/__tests__/UserManagementView.test.tsx:192",
+        "src/components/views/__tests__/UserManagementView.test.tsx:214"
+      ]
     }
   ]
 }
