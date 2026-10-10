@@ -18,7 +18,7 @@
 | Live wiring of overlay/performance/strategy (remaining) | agent-webui | FUI-07.2, FUI-08.2, FUI-09.2 | SPECIFIED | `overlay-wiring.test.ts`, `PerformanceCardView.test.tsx`, `StrategyPanel.test.tsx` — 10 passed, PR pending |
 | Live wiring of delivery (remaining) | agent-webui | FUI-10.2 | SPECIFIED | `DeliveryStateList.test.tsx` — 3 passed, PR pending |
 | Live wiring of CSV import/offline-cache (remaining) | agent-webui | FUI-11.2, FUI-12.2 | SPECIFIED | `CsvImportFlow.test.tsx`, `OfflineCacheView.test.tsx` — 7 passed, PR pending |
-| Live wiring of a11y (remaining) | agent-webui | FUI-13.2 | SPECIFIED | Live component wiring, PR pending |
+| Live wiring of a11y (remaining) | agent-webui | FUI-13.2 | SPECIFIED | `ChartA11ySummary.test.tsx` — 4 passed, PR pending |
 
 ## Build sequence
 
