@@ -20,7 +20,8 @@
       "title": "Design guidance distilled into component system and skills",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "1509bdb19bd4"
+        "1509bdb19bd4",
+        "cb7ca4afa907"
       ],
       "verified_by": [
         "src/components/ui/__tests__/no-duplicate-skill-names.test.ts:23"
@@ -44,7 +45,8 @@
       "title": "Controls have accessible names and visible focus",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "a4c402f68f1b"
+        "a4c402f68f1b",
+        "cb7ca4afa907"
       ],
       "verified_by": [
         "e2e/accessibility.spec.ts:19"
@@ -55,7 +57,8 @@
       "title": "Responsive layout covers 320px mobile through desktop",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "660d19fa4d36"
+        "660d19fa4d36",
+        "cb7ca4afa907"
       ],
       "verified_by": [
         "e2e/accessibility.spec.ts:19"
@@ -111,7 +114,8 @@
       "delivery_state": "LANDED",
       "landed_in": [
         "03cc841a38ce",
-        "1906c2636f82"
+        "1906c2636f82",
+        "cb7ca4afa907"
       ],
       "verified_by": []
     },
@@ -121,7 +125,8 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "03cc841a38ce",
-        "1906c2636f82"
+        "1906c2636f82",
+        "cb7ca4afa907"
       ],
       "verified_by": [
         "agent/agent_webui/__tests__/test_security_boundaries.py:299"

@@ -43,6 +43,7 @@
       "title": "AppSurface contract declares each app's route, capability and client",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "401cec444a5f",
         "e05e1230ae72"
       ],
       "verified_by": [
@@ -54,6 +55,7 @@
       "title": "Contributed app descriptors cannot escalate privilege beyond the contract",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "401cec444a5f",
         "e05e1230ae72"
       ],
       "verified_by": [
@@ -93,6 +95,7 @@
       "title": "Apps information-architecture section and AppSurface contract",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "401cec444a5f",
         "e05e1230ae72"
       ],
       "verified_by": [

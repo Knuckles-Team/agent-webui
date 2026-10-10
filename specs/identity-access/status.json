@@ -68,6 +68,7 @@
       "title": "Identity or tenant change invalidates cached protected data",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "cb7ca4afa907",
         "cd1604a78520"
       ],
       "verified_by": [
@@ -98,7 +99,8 @@
       "title": "Admin UI surfaces identity operations for users, roles and navigation",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "099127294433"
+        "099127294433",
+        "401cec444a5f"
       ],
       "verified_by": [
         "src/components/views/__tests__/UserManagementView.test.tsx:192",

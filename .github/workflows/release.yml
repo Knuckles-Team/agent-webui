@@ -80,11 +80,20 @@ jobs:
   # (CI is set), so a green run means every hook really ran.
   gates:
     name: gates
-    runs-on: ubuntu-latest
+    # PR gates are bounded (10 min) so a stuck or runaway step fails fast
+    # instead of riding out the default 6h ceiling; push/main and
+    # workflow_dispatch keep a generous 60 min for the full, unscoped suite.
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 20 || 60 }}
+    # Homelab self-hosted runner for same-repo push/PR traffic; a fork PR's
+    # head repo never matches `github.repository`, so it always lands on the
+    # GitHub-hosted runner instead -- self-hosted capacity is never offered
+    # to an untrusted fork.
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "homelab"]') || 'ubuntu-latest' }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up uv
@@ -106,6 +115,127 @@ jobs:
 
       - name: pre-commit (pre-push stage, all files)
         run: uvx pre-commit run --config .config/pre-commit.yaml --all-files --hook-stage pre-push --show-diff-on-failure
+
+      - name: Type check and full lint (manual-stage hooks, always full)
+        run: |
+          set -euo pipefail
+          uvx pre-commit run typecheck --config .config/pre-commit.yaml --hook-stage manual --all-files
+          uvx pre-commit run lint --config .config/pre-commit.yaml --hook-stage manual --all-files
+
+      # The base the differential hooks compare against: the pull request
+      # base or the previous push, else the root commit (a first push scans
+      # all of it). An unavailable object is never an invented empty baseline.
+      - name: Resolve the published base
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "${BASE:-}" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            BASE="$(git rev-list --max-parents=0 HEAD)"
+          fi
+          echo "PRE_COMMIT_FROM_REF=$BASE" >> "$GITHUB_ENV"
+
+      # Operator decision (2026-10-09, matching graph-os PR #125): PR gates
+      # run a fast subset so a PR turns around in minutes -- lint, type
+      # check and the spec check (public-surface/ste-staged, pre-commit
+      # stage above) already ran full. Only the test matrix narrows here.
+      # `push` to main and workflow_dispatch are never `pull_request` and
+      # keep running the full suite unchanged below.
+      - name: Resolve pull-request Python test scope
+        if: github.event_name == 'pull_request'
+        id: pr-test-scope
+        run: |
+          set -euo pipefail
+          uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' \
+            pipelines-hook pr-test-scope --base-ref "$PRE_COMMIT_FROM_REF" \
+            --src-root agent/agent_webui --tests-root tests > "$RUNNER_TEMP/pr-test-scope.txt"
+          cat "$RUNNER_TEMP/pr-test-scope.txt"
+          {
+            echo "scope<<PR_TEST_SCOPE_EOF"
+            cat "$RUNNER_TEMP/pr-test-scope.txt"
+            echo "PR_TEST_SCOPE_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve pull-request TypeScript/React changed files
+        if: github.event_name == 'pull_request'
+        id: pr-ts-scope
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only --diff-filter=ACMR "$PRE_COMMIT_FROM_REF"...HEAD -- '*.ts' '*.tsx' | grep -v '^node_modules/' || true)"
+          echo "$changed"
+          {
+            echo "files<<PR_TS_SCOPE_EOF"
+            echo "$changed"
+            echo "PR_TS_SCOPE_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Full test suite (push to main / workflow_dispatch)
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m pytest tests -q --tb=short -m "not slow" --timeout=60
+          pnpm test
+
+      - name: Python test suite -- pull request fast subset
+        if: github.event_name == 'pull_request'
+        env:
+          SCOPE: ${{ steps.pr-test-scope.outputs.scope }}
+        run: |
+          set -euo pipefail
+          if [ "$SCOPE" = "NONE" ]; then
+            echo "pr-test-scope: no agent/agent_webui/tests change in this diff; skipping pytest"
+          elif [ "$SCOPE" = "FULL" ]; then
+            echo "pr-test-scope: unmapped source change (or an unreadable diff); running the full suite"
+            .venv/bin/python -m pytest tests -q --tb=short -m "not slow" --timeout=60
+          else
+            echo "pr-test-scope: running only the tests this diff affects:"
+            echo "$SCOPE"
+            mapfile -t affected_tests <<< "$SCOPE"
+            .venv/bin/python -m pytest "${affected_tests[@]}" -q --tb=short -m "not slow" --timeout=60
+          fi
+
+      - name: TypeScript test suite -- pull request fast subset (vitest related)
+        if: github.event_name == 'pull_request'
+        env:
+          CHANGED: ${{ steps.pr-ts-scope.outputs.files }}
+        run: |
+          set -euo pipefail
+          if [ -z "$(echo "$CHANGED" | tr -d '[:space:]')" ]; then
+            echo "no .ts/.tsx change in this diff; skipping vitest"
+          else
+            echo "running vitest related for:"
+            echo "$CHANGED"
+            mapfile -t changed_files <<< "$CHANGED"
+            pnpm exec vitest related "${changed_files[@]}" --run
+          fi
+
+  # Spec-status lifecycle gates (plans/refactor/reconciliation-20261006/
+  # SPEC-STATUS-LIFECYCLE.md). Deliberately independent of `gates` (no
+  # `needs:`) and never added to any release job's `needs:` -- this is an
+  # advisory/PR check, not a release blocker, and must not be configured as
+  # a required check in branch protection.
+  spec-gates:
+    name: spec-gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      - name: spec-status
+        run: uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' pipelines-hook spec-status
+
+      - name: spec-decomposition
+        run: uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' pipelines-hook spec-decomposition
+
+      - name: spec-trailers
+        if: github.event_name == 'pull_request'
+        run: uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' pipelines-hook spec-trailers --base-ref "origin/${{ github.base_ref }}"
 
   release-intent:
     name: release-intent
