@@ -45,3 +45,13 @@ The build sequence above cites `FIN-UI-R001` and `FIN-UI-R002` by work package b
 ## Status rules
 
 `SPECIFIED` means the intended behavior and design are reviewable. `BUILDING` requires a linked implementation PR. `BUILT` requires merged code plus passing served-path and quality evidence for the owned behavior. `BLOCKED` names an unmet dependency or unavailable capability. A mock view or documentation commit does not promote any requirement ID to BUILT. If a dependency remains unavailable, keep its row PENDING/BLOCKED and show the corresponding honest state in the UI.
+
+## Decomposition children (tracked)
+
+- [x] **FUI-05:** Detail tabs and range controls expose only supported data (rollup)
+- [x] **FUI-07:** Chart overlays show strategy version and simulation state (rollup)
+- [x] **FUI-08:** Performance cards render owner-calculated values verbatim (rollup)
+- [x] **FUI-09:** Strategy views cite evidence and never submit orders (rollup)
+- [ ] **FUI-10:** DCA and alert views distinguish delivery states (rollup)
+- [ ] **FUI-11:** CSV import preview with idempotent receipt (rollup)
+- [ ] **FUI-12:** Offline PWA shell marks cached data stale (rollup)

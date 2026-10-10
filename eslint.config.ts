@@ -50,6 +50,8 @@ export default defineConfig(
   },
   {
     ignores: [
+      // Sibling source checkouts are other repositories; they lint themselves.
+      '.uv-workspace-siblings/**',
       '**/dist/**',
       '**/build/**',
       'server/**',
