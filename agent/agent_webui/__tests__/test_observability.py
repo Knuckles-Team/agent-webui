@@ -325,6 +325,7 @@ async def test_inbound_correlation_id_is_reused_not_replaced(
 
 
 @pytest.mark.asyncio
+@pytest.mark.spec('WEBUI-API-R004')
 async def test_each_request_gets_its_own_id_despite_an_ambient_one() -> None:
     """A host thread that bound a correlation id at startup must not leak it.
 

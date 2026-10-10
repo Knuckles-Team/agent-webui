@@ -1,7 +1,8 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "spec_id": "WEBUI-DECIDE-001",
   "owner_repo": "agent-webui",
+  "delivery_state": "LANDED",
   "requirement_ids": [
     "WEBUI-DECIDE-R001",
     "DEC-01",
@@ -12,163 +13,112 @@
     "DEC-06",
     "WEBUI-DECIDE-R002"
   ],
-  "delivery_state": "LANDED",
-  "acceptance_state": "NOT_AUDITED",
-  "evidence": [
-    {
-      "kind": "merged_head",
-      "result": "passed",
-      "commit": "df208e18c6c80f740a2343d4babe3acf07982424",
-      "url": "https://github.com/Knuckles-Team/agent-webui/commit/df208e18c6c80f740a2343d4babe3acf07982424",
-      "description": "Every requirement in this spec is merged to the default branch."
-    }
-  ],
   "requirements": [
     {
       "id": "WEBUI-DECIDE-R001",
       "title": "Evaluation dashboard shows calibration and coverage",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "edef2b7893e6acf45a316d892c1266362f5536ff",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/edef2b7893e6acf45a316d892c1266362f5536ff",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "df208e18c6c80f740a2343d4babe3acf07982424",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/df208e18c6c80f740a2343d4babe3acf07982424",
-          "description": "Implementation merged to the default branch; the commit names this requirement."
-        }
+      "landed_in": [
+        "959fac1c5bea",
+        "df208e18c6c8"
       ],
-      "remaining": "Dashboard components and fixture tests are on the default branch behind an injected transport. Remaining: a production transport over the generated Graph OS client and a registered route so the dashboard is reachable."
+      "verified_by": []
     },
     {
       "id": "DEC-01",
       "title": "Decision explorer cites premises, derivations and certificate",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "edef2b7893e6acf45a316d892c1266362f5536ff",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/edef2b7893e6acf45a316d892c1266362f5536ff",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "df208e18c6c80f740a2343d4babe3acf07982424",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/df208e18c6c80f740a2343d4babe3acf07982424",
-          "description": "Implementation merged to the default branch; the commit names this requirement."
-        }
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "2d3f1b884e39",
+        "959fac1c5bea",
+        "df208e18c6c8"
       ],
-      "remaining": "Explorer components and fixture tests are on the default branch behind an injected transport. Remaining: a production transport over the generated Graph OS client, a registered route, and the rendered-route test."
+      "verified_by": [
+        "src/components/decisions/__tests__/DecisionExplorerTab.test.tsx:41"
+      ]
     },
     {
       "id": "DEC-02",
       "title": "Why-not explanations run on demand within a bounded budget",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "94fdf68cfbca16ad0d81cc623fe950eca5a014e6",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/94fdf68cfbca16ad0d81cc623fe950eca5a014e6",
-          "description": "DEC-02 merged to the default branch in this commit."
-        }
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "2d3f1b884e39",
+        "94fdf68cfbca",
+        "ce87bed0d725",
+        "fed13820d806"
+      ],
+      "verified_by": [
+        "src/components/decisions/__tests__/DecisionDetailPanel.test.tsx:27",
+        "src/components/decisions/__tests__/DecisionDetailPanel.test.tsx:48",
+        "src/components/decisions/__tests__/DecisionDetailPanel.test.tsx:59"
       ]
     },
     {
       "id": "DEC-03",
       "title": "Dashboard labels each evaluation field independently",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "df208e18c6c80f740a2343d4babe3acf07982424",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/df208e18c6c80f740a2343d4babe3acf07982424",
-          "description": "Implementation merged to the default branch; the commit names this requirement."
-        }
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "2d3f1b884e39",
+        "959fac1c5bea",
+        "df208e18c6c8"
       ],
-      "remaining": "The dashboard components and their fixture tests are on the default branch behind an injected transport (src/components/decisions/__tests__/DecisionCalibrationTab.test.tsx). Remaining: a production transport over the generated Graph OS client and a registered route, so the dashboard is reachable in the product."
+      "verified_by": [
+        "src/components/decisions/__tests__/DecisionCalibrationTab.test.tsx:13",
+        "src/components/decisions/__tests__/DecisionCalibrationTab.test.tsx:67"
+      ]
     },
     {
       "id": "DEC-04",
       "title": "No coverage claim shown for inadequate evaluation data",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "df208e18c6c80f740a2343d4babe3acf07982424",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/df208e18c6c80f740a2343d4babe3acf07982424",
-          "description": "Implementation merged to the default branch; the commit names this requirement."
-        }
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "2d3f1b884e39",
+        "959fac1c5bea",
+        "df208e18c6c8"
       ],
-      "remaining": "The dashboard components and their fixture tests are on the default branch behind an injected transport (src/components/decisions/__tests__/DecisionCalibrationTab.test.tsx). Remaining: a production transport over the generated Graph OS client and a registered route, so the dashboard is reachable in the product."
+      "verified_by": [
+        "src/components/decisions/__tests__/DecisionCalibrationTab.test.tsx:141",
+        "src/components/decisions/__tests__/DecisionCalibrationTab.test.tsx:33",
+        "src/components/decisions/__tests__/DecisionCalibrationTab.test.tsx:86"
+      ]
     },
     {
       "id": "DEC-05",
       "title": "Tenant or purpose change invalidates cached decision queries",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "1c4d40ed1a3f72b5c84c674f7d1d39c8a1ffd4b4",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/1c4d40ed1a3f72b5c84c674f7d1d39c8a1ffd4b4",
-          "description": "DEC-05 merged to the default branch in this commit."
-        }
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "1c4d40ed1a3f",
+        "2d3f1b884e39"
+      ],
+      "verified_by": [
+        "src/components/decisions/__tests__/decision-query-scope.test.ts:27",
+        "src/components/decisions/__tests__/decision-query-scope.test.ts:34",
+        "src/components/decisions/__tests__/decision-query-scope.test.ts:41"
       ]
     },
     {
       "id": "DEC-06",
       "title": "Explanation views work without color, hover or pointer",
-      "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "edef2b7893e6acf45a316d892c1266362f5536ff",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/edef2b7893e6acf45a316d892c1266362f5536ff",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "df208e18c6c80f740a2343d4babe3acf07982424",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/df208e18c6c80f740a2343d4babe3acf07982424",
-          "description": "Implementation merged to the default branch; the commit names this requirement."
-        }
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "2d3f1b884e39",
+        "959fac1c5bea",
+        "df208e18c6c8"
       ],
-      "remaining": "Keyboard-only selection is tested at component level. Remaining: the accessibility audit over the full explanation structure in a browser once the view is routed."
+      "verified_by": [
+        "src/components/decisions/__tests__/DecisionCalibrationTab.test.tsx:228",
+        "src/components/decisions/__tests__/DecisionExplorerTab.test.tsx:64"
+      ]
     },
     {
       "id": "WEBUI-DECIDE-R002",
       "title": "Decision explorer surfaces premises, derivations and violations",
       "delivery_state": "LANDED",
-      "evidence": [
-        {
-          "kind": "branch",
-          "result": "passed",
-          "commit": "edef2b7893e6acf45a316d892c1266362f5536ff",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/edef2b7893e6acf45a316d892c1266362f5536ff",
-          "description": "Implementation commit is published on a branch; not yet merged to the default branch."
-        },
-        {
-          "kind": "merged_head",
-          "result": "passed",
-          "commit": "df208e18c6c80f740a2343d4babe3acf07982424",
-          "url": "https://github.com/Knuckles-Team/agent-webui/commit/df208e18c6c80f740a2343d4babe3acf07982424",
-          "description": "Implementation merged to the default branch; the commit names this requirement."
-        }
+      "landed_in": [
+        "959fac1c5bea",
+        "df208e18c6c8"
       ],
-      "remaining": "Rendering logic and component tests are on the default branch. Remaining: typed calls to the Graph OS read API through the generated client, route registration, and the browser integration test against an authenticated session."
+      "verified_by": []
     }
   ]
 }

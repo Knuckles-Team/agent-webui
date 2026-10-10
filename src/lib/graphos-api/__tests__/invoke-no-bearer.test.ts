@@ -28,6 +28,7 @@ function flattenCallText(calls: unknown[][]): string {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('invoke() never exposes a Graph OS service bearer', () => {
+  // spec: APIUI-06
   it('sets no Authorization header on the session fetch or the operation call', async () => {
     const fetcher = vi
       .fn()
@@ -41,6 +42,7 @@ describe('invoke() never exposes a Graph OS service bearer', () => {
     }
   })
 
+  // spec: APIUI-06
   it('never carries a bearer or service-token credential in any request header or body', async () => {
     const fetcher = vi
       .fn()
@@ -51,6 +53,7 @@ describe('invoke() never exposes a Graph OS service bearer', () => {
     expect(flattenCallText(fetcher.mock.calls)).not.toMatch(BEARER_LEAK)
   })
 
+  // spec: APIUI-06
   it('relies only on the same-origin cookie session plus the fetched CSRF token', async () => {
     const fetcher = vi
       .fn()

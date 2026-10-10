@@ -10,6 +10,7 @@ import { baseAggregate, createFixtureTransport, emptyReceiptPage, emptyTimelineP
  */
 
 describe('DecisionCalibrationTab', () => {
+  // spec: DEC-03
   it('renders per-option stat tiles, the success rate, and the min-support caption, labeled independently of the unavailable calibration/coverage notice (DEC-03)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue(baseAggregate)
@@ -29,6 +30,7 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.getByText(/bounds for their evaluation set below/i)).toBeInTheDocument()
   })
 
+  // spec: DEC-04
   it('does not interpret an empty aggregate as proof of zero outcomes (DEC-04)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue({ schema_version: 1, min_support: 10, rows: [] })
@@ -62,6 +64,7 @@ describe('DecisionCalibrationTab', () => {
     expect(lastCall?.fromMs).toBe(0)
   })
 
+  // spec: DEC-03
   it('labels policy cohorts independently and warns against comparing changed policies (DEC-03)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue({
@@ -80,6 +83,7 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.getAllByText(/no uncertainty interval or act-risk bound/i)).toHaveLength(2)
   })
 
+  // spec: DEC-04
   it('shows certified bounds only from a passing, non-synthetic receipt and withholds them for a synthetic one (DEC-04)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue(baseAggregate)
@@ -134,6 +138,7 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.getAllByText('Coverage interval')).toHaveLength(1)
   })
 
+  // spec: DEC-04
   it('shows server job time and failed gates without inventing a drift alert (DEC-04)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue(baseAggregate)
@@ -220,6 +225,7 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.queryByText(/statistical drift detected/i)).not.toBeInTheDocument()
   })
 
+  // spec: DEC-06
   it('every status-bearing control is reachable by keyboard and carries text, not color alone (DEC-06)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue(baseAggregate)

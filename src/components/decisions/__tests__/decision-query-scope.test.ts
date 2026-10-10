@@ -24,18 +24,21 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 }
 
 describe('decisionQueryKey', () => {
+  // spec: DEC-05
   it('differs when tenant changes', () => {
     const a = decisionQueryKey('decision', { tenantId: 'tenant-a' }, 'dec-1')
     const b = decisionQueryKey('decision', { tenantId: 'tenant-b' }, 'dec-1')
     expect(a).not.toEqual(b)
   })
 
+  // spec: DEC-05
   it('differs when purpose changes for the same tenant', () => {
     const a = decisionQueryKey('decision', { tenantId: 'tenant-a', purpose: 'audit' })
     const b = decisionQueryKey('decision', { tenantId: 'tenant-a', purpose: 'billing' })
     expect(a).not.toEqual(b)
   })
 
+  // spec: DEC-05
   it('is stable for the same tenant and purpose', () => {
     const a = decisionQueryKey('decision', { tenantId: 'tenant-a', purpose: 'audit' }, 'dec-1')
     const b = decisionQueryKey('decision', { tenantId: 'tenant-a', purpose: 'audit' }, 'dec-1')
