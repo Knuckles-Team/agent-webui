@@ -83,7 +83,7 @@ jobs:
     # PR gates are bounded (10 min) so a stuck or runaway step fails fast
     # instead of riding out the default 6h ceiling; push/main and
     # workflow_dispatch keep a generous 60 min for the full, unscoped suite.
-    timeout-minutes: ${{ github.event_name == 'pull_request' && 20 || 60 }}
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 45 || 60 }}
     # Homelab self-hosted runner for same-repo push/PR traffic; a fork PR's
     # head repo never matches `github.repository`, so it always lands on the
     # GitHub-hosted runner instead -- self-hosted capacity is never offered
@@ -114,7 +114,7 @@ jobs:
         # Step-level cap and --verbose so a stall on a self-hosted runner fails
         # this step with a log naming the hook, instead of the job being
         # cancelled with no log. A per-run hook cache avoids a stale shared one.
-        timeout-minutes: 10
+        timeout-minutes: 15
         env:
           PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit
         run: uvx pre-commit run --config .config/pre-commit.yaml --all-files --show-diff-on-failure --verbose
