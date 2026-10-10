@@ -101,3 +101,29 @@ def test_home_path_is_detected_without_any_identity(
         identifiers=gate.derive_local_identifiers(),
         deployment_doc=False,
     )
+
+
+# Shared-fix regression: ``_MACHINE_HOST_ID_RE``'s lookbehind did not exclude
+# ``-``, so a hyphen-joined requirement ID (``AU-BOUNDARY-R016``) false-
+# positived as a machine host alias. Fixed by widening the lookbehind to
+# ``(?<![a-z0-9-])`` -- the same one-character fix as pipelines PR #41
+# (pipelines_hooks/privacy/patterns.py) and epistemic-graph's local copy
+# (D-EG-PRIVACY-R001-FALSEPOS).
+def test_hyphenated_requirement_id_is_not_flagged_as_host_id() -> None:
+    gate = _load_gate()
+    categories = gate.classify_line(
+        'see AU-BOUNDARY-R016 for the full requirement text',
+        identifiers=frozenset(),
+        deployment_doc=False,
+    )
+    assert 'machine-specific host identifier' not in categories
+
+
+def test_bare_host_token_is_still_flagged_as_host_id() -> None:
+    gate = _load_gate()
+    categories = gate.classify_line(
+        'reported from ' + 'host' + '123',
+        identifiers=frozenset(),
+        deployment_doc=False,
+    )
+    assert 'machine-specific host identifier' in categories
