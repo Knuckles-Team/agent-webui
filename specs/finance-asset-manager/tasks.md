@@ -15,7 +15,8 @@
 | Overlay/performance/strategy/delivery contracts (PR #60) | agent-webui | FUI-07.1, FUI-08.1, FUI-09.1, FUI-10.1 | LANDED | 4 new vitest files — 19 passed |
 | CSV import/offline-cache/a11y contracts (PR #61) | agent-webui | FUI-11.1, FUI-12.1, FUI-13.1 | LANDED | vitest — 13 passed |
 | Live wiring of detail-tab/ChartRenderer/supportedChartMode (remaining) | agent-webui | FIN-UI-R001.2, FIN-UI-R002.2, FUI-05.2 | SPECIFIED | Live ChartPage/ChartRenderer component wiring, PR pending |
-| Live wiring of overlay/performance/strategy/delivery (remaining) | agent-webui | FUI-07.2, FUI-08.2, FUI-09.2, FUI-10.2 | SPECIFIED | Live component wiring, PR pending |
+| Live wiring of overlay/performance/strategy (remaining) | agent-webui | FUI-07.2, FUI-08.2, FUI-09.2 | SPECIFIED | `overlay-wiring.test.ts`, `PerformanceCardView.test.tsx`, `StrategyPanel.test.tsx` — 10 passed, PR pending |
+| Live wiring of delivery (remaining) | agent-webui | FUI-10.2 | SPECIFIED | Live component wiring, PR pending |
 | Live wiring of CSV import/offline-cache/a11y (remaining) | agent-webui | FUI-11.2, FUI-12.2, FUI-13.2 | SPECIFIED | Live component wiring, PR pending |
 
 ## Build sequence
