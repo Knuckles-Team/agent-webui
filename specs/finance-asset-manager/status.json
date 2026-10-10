@@ -2,7 +2,7 @@
   "schema_version": 2,
   "spec_id": "FIN-UI-001",
   "owner_repo": "agent-webui",
-  "delivery_state": "SPECIFIED",
+  "delivery_state": "LANDED",
   "requirement_ids": [
     "FIN-UI-R001",
     "FIN-UI-R001.1",
@@ -390,8 +390,10 @@
     {
       "id": "FUI-13",
       "title": "Charts and controls meet accessibility requirements (rollup)",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "4aef66253171"
+      ],
       "verified_by": [],
       "rollup_of": [
         "FUI-13.1",
@@ -403,6 +405,7 @@
       "title": "Chart accessibility text-summary contract",
       "delivery_state": "LANDED",
       "landed_in": [
+        "4aef66253171",
         "83e9b629b83e"
       ],
       "verified_by": []
@@ -410,9 +413,16 @@
     {
       "id": "FUI-13.2",
       "title": "Live chart/control accessibility wiring (remaining)",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
-      "verified_by": []
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "4aef66253171"
+      ],
+      "verified_by": [
+        "src/apps/markets/components/__tests__/ChartA11ySummary.test.tsx:13",
+        "src/apps/markets/components/__tests__/ChartA11ySummary.test.tsx:21",
+        "src/apps/markets/components/__tests__/ChartA11ySummary.test.tsx:33",
+        "src/apps/markets/components/__tests__/ChartA11ySummary.test.tsx:7"
+      ]
     },
     {
       "id": "FIN-UI-R003",
