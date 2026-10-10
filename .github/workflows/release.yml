@@ -107,6 +107,35 @@ jobs:
       - name: pre-commit (pre-push stage, all files)
         run: uvx pre-commit run --config .config/pre-commit.yaml --all-files --hook-stage pre-push --show-diff-on-failure
 
+  # Spec-status lifecycle gates (plans/refactor/reconciliation-20261006/
+  # SPEC-STATUS-LIFECYCLE.md). Deliberately independent of `gates` (no
+  # `needs:`) and never added to any release job's `needs:` -- this is an
+  # advisory/PR check, not a release blocker, and must not be configured as
+  # a required check in branch protection.
+  spec-gates:
+    name: spec-gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      - name: spec-status
+        run: uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' pipelines-hook spec-status
+
+      - name: spec-decomposition
+        run: uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' pipelines-hook spec-decomposition
+
+      - name: spec-trailers
+        if: github.event_name == 'pull_request'
+        run: uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' pipelines-hook spec-trailers --base-ref "origin/${{ github.base_ref }}"
+
   release-intent:
     name: release-intent
     if: github.event_name != 'pull_request'

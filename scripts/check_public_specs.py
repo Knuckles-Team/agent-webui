@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 REQUIRED = ("spec.md", "plan.md", "test-spec.md", "tasks.md", "status.json")
-DELIVERY_STATES = frozenset(
+DELIVERY_STATES_V1 = frozenset(
     {
         "UNKNOWN",
         "SPECIFIED",
@@ -21,6 +21,8 @@ DELIVERY_STATES = frozenset(
         "REJECTED",
     }
 )
+# schema_version 2 (generator-owned: see SPEC-STATUS-LIFECYCLE.md)
+DELIVERY_STATES_V2 = frozenset({"SPECIFIED", "LANDED", "VERIFIED", "RETIRED"})
 ACCEPTANCE_STATES = frozenset({"NOT_AUDITED", "PENDING", "ACCEPTED", "FAILED"})
 EVIDENCE_KINDS = frozenset(
     {
@@ -154,23 +156,55 @@ def _status_errors(root: Path, path: Path) -> list[str]:
         return [f"{path}: invalid JSON ({exc})"]
     if not isinstance(data, dict):
         return [f"{path}: status must be an object"]
+    errors = _status_field_errors(path, data) + _requirement_errors(root, path, data)
+    if data.get("schema_version") == 2:
+        # schema_version 2: the generator (pipelines-hook spec-status) owns
+        # delivery/acceptance derivation from landed_in/verified_by receipts;
+        # no separate merged-head/acceptance evidence contract here.
+        return errors
     entries = data.get("evidence")
     return (
-        _status_field_errors(path, data)
+        errors
         + _evidence_errors(path, entries)
         + _receipt_errors(path, data, entries)
-        + _requirement_errors(root, path, data)
     )
 
 
-def _requirement_entry_errors(path: Path, owner: str, entry: dict) -> list[str]:
+def _requirement_entry_errors_v2(path: Path, entry: dict, has_children: bool) -> list[str]:
+    label = f"{path}: {entry.get('id')}"
+    errors = []
+    state = entry.get("delivery_state")
+    if state not in DELIVERY_STATES_V2 or not entry.get("title"):
+        errors.append(f"{label}: requires a title and a valid delivery_state")
+    landed_in = entry.get("landed_in")
+    verified_by = entry.get("verified_by")
+    if not isinstance(landed_in, list) or not isinstance(verified_by, list):
+        errors.append(f"{label}: landed_in and verified_by must be arrays")
+        return errors
+    # A decomposed parent row rolls its state up from `<ID>.<n>` children
+    # (spec-decomposition owns that invariant); only leaf rows must carry
+    # their own landed_in/verified_by receipts.
+    if has_children:
+        return errors
+    if state in ("LANDED", "VERIFIED") and not landed_in:
+        errors.append(f"{label}: LANDED/VERIFIED requires landed_in commits")
+    if state == "VERIFIED" and not verified_by:
+        errors.append(f"{label}: VERIFIED requires verified_by evidence")
+    return errors
+
+
+def _requirement_entry_errors(
+    path: Path, owner: str, entry: dict, version: object, has_children: bool
+) -> list[str]:
+    if version == 2:
+        return _requirement_entry_errors_v2(path, entry, has_children)
     label = f"{path}: {entry.get('id')}"
     evidence = entry.get("evidence")
     errors = []
     if _evidence_errors(path, evidence):
         errors.append(f"{label}: malformed evidence")
     state = entry.get("delivery_state")
-    if state not in DELIVERY_STATES or not entry.get("title"):
+    if state not in DELIVERY_STATES_V1 or not entry.get("title"):
         errors.append(f"{label}: requires a title and a valid delivery_state")
     if state in ("LANDED", "CLOSED") and not _merged_head(evidence, owner):
         errors.append(f"{label}: LANDED/CLOSED requires merged-head evidence")
@@ -192,27 +226,33 @@ def _requirement_errors(root: Path, path: Path, data: dict) -> list[str]:
     register = root / path.parent / "requirements.md"
     defined = register.read_text(encoding="utf-8") if register.is_file() else ""
     owner = data.get("owner_repo", "")
+    version = data.get("schema_version")
+    ids = [entry.get("id") for entry in entries if isinstance(entry.get("id"), str)]
     for entry in entries:
         if f"`{entry.get('id')}`" not in defined:
             errors.append(f"{path}: {entry.get('id')} lacks a definition")
-        errors.extend(_requirement_entry_errors(path, owner, entry))
+        entry_id = entry.get("id")
+        has_children = isinstance(entry_id, str) and any(
+            other != entry_id and other.startswith(f"{entry_id}.") for other in ids
+        )
+        errors.extend(
+            _requirement_entry_errors(path, owner, entry, version, has_children)
+        )
     return errors
 
 
 def _status_field_errors(path: Path, data: dict) -> list[str]:
     errors = []
+    version = data.get("schema_version")
     ids = data.get("requirement_ids")
-    if (
-        data.get("schema_version") != 1
-        or not data.get("spec_id")
-        or not data.get("owner_repo")
-    ):
+    if version not in (1, 2) or not data.get("spec_id") or not data.get("owner_repo"):
         errors.append(f"{path}: schema_version, spec_id, and owner_repo are required")
     if not _valid_ids(ids):
         errors.append(f"{path}: nonempty real requirement_ids are required")
-    if data.get("delivery_state") not in DELIVERY_STATES:
+    states = DELIVERY_STATES_V2 if version == 2 else DELIVERY_STATES_V1
+    if data.get("delivery_state") not in states:
         errors.append(f"{path}: invalid delivery_state")
-    if data.get("acceptance_state") not in ACCEPTANCE_STATES:
+    if version != 2 and data.get("acceptance_state") not in ACCEPTANCE_STATES:
         errors.append(f"{path}: invalid acceptance_state")
     return errors
 
