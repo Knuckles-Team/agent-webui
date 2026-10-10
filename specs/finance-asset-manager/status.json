@@ -181,8 +181,10 @@
     {
       "id": "FUI-07",
       "title": "Chart overlays show strategy version and simulation state (rollup)",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "a3dd06faa65b"
+      ],
       "verified_by": [],
       "rollup_of": [
         "FUI-07.1",
@@ -201,15 +203,22 @@
     {
       "id": "FUI-07.2",
       "title": "Live chart overlay wiring (remaining)",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
-      "verified_by": []
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "a3dd06faa65b"
+      ],
+      "verified_by": [
+        "src/apps/markets/__tests__/overlay-wiring.test.ts:27",
+        "src/apps/markets/__tests__/overlay-wiring.test.ts:47"
+      ]
     },
     {
       "id": "FUI-08",
       "title": "Performance cards render owner-calculated values verbatim (rollup)",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "a3dd06faa65b"
+      ],
       "verified_by": [],
       "rollup_of": [
         "FUI-08.1",
@@ -228,15 +237,23 @@
     {
       "id": "FUI-08.2",
       "title": "Live performance/benchmark card wiring (remaining)",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
-      "verified_by": []
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "a3dd06faa65b"
+      ],
+      "verified_by": [
+        "src/apps/markets/components/__tests__/PerformanceCardView.test.tsx:43",
+        "src/apps/markets/components/__tests__/PerformanceCardView.test.tsx:53",
+        "src/apps/markets/components/__tests__/PerformanceCardView.test.tsx:60"
+      ]
     },
     {
       "id": "FUI-09",
       "title": "Strategy views cite evidence and never submit orders (rollup)",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "a3dd06faa65b"
+      ],
       "verified_by": [],
       "rollup_of": [
         "FUI-09.1",
@@ -255,9 +272,14 @@
     {
       "id": "FUI-09.2",
       "title": "Live strategy/recommendation view wiring (remaining)",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
-      "verified_by": []
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "a3dd06faa65b"
+      ],
+      "verified_by": [
+        "src/apps/markets/components/__tests__/StrategyPanel.test.tsx:17",
+        "src/apps/markets/components/__tests__/StrategyPanel.test.tsx:26"
+      ]
     },
     {
       "id": "FUI-10",
