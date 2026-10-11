@@ -20,6 +20,7 @@ def _logged(caplog, error: BaseException) -> str:
     return caplog.records[-1].getMessage()
 
 
+# spec: WEBUI-API-R005
 def test_typed_engine_code_is_logged(caplog):
     message = _logged(caplog, _EngineError('ACCESS_DENIED'))
     assert message == (
@@ -27,18 +28,21 @@ def test_typed_engine_code_is_logged(caplog):
     )
 
 
+# spec: WEBUI-API-R005
 def test_message_text_never_reaches_the_log(caplog):
     message = _logged(caplog, _EngineError('ACCESS_DENIED'))
     assert 'secret' not in message
     assert 'MATCH' not in message
 
 
+# spec: WEBUI-API-R005
 def test_malformed_or_missing_code_logs_none(caplog):
     for code in (None, 'access denied; graph=x', 'x' * 80, 403):
         assert _logged(caplog, _EngineError(code)).endswith('error_code=none')
     assert _logged(caplog, ValueError('boom')).endswith('error_code=none')
 
 
+# spec: WEBUI-API-R005
 def test_error_code_length_boundary(caplog):
     accepted = 'A' * 64
     refused = 'A' * 65
@@ -52,6 +56,7 @@ class _CodedError(OSError):
         self.code = code
 
 
+# spec: WEBUI-API-R005
 def test_plain_code_attribute_is_used(caplog):
     error = _CodedError('UNAVAILABLE')
     assert _logged(caplog, error).endswith('error_code=UNAVAILABLE')

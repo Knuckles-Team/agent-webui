@@ -86,3 +86,15 @@ Import the real host module after numeric certification during wheel bootstrap.
 Write the receipt only after both imports pass. This check enables the existing
 host tests, including `WEBUI-API-R005`; it does not establish their acceptance.
 Do not replace the public owner API or hide an import failure.
+
+### 2026-10-11: bind the tested failure-log tests
+
+Hosted job [38129639497](https://github.com/Knuckles-Team/agent-webui/actions/runs/38129639497)
+tested source `1684efea0e6d85f720803a6b729bdc2ee2b01a38` with the real host
+and certified engine wheel. At 10:00:11 UTC, all five tests in
+`tests/test_log_failure_error_code.py` passed. All 19 selected tests passed.
+The tests cover typed and plain codes, missing or malformed codes, message
+redaction, and the 64/65-character boundary. Bind these tested tests to
+`WEBUI-API-R005` without changing their semantics. Generate the delivery
+record after publishing this source. This evidence covers failure logging;
+it does not establish acceptance of the other consumer requirements.
