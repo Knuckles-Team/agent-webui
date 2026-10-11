@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "spec_id": "WEBUI-IDENTITY-001",
+  "spec_id": "WEBUI-IDENTITY",
   "owner_repo": "agent-webui",
   "delivery_state": "LANDED",
   "requirement_ids": [
