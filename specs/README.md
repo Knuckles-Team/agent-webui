@@ -29,15 +29,9 @@ owner and live wiring before proposing new components. Include CCCC, jscpd, dupe
 language-native and repo release gates where applicable, with exact pass evidence and a
 no-duplicate-authority check.
 
-## Status and evidence
+## States
 
-The generator writes each requirement's delivery state to `status.json`.
-The states are `SPECIFIED`, `LANDED`, `VERIFIED`, and `RETIRED`, as defined by the shared standard.
-Use `pipelines-hook spec-status --write` to regenerate this file from commit trailers and test bindings.
-Do not edit generated receipts by hand.
-
-Keep exact-revision test, consumer, and release evidence in the owning spec.
-A source landing does not establish browser or deployment acceptance.
+States are `SPECIFIED`, `LANDED`, and `VERIFIED`. The generator sets them. See the [spec standard](https://github.com/Knuckles-Team/pipelines/blob/main/reference/spec-standard.md#states).
 
 ## Graph OS owner map
 
