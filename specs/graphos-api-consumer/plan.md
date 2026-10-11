@@ -33,3 +33,8 @@ digest in the virtual environment. The source target is release metadata; it
 does not attest the compiled source. This receipt identifies the tested artifact without
 adding a fixed source pin. Fixture tests cover matching and invalid downloads.
 Real host tests must still pass before runtime acceptance.
+
+CI support source for `WEBUI-API-R005` is
+[`d3bf9a9651c70688dd19ade62b45dc2897d9fa9a`](https://github.com/Knuckles-Team/agent-webui/commit/d3bf9a9651c70688dd19ade62b45dc2897d9fa9a).
+Seven fixture tests pass. Native host acceptance remains pending. This change
+does not add a test binding or claim new runtime verification for the row.
