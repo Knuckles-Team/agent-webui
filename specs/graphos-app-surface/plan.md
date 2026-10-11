@@ -48,7 +48,7 @@ Reused: the typed client of `APIUI-04`. Fleet execution stays with `AU-CONTROL` 
 Decision: relate by returned identifiers. Rejected alternative: infer links by name matching in the browser.
 ## Graph edits through the engine (WEBUI-APPS-R030)
 
-Data flow: graph overlay save (`GraphCanvas.tsx:605`) → `handleUpdateNode` (`GraphView.tsx:792`) → `sendGraphEdit` (`src/lib/graph-edit.ts`, new) → `gatewayPost` (`gateway.ts:129`) → graph-os node operation → verdict → local state.
+Data flow: graph overlay save (`GraphCanvas.tsx:605`) → `handleUpdateNode` (`GraphView.tsx:792`) → `sendGraphEdit` (`src/lib/graph-edit.ts`, new) → `gatewayPost` (`gateway.ts:129`) → registered `eg.graph.AddNode` / `eg.graph.ApplyMutation` / `eg.graph.RemoveNode` through the authenticated GraphOS invoke pipeline → fixture engine durable mutation → verdict and authoritative readback → local state.
 
 Types: `GraphEditRequest`, `GraphEditVerdict` (`applied` | `refused` | `unavailable`), `ViewPersona`. Attach point: the three handlers at `GraphView.tsx:792-801`, called by `GraphCanvas.tsx:605-609`.
 
@@ -58,11 +58,11 @@ Existing code: `src/components/views/GraphView.tsx:792`, `:796`, `:801`; `src/co
 
 Decision: the engine decides authorization and the client shows the verdict. Rejected alternative: a client-side role check, which drifts from the engine policy.
 
-Cross-repository: the graph write and its access check belong to `EG-TYPED-PACKS-R088`. The served operation belongs to `GRAPHOS-OPS`. Identity belongs to `GRAPHOS-IDENTITY`.
+Cross-repository: `GRAPHOS-OPS-R008` generates the engine-bound operations, `GRAPHOS-OPS-R009` enforces invoke authority and `GRAPHOS-OPS-R013` serves `POST /api/v1/ops/{op_id}`. EG owns the served `ApplyMutation` version check (`EG-DURABLE-KERNEL-R084.3`) and unchanged-state conflict refusal (`EG-DURABLE-KERNEL-R084.4`). Embedded read parity in `EG-TYPED-PACKS-R088` is not proof of served write authorization.
 
 ## Memory files (WEBUI-APPS-R031)
 
-Data flow: Files tab (`MemoryView.tsx:439`) → `listMemoryFiles` / `saveMemoryFile` (`src/lib/memory-files.ts`, new) → `gatewayPost` (`gateway.ts:129`) → graph-os operation → file and graph sync → sync state shown.
+Data flow: Files tab (`MemoryView.tsx:439`) → `listMemoryFiles` / `saveMemoryFile` (`src/lib/memory-files.ts`, new) → `gatewayPost` (`gateway.ts:129`) → authenticated GraphOS file operation (owner contract prerequisite below) → EG memory/version/sync decision → GraphOS hosted materialization and retained conflict artifacts → authoritative sync state shown.
 
 Types: `MemoryFileKind`, `MemoryFile`, `MemorySyncState`. Attach point: the tab list beside `browse` in `MemoryView`.
 
@@ -70,6 +70,40 @@ Failure behaviour: a conflict keeps the file unchanged and shows both versions. 
 
 Existing code: `src/components/views/MemoryView.tsx:439`, `:461`, `:143`, `:190`, `:492`. Reachable today: yes for Memory node CRUD, no for file materialization or sync. Search terms `MEMORY.md`, `reflections`, `bidirectional` found nothing in `src`.
 
-Decision: the engine and agent runtime own the files and the sync; the client lists and saves through operations. Rejected alternative: a browser-side file store, which holds state and policy.
+Decision: EG owns authoritative memory and sync decisions. GraphOS owns hosted file materialization and the public operations. AU is an EG-driven harness that consumes these decisions and does not become a second memory or sync authority. The client lists and saves through named exports and renders served state. Rejected alternative: a browser-side file store, which holds state and policy.
 
-Cross-repository: the served operations belong to `GRAPHOS-OPS`. The graph conflict check belongs to `EG-DURABLE`.
+Cross-repository: existing `memory.read` / `memory.write` belong to `GRAPHOS-OPS-R024.4`. The generic served conflict path is `ApplyMutation` under `EG-DURABLE-KERNEL-R084.3`, refusal `.4`, and two-writer proof `.6`. These contracts do not yet specify Markdown-file enumeration, materialization or synchronization.
+
+
+## 2026-10-11 ownership and served-acceptance correction
+
+Checked owner snapshots: GraphOS `9d035d692475a7f513c2b3e99171d729b4ca5d08`
+and EG `3137ad4a02c50540a94c0523acc9638281532c9e`.
+GraphOS `graph_os/api/registry/eg_binding.py` generates `eg.{domain}.{method_id}`;
+its exclusions list is empty at this snapshot. EG `contract/methods.json`
+marks AddNode, ApplyMutation and RemoveNode in the graph domain wire-callable.
+The installed registry and generated schemas remain the deployment authority;
+source availability is not a served acceptance receipt.
+
+`graph_os/api/ops/memory.py` currently defines only `memory.read` and
+`memory.write`, keyed by tenant and key. Its `MemoryStore` port does not establish
+a file-listing, versioned-save, conflict-retention or sync-decision contract.
+Searches of current owner specs found no memory-file synchronization operation
+or exact owner row for it. R031.2 therefore has an explicit upstream prerequisite:
+EG must publish its authoritative memory/sync decision contract and GraphOS must
+publish the hosted file contracts and owning requirement IDs before WebUI binds
+them. No new owner ID or operation name is assigned in this repository.
+
+Acceptance architecture is the served path: browser component → typed named
+export → gatewayPost → real WebUI host → authenticated GraphOS operation/invoke
+handler → actual fixture engine → durable readback. Local React state or helper
+spies prove presentation/wiring only. R030.7 and R031.7 require browser journeys
+through that complete path with no client/gateway/host-handler/engine-transport
+mocks. Fixture credentials and temporary storage are allowed; replacing the
+owners with canned verdicts is not. Persist and reload both conflict versions;
+unauthorized graph edits must leave durable graph state unchanged.
+
+All R030/R031 children remain SPECIFIED until their own acceptance runs. The
+requirements describe product-neutral graph and memory behavior. Research
+citations, including arXiv papers, are inspiration only, never protocol
+contracts, owner authority, implementation evidence or acceptance receipts.

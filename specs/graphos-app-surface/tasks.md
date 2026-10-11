@@ -43,3 +43,7 @@ No task above names a requirement ID individually; together they must close ever
 - [ ] **WEBUI-APPS-R006.1:** Link type.
 - [ ] **WEBUI-APPS-R006.2:** Panel reads typed operations.
 - [ ] **WEBUI-APPS-R006.3:** Absent operation is honest.
+
+- [ ] R030.7: implement the served browser → GraphOS operation → fixture-engine journey and prove unauthorized edits leave durable graph state unchanged.
+- [ ] R031.2 prerequisite: obtain owner-published file-list/save/sync contracts and exact requirement IDs; existing memory.read/write do not satisfy this prerequisite.
+- [ ] R031.7: implement the served conflict journey; retain and reload both versions before accepting an EG-approved resolution. No client/gateway/host-handler/engine-transport mocks.
