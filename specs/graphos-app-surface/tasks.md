@@ -16,5 +16,19 @@
 - [ ] **WEBUI-APPS-R004.4:** Current plan is shown read-only.
 - [ ] **WEBUI-APPS-R004.5:** Each termination reason has a distinct state.
 - [ ] **WEBUI-APPS-R004.6:** Absent operation shows an honest state.
+- [ ] **WEBUI-APPS-R030.1:** Graph edit types.
+- [ ] **WEBUI-APPS-R030.2:** Send edits to graph-os.
+- [ ] **WEBUI-APPS-R030.3:** Wire graph handlers to the engine.
+- [ ] **WEBUI-APPS-R030.4:** Show refusals on unauthorized edits.
+- [ ] **WEBUI-APPS-R030.5:** Semantic filters and persona modes.
+- [ ] **WEBUI-APPS-R030.6:** Edit log with verdicts.
+- [ ] **WEBUI-APPS-R030.7:** Graph edit hot-path proof.
+- [ ] **WEBUI-APPS-R031.1:** Memory file types.
+- [ ] **WEBUI-APPS-R031.2:** Memory file operations.
+- [ ] **WEBUI-APPS-R031.3:** Files tab in the memory view.
+- [ ] **WEBUI-APPS-R031.4:** Conflict refusal.
+- [ ] **WEBUI-APPS-R031.5:** Sync state labels.
+- [ ] **WEBUI-APPS-R031.6:** Save evidence.
+- [ ] **WEBUI-APPS-R031.7:** Memory files hot-path proof.
 
 No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `APP-01`, `APP-02`, `APP-03`, `APP-04`, `APP-05`, `APP-06`, `APP-07`, `WEBUI-APPS-R001`, `WEBUI-APPS-R002`, `WEBUI-APPS-R003`, `WEBUI-APPS-R004`.

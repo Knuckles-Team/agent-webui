@@ -16,5 +16,19 @@
 | Run surface WEBUI-APPS-R004.4 | `tests/x::test_plan_read_only` | Current plan is shown read-only. |
 | Run surface WEBUI-APPS-R004.5 | `tests/x::test_termination_reasons_distinct` | Each termination reason has a distinct state. |
 | Run surface WEBUI-APPS-R004.6 | `tests/x::test_absent_operation_not_available` | Absent operation shows an honest state. |
+| Graph and memory WEBUI-APPS-R030.1 | `src/__tests__/graph-edit-types.test.ts::test_edit_types_closed` | Graph edit types. |
+| Graph and memory WEBUI-APPS-R030.2 | `src/__tests__/graph-edit-send.test.ts::test_send_returns_engine_verdict` | Send edits to graph-os. |
+| Graph and memory WEBUI-APPS-R030.3 | `src/__tests__/graph-edit-wiring.test.tsx::test_handlers_call_send_graph_edit` | Wire graph handlers to the engine. |
+| Graph and memory WEBUI-APPS-R030.4 | `src/__tests__/graph-edit-refusal.test.tsx::test_unauthorized_edit_refused_and_unchanged` | Show refusals on unauthorized edits. |
+| Graph and memory WEBUI-APPS-R030.5 | `src/__tests__/graph-persona-filter.test.tsx::test_persona_changes_presentation_only` | Semantic filters and persona modes. |
+| Graph and memory WEBUI-APPS-R030.6 | `src/__tests__/graph-edit-log.test.tsx::test_log_records_each_verdict` | Edit log with verdicts. |
+| Graph and memory WEBUI-APPS-R030.7 | `src/__tests__/graph-edit-hotpath.test.tsx::test_overlay_edit_reaches_engine_and_shows_verdict` | Graph edit hot-path proof. |
+| Graph and memory WEBUI-APPS-R031.1 | `src/__tests__/memory-files-types.test.ts::test_memory_file_types_closed` | Memory file types. |
+| Graph and memory WEBUI-APPS-R031.2 | `src/__tests__/memory-files-ops.test.ts::test_list_and_save_use_graphos_ops` | Memory file operations. |
+| Graph and memory WEBUI-APPS-R031.3 | `src/__tests__/memory-files-wiring.test.tsx::test_files_tab_calls_list` | Files tab in the memory view. |
+| Graph and memory WEBUI-APPS-R031.4 | `src/__tests__/memory-files-conflict.test.tsx::test_conflict_refused_with_both_versions` | Conflict refusal. |
+| Graph and memory WEBUI-APPS-R031.5 | `src/__tests__/memory-files-state.test.tsx::test_each_sync_state_has_label` | Sync state labels. |
+| Graph and memory WEBUI-APPS-R031.6 | `src/__tests__/memory-files-evidence.test.tsx::test_save_shows_hash_and_verdict` | Save evidence. |
+| Graph and memory WEBUI-APPS-R031.7 | `src/__tests__/memory-files-hotpath.test.tsx::test_files_tab_edit_conflict_and_accept` | Memory files hot-path proof. |
 
 Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`, `uv run --all-extras pytest agent/agent_webui/__tests__`, and `pre-commit run --config .config/pre-commit.yaml --all-files`. Hosted CI provisions browser and API fixtures; no live deployment is required to accept an external PR. CCCC staged threshold is no new function above cyclomatic 10/cognitive 15 and no regression. Run configured jscpd and Dupehound if installed; do not claim an unconfigured threshold passed. KISS rejects duplicate route/app/renderer registries. Record package, Pages and browser artifact digests with exact commit in `tasks.md`.
