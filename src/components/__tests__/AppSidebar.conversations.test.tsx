@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ACTIVE_CONVERSATION_STORAGE_KEY, useConversationIdFromUrl } from '@/hooks/useConversationIdFromUrl'
 import { saveConversationEntry } from '@/lib/chat-store'
+import { renderWithProviders } from '@/__tests__/fixtures'
 
 import { AppSidebar } from '../app-sidebar'
 import { SidebarProvider } from '../ui/sidebar'
@@ -25,9 +26,11 @@ async function deleteFromSidebar(path: string, activeId: string) {
   saveConversationEntry('reader', '/session-1', 'First chat')
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockImplementation(() => Promise.resolve(new Response('[]', { status: 200 }))),
+    vi
+      .fn()
+      .mockImplementation((url: string) => Promise.resolve(Response.json(url === '/api/apps' ? { apps: [] } : []))),
   )
-  render(
+  renderWithProviders(
     <SidebarProvider>
       <AppSidebar />
       <ActiveConversation />
@@ -77,7 +80,11 @@ describe('conversation deep links across workspace navigation', () => {
       if (stored) window.localStorage.setItem(ACTIVE_CONVERSATION_STORAGE_KEY, stored)
       vi.stubGlobal(
         'fetch',
-        vi.fn().mockImplementation(() => Promise.resolve(new Response('[]', { status: 200 }))),
+        vi
+          .fn()
+          .mockImplementation((url: string) =>
+            Promise.resolve(Response.json(url === '/api/apps' ? { apps: [] } : [])),
+          ),
       )
       const panel = (
         <SidebarProvider>
@@ -85,7 +92,7 @@ describe('conversation deep links across workspace navigation', () => {
           <ActiveConversation />
         </SidebarProvider>
       )
-      const view = render(panel)
+      const view = renderWithProviders(panel)
       expect(screen.getByLabelText('Active conversation')).toHaveTextContent('/session-1')
       for (let attempt = 0; attempt < 2; attempt += 1) {
         fireEvent.click(screen.getByRole('link', { name: 'Atlas' }))
@@ -96,7 +103,7 @@ describe('conversation deep links across workspace navigation', () => {
         expect(screen.getByLabelText('Active conversation')).toHaveTextContent('/session-1')
       }
       view.unmount()
-      render(panel)
+      renderWithProviders(panel)
       expect(screen.getByLabelText('Active conversation')).toHaveTextContent('/session-1')
       expect(window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY)).toBe('/session-1')
     },

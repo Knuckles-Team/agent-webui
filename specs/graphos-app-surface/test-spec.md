@@ -9,6 +9,7 @@
 | Old state and grants | Browser profile with prior consent/tool IDs | Re-consent required; old grant cannot invoke new tool |
 | Direct denied URL | Two-principal browser fixture | No privileged component data or tool registration exposed |
 | Mobile/desktop accessibility | Playwright keyboard/touch and reduced-motion fixture | Focus, nav labels, hit targets, contrast and error states pass |
+| Sidebar catalog provider | `AppSidebar.navigation.test.tsx` with the real query hook and deferred catalog response; conversation deletion/deep-link suites | Available app links appear only after catalog resolution; unavailable links stay hidden; all navigation and conversation regressions pass |
 | Public site | `mkdocs build --strict` and Pages artifact inspection | Links/assets resolve under published base path |
 
 Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`, `uv run --all-extras pytest agent/agent_webui/__tests__`, and `pre-commit run --config .config/pre-commit.yaml --all-files`. Hosted CI provisions browser and API fixtures; no live deployment is required to accept an external PR. CCCC staged threshold is no new function above cyclomatic 10/cognitive 15 and no regression. Run configured jscpd and Dupehound if installed; do not claim an unconfigured threshold passed. KISS rejects duplicate route/app/renderer registries. Record package, Pages and browser artifact digests with exact commit in `tasks.md`.

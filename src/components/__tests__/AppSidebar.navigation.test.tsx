@@ -1,5 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { renderWithProviders } from '@/__tests__/fixtures'
 
 import { AppSidebar } from '../app-sidebar'
 import { SidebarProvider } from '../ui/sidebar'
@@ -13,11 +15,15 @@ vi.mock('@/lib/nav-registry', () => ({
   SECTIONS: [{ id: 'knowledge', label: 'Knowledge' }],
   roleAtLeast: () => true,
   isAtlasPath: () => false,
-  routesBySection: () => [{ id: 'knowledge.atlas', path: '/explore', label: 'Atlas', icon: () => null }],
+  routesBySection: () => [
+    { id: 'knowledge.atlas', path: '/explore', label: 'Atlas', icon: () => null },
+    { id: 'apps.markets', path: '/apps/markets', label: 'Markets', capability: 'app:markets', icon: () => null },
+    { id: 'apps.reports', path: '/apps/reports', label: 'Reports', capability: 'app:reports', icon: () => null },
+  ],
 }))
 
 function sidebarLink() {
-  render(
+  renderWithProviders(
     <SidebarProvider>
       <AppSidebar />
     </SidebarProvider>,
@@ -25,7 +31,15 @@ function sidebarLink() {
   return screen.getByRole('link', { name: 'Atlas' })
 }
 
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string) => Promise.resolve(Response.json(url === '/api/apps' ? { apps: [] } : {}))),
+  )
+})
+
 afterEach(() => {
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
   window.history.replaceState({}, '', '/')
 })
@@ -61,4 +75,29 @@ describe('sidebar link navigation', () => {
     expect(push).toHaveBeenCalledWith({}, '', '/explore')
     expect(window.location.pathname).toBe('/explore')
   })
+})
+
+// spec: WEBUI-APPS-R001
+it('renders only available app links after the real catalog query resolves', async () => {
+  let resolveCatalog!: (response: Response) => void
+  const catalog = new Promise<Response>((resolve) => {
+    resolveCatalog = resolve
+  })
+  const fetchMock = vi.fn((url: string) => (url === '/api/apps' ? catalog : Promise.resolve(Response.json({}))))
+  vi.stubGlobal('fetch', fetchMock)
+  sidebarLink()
+  expect(screen.queryByRole('link', { name: 'Markets' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'Reports' })).not.toBeInTheDocument()
+  expect(fetchMock).toHaveBeenCalledWith('/api/apps', undefined)
+  resolveCatalog(
+    Response.json({
+      apps: [
+        { id: 'markets', available: true, detail: null },
+        { id: 'reports', available: false, detail: 'Unavailable on this deployment.' },
+      ],
+    }),
+  )
+  expect(await screen.findByRole('link', { name: 'Markets' })).toHaveAttribute('href', '/apps/markets')
+  expect(screen.queryByRole('link', { name: 'Reports' })).not.toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Atlas' })).toBeInTheDocument()
 })
