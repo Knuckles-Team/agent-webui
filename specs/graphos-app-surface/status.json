@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "spec_id": "WEBUI-APPS",
+  "spec_id": "graphos-app-surface",
   "owner_repo": "agent-webui",
   "delivery_state": "SPECIFIED",
   "requirement_ids": [
@@ -53,23 +53,15 @@
     {
       "id": "APP-01",
       "title": "Browser identity consistently reads GraphOS across titles and assets",
-      "delivery_state": "LANDED",
-      "landed_in": [
-        "4f0952b82845",
-        "82a4f84c98e6",
-        "dd43c178542b"
-      ],
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
       "verified_by": []
     },
     {
       "id": "APP-02",
       "title": "Package, import and environment naming stay on the component identity",
-      "delivery_state": "LANDED",
-      "landed_in": [
-        "19e4264b5f66",
-        "82a4f84c98e6",
-        "dd43c178542b"
-      ],
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
       "verified_by": []
     },
     {
@@ -77,8 +69,7 @@
       "title": "AppSurface contract declares each app's route, capability and client",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "401cec444a5f",
-        "e05e1230ae72"
+        "401cec444a5f"
       ],
       "verified_by": [
         "src/lib/apps/__tests__/apps.test.ts:9"
@@ -89,8 +80,7 @@
       "title": "Contributed app descriptors cannot escalate privilege beyond the contract",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "401cec444a5f",
-        "e05e1230ae72"
+        "401cec444a5f"
       ],
       "verified_by": [
         "src/lib/apps/__tests__/apps.test.ts:9"
@@ -99,29 +89,22 @@
     {
       "id": "APP-05",
       "title": "Markets consumes the AppSurface contract without shell-side duplication",
-      "delivery_state": "LANDED",
-      "landed_in": [
-        "e05e1230ae72"
-      ],
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
       "verified_by": []
     },
     {
       "id": "APP-06",
       "title": "No browser-state migration is required by the rebrand",
-      "delivery_state": "LANDED",
-      "landed_in": [
-        "19e4264b5f66",
-        "82a4f84c98e6"
-      ],
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
       "verified_by": []
     },
     {
       "id": "APP-07",
       "title": "App navigation supports accessibility and layout states across devices",
-      "delivery_state": "LANDED",
-      "landed_in": [
-        "e05e1230ae72"
-      ],
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
       "verified_by": []
     },
     {
@@ -129,8 +112,7 @@
       "title": "Apps information-architecture section and AppSurface contract",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "401cec444a5f",
-        "e05e1230ae72"
+        "401cec444a5f"
       ],
       "verified_by": [
         "src/lib/apps/__tests__/apps.test.ts:14",
@@ -140,23 +122,15 @@
     {
       "id": "WEBUI-APPS-R002",
       "title": "Graph OS brand layer covers user-visible strings",
-      "delivery_state": "LANDED",
-      "landed_in": [
-        "19e4264b5f66",
-        "82a4f84c98e6",
-        "dd43c178542b"
-      ],
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
       "verified_by": []
     },
     {
       "id": "WEBUI-APPS-R003",
       "title": "Repository, package and runtime identifiers are not renamed",
-      "delivery_state": "LANDED",
-      "landed_in": [
-        "19e4264b5f66",
-        "82a4f84c98e6",
-        "dd43c178542b"
-      ],
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
       "verified_by": []
     },
     {
