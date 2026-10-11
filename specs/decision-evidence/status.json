@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "spec_id": "WEBUI-DECIDE-001",
+  "spec_id": "WEBUI-DECIDE",
   "owner_repo": "agent-webui",
   "delivery_state": "VERIFIED",
   "requirement_ids": [

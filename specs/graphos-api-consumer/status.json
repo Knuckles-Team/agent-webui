@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "spec_id": "WEBUI-API-001",
+  "spec_id": "WEBUI-API",
   "owner_repo": "agent-webui",
   "delivery_state": "SPECIFIED",
   "requirement_ids": [
