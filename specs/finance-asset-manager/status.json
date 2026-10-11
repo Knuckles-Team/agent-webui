@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "spec_id": "FIN-UI-001",
+  "spec_id": "FIN-UI",
   "owner_repo": "agent-webui",
   "delivery_state": "LANDED",
   "requirement_ids": [

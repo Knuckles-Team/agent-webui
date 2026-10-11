@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "spec_id": "WEBUI-APPS-001",
+  "spec_id": "WEBUI-APPS",
   "owner_repo": "agent-webui",
   "delivery_state": "LANDED",
   "requirement_ids": [
