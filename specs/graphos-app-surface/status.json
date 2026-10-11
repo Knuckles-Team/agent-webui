@@ -366,7 +366,7 @@
     },
     {
       "id": "WEBUI-APPS-R030.7",
-      "title": "Hot-path proof",
+      "title": "Served end-to-end proof",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
@@ -396,7 +396,7 @@
     },
     {
       "id": "WEBUI-APPS-R031.2",
-      "title": "Behavior",
+      "title": "Behavior and ownership",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
@@ -431,7 +431,7 @@
     },
     {
       "id": "WEBUI-APPS-R031.7",
-      "title": "Hot-path proof",
+      "title": "Served end-to-end proof",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
