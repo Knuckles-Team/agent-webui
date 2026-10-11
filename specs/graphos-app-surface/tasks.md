@@ -9,5 +9,12 @@
 - [x] Perform atomic public-name package and consumer cutover; regenerate assets and digests; document browser migration. (APP-02, APP-06, WEBUI-APPS-R002's remaining theme-token/asset-regeneration surface, WEBUI-APPS-R003: source commit 677a27e0f701eca99cad20887a0b5c4b8ec9734e exists on local branch feat/eh427-retire-review-20260926 but conflicts heavily with main — rename touches package.json, pyproject.toml, uv.lock, pnpm-lock.yaml and deletes files main already restructured; needs a fresh, smaller port, not a direct cherry-pick. The operator has not yet confirmed this package-identity rename; do not attempt it without that confirmation.)
 - [ ] Run all test-spec gates, installed wheel and Pages build on exact commit; record consumer and publication evidence.
 - [ ] Review every requirement and mark ACCEPTED only after browser, package and public-site evidence is attached.
+- [ ] **WEBUI-APPS-R004:** Run harness surface (rollup of 1 to 6)
+- [ ] **WEBUI-APPS-R004.1:** Run read goes through the graph-os read operations.
+- [ ] **WEBUI-APPS-R004.2:** Applied harness configuration is shown.
+- [ ] **WEBUI-APPS-R004.3:** Context use is shown against the budget.
+- [ ] **WEBUI-APPS-R004.4:** Current plan is shown read-only.
+- [ ] **WEBUI-APPS-R004.5:** Each termination reason has a distinct state.
+- [ ] **WEBUI-APPS-R004.6:** Absent operation shows an honest state.
 
-No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `APP-01`, `APP-02`, `APP-03`, `APP-04`, `APP-05`, `APP-06`, `APP-07`, `WEBUI-APPS-R001`, `WEBUI-APPS-R002`, `WEBUI-APPS-R003`.
+No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `APP-01`, `APP-02`, `APP-03`, `APP-04`, `APP-05`, `APP-06`, `APP-07`, `WEBUI-APPS-R001`, `WEBUI-APPS-R002`, `WEBUI-APPS-R003`, `WEBUI-APPS-R004`.
