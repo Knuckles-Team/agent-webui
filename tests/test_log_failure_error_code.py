@@ -39,6 +39,13 @@ def test_malformed_or_missing_code_logs_none(caplog):
     assert _logged(caplog, ValueError('boom')).endswith('error_code=none')
 
 
+def test_error_code_length_boundary(caplog):
+    accepted = 'A' * 64
+    refused = 'A' * 65
+    assert _logged(caplog, _EngineError(accepted)).endswith(f'error_code={accepted}')
+    assert _logged(caplog, _EngineError(refused)).endswith('error_code=none')
+
+
 class _CodedError(OSError):
     def __init__(self, code: str) -> None:
         super().__init__('boom')

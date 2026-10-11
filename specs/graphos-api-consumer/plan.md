@@ -47,3 +47,18 @@ host checks, including `WEBUI-API-R005`. Push and manual release runs must
 keep the existing no-cancellation policy. The group key, gate timeouts and
 test scopes stay unchanged. Event contract tests cover PR cancellation and
 non-PR preservation. They do not establish native host acceptance.
+
+### 2026-10-11: test evidence before pre-push metadata checks
+
+The gates job must run its existing test steps after bootstrap and commit
+hooks, but before pre-push hooks. This lets selected tests produce real
+execution evidence even when the later spec trailer check blocks delivery.
+Keep every command, test scope, failure gate and timeout unchanged. Scope
+selection still controls which tests run; ordering alone does not establish
+`WEBUI-API-R005` acceptance. Its real tests must run before adding a binding.
+
+The existing error-code test file now checks the exact length boundary:
+64 uppercase characters remain in the log; 65 produce `error_code=none`.
+These tests import the real host module. They have no new spec binding until
+hosted execution passes. The existing scope resolver selects this changed
+test file without a second test list or a broader scope override.
