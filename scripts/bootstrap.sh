@@ -12,13 +12,15 @@
 #
 # epistemic-graph (a native Rust engine with no satisfying PyPI release) is not
 # built by default; tests that import agent_utilities' knowledge-graph or
-# numeric layers need it and error at collection without it. Pass --engine to
-# build it from the pinned source (Rust + maturin; tens of minutes cold).
+# numeric layers need it and error at collection without it. Pass --engine-wheel
+# to install the published wheel from the epistemic-graph `engine-main` GitHub
+# Release (seconds; set GH_TOKEN to avoid the anonymous rate limit), or --engine
+# to build it from the pinned source (Rust + maturin; tens of minutes cold).
 #
 # Idempotent and non-interactive. Afterwards run every commit-stage gate with:
 #   uvx pre-commit run --config .config/pre-commit.yaml --all-files
 #
-# Usage: scripts/bootstrap.sh [--siblings-only] [--engine] [--no-frontend] [--no-hooks]
+# Usage: scripts/bootstrap.sh [--siblings-only] [--engine | --engine-wheel] [--no-frontend] [--no-hooks]
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,12 +28,14 @@ cd "$REPO_ROOT"
 
 SIBLINGS_ONLY=0
 ENGINE=0
+ENGINE_WHEEL=0
 FRONTEND=1
 HOOKS=1
 for arg in "$@"; do
   case "$arg" in
     --siblings-only) SIBLINGS_ONLY=1 ;;
     --engine) ENGINE=1 ;;
+    --engine-wheel) ENGINE_WHEEL=1 ;;
     --no-frontend) FRONTEND=0 ;;
     --no-hooks) HOOKS=0 ;;
     -h | --help)
@@ -129,6 +133,22 @@ else
 fi
 log "${SYNC[*]}"
 "${SYNC[@]}"
+
+# The published engine wheel, for the tests that import agent-utilities'
+# knowledge-graph and numeric layers. Plain curl: CI runners have no gh CLI.
+if [ "$ENGINE_WHEEL" -eq 1 ] && [ "$ENGINE" -eq 0 ]; then
+  api=https://api.github.com/repos/Knuckles-Team/epistemic-graph/releases/tags/engine-main
+  auth=()
+  [ -n "${GH_TOKEN:-}" ] && auth=(-H "Authorization: Bearer $GH_TOKEN")
+  wheel_url="$(curl --fail --silent --show-error --location "${auth[@]}" "$api" |
+    python3 -c "import json,sys,fnmatch; a=[x['browser_download_url'] for x in json.load(sys.stdin)['assets'] if fnmatch.fnmatch(x['name'],'epistemic_graph-*manylinux*x86_64.whl')]; print(a[0])")"
+  wheel_dir="$(mktemp -d)"
+  log "installing $(basename "$wheel_url")"
+  curl --fail --silent --show-error --location --retry 3 "${auth[@]}" \
+    --output "$wheel_dir/$(basename "$wheel_url")" "$wheel_url"
+  uv pip install --python .venv/bin/python --no-deps "$wheel_dir/$(basename "$wheel_url")"
+  .venv/bin/python -c "import epistemic_graph.numeric"
+fi
 
 # ── 3. frontend dependencies (from the lockfile only) ───────────────────────
 if [ "$FRONTEND" -eq 1 ] && [ -f pnpm-lock.yaml ]; then

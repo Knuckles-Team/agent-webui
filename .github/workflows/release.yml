@@ -107,8 +107,10 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
-      - name: Bootstrap (pinned siblings, locked Python and frontend deps)
-        run: scripts/bootstrap.sh --no-hooks
+      - name: Bootstrap (pinned siblings, locked Python and frontend deps, engine wheel)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/bootstrap.sh --no-hooks --engine-wheel
 
       - name: pre-commit (commit stage, all files)
         # Step-level cap and --verbose so a stall on a self-hosted runner fails
