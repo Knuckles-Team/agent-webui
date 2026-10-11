@@ -110,12 +110,14 @@ class EngineWheelVerificationTests(unittest.TestCase):
         verify = script.index('--wheel "$wheel_dir/')
         install = script.index('uv pip install --python .venv/bin/python')
         certify = script.index('import agent_utilities.numeric')
+        host_import = script.index('import agent_webui.api_extensions')
         receipt = script.index('cp "$wheel_dir/receipt.json"')
         self.assertLess(invalidate, sync)
         self.assertLess(sync, verify)
         self.assertLess(verify, install)
         self.assertLess(install, certify)
-        self.assertLess(certify, receipt)
+        self.assertLess(certify, host_import)
+        self.assertLess(host_import, receipt)
 
 
 if __name__ == '__main__':

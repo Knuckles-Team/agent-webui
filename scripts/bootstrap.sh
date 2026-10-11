@@ -153,6 +153,7 @@ if [ "$ENGINE_WHEEL" -eq 1 ] && [ "$ENGINE" -eq 0 ]; then
     --wheel "$wheel_dir/$(basename "$wheel_url")" --receipt "$wheel_dir/receipt.json"
   uv pip install --python .venv/bin/python "$wheel_dir/$(basename "$wheel_url")"
   .venv/bin/python -c "import agent_utilities.numeric"
+  .venv/bin/python -c "import agent_webui.api_extensions"
   cp "$wheel_dir/receipt.json" .venv/engine-wheel-receipt.json
 fi
 

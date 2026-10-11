@@ -62,3 +62,15 @@ The existing error-code test file now checks the exact length boundary:
 These tests import the real host module. They have no new spec binding until
 hosted execution passes. The existing scope resolver selects this changed
 test file without a second test list or a broader scope override.
+
+### 2026-10-11: check the real host after wheel installation
+
+The host imports AU's Agent Library constants and store. The old AU pin
+predates that module. Parent PR #80 source `23abf3493a114389e101efbd0190382dcef30d64`
+updates AU to `f0cd9fd58d168f2c094787b08eab0ef4e06303aa` and the connector SDK
+to `8e2d7c50896a9e416ec76e53c4a9a585cc5f4d28`, with a regenerated lockfile.
+Merge that repair without changing its immutable pins or dependency lock.
+Import the real host module after numeric certification during wheel bootstrap.
+Write the receipt only after both imports pass. This check enables the existing
+host tests, including `WEBUI-API-R005`; it does not establish their acceptance.
+Do not replace the public owner API or hide an import failure.
