@@ -85,6 +85,8 @@ repos:
     stages: [pre-commit, manual]
   - id: spec-decomposition
     stages: [pre-commit, manual]
+  - id: spec-standard
+    stages: [pre-commit, manual]
   - id: spec-trailers
     stages: [pre-push, manual]
 - repo: local

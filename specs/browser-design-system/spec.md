@@ -14,14 +14,14 @@ A contributor builds new GraphOS browser surfaces from one documented set of tok
 
 | ID | Behavior | Proof |
 |---|---|---|
-| DS-01 | Document semantic color, type, spacing, focus, density and state tokens with light/dark contrast targets; use current `src/index.css` tokens as the source | Token audit and snapshots |
-| DS-02 | Every control has an accessible name and visible focus; repeated filter rows name their individual clauses; dialogs trap/restore focus | Chat/Atlas/form keyboard E2E |
+| DS-01 | Document semantic color, type, spacing, focus, density and state tokens with light/dark contrast targets. Use current `src/index.css` tokens as the source | Token audit and snapshots |
+| DS-02 | Every control has an accessible name and visible focus. Repeated filter rows name their individual clauses. Dialogs trap/restore focus | Chat/Atlas/form keyboard E2E |
 | DS-03 | Responsive patterns cover 320px mobile through desktop without horizontal overflow or hidden required actions | Viewport matrix and screenshot diff |
 | DS-04 | Gestures have click/keyboard alternatives; `prefers-reduced-motion` disables nonessential motion without hiding feedback | Touch and reduced-motion E2E |
-| DS-05 | Loading, empty, stale, denied, error, success and pending states are distinct in text as well as color; long operations are interruptible where safe | State-fixture rendered tests |
-| DS-06 | No new duplicate UI primitives or unsolicited telemetry; any third-party idea is paraphrased only after license review | Source diff and dependency audit |
-| DS-07 | Inter font files ship inside the build with `@font-face` and a fallback stack; no remote font or stylesheet import | Browser probe under the served policy |
-| DS-08 | Each HTML document gets a fresh style nonce; runtime `<style>` injectors carry it or ship bundled CSS; no `'unsafe-inline'` for style elements | Server nonce tests and browser probe |
+| DS-05 | Loading, empty, stale, denied, error, success and pending states are distinct in text as well as color. Long operations are interruptible where safe | State-fixture rendered tests |
+| DS-06 | No new duplicate UI primitives or unsolicited telemetry. Any third-party idea is paraphrased only after license review | Source diff and dependency audit |
+| DS-07 | Inter font files ship inside the build with `@font-face` and a fallback stack. No remote font or stylesheet import | Browser probe under the served policy |
+| DS-08 | Each HTML document gets a fresh style nonce. Runtime `<style>` injectors carry it or ship bundled CSS. No `'unsafe-inline'` for style elements | Server nonce tests and browser probe |
 
 The review covers one chat flow, Atlas query/filter/result flow, and one operational form with both successful and denied outcomes. It does not declare the entire application WCAG conformant based on those journeys. A new journey must add its own acceptance evidence. The spec's assets are local screenshot fixtures and token documentation under this feature directory or the existing component system; no private host is required.
 

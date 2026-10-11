@@ -10,7 +10,7 @@
 
 A reader can inspect why a governed decision selected an option, why an alternative lost, which premises and constraints were used, and whether independently evaluated calibration supports a claimed risk or coverage level. The view presents evidence returned by the authenticated Graph OS API; it never recomputes an authoritative decision, invents confidence, or converts a diagnostic into permission to act.
 
-Actors are a tenant reader, an operator investigating a decision, and an accessibility user using keyboard or screen reader. A reader sees only decisions and evaluation receipts authorized for their tenant and purpose. An operator can diagnose unavailable data without receiving hidden premises from another tenant. This spec owns WebUI presentation and browser adaptation; the database owns decision records and evaluation data, and Graph OS owns caller authorization and the read contract.
+Actors are a tenant reader, an operator investigating a decision, and an accessibility user using keyboard or screen reader. A reader sees only decisions and evaluation receipts authorized for their tenant and purpose. An operator can diagnose unavailable data without receiving hidden premises from another tenant. This spec owns WebUI presentation and browser adaptation. The database owns decision records and evaluation data, and Graph OS owns caller authorization and the read contract.
 
 ## User stories and acceptance
 
@@ -24,7 +24,7 @@ Actors are a tenant reader, an operator investigating a decision, and an accessi
 | Requirement | Behavior | Related ID | Acceptance evidence |
 |---|---|---|---|
 | DEC-01 | Typed explorer renders chosen and excluded options with cited premise/derivation identifiers, certificate and violations | WEBUI-DECIDE-R002 | Contract fixture and rendered route test |
-| DEC-02 | Why-not is requested on demand with a bounded solve budget; timeout or refusal is visible without mutating the original decision | WEBUI-DECIDE-R002 | Timeout/refusal integration fixture |
+| DEC-02 | Why-not is requested on demand with a bounded solve budget. Timeout or refusal is visible without mutating the original decision | WEBUI-DECIDE-R002 | Timeout/refusal integration fixture |
 | DEC-03 | Evaluation dashboard labels cohort, sample count, source class, window, target/observed coverage, risk and receipt version independently | WEBUI-DECIDE-R001 | Independent-label fixture and rendered test |
 | DEC-04 | No numeric coverage, calibration or deployment claim appears for synthetic-only, missing or underpowered evaluation | WEBUI-DECIDE-R001 | Negative fixtures for each case |
 | DEC-05 | Tenant and purpose changes invalidate cached decision/evaluation queries, and stale responses cannot overwrite a newer selection | WEBUI-DECIDE-R002, WEBUI-DECIDE-R001 | Two-tenant browser test |

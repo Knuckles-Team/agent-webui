@@ -40,7 +40,7 @@
 
 ## Unreferenced requirement IDs
 
-The build sequence above cites `FIN-UI-R001` and `FIN-UI-R002` by work package but does not name `FIN-UI-R003` or the `FUI-01`–`FUI-13` sub-requirements individually; add their coverage to the corresponding build-sequence and evidence-log rows as each is implemented. All IDs are defined in [requirements.md](requirements.md).
+The build sequence above cites `FIN-UI-R001` and `FIN-UI-R002` by work package but does not name `FIN-UI-R003` or the `FUI-01`–`FUI-13` sub-requirements individually. Add their coverage to the corresponding build-sequence and evidence-log rows as each is implemented. All IDs are defined in [requirements.md](requirements.md).
 
 ## Status rules
 

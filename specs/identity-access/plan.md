@@ -6,7 +6,7 @@ Reuse `src/lib/auth.ts` and the existing identity context for display state; `sr
 
 ## Contract and flow
 
-The browser obtains a redacted session descriptor `{subject, tenant, roles, mode, csrf_token?, mfa_state, session_expires_at}` from its same-origin host. The server alone holds provider or service credentials. Mutating local-auth calls require same-origin cookie plus CSRF; session rotation occurs after login, password reset and privilege change. Graph OS admin requests are typed generated-client operations with `{op, params, request_id}` and stable error code/receipt; the browser cannot choose a service principal. Mapping-rule dry run returns a preview and diagnostics, not a policy write.
+The browser obtains a redacted session descriptor `{subject, tenant, roles, mode, csrf_token?, mfa_state, session_expires_at}` from its same-origin host. The server alone holds provider or service credentials. Mutating local-auth calls require same-origin cookie plus CSRF. Session rotation occurs after login, password reset and privilege change. Graph OS admin requests are typed generated-client operations with `{op, params, request_id}` and stable error code/receipt. The browser cannot choose a service principal. Mapping-rule dry run returns a preview and diagnostics, not a policy write.
 
 Elevation flow: user submits purpose, requested scope and bounded duration; Graph OS returns an immutable request receipt. A different authorized approver sees the exact action and subject, performs step-up, then confirms or rejects. The UI displays pending/granted/revoked/expired from server receipts. Chat and A2A surfaces must use the same operation and authority; WebUI never infers approval from an HTTP success alone. Revocation invalidates cache and active controls. Browser response bodies omit secret, verifier, recovery-code hash and raw token data.
 
@@ -16,4 +16,4 @@ Distinguish unauthenticated, forbidden, CSRF, expired session, challenge require
 
 ## Independent checkout
 
-Run `pnpm install --frozen-lockfile`, `uv venv --python 3.12`, `uv pip install -e '.[test]'` and the repo's `dev:server`/`dev` commands. Use disposable local identity fixtures or a test OIDC realm provisioned by the E2E job; no shared or live identity provider is required for commit checks. Browser probes run with two distinct principals and a clean profile. All required test cases are in `test-spec.md`.
+Run `pnpm install --frozen-lockfile`, `uv venv --python 3.12`, `uv pip install -e '.[test]'` and the repo's `dev:server`/`dev` commands. Use disposable local identity fixtures or a test OIDC realm provisioned by the E2E job. No shared or live identity provider is required for commit checks. Browser probes run with two distinct principals and a clean profile. All required test cases are in `test-spec.md`.

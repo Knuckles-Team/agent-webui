@@ -120,7 +120,8 @@ pages_url = "https://knuckles-team.github.io/agent-webui/"
 mcp_server = false
 
 [tool.pipelines_hooks.ste]
-exempt = []
+paths = ["README.md", "AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md", "CHANGELOG.md", "docs", "specs"]
+exempt = ["specs/_template/*"]
 
 [tool.ruff.format]
 docstring-code-format = false
