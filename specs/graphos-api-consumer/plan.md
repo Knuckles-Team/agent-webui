@@ -16,3 +16,20 @@ Generate the client into `src/lib/graphos-api/` from a pinned published schema w
 ## Compatibility and failure
 
 The `/api/v1` version and schema digest are visible to the client. A version mismatch fails with a concise upgrade state. No call is sent with guessed fields. Preserve pagination cursors, result shapes and cancellation. Timeouts, forbidden, conflict, validation and unavailable responses remain distinguishable. Streaming uses existing authenticated browser transport and the same caller. Cancellation is idempotent. Never log request bodies carrying prompts, secrets or tenant data. For fresh checkout, install `pnpm`/`uv` dependencies as in `AGENTS.md`. Use a checked-in schema fixture or a locally provisioned Graph OS service to regenerate and test without a shared deployment.
+
+## Amendments
+
+### 2026-10-11: engine wheel integrity for host tests
+
+The host tests, including `WEBUI-API-R005`, still import the AU numeric layer.
+The existing `--engine-wheel` bootstrap option keeps using the rolling
+`engine-main` release. Before installation, bootstrap must check the downloaded
+wheel against the selected GitHub asset's SHA-256 digest. A missing digest or
+mismatched download must stop bootstrap. After installation, bootstrap must
+import `agent_utilities.numeric` to run its existing certified-kernel check.
+Delete any old receipt before sync changes the environment. After the
+certification check passes, store the release ID, asset ID, source target and
+digest in the virtual environment. The source target is release metadata; it
+does not attest the compiled source. This receipt identifies the tested artifact without
+adding a fixed source pin. Fixture tests cover matching and invalid downloads.
+Real host tests must still pass before runtime acceptance.
