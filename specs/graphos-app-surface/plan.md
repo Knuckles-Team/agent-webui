@@ -33,6 +33,19 @@ The engine owns the run trace, and a client copy drifts.
 
 Cross-repository: depends on three rows. The `GRAPHOS-OPS` row for run metrics serves `runs.get` and `runs.metrics`. The `AU-HARNESS` row for the run trace writes the fields. The `AU-HARNESS` row for `update_plan` owns the plan state.
 
+## WEBUI-APPS-R005 role-aware navigation and per-user dashboards
+
+Data flow: principal role → nav registry filter → DashboardView layout read and write → rendered page.
+Attach point: src/lib/nav-registry.ts and src/components/views/DashboardView.tsx.
+Reused: the identity session from `IDUI-02` and the AppSurface contract. Role definitions stay with `GRAPHOS-IDENTITY` rows.
+Decision: filter navigation by the declared role in the client. Graph OS still authorizes each call. Rejected alternative: a separate client role table.
+
+## WEBUI-APPS-R006 goals, sessions and fleets panel
+
+Data flow: goals, sessions and fleets operations → link builder → panel filtered by goal.
+Attach point: first child row locates the current goals and sessions views and replaces them.
+Reused: the typed client of `APIUI-04`. Fleet execution stays with `AU-CONTROL` rows.
+Decision: relate by returned identifiers. Rejected alternative: infer links by name matching in the browser.
 ## Graph edits through the engine (WEBUI-APPS-R030)
 
 Data flow: graph overlay save (`GraphCanvas.tsx:605`) → `handleUpdateNode` (`GraphView.tsx:792`) → `sendGraphEdit` (`src/lib/graph-edit.ts`, new) → `gatewayPost` (`gateway.ts:129`) → graph-os node operation → verdict → local state.
