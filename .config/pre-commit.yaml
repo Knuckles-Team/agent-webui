@@ -151,6 +151,7 @@ repos:
     # `--max-warnings=0` here.
     entry: python3 scripts/run_if_available.py --gate eslint-staged --require node_modules/.bin/eslint --require pnpm -- pnpm exec eslint
     language: system
+    require_serial: true
     files: \.(ts|tsx)$
     exclude: ^scripts/
     stages: [pre-commit, pre-push, manual]

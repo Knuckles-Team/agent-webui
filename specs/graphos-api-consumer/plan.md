@@ -6,6 +6,18 @@ Current WebUI calls are concentrated in `src/lib/api.ts`, `src/lib/admin-api.ts`
 
 Generate the client into `src/lib/graphos-api/` from a pinned published schema with a repeatable command and checked-in lock/digest. The adapter accepts typed operation name and params, supplies correlation/request ID and caller context through the host, validates error envelopes, and returns a discriminated success/error result. It must not synthesize scopes, bypass server policy or accept arbitrary URL targets from browser input. For effects, the response carries a `plan_ref`, effect class and required confirmation/step-up; confirmation posts the exact unmodified plan reference and binds it to the current principal/session. Denial codes and database codes remain intact for display and debugging without leaking sensitive detail.
 
+## CI support amendments
+
+### 2026-10-11: run typed lint in one hook process
+
+The shared host gate runs typed lint before consumer tests. The current
+filename hook can start concurrent ESLint processes. Each process starts
+its own TypeScript project service. Run this hook serially to avoid that
+repeated work. Keep the command, filename filters, stages and failure policy.
+Do not change the full manual lint check. Check the selected filenames and
+hook contract; measure any timing change in hosted CI before claiming a gain.
+This CI change does not establish acceptance of a product requirement.
+
 ## Cutover sequence
 
 1. Freeze a route census with classifications: UI-local, session/protocol, generated Graph OS operation, and retire. Save the census with this spec when implementation starts.
