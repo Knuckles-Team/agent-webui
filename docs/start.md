@@ -55,5 +55,5 @@ pnpm run test
 pnpm run build
 ```
 
-Continue with [architecture](plan.md) for the request path or
+Continue with [architecture](architecture.md) for the request path or
 [deployment and operations](deployment.md) for production controls.
