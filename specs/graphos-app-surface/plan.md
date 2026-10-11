@@ -48,7 +48,7 @@ Reused: the typed client of `APIUI-04`. Fleet execution stays with `AU-CONTROL` 
 Decision: relate by returned identifiers. Rejected alternative: infer links by name matching in the browser.
 ## Graph edits through the engine (WEBUI-APPS-R030)
 
-Data flow: graph overlay save (`GraphCanvas.tsx:605`) → `handleUpdateNode` (`GraphView.tsx:792`) → `sendGraphEdit` (`src/lib/graph-edit.ts`, new) → `gatewayPost` (`gateway.ts:129`) → registered `eg.graph.AddNode` / `eg.graph.ApplyMutation` / `eg.graph.RemoveNode` through the authenticated GraphOS invoke pipeline → fixture engine durable mutation → verdict and authoritative readback → local state.
+The graph overlay save (`GraphCanvas.tsx:605`) calls `handleUpdateNode` (`GraphView.tsx:792`). It calls the new `sendGraphEdit` export in `src/lib/graph-edit.ts`, then `gatewayPost` (`gateway.ts:129`). The authenticated GraphOS invoke pipeline serves `eg.graph.AddNode`, `eg.graph.ApplyMutation` and `eg.graph.RemoveNode`. The fixture engine commits the durable mutation. The client updates local state from the verdict and authoritative readback.
 
 Types: `GraphEditRequest`, `GraphEditVerdict` (`applied` | `refused` | `unavailable`), `ViewPersona`. Attach point: the three handlers at `GraphView.tsx:792-801`, called by `GraphCanvas.tsx:605-609`.
 
@@ -62,7 +62,7 @@ Cross-repository: `GRAPHOS-OPS-R008` generates the engine-bound operations, `GRA
 
 ## Memory files (WEBUI-APPS-R031)
 
-Data flow: Files tab (`MemoryView.tsx:439`) → `listMemoryFiles` / `saveMemoryFile` (`src/lib/memory-files.ts`, new) → `gatewayPost` (`gateway.ts:129`) → authenticated GraphOS file operation (owner contract prerequisite below) → EG memory/version/sync decision → GraphOS hosted materialization and retained conflict artifacts → authoritative sync state shown.
+The Files tab (`MemoryView.tsx:439`) calls the new `listMemoryFiles` and `saveMemoryFile` exports in `src/lib/memory-files.ts`. These call `gatewayPost` (`gateway.ts:129`), then the authenticated GraphOS file operation. The owner contracts below are prerequisites. EG decides memory versions and sync. GraphOS materializes hosted files and retains conflict artifacts. The client shows the authoritative sync state.
 
 Types: `MemoryFileKind`, `MemoryFile`, `MemorySyncState`. Attach point: the tab list beside `browse` in `MemoryView`.
 
@@ -89,14 +89,14 @@ source availability is not a served acceptance receipt.
 `memory.write`, keyed by tenant and key. Its `MemoryStore` port does not establish
 a file-listing, versioned-save, conflict-retention or sync-decision contract.
 Searches of current owner specs found no memory-file synchronization operation
-or exact owner row for it. R031.2 therefore has an explicit upstream prerequisite:
-EG must publish its authoritative memory/sync decision contract and GraphOS must
-publish the hosted file contracts and owning requirement IDs before WebUI binds
-them. No new owner ID or operation name is assigned in this repository.
+or exact owner row for it. R031.2 has upstream prerequisites.
+EG must publish its authoritative memory and sync decision contract.
+GraphOS must publish the hosted file contracts and owning requirement IDs.
+WebUI must wait for those contracts before binding them. No new owner ID or operation name is assigned in this repository.
 
-Acceptance architecture is the served path: browser component → typed named
-export → gatewayPost → real WebUI host → authenticated GraphOS operation/invoke
-handler → actual fixture engine → durable readback. Local React state or helper
+The browser component calls a typed named export, then gatewayPost and the real WebUI host.
+The authenticated GraphOS operation invokes its real handler and the actual fixture engine.
+An independent durable readback completes the acceptance path. Local React state or helper
 spies prove presentation/wiring only. R030.7 and R031.7 require browser journeys
 through that complete path with no client/gateway/host-handler/engine-transport
 mocks. Fixture credentials and temporary storage are allowed; replacing the
