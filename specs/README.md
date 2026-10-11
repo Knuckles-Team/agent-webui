@@ -31,17 +31,13 @@ no-duplicate-authority check.
 
 ## Status and evidence
 
-The tracked `status.json` is the source for the public HTML report. It uses delivery states
-`UNKNOWN`, `SPECIFIED`, `BUILDING`, `BUILT`, `LANDED`, `CLOSED`, `DEFERRED`, and `REJECTED`,
-and acceptance states `NOT_AUDITED`, `PENDING`, `ACCEPTED`, and `FAILED`. Use
-`SPECIFIED/NOT_AUDITED` for a complete design awaiting build; use `UNKNOWN/NOT_AUDITED`
-when existing code has not received an exact-revision audit. Prose labels such as `PARTIAL`
-or `IN REVIEW` may describe current work, but they do not prove delivery.
+The generator writes each requirement's delivery state to `status.json`.
+The states are `SPECIFIED`, `LANDED`, `VERIFIED`, and `RETIRED`, as defined by the shared standard.
+Use `pipelines-hook spec-status --write` to regenerate this file from commit trailers and test bindings.
+Do not edit generated receipts by hand.
 
-`LANDED` requires a public merged-head receipt for the exact owning-repository revision.
-`ACCEPTED` also requires the checked-in test and consumer or release receipts.
-Record public issue, PR, check, and commit links in the owner spec and evidence array.
-An obligation can be landed while acceptance remains open.
+Keep exact-revision test, consumer, and release evidence in the owning spec.
+A source landing does not establish browser or deployment acceptance.
 
 ## Graph OS owner map
 
@@ -67,17 +63,10 @@ bootstrap skill, together with the [SDD full lifecycle](https://github.com/Knuck
 
 ## Local specifications
 
-- [`FIN-UI-001` Finance Asset Manager](finance-asset-manager/spec.md) — FIN-UI-R001 and FIN-UI-R002 Markets and shared chart; specified, implementation unverified.
-- [`WEBUI-DESIGN-001` Browser design system](browser-design-system/spec.md) — WEBUI-DESIGN-R001 accessible UI primitives, visual contracts and design-guidance assimilation.
-- [`WEBUI-DECIDE-001` Decision evidence](decision-evidence/spec.md) — WEBUI-DECIDE-R001 calibration dashboard and governed decision explanation.
-- [`WEBUI-API-001` Graph OS API consumer](graphos-api-consumer/spec.md) — WEBUI-API-R001–WEBUI-API-R004 generated client and domain-family migration.
-- [`WEBUI-APPS-001` Graph OS app surface](graphos-app-surface/spec.md) — application routes and integrated navigation.
-- [`WEBUI-IDENTITY-001` Identity and access](identity-access/spec.md) — authentication state and tenant-safe browser behavior.
+- [`FIN-UI`](finance-asset-manager/spec.md) — FIN-UI-R001 and FIN-UI-R002 Markets and shared chart; specified, implementation unverified.
+- [`WEBUI-DESIGN`](browser-design-system/spec.md) — WEBUI-DESIGN-R001 accessible UI primitives, visual contracts and design-guidance assimilation.
+- [`WEBUI-DECIDE`](decision-evidence/spec.md) — WEBUI-DECIDE-R001 calibration dashboard and governed decision explanation.
+- [`WEBUI-API`](graphos-api-consumer/spec.md) — WEBUI-API-R001–WEBUI-API-R004 generated client and domain-family migration.
+- [`WEBUI-APPS`](graphos-app-surface/spec.md) — application routes and integrated navigation.
+- [`WEBUI-IDENTITY`](identity-access/spec.md) — authentication state and tenant-safe browser behavior.
 - [`delete-past-chats.md`](delete-past-chats.md), [`update-color-scheme.md`](update-color-scheme.md), and [`update-tools-dropdown.md`](update-tools-dropdown.md) are existing brief feature drafts. Preserve them; expand to the shared feature directory format when resumed.
-
-- [`WEBUI-DESIGN`](browser-design-system/spec.md) — Accessible GraphOS browser design system
-- [`WEBUI-DECIDE`](decision-evidence/spec.md) — Decision evidence and calibration
-- [`FIN-UI`](finance-asset-manager/spec.md) — Finance Asset Manager
-- [`WEBUI-API`](graphos-api-consumer/spec.md) — Generated Graph OS API consumer cutover
-- [`WEBUI-APPS`](graphos-app-surface/spec.md) — GraphOS browser shell and app surfaces
-- [`WEBUI-IDENTITY`](identity-access/spec.md) — Browser identity, administration and elevation
