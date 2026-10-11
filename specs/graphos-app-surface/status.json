@@ -20,7 +20,18 @@
     "WEBUI-APPS-R004.3",
     "WEBUI-APPS-R004.4",
     "WEBUI-APPS-R004.5",
-    "WEBUI-APPS-R004.6"
+    "WEBUI-APPS-R004.6",
+    "WEBUI-APPS-R005",
+    "WEBUI-APPS-R005.1",
+    "WEBUI-APPS-R005.2",
+    "WEBUI-APPS-R005.3",
+    "WEBUI-APPS-R005.4",
+    "WEBUI-APPS-R005.5",
+    "WEBUI-APPS-R005.6",
+    "WEBUI-APPS-R006",
+    "WEBUI-APPS-R006.1",
+    "WEBUI-APPS-R006.2",
+    "WEBUI-APPS-R006.3"
   ],
   "requirements": [
     {
@@ -185,6 +196,96 @@
     {
       "id": "WEBUI-APPS-R004.6",
       "title": "Absent operation shows an honest state",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R005",
+      "title": "Navigation and dashboards follow the signed-in user's role",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R005.1",
+        "WEBUI-APPS-R005.2",
+        "WEBUI-APPS-R005.3",
+        "WEBUI-APPS-R005.4",
+        "WEBUI-APPS-R005.5",
+        "WEBUI-APPS-R005.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R005.1",
+      "title": "Nav entry declares a minimum role",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R005.2",
+      "title": "Layout saved per user",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R005.3",
+      "title": "Connector tiles from the catalog",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R005.4",
+      "title": "One chat session list",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R005.5",
+      "title": "Every route renders",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R005.6",
+      "title": "Each view states its purpose",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R006",
+      "title": "One panel relates goals, sessions and fleets",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R006.1",
+        "WEBUI-APPS-R006.2",
+        "WEBUI-APPS-R006.3"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R006.1",
+      "title": "Link type",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R006.2",
+      "title": "Panel reads typed operations",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R006.3",
+      "title": "Absent operation is honest",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
