@@ -200,11 +200,20 @@
     {
       "id": "WEBUI-API-R005",
       "title": "Failure logs carry a sanitized typed error code",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
-        "4924a5237ee7"
+        "4924a5237ee7",
+        "4ad4466122fe",
+        "c183f7a2a67b",
+        "e225859bb82a"
       ],
-      "verified_by": []
+      "verified_by": [
+        "tests/test_log_failure_error_code.py:23",
+        "tests/test_log_failure_error_code.py:31",
+        "tests/test_log_failure_error_code.py:38",
+        "tests/test_log_failure_error_code.py:45",
+        "tests/test_log_failure_error_code.py:59"
+      ]
     }
   ]
 }

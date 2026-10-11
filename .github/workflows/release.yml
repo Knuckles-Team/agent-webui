@@ -69,7 +69,7 @@ on:
 
 concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -120,9 +120,6 @@ jobs:
         env:
           PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit
         run: uvx pre-commit run --config .config/pre-commit.yaml --all-files --show-diff-on-failure --verbose
-
-      - name: pre-commit (pre-push stage, all files)
-        run: uvx pre-commit run --config .config/pre-commit.yaml --all-files --hook-stage pre-push --show-diff-on-failure
 
       - name: Type check and full lint (manual-stage hooks, always full)
         run: |
@@ -215,6 +212,9 @@ jobs:
             mapfile -t changed_files <<< "$CHANGED"
             pnpm exec vitest related "${changed_files[@]}" --run
           fi
+
+      - name: pre-commit (pre-push stage, all files)
+        run: uvx pre-commit run --config .config/pre-commit.yaml --all-files --hook-stage pre-push --show-diff-on-failure
 
   # Spec-status lifecycle gates (plans/refactor/reconciliation-20261006/
   # SPEC-STATUS-LIFECYCLE.md). Deliberately independent of `gates` (no

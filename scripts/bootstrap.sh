@@ -132,6 +132,8 @@ else
   SYNC+=(--no-install-package epistemic-graph)
 fi
 log "${SYNC[*]}"
+# Sync may change the environment even if the later wheel install fails.
+rm -f .venv/engine-wheel-receipt.json
 "${SYNC[@]}"
 
 # The published engine wheel, for the tests that import agent-utilities'
@@ -140,14 +142,19 @@ if [ "$ENGINE_WHEEL" -eq 1 ] && [ "$ENGINE" -eq 0 ]; then
   api=https://api.github.com/repos/Knuckles-Team/epistemic-graph/releases/tags/engine-main
   auth=()
   [ -n "${GH_TOKEN:-}" ] && auth=(-H "Authorization: Bearer $GH_TOKEN")
-  wheel_url="$(curl --fail --silent --show-error --location "${auth[@]}" "$api" |
-    python3 -c "import json,sys,fnmatch; a=[x['browser_download_url'] for x in json.load(sys.stdin)['assets'] if fnmatch.fnmatch(x['name'],'epistemic_graph-*manylinux*x86_64.whl')]; print(a[0])")"
   wheel_dir="$(mktemp -d)"
+  curl --fail --silent --show-error --location "${auth[@]}" \
+    --output "$wheel_dir/release.json" "$api"
+  wheel_url="$(python3 scripts/release/verify_engine_wheel.py "$wheel_dir/release.json")"
   log "installing $(basename "$wheel_url")"
   curl --fail --silent --show-error --location --retry 3 "${auth[@]}" \
     --output "$wheel_dir/$(basename "$wheel_url")" "$wheel_url"
+  python3 scripts/release/verify_engine_wheel.py "$wheel_dir/release.json" \
+    --wheel "$wheel_dir/$(basename "$wheel_url")" --receipt "$wheel_dir/receipt.json"
   uv pip install --python .venv/bin/python "$wheel_dir/$(basename "$wheel_url")"
-  .venv/bin/python -c "import epistemic_graph.numeric"
+  .venv/bin/python -c "import agent_utilities.numeric"
+  .venv/bin/python -c "import agent_webui.api_extensions"
+  cp "$wheel_dir/receipt.json" .venv/engine-wheel-receipt.json
 fi
 
 # ── 3. frontend dependencies (from the lockfile only) ───────────────────────

@@ -28,3 +28,73 @@ This CI change does not establish acceptance of a product requirement.
 ## Compatibility and failure
 
 The `/api/v1` version and schema digest are visible to the client. A version mismatch fails with a concise upgrade state. No call is sent with guessed fields. Preserve pagination cursors, result shapes and cancellation. Timeouts, forbidden, conflict, validation and unavailable responses remain distinguishable. Streaming uses existing authenticated browser transport and the same caller. Cancellation is idempotent. Never log request bodies carrying prompts, secrets or tenant data. For fresh checkout, install `pnpm`/`uv` dependencies as in `AGENTS.md`. Use a checked-in schema fixture or a locally provisioned Graph OS service to regenerate and test without a shared deployment.
+
+## Amendments
+
+### 2026-10-11: engine wheel integrity for host tests
+
+The host tests, including `WEBUI-API-R005`, still import the AU numeric layer.
+The existing `--engine-wheel` bootstrap option keeps using the rolling
+`engine-main` release. Before installation, bootstrap must check the downloaded
+wheel against the selected GitHub asset's SHA-256 digest. A missing digest or
+mismatched download must stop bootstrap. After installation, bootstrap must
+import `agent_utilities.numeric` to run its existing certified-kernel check.
+Delete any old receipt before sync changes the environment. After the
+certification check passes, store the release ID, asset ID, source target and
+digest in the virtual environment. The source target is release metadata; it
+does not attest the compiled source. This receipt identifies the tested artifact without
+adding a fixed source pin. Fixture tests cover matching and invalid downloads.
+Real host tests must still pass before runtime acceptance.
+
+CI support source for `WEBUI-API-R005` is
+[`d3bf9a9651c70688dd19ade62b45dc2897d9fa9a`](https://github.com/Knuckles-Team/agent-webui/commit/d3bf9a9651c70688dd19ade62b45dc2897d9fa9a).
+Seven fixture tests pass. Native host acceptance remains pending. This change
+does not add a test binding or claim new runtime verification for the row.
+
+### 2026-10-11: current pull-request gate takes precedence
+
+A newer pull-request revision must cancel the older run in the same release
+concurrency group. This prevents obsolete revisions from delaying the current
+host checks, including `WEBUI-API-R005`. Push and manual release runs must
+keep the existing no-cancellation policy. The group key, gate timeouts and
+test scopes stay unchanged. Event contract tests cover PR cancellation and
+non-PR preservation. They do not establish native host acceptance.
+
+### 2026-10-11: test evidence before pre-push metadata checks
+
+The gates job must run its existing test steps after bootstrap and commit
+hooks, but before pre-push hooks. This lets selected tests produce real
+execution evidence even when the later spec trailer check blocks delivery.
+Keep every command, test scope, failure gate and timeout unchanged. Scope
+selection still controls which tests run; ordering alone does not establish
+`WEBUI-API-R005` acceptance. Its real tests must run before adding a binding.
+
+The existing error-code test file now checks the exact length boundary:
+64 uppercase characters remain in the log; 65 produce `error_code=none`.
+These tests import the real host module. They have no new spec binding until
+hosted execution passes. The existing scope resolver selects this changed
+test file without a second test list or a broader scope override.
+
+### 2026-10-11: check the real host after wheel installation
+
+The host imports AU's Agent Library constants and store. The old AU pin
+predates that module. Parent PR #80 source `23abf3493a114389e101efbd0190382dcef30d64`
+updates AU to `f0cd9fd58d168f2c094787b08eab0ef4e06303aa` and the connector SDK
+to `8e2d7c50896a9e416ec76e53c4a9a585cc5f4d28`, with a regenerated lockfile.
+Merge that repair without changing its immutable pins or dependency lock.
+Import the real host module after numeric certification during wheel bootstrap.
+Write the receipt only after both imports pass. This check enables the existing
+host tests, including `WEBUI-API-R005`; it does not establish their acceptance.
+Do not replace the public owner API or hide an import failure.
+
+### 2026-10-11: bind the tested failure-log tests
+
+Hosted job [38129639497](https://github.com/Knuckles-Team/agent-webui/actions/runs/38129639497)
+tested source `1684efea0e6d85f720803a6b729bdc2ee2b01a38` with the real host
+and certified engine wheel. At 10:00:11 UTC, all five tests in
+`tests/test_log_failure_error_code.py` passed. All 19 selected tests passed.
+The tests cover typed and plain codes, missing or malformed codes, message
+redaction, and the 64/65-character boundary. Bind these tested tests to
+`WEBUI-API-R005` without changing their semantics. Generate the delivery
+record after publishing this source. This evidence covers failure logging;
+it does not establish acceptance of the other consumer requirements.
