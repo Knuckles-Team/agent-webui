@@ -1,5 +1,7 @@
 # agent-webui specifications
 
+These specs follow the ecosystem [spec standard](https://github.com/Knuckles-Team/pipelines/blob/main/reference/spec-standard.md): one owning spec per capability, extend an existing spec before creating one, audits and reviews land in the owning spec, one ID and title form, one file set. The `spec-standard` gate enforces it.
+
 This tracked `specs/` directory is the public build contract for **WEBUI** owned work. Every
 spec must contain the behavior, architecture, interfaces, tests, quality gates, and acceptance
 criteria needed to implement it from this repository. External program notes may inform a draft,
@@ -72,3 +74,10 @@ bootstrap skill, together with the [SDD full lifecycle](https://github.com/Knuck
 - [`WEBUI-APPS-001` Graph OS app surface](graphos-app-surface/spec.md) — application routes and integrated navigation.
 - [`WEBUI-IDENTITY-001` Identity and access](identity-access/spec.md) — authentication state and tenant-safe browser behavior.
 - [`delete-past-chats.md`](delete-past-chats.md), [`update-color-scheme.md`](update-color-scheme.md), and [`update-tools-dropdown.md`](update-tools-dropdown.md) are existing brief feature drafts. Preserve them; expand to the shared feature directory format when resumed.
+
+- [`WEBUI-DESIGN`](browser-design-system/spec.md) — Accessible GraphOS browser design system
+- [`WEBUI-DECIDE`](decision-evidence/spec.md) — Decision evidence and calibration
+- [`FIN-UI`](finance-asset-manager/spec.md) — Finance Asset Manager
+- [`WEBUI-API`](graphos-api-consumer/spec.md) — Generated Graph OS API consumer cutover
+- [`WEBUI-APPS`](graphos-app-surface/spec.md) — GraphOS browser shell and app surfaces
+- [`WEBUI-IDENTITY`](identity-access/spec.md) — Browser identity, administration and elevation

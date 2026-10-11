@@ -1,4 +1,4 @@
-# WEBUI-DECIDE-001 requirements
+# WEBUI-DECIDE requirements
 
 | ID | Requirement | Verification |
 |---|---|---|

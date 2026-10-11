@@ -1,4 +1,4 @@
-# WEBUI-API-001 requirements
+# WEBUI-API requirements
 
 | ID | Requirement | Verification |
 |---|---|---|

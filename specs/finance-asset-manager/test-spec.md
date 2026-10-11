@@ -1,4 +1,4 @@
-# FIN-UI-001 — Test and acceptance specification
+# FIN-UI — Test and acceptance specification
 
 **Status:** SPECIFIED. Requirements: [spec.md](spec.md). Tests use deterministic public/synthetic fixtures with no credentials or private account exports. Live integration evidence must identify commit, service versions, environment class, date and provider entitlement without disclosing secrets.
 

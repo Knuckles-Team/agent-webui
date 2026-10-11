@@ -1,4 +1,4 @@
-# FIN-UI-001 requirements
+# FIN-UI requirements
 
 | ID | Requirement | Verification |
 |---|---|---|

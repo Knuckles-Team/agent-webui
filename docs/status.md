@@ -22,4 +22,4 @@ deployment.
 - [GitHub releases](https://github.com/Knuckles-Team/agent-webui/releases)
 
 Use the workflow records for commit-specific build results and the
-[architecture guide](architecture.md) for current ownership and request paths.
+[architecture guide](plan.md) for current ownership and request paths.

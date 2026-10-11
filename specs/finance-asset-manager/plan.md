@@ -1,4 +1,4 @@
-# FIN-UI-001 — Architecture and implementation design
+# FIN-UI — Architecture and implementation design
 
 **Status:** SPECIFIED. Governing requirements: [spec.md](spec.md). This design defines the WebUI contract proposal; paths in the proposed API table do not claim deployed endpoints exist.
 

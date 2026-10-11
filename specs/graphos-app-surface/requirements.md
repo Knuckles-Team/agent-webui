@@ -1,4 +1,4 @@
-# WEBUI-APPS-001 requirements
+# WEBUI-APPS requirements
 
 | ID | Requirement | Verification |
 |---|---|---|
