@@ -38,3 +38,12 @@ CI support source for `WEBUI-API-R005` is
 [`d3bf9a9651c70688dd19ade62b45dc2897d9fa9a`](https://github.com/Knuckles-Team/agent-webui/commit/d3bf9a9651c70688dd19ade62b45dc2897d9fa9a).
 Seven fixture tests pass. Native host acceptance remains pending. This change
 does not add a test binding or claim new runtime verification for the row.
+
+### 2026-10-11: current pull-request gate takes precedence
+
+A newer pull-request revision must cancel the older run in the same release
+concurrency group. This prevents obsolete revisions from delaying the current
+host checks, including `WEBUI-API-R005`. Push and manual release runs must
+keep the existing no-cancellation policy. The group key, gate timeouts and
+test scopes stay unchanged. Event contract tests cover PR cancellation and
+non-PR preservation. They do not establish native host acceptance.
