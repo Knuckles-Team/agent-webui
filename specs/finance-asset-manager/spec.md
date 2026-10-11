@@ -1,6 +1,6 @@
 # FIN-UI — Finance Asset Manager
 
-**Status:** SPECIFIED; implementation and deployment unverified. **Owner:** `agent-webui`. Every requirement ID this spec owns, and the cross-repository IDs it depends on, are defined in [requirements.md](requirements.md); their current delivery and acceptance state, with evidence, is recorded in [status.json](status.json). These identifiers support cross-repository tracking; this document contains the complete WebUI requirements. A specification is not evidence that its feature is built.
+**Status:** SPECIFIED. Implementation and deployment unverified. **Owner:** `agent-webui`. Every requirement ID this spec owns, and the cross-repository IDs it depends on, are defined in [requirements.md](requirements.md). Their current delivery and acceptance state, with evidence, is recorded in [status.json](status.json). These identifiers support cross-repository tracking. This document contains the complete WebUI requirements. A specification is not evidence that its feature is built.
 
 ## Purpose, actors, and priority
 
@@ -21,13 +21,13 @@ The primary actor is an authenticated investor managing personal accounts. They 
 
 | ID | Observable requirement | Related IDs |
 |---|---|---|
-| FUI-01 | Responsive five-destination navigation uses a bottom bar on narrow viewports and a side rail on desktop; selected route and focus remain coherent. | FIN-UI-R001 |
+| FUI-01 | Responsive five-destination navigation uses a bottom bar on narrow viewports and a side rail on desktop. Selected route and focus remain coherent. | FIN-UI-R001 |
 | FUI-02 | User-defined instrument groups and Basic/Holdings mode preserve selection and distinguish loading, genuinely empty, stale, partial, denied, and unavailable results. | EG-FINANCE-PRIMITIVES-R004, FIN-UI-R001 |
 | FUI-03 | Search keys selection by stable instrument and listing IDs, venue and quote basis; ticker text alone never identifies an instrument. | EG-FINANCE-PRIMITIVES-R006, SDK-FINANCE-SOURCES-R002 |
 | FUI-04 | Rows and details show price/session/provenance, previous close, change, sparkline, licensed logo or fallback, and separate after-hours value where supplied. | EG-FINANCE-PRIMITIVES-R006, SDK-FINANCE-SOURCES-R002, FIN-UI-R001 |
 | FUI-05 | Detail tabs, range controls, line/candle toggle and separate volume pane expose only supported intervals and data types. | FIN-UI-R001, FIN-UI-R002 |
 | FUI-06 | One typed ChartRenderer is shared with Atlas. It draws scalar line/area and complete OHLC candles, preserves gaps and revisions, and computes no authoritative indicators. | FIN-UI-R002 |
-| FUI-07 | Available overlays include trend line/flips, DCA buys, cost basis and margin/liquidation levels; each displays strategy/source version and simulation status. | EG-FINANCE-PRIMITIVES-R005, EG-FINANCE-PRIMITIVES-R007, EG-FINANCE-PRIMITIVES-R010, FIN-UI-R002 |
+| FUI-07 | Available overlays include trend line/flips, DCA buys, cost basis and margin/liquidation levels. Each displays strategy/source version and simulation status. | EG-FINANCE-PRIMITIVES-R005, EG-FINANCE-PRIMITIVES-R007, EG-FINANCE-PRIMITIVES-R010, FIN-UI-R002 |
 | FUI-08 | Performance and benchmark cards render owner-calculated fixed-point values with method, currency, source, as-of, session and explicit unavailable states. | EG-FINANCE-PRIMITIVES-R005, EG-FINANCE-PRIMITIVES-R013 |
 | FUI-09 | Strategy and recommendation views cite versioned evidence and scorecards, show abstention reasons, and never directly submit orders. | EG-FINANCE-PRIMITIVES-R007–EG-FINANCE-PRIMITIVES-R010 |
 | FUI-10 | DCA and alert views distinguish due, missed, failed, replayed, paper-filled and delivered states. | GRAPHOS-DATA-MARKET-R006, EG-FINANCE-PRIMITIVES-R011 |
@@ -45,7 +45,7 @@ Missing permission, route absence, stale data, partial coverage, bad contract sh
 
 - Every FUI requirement has the corresponding passing test in [test-spec.md](test-spec.md) and a linked merged commit/PR in [tasks.md](tasks.md).
 - Scanner, chart and alert views agree on the same finalized, versioned trend event; viewport decimation cannot change an indicator output.
-- Mobile and desktop visual review, accessibility checks, owner contract fixtures, build, and applicable quality gates pass. Performance is recorded for a 1,000-instrument paged universe on the agreed device profile; no target is declared passed without a measured baseline and published threshold.
+- Mobile and desktop visual review, accessibility checks, owner contract fixtures, build, and applicable quality gates pass. Performance is recorded for a 1,000-instrument paged universe on the agreed device profile. No target is declared passed without a measured baseline and published threshold.
 - A demo or mock is labeled as such. The feature is **BUILT** only when the served, authenticated path and negative cases pass, not when this document or a mock UI merges.
 
 ## Scope exclusions

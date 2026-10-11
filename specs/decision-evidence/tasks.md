@@ -1,8 +1,8 @@
 # Decision evidence delivery
 
-**State legend:** SPECIFIED means design reviewed; BUILDING means an implementation branch exists; BUILT means exact source is merged; ACCEPTED means every acceptance gate has evidence. Current state: **SPECIFIED**. No acceptance receipt is asserted.
+**State legend:** SPECIFIED means design reviewed. BUILDING means an implementation branch exists. BUILT means exact source is merged. ACCEPTED means every acceptance gate has evidence. Current state: **SPECIFIED**. No acceptance receipt is asserted.
 
-- [ ] Inventory current decision UI and generated Graph OS read methods on current main; document the exact operation names here before implementation.
+- [ ] Inventory current decision UI and generated Graph OS read methods on current main. Document the exact operation names here before implementation.
 - [ ] Add typed decision and evaluation adapters with validation, scoped cache keys and race cancellation.
 - [ ] Render selected/why-not/certificate/premises and calibration states using existing view and renderer components.
 - [ ] Add fixture, FastAPI/contract, rendered, browser tenant-isolation and accessibility tests from `test-spec.md`.
@@ -13,4 +13,4 @@ No task above names a requirement ID individually; together they must close ever
 
 ## Why-not on demand (DEC-02)
 
-- [x] Add `DecisionsTransport.getWhyNotOnDemand` plus a bounded-budget request helper in `DecisionDetailPanel.tsx`; an abort past the caller's budget resolves `{ kind: 'timeout' }` instead of rejecting, and a server refusal resolves `{ kind: 'refused', reason }` — neither path mutates the rendered `DecisionRecord` (DEC-02). Fixture-level success/timeout/refusal coverage: `src/components/decisions/__tests__/DecisionDetailPanel.test.tsx`. No production Graph OS transport is wired up yet (see `decisions-transport.ts`'s file doc); wiring one is future work.
+- [x] Add `DecisionsTransport.getWhyNotOnDemand` plus a bounded-budget request helper in `DecisionDetailPanel.tsx`. An abort past the caller's budget resolves `{ kind: 'timeout' }` instead of rejecting, and a server refusal resolves `{ kind: 'refused', reason }` — neither path mutates the rendered `DecisionRecord` (DEC-02). Fixture-level success/timeout/refusal coverage: `src/components/decisions/__tests__/DecisionDetailPanel.test.tsx`. No production Graph OS transport is wired up yet (see `decisions-transport.ts`'s file doc). Wiring one is future work.

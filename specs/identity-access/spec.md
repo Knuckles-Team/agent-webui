@@ -17,7 +17,7 @@ Actors are visitor, authenticated member, identity administrator, elevation requ
 | ID | Required behavior | Related IDs | Acceptance |
 |---|---|---|---|
 | IDUI-01 | Mode wizard shows configured OIDC, local or loopback bootstrap and doctor result; no invisible auth bypass | GRAPHOS-IDENTITY-R004, GRAPHOS-IDENTITY-R007 | Mode-specific rendered + server tests |
-| IDUI-02 | Local register/login/logout/forgot/reset/change-password use server sessions and anti-CSRF; no credential or bearer is stored in browser persistence | GRAPHOS-IDENTITY-R005 | End-to-end session/fixation/CSRF probes |
+| IDUI-02 | Local register/login/logout/forgot/reset/change-password use server sessions and anti-CSRF. No credential or bearer is stored in browser persistence | GRAPHOS-IDENTITY-R005 | End-to-end session/fixation/CSRF probes |
 | IDUI-03 | MFA enrollment, challenge and recovery cover TOTP and WebAuthn, with one-time recovery code handling | GRAPHOS-IDENTITY-R006 | Positive, replay, lost-device tests |
 | IDUI-04 | Admin tabs cover users, roles, groups, auth modes and mapping-rule dry run through typed `identity.*` operations | GRAPHOS-IDENTITY-R007, WEBUI-IDENTITY-R002 | Authorized/denied generated-client tests |
 | IDUI-05 | Elevation request, approval and revocation display scope, reason, expiry and receipt; confirmation and step-up bind to the same caller and action | AU-SEC-R006 | A2A/chat/UI parity and adversarial tests |
