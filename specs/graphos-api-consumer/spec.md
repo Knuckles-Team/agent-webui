@@ -1,6 +1,6 @@
-# Generated Graph OS API consumer cutover
+# WEBUI-API — Generated Graph OS API consumer cutover
 
-**ID:** WEBUI-API-001
+**ID:** WEBUI-API
 **Owner:** agent-webui
 **Related IDs:** AU-BOUNDARY-R039, WEBUI-API-R001, WEBUI-API-R002, WEBUI-API-R003
 **Delivery:** specified; current adapter inventory requires verification

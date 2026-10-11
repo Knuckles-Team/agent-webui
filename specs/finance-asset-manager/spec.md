@@ -1,4 +1,4 @@
-# FIN-UI-001 — Finance Asset Manager
+# FIN-UI — Finance Asset Manager
 
 **Status:** SPECIFIED; implementation and deployment unverified. **Owner:** `agent-webui`. Every requirement ID this spec owns, and the cross-repository IDs it depends on, are defined in [requirements.md](requirements.md); their current delivery and acceptance state, with evidence, is recorded in [status.json](status.json). These identifiers support cross-repository tracking; this document contains the complete WebUI requirements. A specification is not evidence that its feature is built.
 

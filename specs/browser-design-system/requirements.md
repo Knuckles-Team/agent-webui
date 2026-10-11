@@ -1,4 +1,4 @@
-# WEBUI-DESIGN-001 requirements
+# WEBUI-DESIGN requirements
 
 | ID | Requirement | Verification |
 |---|---|---|

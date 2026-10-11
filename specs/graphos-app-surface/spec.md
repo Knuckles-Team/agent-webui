@@ -1,6 +1,6 @@
-# GraphOS browser shell and app surfaces
+# WEBUI-APPS — GraphOS browser shell and app surfaces
 
-**ID:** WEBUI-APPS-001
+**ID:** WEBUI-APPS
 **Owner:** agent-webui
 **Related IDs:** WEBUI-APPS-R002, WEBUI-APPS-R003, WEBUI-APPS-R001; FIN-UI-R003 is the first app consumer
 **Delivery:** specified; publication and consumer cutover unverified

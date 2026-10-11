@@ -1,6 +1,6 @@
-# Browser identity, administration and elevation
+# WEBUI-IDENTITY — Browser identity, administration and elevation
 
-**ID:** WEBUI-IDENTITY-001
+**ID:** WEBUI-IDENTITY
 **Owner:** agent-webui
 **Related IDs:** AU-SEC-R006, GRAPHOS-IDENTITY-R004, GRAPHOS-IDENTITY-R005, GRAPHOS-IDENTITY-R006, GRAPHOS-IDENTITY-R007, WEBUI-IDENTITY-R002
 **Delivery:** specified; current source requires audit

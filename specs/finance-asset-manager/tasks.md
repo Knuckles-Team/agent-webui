@@ -1,4 +1,4 @@
-# FIN-UI-001 — Delivery and evidence tracker
+# FIN-UI — Delivery and evidence tracker
 
 **Spec status:** SPECIFIED. **Implementation status:** UNVERIFIED. **Owner:** `agent-webui`. The related cross-repository requirement IDs below are stable identifiers, each defined in its owning repository's own `requirements.md`. Status changes only when linked merged code and the tests in [test-spec.md](test-spec.md) prove the behavior.
 
@@ -23,7 +23,7 @@
 ## Build sequence
 
 - [ ] Confirm the owner services' actual served capabilities, source entitlements, and account permissions. Start with one venue and a bounded instrument universe; record unavailable paths.
-- [ ] Agree and version the API/data shapes in [plan.md](plan.md) with owner repositories. Publish owner-native specs that cite FIN-UI-001 and the relevant cross-repository requirement IDs.
+- [ ] Agree and version the API/data shapes in [plan.md](plan.md) with owner repositories. Publish owner-native specs that cite FIN-UI and the relevant cross-repository requirement IDs.
 - [ ] Add a Finance route in `src/lib/nav-registry.ts` and use the existing shell, route role filter, FastAPI host checks and gateway validation.
 - [ ] Implement one venue → persisted candles → scanner → shared ChartRenderer → finalized flip history. Keep source, as-of, session and quality metadata visible.
 - [ ] Add groups, holdings, performance, account import, strategy, DCA, alerts, News and Calendar only as certified owner contracts become available. Use explicit unavailable states meanwhile.

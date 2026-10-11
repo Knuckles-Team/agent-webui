@@ -1,6 +1,6 @@
-# Decision evidence and calibration
+# WEBUI-DECIDE — Decision evidence and calibration
 
-**ID:** WEBUI-DECIDE-001
+**ID:** WEBUI-DECIDE
 **Owner:** agent-webui
 **Related IDs:** WEBUI-DECIDE-R002, WEBUI-DECIDE-R001
 **Delivery:** specified; existing source requires current-main and browser acceptance audit

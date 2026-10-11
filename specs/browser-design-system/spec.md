@@ -1,6 +1,6 @@
-# Accessible GraphOS browser design system
+# WEBUI-DESIGN — Accessible GraphOS browser design system
 
-**ID:** WEBUI-DESIGN-001
+**ID:** WEBUI-DESIGN
 **Owner:** agent-webui
 **Related ID:** WEBUI-DESIGN-R001
 **Delivery:** specified; acceptance audit open
