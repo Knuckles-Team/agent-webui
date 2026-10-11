@@ -18,3 +18,14 @@
 - [ ] **WEBUI-APPS-R004.6:** Absent operation shows an honest state.
 
 No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `APP-01`, `APP-02`, `APP-03`, `APP-04`, `APP-05`, `APP-06`, `APP-07`, `WEBUI-APPS-R001`, `WEBUI-APPS-R002`, `WEBUI-APPS-R003`, `WEBUI-APPS-R004`.
+- [ ] **WEBUI-APPS-R005:** Navigation and dashboards follow the signed-in user's role (rollup).
+- [ ] **WEBUI-APPS-R005.1:** Nav entry declares a minimum role.
+- [ ] **WEBUI-APPS-R005.2:** Layout saved per user.
+- [ ] **WEBUI-APPS-R005.3:** Connector tiles from the catalog.
+- [ ] **WEBUI-APPS-R005.4:** One chat session list.
+- [ ] **WEBUI-APPS-R005.5:** Every route renders.
+- [ ] **WEBUI-APPS-R005.6:** Each view states its purpose.
+- [ ] **WEBUI-APPS-R006:** One panel relates goals, sessions and fleets (rollup).
+- [ ] **WEBUI-APPS-R006.1:** Link type.
+- [ ] **WEBUI-APPS-R006.2:** Panel reads typed operations.
+- [ ] **WEBUI-APPS-R006.3:** Absent operation is honest.
