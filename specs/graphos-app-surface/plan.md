@@ -46,3 +46,30 @@ Data flow: goals, sessions and fleets operations → link builder → panel filt
 Attach point: first child row locates the current goals and sessions views and replaces them.
 Reused: the typed client of `APIUI-04`. Fleet execution stays with `AU-CONTROL` rows.
 Decision: relate by returned identifiers. Rejected alternative: infer links by name matching in the browser.
+## Graph edits through the engine (WEBUI-APPS-R030)
+
+Data flow: graph overlay save (`GraphCanvas.tsx:605`) → `handleUpdateNode` (`GraphView.tsx:792`) → `sendGraphEdit` (`src/lib/graph-edit.ts`, new) → `gatewayPost` (`gateway.ts:129`) → graph-os node operation → verdict → local state.
+
+Types: `GraphEditRequest`, `GraphEditVerdict` (`applied` | `refused` | `unavailable`), `ViewPersona`. Attach point: the three handlers at `GraphView.tsx:792-801`, called by `GraphCanvas.tsx:605-609`.
+
+Failure behaviour: a refused edit leaves the node unchanged and shows the engine reason. An absent operation shows "not available".
+
+Existing code: `src/components/views/GraphView.tsx:792`, `:796`, `:801`; `src/components/knowledge-graph/GraphCanvas.tsx:379`, `:605`; `src/lib/nav-registry.ts:73`. Reachable today: no. The handlers run, but no production caller reaches an engine write. Persona search terms (`persona`, `ViewPersona`) found nothing, so persona modes are new.
+
+Decision: the engine decides authorization and the client shows the verdict. Rejected alternative: a client-side role check, which drifts from the engine policy.
+
+Cross-repository: the graph write and its access check belong to `EG-TYPED-PACKS-R088`. The served operation belongs to `GRAPHOS-OPS`. Identity belongs to `GRAPHOS-IDENTITY`.
+
+## Memory files (WEBUI-APPS-R031)
+
+Data flow: Files tab (`MemoryView.tsx:439`) → `listMemoryFiles` / `saveMemoryFile` (`src/lib/memory-files.ts`, new) → `gatewayPost` (`gateway.ts:129`) → graph-os operation → file and graph sync → sync state shown.
+
+Types: `MemoryFileKind`, `MemoryFile`, `MemorySyncState`. Attach point: the tab list beside `browse` in `MemoryView`.
+
+Failure behaviour: a conflict keeps the file unchanged and shows both versions. An absent operation shows "not available".
+
+Existing code: `src/components/views/MemoryView.tsx:439`, `:461`, `:143`, `:190`, `:492`. Reachable today: yes for Memory node CRUD, no for file materialization or sync. Search terms `MEMORY.md`, `reflections`, `bidirectional` found nothing in `src`.
+
+Decision: the engine and agent runtime own the files and the sync; the client lists and saves through operations. Rejected alternative: a browser-side file store, which holds state and policy.
+
+Cross-repository: the served operations belong to `GRAPHOS-OPS`. The graph conflict check belongs to `EG-DURABLE`.
