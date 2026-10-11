@@ -202,7 +202,8 @@
       "title": "Failure logs carry a sanitized typed error code",
       "delivery_state": "LANDED",
       "landed_in": [
-        "4924a5237ee7"
+        "4924a5237ee7",
+        "e225859bb82a"
       ],
       "verified_by": []
     }
