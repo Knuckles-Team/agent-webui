@@ -2,7 +2,7 @@
   "schema_version": 2,
   "spec_id": "WEBUI-APPS",
   "owner_repo": "agent-webui",
-  "delivery_state": "LANDED",
+  "delivery_state": "SPECIFIED",
   "requirement_ids": [
     "APP-01",
     "APP-02",
@@ -13,7 +13,14 @@
     "APP-07",
     "WEBUI-APPS-R001",
     "WEBUI-APPS-R002",
-    "WEBUI-APPS-R003"
+    "WEBUI-APPS-R003",
+    "WEBUI-APPS-R004",
+    "WEBUI-APPS-R004.1",
+    "WEBUI-APPS-R004.2",
+    "WEBUI-APPS-R004.3",
+    "WEBUI-APPS-R004.4",
+    "WEBUI-APPS-R004.5",
+    "WEBUI-APPS-R004.6"
   ],
   "requirements": [
     {
@@ -123,6 +130,63 @@
         "82a4f84c98e6",
         "dd43c178542b"
       ],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004",
+      "title": "Run harness surface is read-only and honest",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R004.1",
+        "WEBUI-APPS-R004.2",
+        "WEBUI-APPS-R004.3",
+        "WEBUI-APPS-R004.4",
+        "WEBUI-APPS-R004.5",
+        "WEBUI-APPS-R004.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R004.1",
+      "title": "Run read goes through the graph-os read operations",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.2",
+      "title": "Applied harness configuration is shown",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.3",
+      "title": "Context use is shown against the budget",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.4",
+      "title": "Current plan is shown read-only",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.5",
+      "title": "Each termination reason has a distinct state",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.6",
+      "title": "Absent operation shows an honest state",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
       "verified_by": []
     }
   ]
