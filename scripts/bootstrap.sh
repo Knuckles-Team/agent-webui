@@ -146,7 +146,7 @@ if [ "$ENGINE_WHEEL" -eq 1 ] && [ "$ENGINE" -eq 0 ]; then
   log "installing $(basename "$wheel_url")"
   curl --fail --silent --show-error --location --retry 3 "${auth[@]}" \
     --output "$wheel_dir/$(basename "$wheel_url")" "$wheel_url"
-  uv pip install --python .venv/bin/python --no-deps "$wheel_dir/$(basename "$wheel_url")"
+  uv pip install --python .venv/bin/python "$wheel_dir/$(basename "$wheel_url")"
   .venv/bin/python -c "import epistemic_graph.numeric"
 fi
 
