@@ -89,10 +89,6 @@ jobs:
     # GitHub-hosted runner instead -- self-hosted capacity is never offered
     # to an untrusted fork.
     runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "homelab"]') || 'ubuntu-latest' }}
-    # Share freshly resolved hook environments across every stage in this run.
-    # The run and attempt IDs prevent reuse of mutable hook refs across runs.
-    env:
-      PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -120,7 +116,11 @@ jobs:
         # Cold environment installation has its own bounded step. Every check
         # below uses these environments, leaving its budget for validation.
         timeout-minutes: 15
-        run: uvx pre-commit install-hooks --config .config/pre-commit.yaml
+        run: |
+          set -euo pipefail
+          export PRE_COMMIT_HOME="$RUNNER_TEMP/pre-commit-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          printf 'PRE_COMMIT_HOME=%s\n' "$PRE_COMMIT_HOME" >> "$GITHUB_ENV"
+          uvx pre-commit install-hooks --config .config/pre-commit.yaml
 
       - name: pre-commit (commit stage, all files)
         # Keep the validation cap and hook output after environment preparation.

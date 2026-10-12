@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -43,7 +47,7 @@ class ReleaseGateOrderTests(unittest.TestCase):
         self.assertLess(prepare, commit)
         setup = steps[prepare][1]
         self.assertIn(
-            'run: uvx pre-commit install-hooks --config .config/pre-commit.yaml',
+            'uvx pre-commit install-hooks --config .config/pre-commit.yaml',
             setup,
         )
         for body in (setup, steps[commit][1]):
@@ -57,14 +61,53 @@ class ReleaseGateOrderTests(unittest.TestCase):
             '\n  # Spec-status lifecycle', 1
         )[0]
         job, steps = gates.split('    steps:\n', 1)
-        self.assertIn(
-            '    env:\n'
-            '      PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit-'
-            '${{ github.run_id }}-${{ github.run_attempt }}',
-            job,
-        )
-        self.assertNotIn('PRE_COMMIT_HOME', steps)
-        self.assertNotIn('SKIP:', job + steps)
+        self.assertNotIn('PRE_COMMIT_HOME', job)
+        setup = dict(gate_steps())['Prepare shared hook environments']
+        script = textwrap.dedent(setup.split('run: |\n', 1)[1])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / 'uvx'
+            executable.write_text(
+                '#!/bin/sh\n'
+                'printf "%s" "$PRE_COMMIT_HOME" > "$OBSERVED_CACHE"\n'
+                'exit "${INSTALL_EXIT:-0}"\n',
+                encoding='utf-8',
+            )
+            executable.chmod(0o755)
+            environment = {
+                **os.environ,
+                'PATH': f'{root}{os.pathsep}{os.environ["PATH"]}',
+                'RUNNER_TEMP': str(root),
+                'GITHUB_RUN_ID': '123',
+                'GITHUB_ENV': str(root / 'github-env'),
+                'OBSERVED_CACHE': str(root / 'observed-cache'),
+                'INSTALL_EXIT': '0',
+            }
+            for attempt in ('1', '2'):
+                environment['GITHUB_RUN_ATTEMPT'] = attempt
+                (root / 'github-env').write_text('', encoding='utf-8')
+                subprocess.run(
+                    ['bash', '-c', script], env=environment, check=True,
+                    capture_output=True, text=True,
+                )
+                cache = str(root / f'pre-commit-123-{attempt}')
+                self.assertEqual(
+                    (root / 'observed-cache').read_text(encoding='utf-8'),
+                    cache,
+                )
+                self.assertEqual(
+                    (root / 'github-env').read_text(encoding='utf-8'),
+                    f'PRE_COMMIT_HOME={cache}\n',
+                )
+            environment['INSTALL_EXIT'] = '19'
+            failed = subprocess.run(
+                ['bash', '-c', script], env=environment,
+                capture_output=True, text=True,
+            )
+            self.assertEqual(failed.returncode, 19)
+    def test_existing_validation_keeps_full_file_scope(self) -> None:
+        steps = ''.join(body for _, body in gate_steps())
+        self.assertNotIn('SKIP:', steps)
         runs = [
             line.strip()
             for line in steps.splitlines()
