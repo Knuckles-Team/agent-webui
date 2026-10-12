@@ -26,7 +26,7 @@
 - [ ] **WEBUI-APPS-R031.1:** Memory file types.
 - [ ] **WEBUI-APPS-R031.2:** Memory file operations.
 - [ ] **WEBUI-APPS-R031.3:** Files tab in the memory view.
-- [ ] **WEBUI-APPS-R031.4:** Conflict refusal.
+- [ ] **WEBUI-APPS-R031.4:** Authorized retained conflicts and head-free refusals.
 - [ ] **WEBUI-APPS-R031.5:** Sync state labels.
 - [ ] **WEBUI-APPS-R031.6:** Save evidence.
 - [ ] **WEBUI-APPS-R031.7:** Memory files hot-path proof.
@@ -45,5 +45,5 @@ No task above names a requirement ID individually; together they must close ever
 - [ ] **WEBUI-APPS-R006.3:** Absent operation is honest.
 
 - [ ] R030.7: implement the served browser → GraphOS operation → fixture-engine journey and prove unauthorized edits leave durable graph state unchanged.
-- [ ] R031.2 prerequisite: obtain owner-published file-list/save/sync contracts and exact requirement IDs; existing memory.read/write do not satisfy this prerequisite.
-- [ ] R031.7: implement the served conflict journey; retain and reload both versions before accepting an EG-approved resolution. No client/gateway/host-handler/engine-transport mocks.
+- [ ] R031.2 prerequisite: implement generated EG R085 and GraphOS R024.4.1–.6 contracts through canonical invoke; prove registered same-origin hosting. Definitions exist, runtime proof remains missing.
+- [ ] R031.7: implement served snapshot/conflict/refusal journeys and the unchanged-head observation-generation acknowledgment race. Retain and reload authorized versions. Prove redacted denied/revoked reads and browser acknowledgment refusal. Accept sync labels only from EG evidence. No client/host-handler/engine-transport mocks.
