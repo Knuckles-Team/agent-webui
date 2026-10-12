@@ -29,3 +29,17 @@ Operator decision 2026-10-09: only front-end-facing items carry the Graph OS nam
 BUILT requires merged source, generated assets and package metadata with consumers updated. ACCEPTED requires installed wheel and Pages build, clean browser migration/capability tests, one native app and one rejected contributed descriptor, and exact GitHub commit/CI evidence in `tasks.md`. Consumer release and public repository rename remain explicit external acceptance receipts.
 
 Requirement IDs are defined in [requirements.md](requirements.md); delivery state per ID is in `status.json`.
+
+<!-- spec-definition-patch:consumer-definitions-20261012 -->
+## Additional consumer scope
+
+The existing app, run, session and graph rollups also own the browser consumers listed in plan.md.
+They cover evolution evidence, unified sessions, indexed usage, live graph convergence and the additional app interactions.
+The app interactions include retrieval comparison, bounded charts, column bindings, editor compatibility, meetings, bookmarks and generated artifacts.
+EG retains semantic and policy authority. GraphOS retains authenticated serving and host effects. SDK and AU retain their respective transports and execution.
+All new requirements remain SPECIFIED until their real served acceptance passes. No implementation or runtime receipt is recorded by this definition batch.
+<!-- /spec-definition-patch -->
+
+Definition closure remains open for all twelve source inputs.
+Missing specialized producer bindings, quantitative limits and complete harness-manifest coverage are definition prerequisites as well as runtime dependencies.
+See the open definition prerequisites in plan.md. All new rows remain SPECIFIED.
