@@ -62,18 +62,38 @@ Cross-repository: `GRAPHOS-OPS-R008` generates the engine-bound operations, `GRA
 
 ## Memory files (WEBUI-APPS-R031)
 
-The Files tab (`MemoryView.tsx:439`) calls the new `listMemoryFiles` and `saveMemoryFile` exports in `src/lib/memory-files.ts`. These call `gatewayPost` (`gateway.ts:129`), then the authenticated GraphOS file operation. The owner contracts below are prerequisites. EG decides memory versions and sync. GraphOS materializes hosted files and retains conflict artifacts. The client shows the authoritative sync state.
+### Current source and producer prerequisites
 
-Types: `MemoryFileKind`, `MemoryFile`, `MemorySyncState`. Attach point: the tab list beside `browse` in `MemoryView`.
+[EG R085](https://github.com/Knuckles-Team/epistemic-graph/tree/c0b952776129fd509b9f87b411a298593c2591ec/specs/durable-graph-kernel) defines authoritative memory versions, conflicts, retention and synchronization evidence.
+[GraphOS R024.4.1–.6](https://github.com/Knuckles-Team/graph-os/tree/4947963af19b13cc8cc7eed8f180e5939594d114/specs/hosted-api-operations) defines hosted files and serving in [PR 272](https://github.com/Knuckles-Team/graph-os/pull/272), currently a proposed producer dependency.
+Neither definition establishes installed operations or runtime acceptance.
+EG owns content, compare-and-set, retention and sync decisions. GraphOS owns authenticated serving, hosted projection and authenticated materialization acknowledgments. AU consumes EG decisions. WebUI renders the returned state.
 
-Failure behaviour: a conflict keeps the file unchanged and shows both versions. An absent operation shows "not available".
+Current main `28df14e42c751d5fb99b60c973a5164144ef090d` has Memory-node CRUD in `src/components/views/MemoryView.tsx:439`, mounted from `src/lib/nav-registry.ts:664`; it has no Files tab or `src/lib/memory-files.ts`.
+The existing `src/lib/graphos-api/invoke.ts:56` sends generated operations to `/api/v1/ops/{op_id}` with same-origin credentials, CSRF handling, idempotency options and validated envelopes. Reuse that adapter under `WEBUI-API-R001`, `APIUI-01` and `APIUI-06`.
+`gatewayPost` prefixes the graph facade and is not the operation adapter. Served tests must prove the real same-origin host route and installed schemas. The browser helper alone does not prove them.
 
-Existing code: `src/components/views/MemoryView.tsx:439`, `:461`, `:143`, `:190`, `:492`. Reachable today: yes for Memory node CRUD, no for file materialization or sync. Search terms `MEMORY.md`, `reflections`, `bidirectional` found nothing in `src`.
+### Explicit wire and view mapping
 
-Decision: EG owns authoritative memory and sync decisions. GraphOS owns hosted file materialization and the public operations. AU is an EG-driven harness that consumes these decisions and does not become a second memory or sync authority. The client lists and saves through named exports and renders served state. Rejected alternative: a browser-side file store, which holds state and policy.
+| Planned helper/view | GraphOS producer | EG producer | Required mapping |
+|---|---|---|---|
+| listMemoryFiles | memory.files.list; R024.4.1/.2/.6 | R085.1/.2/.4 | Generated metadata-only page, optional kind, limit 1–100, opaque cursor; stable authorized snapshot, no hidden counts or hashes |
+| readMemoryFile | memory.files.read; R024.4.1/.2/.6 | R085.1/.2/.4/.5 | Document identity and optional exact revision; only authorized snapshot bytes, digest, sync state and conflict references |
+| saveMemoryFile | memory.files.save; R024.4.1/.3/.5/.6 | R085.1/.3–.5/.7 | Generated submit/resolve only; exact precondition, UTF-8 bytes and digest; explicit absent-head creation; same identity/body retry |
+| conflict and refusal views | R024.4.3/.5 | R085.3/.5/.7 | Authorized conflict_retained versus head-free refused; do not convert retained conflict to a generic failure |
+| sync label | R024.4.4 | R085.6/.8 | Render in_sync, graph_ahead, file_ahead, conflict or unavailable exactly from served evidence |
 
-Cross-repository: existing `memory.read` / `memory.write` belong to `GRAPHOS-OPS-R024.4`. The generic served conflict path is `ApplyMutation` under `EG-DURABLE-KERNEL-R084.3`, refusal `.4`, and two-writer proof `.6`. These contracts do not yet specify Markdown-file enumeration, materialization or synchronization.
+These operation names are proposed producer IDs, not registration claims. Do not alias generic memory.read/write to them or maintain another authoritative browser store. Use generated bounded schemas: 1 MiB content, 256-byte document IDs and 1024-byte logical paths, preserving stricter serving limits. Logical paths are labels, never browser-controlled filesystem authority.
 
+Refused/expired cursors require an explicit restart, not concatenation of incompatible snapshots. Recheck authorization on every page/read/save/conflict read/replay. Discard late responses across principal, tenant, graph or document changes; clear protected content after access loss. Refused results carry only error code and request-local correlation, with no result-derived metadata in the envelope, errors or activity view. Denied existing, absent and creation attempts have equal disclosure. A changed-body replay refuses without mutation.
+
+Authorized stale saves return conflict_retained only after both versions are durably retained. Show both immutable contents/digests via authorized reads; never overwrite the accepted head. Retention-capacity failure refuses and cannot be presented as retained. Resolution binds the current accepted head and retained conflict. EG, not the client or hosted artifact deletion, determines release of retained history.
+
+### Host observations and acknowledgment races
+
+The browser cannot invoke observe_file or acknowledge_materialization. A save result is not a host acknowledgment. GraphOS must preserve local edits and submit observations before replacing hosted bytes. Its acknowledgment binds graph incarnation, document, accepted revision, digest, observation_generation and attempt. EG atomically checks head and generation. A newer observed edit invalidates an old acknowledgment even if the accepted head has not changed. Pending edits or unresolved conflicts prevent in_sync; missing evidence yields unavailable. The UI must render that state after reread and never infer in_sync from HTTP success or matching local text.
+
+All helper, tab, registered-operation and host-materializer work remains SPECIFIED. Planned tests below are acceptance requirements, not implementation evidence.
 
 ## 2026-10-11 ownership and served-acceptance correction
 
@@ -85,16 +105,10 @@ marks AddNode, ApplyMutation and RemoveNode in the graph domain wire-callable.
 The installed registry and generated schemas remain the deployment authority;
 source availability is not a served acceptance receipt.
 
-`graph_os/api/ops/memory.py` currently defines only `memory.read` and
-`memory.write`, keyed by tenant and key. Its `MemoryStore` port does not establish
-a file-listing, versioned-save, conflict-retention or sync-decision contract.
-Searches of current owner specs found no memory-file synchronization operation
-or exact owner row for it. R031.2 has upstream prerequisites.
-EG must publish its authoritative memory and sync decision contract.
-GraphOS must publish the hosted file contracts and owning requirement IDs.
-WebUI must wait for those contracts before binding them. No new owner ID or operation name is assigned in this repository.
+The versioned-memory ownership contract is now the R085/R024.4 mapping above.
+Generic memory.read/write and ApplyMutation concurrency remain insufficient to establish file synchronization.
 
-The browser component calls a typed named export, then gatewayPost and the real WebUI host.
+The graph-edit browser path uses its typed export and gatewayPost. The memory-file path uses its typed export and canonical invoke adapter. Both require the real WebUI host.
 The authenticated GraphOS operation invokes its real handler and the actual fixture engine.
 An independent durable readback completes the acceptance path. Local React state or helper
 spies prove presentation/wiring only. R030.7 and R031.7 require browser journeys
