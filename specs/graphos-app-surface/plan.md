@@ -65,7 +65,7 @@ Cross-repository: `GRAPHOS-OPS-R008` generates the engine-bound operations, `GRA
 ### Current source and producer prerequisites
 
 [EG R085](https://github.com/Knuckles-Team/epistemic-graph/tree/c0b952776129fd509b9f87b411a298593c2591ec/specs/durable-graph-kernel) defines authoritative memory versions, conflicts, retention and synchronization evidence.
-[GraphOS R024.4.1–.6](https://github.com/Knuckles-Team/graph-os/tree/4947963af19b13cc8cc7eed8f180e5939594d114/specs/hosted-api-operations) defines hosted files and serving in [PR 272](https://github.com/Knuckles-Team/graph-os/pull/272), currently a proposed producer dependency.
+[GraphOS R024.4.1–.6](https://github.com/Knuckles-Team/graph-os/tree/1d7fb3f0865a32be167b0090c01e28a2c5f258b4/specs/hosted-api-operations) defines hosted files and serving in [PR 272](https://github.com/Knuckles-Team/graph-os/pull/272), currently a proposed producer dependency.
 Neither definition establishes installed operations or runtime acceptance.
 EG owns content, compare-and-set, retention and sync decisions. GraphOS owns authenticated serving, hosted projection and authenticated materialization acknowledgments. AU consumes EG decisions. WebUI renders the returned state.
 
