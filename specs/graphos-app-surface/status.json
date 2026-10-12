@@ -47,7 +47,91 @@
     "WEBUI-APPS-R031.4",
     "WEBUI-APPS-R031.5",
     "WEBUI-APPS-R031.6",
-    "WEBUI-APPS-R031.7"
+    "WEBUI-APPS-R031.7",
+    "WEBUI-APPS-R004.7",
+    "WEBUI-APPS-R004.7.1",
+    "WEBUI-APPS-R004.7.2",
+    "WEBUI-APPS-R004.7.3",
+    "WEBUI-APPS-R004.7.4",
+    "WEBUI-APPS-R004.7.5",
+    "WEBUI-APPS-R004.7.6",
+    "WEBUI-APPS-R006.4",
+    "WEBUI-APPS-R006.4.1",
+    "WEBUI-APPS-R006.4.2",
+    "WEBUI-APPS-R006.4.3",
+    "WEBUI-APPS-R006.4.4",
+    "WEBUI-APPS-R006.4.5",
+    "WEBUI-APPS-R006.4.6",
+    "WEBUI-APPS-R004.8",
+    "WEBUI-APPS-R004.8.1",
+    "WEBUI-APPS-R004.8.2",
+    "WEBUI-APPS-R004.8.3",
+    "WEBUI-APPS-R004.8.4",
+    "WEBUI-APPS-R004.8.5",
+    "WEBUI-APPS-R004.8.6",
+    "WEBUI-APPS-R030.8",
+    "WEBUI-APPS-R030.8.1",
+    "WEBUI-APPS-R030.8.2",
+    "WEBUI-APPS-R030.8.3",
+    "WEBUI-APPS-R030.8.4",
+    "WEBUI-APPS-R030.8.5",
+    "WEBUI-APPS-R030.8.6",
+    "WEBUI-APPS-R001.1",
+    "WEBUI-APPS-R001.1.1",
+    "WEBUI-APPS-R001.1.2",
+    "WEBUI-APPS-R001.1.3",
+    "WEBUI-APPS-R001.1.4",
+    "WEBUI-APPS-R001.1.5",
+    "WEBUI-APPS-R001.1.6",
+    "WEBUI-APPS-R001.2",
+    "WEBUI-APPS-R001.2.1",
+    "WEBUI-APPS-R001.2.2",
+    "WEBUI-APPS-R001.2.3",
+    "WEBUI-APPS-R001.2.4",
+    "WEBUI-APPS-R001.2.5",
+    "WEBUI-APPS-R001.2.6",
+    "WEBUI-APPS-R001.3",
+    "WEBUI-APPS-R001.3.1",
+    "WEBUI-APPS-R001.3.2",
+    "WEBUI-APPS-R001.3.3",
+    "WEBUI-APPS-R001.3.4",
+    "WEBUI-APPS-R001.3.5",
+    "WEBUI-APPS-R001.3.6",
+    "WEBUI-APPS-R001.4",
+    "WEBUI-APPS-R001.4.1",
+    "WEBUI-APPS-R001.4.2",
+    "WEBUI-APPS-R001.4.3",
+    "WEBUI-APPS-R001.4.4",
+    "WEBUI-APPS-R001.4.5",
+    "WEBUI-APPS-R001.4.6",
+    "WEBUI-APPS-R001.5",
+    "WEBUI-APPS-R001.5.1",
+    "WEBUI-APPS-R001.5.2",
+    "WEBUI-APPS-R001.5.3",
+    "WEBUI-APPS-R001.5.4",
+    "WEBUI-APPS-R001.5.5",
+    "WEBUI-APPS-R001.5.6",
+    "WEBUI-APPS-R001.6",
+    "WEBUI-APPS-R001.6.1",
+    "WEBUI-APPS-R001.6.2",
+    "WEBUI-APPS-R001.6.3",
+    "WEBUI-APPS-R001.6.4",
+    "WEBUI-APPS-R001.6.5",
+    "WEBUI-APPS-R001.6.6",
+    "WEBUI-APPS-R001.7",
+    "WEBUI-APPS-R001.7.1",
+    "WEBUI-APPS-R001.7.2",
+    "WEBUI-APPS-R001.7.3",
+    "WEBUI-APPS-R001.7.4",
+    "WEBUI-APPS-R001.7.5",
+    "WEBUI-APPS-R001.7.6",
+    "WEBUI-APPS-R001.8",
+    "WEBUI-APPS-R001.8.1",
+    "WEBUI-APPS-R001.8.2",
+    "WEBUI-APPS-R001.8.3",
+    "WEBUI-APPS-R001.8.4",
+    "WEBUI-APPS-R001.8.5",
+    "WEBUI-APPS-R001.8.6"
   ],
   "requirements": [
     {
@@ -127,7 +211,7 @@
     {
       "id": "WEBUI-APPS-R001",
       "title": "Apps information-architecture section and AppSurface contract",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "401cec444a5f",
         "e05e1230ae72"
@@ -135,6 +219,16 @@
       "verified_by": [
         "src/lib/apps/__tests__/apps.test.ts:14",
         "src/lib/apps/__tests__/apps.test.ts:9"
+      ],
+      "rollup_of": [
+        "WEBUI-APPS-R001.1",
+        "WEBUI-APPS-R001.2",
+        "WEBUI-APPS-R001.3",
+        "WEBUI-APPS-R001.4",
+        "WEBUI-APPS-R001.5",
+        "WEBUI-APPS-R001.6",
+        "WEBUI-APPS-R001.7",
+        "WEBUI-APPS-R001.8"
       ]
     },
     {
@@ -171,7 +265,9 @@
         "WEBUI-APPS-R004.3",
         "WEBUI-APPS-R004.4",
         "WEBUI-APPS-R004.5",
-        "WEBUI-APPS-R004.6"
+        "WEBUI-APPS-R004.6",
+        "WEBUI-APPS-R004.7",
+        "WEBUI-APPS-R004.8"
       ]
     },
     {
@@ -282,7 +378,8 @@
       "rollup_of": [
         "WEBUI-APPS-R006.1",
         "WEBUI-APPS-R006.2",
-        "WEBUI-APPS-R006.3"
+        "WEBUI-APPS-R006.3",
+        "WEBUI-APPS-R006.4"
       ]
     },
     {
@@ -319,7 +416,8 @@
         "WEBUI-APPS-R030.4",
         "WEBUI-APPS-R030.5",
         "WEBUI-APPS-R030.6",
-        "WEBUI-APPS-R030.7"
+        "WEBUI-APPS-R030.7",
+        "WEBUI-APPS-R030.8"
       ]
     },
     {
@@ -432,6 +530,690 @@
     {
       "id": "WEBUI-APPS-R031.7",
       "title": "Served end-to-end proof",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.7",
+      "title": "Evolution evidence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R004.7.1",
+        "WEBUI-APPS-R004.7.2",
+        "WEBUI-APPS-R004.7.3",
+        "WEBUI-APPS-R004.7.4",
+        "WEBUI-APPS-R004.7.5",
+        "WEBUI-APPS-R004.7.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R004.7.1",
+      "title": "Model",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.7.2",
+      "title": "Behavior",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.7.3",
+      "title": "Wiring",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.7.4",
+      "title": "Refusal",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.7.5",
+      "title": "Evidence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.7.6",
+      "title": "Served acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R006.4",
+      "title": "Unified harness sessions",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R006.4.1",
+        "WEBUI-APPS-R006.4.2",
+        "WEBUI-APPS-R006.4.3",
+        "WEBUI-APPS-R006.4.4",
+        "WEBUI-APPS-R006.4.5",
+        "WEBUI-APPS-R006.4.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R006.4.1",
+      "title": "Model",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R006.4.2",
+      "title": "Behavior",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R006.4.3",
+      "title": "Wiring",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R006.4.4",
+      "title": "Refusal",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R006.4.5",
+      "title": "Evidence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R006.4.6",
+      "title": "Served acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.8",
+      "title": "Indexed usage analysis",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R004.8.1",
+        "WEBUI-APPS-R004.8.2",
+        "WEBUI-APPS-R004.8.3",
+        "WEBUI-APPS-R004.8.4",
+        "WEBUI-APPS-R004.8.5",
+        "WEBUI-APPS-R004.8.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R004.8.1",
+      "title": "Model",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.8.2",
+      "title": "Behavior",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.8.3",
+      "title": "Wiring",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.8.4",
+      "title": "Refusal",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.8.5",
+      "title": "Evidence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R004.8.6",
+      "title": "Served acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R030.8",
+      "title": "Live graph convergence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R030.8.1",
+        "WEBUI-APPS-R030.8.2",
+        "WEBUI-APPS-R030.8.3",
+        "WEBUI-APPS-R030.8.4",
+        "WEBUI-APPS-R030.8.5",
+        "WEBUI-APPS-R030.8.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R030.8.1",
+      "title": "Model",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R030.8.2",
+      "title": "Behavior",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R030.8.3",
+      "title": "Wiring",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R030.8.4",
+      "title": "Refusal",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R030.8.5",
+      "title": "Evidence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R030.8.6",
+      "title": "Served acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.1",
+      "title": "Retrieval quality comparison",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R001.1.1",
+        "WEBUI-APPS-R001.1.2",
+        "WEBUI-APPS-R001.1.3",
+        "WEBUI-APPS-R001.1.4",
+        "WEBUI-APPS-R001.1.5",
+        "WEBUI-APPS-R001.1.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R001.1.1",
+      "title": "Model",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.1.2",
+      "title": "Behavior",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.1.3",
+      "title": "Wiring",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.1.4",
+      "title": "Refusal",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.1.5",
+      "title": "Evidence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.1.6",
+      "title": "Served acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.2",
+      "title": "Bounded large-data charts",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R001.2.1",
+        "WEBUI-APPS-R001.2.2",
+        "WEBUI-APPS-R001.2.3",
+        "WEBUI-APPS-R001.2.4",
+        "WEBUI-APPS-R001.2.5",
+        "WEBUI-APPS-R001.2.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R001.2.1",
+      "title": "Model",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.2.2",
+      "title": "Behavior",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.2.3",
+      "title": "Wiring",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.2.4",
+      "title": "Refusal",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.2.5",
+      "title": "Evidence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.2.6",
+      "title": "Served acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.3",
+      "title": "Column vector controls",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R001.3.1",
+        "WEBUI-APPS-R001.3.2",
+        "WEBUI-APPS-R001.3.3",
+        "WEBUI-APPS-R001.3.4",
+        "WEBUI-APPS-R001.3.5",
+        "WEBUI-APPS-R001.3.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R001.3.1",
+      "title": "Model",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.3.2",
+      "title": "Behavior",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.3.3",
+      "title": "Wiring",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.3.4",
+      "title": "Refusal",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.3.5",
+      "title": "Evidence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.3.6",
+      "title": "Served acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.4",
+      "title": "Remote editor compatibility",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R001.4.1",
+        "WEBUI-APPS-R001.4.2",
+        "WEBUI-APPS-R001.4.3",
+        "WEBUI-APPS-R001.4.4",
+        "WEBUI-APPS-R001.4.5",
+        "WEBUI-APPS-R001.4.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R001.4.1",
+      "title": "Model",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.4.2",
+      "title": "Behavior",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.4.3",
+      "title": "Wiring",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.4.4",
+      "title": "Refusal",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.4.5",
+      "title": "Evidence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.4.6",
+      "title": "Served acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.5",
+      "title": "Meeting transcripts and summaries",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R001.5.1",
+        "WEBUI-APPS-R001.5.2",
+        "WEBUI-APPS-R001.5.3",
+        "WEBUI-APPS-R001.5.4",
+        "WEBUI-APPS-R001.5.5",
+        "WEBUI-APPS-R001.5.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R001.5.1",
+      "title": "Model",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.5.2",
+      "title": "Behavior",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.5.3",
+      "title": "Wiring",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.5.4",
+      "title": "Refusal",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.5.5",
+      "title": "Evidence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.5.6",
+      "title": "Served acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.6",
+      "title": "Bookmark knowledge views",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R001.6.1",
+        "WEBUI-APPS-R001.6.2",
+        "WEBUI-APPS-R001.6.3",
+        "WEBUI-APPS-R001.6.4",
+        "WEBUI-APPS-R001.6.5",
+        "WEBUI-APPS-R001.6.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R001.6.1",
+      "title": "Model",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.6.2",
+      "title": "Behavior",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.6.3",
+      "title": "Wiring",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.6.4",
+      "title": "Refusal",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.6.5",
+      "title": "Evidence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.6.6",
+      "title": "Served acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.7",
+      "title": "Sandboxed design artifacts",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R001.7.1",
+        "WEBUI-APPS-R001.7.2",
+        "WEBUI-APPS-R001.7.3",
+        "WEBUI-APPS-R001.7.4",
+        "WEBUI-APPS-R001.7.5",
+        "WEBUI-APPS-R001.7.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R001.7.1",
+      "title": "Model",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.7.2",
+      "title": "Behavior",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.7.3",
+      "title": "Wiring",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.7.4",
+      "title": "Refusal",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.7.5",
+      "title": "Evidence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.7.6",
+      "title": "Served acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.8",
+      "title": "Interactive code explanations",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R001.8.1",
+        "WEBUI-APPS-R001.8.2",
+        "WEBUI-APPS-R001.8.3",
+        "WEBUI-APPS-R001.8.4",
+        "WEBUI-APPS-R001.8.5",
+        "WEBUI-APPS-R001.8.6"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R001.8.1",
+      "title": "Model",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.8.2",
+      "title": "Behavior",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.8.3",
+      "title": "Wiring",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.8.4",
+      "title": "Refusal",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.8.5",
+      "title": "Evidence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R001.8.6",
+      "title": "Served acceptance",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []

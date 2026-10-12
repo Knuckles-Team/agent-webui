@@ -6,11 +6,11 @@
 
 ## AppSurface contract
 
-Each app has a stable ID, manifest version, route definitions from the same `RouteDef` shape, capability/min-role declaration, generated API client binding, WebMCP page/tool IDs and optional typed Atlas renderer registrations. Resolve the app catalog before constructing navigation. A native app registers a statically imported component. A package descriptor carries declarative metadata and a trusted, bounded contribution reference; the host validates it through the existing frontend-contribution schema and policy before exposing a route. A denied app is absent from privileged navigation and direct URL access returns a denied state. WebMCP tools remain attended and call the host-mediated Graph OS operation path; they cannot execute merely because a page registered them.
+Each app has a stable ID, manifest version and route definitions from the same `RouteDef` shape. It declares capabilities, minimum role, generated API client bindings, WebMCP page/tool IDs and optional typed Atlas renderer registrations. Resolve the app catalog before constructing navigation. A native app registers a statically imported component. A package descriptor carries declarative metadata and a trusted, bounded contribution reference. The host validates it through the existing frontend-contribution schema and policy before exposing a route. A denied app is absent from privileged navigation and direct URL access returns a denied state. WebMCP tools remain attended and call the host-mediated Graph OS operation path. They cannot execute merely because a page registered them.
 
 ## Brand and migration
 
-Regenerate favicon/icon/social images using the repository asset script and check generated files against source. Move Python import and distribution metadata, npm package metadata and release image naming in one cutover with Graph OS's consumer dependency. Keep the npm package private when the SPA is shipped in the Python wheel. Change WebMCP tool IDs to `graphos.*` and regenerate digests; old grants drain by expiry and are not silently reinterpreted. Browser storage keys receive a version bump and explicit re-consent. Environment names use one canonical prefix and reject stale aliases after the documented cutover. Preserve browser route paths except those required for the Apps section. Published Pages navigation resolves to the new site after publication; broken links are measured.
+Regenerate favicon/icon/social images using the repository asset script and check generated files against source. Move Python import and distribution metadata, npm package metadata and release image naming in one cutover. Coordinate that cutover with Graph OS's consumer dependency. Keep the npm package private when the SPA is shipped in the Python wheel. Change WebMCP tool IDs to `graphos.*` and regenerate digests; old grants drain by expiry and are not silently reinterpreted. Browser storage keys receive a version bump and explicit re-consent. Environment names use one canonical prefix and reject stale aliases after the documented cutover. Preserve browser route paths except those required for the Apps section. Published Pages navigation resolves to the new site after publication; broken links are measured.
 
 ## Failure and portability
 
@@ -121,3 +121,274 @@ Each R030/R031 child still needs its own acceptance run. The
 requirements describe product-neutral graph and memory behavior. Research
 citations, including arXiv papers, are inspiration only, never protocol
 contracts, owner authority, implementation evidence or acceptance receipts.
+
+<!-- spec-definition-patch:consumer-definitions-20261012 -->
+## Consolidated consumer contracts
+
+These clauses preserve the existing shell and producer responsibilities. They add only the reviewed missing browser consumers.
+
+All new typed operation calls reuse `src/lib/graphos-api/invoke.ts` under `WEBUI-API-R001` and the generated API client. GraphOS registration, authorization and serving remain `GRAPHOS-OPS-R008`, `GRAPHOS-OPS-R009` and `GRAPHOS-OPS-R013`. Existing event transports carry owner-defined subscriptions; the browser must not create a second event protocol.
+
+No operation ID absent from a producer contract is assigned here. The owner must publish its generated operation and schema binding before implementation can pass. A missing binding is an unavailable dependency, not permission for local policy or a browser-owned index. Specialized producer extensions remain with EG, SDK, AU and GraphOS. This batch defines the exact information and behavior their WebUI consumer requires.
+
+For every consumer, bind authenticated tenant, principal, graph/workspace incarnation, request identity and source revision at the host. Cancel stale requests on scope changes and clear protected state on revocation. Refusals expose no hidden entity identifiers or stored data. Compare-and-set, idempotency and authorization decisions remain producer decisions.
+
+### WEBUI-APPS-R004.7: Evolution evidence
+
+Input `AU:103`; original record SHA-256 `68bae14976bd3581bc33ee65b153b5ad60f807fb894af09577b9debd19be7557`.
+
+Source obligation: Evolution dashboards show per-run metrics and prompt-optimization progress drawn from recorded traces. Reviewers judge proposals by measured outcomes.
+
+Existing owner anchors: AU-HARNESS-R011; AU-HARNESS-R017; EG-ORCH-VOCAB-R009; GRAPHOS-OPS-R021.4.4/.5. Entry: ObservabilityView harness block.
+
+Use generated proposal identity, prompt revision, agent identity, progress state and source RunTrace references. Keep measured run metrics separate from decision calibration and coverage.
+
+Show each optimization proposal beside its exact source runs and recorded progress. Preserve pending review and propose-only state. Never promote a prompt from this view.
+
+Extend src/components/views/ObservabilityView.tsx beside the existing run DAG. Resolve proposal and trace references through typed GraphOS reads. The existing runs.get and runs.metrics operations alone do not return the missing join.
+
+Missing proposal provenance, hidden traces or incompatible producer revisions show unavailable. Never infer progress from trace count or substitute WEBUI-DECIDE-R001 coverage.
+
+Bind the shown proposal revision, run IDs, trace digests, metric window and producer schema revision. Label incomplete source sets.
+
+A real served proposal must lead from the dashboard to its authorized stored traces and measured outcomes. Denied traces must reveal no metrics or proposal progress.
+
+### WEBUI-APPS-R006.4: Unified harness sessions
+
+Input `WEBUI:3`; original record SHA-256 `38936b5f2136263c40c29fe639c984243fed8be6dbb9a6d836f40d7b7672116e`.
+
+Source obligation: On first run, the platform discovers agent sessions from every supported harness and syncs them into local queryable indexes. The web interface offers unified browsing and search across them with cost summaries.
+
+Existing owner anchors: APIUI-04; WEBUI-APPS-R006; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: SessionsView and goal-session-fleet panel.
+
+Consume the host supported-harness inventory and discovery status. Session identity includes source harness, source session ID, tenant and authoritative indexed revision.
+
+On first use, show discovery and synchronization for every declared supported harness. Browse and search the unified authorized index with cross-session cost summaries.
+
+Extend src/components/views/SessionsView.tsx and the R006 panel through the generated client. SDK discovers and syncs sources; EG owns indexes; GraphOS serves bounded search and discovery progress.
+
+Unsupported harnesses, denied sources and partial synchronization remain individually visible. Never claim complete discovery from one source or replace missing costs with zero.
+
+Keep source coverage, sync cursor, index revision, query window, cost units and partial-result flags with every result page. Do not create a browser metric or session index.
+
+From a fresh authenticated browser, discover two supported harnesses and search indexed sessions without duplicate identities. Deny one source and prove visible partial coverage and no hidden-session disclosure.
+
+### WEBUI-APPS-R004.8: Indexed usage analysis
+
+Input `WEBUI:4`; original record SHA-256 `dd790b40c92758d720375c78ccd4278845b8d348022b4d69b978cba049461237`.
+
+Source obligation: The platform tracks token and cost usage per agent, indexes it in local storage, and exposes it for fast analysis by model, project and agent.
+
+Existing owner anchors: EG-ORCH-VOCAB-R010.1–.6; GRAPHOS-OPS-R021.4.3/.4; WEBUI-APPS-R004.3. Entry: ObservabilityView usage section.
+
+Consume generated model, project and agent identities, input/output token counts and total usage cost. Preserve owner-defined cached/reasoning categories, accounting units and missing-value semantics.
+
+Filter indexed history by model, project, agent and time window. Show producer aggregates and pagination. Label cost per solved task separately from total usage and context peak/budget.
+
+Extend src/components/views/ObservabilityView.tsx using the canonical operation adapter. EG returns indexed accounting and groups; GraphOS serves the generated projection. Reuse existing model/task-class metrics.
+
+Unknown project/agent attribution, incomplete token accounting and zero-solved abstention remain explicit. Never total overlapping token categories or manufacture project costs in JavaScript.
+
+Retain aggregate definition, currency, accounting version, observation interval, source coverage and index watermark. Record producer-reported query duration and the tested dataset size.
+
+Serve indexed model/project/agent queries over a declared large history and check independent stored accounting totals. Test incomplete attribution and denied scopes; record latency against the owner-declared query budget.
+
+### WEBUI-APPS-R030.8: Live graph convergence
+
+Input `WEBUI:5`; original record SHA-256 `0b416b47d85530fb35cf44bf5dc79e04e1b9746481027d0b0687b66579dc9844`.
+
+Source obligation: Connected client views reflect graph changes immediately without page refresh. The graph layout stays readable under concurrent edits from multiple users.
+
+Existing owner anchors: EG-DURABLE-KERNEL-R084.3/.4; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009; WEBUI-APPS-R030. Entry: GraphView and GraphCanvas.
+
+Consume authorized snapshot identity and ordered change events with graph incarnation, revision, cursor and event identity. A tombstone remains distinct from an inaccessible entity.
+
+Apply committed changes to other connected clients without page refresh. Preserve selected nodes, camera and stable layout anchors during concurrent edits.
+
+Attach the host subscription to src/components/views/GraphView.tsx and GraphCanvas. Use the existing host event transport with its generated contract; snapshot reads remain typed GraphOS operations.
+
+Deduplicate events and reject revision regressions. A gap or expired cursor requires an authorized fresh snapshot. Revocation clears protected graph state and stops the subscription.
+
+Retain snapshot and event revisions and measure commit-to-visible latency. Layout evidence includes selection continuity, readable labels and frame timing under concurrent changes.
+
+Two real browsers edit concurrently and converge before refresh. Exercise duplicated, delayed and reordered events, reconnect and revocation; compare both views with independent durable readback.
+
+### WEBUI-APPS-R001.1: Retrieval quality comparison
+
+Input `WEBUI:6`; original record SHA-256 `3dc3c464a10a5178a413463f2b43baeb015732f5b8df508f6dbab9c37cc1165d`.
+
+Source obligation: An operator inspects and compares retrieval quality interactively: hits-at-k metrics, n-gram highlighting, side-by-side algorithm comparison and context search.
+
+Existing owner anchors: WEBUI-APPS-R001; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: TableExplorer TryItPanel.
+
+Consume EG evaluation identity, corpus revision, relevance-label revision, algorithm version, k, hits-at-k and context-span offsets. Keep result ranking separate from relevance labels.
+
+Compare algorithms side by side for the same evaluation input. Show hits-at-k, safe n-gram highlights and context search with source references.
+
+Extend src/components/table-explorer/TryItPanel.tsx through typed GraphOS evaluation reads. Its current SQL search legs and local rrfFuse do not establish authoritative evaluation metrics.
+
+Missing labels, incompatible corpus revisions, invalid offsets and denied context show unavailable. Never compute quality from rank alone or treat local fusion as an EG retrieval decision.
+
+Show numerator, denominator, k, corpus/label revisions, algorithm settings and query identity. Escape source text before highlighting and bound returned context spans.
+
+A real served fixed corpus and labels must produce independently checked hits-at-k for two algorithms. Test unlabeled data, cross-revision comparison and hostile highlight text without fake metrics.
+
+### WEBUI-APPS-R001.2: Bounded large-data charts
+
+Input `WEBUI:7`; original record SHA-256 `483b80b268ba6924ced162740792071fb43f482b1cddf16d9fbd424727d4ed89`.
+
+Source obligation: The web interface renders interactive scatter and line charts with pan, zoom and selection. Datasets reach billions of points. Screen-bounded binning keeps payload size bounded.
+
+Existing owner anchors: FIN-UI-R002.1/.2; FIN-UI-R003; WEBUI-APPS-R001; GRAPHOS-OPS-R008. Entry: Shared Atlas chart renderer.
+
+Consume EG viewport bounds, pixel dimensions, bin revision, source cardinality, count/extrema and selection references. Scatter bins and line continuity have distinct generated result variants.
+
+Pan, zoom and select scatter and line data with at least one billion source points. Render screen-bounded results, preserving gaps and producer-defined selection semantics.
+
+Extend the existing shared Atlas chart renderer used by finance. Send viewport queries through typed GraphOS reads; EG performs binning and selection against its indexed source.
+
+Reject stale viewport replies and invalid selection tokens. Never download the complete source, interpolate across declared gaps or report exact point selection from a bin summary.
+
+Enforce negotiated response-byte and bin-count bounds before rendering. Record viewport dimensions, source cardinality, bin counts, bytes and source revision for each interaction.
+
+Serve a real indexed source of at least one billion points. Pan, zoom and select both chart variants; assert bins are screen-bounded and bytes respect the declared cap. Test stale responses and denied selections.
+
+### WEBUI-APPS-R001.3: Column vector controls
+
+Input `WEBUI:8`; original record SHA-256 `c00e7f00c83f38949d4da47e43c1e3d430e43d5b7122ff44c040d2921eeebedc`.
+
+Source obligation: A table schema browser lets the user toggle vectorization per column and observe vector index statistics.
+
+Existing owner anchors: EG-FEDERATED-QUERY-R077.1/.2/.5; EG-FEDERATED-QUERY-R077.6.1–.6; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: TableExplorer schema browser.
+
+Consume stable table/column IDs, schema revision, ColumnVectorBinding, embedder identity/dimension and versioned index statistics. Advice and binding state remain distinct.
+
+Offer explicit per-column bind/unbind controls and show index readiness, indexed-row count and owner-reported size/freshness. Read the authoritative binding after each accepted mutation.
+
+Extend src/components/views/TableExplorerView.tsx and src/components/table-explorer/SchemaTree.tsx. Use generated GraphOS list, stats and mutation bindings to existing EG column operations.
+
+Deny unauthorized mutations before effects. Stale schema, unsupported type or unavailable embedder leaves the binding unchanged. Advice must never activate a toggle automatically.
+
+Bind mutation verdict and readback to column ID, schema revision, embedder and index generation. Missing statistics remain unavailable, never fabricated zeros.
+
+Use an authenticated browser to bind a text column and read actual index statistics through GraphOS and EG. Deny a writer and submit a stale schema; prove unchanged bindings and no embedding effects.
+
+### WEBUI-APPS-R001.4: Remote editor compatibility
+
+Input `WEBUI:9`; original record SHA-256 `adf594bd4203d666df7254ef4f9481e91cdb841429e8b720d2a8483764f44a32`.
+
+Source obligation: The web interface offers a browser-based code editor with extension and keyboard-shortcut compatibility for remote development.
+
+Existing owner anchors: WEBUI-APPS-R001; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: WorkspaceIDEView.
+
+Consume a versioned host compatibility manifest naming editor protocol, extension IDs/versions, supported capabilities and keybinding profiles. Keep remote workspace identity scoped to the session.
+
+Expose supported extension installation/use and keyboard shortcuts within the existing embedded workbench. Resolve shortcut focus between shell and editor without silently swallowing commands.
+
+Reuse src/components/views/WorkspaceIDEView.tsx at /ide and its editor-context bridge. GraphOS owns workbench hosting and extension admission; the browser must not install a second editor.
+
+Unsupported extensions, incompatible versions and denied workspace access show explicit refusals. Untrusted workspaces cannot gain host privileges or access another workspace through the bridge.
+
+Record workbench and manifest versions, extension verdicts, keybinding profile and workspace revision. Keep service credentials out of frame messages and browser state.
+
+Open an authenticated remote workspace and exercise one declared extension and shortcut in a real browser. Test incompatible extensions, reserved shortcut focus and cross-workspace access denial.
+
+### WEBUI-APPS-R001.5: Meeting transcripts and summaries
+
+Input `WEBUI:10`; original record SHA-256 `c82a815c87428a5baf4379ef7790bafb24a5d3367d16ebd85a6c39ff9b52521d`.
+
+Source obligation: The web interface shows a live meeting transcript. The user chooses a local or hosted language-model provider for post-meeting summaries.
+
+Existing owner anchors: WEBUI-APPS-R001; APIUI-04; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: Meeting AppSurface and existing dictation seam.
+
+Consume meeting ID, segment ID, sequence, correction revision, timestamps and finalization state. Summary requests bind final transcript revision, admitted provider identity and local/hosted execution class.
+
+Show live partial/final segments and ordered corrections. After meeting finalization, let the user select an available local or hosted summary provider and request a summary.
+
+Add the meeting consumer through existing AppSurface and host transport. SDK owns live transcription/provider transport; EG owns context and summary admission; GraphOS serves their generated contracts.
+
+Keep src/hooks/useVoiceDictation.ts single-shot behavior honest. Denied capture, missing streams, sequence gaps or absent providers remain distinct. Never silently move a local-provider request to a hosted service.
+
+Bind summary content and citations to final transcript revision, provider/model revision and admitted execution receipt. Corrections invalidate stale summaries visibly.
+
+In a real browser, receive segments and corrections, finalize, then select local and hosted providers separately. Check actual provider routing and summary provenance. Denied egress and stale transcript requests produce no summary effects.
+
+### WEBUI-APPS-R001.6: Bookmark knowledge views
+
+Input `WEBUI:11`; original record SHA-256 `b1708c96d6b9cadcb1c9f35cc5cb7dde4e60ed2cb1250598e55b9ce4cc66907e`.
+
+Source obligation: The web interface presents a searchable bookmark knowledge base with meaning-based semantic filtering, an interactive mindmap and CSV or JSON export.
+
+Existing owner anchors: SDK-SOURCE-INGEST-R005.7–.12; WEBUI-APPS-R001; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: Bookmark AppSurface and GraphCanvas.
+
+Consume bookmark/source IDs, ingestion provenance, semantic-index revision, authorized relationships and bounded export schema. Reuse the existing SDK bookmark envelopes and extraction vocabulary.
+
+Search and filter bookmarks by meaning; render their authorized relationships as an interactive mindmap. Offer CSV and JSON export for the selected authorized query snapshot.
+
+Use existing AppSurface, GraphView/GraphCanvas and generated GraphOS reads/export delivery. EG owns semantic indexing and relationship decisions. Do not duplicate SDK offline ingestion in the browser.
+
+Denied nodes, stale cursors and unavailable semantic indexes reveal no hidden counts or relationships. Never fetch embedded URLs or run imported instructions. Exports must not widen the selected scope.
+
+Bind search, mindmap and exports to one query/snapshot revision, source provenance, format version and content digest. Preserve unknown metadata and escape CSV formula-like cells safely.
+
+Import bookmarks through SDK R005.7–.12, then use real browser semantic filtering, mindmap and CSV/JSON export. Independently compare stored records and downloaded bytes; deny one bookmark and prove exclusion everywhere.
+
+### WEBUI-APPS-R001.7: Sandboxed design artifacts
+
+Input `AU:107`; original record SHA-256 `d179fc0eb33039df3a87efe8a59ce2a635f0e39f360c58f925011448d0401cdc`.
+
+Source obligation: A design flow composes available coding agents found on the path and applies skill-driven transformations. It renders generated artifacts in a sandboxed web frame.
+
+Existing owner anchors: AU-CONTROL-R003; AU-HARNESS-R009; WEBUI-DESIGN-R001; WEBUI-APPS-R001. Entry: Existing MCP App frame.
+
+Consume host-discovered executable identities and capabilities, EG-admitted skill sequence and immutable generated artifact references. Bind artifacts to execution, skill and source revisions.
+
+Let the user select available coding-agent capabilities for a design flow and inspect skill-transformation progress. Render the resulting artifact only through the existing sandboxed frame.
+
+Reuse src/components/mcp/McpAppFrame.tsx and McpAppHost.tsx. GraphOS discovers PATH executables and hosts effects; EG selects composition; AU runs admitted skills. The browser never probes PATH or chooses policy.
+
+Unavailable executables or refused transformations produce no success preview. Validate artifact digest, origin and message schema. Block parent DOM, credential access, popups and unauthorized network/navigation.
+
+Show execution and transformation references with the rendered digest. Preserve producer refusal and cancellation; frame rendering alone is not proof of a completed transformation.
+
+Serve an admitted design flow through actual host discovery and execution to the sandbox frame. Compare the artifact digest with durable provenance; test substituted artifacts and hostile scripts without parent or network escape.
+
+### WEBUI-APPS-R001.8: Interactive code explanations
+
+Input `AU:115`; original record SHA-256 `445704f78ae07d1c4b62f42dd23797823d91bc470f04a9dc779e3f6777fffbf0`.
+
+Source obligation: A codebase query can produce a linear code walkthrough and a self-contained interactive explanation artifact. Execution notes stream to the graph as provenance.
+
+Existing owner anchors: EG-REPO-INGEST-R009; AU-HARNESS-R024; EG-ORCH-VOCAB-R013.1/.3; WEBUI-APPS-R001. Entry: Existing artifact frame and code navigation.
+
+Consume query/repository revision, ordered walkthrough steps, source spans, self-contained artifact manifest/digest and execution-note sequence references. Keep explanation notes distinct from private model reasoning.
+
+Show a linear source-linked walkthrough and interactive explanation artifact for the same query output. Show ordered graph-persisted execution notes with provenance links.
+
+Reuse existing code navigation and the R001.7 frame boundary. GraphOS serves generated explanation output and note subscriptions; EG owns source and provenance identity; AU emits admitted execution notes.
+
+Missing source revisions, invalid manifests, stale notes and denied source spans show unavailable. Reject unmanifested external artifact dependencies; never synthesize a successful explanation from a generic span tree.
+
+Bind walkthrough, artifact bytes and note stream to one query and repository revision. Label disconnected streams and retain sequence/correction identities without exposing hidden source content.
+
+From a real served code query, inspect source-linked steps and load the artifact with external network blocked. Independently read graph notes and compare artifact bytes; reject wrong-revision outputs and unauthorized source links.
+
+### Input reconciliation
+
+| Input | Consumer clauses | Scope |
+|---|---|---|
+| AU:103 | `WEBUI-APPS-R004.7.1`–`.6` | Evolution evidence |
+| WEBUI:3 | `WEBUI-APPS-R006.4.1`–`.6` | Unified harness sessions |
+| WEBUI:4 | `WEBUI-APPS-R004.8.1`–`.6` | Indexed usage analysis |
+| WEBUI:5 | `WEBUI-APPS-R030.8.1`–`.6` | Live graph convergence |
+| WEBUI:6 | `WEBUI-APPS-R001.1.1`–`.6` | Retrieval quality comparison |
+| WEBUI:7 | `WEBUI-APPS-R001.2.1`–`.6` | Bounded large-data charts |
+| WEBUI:8 | `WEBUI-APPS-R001.3.1`–`.6` | Column vector controls |
+| WEBUI:9 | `WEBUI-APPS-R001.4.1`–`.6` | Remote editor compatibility |
+| WEBUI:10 | `WEBUI-APPS-R001.5.1`–`.6` | Meeting transcripts and summaries |
+| WEBUI:11 | `WEBUI-APPS-R001.6.1`–`.6` | Bookmark knowledge views |
+| AU:107 | `WEBUI-APPS-R001.7.1`–`.6` | Sandboxed design artifacts |
+| AU:115 | `WEBUI-APPS-R001.8.1`–`.6` | Interactive code explanations |
+
+The cited owner anchors establish existing responsibilities, not missing operation registrations. The exact newly published producer extensions must be reconciled before runtime acceptance. Covered model/task-class metrics, SDK bookmark ingestion, single-shot dictation and the existing editor/frame remain intact.
+<!-- /spec-definition-patch -->

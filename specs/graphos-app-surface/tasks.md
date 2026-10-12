@@ -47,3 +47,82 @@ No task above names a requirement ID individually; together they must close ever
 - [ ] R030.7: implement the served browser → GraphOS operation → fixture-engine journey and prove unauthorized edits leave durable graph state unchanged.
 - [ ] R031.2 prerequisite: implement generated EG R085 and GraphOS R024.4.1–.6 contracts through canonical invoke; prove registered same-origin hosting. Definitions exist, runtime proof remains missing.
 - [ ] R031.7: implement served snapshot/conflict/refusal journeys and the unchanged-head observation-generation acknowledgment race. Retain and reload authorized versions. Prove redacted denied/revoked reads and browser acknowledgment refusal. Accept sync labels only from EG evidence. No client/host-handler/engine-transport mocks.
+
+<!-- spec-definition-patch:consumer-definitions-20261012 -->
+## Consumer implementation tasks
+
+All tasks below remain open. Definitions do not establish runtime delivery.
+
+- [ ] **WEBUI-APPS-R004.7.1:** Implement and prove model for evolution evidence.
+- [ ] **WEBUI-APPS-R004.7.2:** Implement and prove behavior for evolution evidence.
+- [ ] **WEBUI-APPS-R004.7.3:** Implement and prove wiring for evolution evidence.
+- [ ] **WEBUI-APPS-R004.7.4:** Implement and prove refusal for evolution evidence.
+- [ ] **WEBUI-APPS-R004.7.5:** Implement and prove evidence for evolution evidence.
+- [ ] **WEBUI-APPS-R004.7.6:** Implement and prove served acceptance for evolution evidence.
+- [ ] **WEBUI-APPS-R006.4.1:** Implement and prove model for unified harness sessions.
+- [ ] **WEBUI-APPS-R006.4.2:** Implement and prove behavior for unified harness sessions.
+- [ ] **WEBUI-APPS-R006.4.3:** Implement and prove wiring for unified harness sessions.
+- [ ] **WEBUI-APPS-R006.4.4:** Implement and prove refusal for unified harness sessions.
+- [ ] **WEBUI-APPS-R006.4.5:** Implement and prove evidence for unified harness sessions.
+- [ ] **WEBUI-APPS-R006.4.6:** Implement and prove served acceptance for unified harness sessions.
+- [ ] **WEBUI-APPS-R004.8.1:** Implement and prove model for indexed usage analysis.
+- [ ] **WEBUI-APPS-R004.8.2:** Implement and prove behavior for indexed usage analysis.
+- [ ] **WEBUI-APPS-R004.8.3:** Implement and prove wiring for indexed usage analysis.
+- [ ] **WEBUI-APPS-R004.8.4:** Implement and prove refusal for indexed usage analysis.
+- [ ] **WEBUI-APPS-R004.8.5:** Implement and prove evidence for indexed usage analysis.
+- [ ] **WEBUI-APPS-R004.8.6:** Implement and prove served acceptance for indexed usage analysis.
+- [ ] **WEBUI-APPS-R030.8.1:** Implement and prove model for live graph convergence.
+- [ ] **WEBUI-APPS-R030.8.2:** Implement and prove behavior for live graph convergence.
+- [ ] **WEBUI-APPS-R030.8.3:** Implement and prove wiring for live graph convergence.
+- [ ] **WEBUI-APPS-R030.8.4:** Implement and prove refusal for live graph convergence.
+- [ ] **WEBUI-APPS-R030.8.5:** Implement and prove evidence for live graph convergence.
+- [ ] **WEBUI-APPS-R030.8.6:** Implement and prove served acceptance for live graph convergence.
+- [ ] **WEBUI-APPS-R001.1.1:** Implement and prove model for retrieval quality comparison.
+- [ ] **WEBUI-APPS-R001.1.2:** Implement and prove behavior for retrieval quality comparison.
+- [ ] **WEBUI-APPS-R001.1.3:** Implement and prove wiring for retrieval quality comparison.
+- [ ] **WEBUI-APPS-R001.1.4:** Implement and prove refusal for retrieval quality comparison.
+- [ ] **WEBUI-APPS-R001.1.5:** Implement and prove evidence for retrieval quality comparison.
+- [ ] **WEBUI-APPS-R001.1.6:** Implement and prove served acceptance for retrieval quality comparison.
+- [ ] **WEBUI-APPS-R001.2.1:** Implement and prove model for bounded large-data charts.
+- [ ] **WEBUI-APPS-R001.2.2:** Implement and prove behavior for bounded large-data charts.
+- [ ] **WEBUI-APPS-R001.2.3:** Implement and prove wiring for bounded large-data charts.
+- [ ] **WEBUI-APPS-R001.2.4:** Implement and prove refusal for bounded large-data charts.
+- [ ] **WEBUI-APPS-R001.2.5:** Implement and prove evidence for bounded large-data charts.
+- [ ] **WEBUI-APPS-R001.2.6:** Implement and prove served acceptance for bounded large-data charts.
+- [ ] **WEBUI-APPS-R001.3.1:** Implement and prove model for column vector controls.
+- [ ] **WEBUI-APPS-R001.3.2:** Implement and prove behavior for column vector controls.
+- [ ] **WEBUI-APPS-R001.3.3:** Implement and prove wiring for column vector controls.
+- [ ] **WEBUI-APPS-R001.3.4:** Implement and prove refusal for column vector controls.
+- [ ] **WEBUI-APPS-R001.3.5:** Implement and prove evidence for column vector controls.
+- [ ] **WEBUI-APPS-R001.3.6:** Implement and prove served acceptance for column vector controls.
+- [ ] **WEBUI-APPS-R001.4.1:** Implement and prove model for remote editor compatibility.
+- [ ] **WEBUI-APPS-R001.4.2:** Implement and prove behavior for remote editor compatibility.
+- [ ] **WEBUI-APPS-R001.4.3:** Implement and prove wiring for remote editor compatibility.
+- [ ] **WEBUI-APPS-R001.4.4:** Implement and prove refusal for remote editor compatibility.
+- [ ] **WEBUI-APPS-R001.4.5:** Implement and prove evidence for remote editor compatibility.
+- [ ] **WEBUI-APPS-R001.4.6:** Implement and prove served acceptance for remote editor compatibility.
+- [ ] **WEBUI-APPS-R001.5.1:** Implement and prove model for meeting transcripts and summaries.
+- [ ] **WEBUI-APPS-R001.5.2:** Implement and prove behavior for meeting transcripts and summaries.
+- [ ] **WEBUI-APPS-R001.5.3:** Implement and prove wiring for meeting transcripts and summaries.
+- [ ] **WEBUI-APPS-R001.5.4:** Implement and prove refusal for meeting transcripts and summaries.
+- [ ] **WEBUI-APPS-R001.5.5:** Implement and prove evidence for meeting transcripts and summaries.
+- [ ] **WEBUI-APPS-R001.5.6:** Implement and prove served acceptance for meeting transcripts and summaries.
+- [ ] **WEBUI-APPS-R001.6.1:** Implement and prove model for bookmark knowledge views.
+- [ ] **WEBUI-APPS-R001.6.2:** Implement and prove behavior for bookmark knowledge views.
+- [ ] **WEBUI-APPS-R001.6.3:** Implement and prove wiring for bookmark knowledge views.
+- [ ] **WEBUI-APPS-R001.6.4:** Implement and prove refusal for bookmark knowledge views.
+- [ ] **WEBUI-APPS-R001.6.5:** Implement and prove evidence for bookmark knowledge views.
+- [ ] **WEBUI-APPS-R001.6.6:** Implement and prove served acceptance for bookmark knowledge views.
+- [ ] **WEBUI-APPS-R001.7.1:** Implement and prove model for sandboxed design artifacts.
+- [ ] **WEBUI-APPS-R001.7.2:** Implement and prove behavior for sandboxed design artifacts.
+- [ ] **WEBUI-APPS-R001.7.3:** Implement and prove wiring for sandboxed design artifacts.
+- [ ] **WEBUI-APPS-R001.7.4:** Implement and prove refusal for sandboxed design artifacts.
+- [ ] **WEBUI-APPS-R001.7.5:** Implement and prove evidence for sandboxed design artifacts.
+- [ ] **WEBUI-APPS-R001.7.6:** Implement and prove served acceptance for sandboxed design artifacts.
+- [ ] **WEBUI-APPS-R001.8.1:** Implement and prove model for interactive code explanations.
+- [ ] **WEBUI-APPS-R001.8.2:** Implement and prove behavior for interactive code explanations.
+- [ ] **WEBUI-APPS-R001.8.3:** Implement and prove wiring for interactive code explanations.
+- [ ] **WEBUI-APPS-R001.8.4:** Implement and prove refusal for interactive code explanations.
+- [ ] **WEBUI-APPS-R001.8.5:** Implement and prove evidence for interactive code explanations.
+- [ ] **WEBUI-APPS-R001.8.6:** Implement and prove served acceptance for interactive code explanations.
+<!-- /spec-definition-patch -->
