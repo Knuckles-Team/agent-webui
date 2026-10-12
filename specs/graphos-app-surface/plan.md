@@ -93,7 +93,7 @@ Authorized stale saves return conflict_retained only after both versions are dur
 
 The browser cannot invoke observe_file or acknowledge_materialization. A save result is not a host acknowledgment. GraphOS must preserve local edits and submit observations before replacing hosted bytes. Its acknowledgment binds graph incarnation, document, accepted revision, digest, observation_generation and attempt. EG atomically checks head and generation. A newer observed edit invalidates an old acknowledgment even if the accepted head has not changed. Pending edits or unresolved conflicts prevent in_sync; missing evidence yields unavailable. The UI must render that state after reread and never infer in_sync from HTTP success or matching local text.
 
-All helper, tab, registered-operation and host-materializer work remains SPECIFIED. Planned tests below are acceptance requirements, not implementation evidence.
+Helper, tab, registered-operation and host-materializer work still needs implementation. Planned tests below are acceptance requirements, not implementation evidence.
 
 ## 2026-10-11 ownership and served-acceptance correction
 
@@ -117,7 +117,7 @@ mocks. Fixture credentials and temporary storage are allowed; replacing the
 owners with canned verdicts is not. Persist and reload both conflict versions;
 unauthorized graph edits must leave durable graph state unchanged.
 
-All R030/R031 children remain SPECIFIED until their own acceptance runs. The
+Each R030/R031 child still needs its own acceptance run. The
 requirements describe product-neutral graph and memory behavior. Research
 citations, including arXiv papers, are inspiration only, never protocol
 contracts, owner authority, implementation evidence or acceptance receipts.

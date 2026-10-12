@@ -30,6 +30,11 @@ repos:
     # pnpm patch files are diffs: a blank context line is a single space.
     exclude: ^patches/
   - id: end-of-file-fixer
+- repo: https://github.com/Mateusz-Grzelinski/actionlint-py
+  rev: 805f85e558841bf4d852335e036b33d2b26be1cc # v1.7.12.25; prebuilt actionlint binary
+  hooks:
+  - id: actionlint
+    stages: [pre-commit, pre-push, manual]
 - repo: https://github.com/astral-sh/ruff-pre-commit
   rev: 6fec9b7edb08fd9989088709d864a7826dc74e80 # v0.15.12
   hooks:
