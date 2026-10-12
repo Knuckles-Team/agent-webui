@@ -39,3 +39,7 @@ The app interactions include retrieval comparison, bounded charts, column bindin
 EG retains semantic and policy authority. GraphOS retains authenticated serving and host effects. SDK and AU retain their respective transports and execution.
 All new requirements remain SPECIFIED until their real served acceptance passes. No implementation or runtime receipt is recorded by this definition batch.
 <!-- /spec-definition-patch -->
+
+Definition closure remains open for all twelve source inputs.
+Missing specialized producer bindings, quantitative limits and complete harness-manifest coverage are definition prerequisites as well as runtime dependencies.
+See the open definition prerequisites in plan.md. All new rows remain SPECIFIED.

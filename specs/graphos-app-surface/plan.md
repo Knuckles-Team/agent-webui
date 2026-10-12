@@ -129,7 +129,7 @@ These clauses preserve the existing shell and producer responsibilities. They ad
 
 All new typed operation calls reuse `src/lib/graphos-api/invoke.ts` under `WEBUI-API-R001` and the generated API client. GraphOS registration, authorization and serving remain `GRAPHOS-OPS-R008`, `GRAPHOS-OPS-R009` and `GRAPHOS-OPS-R013`. Existing event transports carry owner-defined subscriptions; the browser must not create a second event protocol.
 
-No operation ID absent from a producer contract is assigned here. The owner must publish its generated operation and schema binding before implementation can pass. A missing binding is an unavailable dependency, not permission for local policy or a browser-owned index. Specialized producer extensions remain with EG, SDK, AU and GraphOS. This batch defines the exact information and behavior their WebUI consumer requires.
+No operation ID absent from a producer contract is assigned here. The owner must publish exact specialized operation IDs and schema bindings before definition closure or runtime acceptance. A missing binding is an unavailable dependency, not permission for local policy or a browser-owned index. Specialized producer extensions remain with EG, SDK, AU and GraphOS. This batch defines the exact information and behavior their WebUI consumer requires.
 
 For every consumer, bind authenticated tenant, principal, graph/workspace incarnation, request identity and source revision at the host. Cancel stale requests on scope changes and clear protected state on revocation. Refusals expose no hidden entity identifiers or stored data. Compare-and-set, idempotency and authorization decisions remain producer decisions.
 
@@ -161,7 +161,7 @@ Source obligation: On first run, the platform discovers agent sessions from ever
 
 Existing owner anchors: APIUI-04; WEBUI-APPS-R006; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: SessionsView and goal-session-fleet panel.
 
-Consume the host supported-harness inventory and discovery status. Session identity includes source harness, source session ID, tenant and authoritative indexed revision.
+Consume the versioned host supported-harness manifest and discovery status for every manifest entry. Session identity includes source harness, source session ID, tenant and authoritative indexed revision.
 
 On first use, show discovery and synchronization for every declared supported harness. Browse and search the unified authorized index with cross-session cost summaries.
 
@@ -171,7 +171,7 @@ Unsupported harnesses, denied sources and partial synchronization remain individ
 
 Keep source coverage, sync cursor, index revision, query window, cost units and partial-result flags with every result page. Do not create a browser metric or session index.
 
-From a fresh authenticated browser, discover two supported harnesses and search indexed sessions without duplicate identities. Deny one source and prove visible partial coverage and no hidden-session disclosure.
+From a fresh browser, exercise every supported harness in the versioned owner manifest and search sessions without duplicate identities. Include at least two harnesses when the manifest contains two or more. Two examples alone do not prove manifest-wide coverage. Deny one source and prove visible partial coverage and no hidden-session disclosure.
 
 ### WEBUI-APPS-R004.8: Indexed usage analysis
 
@@ -187,11 +187,11 @@ Filter indexed history by model, project, agent and time window. Show producer a
 
 Extend src/components/views/ObservabilityView.tsx using the canonical operation adapter. EG returns indexed accounting and groups; GraphOS serves the generated projection. Reuse existing model/task-class metrics.
 
-Unknown project/agent attribution, incomplete token accounting and zero-solved abstention remain explicit. Never total overlapping token categories or manufacture project costs in JavaScript.
+Unknown project/agent attribution, incomplete token accounting and zero-solved abstention remain explicit. Missing, nonpositive or nonfinite owner latency limits make bounded analysis unavailable. Never total overlapping token categories or manufacture project costs in JavaScript.
 
-Retain aggregate definition, currency, accounting version, observation interval, source coverage and index watermark. Record producer-reported query duration and the tested dataset size.
+Retain aggregate definition, currency, accounting version, observation interval, source coverage and index watermark. Bind measured latency to an owner-published positive finite limit, units, measurement boundary, dataset size and contract revision.
 
-Serve indexed model/project/agent queries over a declared large history and check independent stored accounting totals. Test incomplete attribution and denied scopes; record latency against the owner-declared query budget.
+Serve indexed model/project/agent queries over the owner-declared dataset and check independent stored accounting totals. Compare measured latency with the revision-bound positive finite owner limit. Test incomplete attribution, denied scope and absent, invalid or exceeded limits.
 
 ### WEBUI-APPS-R030.8: Live graph convergence
 
@@ -207,11 +207,11 @@ Apply committed changes to other connected clients without page refresh. Preserv
 
 Attach the host subscription to src/components/views/GraphView.tsx and GraphCanvas. Use the existing host event transport with its generated contract; snapshot reads remain typed GraphOS operations.
 
-Deduplicate events and reject revision regressions. A gap or expired cursor requires an authorized fresh snapshot. Revocation clears protected graph state and stops the subscription.
+Deduplicate events and reject revision regressions. A gap or expired cursor requires an authorized fresh snapshot. Missing, nonpositive or nonfinite latency/layout bounds make bounded live mode unavailable. Revocation clears protected graph state and stops the subscription.
 
-Retain snapshot and event revisions and measure commit-to-visible latency. Layout evidence includes selection continuity, readable labels and frame timing under concurrent changes.
+Retain snapshot and event revisions and measure commit-to-visible latency. Bind latency and layout measurements to owner-published positive finite limits, metric definitions, units, workload and contract revision. Layout metrics must cover readability and frame timing; retain selection continuity evidence.
 
-Two real browsers edit concurrently and converge before refresh. Exercise duplicated, delayed and reordered events, reconnect and revocation; compare both views with independent durable readback.
+Two real browsers edit concurrently and converge before refresh within the owner latency limit. Compare layout measurements against owner limits under the declared workload. Test missing, invalid and exceeded bounds. Exercise duplicated, delayed and reordered events, reconnect and revocation; compare both views with independent durable readback.
 
 ### WEBUI-APPS-R001.1: Retrieval quality comparison
 
@@ -247,11 +247,11 @@ Pan, zoom and select scatter and line data with at least one billion source poin
 
 Extend the existing shared Atlas chart renderer used by finance. Send viewport queries through typed GraphOS reads; EG performs binning and selection against its indexed source.
 
-Reject stale viewport replies and invalid selection tokens. Never download the complete source, interpolate across declared gaps or report exact point selection from a bin summary.
+Reject stale viewport replies and invalid selection tokens. Refuse rendering when owner bin/byte limits or viewport dimensions are absent, nonpositive, nonfinite or schema-invalid. Never download the complete source, interpolate across declared gaps or report exact point selection from a bin summary.
 
-Enforce negotiated response-byte and bin-count bounds before rendering. Record viewport dimensions, source cardinality, bin counts, bytes and source revision for each interaction.
+Enforce owner-published positive finite bin-count and response-byte limits before rendering. Their versioned formulas must bind viewport dimensions and chart variant, independently of total source cardinality. Count limits use integers. Record formula revision, viewport dimensions, source cardinality, bins and bytes.
 
-Serve a real indexed source of at least one billion points. Pan, zoom and select both chart variants; assert bins are screen-bounded and bytes respect the declared cap. Test stale responses and denied selections.
+Serve a real indexed source of at least one billion points. Pan, zoom and select both chart variants. Measure bins and bytes against the owner viewport formulas and limits. Test absent, zero, negative, nonfinite and exceeded limits, stale responses and denied selections.
 
 ### WEBUI-APPS-R001.3: Column vector controls
 
@@ -390,5 +390,17 @@ From a real served code query, inspect source-linked steps and load the artifact
 | AU:107 | `WEBUI-APPS-R001.7.1`–`.6` | Sandboxed design artifacts |
 | AU:115 | `WEBUI-APPS-R001.8.1`–`.6` | Interactive code explanations |
 
-The cited owner anchors establish existing responsibilities, not missing operation registrations. The exact newly published producer extensions must be reconciled before runtime acceptance. Covered model/task-class metrics, SDK bookmark ingestion, single-shot dictation and the existing editor/frame remain intact.
+The cited owner anchors establish existing responsibilities, not missing operation registrations. The exact newly published producer extensions must be reconciled before definition closure and runtime acceptance. Covered model/task-class metrics, SDK bookmark ingestion, single-shot dictation and the existing editor/frame remain intact.
 <!-- /spec-definition-patch -->
+
+## Open definition prerequisites
+
+None of the twelve source inputs is fully definition-complete through this consumer increment alone.
+Existing general owner anchors do not replace exact specialized producer operation IDs, schema revisions and consumer bindings.
+EG, SDK, AU and GraphOS retain authority to publish those missing producer clauses.
+WebUI must reconcile each exact owner requirement and generated schema before claiming source-input definition closure.
+The latency, layout and viewport limits above are also missing definition prerequisites.
+Their owners must publish positive finite values or formulas with units, measurement boundaries, workloads and revisions.
+The consumer must refuse absent or invalid bounds; it must not choose local defaults to close the gap.
+Manifest-wide harness coverage requires the versioned complete supported-harness inventory and per-entry acceptance evidence.
+These are cross-owner follow-up conditions. This change does not assign limit values, register operations or implement behavior.

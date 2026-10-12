@@ -126,3 +126,7 @@ All tasks below remain open. Definitions do not establish runtime delivery.
 - [ ] **WEBUI-APPS-R001.8.5:** Implement and prove evidence for interactive code explanations.
 - [ ] **WEBUI-APPS-R001.8.6:** Implement and prove served acceptance for interactive code explanations.
 <!-- /spec-definition-patch -->
+
+- [ ] Reconcile exact specialized producer requirements, operation IDs and schema revisions before marking any source input definition-complete.
+- [ ] Obtain owner-defined positive finite latency, layout and viewport bounds for R004.8, R030.8 and R001.2.
+- [ ] Bind R006.4 acceptance to every entry in the complete versioned supported-harness manifest.
