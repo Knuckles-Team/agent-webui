@@ -3,7 +3,7 @@
 The five repositories form one runtime. Each owns one kind of authority, and
 Graph OS presents those capabilities without duplicating them.
 
-![Knuckles-Team runtime architecture showing Graph OS, GraphOS, agent-utilities, epistemic-graph, and agent-connector-sdk in their owned positions.](assets/runtime-architecture.svg)
+![Knuckles-Team runtime architecture showing Graph OS, GraphOS, agent-utilities, epistemic-graph, and agent-connector-sdk in their owned positions.](https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/main/docs/assets/runtime-architecture.svg)
 
 ## Component ownership
 

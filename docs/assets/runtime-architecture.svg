@@ -1,3 +1,8 @@
+<!-- Generated compatibility copy; do not edit.
+Source: https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/54aab65786bf72fac94f565796eb21f5d1ec72c4/docs/assets/runtime-architecture.svg
+SHA-256: 2ecd201c6b7a170924195ce5578394f88365d3a539be4ece17aca15a439aef47
+Synchronize: https://github.com/Knuckles-Team/.github/blob/main/docs/runtime-diagram.md
+-->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 700" role="img" aria-labelledby="diagram-title diagram-description">
   <title id="diagram-title">Knuckles-Team agent ecosystem runtime architecture</title>
   <desc id="diagram-description">People use Graph OS web UI, Agent Terminal UI, Geniusbot, or messaging channels. MCP, REST, and A2A clients also enter through Graph OS. Graph OS is the governed gateway and composition host, Agent Utilities is the agent control plane, and Epistemic Graph is the durable multimodal knowledge and reasoning engine. Source systems connect through Agent Connector SDK.</desc>

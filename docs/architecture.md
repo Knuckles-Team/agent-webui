@@ -3,7 +3,7 @@
 Graph OS is the browser and same-origin presentation boundary for GraphOS.
 It renders runtime capabilities; it does not duplicate their authorities.
 
-![Runtime architecture: Graph OS enters GraphOS, which composes agent-utilities, epistemic-graph, and connector services.](assets/runtime-architecture.svg)
+![Runtime architecture: Graph OS enters GraphOS, which composes agent-utilities, epistemic-graph, and connector services.](https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/main/docs/assets/runtime-architecture.svg)
 
 ## Runtime composition
 
