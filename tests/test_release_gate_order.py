@@ -1,4 +1,4 @@
-"""Runtime test evidence precedes the still-required pre-push metadata gates."""
+"""Hook setup is shared; runtime tests precede required pre-push gates."""
 
 from __future__ import annotations
 
@@ -30,6 +30,50 @@ class ReleaseGateOrderTests(unittest.TestCase):
         self.assertLess(bootstrap, commit)
         self.assertLess(commit, scope)
         self.assertLess(scope, tests)
+
+    def test_cold_hook_setup_precedes_bounded_validation(self) -> None:
+        steps = gate_steps()
+        names = [name for name, _ in steps]
+        prepare = names.index('Prepare shared hook environments')
+        bootstrap = next(
+            i for i, name in enumerate(names) if name.startswith('Bootstrap')
+        )
+        commit = names.index('pre-commit (commit stage, all files)')
+        self.assertLess(bootstrap, prepare)
+        self.assertLess(prepare, commit)
+        setup = steps[prepare][1]
+        self.assertIn(
+            'run: uvx pre-commit install-hooks --config .config/pre-commit.yaml',
+            setup,
+        )
+        for body in (setup, steps[commit][1]):
+            self.assertIn('timeout-minutes: 15', body)
+            self.assertNotIn('continue-on-error:', body)
+            self.assertNotIn('if:', body)
+
+    def test_all_hook_stages_share_a_fresh_cache_per_attempt(self) -> None:
+        workflow = WORKFLOW.read_text(encoding='utf-8')
+        gates = workflow.split('\n  gates:\n', 1)[1].split(
+            '\n  # Spec-status lifecycle', 1
+        )[0]
+        job, steps = gates.split('    steps:\n', 1)
+        self.assertIn(
+            '    env:\n'
+            '      PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit-'
+            '${{ github.run_id }}-${{ github.run_attempt }}',
+            job,
+        )
+        self.assertNotIn('PRE_COMMIT_HOME', steps)
+        self.assertNotIn('SKIP:', job + steps)
+        runs = [
+            line.strip()
+            for line in steps.splitlines()
+            if 'uvx pre-commit run ' in line
+        ]
+        self.assertEqual(len(runs), 4)
+        for command in runs:
+            self.assertIn('--all-files', command)
+            self.assertNotIn('||', command)
 
     def test_existing_runtime_test_steps_precede_pre_push(self) -> None:
         names = [name for name, _ in gate_steps()]

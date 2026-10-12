@@ -80,7 +80,7 @@ jobs:
   # (CI is set), so a green run means every hook really ran.
   gates:
     name: gates
-    # PR gates are bounded (10 min) so a stuck or runaway step fails fast
+    # PR gates are bounded (45 min) so a stuck or runaway step fails fast
     # instead of riding out the default 6h ceiling; push/main and
     # workflow_dispatch keep a generous 60 min for the full, unscoped suite.
     timeout-minutes: ${{ github.event_name == 'pull_request' && 45 || 60 }}
@@ -89,6 +89,10 @@ jobs:
     # GitHub-hosted runner instead -- self-hosted capacity is never offered
     # to an untrusted fork.
     runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "homelab"]') || 'ubuntu-latest' }}
+    # Share freshly resolved hook environments across every stage in this run.
+    # The run and attempt IDs prevent reuse of mutable hook refs across runs.
+    env:
+      PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -112,13 +116,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: scripts/bootstrap.sh --no-hooks --engine-wheel
 
-      - name: pre-commit (commit stage, all files)
-        # Step-level cap and --verbose so a stall on a self-hosted runner fails
-        # this step with a log naming the hook, instead of the job being
-        # cancelled with no log. A per-run hook cache avoids a stale shared one.
+      - name: Prepare shared hook environments
+        # Cold environment installation has its own bounded step. Every check
+        # below uses these environments, leaving its budget for validation.
         timeout-minutes: 15
-        env:
-          PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit
+        run: uvx pre-commit install-hooks --config .config/pre-commit.yaml
+
+      - name: pre-commit (commit stage, all files)
+        # Keep the validation cap and hook output after environment preparation.
+        timeout-minutes: 15
         run: uvx pre-commit run --config .config/pre-commit.yaml --all-files --show-diff-on-failure --verbose
 
       - name: Type check and full lint (manual-stage hooks, always full)
