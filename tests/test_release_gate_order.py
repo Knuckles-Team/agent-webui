@@ -35,6 +35,19 @@ class ReleaseGateOrderTests(unittest.TestCase):
         self.assertLess(commit, scope)
         self.assertLess(scope, tests)
 
+    def test_uv_cache_uses_a_repository_scoped_runner_temp_path(self) -> None:
+        setup = dict(gate_steps())['Set up uv']
+        cache = re.search(
+            r'^          cache-local-path: (.+)$', setup, re.MULTILINE
+        )
+        self.assertIsNotNone(cache)
+        assert cache is not None
+        self.assertEqual(
+            cache.group(1), '${{ runner.temp }}/agent-webui/uv-cache'
+        )
+        self.assertNotIn('enable-cache:', setup)
+        self.assertNotIn('UV_LINK_MODE', WORKFLOW.read_text(encoding='utf-8'))
+
     def test_cold_hook_setup_precedes_bounded_validation(self) -> None:
         steps = gate_steps()
         names = [name for name, _ in steps]
