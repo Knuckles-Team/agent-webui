@@ -214,9 +214,11 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [
         "401cec444a5f",
+        "7545b6ceaf55",
         "e05e1230ae72"
       ],
       "verified_by": [
+        "src/components/__tests__/AppSidebar.navigation.test.tsx:81",
         "src/lib/apps/__tests__/apps.test.ts:14",
         "src/lib/apps/__tests__/apps.test.ts:9"
       ],

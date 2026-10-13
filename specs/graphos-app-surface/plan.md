@@ -16,6 +16,18 @@ Regenerate favicon/icon/social images using the repository asset script and chec
 
 A missing catalog, unsupported manifest version, denied capability, unavailable API or failed app load has a distinct visible state. Fail closed on invalid descriptors and do not import remote executable code. A fresh checkout runs `pnpm install --frozen-lockfile`, `uv venv --python 3.12`, `uv pip install -e '.[test]'`, then `pnpm run dev:server` and `pnpm run dev`; fixtures provide native and contributed app manifests locally. No private host is needed for normal PR validation.
 
+## Amendments
+
+### 2026-10-11: Sidebar query-provider parity (`WEBUI-APPS-R001`)
+
+Standalone sidebar navigation and conversation tests use the existing
+`renderWithProviders` harness, matching the real query provider in `App.tsx`.
+Keep the catalog hook and React Query real. A rendered regression checks that
+capability-gated links remain absent until the catalog loads, then shows only
+available apps. Preserve modified-click and conversation-remount coverage.
+This focused regression does not establish the broader `APP-07` accessibility
+acceptance criteria.
+
 ## Run harness surface (WEBUI-APPS-R004)
 
 Data flow: Observability run view (`ObservabilityView.tsx:602`) → `gatewayPost` (`gateway.ts:129`) → graph-os `runs.get` / `runs.metrics` → harness block beside the DAG.
