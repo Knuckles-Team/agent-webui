@@ -9,6 +9,7 @@
 | Old state and grants | Browser profile with prior consent/tool IDs | Re-consent required; old grant cannot invoke new tool |
 | Direct denied URL | Two-principal browser fixture | No privileged component data or tool registration exposed |
 | Mobile/desktop accessibility | Playwright keyboard/touch and reduced-motion fixture | Focus, nav labels, hit targets, contrast and error states pass |
+| Sidebar catalog provider | `AppSidebar.navigation.test.tsx` uses the real query hook and deferred catalog response. Conversation suites cover deletion and deep links. | Available links appear after catalog resolution. Unavailable links stay hidden. Navigation and conversation regressions pass. |
 | Public site | `mkdocs build --strict` and Pages artifact inspection | Links/assets resolve under published base path |
 | Run surface WEBUI-APPS-R004.1 | `tests/x::test_run_read_uses_graphos_operations` | Run read goes through the graph-os read operations. |
 | Run surface WEBUI-APPS-R004.2 | `tests/x::test_harness_config_shown` | Applied harness configuration is shown. |

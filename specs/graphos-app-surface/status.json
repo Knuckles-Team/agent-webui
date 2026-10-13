@@ -217,6 +217,7 @@
         "e05e1230ae72"
       ],
       "verified_by": [
+        "src/components/__tests__/AppSidebar.navigation.test.tsx:81",
         "src/lib/apps/__tests__/apps.test.ts:14",
         "src/lib/apps/__tests__/apps.test.ts:9"
       ],
