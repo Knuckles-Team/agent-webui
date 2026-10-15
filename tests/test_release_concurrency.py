@@ -1,53 +1,42 @@
-"""Only pull-request runs supersede an in-progress release check."""
+"""Pull-request checks supersede stale runs; release runs are never cancelled."""
 
 from __future__ import annotations
 
-import re
 import unittest
 from pathlib import Path
 
-WORKFLOW = Path(__file__).parents[1] / '.github/workflows/release.yml'
+WORKFLOWS = Path(__file__).parents[1] / '.github/workflows'
+CI = (WORKFLOWS / 'ci.yml').read_text(encoding='utf-8')
+RELEASE = (WORKFLOWS / 'release.yml').read_text(encoding='utf-8')
 
 
-def cancellation_for_event(event: str) -> bool:
-    """Interpret only the literal or event equality used by this contract."""
-    workflow = WORKFLOW.read_text(encoding='utf-8')
-    group = workflow.split('\nconcurrency:\n', 1)[1].split('\npermissions:', 1)[0]
-    policy = re.search(r'^  cancel-in-progress: (.+)$', group, re.MULTILINE)
-    assert policy is not None
-    expression = policy.group(1)
-    if expression in ('true', 'false'):
-        return expression == 'true'
-    match = re.fullmatch(r"\$\{\{ github\.event_name == '([a-z_]+)' \}\}", expression)
-    assert match is not None, f'Unexpected cancellation expression: {expression}'
-    return event == match.group(1)
+class CiConcurrencyTests(unittest.TestCase):
+    def test_ci_cancels_stale_pull_request_and_main_runs(self) -> None:
+        self.assertIn('  cancel-in-progress: true', CI)
+        self.assertIn("format('pr-{0}-{1}'", CI)
+        self.assertIn("format('main-{0}'", CI)
 
-
-class ReleaseConcurrencyTests(unittest.TestCase):
-    def test_pull_request_supersedes_stale_gate(self) -> None:
-        self.assertTrue(cancellation_for_event('pull_request'))
-
-    def test_main_tag_and_manual_runs_are_not_cancelled(self) -> None:
-        for event, ref in (
-            ('push', 'refs/heads/main'),
-            ('push', 'refs/tags/v1.2.3'),
-            ('workflow_dispatch', 'refs/heads/main'),
-            ('release', 'refs/tags/v1.2.3'),
-        ):
-            with self.subTest(event=event, ref=ref):
-                self.assertFalse(cancellation_for_event(event))
-
-    def test_cancellation_remains_scoped_to_workflow_and_ref(self) -> None:
-        workflow = WORKFLOW.read_text(encoding='utf-8')
+    def test_release_is_tag_or_dispatch_only_and_never_cancelled(self) -> None:
+        self.assertIn("    tags:\n      - 'v*'\n  workflow_dispatch:", RELEASE)
+        self.assertNotIn('pull_request', RELEASE)
+        self.assertNotIn('branches:', RELEASE)
+        self.assertIn('  cancel-in-progress: false', RELEASE)
         self.assertIn(
-            '  group: release-${{ github.workflow }}-${{ github.ref }}', workflow
+            '  group: release-${{ github.workflow }}-${{ github.ref }}', RELEASE
         )
 
-    def test_existing_pr_and_release_timeouts_are_preserved(self) -> None:
-        workflow = WORKFLOW.read_text(encoding='utf-8')
+    def test_ci_never_publishes(self) -> None:
+        for marker in ('twine', 'docker/build-push-action', 'create-version-release'):
+            self.assertNotIn(marker, CI)
+
+    def test_ci_uses_the_shared_gates_workflow_at_main(self) -> None:
         self.assertIn(
-            "timeout-minutes: ${{ github.event_name == 'pull_request' && 45 || 60 }}",
-            workflow,
+            'uses: Knuckles-Team/pipelines/.github/workflows/gates_pipeline.yml@main',
+            CI,
+        )
+        self.assertIn(
+            "timeout-minutes: ${{ github.event_name == 'pull_request' && 15 || 60 }}",
+            CI,
         )
 
 

@@ -115,7 +115,7 @@ docker/deploy.sh
 `scripts/bootstrap.sh` installs the commit and push hooks. Run focused tests
 while developing, then run
 `uvx pre-commit run --config .config/pre-commit.yaml --all-files` before
-committing. Hosted CI (the `gates` job in `.github/workflows/release.yml`, also
+committing. Hosted CI (the `gates` job in `.github/workflows/ci.yml`, also
 the pull-request check) runs the same file after the same bootstrap, so the
 hook list is the one definition of the gate. Automatic pre-push checks are
 bounded; full pytest, typecheck, wheel builds, and repository-wide lint remain

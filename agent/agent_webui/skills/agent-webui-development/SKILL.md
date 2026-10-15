@@ -188,7 +188,7 @@ uvx pre-commit run --config .config/pre-commit.yaml --all-files
 uvx pre-commit run --config .config/pre-commit.yaml --all-files --hook-stage manual
 ```
 
-Hosted CI's `gates` job in `.github/workflows/release.yml` runs the same
+Hosted CI's `gates` job in `.github/workflows/ci.yml` runs the same
 pre-commit config (commit stage, then pre-push stage) over all files — the
 one definition of the gate.
 
