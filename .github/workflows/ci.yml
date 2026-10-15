@@ -3,13 +3,14 @@ name: CI
 # PR and main checks (CI-STANDARD). Never publishes: publication is
 # release.yml, triggered only by a v* tag or a manual dispatch.
 #
-#   gates -- the shared Knuckles-Team/pipelines gates workflow: this repo's
+#   hooks -- the shared Knuckles-Team/pipelines gates workflow: this repo's
 #            .config/pre-commit.yaml at the commit and pre-push stages
 #            (diff-scoped on a PR, every file on main), which includes the
 #            spec-status / spec-decomposition / spec-trailers hooks.
 #   tests -- WebUI-specific: bootstrap (pinned siblings, locked Python and
 #            frontend deps, engine wheel), full type check and lint, then the
 #            pr-test-scope subset (PR) or the full suite (main).
+#   gates -- the single required check: succeeds only when hooks and tests do.
 #   build -- main only: frontend bundle and wheel/sdist build, no upload.
 #
 # Docs/spec-only changes skip this workflow; gates-skip.yml reports the same
@@ -37,8 +38,8 @@ permissions:
   contents: read
 
 jobs:
-  gates:
-    name: gates
+  hooks:
+    name: hooks
     uses: Knuckles-Team/pipelines/.github/workflows/gates_pipeline.yml@main
     with:
       config: .config/pre-commit.yaml
@@ -216,3 +217,21 @@ jobs:
 
       - name: Build Python distributions (no upload)
         run: uv build
+
+  # The one required check (branch ruleset context `gates`): an aggregate so
+  # the required name is stable while the work is split across `hooks`
+  # (shared workflow) and `tests` (needs the bootstrap).
+  gates:
+    name: gates
+    if: always()
+    needs: [hooks, tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require hooks and tests to have passed
+        env:
+          HOOKS: ${{ needs.hooks.result }}
+          TESTS: ${{ needs.tests.result }}
+        run: |
+          echo "hooks=$HOOKS tests=$TESTS"
+          [ "$HOOKS" = success ] && [ "$TESTS" = success ]

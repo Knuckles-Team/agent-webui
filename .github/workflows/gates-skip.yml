@@ -24,8 +24,7 @@ concurrency:
 
 jobs:
   gates:
-    # Same check name as the reusable-workflow call in ci.yml (gates / gates).
-    name: gates / gates
+    name: gates
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
