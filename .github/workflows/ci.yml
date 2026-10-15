@@ -48,7 +48,7 @@ jobs:
       # lands on the GitHub-hosted runner.
       runner: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","homelab"]' || '"ubuntu-latest"' }}
       # These hooks need the bootstrapped siblings or the Node toolchain; the
-      # `tests` job runs them (full, manual stage) after bootstrap.
+      # `tests` job runs them (full) after bootstrap.
       skip-hooks: check-stubs,check-sprawl,okf-no-legacy-concepts,uv-lock,eslint-staged,no-fabrication-gate
       all-files: ${{ github.event_name != 'pull_request' }}
       timeout-minutes: ${{ github.event_name == 'pull_request' && 15 || 60 }}
@@ -89,8 +89,11 @@ jobs:
           PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          for hook in check-stubs check-sprawl okf-no-legacy-concepts uv-lock eslint-staged no-fabrication-gate; do
-            uvx pre-commit run "$hook" --config .config/pre-commit.yaml --hook-stage manual --all-files --show-diff-on-failure
+          for hook in check-stubs check-sprawl okf-no-legacy-concepts; do
+            uvx pre-commit run "$hook" --config .config/pre-commit.yaml --hook-stage pre-commit --all-files --show-diff-on-failure
+          done
+          for hook in uv-lock eslint-staged no-fabrication-gate; do
+            uvx pre-commit run "$hook" --config .config/pre-commit.yaml --hook-stage pre-push --all-files --show-diff-on-failure
           done
 
       - name: Type check and full lint (manual-stage hooks, always full)
