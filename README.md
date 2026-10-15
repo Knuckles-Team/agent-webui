@@ -15,7 +15,7 @@
 [![Build](https://github.com/Knuckles-Team/agent-webui/actions/workflows/release.yml/badge.svg)](https://github.com/Knuckles-Team/agent-webui/actions/workflows/release.yml)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-526cfe)](https://knuckles-team.github.io/agent-webui/)
 [![GitHub license](https://img.shields.io/github/license/Knuckles-Team/agent-webui)](LICENSE)
-[![Docs build](https://github.com/Knuckles-Team/agent-webui/actions/workflows/advisory.yml/badge.svg?branch=main)](https://github.com/Knuckles-Team/agent-webui/actions/workflows/advisory.yml)
+[![Docs build](https://github.com/Knuckles-Team/agent-webui/actions/workflows/pages.yml/badge.svg?branch=main)](https://github.com/Knuckles-Team/agent-webui/actions/workflows/pages.yml)
 [![PyPI - Downloads](https://img.shields.io/pypi/dd/agent-webui)](https://pypi.org/project/agent-webui/)
 [![PyPI - License](https://img.shields.io/pypi/l/agent-webui)](https://pypi.org/project/agent-webui/)
 [![PyPI - Wheel](https://img.shields.io/pypi/wheel/agent-webui)](https://pypi.org/project/agent-webui/)

@@ -18,7 +18,7 @@ deployment.
 
 - [PyPI package](https://pypi.org/project/agent-webui/)
 - [Release workflow](https://github.com/Knuckles-Team/agent-webui/actions/workflows/release.yml)
-- [Documentation workflow](https://github.com/Knuckles-Team/agent-webui/actions/workflows/advisory.yml)
+- [Documentation workflow](https://github.com/Knuckles-Team/agent-webui/actions/workflows/pages.yml)
 - [GitHub releases](https://github.com/Knuckles-Team/agent-webui/releases)
 
 Use the workflow records for commit-specific build results and the

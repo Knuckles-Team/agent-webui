@@ -85,12 +85,14 @@ after the existing operation completes. Never race two `kubectl set image` opera
 
 ## GitHub release pipeline
 
-`.github/workflows/release.yml` is the release authority. It publishes the
+`.github/workflows/ci.yml` runs the pull request and main checks and never
+publishes. `.github/workflows/release.yml` is the release authority and runs
+only on a `v*` tag or a manual dispatch. It publishes the
 Python package first and builds the container from the same commit only after
 that publication succeeds. The container job checks that the required
 epistemic-graph release is resolvable before building.
 
-`.github/workflows/advisory.yml` owns documentation publication. Documentation
+`.github/workflows/pages.yml` owns documentation publication. Documentation
 failures remain visible without publishing a package or image from an
 unverified release job.
 

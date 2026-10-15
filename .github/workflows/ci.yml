@@ -1,0 +1,237 @@
+name: CI
+
+# PR and main checks (CI-STANDARD). Never publishes: publication is
+# release.yml, triggered only by a v* tag or a manual dispatch.
+#
+#   hooks -- the shared Knuckles-Team/pipelines gates workflow: this repo's
+#            .config/pre-commit.yaml at the commit and pre-push stages
+#            (diff-scoped on a PR, every file on main), which includes the
+#            spec-status / spec-decomposition / spec-trailers hooks.
+#   tests -- WebUI-specific: bootstrap (pinned siblings, locked Python and
+#            frontend deps, engine wheel), full type check and lint, then the
+#            pr-test-scope subset (PR) or the full suite (main).
+#   gates -- the single required check: succeeds only when hooks and tests do.
+#   build -- main only: frontend bundle and wheel/sdist build, no upload.
+#
+# Docs/spec-only changes skip this workflow; gates-skip.yml reports the same
+# required `gates` check for them.
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore: &ignored
+      - 'specs/**'
+      - 'docs/**'
+      - '**/*.md'
+      - 'plans/**'
+      - 'LICENSE'
+  pull_request:
+    paths-ignore: *ignored
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}-{1}', github.workflow, github.event.pull_request.number) || format('main-{0}', github.workflow) }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  hooks:
+    name: hooks
+    uses: Knuckles-Team/pipelines/.github/workflows/gates_pipeline.yml@main
+    with:
+      config: .config/pre-commit.yaml
+      # Tests need the bootstrap below, so the `tests` job owns them.
+      test-scope: ''
+      # Homelab self-hosted runner for same-repo traffic; a fork PR always
+      # lands on the GitHub-hosted runner.
+      runner: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","homelab"]' || '"ubuntu-latest"' }}
+      # These hooks need the bootstrapped siblings or the Node toolchain; the
+      # `tests` job runs them (full) after bootstrap.
+      skip-hooks: check-stubs,check-sprawl,okf-no-legacy-concepts,uv-lock,eslint-staged,no-fabrication-gate
+      all-files: ${{ github.event_name != 'pull_request' }}
+      timeout-minutes: ${{ github.event_name == 'pull_request' && 15 || 60 }}
+
+  tests:
+    name: tests
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 15 || 60 }}
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "homelab"]') || 'ubuntu-latest' }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          # Keep cached wheels on the work volume so installs can use hardlinks.
+          cache-local-path: ${{ runner.temp }}/agent-webui/uv-cache
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Bootstrap (pinned siblings, locked Python and frontend deps, engine wheel)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/bootstrap.sh --no-hooks --engine-wheel
+
+      - name: Bootstrap-dependent hooks (siblings, lockfile, Node toolchain)
+        timeout-minutes: 15
+        env:
+          PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          for hook in check-stubs check-sprawl okf-no-legacy-concepts; do
+            uvx pre-commit run "$hook" --config .config/pre-commit.yaml --hook-stage pre-commit --all-files --show-diff-on-failure
+          done
+          for hook in uv-lock eslint-staged no-fabrication-gate; do
+            uvx pre-commit run "$hook" --config .config/pre-commit.yaml --hook-stage pre-push --all-files --show-diff-on-failure
+          done
+
+      - name: Type check and full lint (manual-stage hooks, always full)
+        timeout-minutes: 15
+        env:
+          PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          uvx pre-commit run typecheck --config .config/pre-commit.yaml --hook-stage manual --all-files
+          uvx pre-commit run lint --config .config/pre-commit.yaml --hook-stage manual --all-files
+
+      # The base the differential steps compare against: the pull request
+      # base or the previous push, else the root commit.
+      - name: Resolve the published base
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "${BASE:-}" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            BASE="$(git rev-list --max-parents=0 HEAD)"
+          fi
+          echo "PRE_COMMIT_FROM_REF=$BASE" >> "$GITHUB_ENV"
+
+      - name: Resolve pull-request Python test scope
+        if: github.event_name == 'pull_request'
+        id: pr-test-scope
+        run: |
+          set -euo pipefail
+          uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' \
+            pipelines-hook pr-test-scope --base-ref "$PRE_COMMIT_FROM_REF" \
+            --src-root agent/agent_webui --tests-root tests > "$RUNNER_TEMP/pr-test-scope.txt"
+          cat "$RUNNER_TEMP/pr-test-scope.txt"
+          {
+            echo "scope<<PR_TEST_SCOPE_EOF"
+            cat "$RUNNER_TEMP/pr-test-scope.txt"
+            echo "PR_TEST_SCOPE_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve pull-request TypeScript/React changed files
+        if: github.event_name == 'pull_request'
+        id: pr-ts-scope
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only --diff-filter=ACMR "$PRE_COMMIT_FROM_REF"...HEAD -- '*.ts' '*.tsx' | grep -v '^node_modules/' || true)"
+          echo "$changed"
+          {
+            echo "files<<PR_TS_SCOPE_EOF"
+            echo "$changed"
+            echo "PR_TS_SCOPE_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Full test suite (push to main / workflow_dispatch)
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m pytest tests -q --tb=short -m "not slow" --timeout=60
+          pnpm test
+
+      - name: Python test suite -- pull request fast subset
+        if: github.event_name == 'pull_request'
+        env:
+          SCOPE: ${{ steps.pr-test-scope.outputs.scope }}
+        run: |
+          set -euo pipefail
+          if [ "$SCOPE" = "NONE" ]; then
+            echo "pr-test-scope: no agent/agent_webui/tests change in this diff; skipping pytest"
+          elif [ "$SCOPE" = "FULL" ]; then
+            echo "pr-test-scope: unmapped source change (or an unreadable diff); running the full suite"
+            .venv/bin/python -m pytest tests -q --tb=short -m "not slow" --timeout=60
+          else
+            echo "pr-test-scope: running only the tests this diff affects:"
+            echo "$SCOPE"
+            mapfile -t affected_tests <<< "$SCOPE"
+            .venv/bin/python -m pytest "${affected_tests[@]}" -q --tb=short -m "not slow" --timeout=60
+          fi
+
+      - name: TypeScript test suite -- pull request fast subset (vitest related)
+        if: github.event_name == 'pull_request'
+        env:
+          CHANGED: ${{ steps.pr-ts-scope.outputs.files }}
+        run: |
+          set -euo pipefail
+          if [ -z "$(echo "$CHANGED" | tr -d '[:space:]')" ]; then
+            echo "no .ts/.tsx change in this diff; skipping vitest"
+          else
+            echo "running vitest related for:"
+            echo "$CHANGED"
+            mapfile -t changed_files <<< "$CHANGED"
+            pnpm exec vitest related "${changed_files[@]}" --run
+          fi
+
+  build:
+    name: build
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Install Frontend Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Frontend
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm run build
+
+      - name: Build Python distributions (no upload)
+        run: uv build
+
+  # The one required check (branch ruleset context `gates`): an aggregate so
+  # the required name is stable while the work is split across `hooks`
+  # (shared workflow) and `tests` (needs the bootstrap).
+  gates:
+    name: gates
+    if: always()
+    needs: [hooks, tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require hooks and tests to have passed
+        env:
+          HOOKS: ${{ needs.hooks.result }}
+          TESTS: ${{ needs.tests.result }}
+        run: |
+          echo "hooks=$HOOKS tests=$TESTS"
+          [ "$HOOKS" = success ] && [ "$TESTS" = success ]

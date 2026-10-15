@@ -1,263 +1,47 @@
 name: Release
 
-# ─────────────────────────────────────────────────────────────────────────
-# THE TWO-WORKFLOW MODEL (read this before adding a check to either file)
+# Tag-only release (CI-STANDARD): this workflow runs ONLY on a `v*` tag push or
+# a manual dispatch. An ordinary push to main never reaches it, so nothing is
+# published from main and `[skip ci]` is not needed. PR and main checks live in
+# ci.yml; documentation lives in pages.yml.
 #
-# This repo ships exactly two GitHub Actions workflows, matching the model
-# already landed in agent-utilities and epistemic-graph:
-#
-#   release.yml (THIS FILE) -- the ONLY workflow that can block a release.
-#     Four jobs, wired with `needs:` so the ordering is explicit and the
-#     failing stage is obvious at a glance:
-#
-#       gates          -- runs .config/pre-commit.yaml (commit and pre-push
-#                         stages) after scripts/bootstrap.sh, exactly as a
-#                         contributor does locally. Also the pull-request check.
-#       release-intent -- skips release-neutral commits when this version is
-#                         already published, while retaining exact artifact
-#                         verification for the tagged release commit.
-#       publish-pypi   -- builds the agent-webui wheel and sdist, verifies an
-#                         existing immutable PyPI release byte-for-byte,
-#                         publishes only when absent, then tags/releases the
-#                         source commit. It consumes the fleet's shared release
-#                         action but keeps the WebUI-specific preflight local.
-#       publish-docker -- needs: publish-pypi. Builds and publishes the
-#                         container image FROM THE SAME COMMIT, consuming
-#                         whatever agent-utilities/epistemic-graph floor is
-#                         actually resolvable once PyPI publish has landed.
-#
-#   advisory.yml -- everything else (currently: GitHub Pages). Every job
-#     there runs with `continue-on-error: true` so debt stays visible (red
-#     job, annotation, job summary) but never blocks a release.
-#
-# WHY: this replaced THREE independent workflows (`pipeline.yml` for PyPI,
-# `docker-publish.yml` for the container image, `pages.yml` for docs) that
-# had no explicit relationship to each other. `docker-publish.yml` triggered
-# on `push: tags: ['v*']` -- which happened to fire only AFTER `pipeline.yml`
-# succeeded, because `python_pipeline.yml` creates that tag as its own
-# last step (`softprops/action-gh-release`, `tag_name: v${BUILD_VERSION}`).
-# That made PyPI-then-Docker ordering an accidental side effect of two
-# decoupled workflows reacting to two separate push events, not something
-# this repo declared on purpose -- exactly what the owner asked to fix
-# ("it should all be one pipeline -- first builds the pypi image for
-# agent-webui, then runs the docker build job to include the newly
-# published pypi package"). `needs: publish-pypi` below makes that ordering
-# structural instead of incidental.
+#   release-intent -- on the tagged commit, retains exact artifact verification
+#                     (an existing immutable PyPI release must match byte for
+#                     byte); a manual dispatch from a later release-neutral
+#                     commit is skipped.
+#   publish-pypi   -- fails fast on any ref that is not a v* tag (dispatch from
+#                     a tag is allowed), builds the wheel and sdist, verifies an
+#                     existing immutable PyPI release, publishes only when
+#                     absent, then creates the GitHub release for the tag.
+#   publish-docker -- needs: publish-pypi. Builds and publishes the container
+#                     image FROM THE SAME COMMIT; it needs the au-src build
+#                     context and the epistemic-graph PyPI floor check, which
+#                     container_pipeline@main does not provide.
 #
 # CROSS-REPO ORDERING: epistemic-graph must publish to PyPI before
-# agent-utilities can be installed from a plain index, because
-# agent-utilities pins a version floor on it. `publish-docker` below
-# verifies that floor is actually resolvable on PyPI
-# (scripts/release/check_eg_pypi_resolvable.py, adapted from
-# agent-utilities' own script of the same name and purpose) and fails with
-# one clear message naming the missing version, rather than letting `uv pip
-# install` die deep inside a resolver backtrace -- which is also why the
-# former `docker-publish.yml` had its own `build-eg-wheel` job compiling
-# epistemic-graph from source in CI: a workaround for eg never having
-# published a satisfying release, not a deliberate bundling choice. That job
-# is gone; the image now installs epistemic-graph from PyPI like any normal
-# dependency, and this gate makes the "not yet published" case fail loudly
-# instead of silently, deep inside a build.
-# ─────────────────────────────────────────────────────────────────────────
+# agent-utilities, which this image installs from source with a version floor
+# on epistemic-graph. `publish-docker` verifies that floor is resolvable
+# (scripts/release/check_eg_pypi_resolvable.py) and fails with one clear message
+# naming the missing version.
 
 on:
   push:
-    branches:
-      - 'main'
-  pull_request:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  # The repository's own hook definitions are the gate: CI never re-lists
-  # individual check scripts. A hook whose tool is missing fails closed here
-  # (CI is set), so a green run means every hook really ran.
-  gates:
-    name: gates
-    # PR gates are bounded (45 min) so a stuck or runaway step fails fast
-    # instead of riding out the default 6h ceiling; push/main and
-    # workflow_dispatch keep a generous 60 min for the full, unscoped suite.
-    timeout-minutes: ${{ github.event_name == 'pull_request' && 45 || 60 }}
-    # Homelab self-hosted runner for same-repo push/PR traffic; a fork PR's
-    # head repo never matches `github.repository`, so it always lands on the
-    # GitHub-hosted runner instead -- self-hosted capacity is never offered
-    # to an untrusted fork.
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "homelab"]') || 'ubuntu-latest' }}
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
-        with:
-          # Keep cached wheels on the work volume so installs can use hardlinks.
-          cache-local-path: ${{ runner.temp }}/agent-webui/uv-cache
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '22'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
-      - name: Bootstrap (pinned siblings, locked Python and frontend deps, engine wheel)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: scripts/bootstrap.sh --no-hooks --engine-wheel
-
-      - name: Prepare shared hook environments
-        # Cold environment installation has its own bounded step. Every check
-        # below uses these environments, leaving its budget for validation.
-        timeout-minutes: 15
-        run: |
-          set -euo pipefail
-          export PRE_COMMIT_HOME="$RUNNER_TEMP/pre-commit-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          printf 'PRE_COMMIT_HOME=%s\n' "$PRE_COMMIT_HOME" >> "$GITHUB_ENV"
-          uvx pre-commit install-hooks --config .config/pre-commit.yaml
-
-      - name: pre-commit (commit stage, all files)
-        # Keep the validation cap and hook output after environment preparation.
-        timeout-minutes: 15
-        run: uvx pre-commit run --config .config/pre-commit.yaml --all-files --show-diff-on-failure --verbose
-
-      - name: Type check and full lint (manual-stage hooks, always full)
-        run: |
-          set -euo pipefail
-          uvx pre-commit run typecheck --config .config/pre-commit.yaml --hook-stage manual --all-files
-          uvx pre-commit run lint --config .config/pre-commit.yaml --hook-stage manual --all-files
-
-      # The base the differential hooks compare against: the pull request
-      # base or the previous push, else the root commit (a first push scans
-      # all of it). An unavailable object is never an invented empty baseline.
-      - name: Resolve the published base
-        run: |
-          set -euo pipefail
-          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
-          if [ -z "${BASE:-}" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
-            BASE="$(git rev-list --max-parents=0 HEAD)"
-          fi
-          echo "PRE_COMMIT_FROM_REF=$BASE" >> "$GITHUB_ENV"
-
-      # Operator decision (2026-10-09, matching graph-os PR #125): PR gates
-      # run a fast subset so a PR turns around in minutes -- lint, type
-      # check and the spec check (public-surface/ste-staged, pre-commit
-      # stage above) already ran full. Only the test matrix narrows here.
-      # `push` to main and workflow_dispatch are never `pull_request` and
-      # keep running the full suite unchanged below.
-      - name: Resolve pull-request Python test scope
-        if: github.event_name == 'pull_request'
-        id: pr-test-scope
-        run: |
-          set -euo pipefail
-          uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' \
-            pipelines-hook pr-test-scope --base-ref "$PRE_COMMIT_FROM_REF" \
-            --src-root agent/agent_webui --tests-root tests > "$RUNNER_TEMP/pr-test-scope.txt"
-          cat "$RUNNER_TEMP/pr-test-scope.txt"
-          {
-            echo "scope<<PR_TEST_SCOPE_EOF"
-            cat "$RUNNER_TEMP/pr-test-scope.txt"
-            echo "PR_TEST_SCOPE_EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Resolve pull-request TypeScript/React changed files
-        if: github.event_name == 'pull_request'
-        id: pr-ts-scope
-        run: |
-          set -euo pipefail
-          changed="$(git diff --name-only --diff-filter=ACMR "$PRE_COMMIT_FROM_REF"...HEAD -- '*.ts' '*.tsx' | grep -v '^node_modules/' || true)"
-          echo "$changed"
-          {
-            echo "files<<PR_TS_SCOPE_EOF"
-            echo "$changed"
-            echo "PR_TS_SCOPE_EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Full test suite (push to main / workflow_dispatch)
-        if: github.event_name != 'pull_request'
-        run: |
-          set -euo pipefail
-          .venv/bin/python -m pytest tests -q --tb=short -m "not slow" --timeout=60
-          pnpm test
-
-      - name: Python test suite -- pull request fast subset
-        if: github.event_name == 'pull_request'
-        env:
-          SCOPE: ${{ steps.pr-test-scope.outputs.scope }}
-        run: |
-          set -euo pipefail
-          if [ "$SCOPE" = "NONE" ]; then
-            echo "pr-test-scope: no agent/agent_webui/tests change in this diff; skipping pytest"
-          elif [ "$SCOPE" = "FULL" ]; then
-            echo "pr-test-scope: unmapped source change (or an unreadable diff); running the full suite"
-            .venv/bin/python -m pytest tests -q --tb=short -m "not slow" --timeout=60
-          else
-            echo "pr-test-scope: running only the tests this diff affects:"
-            echo "$SCOPE"
-            mapfile -t affected_tests <<< "$SCOPE"
-            .venv/bin/python -m pytest "${affected_tests[@]}" -q --tb=short -m "not slow" --timeout=60
-          fi
-
-      - name: TypeScript test suite -- pull request fast subset (vitest related)
-        if: github.event_name == 'pull_request'
-        env:
-          CHANGED: ${{ steps.pr-ts-scope.outputs.files }}
-        run: |
-          set -euo pipefail
-          if [ -z "$(echo "$CHANGED" | tr -d '[:space:]')" ]; then
-            echo "no .ts/.tsx change in this diff; skipping vitest"
-          else
-            echo "running vitest related for:"
-            echo "$CHANGED"
-            mapfile -t changed_files <<< "$CHANGED"
-            pnpm exec vitest related "${changed_files[@]}" --run
-          fi
-
-      - name: pre-commit (pre-push stage, all files)
-        run: uvx pre-commit run --config .config/pre-commit.yaml --all-files --hook-stage pre-push --show-diff-on-failure
-
-  # Spec-status lifecycle gates (plans/refactor/reconciliation-20261006/
-  # SPEC-STATUS-LIFECYCLE.md). Deliberately independent of `gates` (no
-  # `needs:`) and never added to any release job's `needs:` -- this is an
-  # advisory/PR check, not a release blocker, and must not be configured as
-  # a required check in branch protection.
-  spec-gates:
-    name: spec-gates
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
-
-      - name: spec-status
-        run: uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' pipelines-hook spec-status
-
-      - name: spec-decomposition
-        run: uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' pipelines-hook spec-decomposition
-
-      - name: spec-trailers
-        if: github.event_name == 'pull_request'
-        run: uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' pipelines-hook spec-trailers --base-ref "origin/${{ github.base_ref }}"
-
   release-intent:
     name: release-intent
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       release: ${{ steps.intent.outputs.release }}
     steps:
@@ -282,12 +66,22 @@ jobs:
   # every filename and SHA-256 digest matches the artifacts built here.
   publish-pypi:
     name: publish-pypi
-    needs: [gates, release-intent]
+    needs: [release-intent]
     if: needs.release-intent.outputs.release == 'true'
     runs-on: self-hosted
+    timeout-minutes: 60
     permissions:
       contents: write
     steps:
+      - name: Require a release tag
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ ! "$REF" =~ ^refs/tags/v ]]; then
+            echo "::error::publish only from a v* release tag; $REF is not one."
+            exit 1
+          fi
+
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -387,6 +181,7 @@ jobs:
     needs: [release-intent, publish-pypi]
     if: needs.release-intent.outputs.release == 'true' && needs.publish-pypi.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     # D-ORC-10-style gate (matches agent-utilities' own publish-docker job):
     # a protected GitHub Environment enables required-reviewer / wait-timer
     # rules once an admin configures them under
@@ -399,12 +194,9 @@ jobs:
     steps:
       # Belt-and-suspenders confirmation that this commit really is a
       # published release, not merely a commit that happens to follow one:
-      # `publish-pypi` creates a `vX.Y.Z` tag pointing at this exact commit as
-      # its last step (through the fleet's shared release action), so
-      # by the time `needs: publish-pypi` has been satisfied the tag should
-      # already exist. Failing loudly here if it doesn't catches a
-      # partial-success case (e.g. the tag/release step itself regresses
-      # upstream in a way that doesn't fail the calling job).
+      # this workflow is triggered by a `vX.Y.Z` tag pointing at this exact
+      # commit. Failing loudly here when no such tag exists catches a
+      # workflow_dispatch from an untagged commit.
       - name: Require a vX.Y.Z release tag on the published commit
         env:
           GH_TOKEN: ${{ github.token }}
