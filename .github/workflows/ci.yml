@@ -47,6 +47,9 @@ jobs:
       # Homelab self-hosted runner for same-repo traffic; a fork PR always
       # lands on the GitHub-hosted runner.
       runner: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","homelab"]' || '"ubuntu-latest"' }}
+      # These two hooks need the bootstrapped agent-utilities sibling; the
+      # `tests` job runs them after bootstrap.
+      skip-hooks: check-stubs,check-sprawl
       all-files: ${{ github.event_name != 'pull_request' }}
       timeout-minutes: ${{ github.event_name == 'pull_request' && 15 || 60 }}
 
@@ -79,6 +82,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/bootstrap.sh --no-hooks --engine-wheel
+
+      - name: Sibling-dependent hooks (check-stubs, check-sprawl)
+        timeout-minutes: 15
+        env:
+          PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          uvx pre-commit run check-stubs --config .config/pre-commit.yaml --all-files --show-diff-on-failure
+          uvx pre-commit run check-sprawl --config .config/pre-commit.yaml --all-files --show-diff-on-failure
 
       - name: Type check and full lint (manual-stage hooks, always full)
         timeout-minutes: 15
