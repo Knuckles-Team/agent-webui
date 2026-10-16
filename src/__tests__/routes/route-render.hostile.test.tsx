@@ -41,6 +41,7 @@
  * (`knowledge.object-detail`) whose element needs props the shared zero-prop
  * contract can't carry; `render-route.tsx` special-cases it.
  */
+import { lazy } from 'react'
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import { ROUTES } from './route-source'
@@ -158,6 +159,29 @@ describe('route render harness — mobile viewport x hostile payload subset', ()
 })
 
 describe('route registry coverage', () => {
+  // Partial coverage for WEBUI-APPS-R005.5; known-broken route baselines remain open.
+  // spec: WEBUI-APPS-R005.5.1
+  it('detects an injected throwing view through the real ErrorBoundary', async () => {
+    const fixture = HOSTILE_FIXTURES[0]
+    fixture.installFetch()
+    const route = {
+      ...ROUTES[0],
+      id: 'test.throwing-view',
+      element: lazy(async () => ({
+        default: function ThrowingView(): never {
+          throw new Error('Injected route census failure')
+        },
+      })),
+    }
+    const result = renderRoute(route)
+    try {
+      await flush()
+      expect(result.tripped()).toBe(true)
+    } finally {
+      result.cleanupQueryClient()
+    }
+  })
+
   it('every route in ROUTES has a non-empty id, path, and element', () => {
     for (const route of ROUTES) {
       expect(route.id, 'route missing id').toBeTruthy()
