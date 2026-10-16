@@ -425,4 +425,5 @@ purpose bound. Extend the existing hostile route harness for WEBUI-APPS-R005.5
 with an injected throwing view; do not create a duplicate census harness.
 This is partial test evidence only: the harness retains known-failure baselines,
 and purpose visibility through shell-heading exceptions still needs rendered
-acceptance. This batch does not promote any requirement status.
+acceptance. Generated LANDED state records the source commit, not full acceptance.
+These partial tests do not bind full verification receipts to the requirements.

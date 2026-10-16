@@ -159,7 +159,7 @@ describe('route render harness — mobile viewport x hostile payload subset', ()
 })
 
 describe('route registry coverage', () => {
-  // spec: WEBUI-APPS-R005.5
+  // Partial coverage for WEBUI-APPS-R005.5; known-broken route baselines remain open.
   it('detects an injected throwing view through the real ErrorBoundary', async () => {
     const fixture = HOSTILE_FIXTURES[0]
     fixture.installFetch()
