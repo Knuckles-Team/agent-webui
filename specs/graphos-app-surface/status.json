@@ -391,7 +391,9 @@
       "title": "Nav entry declares a minimum role",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "src/lib/__tests__/nav-registry.test.ts:76"
+      ]
     },
     {
       "id": "WEBUI-APPS-R005.2",
@@ -419,14 +421,18 @@
       "title": "Every route renders",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "src/__tests__/routes/route-render.hostile.test.tsx:162"
+      ]
     },
     {
       "id": "WEBUI-APPS-R005.6",
       "title": "Each view states its purpose",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "src/lib/__tests__/nav-registry.test.ts:94"
+      ]
     },
     {
       "id": "WEBUI-APPS-R006",

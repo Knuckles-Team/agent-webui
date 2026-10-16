@@ -37,7 +37,7 @@ Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`
 | WEBUI-APPS-R005.2 | src/components/views/__tests__/DashboardView.test.tsx | Layout saved per user. |
 | WEBUI-APPS-R005.3 | src/components/views/__tests__/DashboardConnectorTiles.test.tsx | Connector tiles from the catalog. |
 | WEBUI-APPS-R005.4 | src/components/__tests__/chat-session-sync.test.tsx | One chat session list. |
-| WEBUI-APPS-R005.5 | src/lib/__tests__/route-render-census.test.tsx | Every route renders. |
+| WEBUI-APPS-R005.5 | src/__tests__/routes/route-render.hostile.test.tsx | Every route renders. |
 | WEBUI-APPS-R005.6 | src/lib/__tests__/nav-registry.test.ts | Each view states its purpose. |
 | WEBUI-APPS-R006.1 | src/lib/__tests__/goal-link.test.ts | Link type. |
 | WEBUI-APPS-R006.2 | src/components/views/__tests__/GoalPanel.test.tsx | Panel reads typed operations. |

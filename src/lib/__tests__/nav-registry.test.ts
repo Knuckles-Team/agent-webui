@@ -5,6 +5,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ROUTES,
+  ROUTE_REGISTRY,
+  ROLE_ORDER,
+  roleAtLeast,
   SECTIONS,
   isAtlasPath,
   isPrimaryNavRoute,
@@ -70,10 +73,30 @@ const referencedViewFiles = new Set(
 )
 
 describe('nav-registry: ROUTES', () => {
+  // spec: WEBUI-APPS-R005.1
+  it('requires a recognized minimum role on every registered route', () => {
+    for (const route of ROUTE_REGISTRY) {
+      expect(ROLE_ORDER, `${route.id} is missing a valid minimum role`).toContain(route.minRole)
+    }
+  })
+
+  it('exposes only reader routes to readers and rejects absent or unknown identities', () => {
+    for (const route of ROUTE_REGISTRY) {
+      expect(roleAtLeast('reader', route.minRole), route.id).toBe(route.minRole === 'reader')
+      expect(roleAtLeast(null, route.minRole), route.id).toBe(false)
+      expect(roleAtLeast(undefined, route.minRole), route.id).toBe(false)
+      // Exercise runtime input outside the compile-time Role union.
+      // @ts-expect-error deliberately unrecognized identity role
+      expect(roleAtLeast('unknown-role', route.minRole), route.id).toBe(false)
+    }
+  })
+
+  // spec: WEBUI-APPS-R005.6
   it('gives every route a real, non-placeholder blurb', () => {
     const placeholder = /^(todo|tbd|fixme|placeholder|lorem ipsum|description here|change me)\b/i
-    for (const route of ROUTES) {
+    for (const route of ROUTE_REGISTRY) {
       const blurb = route.blurb?.trim() ?? ''
+      expect(blurb.split(/\s+/).length, `${route.id} purpose exceeds 20 words`).toBeLessThanOrEqual(20)
       expect(blurb.length, `${route.id} is missing a blurb`).toBeGreaterThan(0)
       expect(blurb, `${route.id} blurb looks like a placeholder, not real copy`).not.toMatch(placeholder)
       expect(

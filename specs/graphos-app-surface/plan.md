@@ -169,7 +169,7 @@ A real served proposal must lead from the dashboard to its authorized stored tra
 
 Input `WEBUI:3`; original record SHA-256 `38936b5f2136263c40c29fe639c984243fed8be6dbb9a6d836f40d7b7672116e`.
 
-Source obligation: On first run, the platform discovers agent sessions from every supported harness and syncs them into local queryable indexes. The web interface offers unified browsing and search across them with cost summaries.
+Source obligation: On first run, the platform discovers agent sessions from every supported harness. It syncs them into local queryable indexes. The web interface offers unified browsing and search across them with cost summaries.
 
 Existing owner anchors: APIUI-04; WEBUI-APPS-R006; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: SessionsView and goal-session-fleet panel.
 
@@ -416,3 +416,13 @@ Their owners must publish positive finite values or formulas with units, measure
 The consumer must refuse absent or invalid bounds; it must not choose local defaults to close the gap.
 Manifest-wide harness coverage requires the versioned complete supported-harness inventory and per-entry acceptance evidence.
 These are cross-owner follow-up conditions. This change does not assign limit values, register operations or implement behavior.
+
+## Amendments — 2026-10-16 navigation acceptance evidence
+
+Extend WEBUI-APPS-R005.1 and WEBUI-APPS-R005.6 registry tests to enforce explicit
+valid minimum roles, reader filtering, unknown-user rejection and the 20-word
+purpose bound. Extend the existing hostile route harness for WEBUI-APPS-R005.5
+with an injected throwing view; do not create a duplicate census harness.
+This is partial test evidence only: the harness retains known-failure baselines,
+and purpose visibility through shell-heading exceptions still needs rendered
+acceptance. This batch does not promote any requirement status.
