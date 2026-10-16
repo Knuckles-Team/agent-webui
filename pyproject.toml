@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-webui"
-version = "2.6.3"
+version = "2.7.0"
 description = "Agent Web Interface for Pydantic AI Agents"
 readme = "README.md"
 classifiers = [
@@ -24,6 +24,7 @@ classifiers = [
 # resolution.
 requires-python = ">=3.12,<3.15"
 dependencies = [
+    "agent-utilities>=2.5.0",
     "fastapi>=0.142.2",
     "langfuse>=4.14.1",
     "pydantic-ai-slim[ui]>=2.29.0",
