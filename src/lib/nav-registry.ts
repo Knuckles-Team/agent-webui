@@ -215,8 +215,7 @@ export const ROUTES: readonly RouteDef[] = [
     path: '/ide',
     label: 'IDE',
     section: 'workspace',
-    blurb:
-      'A full VS Code editor on your workspace, right inside the app -- the agent can see what file and selection you have open.',
+    blurb: 'Edit your workspace in VS Code while the agent sees your open file and selection.',
     icon: Code2,
     minRole: 'user',
     mobile: 'unsupported',
@@ -385,8 +384,7 @@ export const ROUTES: readonly RouteDef[] = [
     label: 'Atlas',
     section: 'knowledge',
     navigation: 'primary',
-    blurb:
-      'Explore every kind of data the graph holds — filter it one way, then view it as a table, a tree, or in 3D.',
+    blurb: 'Explore and filter graph data as a table, a tree, or in 3D.',
     icon: Compass,
     minRole: 'reader',
     // The 3D renderer declines on a phone and says so; the table, JSON and 2D

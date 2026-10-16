@@ -34,11 +34,17 @@
 
 Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`, `uv run --all-extras pytest agent/agent_webui/__tests__`, and `pre-commit run --config .config/pre-commit.yaml --all-files`. Hosted CI provisions browser and API fixtures; no live deployment is required to accept an external PR. CCCC staged threshold is no new function above cyclomatic 10/cognitive 15 and no regression. Run configured jscpd and Dupehound if installed; do not claim an unconfigured threshold passed. KISS rejects duplicate route/app/renderer registries. Record package, Pages and browser artifact digests with exact commit in `tasks.md`.
 | WEBUI-APPS-R005.1 | src/lib/__tests__/nav-registry.test.ts | Nav entry declares a minimum role. |
+| WEBUI-APPS-R005.1.1 | src/lib/__tests__/nav-registry.test.ts | Registry role contract. |
+| WEBUI-APPS-R005.1.2 | Planned rendered sidebar and route-shell acceptance | Rendered role filtering. |
 | WEBUI-APPS-R005.2 | src/components/views/__tests__/DashboardView.test.tsx | Layout saved per user. |
 | WEBUI-APPS-R005.3 | src/components/views/__tests__/DashboardConnectorTiles.test.tsx | Connector tiles from the catalog. |
 | WEBUI-APPS-R005.4 | src/components/__tests__/chat-session-sync.test.tsx | One chat session list. |
-| WEBUI-APPS-R005.5 | src/lib/__tests__/route-render-census.test.tsx | Every route renders. |
+| WEBUI-APPS-R005.5 | src/__tests__/routes/route-render.hostile.test.tsx | Every route renders. |
+| WEBUI-APPS-R005.5.1 | src/__tests__/routes/route-render.hostile.test.tsx | Census detects a throwing view. |
+| WEBUI-APPS-R005.5.2 | Planned complete route census without known-failure exemptions | Complete route render acceptance. |
 | WEBUI-APPS-R005.6 | src/lib/__tests__/nav-registry.test.ts | Each view states its purpose. |
+| WEBUI-APPS-R005.6.1 | src/lib/__tests__/nav-registry.test.ts | Registry purpose copy. |
+| WEBUI-APPS-R005.6.2 | Planned rendered shell and own-heading purpose acceptance | Rendered purpose visibility. |
 | WEBUI-APPS-R006.1 | src/lib/__tests__/goal-link.test.ts | Link type. |
 | WEBUI-APPS-R006.2 | src/components/views/__tests__/GoalPanel.test.tsx | Panel reads typed operations. |
 | WEBUI-APPS-R006.3 | src/components/views/__tests__/GoalPanel.test.tsx | Absent operation is honest. |
