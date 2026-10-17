@@ -30,7 +30,7 @@ The primary actor is an authenticated investor managing personal accounts. They 
 | FUI-07 | Available overlays include trend line/flips, DCA buys, cost basis and margin/liquidation levels. Each displays strategy/source version and simulation status. | EG-FINANCE-PRIMITIVES-R005, EG-FINANCE-PRIMITIVES-R007, EG-FINANCE-PRIMITIVES-R010, FIN-UI-R002 |
 | FUI-08 | Performance and benchmark cards render owner-calculated fixed-point values with method, currency, source, as-of, session and explicit unavailable states. | EG-FINANCE-PRIMITIVES-R005, EG-FINANCE-PRIMITIVES-R013 |
 | FUI-09 | Strategy and recommendation views cite versioned evidence and scorecards, show abstention reasons, and never directly submit orders. | EG-FINANCE-PRIMITIVES-R007–EG-FINANCE-PRIMITIVES-R010 |
-| FUI-10 | DCA and alert views distinguish due, missed, failed, replayed, paper-filled and delivered states. | GRAPHOS-DATA-MARKET-R006, EG-FINANCE-PRIMITIVES-R011 |
+| FUI-10 | DCA and alert views distinguish due, missed, failed, replayed, paper-filled and delivered states. | ARBORA-DATA-MARKET-R006, EG-FINANCE-PRIMITIVES-R011 |
 | FUI-11 | CSV import previews mapping and validation, shows source digest and idempotent receipt, and reads authoritative accounting after import. | SDK-FINANCE-SOURCES-R004 |
 | FUI-12 | PWA offline shell marks cached financial facts stale; it cannot imply current market, account or order state. | FIN-UI-R001, EG-FINANCE-PRIMITIVES-R013 |
 | FUI-13 | Every chart and control works with keyboard, screen reader summary, 200% zoom, reduced motion and non-color state labels. | WEBUI-DESIGN-R001, FIN-UI-R001, FIN-UI-R002 |
