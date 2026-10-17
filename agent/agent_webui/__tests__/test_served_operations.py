@@ -185,6 +185,7 @@ def _client(app: Any, scope: str = _ADMIN) -> TestClient:
         ),
     ],
 )
+# spec: APIUI-06.1
 def test_read_routes_project_the_served_operation(
     app, graph_os, method, path, body, op_id, value, sent, expected
 ) -> None:
@@ -271,6 +272,7 @@ def test_a_graph_os_refusal_keeps_its_status(app, graph_os, code, status) -> Non
         ('/cron/calendar', 'schedule.tasks.read'),
     ],
 )
+# spec: APIUI-06.1
 def test_routes_without_a_served_operation_answer_not_available(
     app, graph_os, path, operation
 ) -> None:
