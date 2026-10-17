@@ -219,14 +219,16 @@
     },
     {
       "id": "APIUI-06.1",
-      "title": "Borrowed per-app host composition",
+      "title": "Host composition without an engine",
       "delivery_state": "VERIFIED",
       "landed_in": [
         "0940bc0c0d99",
+        "1d3334c8e819",
         "bd46338613c1"
       ],
       "verified_by": [
-        "agent/agent_webui/__tests__/test_application_composer.py:183"
+        "agent/agent_webui/__tests__/test_served_operations.py:188",
+        "agent/agent_webui/__tests__/test_served_operations.py:275"
       ]
     }
   ]
