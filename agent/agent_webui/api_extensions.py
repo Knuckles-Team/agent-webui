@@ -14,7 +14,8 @@ import secrets
 import stat
 import threading
 import time
-from collections.abc import Awaitable, Callable, Mapping
+import uuid
+from collections.abc import Awaitable, Callable
 from concurrent import futures as _futures
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -23,26 +24,10 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 from urllib.parse import quote, urlsplit
 
-from agent_utilities.core.config import config
+import msgpack
+from agent_connector_sdk.privacy import sanitize_for_persistence
+from agent_connector_sdk.privacy_reference import persistence_reference
 from agent_utilities.core.paths import config_dir, data_dir
-from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
-from agent_utilities.knowledge_graph.core.maintainer import GraphMaintainer
-from agent_utilities.knowledge_graph.kb.ingestion import KBIngestionEngine
-from agent_utilities.knowledge_graph.pipeline.phases import PHASES
-from agent_utilities.knowledge_graph.pipeline.runner import PipelineRunner
-from agent_utilities.knowledge_graph.pipeline.types import PipelineContext
-from agent_utilities.models.knowledge_graph import PipelineConfig
-from agent_utilities.orchestration.agent_library import (
-    AGENT_LIBRARY_PROVIDER_REF as _AGENT_LIBRARY_PROVIDER_REF,
-)
-from agent_utilities.orchestration.agent_library import (
-    MAX_INSTRUCTIONS_BYTES as _MAX_INSTRUCTIONS_BYTES,
-)
-from agent_utilities.sdd import SDDManager
-from agent_utilities.security.persistence_privacy import (
-    persistence_reference,
-    sanitize_for_persistence,
-)
 from fastapi import (
     APIRouter,
     File,
@@ -54,7 +39,7 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse, Response
 
-from .app_composition import current_app_composition
+from .host import config, served, unavailable
 
 # Global constant for agent directory
 
@@ -756,45 +741,6 @@ _MCP_UI_OPTIONAL_FIELDS: tuple[tuple[str, Callable[[dict[str, Any]], Any]], ...]
 )
 
 
-def _public_tool_ui_meta(meta: Any) -> dict[str, Any] | None:
-    """Shape-validate one tool's declared MCP Apps UI binding (``meta['ui']``).
-
-    CONCEPT:AU-ECO.mcp.webui-governed-mcp-delegation
-
-    BUG-071: ``_meta.ui.resourceUri`` is a ``tools/list``-time field
-    (``agent_utilities.mcp.shared_multiplexer._live_tools_for_server`` /
-    ``server.webui_mcp_delegation._list_mcp_server_tools`` already forward the
-    raw ``meta`` dict this reads), naming which ``ui://`` resource a WebUI
-    app-launcher should fetch and render via ``McpAppHost``/``McpAppFrame``
-    (``src/lib/mcp-apps/``). ``resourceUri`` is the ONLY required field -- a
-    tool without a usable, non-empty string ``resourceUri`` carries no app
-    binding and this returns ``None``, which is what makes a tool
-    non-launchable rather than rendered with a fabricated/empty frame.
-
-    Everything else here is untrusted server metadata (the docstrings in
-    ``mcp-apps/policy.ts`` and ``McpAppFrame.tsx`` already treat it that way
-    on the client): only the known ``McpUiMeta`` fields are passed through,
-    each individually type-checked by its ``_MCP_UI_OPTIONAL_FIELDS``
-    extractor, so a malformed or hostile ``meta['ui']`` cannot smuggle
-    arbitrary extra keys into the API response.
-    """
-    if not isinstance(meta, dict):
-        return None
-    ui = meta.get('ui')
-    if not isinstance(ui, dict):
-        return None
-    resource_uri = ui.get('resourceUri')
-    if not isinstance(resource_uri, str) or not resource_uri:
-        return None
-
-    result: dict[str, Any] = {'resourceUri': resource_uri}
-    for field_name, extract in _MCP_UI_OPTIONAL_FIELDS:
-        field_value = extract(ui)
-        if field_value is not None:
-            result[field_name] = field_value
-    return {'ui': result}
-
-
 def _validate_delegation_call(
     server_name: str, tool_name: str, arguments: dict[str, Any]
 ) -> dict[str, Any]:
@@ -874,34 +820,6 @@ def _require_mcp_helper(name: str, detail: str) -> None:
     """Refuse a route when its host-owned governed delegation seam is absent."""
     if get_helper(name) is None:
         raise HTTPException(status_code=501, detail=detail)
-
-
-async def _enforce_mcp_tool_policy(server_name: str, tool_name: str) -> None:
-    """Re-read the persisted toggle immediately before every tool call.
-
-    Catalog metadata is intentionally stale-able: operators can disable a tool
-    after the browser loaded the inventory. The call seam therefore checks the
-    same KG preference source at execution time and fails closed if that read
-    cannot be verified.
-    """
-    try:
-        engine = await get_engine_bounded()
-        states, states_ok = await _batch_toggle_states(
-            engine,
-            'mcp_tool',
-            [f'{server_name}:{tool_name}'],
-        )
-    except HTTPException:
-        raise HTTPException(status_code=503, detail='MCP tool policy unavailable')
-    except Exception as exc:
-        _log_failure('mcp_tool_policy', exc)
-        raise HTTPException(
-            status_code=503, detail='MCP tool policy unavailable'
-        ) from exc
-    if not states_ok:
-        raise HTTPException(status_code=503, detail='MCP tool policy unavailable')
-    if states.get(f'{server_name}:{tool_name}', True) is False:
-        raise HTTPException(status_code=403, detail='MCP tool is disabled by policy')
 
 
 def _validate_runtime_id(value: Any) -> str:
@@ -1062,13 +980,6 @@ DEFAULT_AGENT_DIR = _private_directory(_WEBUI_DATA_DIR / 'workspace')
 workspace_helpers: dict[str, Any] = {}
 
 
-def _current_workspace_helpers() -> Mapping[str, Any]:
-    composition = current_app_composition()
-    return (
-        composition.workspace_helpers if composition is not None else workspace_helpers
-    )
-
-
 def get_helper(name: str, fallback: Any = None) -> Any:
     """Safely retrieve a registered workspace helper by name.
 
@@ -1079,7 +990,7 @@ def get_helper(name: str, fallback: Any = None) -> Any:
     Returns:
         The matched helper function or the fallback value.
     """
-    helper = _current_workspace_helpers().get(name)
+    helper = workspace_helpers.get(name)
     if not helper:
         logger.warning('Requested workspace helper was not found')
         return fallback
@@ -1145,7 +1056,7 @@ async def invoke_governed_helper(
                 detail='Backend deadline exceeded',
             )
         return await asyncio.wait_for(result, timeout=remaining)
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except TimeoutError as exc:
         raise HTTPException(
@@ -1164,106 +1075,16 @@ def set_workspace_helpers(helpers: dict[str, Any]) -> None:
     workspace_helpers = helpers
 
 
-def get_engine() -> IntelligenceGraphEngine:
-    """Resolve an injected borrowed engine, otherwise the standalone singleton.
+def get_engine() -> Any:
+    """The WebUI holds no graph engine.
 
-    CONCEPT:AU-ECO.ui.one-engine-authority — the ONLY sanctioned way to acquire
-    the process-wide engine is ``IntelligenceGraphEngine.get_or_create()``: it
-    returns the already-active singleton when one exists, and otherwise
-    constructs the ONE operational authority (the epistemic-graph engine plus
-    any configured mirrors — ``create_backend()`` called with no
-    ``backend_type``). This entrypoint must never build its own backend/engine
-    directly. It previously did: a hand-rolled
-    ``create_backend(backend_type='ladybug', ...)`` fallback here constructed a
-    disconnected, empty, ephemeral local LadybugDB whenever this route raced
-    ahead of the MCP server's own bootstrap and won the process-wide singleton
-    first — "Workflows shows nothing" even though the real ~37k-node graph was
-    reachable the whole time (D-WD-7). Routing through ``get_or_create()``
-    makes that divergence structurally impossible: whichever caller
-    constructs first, it is always the same operational authority.
+    Graph data comes from Graph OS served operations. A route that still
+    needs an in-process engine answers "not available".
     """
-    composition = current_app_composition()
-    if composition is not None:
-        return _borrowed_engine(composition.engine_provider)
-    return _standalone_engine()
+    raise unavailable('Graph engine', 'query.uql')
 
 
-def _borrowed_engine(
-    provider: Callable[[], IntelligenceGraphEngine],
-) -> IntelligenceGraphEngine:
-    try:
-        engine = provider()
-    except Exception as exc:
-        raise HTTPException(503, 'Host engine unavailable') from exc
-    if engine is None or inspect.isawaitable(engine):
-        if inspect.iscoroutine(engine):
-            engine.close()
-        raise HTTPException(503, 'Host engine unavailable')
-    return engine
-
-
-def _standalone_engine() -> IntelligenceGraphEngine:
-    """Preserve the standalone engine's existing lazy acquisition contract."""
-    import sys
-
-    get_active_fn = IntelligenceGraphEngine.get_active
-    is_mocked = (
-        hasattr(get_active_fn, 'called')
-        or hasattr(get_active_fn, 'return_value')
-        or 'mock' in type(get_active_fn).__name__.lower()
-    )
-    # 'unittest' alone is NOT a reliable test-mode signal: several production
-    # dependencies (e.g. pydantic_graph) import `unittest` for non-test reasons,
-    # so checking for it made every real deployment look like it was under
-    # test, skipping auto-initialization entirely (D-WUI, 2026-08-06). Only
-    # 'pytest' in sys.modules is trustworthy — production never imports pytest.
-    is_testing = 'pytest' in sys.modules
-
-    engine = get_active_fn()
-    if not engine:
-        if is_mocked or is_testing:
-            logger.info(
-                'IntelligenceGraphEngine.get_active is mocked or in testing env and returned None. Skipping auto-initialization.'
-            )
-            raise HTTPException(
-                status_code=501, detail='Intelligence Graph Engine not initialized'
-            )
-
-        try:
-            from agent_utilities.core.paths import ensure_dirs
-
-            # Kept from the pre-merge fallback: create_backend() (reached below
-            # inside the engine constructor) writes into the standard data
-            # dirs, and this path can win the process-wide singleton race
-            # before kg_server's own bootstrap has run them.
-            ensure_dirs()
-
-            # No factory and no backend_type. get_or_create() falls through to
-            # IntelligenceGraphEngine(**kwargs), whose constructor resolves the
-            # OPERATIONAL AUTHORITY backend via a bare create_backend() -- the
-            # same resolution the canonical KG REST surface and kg_server's own
-            # bootstrap use. An earlier version passed backend_type='ladybug'
-            # here, which silently stood up a second, disconnected, always-empty
-            # local store instead of the real graph: the actual cause of
-            # "Workflows/graph-nodes show nothing" (D-WD-7). Passing
-            # defer_background_start as a kwarg (rather than burying it in a
-            # hand-rolled factory) keeps the D-03 deferred-start invariant on
-            # the one seam every sanctioned caller shares.
-            engine = IntelligenceGraphEngine.get_or_create(defer_background_start=True)
-            logger.info(
-                'Successfully acquired the process-wide IntelligenceGraphEngine '
-                '(operational authority) via get_or_create().'
-            )
-        except Exception as e:
-            _log_failure('api_extension', e)
-            raise HTTPException(
-                status_code=501,
-                detail='Intelligence Graph Engine not initialized',
-            )
-    return engine
-
-
-async def get_engine_bounded() -> IntelligenceGraphEngine:
+async def get_engine_bounded() -> Any:
     """Resolve or initialize the active engine under the shared sync budget.
 
     Hosts should pass this public provider to
@@ -1271,7 +1092,7 @@ async def get_engine_bounded() -> IntelligenceGraphEngine:
     calling the synchronous engine resolver directly.
     """
 
-    return await invoke_governed_helper(get_engine, deadline=10.0)
+    raise unavailable('Get engine bounded', 'graph.query')
 
 
 @router.get('/info')
@@ -1285,7 +1106,7 @@ async def get_info() -> dict[str, str]:
     """
     try:
         engine = await get_engine_bounded()
-    except HTTPException as exc:
+    except FastAPIHTTPException as exc:
         if exc.status_code == 503:
             raise
         engine = None
@@ -1296,16 +1117,14 @@ async def get_info() -> dict[str, str]:
         return {
             'name': identity.get('name', 'Agent'),
             'description': identity.get('description', 'AI Agent'),
-            'emoji': identity.get(
-                'emoji', _current_workspace_helpers().get('agent_emoji', '🤖')
-            ),
+            'emoji': identity.get('emoji', workspace_helpers.get('agent_emoji', '🤖')),
             'user_emoji': '👤',
         }
 
     # Legacy fallback for edge cases during startup
-    name = _current_workspace_helpers().get('agent_name', 'Agent')
-    description = _current_workspace_helpers().get('agent_description', 'AI Agent')
-    emoji = _current_workspace_helpers().get('agent_emoji', '🤖')
+    name = workspace_helpers.get('agent_name', 'Agent')
+    description = workspace_helpers.get('agent_description', 'AI Agent')
+    emoji = workspace_helpers.get('agent_emoji', '🤖')
 
     return {
         'name': name,
@@ -1324,45 +1143,16 @@ def get_workspace_dir() -> Path:
             return Path(get_path_helper('')).resolve()
         except Exception:
             pass
-    try:
-        from agent_utilities.core.workspace_config import load_workspace_yml
-
-        data = load_workspace_yml()
-        if data and 'path' in data:
-            return Path(data['path']).expanduser().resolve()
-    except Exception:
-        pass
     configured = config.workspace_path or os.getenv('AGENT_WORKSPACE')
     if configured:
         return Path(configured).expanduser().resolve()
     return DEFAULT_AGENT_DIR
 
 
-def get_agent_packages_dir() -> Path:
-    """Resolve the ecosystem package root without a machine-specific path."""
-
-    configured = os.getenv('AGENT_PACKAGES_ROOT')
-    if configured:
-        return Path(configured).expanduser().resolve()
-    # ``parents[3]`` only exists when this module is imported from a full
-    # ecosystem checkout (``agent-packages/agent-webui/agent/agent_webui/``).
-    # A deployed install has a shallower path — the editable NFS mount at
-    # ``/webui-src/agent_webui/`` has just two — and indexing past the root
-    # raised ``IndexError``, turning every route that resolves a skills or
-    # prompts path into a 500. Fall through to the configured workspace
-    # instead, which is what a deployment is expected to supply.
-    parents = Path(__file__).resolve().parents
-    if len(parents) > 3 and parents[3].name == 'agent-packages':
-        return parents[3]
-    return get_workspace_dir() / 'agent-packages'
-
-
 def get_agent_utilities_dir() -> Path:
     """Resolve the installed agent-utilities package directory."""
 
-    import agent_utilities
-
-    return Path(agent_utilities.__file__).resolve().parent
+    raise unavailable('Get agent utilities dir', 'graph.query')
 
 
 def get_prompts_dir() -> Path:
@@ -1409,19 +1199,6 @@ def _read_bounded_json(path: Path) -> Any:
     """Read a small JSON document without following a file link."""
 
     return json.loads(_read_bounded_bytes(path, limit=_MAX_EXTERNAL_RESULT_BYTES))
-
-
-def _mcp_inventory_path() -> Path | None:
-    """Locate a registry for read-only inventory; never interpret commands."""
-
-    candidates = (
-        config_dir() / 'mcp_config.json',
-        config_dir() / 'config.json',
-        get_workspace_dir() / 'mcp_config.json',
-    )
-    return next(
-        (path for path in candidates if path.is_file() and not path.is_symlink()), None
-    )
 
 
 def resolve_prompt_file(name: str) -> Path:
@@ -1478,21 +1255,6 @@ def resolve_workspace_file(
     if target == base and not allow_workspace_root:
         raise HTTPException(status_code=400, detail='Workspace root is not a file')
     return target
-
-
-def _confine_stored_workspace_path(value: Any) -> Path:
-    """Revalidate a persisted KB source path against the current workspace."""
-
-    if not isinstance(value, str) or not value.strip() or '\x00' in value:
-        raise HTTPException(status_code=400, detail='Invalid stored KB source')
-    base = get_workspace_dir().resolve()
-    supplied = Path(value).expanduser()
-    target = (supplied if supplied.is_absolute() else base / supplied).resolve()
-    try:
-        relative = target.relative_to(base)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail='Stored KB source escaped') from exc
-    return resolve_workspace_file(relative.as_posix())
 
 
 _LIST_FILES_ALLOWED_SUFFIXES = (
@@ -1681,31 +1443,7 @@ def _list_files_scan_configured_repositories(
     """Branch 3 of ``list_files``: scan every repository loaded from the
     workspace config, appending into ``results`` in place.
     """
-    try:
-        from agent_utilities.core.workspace_config import (
-            _extract_repositories,
-            load_workspace_yml,
-        )
-
-        data = load_workspace_yml()
-        if not data:
-            return
-        base_path = Path(data.get('path') or get_workspace_dir())
-        repos = _extract_repositories(data, base_path)
-        for repo_path, _ in repos:
-            if len(results) >= limit:
-                break
-            if repo_path.exists() and repo_path.is_dir():
-                _list_files_scan_tree(
-                    repo_path,
-                    base_path,
-                    results,
-                    limit,
-                    allowed_suffixes,
-                    excluded_dirs,
-                )
-    except Exception as e:
-        _log_failure('api_extension', e)
+    raise unavailable('List files scan configured repositories', 'graph.query')
 
 
 def _list_files_scan_fallback_workspace(
@@ -1814,7 +1552,7 @@ async def delete_workspace_file(filename: str) -> dict[str, Any]:
 
     try:
         target = resolve_workspace_file(filename)
-    except HTTPException:
+    except FastAPIHTTPException:
         return {'status': 'error', 'detail': 'path outside workspace'}
     if not target.exists():
         return {'status': 'error', 'detail': 'not found'}
@@ -1941,7 +1679,7 @@ async def list_agents() -> list[dict[str, Any]]:
             if isinstance(agent_data, dict):
                 agents.append(agent_data)
         return agents
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('api_extension', e)
@@ -1989,135 +1727,13 @@ async def get_toggle_state(engine: Any, item_type: str, item_id: str) -> bool:
         )
         if res and len(res) > 0:
             return res[0]['value'] == 'enabled'
-    except HTTPException as e:
+    except FastAPIHTTPException as e:
         if e.status_code == 503:
             raise
         _log_failure('query_toggle_state', e)
     except Exception as e:
         _log_failure('query_toggle_state', e)
     return True  # Enabled by default: preference absent, or unreadable.
-
-
-def _log_toggle_batch_failure(item_type: str, error: BaseException) -> None:
-    """Log a toggle-batch scan failure, including the TRUE underlying cause
-    when it is safely available, without violating ``_log_failure``'s
-    established privacy contract (query text/params are never logged).
-
-    Live pod observation: every ``_batch_toggle_states`` sub-call (5/5, every
-    request) raised ``CypherEngineError`` -- a deliberately opaque wrapper
-    (``epistemic_graph_backend.CypherEngineError``) that hides query text and
-    parameters but DOES carry a non-sensitive ``error_type`` attribute (the
-    underlying native-engine exception's class name, e.g. ``KeyError`` /
-    ``PlacementAuthorityError``). ``_log_failure`` alone only ever logs
-    ``CypherEngineError`` itself (the wrapper type), which was not enough to
-    tell an operator anything about the real failure. Logging that inner
-    ``error_type`` too -- still no query text, no params, no stack trace --
-    is the same redaction discipline, more diagnostic.
-    """
-    inner_type = getattr(error, 'error_type', None)
-    if isinstance(inner_type, str) and inner_type:
-        safe_item_type = re.sub(r'[^a-z0-9_.-]+', '_', item_type.lower())[:64]
-        logger.error(
-            'toggle_batch_%s failed: error_type=%s inner_error_type=%s',
-            safe_item_type or 'item',
-            type(error).__name__,
-            inner_type,
-        )
-    else:
-        _log_failure(f'toggle_batch_{item_type}', error)
-
-
-async def _batch_toggle_states(
-    engine: Any, item_type: str, item_ids: list[str]
-) -> tuple[dict[str, bool], bool]:
-    """Bulk-read the toggle preference of every one of ``item_ids`` (all of
-    ``item_type``) in ONE round trip.
-
-    Root cause of the ``/api/enhanced/tools`` hang that never returned
-    (measured live: >120s, timed out): ``list_all_tools`` called
-    ``get_toggle_state`` once PER ROW -- up to ~256 MCP servers, ~256
-    built-in tools, and ~256 skill-catalog rows, each a SEPARATE, serially
-    ``await``-ed ``engine.query_cypher`` round trip through
-    ``invoke_governed_helper``'s bounded synchronous executor (a shared,
-    process-wide, fixed 4-worker/8-pending-slot budget --
-    ``_SYNC_WORK_EXECUTOR`` -- so this was never just slow for this one
-    request; a large enough listing could starve every other concurrent
-    request's synchronous KG work too). Up to ~768 sequential round trips,
-    each individually bounded but never batched or parallelized, is what
-    made the response practically never return.
-
-    FIX LANE Priority 4: a single ``WHERE p.id IN $ids`` scan, built from the
-    EXACT ids the caller is about to render, replaces both the old N
-    sequential round trips AND an intermediate ``STARTS WITH $prefix`` scan
-    that does not parse on the deployed engine at all (``STARTS WITH`` with
-    a bound-parameter operand fails 5/5, live) -- every toggle read appeared
-    to work while being non-functional fleet-wide. ``IN $ids`` is also
-    index-servable and O(items rendered) rather than O(every preference in
-    the graph), same fail-open semantics as ``get_toggle_state``: a query
-    failure degrades every item of this ``item_type`` to "enabled by
-    default" (the caller's ``.get(id, True)`` lookup) rather than raising --
-    a toggle-preference outage must never take the whole listing down, same
-    reasoning ``get_toggle_state`` already documents for the single-item
-    case.
-
-    Returns ``(states, ok)``. ``ok`` is ``False`` when the underlying scan
-    failed -- ``states`` is still the (fail-open, all-``True``-by-default)
-    mapping callers can safely use, but ``ok=False`` lets the caller surface
-    that the toggle read itself is broken rather than silently reporting
-    "everything enabled" as if it were a real, verified answer. A previous
-    version re-raised a 503 ``invoke_governed_helper`` timeout/capacity
-    ``HTTPException`` here, which took the ENTIRE ``/api/enhanced/tools``
-    response down over a toggle-preference outage alone; that is now
-    degraded the same as any other failure.
-    """
-    if not engine or not item_ids:
-        return {}, True
-    prefix = f'preference:toggle:{item_type}:'
-    pref_to_item = {f'{prefix}{item_id}': item_id for item_id in item_ids}
-    try:
-        res = await invoke_governed_helper(
-            engine.query_cypher,
-            'MATCH (p:Preference) WHERE p.id IN $ids '
-            'RETURN p.id AS id, p.value AS value',
-            {'ids': list(pref_to_item.keys())},
-            deadline=10.0,
-        )
-    except HTTPException as e:
-        _log_toggle_batch_failure(item_type, e)
-        return {}, False
-    except Exception as e:
-        _log_toggle_batch_failure(item_type, e)
-        return {}, False
-    return _toggle_states_from_rows(res, pref_to_item), True
-
-
-def _pref_row_item_id(row: Any, pref_to_item: dict[str, str]) -> str | None:
-    """The item id a `:Preference` row maps back to, or ``None`` for no match.
-
-    A row that is not a mapping, carries a non-string ``id``, or names a
-    preference this batch did not ask about all resolve the same way: the row
-    contributes nothing. Non-string ids could never match -- `pref_to_item` is
-    keyed by ``str`` -- so rejecting them changes no outcome, it only lets the
-    lookup be typed.
-    """
-    if not isinstance(row, dict):
-        return None
-    row_id = row.get('id')
-    if not isinstance(row_id, str):
-        return None
-    return pref_to_item.get(row_id)
-
-
-def _toggle_states_from_rows(
-    rows: Any, pref_to_item: dict[str, str]
-) -> dict[str, bool]:
-    """Map `:Preference` rows back onto the item ids the caller asked about."""
-    states: dict[str, bool] = {}
-    for row in rows or []:
-        item_id = _pref_row_item_id(row, pref_to_item)
-        if item_id is not None:
-            states[item_id] = row.get('value') == 'enabled'
-    return states
 
 
 async def set_toggle_state(
@@ -2142,7 +1758,7 @@ async def set_toggle_state(
             },
             deadline=10.0,
         )
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('save_toggle_state', e)
@@ -2154,43 +1770,6 @@ _MCP_TOOL_PAGE_DEFAULT = 100
 # bounded per entry and then assembled, so a page can never be the thing that
 # trips the collection bound the way the un-sliced list did.
 _MCP_TOOL_PAGE_MAX = 200
-
-
-def _public_mcp_tool_entry(
-    raw: Any, tool_name: str, *, enabled: bool
-) -> dict[str, Any] | None:
-    """Bound and sanitize ONE tool descriptor, independently of its page.
-
-    Per-entry rather than per-page on purpose: a single pathological
-    `input_schema` (too deep, too many properties, an oversized string) must
-    degrade that one tool, never blank the whole page the way bounding the
-    entire collection at once did. A descriptor that cannot be bounded even
-    without its schema is dropped and counted by the caller.
-    """
-    description = raw.get('description', '') if isinstance(raw, dict) else ''
-    schema = raw.get('input_schema', {}) if isinstance(raw, dict) else {}
-    ui_meta = _public_tool_ui_meta(raw.get('meta')) if isinstance(raw, dict) else None
-    for candidate_schema, schema_omitted in ((schema, False), ({}, True)):
-        entry: dict[str, Any] = {
-            'name': tool_name,
-            'description': description,
-            'input_schema': candidate_schema,
-            'enabled': enabled,
-        }
-        if schema_omitted:
-            # Named, not silent: the tool is still listed and still
-            # toggleable, but a consumer can see its schema was dropped
-            # rather than believing the tool declares no inputs.
-            entry['schema_omitted'] = True
-        if ui_meta is not None:
-            entry['meta'] = ui_meta
-        try:
-            bounded = _public_external_result(entry)
-        except ValueError:
-            continue
-        if isinstance(bounded, dict):
-            return bounded
-    return None
 
 
 def _validate_mcp_tool_page_request(server_name: str, offset: int, limit: int) -> None:
@@ -2206,136 +1785,27 @@ def _validate_mcp_tool_page_request(server_name: str, offset: int, limit: int) -
         )
 
 
-def _sorted_named_tools(tools: Any) -> list[tuple[str, str, dict[str, Any]]]:
-    """Order the WHOLE delegated list (stable across pages) before paging.
-
-    Nothing here walks a tool's payload -- only its already-validated name --
-    so an oversized fleet list costs a sort, not a bounding walk over ~1,131
-    schemas.
-    """
-    named: list[tuple[str, str, dict[str, Any]]] = []
-    for t in tools:
-        if not isinstance(t, dict):
-            continue
-        tool_name = str(t.get('name') or '')
-        if not _SAFE_DELEGATION_TOKEN.fullmatch(tool_name):
-            continue
-        named.append((tool_name.lower(), tool_name, t))
-    named.sort(key=lambda item: (item[0], item[1]))
-    return named
-
-
-def _enriched_mcp_tool_page(
-    page: list[tuple[str, str, dict[str, Any]]],
-    server_name: str,
-    toggle_states: dict[str, bool],
-) -> tuple[list[dict[str, Any]], int]:
-    """Shape one page of tools, counting the descriptors that had to be dropped."""
-    enriched_tools: list[dict[str, Any]] = []
-    dropped = 0
-    for _key, tool_name, raw in page:
-        entry = _public_mcp_tool_entry(
-            raw,
-            tool_name,
-            enabled=toggle_states.get(f'{server_name}:{tool_name}', True),
-        )
-        if entry is None:
-            dropped += 1
-            continue
-        enriched_tools.append(entry)
-    return enriched_tools, dropped
-
-
-def _toggle_status_envelope(toggles_ok: bool) -> dict[str, Any]:
-    """The toggle-preference provenance block returned with a tool page."""
-    return {
-        'source': 'kg_preferences',
-        'error': (
-            None
-            if toggles_ok
-            else (
-                'The tool toggle-preference read failed; every tool '
-                'below defaults to "enabled" and may not reflect the '
-                'real persisted preference.'
-            )
-        ),
-    }
-
-
 @router.get('/mcp/servers/{server_name}/tools')
 async def list_mcp_server_tools(
     server_name: str,
     offset: int = 0,
     limit: int = _MCP_TOOL_PAGE_DEFAULT,
 ) -> dict[str, Any]:
-    """One alphabetical page of a server's tools, with the TRUE total.
+    """One page of a server's tools from the served ``fleet.catalog.list``."""
 
-    Query tools through a host-injected, governed GraphOS delegation seam.
-
-    Ordering (`LOWER(name), name`) is applied to the WHOLE delegated list
-    before the page is cut, so paging is stable: page 2 continues where page
-    1 stopped rather than sorting a page in isolation.
-
-    Toggle state for the page is read with ONE `_batch_toggle_states` round
-    trip (`WHERE p.id IN $ids`), not one `get_toggle_state` call per tool.
-    The per-tool loop this replaces was a serial, individually 5s-bounded
-    round trip each -- up to 256 of them for a single expand -- and is the
-    same N+1 that was already fixed for `list_all_tools` and simply never
-    applied here.
-
-    Returns an ENVELOPE (was a bare JSON array): `total` is the real number
-    of tools this server serves, so a consumer can render "showing X of N"
-    instead of silently presenting a truncated list as complete.
-    """
-
-    engine = await get_engine_bounded()
     _validate_mcp_tool_page_request(server_name, offset, limit)
-    delegated_inventory = get_helper('list_mcp_server_tools')
-    if delegated_inventory is None:
-        raise HTTPException(
-            status_code=501,
-            detail='Governed MCP inventory delegation is not configured',
-        )
-
-    try:
-        tools = await invoke_governed_helper(
-            delegated_inventory,
-            deadline=15.0,
-            server_name=server_name,
-        )
-        if not isinstance(tools, list):
-            raise ValueError('Governed MCP inventory returned an invalid shape')
-
-        named = _sorted_named_tools(tools)
-        total = len(named)
-        page = named[offset : offset + limit]
-
-        toggle_ids = [f'{server_name}:{tool_name}' for _key, tool_name, _t in page]
-        toggle_states, toggles_ok = await _batch_toggle_states(
-            engine, 'mcp_tool', toggle_ids
-        )
-        enriched_tools, dropped = _enriched_mcp_tool_page(
-            page, server_name, toggle_states
-        )
-        return {
-            'server': server_name,
-            'tools': enriched_tools,
-            'total': total,
-            'offset': offset,
-            'limit': limit,
-            'returned': len(enriched_tools),
-            # Never silent: a descriptor this route could not safely bound is
-            # counted here rather than just vanishing from `tools`.
-            'dropped': dropped,
-            'has_more': offset + len(page) < total,
-            'toggle_status': _toggle_status_envelope(toggles_ok),
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('mcp_inventory_delegation', e)
-        raise HTTPException(status_code=503, detail='MCP inventory unavailable')
+    value = await served(
+        'fleet.catalog.list',
+        {'servers': [server_name], 'kinds': ['tool'], 'limit': 100},
+    )
+    tools = _result_rows(value, _MAX_EXTERNAL_COLLECTION_ITEMS)
+    return {
+        'server': server_name,
+        'tools': tools[offset : offset + limit],
+        'total': len(tools),
+        'offset': offset,
+        'limit': limit,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -2368,7 +1838,7 @@ def _mcp_server_registry_path() -> Path:
     _default_config_path``: explicit ``MCP_CONFIG`` setting, else
     ``<config_dir>/mcp_config.json``). Writing through any other path would
     silently diverge from what the running multiplexer actually reloads."""
-    from agent_utilities.core.config import setting
+    from .host import setting
 
     explicit = str(setting('MCP_CONFIG', '') or '').strip()
     if explicit:
@@ -2389,82 +1859,26 @@ def _read_mcp_server_registry() -> dict[str, Any]:
 def _write_mcp_server_registry(servers: dict[str, Any]) -> None:
     """Persist the full ``mcpServers`` map atomically, then hot-reload every
     live multiplexer so the change is visible without a pod restart."""
-    import json
-
-    if len(servers) > _MAX_EXTERNAL_COLLECTION_ITEMS:
-        raise HTTPException(status_code=400, detail='MCP server registry is too large')
-    document = {'mcpServers': servers}
-    payload = json.dumps(document, indent=2, sort_keys=True).encode('utf-8')
-    if len(payload) > _MAX_EXTERNAL_RESULT_BYTES:
-        raise HTTPException(
-            status_code=400, detail='MCP server registry exceeds its safety bound'
-        )
-    registry_path = _mcp_server_registry_path()
-    target_dir = _private_directory(registry_path.parent)
-    try:
-        _atomic_private_write(target_dir / registry_path.name, payload)
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('write_mcp_server_registry', e)
-        raise HTTPException(
-            status_code=500, detail='Failed to save the MCP server catalog'
-        ) from e
-    try:
-        from agent_utilities.mcp.multiplexer import invalidate_live_catalogs
-
-        invalidate_live_catalogs()
-    except Exception as e:  # best-effort -- the write already succeeded
-        _log_failure('invalidate_mcp_catalog', e)
+    raise unavailable('Write mcp server registry', 'graph.query')
 
 
-def _validate_mcp_server_entry(server_name: str, config_payload: Any) -> dict[str, Any]:
+def _validate_mcp_server_entry(server_name: str) -> dict[str, Any]:
     """Validate one submitted server config; refuse stdio when prohibited."""
-    from agent_utilities.core.config import enforce_mcp_stdio_permitted
-    from agent_utilities.models.mcp import MCPServerEntryModel
-
-    if not isinstance(config_payload, dict):
-        raise HTTPException(status_code=400, detail="'config' must be an object")
-    try:
-        entry = MCPServerEntryModel.model_validate(config_payload)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    if entry.command:
-        try:
-            enforce_mcp_stdio_permitted(server_name=server_name)
-        except RuntimeError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-    return entry.model_dump(mode='json', exclude_none=True)
+    raise unavailable('Validate mcp server entry', 'graph.query')
 
 
 @router.get('/mcp/server-schema')
 async def get_mcp_server_schema() -> dict[str, Any]:
     """The JSON schema an add/edit form derives its fields from (matches the
     ``/llm/model-schema`` pattern for ``ChatModelConfig``/``EmbeddingModelConfig``)."""
-    from agent_utilities.models.mcp import MCPServerEntryModel
-
-    return MCPServerEntryModel.model_json_schema()
+    raise unavailable('MCP servers', 'fleet.servers.manage')
 
 
 @router.get('/mcp/servers/{server_name}/config')
 async def get_mcp_server_config(server_name: str) -> dict[str, Any]:
     """One server's raw catalog entry, typed through ``MCPServerEntryModel`` --
     what an edit form prefills from (mirrors ``/llm/model-detail``)."""
-    from agent_utilities.models.mcp import MCPServerEntryModel
-
-    if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
-        raise HTTPException(status_code=400, detail='Invalid MCP server name')
-    servers = _read_mcp_server_registry()
-    raw = servers.get(server_name)
-    if not isinstance(raw, dict):
-        raise HTTPException(
-            status_code=404, detail=f'MCP server {server_name!r} not found'
-        )
-    try:
-        entry = MCPServerEntryModel.model_validate(raw)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    return entry.model_dump(mode='json', exclude_none=True)
+    raise unavailable('MCP servers', 'fleet.servers.manage')
 
 
 @router.post('/mcp/servers')
@@ -2473,7 +1887,7 @@ async def create_mcp_server(data: dict[str, Any]) -> dict[str, Any]:
     name = str(data.get('name') or '').strip()
     if not name or not _SAFE_DELEGATION_TOKEN.fullmatch(name):
         raise HTTPException(status_code=400, detail='Invalid MCP server name')
-    validated = _validate_mcp_server_entry(name, data.get('config'))
+    validated = _validate_mcp_server_entry(name)
     try:
         servers = _read_mcp_server_registry()
         if name in servers:
@@ -2483,7 +1897,7 @@ async def create_mcp_server(data: dict[str, Any]) -> dict[str, Any]:
         servers[name] = validated
         _write_mcp_server_registry(servers)
         return {'status': 'success', 'name': name, 'config': validated}
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('create_mcp_server', e)
@@ -2495,7 +1909,7 @@ async def update_mcp_server(server_name: str, data: dict[str, Any]) -> dict[str,
     """Edit an existing MCP server's catalog entry."""
     if not _SAFE_DELEGATION_TOKEN.fullmatch(server_name):
         raise HTTPException(status_code=400, detail='Invalid MCP server name')
-    validated = _validate_mcp_server_entry(server_name, data.get('config'))
+    validated = _validate_mcp_server_entry(server_name)
     try:
         servers = _read_mcp_server_registry()
         if server_name not in servers:
@@ -2505,7 +1919,7 @@ async def update_mcp_server(server_name: str, data: dict[str, Any]) -> dict[str,
         servers[server_name] = validated
         _write_mcp_server_registry(servers)
         return {'status': 'success', 'name': server_name, 'config': validated}
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('update_mcp_server', e)
@@ -2541,64 +1955,28 @@ async def delete_mcp_server(server_name: str, hard: bool = False) -> dict[str, A
             servers[server_name] = entry
         _write_mcp_server_registry(servers)
         return {'status': 'success', 'name': server_name, 'hard_deleted': hard}
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('delete_mcp_server', e)
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
-async def _execute_mcp_tool_call(
-    server_name: str,
-    tool_name: str,
-    arguments: dict[str, Any],
-    timeout: float,
-) -> Any:
-    """Apply call-time policy, invoke the host seam, and map failures."""
-    try:
-        await _enforce_mcp_tool_policy(server_name, tool_name)
-        return await _call_mcp_tool(
-            server_name,
-            tool_name,
-            arguments,
-            timeout=timeout,
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        _log_failure('mcp_tool_delegation', exc)
-        raise HTTPException(status_code=502, detail='MCP tool call failed') from exc
-
-
 @router.post('/mcp/tools/call')
 async def call_mcp_tool_route(data: dict[str, Any]) -> dict[str, Any]:
-    """Invoke one MCP tool through the host's governed delegation seam.
+    """Invoke one MCP tool through the served ``fleet.call`` operation.
 
-    CONCEPT:AU-ECO.mcp.webui-governed-mcp-delegation
-
-    This is the browser's only path to an MCP tool (``src/lib/mcp-client.ts``),
-    and in particular the executor behind an MCP App's ``tools/call`` bridge
-    (``src/lib/mcp-apps/bridge.ts``). The browser cannot reach a graph-os
-    listener itself — that listener enforces ``MCP_ALLOWED_HOSTS`` on the
-    ``Host`` authority and authenticates with a service bearer no page may
-    hold — so the call is made here, same-origin, under the session identity
-    every ``/api/*`` route already requires.
-
-    The WebUI adds NO authority of its own: it validates the shape of the
-    request and hands it to the host-injected ``call_mcp_tool`` helper, which
-    owns the allowlist, actor policy, credential references, and audit
-    envelope. With no host injection the route reports 501 rather than
-    inventing a delegation path.
+    Graph OS owns the allowlist, actor policy, credentials and audit. The
+    WebUI checks only the request shape.
     """
+
     server_name, tool_name, arguments = _mcp_tool_request(data)
-    timeout = _validated_mcp_timeout(
-        data,
-        default_ms=_MCP_CALL_TIMEOUT_DEFAULT_MS,
-        max_ms=_MCP_CALL_TIMEOUT_MAX_MS,
+    result = await served(
+        'fleet.call',
+        {'server': server_name, 'tool': tool_name, 'arguments': arguments},
+        idempotency_key=uuid.uuid4().hex,
     )
-    _require_mcp_helper('call_mcp_tool', 'Governed MCP delegation is not configured')
-    result = await _execute_mcp_tool_call(server_name, tool_name, arguments, timeout)
-    return {'status': 'success', 'result': result}
+    return {'status': 'success', 'result': _public_external_result(result)}
 
 
 async def _read_mcp_app_resource(
@@ -2617,7 +1995,7 @@ async def _read_mcp_app_resource(
             uri=uri,
         )
         return _public_external_result(resource)
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as exc:
         _log_failure('mcp_resource_delegation', exc)
@@ -2721,7 +2099,7 @@ async def toggle_skill(skill_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail='Invalid skill identifier')
     try:
         engine = await get_engine_bounded()
-    except HTTPException as exc:
+    except FastAPIHTTPException as exc:
         # See the matching note in list_skills(): only a genuine 503 hard-
         # fails; "no engine" (501) degrades to the toggle_helper fallback.
         if exc.status_code != 501:
@@ -2761,7 +2139,7 @@ async def reload_agent(request: Request) -> dict[str, Any]:
     try:
         try:
             engine = await get_engine_bounded()
-        except HTTPException as exc:
+        except FastAPIHTTPException as exc:
             # See the matching note in list_skills(): only a genuine 503
             # hard-fails; "no engine" (501) degrades to the legacy
             # workspace-reload fallback below.
@@ -2783,7 +2161,7 @@ async def reload_agent(request: Request) -> dict[str, Any]:
 
         # Legacy fallback
         await invoke_governed_helper(
-            _current_workspace_helpers()['initialize_workspace'],
+            workspace_helpers['initialize_workspace'],
             deadline=30.0,
         )
         reloadable = getattr(request.app.state, 'reload_app', None)
@@ -2793,133 +2171,23 @@ async def reload_agent(request: Request) -> dict[str, Any]:
             )
         await invoke_governed_helper(reloadable.reload, deadline=30.0)
         return {'status': 'success', 'message': 'Agent reloaded successfully'}
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('reload', e)
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
-def parse_cron_table(content: str) -> list[dict[str, Any]]:
-    """Parse a markdown table of cron tasks into structured data.
-
-    Args:
-        content: Raw markdown string containing the task table.
-
-    Returns:
-        A list of task dictionaries with id, name, and schedule.
-    """
-    tasks = []
-    lines = content.split('\n')
-    for line in lines:
-        if '|' in line and 'ID' not in line and '---' not in line:
-            parts = [p.strip() for p in line.split('|') if p.strip()]
-            if len(parts) >= 3:
-                tasks.append(
-                    {
-                        'id': parts[0],
-                        'name': parts[1],
-                        'schedule': parts[2],
-                    }
-                )
-    return tasks
-
-
-def parse_cron_logs(content: str) -> list[dict[str, Any]]:
-    """Extract structured execution logs from a CRON_LOG.md markdown file.
-
-    Args:
-        content: Raw markdown string containing formatted log entries.
-
-    Returns:
-        A list of log entries in reverse chronological order.
-    """
-    logs = []
-
-    parts = re.split(r'(?=^### \[)', content, flags=re.MULTILINE)
-
-    for part in parts:
-        if not part.strip() or not part.startswith('### ['):
-            continue
-
-        try:
-            header_match = re.search(r'^### \[(.*?)\] (.*?) \(`(.*?)`\)', part)
-            if header_match:
-                ts = header_match.group(1)
-                name = header_match.group(2)
-                tid = header_match.group(3)
-
-                body = part.split('\n\n', 1)[1] if '\n\n' in part else ''
-                output = body.split('\n---')[0].strip()
-                safe_output, _privacy_report = sanitize_for_persistence(output)
-
-                logs.append(
-                    {
-                        'timestamp': ts,
-                        'task_id': tid,
-                        'task_name': name,
-                        'status': 'success',
-                        'output': safe_output,
-                    }
-                )
-        except Exception as e:
-            _log_failure('api_extension', e, level=logging.DEBUG)
-    return logs[::-1]
-
-
 @router.get('/cron/calendar')
 async def get_cron_calendar() -> list[dict[str, Any]]:
     """Retrieve the scheduled cron task calendar from Knowledge Graph."""
-    try:
-        from agent_utilities.core.scheduler import get_cron_tasks
-
-        registry = get_cron_tasks()
-        results = []
-        for t in list(registry.tasks or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-            results.append(
-                {
-                    'id': t.id,
-                    'name': t.name or t.id,
-                    'schedule': str(t.interval_minutes),
-                    'last_run': t.last_run,
-                    'next_run': t.next_approx,
-                    'status': 'idle',
-                }
-            )
-        bounded = _public_external_result(results)
-        return bounded if isinstance(bounded, list) else []
-    except Exception as e:
-        _log_failure('api_extension', e)
-        return []
+    raise unavailable('Scheduled tasks', 'schedule.tasks.read')
 
 
 @router.get('/cron/logs')
 async def get_cron_logs() -> list[dict[str, Any]]:
     """Retrieve the execution history logs for cron tasks."""
-    try:
-        from agent_utilities.core.scheduler import get_cron_logs
-
-        logs = get_cron_logs()
-        results = []
-        for entry in list(logs.entries or [])[-_MAX_EXTERNAL_COLLECTION_ITEMS:]:
-            safe_output, _privacy_report = sanitize_for_persistence(entry.message)
-            results.append(
-                {
-                    'timestamp': entry.timestamp,
-                    'task_id': entry.task_id,
-                    'task_name': entry.task_name or entry.task_id,
-                    'output': safe_output,
-                    'status': 'success' if entry.status == 'success' else 'error',
-                    'chat_id': persistence_reference(
-                        'conversation', entry.chat_id, namespace='webui'
-                    ),
-                }
-            )
-        bounded = _public_external_result(results)
-        return bounded if isinstance(bounded, list) else []
-    except Exception as e:
-        _log_failure('api_extension', e)
-        return []
+    raise unavailable('Scheduled tasks', 'schedule.tasks.read')
 
 
 _TEXTUAL_UPLOAD_SUFFIXES = frozenset(
@@ -3328,16 +2596,7 @@ def _accessible_graphs(actor: Any) -> list[str]:
     import of a not-yet-existing name would need a `# type: ignore` this repo's
     own rules forbid.
     """
-    from . import graph_identity
-
-    resolve = getattr(graph_identity, 'frontend_accessible_graphs', None)
-    if resolve is not None:
-        return resolve(actor)
-    from agent_utilities.knowledge_graph.core.tenant_sharing import (
-        accessible_graphs,
-    )
-
-    return accessible_graphs(actor)
+    raise unavailable('Accessible graphs', 'graph.query')
 
 
 def _graph_union_executor(engine: Any) -> Any:
@@ -3371,98 +2630,7 @@ def _graph_union_executor(engine: Any) -> Any:
     session, just pointed at another graph that actor's own
     `accessible_graphs()` already says it may read.
     """
-    from agent_utilities.knowledge_graph.core.session import (
-        current_session,
-        use_session,
-    )
-
-    def _commons_pushdown(
-        graph_name: str, cypher: str, params: dict[str, Any] | None, session: Any
-    ) -> tuple[str, dict[str, Any]]:
-        """Push the commons READ catalog restriction INTO the query text.
-
-        (2026-08-09 owner ruling; `COMMONS_SHAREABLE_NODE_TYPES`) so the engine
-        filters, not this process -- `read_union`/`filter_commons_catalog` were
-        built for a post-hoc Python filter, but that pulls every commons row
-        over the wire first. `apply_commons_catalog_restriction` is the
-        companion primitive built for exactly this pushdown (its own docstring:
-        "closes the label/type-index half of the existence-leak... injected
-        into the query TEXT"). Best-effort: a query shape it can't inject into
-        (no bound variable, `UnscopableQueryError`, or any other failure)
-        leaves the cypher unchanged and is caught by the row-level fallback --
-        this must never fail OPEN.
-        """
-        from agent_utilities.knowledge_graph.core.tenant_sharing import (
-            apply_commons_catalog_restriction,
-        )
-
-        try:
-            exec_cypher, extra_params = apply_commons_catalog_restriction(
-                cypher, session.actor, graph_name
-            )
-        except Exception as exc:  # noqa: BLE001 — pushdown is best-effort; the row-level fallback is the safety net
-            _log_failure('graph_union.commons_restriction', exc, level=logging.DEBUG)
-            return cypher, dict(params or {})
-        exec_params = dict(params or {})
-        exec_params.update(extra_params)
-        return exec_cypher, exec_params
-
-    def _run_scoped(
-        graph_name: str, session: Any, exec_cypher: str, exec_params: dict[str, Any]
-    ) -> list[dict[str, Any]]:
-        """Read `graph_name`, retargeting BOTH the view and the session together.
-
-        `query=`/`params=` are passed as KEYWORDS, not positionally: the real
-        `QueryMixin.query_cypher(self, query, params=None, ...)` signature
-        (`engine_query.py:137`) binds either way, but this route is pinned to
-        the `query` keyword specifically (see
-        `test_execute_cypher_forwards_the_query_text_under_the_query_keyword`)
-        to distinguish it from the MCP tool surface's `cypher`-named field --
-        a future accidental rename to `cypher=` must fail loudly here, which a
-        positional call would silently paper over.
-        """
-        if session is None or graph_name == session.graph:
-            return list(
-                engine.query_cypher(query=exec_cypher, params=exec_params) or []
-            )
-        scoped_engine = engine.for_graph(graph_name)
-        with use_session(session.with_graph(graph_name)):
-            return list(
-                scoped_engine.query_cypher(query=exec_cypher, params=exec_params) or []
-            )
-
-    def _execute(
-        graph_name: str, cypher: str, params: dict[str, Any] | None
-    ) -> list[dict[str, Any]]:
-        from agent_utilities.knowledge_graph.core.tenant_sharing import (
-            commons_graph_name,
-        )
-
-        session = current_session()
-        is_commons = session is not None and graph_name == commons_graph_name()
-        if is_commons:
-            exec_cypher, exec_params = _commons_pushdown(
-                graph_name, cypher, params, session
-            )
-        else:
-            exec_cypher, exec_params = cypher, dict(params or {})
-        rows = _run_scoped(graph_name, session, exec_cypher, exec_params)
-        if is_commons and exec_cypher == cypher:
-            # The pushdown above did not change the query text -- either it
-            # legitimately doesn't apply (privileged actor, no WHERE/RETURN
-            # site) or it failed -- so apply the row-level allowlist as the
-            # fallback. `filter_commons_catalog` itself no-ops for a
-            # privileged actor, so this is a no-op in the common "legitimately
-            # doesn't apply" case and the actual safety net in the "it failed"
-            # case; it never widens access relative to the pushdown succeeding.
-            from agent_utilities.knowledge_graph.core.tenant_sharing import (
-                filter_commons_catalog,
-            )
-
-            rows = filter_commons_catalog(rows, session.actor, graph_name)
-        return rows
-
-    return _execute
+    raise unavailable('Graph union executor', 'graph.query')
 
 
 async def _read_union_cypher(
@@ -3495,16 +2663,7 @@ def _union_rows(
     engine: Any, cypher: str, params: dict[str, Any] | None
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """The synchronous body of `_read_union_cypher` (rows, source graphs)."""
-    from agent_utilities.knowledge_graph.core.session import current_session
-    from agent_utilities.knowledge_graph.core.tenant_sharing import read_union
-
-    session = current_session()
-    if session is None:
-        return list(engine.query_cypher(cypher, params) or []), []
-    actor = session.actor
-    graphs = _accessible_graphs(actor)
-    rows = read_union(cypher, params, _graph_union_executor(engine), actor)
-    return rows, graphs
+    raise unavailable('Union rows', 'graph.query')
 
 
 # Bound on concurrent per-graph fan-out (`_rows_per_accessible_graph` below).
@@ -3517,94 +2676,12 @@ _READ_UNION_MAX_WORKERS = 8
 
 
 def _rows_per_accessible_graph(
-    engine: Any,
-    engine_call: Any,
+    engine: Any, engine_call: Any
 ) -> tuple[list[tuple[str, Any]], list[str]] | None:
-    """Invoke `engine_call(scoped_engine)` once per graph the ambient actor
-    may read, each against a backend/view actually BOUND to that graph
-    (`engine.for_graph(graph_name)` -- see `_graph_union_executor`'s
-    docstring for why retargeting the session alone is not enough) under
-    that graph's own scoped `GraphSession`. Returns `None` when there is no
-    ambient verified session -- callers fall back to a single unscoped call.
+    """Per-graph union reads need the served ``graph.query`` operation."""
 
-    Unlike `_read_union_cypher`, this does not de-duplicate by row id: it is
-    for AGGREGATE reads (counts, `GROUP BY`), where a merged-by-id union is
-    meaningless (an aggregate row carries no per-row node id) and would be
-    wrong even if forced -- physically partitioned graphs (GOC-61) never
-    share a node id, so the correct merge of independent per-graph
-    aggregates is for the CALLER to sum/merge them, not de-dup them.
-
-    CONCURRENT, BOUNDED (`_READ_UNION_MAX_WORKERS`): each graph's read is
-    genuinely independent (a separate `for_graph` view + a separately
-    retargeted session), so running them sequentially would make every
-    union-read route's latency scale with the number of accessible graphs
-    for no reason -- exactly the linear-degradation shape this fix is
-    required not to introduce. `contextvars.copy_context()` per submission is
-    load-bearing, not decoration: `current_session`/`use_session` are
-    `ContextVar`-backed, and a bare `ThreadPoolExecutor.submit` would hand
-    the callable a FRESH context with no ambient session at all, silently
-    breaking every graph but the one the caller's own thread happens to
-    still be on. Results are re-sorted back into `_accessible_graphs`'
-    ordering (tenant graph first) after the fan-out completes, regardless of
-    which thread finished first, so downstream "tenant wins on a duplicate
-    id" merges stay correct.
-
-    FAIL-SOFT (matches `tenant_sharing.read_union`'s own documented
-    contract, `core/tenant_sharing.py:457`: "A per-graph failure is logged
-    and skipped -- a missing commons graph degrades to org-only, never an
-    error"). A single graph's read failing (offline shard, mid-rebuild
-    `PARTIAL_MATERIALIZATION`, a column this graph's projection doesn't
-    carry, ...) must never 503 the whole caller -- it previously did,
-    because this loop had no per-graph exception boundary at all. Returns
-    `(succeeded, degraded)`: `succeeded` is `(graph_name, result)` for every
-    graph that answered; `degraded` is the `graph_name`s that were skipped,
-    so a caller can report a partial read as partial (never silently as
-    complete -- the sibling half of this same fix).
-    """
-    from agent_utilities.knowledge_graph.core.session import (
-        current_session,
-        use_session,
-    )
-
-    session = current_session()
-    if session is None:
-        return None
-    graphs = _accessible_graphs(session.actor)
-
-    def _one(graph_name: str) -> Any:
-        if graph_name == session.graph:
-            return engine_call(engine)
-        scoped_engine = engine.for_graph(graph_name)
-        with use_session(session.with_graph(graph_name)):
-            return engine_call(scoped_engine)
-
-    succeeded: list[tuple[str, Any]] = []
-    degraded: list[str] = []
-    if len(graphs) <= 1:
-        for graph_name in graphs:
-            try:
-                succeeded.append((graph_name, _one(graph_name)))
-            except Exception as exc:  # noqa: BLE001 — one graph down ≠ whole read down (mirrors tenant_sharing.read_union's own per-graph guard)
-                _log_failure('read_union.per_graph', exc, level=logging.WARNING)
-                degraded.append(graph_name)
-        return succeeded, degraded
-
-    max_workers = min(len(graphs), _READ_UNION_MAX_WORKERS)
-    with _futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-        pending = {
-            pool.submit(contextvars.copy_context().run, _one, graph_name): graph_name
-            for graph_name in graphs
-        }
-        for future in pending:
-            graph_name = pending[future]
-            try:
-                succeeded.append((graph_name, future.result()))
-            except Exception as exc:  # noqa: BLE001 — one graph down ≠ whole read down (mirrors tenant_sharing.read_union's own per-graph guard)
-                _log_failure('read_union.per_graph', exc, level=logging.WARNING)
-                degraded.append(graph_name)
-    order = {graph_name: idx for idx, graph_name in enumerate(graphs)}
-    succeeded.sort(key=lambda pair: order[pair[0]])
-    return succeeded, degraded
+    del engine, engine_call
+    raise unavailable('Rows per accessible graph', 'graph.query')
 
 
 async def _read_union_scalar_sum(
@@ -3731,75 +2808,6 @@ async def _read_union_sql_group_counts(
     return await invoke_governed_helper(_run, deadline=deadline)
 
 
-def _node_label_rows(
-    scoped_engine: Any, label: str, limit: int
-) -> list[tuple[str, dict[str, Any]]]:
-    """One graph's `nodes_by_label` page, or [] when the backend lacks it."""
-    fn = getattr(scoped_engine.backend, 'nodes_by_label', None)
-    if not callable(fn):
-        return []
-    return list(fn(label, limit) or [])
-
-
-def _clean_node_label_rows(rows: Any) -> list[tuple[str, dict[str, Any]]]:
-    """Keep only well-formed `(id, properties)` pairs."""
-    return [
-        (row[0], row[1])
-        for row in (rows or [])
-        if isinstance(row, (tuple, list)) and len(row) == 2
-    ]
-
-
-def _restrict_commons_node_rows(
-    clean_rows: list[tuple[str, dict[str, Any]]], actor: Any, graph_name: str
-) -> list[tuple[str, dict[str, Any]]]:
-    """Apply the commons READ catalog allowlist to one graph's node rows.
-
-    `nodes_by_label` has no Cypher form `apply_commons_catalog_restriction`
-    could inject into, so the row-level allowlist function is applied directly
-    here instead (verified: `read_union` itself does not call it, so it is
-    this call site's job).
-    """
-    from agent_utilities.knowledge_graph.core.tenant_sharing import (
-        filter_commons_catalog,
-    )
-
-    props_only = [p if isinstance(p, dict) else {} for _nid, p in clean_rows]
-    allowed = filter_commons_catalog(props_only, actor, graph_name)
-    allowed_ids = {id(p) for p in allowed}
-    return [(nid, p) for nid, p in clean_rows if id(p) in allowed_ids]
-
-
-def _append_unseen_node_rows(
-    merged: list[tuple[str, dict[str, Any]]],
-    seen: set[str],
-    clean_rows: list[tuple[str, dict[str, Any]]],
-) -> None:
-    """Append rows whose string node id has not been merged yet."""
-    for nid, props in clean_rows:
-        if isinstance(nid, str):
-            if nid in seen:
-                continue
-            seen.add(nid)
-        merged.append((nid, props))
-
-
-def _merge_node_label_rows(
-    per_graph: Any, actor: Any, commons: str
-) -> tuple[list[tuple[str, dict[str, Any]]], list[str]]:
-    """Merge per-graph `nodes_by_label` pages, de-duped by node id."""
-    merged: list[tuple[str, dict[str, Any]]] = []
-    seen: set[str] = set()
-    source_graphs: list[str] = []
-    for graph_name, rows in per_graph:
-        source_graphs.append(graph_name)
-        clean_rows = _clean_node_label_rows(rows)
-        if graph_name == commons and actor is not None:
-            clean_rows = _restrict_commons_node_rows(clean_rows, actor, graph_name)
-        _append_unseen_node_rows(merged, seen, clean_rows)
-    return merged, source_graphs
-
-
 def _union_nodes_by_label(
     engine: Any, label: str, limit: int
 ) -> tuple[list[tuple[str, dict[str, Any]]], list[str], list[str]]:
@@ -3820,89 +2828,7 @@ def _union_nodes_by_label(
     `_read_union_scalar_sum` returns, so callers can accumulate source/degraded
     sets identically.
     """
-    from agent_utilities.knowledge_graph.core.session import current_session
-    from agent_utilities.knowledge_graph.core.tenant_sharing import (
-        commons_graph_name,
-    )
-
-    def _call(scoped_engine: Any) -> list[tuple[str, dict[str, Any]]]:
-        return _node_label_rows(scoped_engine, label, limit)
-
-    result = _rows_per_accessible_graph(engine, _call)
-    if result is None:
-        return list(_call(engine)), [], []
-    per_graph, degraded = result
-    session = current_session()
-    actor = session.actor if session is not None else None
-    merged, source_graphs = _merge_node_label_rows(
-        per_graph, actor, commons_graph_name()
-    )
-    return merged, source_graphs, degraded
-
-
-def _append_unseen_dict_rows(
-    merged: list[dict[str, Any]],
-    seen: set[Any],
-    rows: list[dict[str, Any]],
-    id_key: str,
-) -> None:
-    """Append rows whose `id_key` has not been merged yet (id-less rows pass)."""
-    for row in rows:
-        rid = row.get(id_key)
-        if rid is None:
-            merged.append(row)
-            continue
-        if rid in seen:
-            continue
-        seen.add(rid)
-        merged.append(row)
-
-
-def _merge_union_dict_rows(
-    per_graph: Any, actor: Any, commons: str, id_key: str
-) -> tuple[list[dict[str, Any]], list[str]]:
-    """Merge per-graph dict rows, de-duped by `id_key` (tenant graph wins)."""
-    from agent_utilities.knowledge_graph.core.tenant_sharing import (
-        filter_commons_catalog,
-    )
-
-    merged: list[dict[str, Any]] = []
-    seen: set[Any] = set()
-    source_graphs: list[str] = []
-    for graph_name, rows in per_graph:
-        source_graphs.append(graph_name)
-        clean = [r for r in (rows or []) if isinstance(r, dict)]
-        if graph_name == commons and actor is not None:
-            clean = filter_commons_catalog(clean, actor, graph_name)
-        _append_unseen_dict_rows(merged, seen, clean, id_key)
-    return merged, source_graphs
-
-
-def _union_engine_call(
-    engine: Any, actor: Any, call: Any, *, id_key: str = 'id'
-) -> tuple[list[dict[str, Any]], list[str], list[str]]:
-    """Fan a native (non-Cypher) engine READ call `call(scoped_engine)` out
-    across every graph this actor may read, merging row-shaped dict results
-    de-duped by `id_key` (tenant graph wins, matching `read_union`'s own
-    semantic; `_rows_per_accessible_graph` already orders its output tenant-
-    first). The commons READ catalog restriction (`filter_commons_catalog`)
-    is applied to only the commons graph's rows before merging -- same
-    reasoning as `_union_nodes_by_label`, for any native call whose results
-    are already row/dict-shaped (e.g. `search_hybrid`, `query_impact`) rather
-    than the `(id, props)` tuples `nodes_by_label` returns.
-    """
-    from agent_utilities.knowledge_graph.core.tenant_sharing import (
-        commons_graph_name,
-    )
-
-    result = _rows_per_accessible_graph(engine, call)
-    if result is None:
-        return list(call(engine) or []), [], []
-    per_graph, degraded = result
-    merged, source_graphs = _merge_union_dict_rows(
-        per_graph, actor, commons_graph_name(), id_key
-    )
-    return merged, source_graphs, degraded
+    raise unavailable('Union nodes by label', 'graph.query')
 
 
 async def _graph_read_engine() -> Any | None:
@@ -3918,7 +2844,7 @@ async def _graph_read_engine() -> Any | None:
     """
     try:
         return await get_engine_bounded()
-    except HTTPException as exc:
+    except FastAPIHTTPException as exc:
         if exc.status_code != 501:
             raise
         return None
@@ -4098,145 +3024,72 @@ def _build_canvas_nodes(
 
 @router.get('/graph/nodes')
 async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
-    """Query Knowledge Graph for nodes of a specific type or all nodes.
+    """List graph nodes, optionally of one type, through ``eg.graph.GetNodesByLabel``.
 
-    Args:
-        node_type: Optional filter for node type (e.g., 'Job', 'Log',
-                   'Memory', 'KnowledgeBase')
-
-    Returns:
-        List of node dictionaries with properties.
-
-    This does not go through Cypher at all. `properties(n)` asked the engine's
-    Cypher RETURN clause to call a function it does not implement
-    (`eg-query`'s `parse_proj_expr` recognizes only a fixed aggregate set plus
-    the special-cased `type(r)`), and `RETURN n` is the ORIGINAL, still-broken
-    whole-object projection documented at `get_graph_stats`. There is no
-    scalar-column way to ask Cypher for "all of a node's properties" (the
-    grammar has no wildcard/`RETURN n.*`), so this uses `nodes_by_label` --
-    the engine's OWN purpose-built native replacement for exactly this
-    `MATCH (n[:Label]) ... LIMIT k` shape -- fanned out across every
-    accessible graph by `_collect_graph_node_rows`.
+    One bounded, keyset-ordered label scan; an empty label scans every node.
+    Each ``(id, properties)`` row becomes one canvas node.
     """
     if node_type and not _SAFE_GRAPH_LABEL.fullmatch(node_type):
         raise HTTPException(status_code=400, detail='Invalid graph node type')
+    rows = await served(
+        'eg.graph.GetNodesByLabel',
+        {
+            'label': node_type or '',
+            'after': None,
+            'limit': _MAX_EXTERNAL_COLLECTION_ITEMS,
+        },
+    )
+    if not isinstance(rows, list):
+        return []
+    budget_bytes = (_MAX_EXTERNAL_RESULT_BYTES * 3) // 4
+    return _public_external_result(_build_canvas_nodes(rows, node_type, budget_bytes))
+
+
+def _edge_type(packed: Any) -> str:
+    """The ``type`` property of one MessagePack-encoded edge property map."""
+
+    if isinstance(packed, list):
+        try:
+            packed = bytes(packed)
+        except (TypeError, ValueError):
+            return ''
+    if not isinstance(packed, bytes | bytearray) or not packed:
+        return ''
     try:
-        engine = await _graph_read_engine()
-        if engine is None:
-            return []
-        if not callable(getattr(engine.backend, 'nodes_by_label', None)):
-            raise HTTPException(
-                status_code=503,
-                detail='Knowledge Graph node query failed',
-            )
-        budget = _MAX_EXTERNAL_COLLECTION_ITEMS
-        # Leave headroom under the serialized ceiling for the JSON envelope.
-        budget_bytes = (_MAX_EXTERNAL_RESULT_BYTES * 3) // 4
-        rows, source_graphs, degraded_graphs = await _collect_graph_node_rows(
-            engine, node_type, budget
-        )
-        # `source_graphs`/`degraded_graphs` are computed for observability
-        # parity with `get_graph_stats`, but this route's response is a bare
-        # JSON array (`list[dict]`, consumed directly by GraphView.tsx's node
-        # list) -- there is no envelope field to carry them without breaking
-        # that contract. Logged instead so the union's effect stays visible
-        # operationally even though it can't ride the response body.
-        if degraded_graphs:
-            logger.warning(
-                'get_graph_nodes: degraded graphs %s (source graphs: %s)',
-                sorted(degraded_graphs),
-                sorted(source_graphs),
-            )
-        return _public_external_result(
-            _build_canvas_nodes(rows, node_type, budget_bytes)
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        # D-W6-10: this used to swallow ANY backend failure (including an
-        # authorization rejection such as PlacementAuthorityError) into a
-        # bare `[]` -- indistinguishable, to both this route's caller and to
-        # GraphView.tsx, from a graph that is genuinely empty. Raise instead
-        # so the frontend's existing `.catch(() => null)` -> "Failed to load
-        # graph database nodes" toast (GraphView.tsx's own fetchData, already
-        # wired, previously never fired because a 200 + `[]` looks like
-        # success) fires on a REAL failure, and stays silent for a REAL empty
-        # graph (which never reaches this except block at all). `_log_failure`
-        # already logs the exception TYPE (e.g. `error_type=ValueError`) to
-        # the server log without the message/args, so the cause stays legible
-        # to an operator reading logs while nothing internal reaches the
-        # client response below.
-        _log_failure('get_graph_nodes', e)
-        raise HTTPException(
-            status_code=503,
-            detail='Knowledge Graph node query failed',
-        ) from e
+        properties = msgpack.unpackb(packed, raw=False)
+    except (ValueError, msgpack.ExtraData, msgpack.FormatError, msgpack.StackError):
+        return ''
+    if not isinstance(properties, dict):
+        return ''
+    edge_type = properties.get('type')
+    return edge_type if isinstance(edge_type, str) else ''
 
 
 @router.get('/graph/relationships')
 async def get_graph_relationships() -> list[dict[str, Any]]:
-    """Query Knowledge Graph for relationships between nodes.
+    """List graph relationships through ``eg.graph.GetEdgesPage``.
 
-    Returns:
-        List of relationship dictionaries with source, target, and type.
+    One bounded, keyset-ordered edge page. Each
+    ``(source, target, ordinal, properties)`` row becomes
+    ``{source, type, target}``.
     """
-    try:
-        try:
-            engine = await get_engine_bounded()
-        except HTTPException as exc:
-            # See the matching note in get_graph_nodes() -- same fix, same
-            # reasoning: "no engine" degrades to an honest empty list; a
-            # genuine 503 still hard-fails, and D-W6-10's post-acquisition
-            # 503 hardening below is untouched.
-            if exc.status_code != 501:
-                raise
-            return []
-
-        query = (
-            'MATCH (a)-[r]->(b) RETURN a.id as source, '
-            f'type(r) as type, b.id as target LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+    rows = await served(
+        'eg.graph.GetEdgesPage',
+        {'after': None, 'limit': _MAX_EXTERNAL_COLLECTION_ITEMS},
+    )
+    relationships = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, list | tuple) or len(row) != 4:
+            continue
+        source, target, _ordinal, packed = row
+        relationships.append(
+            {
+                'source': source if isinstance(source, str) else '',
+                'type': _edge_type(packed),
+                'target': target if isinstance(target, str) else '',
+            }
         )
-        # FIX LANE Priority 1: unioned across every graph this actor may read
-        # (`_read_union_cypher` -- `tenant_sharing.read_union`, same primitive
-        # `get_graph_stats` already uses), not `engine.backend.execute` alone,
-        # so relationships among commons-graph nodes (e.g. `Tool`-to-`Server`
-        # edges) are visible here too. A relationship row carries no single
-        # `id` column, so `read_union`'s id-dedup is a no-op for every row here
-        # (its own documented behaviour for an unclassifiable id -- "keep,
-        # never drop") -- which is correct: two physically partitioned graphs
-        # (GOC-61) never share an edge, so nothing needs de-duplicating.
-        result, _source_graphs = await _read_union_cypher(
-            engine, query, None, deadline=10.0
-        )
-        relationships = []
-        for row in result:
-            relationships.append(
-                {
-                    'source': row.get('source', ''),
-                    'type': row.get('type', ''),
-                    'target': row.get('target', ''),
-                }
-            )
-        # Re-bound after the union merge (same fix `list_resources` already
-        # applies): the Cypher `LIMIT` above caps each GRAPH's own read at
-        # `_MAX_EXTERNAL_COLLECTION_ITEMS`, but `_read_union_cypher` can read
-        # more than one accessible graph (tenant + `__commons__`), and their
-        # combined row count can exceed that cap even though neither graph's
-        # own read did. Without this, `_public_external_result` raised
-        # `ValueError('...oversized collection')` on the merged list and the
-        # broad `except` below turned a real, over-cap result into a loud
-        # 503 -- never silently `[]`, but still indistinguishable from a
-        # genuine backend failure for a tenant with a busy commons graph.
-        return _public_external_result(relationships[:_MAX_EXTERNAL_COLLECTION_ITEMS])
-    except HTTPException:
-        raise
-    except Exception as e:
-        # D-W6-10: mirror of get_graph_nodes' fix above -- see that comment.
-        _log_failure('get_graph_relationships', e)
-        raise HTTPException(
-            status_code=503,
-            detail='Knowledge Graph relationship query failed',
-        ) from e
+    return _public_external_result(relationships[:_MAX_EXTERNAL_COLLECTION_ITEMS])
 
 
 # ---------------------------------------------------------------------------
@@ -4368,25 +3221,7 @@ async def _engine_graph_sizes() -> dict[str, dict[str, int]]:
     Best-effort by construction: any failure returns `{}` and the caller
     reports the payload's own counts alone, never a fabricated total.
     """
-    try:
-        from agent_utilities.observability.gateway_metrics import (
-            _fetch_engine_metrics,
-        )
-
-        body, ok = await _fetch_engine_metrics()
-        if not ok:
-            return {}
-        sizes: dict[str, dict[str, int]] = {}
-        for line in body.decode('utf-8', 'replace').splitlines():
-            match = _ENGINE_GRAPH_SIZE_RE.match(line.strip())
-            if not match:
-                continue
-            kind, graph, value = match.groups()
-            sizes.setdefault(graph, {})[kind] = int(value)
-        return sizes
-    except Exception as exc:  # noqa: BLE001 - observability must never fail a read
-        logger.debug('engine graph-size gauges unavailable: %s', type(exc).__name__)
-        return {}
+    raise unavailable('Engine graph sizes', 'graph.query')
 
 
 class _Graph3DAccumulator:
@@ -4599,7 +3434,7 @@ async def get_graph_3d(include_isolated: bool = False) -> dict[str, Any]:
         return _graph3d_size_bounded(
             _graph3d_payload(acc, connected_nodes, node_sources, engine_sizes)
         )
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         # Same D-W6-10 contract as the two routes above: a real failure is a
@@ -4743,36 +3578,7 @@ def _lod_validate_cluster_id(value: Any, *, field: str) -> str:
 
 def _require_lod_graph_scope(request: Request) -> tuple[Any, str]:
     """Require exactly one caller-authorized graph, never a server default."""
-    graph_values = request.query_params.getlist('graph')
-    if len(graph_values) != 1:
-        raise HTTPException(
-            status_code=400,
-            detail='Exactly one authorized graph scope is required',
-        )
-    try:
-        graph_name = _lod_identifier(graph_values[0], field='graph')
-    except _LodUnavailable as exc:
-        raise HTTPException(status_code=400, detail='Invalid graph scope') from exc
-    try:
-        from agent_utilities.knowledge_graph.core.session import resolve_session
-
-        session = resolve_session(required_scope='kg:read')
-        # The native hierarchy RPC has no commons-catalog projection. Keep the
-        # proxy pinned to the session's own tenant graph even though ordinary
-        # union reads may include additional catalog graphs; accepting an
-        # arbitrary accessible graph here would expose unfiltered topology.
-        if graph_name != session.graph or graph_name not in _accessible_graphs(
-            session.actor
-        ):
-            raise PermissionError('graph is outside the session-bound read scope')
-    except HTTPException:
-        raise
-    except Exception as exc:
-        _log_failure('lod_graph_scope', exc, level=logging.INFO)
-        raise HTTPException(
-            status_code=403, detail='Graph scope is not authorized'
-        ) from exc
-    return session, graph_name
+    raise unavailable('Require lod graph scope', 'graph.query')
 
 
 def _lod_unavailable_clusters(level: int, reason: str) -> dict[str, Any]:
@@ -4821,83 +3627,17 @@ def _lod_size_bounded(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _lod_rpc(engine: Any, graph_name: str, method: str, *args: Any) -> Any:
     """Call one generated hierarchy RPC through a graph-scoped, signed view."""
-    from agent_utilities.knowledge_graph.core.session import (
-        current_session,
-        use_session,
-    )
-
-    session = current_session()
-    if (
-        session is None
-        or graph_name != session.graph
-        or graph_name not in _accessible_graphs(session.actor)
-    ):
-        raise _LodUnavailable('verified graph scope is unavailable')
-    scoped_engine = (
-        engine if graph_name == session.graph else engine.for_graph(graph_name)
-    )
-    graph_compute = getattr(scoped_engine, 'graph', None)
-    client = getattr(graph_compute, 'client', None)
-    graph_operations = getattr(client, 'graph', None)
-    operation = getattr(graph_operations, method, None)
-    if not callable(operation):
-        raise _LodUnavailable('hierarchy RPC is unavailable on the graph client')
-    with use_session(session.with_graph(graph_name)):
-        result = operation(*args)
-    # The current GraphComputeEngine exposes a synchronous generated-client
-    # wrapper. Refuse an async object here rather than letting the session
-    # context end before its RPC executes under authority.
-    if inspect.isawaitable(result):
-        close = getattr(result, 'close', None)
-        if callable(close):
-            close()
-        raise _LodUnavailable('async hierarchy client is not safely routed')
-    return result
+    raise unavailable('Lod rpc', 'graph.query')
 
 
 def _lod_scoped_graph_operations(engine: Any, graph_name: str) -> tuple[Any, Any, Any]:
     """Return the current verified session and its graph RPC namespaces."""
-    from agent_utilities.knowledge_graph.core.session import current_session
-
-    session = current_session()
-    if (
-        session is None
-        or graph_name != session.graph
-        or graph_name not in _accessible_graphs(session.actor)
-    ):
-        raise _LodUnavailable('verified graph scope is unavailable')
-    scoped_engine = (
-        engine if graph_name == session.graph else engine.for_graph(graph_name)
-    )
-    graph_compute = getattr(scoped_engine, 'graph', None)
-    client = getattr(graph_compute, 'client', None)
-    return session, client, getattr(client, 'graph', None)
-
-
-def _lod_reject_awaitable(value: Any, message: str) -> None:
-    """Reject a coroutine whose authority context would outlive this helper."""
-    if not inspect.isawaitable(value):
-        return
-    close = getattr(value, 'close', None)
-    if callable(close):
-        close()
-    raise _LodUnavailable(message)
+    raise unavailable('Lod scoped graph operations', 'graph.query')
 
 
 def _lod_capability_advertised(client: Any, session: Any) -> bool:
     """Probe a native capability while retaining the verified session context."""
-    from agent_utilities.knowledge_graph.core.session import use_session
-
-    supports = getattr(client, 'supports', None)
-    if not callable(supports):
-        raise _LodUnavailable('authority-scoped hierarchy capability is unavailable')
-    with use_session(session.with_graph(session.graph)):
-        advertised = supports(_LOD_AUTHORITY_SCOPED_REFRESH_CAPABILITY)
-    _lod_reject_awaitable(
-        advertised,
-        'async hierarchy capability negotiation is not safely routed',
-    )
-    return advertised is True
+    raise unavailable('Lod capability advertised', 'graph.query')
 
 
 def _lod_refresh_method(graph_operations: Any) -> str | None:
@@ -5147,27 +3887,7 @@ async def get_graph_3d_lod_scope() -> dict[str, Any]:
     until its separate scoped refresh receipt proves the EG capability,
     freshness, and source version.
     """
-    try:
-        from agent_utilities.knowledge_graph.core.session import resolve_session
-
-        session = resolve_session(required_scope='kg:read')
-        graph_name = session.graph
-        if not graph_name or graph_name not in _accessible_graphs(session.actor):
-            return {
-                'available': False,
-                'status': 'unavailable',
-                'graph': None,
-                'reason': 'No authorized graph scope is available.',
-            }
-        _lod_identifier(graph_name, field='graph')
-        return {'available': True, 'status': 'ready', 'graph': graph_name}
-    except HTTPException:
-        raise
-    except Exception as exc:
-        _log_failure('get_graph_3d_lod_scope', exc, level=logging.INFO)
-        raise HTTPException(
-            status_code=403, detail='Graph scope is not authorized'
-        ) from exc
+    raise unavailable('Graph 3D view', 'graph.view.read')
 
 
 @router.get('/graph/graph3d/refresh', response_model=None)
@@ -5195,7 +3915,7 @@ async def get_graph_3d_lod_refresh(
             deadline=_LOD_RPC_DEADLINE_SECONDS,
         )
         return _lod_size_bounded(_normalize_lod_refresh(raw, graph_name))
-    except HTTPException as exc:
+    except FastAPIHTTPException as exc:
         if exc.status_code == 503:
             return _lod_error_response(
                 _lod_unavailable_refresh(
@@ -5264,7 +3984,7 @@ async def get_graph_3d_lod_clusters(
             deadline=_LOD_RPC_DEADLINE_SECONDS,
         )
         return _lod_size_bounded(_normalize_lod_clusters(raw, ui_level))
-    except HTTPException as exc:
+    except FastAPIHTTPException as exc:
         if exc.status_code == 503:
             return _lod_error_response(
                 _lod_unavailable_clusters(
@@ -5322,7 +4042,7 @@ async def get_graph_3d_lod_expand(
             deadline=_LOD_RPC_DEADLINE_SECONDS,
         )
         return _lod_size_bounded(_normalize_lod_expand(raw))
-    except HTTPException as exc:
+    except FastAPIHTTPException as exc:
         if exc.status_code == 503:
             return _lod_error_response(
                 _lod_unavailable_expand('Knowledge Graph hierarchy is unavailable.')
@@ -5423,16 +4143,7 @@ def _by_type_degraded_graphs() -> list[str]:
     Best-effort by construction: this runs on an error path, so it must not
     be able to raise a second, more confusing failure out of the degrade.
     """
-    from agent_utilities.knowledge_graph.core.session import current_session
-
-    try:
-        session = current_session()
-        if session is None:
-            return []
-        return _accessible_graphs(session.actor)
-    except Exception as exc:  # noqa: BLE001 — a degrade must never itself raise
-        _log_failure('graph_stats.by_type_degraded_graphs', exc, level=logging.DEBUG)
-        return []
+    raise unavailable('By type degraded graphs', 'graph.query')
 
 
 async def _by_type_call(
@@ -5463,7 +4174,7 @@ async def _by_type_call(
             count_field='n',
             deadline=_GRAPH_STATS_BY_TYPE_DEADLINE_SECONDS,
         )
-    except HTTPException as e:
+    except FastAPIHTTPException as e:
         # 503 from this call means exactly "the bounded sync budget said no"
         # (deadline exceeded, or capacity exhausted) -- both are precisely
         # what this call is allowed to degrade on, and both must render as
@@ -5505,7 +4216,7 @@ async def get_graph_stats() -> dict[str, Any]:
     try:
         try:
             engine = await get_engine_bounded()
-        except HTTPException as exc:
+        except FastAPIHTTPException as exc:
             # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- get_engine()
             # raises HTTPException(501) rather than returning None, so the
             # `if not engine` degrade below was unreachable dead code (every
@@ -5648,7 +4359,7 @@ async def get_graph_stats() -> dict[str, Any]:
             'degraded_graphs': degraded_graphs,
             'partial': bool(degraded_graphs),
         }
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         # D-W6-10 (get_graph_stats' narrower related gap, named alongside the
@@ -5708,7 +4419,7 @@ async def get_graph_node_types() -> dict[str, Any]:
     try:
         try:
             engine = await get_engine_bounded()
-        except HTTPException as exc:
+        except FastAPIHTTPException as exc:
             # Same contract as `get_graph_stats`: a 501 ("engine not
             # initialized") is a knowable state and is reported as one --
             # `available: False`, never as a genuinely empty distribution.
@@ -5730,7 +4441,7 @@ async def get_graph_node_types() -> dict[str, Any]:
             'degraded_graphs': sorted(set(degraded_graphs)),
             'partial': bool(degraded_graphs),
         }
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('get_graph_node_types', e)
@@ -5766,259 +4477,81 @@ def _empty_node_type_breakdown() -> dict[str, Any]:
 
 @router.post('/graph/memory')
 async def add_memory(data: dict[str, Any]) -> dict[str, Any]:
-    """Add a new memory node to the Knowledge Graph.
+    """Write one memory record through the served ``memory.write`` operation."""
 
-    Args:
-        data: Dictionary containing memory data (id, content, importance, tags, etc.)
-
-    Returns:
-        Success status and created memory ID.
-    """
-    try:
-        from agent_utilities.models.knowledge_graph import MemoryNode
-
-        engine = await get_engine_bounded()
-
-        data_copy = _bounded_query_params(data)
-        safe_copy, _privacy_report = sanitize_for_persistence(data_copy)
-        if not isinstance(safe_copy, dict):
-            raise HTTPException(status_code=400, detail='Invalid memory record')
-        data_copy = safe_copy
-        if 'name' not in data_copy:
-            data_copy['name'] = data_copy.get('content', 'Memory Node')[:50]
-
-        memory = MemoryNode(**data_copy)
-        await invoke_governed_helper(engine.add_memory_node, memory, deadline=10.0)
-        return {'status': 'success', 'id': memory.id}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('add_memory', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    key = _validate_runtime_id(data.get('id') or uuid.uuid4().hex)
+    record = await _write_memory(key, data)
+    return {'status': 'success', 'id': key, 'record': record}
 
 
 @router.get('/graph/memory/{memory_id}')
 async def get_memory(memory_id: str) -> dict[str, Any]:
-    """Retrieve a specific memory node from the Knowledge Graph.
+    """Read one memory record through the served ``memory.read`` operation."""
 
-    Args:
-        memory_id: The unique identifier of the memory node.
-
-    Returns:
-        Memory node data or 404 if not found.
-    """
-    try:
-        memory_id = _validate_runtime_id(memory_id)
-        engine = await get_engine_bounded()
-
-        memory = await invoke_governed_helper(
-            engine.get_memory_node, memory_id, deadline=10.0
-        )
-        if not memory:
-            raise HTTPException(status_code=404, detail='Memory not found')
-
-        bounded = _public_external_result(memory.model_dump())
-        if not isinstance(bounded, dict):
-            raise HTTPException(status_code=422, detail='Invalid memory record')
-        return bounded
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('get_memory', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    record = await served('memory.read', {'key': _validate_runtime_id(memory_id)})
+    bounded = _public_external_result(record)
+    if not isinstance(bounded, dict):
+        raise HTTPException(status_code=422, detail='Invalid memory record')
+    return bounded
 
 
 @router.put('/graph/memory/{memory_id}')
 async def update_memory(memory_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    """Update an existing memory node in the Knowledge Graph.
+    """Replace one memory record through the served ``memory.write`` operation."""
 
-    Args:
-        memory_id: The unique identifier of the memory node.
-        data: Dictionary containing updated memory data.
-
-    Returns:
-        Success status.
-    """
-    try:
-        from agent_utilities.models.knowledge_graph import MemoryNode
-
-        memory_id = _validate_runtime_id(memory_id)
-        engine = await get_engine_bounded()
-
-        data_copy = _bounded_query_params(data)
-        safe_copy, _privacy_report = sanitize_for_persistence(data_copy)
-        if not isinstance(safe_copy, dict):
-            raise HTTPException(status_code=400, detail='Invalid memory record')
-        data_copy = safe_copy
-        data_copy['id'] = memory_id
-        # Also ensure name is present as it's required in RegistryNode
-        if 'name' not in data_copy:
-            data_copy['name'] = data_copy.get('content', 'Memory Node')[:50]
-
-        updated_memory = MemoryNode(**data_copy)
-        await invoke_governed_helper(
-            engine.update_memory_node, memory_id, updated_memory, deadline=10.0
-        )
-        return {'status': 'success'}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('update_memory', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    record = await _write_memory(_validate_runtime_id(memory_id), data)
+    return {'status': 'success', 'record': record}
 
 
 @router.delete('/graph/memory/{memory_id}')
 async def delete_memory(memory_id: str) -> dict[str, Any]:
-    """Delete a memory node from the Knowledge Graph.
+    """Memory deletion needs a served operation that Graph OS does not have."""
 
-    Args:
-        memory_id: The unique identifier of the memory node.
-
-    Returns:
-        Success status.
-    """
-    try:
-        memory_id = _validate_runtime_id(memory_id)
-        engine = await get_engine_bounded()
-
-        await invoke_governed_helper(
-            engine.delete_memory_node, memory_id, deadline=10.0
-        )
-        return {'status': 'success'}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('delete_memory', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    _validate_runtime_id(memory_id)
+    raise unavailable('Graph memory deletion', 'memory.delete')
 
 
 @router.post('/graph/link')
 async def link_nodes(data: dict[str, Any]) -> dict[str, Any]:
-    """Create a relationship between two nodes in the Knowledge Graph.
+    """Create one relationship through ``eg.graph.AddEdge``.
 
     Args:
-        data: Dictionary containing source, target, relationship_type, and properties.
+        data: ``source``, ``target``, ``relationship_type`` and optional
+            ``properties``. The relationship type is stored as the edge's
+            ``type`` property.
 
     Returns:
         Success status.
     """
-    try:
-        source = _validate_runtime_id(data.get('source', ''))
-        target = _validate_runtime_id(data.get('target', ''))
-        relationship_type = data.get('relationship_type')
-        if not isinstance(relationship_type, str) or not _SAFE_GRAPH_LABEL.fullmatch(
-            relationship_type
-        ):
-            raise HTTPException(status_code=400, detail='Invalid relationship type')
-        properties = _bounded_query_params(data.get('properties', {}))
-        safe_properties, _privacy_report = sanitize_for_persistence(properties)
-        if not isinstance(safe_properties, dict):
-            raise HTTPException(status_code=400, detail='Invalid link properties')
-
-        engine = await get_engine_bounded()
-
-        await invoke_governed_helper(
-            engine.link_nodes,
-            source,
-            target,
-            relationship_type,
-            safe_properties,
-            deadline=10.0,
-        )
-        return {'status': 'success'}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('api_extension', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
-
-
-def _reject_fully_degraded_search(results: Any, degraded: Any) -> None:
-    """Zero results plus an unread graph is a failure, not an empty answer.
-
-    ROOT CAUSE of the observed live non-determinism (item C/F: identical
-    successive `/graph/search` calls returning 5 results, then 0):
-    `_union_engine_call` -> `_rows_per_accessible_graph` fan-out is fail-SOFT
-    per graph by design (a per-graph exception is logged and the graph is
-    added to `degraded`, never raised -- see that function's own docstring).
-    This route used to discard `degraded` entirely (`_degraded`), so when
-    EVERY accessible graph's `search_hybrid` call happened to fail on a given
-    request (contention/timeout), the union quietly degraded to a
-    legitimate-looking `results=[]` -- a 200 indistinguishable from
-    "reachable, genuinely zero matches". The very next identical request, with
-    no failure this time, returned the real hits. Distinguish the two: zero
-    results with at least one graph that could not even be read is a failure
-    (503, same D-W6-10 class as
-    get_graph_nodes/get_graph_relationships/list_workflows). Zero results with
-    `degraded` empty (every accessible graph was actually read) stays a
-    genuine 200 [].
-    """
-    if results or not degraded:
-        return
-    _log_failure('search_graph', RuntimeError(f'degraded graphs: {degraded}'))
-    raise HTTPException(status_code=503, detail='Knowledge Graph search failed')
+    source = _validate_runtime_id(data.get('source', ''))
+    target = _validate_runtime_id(data.get('target', ''))
+    relationship_type = data.get('relationship_type')
+    if not isinstance(relationship_type, str) or not _SAFE_GRAPH_LABEL.fullmatch(
+        relationship_type
+    ):
+        raise HTTPException(status_code=400, detail='Invalid relationship type')
+    properties = _bounded_query_params(data.get('properties', {}))
+    safe_properties, _privacy_report = sanitize_for_persistence(properties)
+    if not isinstance(safe_properties, dict):
+        raise HTTPException(status_code=400, detail='Invalid link properties')
+    packed = msgpack.packb({**safe_properties, 'type': relationship_type})
+    await served(
+        'eg.graph.AddEdge',
+        {
+            'source_id': source,
+            'target_id': target,
+            'properties_msgpack': list(packed),
+        },
+        idempotency_key=uuid.uuid4().hex,
+    )
+    return {'status': 'success'}
 
 
 @router.get('/graph/search')
 async def hybrid_search(query: str, top_k: int = 10) -> list[dict[str, Any]]:
-    """Perform hybrid search across the Knowledge Graph.
+    """Search the graph through the served ``retrieval.search`` operation."""
 
-    Args:
-        query: Search query string.
-        top_k: Maximum number of results to return.
-
-    Returns:
-        List of matching nodes with relevance scores.
-    """
-    if not query.strip() or len(query.encode('utf-8')) > 8192:
-        raise HTTPException(status_code=400, detail='Invalid search query')
-    if not 1 <= top_k <= 100:
-        raise HTTPException(status_code=400, detail='Invalid result limit')
-    try:
-        engine = await get_engine_bounded()
-
-        # FIX LANE Priority 1: `search_hybrid` is a native ranked-retrieval
-        # call with no Cypher form (`_read_union_cypher` does not apply), so
-        # this fans it out per accessible graph via `_union_engine_call`
-        # (`_rows_per_accessible_graph` underneath) and merges by node id --
-        # the fleet/tool catalog is otherwise invisible to hybrid search from
-        # a webui session exactly like it was to `/graph/nodes`. `top_k` is
-        # pushed down to EACH per-graph call (not fetched unbounded then
-        # sliced) -- the merge below still trims to the caller's `top_k` after
-        # de-duping, since the union of two `top_k`-bounded shards can exceed
-        # `top_k`.
-        from agent_utilities.knowledge_graph.core.session import current_session
-
-        session = current_session()
-        actor = session.actor if session is not None else None
-
-        def _call(scoped_engine: Any) -> list[dict[str, Any]]:
-            return list(scoped_engine.search_hybrid(query, top_k=top_k) or [])
-
-        results, _source_graphs, degraded = await invoke_governed_helper(
-            _union_engine_call, engine, actor, _call, deadline=15.0
-        )
-        _reject_fully_degraded_search(results, degraded)
-        return _bounded_list_result(list(results or [])[:top_k])
-    except HTTPException as exc:
-        # "No engine" (501) degrades to an honest empty list -- same as
-        # get_graph_nodes/relationships/workflows treat it (D-W6-10); a
-        # genuine 503 (bounded deadline/capacity, or the all-graphs-degraded
-        # case just above) still hard-fails below.
-        if exc.status_code == 501:
-            return []
-        raise
-    except Exception as e:
-        # D-W6-10 (same class of fix as get_graph_nodes/get_graph_relationships/
-        # list_workflows): a failure raised OUTSIDE the fail-soft per-graph
-        # fan-out above (e.g. `invoke_governed_helper`'s own deadline/capacity
-        # handling, or an error before/after the union call) must also surface
-        # as a distinguishable failure, not a fabricated `200 []`.
-        _log_failure('search_graph', e)
-        raise HTTPException(
-            status_code=503,
-            detail='Knowledge Graph search failed',
-        ) from e
+    return await _retrieve(query, top_k)
 
 
 @router.get('/graph/impact/{symbol}')
@@ -6031,93 +4564,21 @@ async def get_impact(symbol: str) -> list[dict[str, Any]]:
     Returns:
         List of affected nodes and impact severity.
     """
-    if not symbol.strip() or len(symbol.encode('utf-8')) > 2048:
-        raise HTTPException(status_code=400, detail='Invalid impact symbol')
-    try:
-        engine = await get_engine_bounded()
-
-        # FIX LANE Priority 1: `query_impact` is a native BFS-traversal call
-        # with no Cypher form, fanned out per accessible graph and merged by
-        # node id (`_union_engine_call`), same reasoning as `hybrid_search`
-        # above. The traversal itself is graph-local (edges never cross a
-        # GOC-61 graph boundary), so `symbol` resolves in at most one
-        # accessible graph -- the other graph(s) cheaply return `[]` via
-        # `query_impact`'s own `has_node` early-return, not an error.
-        from agent_utilities.knowledge_graph.core.session import current_session
-
-        session = current_session()
-        actor = session.actor if session is not None else None
-
-        def _call(scoped_engine: Any) -> list[dict[str, Any]]:
-            return list(scoped_engine.query_impact(symbol) or [])
-
-        impact_set, _source_graphs, _degraded = await invoke_governed_helper(
-            _union_engine_call, engine, actor, _call, deadline=15.0
-        )
-        bounded = _public_external_result(
-            list(impact_set or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        )
-        return bounded if isinstance(bounded, list) else []
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('get_impact', e)
-        return []
+    raise unavailable('Impact analysis', 'graph.impact.read')
 
 
 @router.post('/graph/query')
 async def execute_cypher(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Execute a custom Cypher query against the Knowledge Graph.
+    """Run one read-only graph query through the served ``query.uql`` operation."""
 
-    Args:
-        data: Dictionary containing 'query' and optional 'params'.
-
-    Returns:
-        Query results.
-    """
-    try:
-        query = _validate_read_only_cypher(data.get('query'))
-        params = _bounded_query_params(data.get('params', {}))
-
-        engine = await get_engine_bounded()
-
-        # FIX LANE Priority 1: unioned across every graph this actor may read
-        # (`_read_union_cypher`). Safe to union unconditionally -- unlike a
-        # general Cypher surface, `_validate_read_only_cypher` above has
-        # ALREADY rejected any mutating clause (CREATE/MERGE/DELETE/SET/
-        # REMOVE/CALL/...); every query reaching this point is a bounded read,
-        # so there is no write-vs-read branch to preserve here (the union
-        # helper itself never touches `session.graph`'s write path either
-        # way).
-        result, _source_graphs = await _read_union_cypher(
-            engine, query, params, deadline=15.0
-        )
-        if not isinstance(result, list):
-            raise ValueError('Graph query returned an invalid result shape')
-        bounded_result = _bounded_external_value(
-            result[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        )
-        if not isinstance(bounded_result, list):
-            raise HTTPException(status_code=422, detail='Invalid query result')
-        try:
-            response_size = len(
-                json.dumps(
-                    bounded_result,
-                    separators=(',', ':'),
-                    ensure_ascii=False,
-                    allow_nan=False,
-                ).encode('utf-8')
-            )
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=422, detail='Invalid query result') from exc
-        if response_size > _MAX_EXTERNAL_RESULT_BYTES:
-            raise HTTPException(status_code=422, detail='Query result is too large')
-        return bounded_result
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('execute_query', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    query = _validate_read_only_cypher(data.get('query'))
+    params = _bounded_query_params(data.get('params', {}))
+    value = await served('query.uql', {'text': query, 'params': params})
+    rows = _result_rows(value, _MAX_EXTERNAL_COLLECTION_ITEMS)
+    encoded = json.dumps(rows, separators=(',', ':'), ensure_ascii=False)
+    if len(encoded.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES:
+        raise HTTPException(status_code=422, detail='Query result is too large')
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -6144,7 +4605,7 @@ async def get_viz_capabilities() -> dict[str, Any]:
             client.viz.capability_matrix, deadline=10.0
         )
         return _bounded_external_value(result)
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('viz_capabilities', e)
@@ -6229,34 +4690,11 @@ async def render_viz(data: dict[str, Any]) -> dict[str, Any]:
             **options,
         )
         return _viz_render_response(result, options['format'])
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('viz_render', e)
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
-
-
-# ---------------------------------------------------------------------------
-# Code Graph Navigation (CONCEPT:AU-KG.backend.declared-columns-so-schema) — the Phase 5 lens over the resolved
-# :Code symbol graph (find definition / references / call graph / impact). Reuses
-# the canonical `build_code_nav_query` so the UI and the graph_code_nav MCP tool
-# share one query contract; scoped by source_system (e.g. 'gitlab:gitlab.example').
-# ---------------------------------------------------------------------------
-def _code_nav_bounds(data: dict[str, Any]) -> tuple[int, int]:
-    """The validated ``(depth, limit)`` for a code-graph navigation."""
-    depth = int(data.get('depth', 3) or 3)
-    limit = int(data.get('limit', 200) or 200)
-    if not 1 <= depth <= 10 or not 1 <= limit <= _MAX_EXTERNAL_COLLECTION_ITEMS:
-        raise HTTPException(status_code=400, detail='Invalid code navigation bounds')
-    return depth, limit
-
-
-def _validate_code_nav_inputs(data: dict[str, Any]) -> None:
-    """Reject a non-string or oversized symbol/node_id/source_system."""
-    for field in ('symbol', 'node_id', 'source_system'):
-        value = data.get(field, '')
-        if not isinstance(value, str) or len(value.encode('utf-8')) > 2048:
-            raise HTTPException(status_code=400, detail='Invalid code navigation input')
 
 
 @router.post('/code/nav')
@@ -6267,35 +4705,7 @@ async def code_nav(data: dict[str, Any]) -> dict[str, Any]:
     ``action`` is find_definition | find_references | trace_call_graph |
     impact_of_change.
     """
-    try:
-        from agent_utilities.mcp.tools.query_tools import build_code_nav_query
-
-        action = str(data.get('action', 'find_definition'))
-        depth, limit = _code_nav_bounds(data)
-        _validate_code_nav_inputs(data)
-        cypher, params = build_code_nav_query(
-            action=action,
-            symbol=str(data.get('symbol', '')),
-            node_id=str(data.get('node_id', '')),
-            source_system=str(data.get('source_system', '')),
-            depth=depth,
-            limit=limit,
-        )
-        engine = await get_engine_bounded()
-        rows = await invoke_governed_helper(
-            engine.query_cypher, cypher, params, deadline=15.0
-        )
-        bounded_rows = list(rows or [])[:limit]
-        return _public_external_result(
-            {'action': action, 'results': bounded_rows, 'count': len(bounded_rows)}
-        )
-    except HTTPException:
-        raise
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=type(e).__name__) from e
-    except Exception as e:
-        _log_failure('api_extension', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    raise unavailable('Code navigation', 'code.context.read')
 
 
 @router.get('/code/instances')
@@ -6312,7 +4722,7 @@ async def code_instances() -> dict[str, Any]:
             deadline=10.0,
         )
         return {'source_systems': [r.get('source_system') for r in (rows or [])]}
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('api_extension', e)
@@ -6334,37 +4744,7 @@ async def ingest_kb(data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Success status and ingestion job ID.
     """
-    try:
-        engine = await get_engine_bounded()
-
-        kb_engine = await invoke_governed_helper(
-            KBIngestionEngine,
-            engine.graph if engine else None,
-            engine.backend if engine else None,
-            deadline=10.0,
-        )
-        kb_id = data.get('kb_id')
-        if not isinstance(kb_id, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
-            raise HTTPException(status_code=400, detail='Invalid KB identifier')
-        source = _workspace_ingestion_source(data.get('source'))
-        options = _bounded_query_params(data.get('options', {}))
-        name = data.get('name', kb_id)
-        if not isinstance(name, str) or len(name.encode('utf-8')) > 1024:
-            raise HTTPException(status_code=400, detail='Invalid KB name')
-        result = await invoke_governed_helper(
-            kb_engine.ingest,
-            deadline=120.0,
-            kb_id=kb_id,
-            source=source,
-            name=name,
-            **options,
-        )
-        return {'status': 'success', 'job_id': result.get('job_id')}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('api_extension', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    raise unavailable('Knowledge bases', 'kb.articles.read')
 
 
 @router.get('/kb/list')
@@ -6374,32 +4754,11 @@ async def list_kbs() -> list[dict[str, Any]]:
     Returns:
         List of Knowledge Base metadata.
     """
-    try:
-        engine = await get_engine_bounded()
-
-        kb_engine = await invoke_governed_helper(
-            KBIngestionEngine,
-            engine.graph if engine else None,
-            engine.backend if engine else None,
-            deadline=10.0,
-        )
-        bases = await invoke_governed_helper(
-            kb_engine.list_knowledge_bases,
-            deadline=15.0,
-        )
-        bounded = _public_external_result(
-            list(bases or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        )
-        return bounded if isinstance(bounded, list) else []
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('list_knowledge_bases', e)
-        return []
+    raise unavailable('Knowledge bases', 'kb.articles.read')
 
 
 @router.get('/kb/search')
-async def search_kb(query: str, kb_id: str | None = None) -> list[dict[str, Any]]:
+async def search_kb(query: str) -> list[dict[str, Any]]:
     """Search within Knowledge Bases.
 
     Args:
@@ -6409,37 +4768,7 @@ async def search_kb(query: str, kb_id: str | None = None) -> list[dict[str, Any]
     Returns:
         List of matching articles and concepts.
     """
-    if not query.strip() or len(query.encode('utf-8')) > 8192:
-        raise HTTPException(status_code=400, detail='Invalid search query')
-    if kb_id and not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
-        raise HTTPException(status_code=400, detail='Invalid KB identifier')
-    try:
-        # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- this route already
-        # anticipated a None engine (`engine.graph if engine else None`), but
-        # `get_engine_bounded()` raises rather than returning None, so that
-        # ternary was dead code. KB search is a separate subsystem from the
-        # graph engine's own live backend, so a still-absent engine degrades
-        # to None here (KBIngestionEngine is constructed with graph=None,
-        # backend=None); a genuine 503 still hard-fails.
-        engine = await _graph_read_engine()
-        kb_engine = await invoke_governed_helper(
-            KBIngestionEngine,
-            engine.graph if engine else None,
-            engine.backend if engine else None,
-            deadline=10.0,
-        )
-        results = await invoke_governed_helper(
-            kb_engine.search,
-            query,
-            kb_id=kb_id,
-            deadline=30.0,
-        )
-        return _bounded_list_result(results)
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('search_knowledge_base', e)
-        return []
+    raise unavailable('Knowledge bases', 'kb.articles.read')
 
 
 @router.get('/kb/article/{article_id}')
@@ -6471,7 +4800,7 @@ async def get_kb_article(article_id: str) -> dict[str, Any]:
             return {}
         bounded = _public_external_result(article_data)
         return bounded if isinstance(bounded, dict) else {}
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('get_article', e)
@@ -6488,33 +4817,7 @@ async def kb_health_check(data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Health status and any issues found.
     """
-    try:
-        kb_id = data.get('kb_id')
-        if not isinstance(kb_id, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
-            raise HTTPException(status_code=400, detail='Invalid KB identifier')
-
-        engine = await get_engine_bounded()
-
-        kb_engine = await invoke_governed_helper(
-            KBIngestionEngine,
-            engine.graph if engine else None,
-            engine.backend if engine else None,
-            deadline=10.0,
-        )
-        health_result = await invoke_governed_helper(
-            kb_engine.health_check,
-            kb_id,
-            deadline=30.0,
-        )
-        bounded = _public_external_result(health_result)
-        if not isinstance(bounded, dict):
-            raise HTTPException(status_code=422, detail='Invalid KB health result')
-        return bounded
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('knowledge_base_health', e)
-        return {'health_status': 'error', 'issues': [type(e).__name__]}
+    raise unavailable('Knowledge bases', 'kb.articles.read')
 
 
 @router.post('/kb/update')
@@ -6527,53 +4830,7 @@ async def update_kb(data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Success status.
     """
-    try:
-        kb_id = data.get('kb_id')
-        if not isinstance(kb_id, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(kb_id):
-            raise HTTPException(status_code=400, detail='Invalid KB identifier')
-        try:
-            engine = await get_engine_bounded()
-        except HTTPException as exc:
-            # See the matching note in search_kb() -- same pre-existing dead
-            # `engine.graph if engine else None` ternary, same fix.
-            if exc.status_code != 501:
-                raise
-            engine = None
-
-        kb_engine = await invoke_governed_helper(
-            KBIngestionEngine,
-            engine.graph if engine else None,
-            engine.backend if engine else None,
-            deadline=10.0,
-        )
-
-        def validate_sources() -> None:
-            graph = getattr(kb_engine, 'graph', None)
-            if graph is None or not hasattr(graph, 'predecessors'):
-                raise HTTPException(
-                    status_code=503, detail='KB source graph unavailable'
-                )
-            source_ids = list(graph.predecessors(kb_id)) if kb_id in graph else []
-            if len(source_ids) > _MAX_LIST_FILES:
-                raise HTTPException(
-                    status_code=400, detail='KB source set is too large'
-                )
-            for source_id in source_ids:
-                source_data = graph.nodes[source_id]
-                if not isinstance(source_data, dict):
-                    continue
-                file_path = source_data.get('file_path')
-                if file_path:
-                    _confine_stored_workspace_path(file_path)
-
-        await invoke_governed_helper(validate_sources, deadline=15.0)
-        await invoke_governed_helper(kb_engine.update, kb_id, deadline=120.0)
-        return {'status': 'success'}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('update_knowledge_base', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    raise unavailable('Knowledge bases', 'kb.articles.read')
 
 
 # ---------------------------------------------------------------------------
@@ -6588,20 +4845,7 @@ async def get_constitution() -> dict[str, Any]:
     Returns:
         Constitution data or null if not exists.
     """
-    try:
-        manager = SDDManager(DEFAULT_AGENT_DIR)
-        constitution = await invoke_governed_helper(
-            manager.get_constitution, deadline=10.0
-        )
-        if not constitution:
-            return {}
-        bounded = _public_external_result(constitution)
-        return bounded if isinstance(bounded, dict) else {}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('api_extension', e)
-        return {}
+    raise unavailable('Spec-driven development', 'sdd.documents.read')
 
 
 @router.post('/sdd/constitution')
@@ -6614,21 +4858,7 @@ async def save_constitution(data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Success status.
     """
-    try:
-        bounded_data = _bounded_query_params(data)
-        safe_data, _privacy_report = sanitize_for_persistence(bounded_data)
-        if not isinstance(safe_data, dict):
-            raise HTTPException(status_code=400, detail='Invalid constitution')
-        manager = SDDManager(DEFAULT_AGENT_DIR)
-        await invoke_governed_helper(
-            manager.save_constitution, safe_data, deadline=15.0
-        )
-        return {'status': 'success'}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('api_extension', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    raise unavailable('Spec-driven development', 'sdd.documents.read')
 
 
 @router.get('/sdd/specs')
@@ -6638,19 +4868,7 @@ async def list_specs() -> list[dict[str, Any]]:
     Returns:
         List of specification metadata.
     """
-    try:
-        manager = SDDManager(DEFAULT_AGENT_DIR)
-        specs_result = await invoke_governed_helper(manager.list_specs, deadline=10.0)
-        specs = list(specs_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        bounded = _public_external_result(
-            [s.model_dump() if hasattr(s, 'model_dump') else s for s in specs]
-        )
-        return bounded if isinstance(bounded, list) else []
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('list_specs', e)
-        return []
+    raise unavailable('Spec-driven development', 'sdd.documents.read')
 
 
 @router.post('/sdd/spec')
@@ -6663,24 +4881,7 @@ async def create_spec(data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Created specification with ID.
     """
-    try:
-        bounded_data = _bounded_query_params(data)
-        safe_data, _privacy_report = sanitize_for_persistence(bounded_data)
-        if not isinstance(safe_data, dict):
-            raise HTTPException(status_code=400, detail='Invalid specification')
-        manager = SDDManager(DEFAULT_AGENT_DIR)
-        spec = await invoke_governed_helper(
-            manager.create_spec, safe_data, deadline=15.0
-        )
-        bounded = _public_external_result(spec.model_dump())
-        if not isinstance(bounded, dict):
-            raise HTTPException(status_code=422, detail='Invalid specification')
-        return bounded
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('create_spec', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    raise unavailable('Spec-driven development', 'sdd.documents.read')
 
 
 @router.get('/sdd/plans')
@@ -6690,65 +4891,11 @@ async def list_plans() -> list[dict[str, Any]]:
     Returns:
         List of plan metadata.
     """
-    try:
-        manager = SDDManager(DEFAULT_AGENT_DIR)
-        plans_result = await invoke_governed_helper(manager.list_plans, deadline=10.0)
-        plans = list(plans_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        bounded = _public_external_result(
-            [p.model_dump() if hasattr(p, 'model_dump') else p for p in plans]
-        )
-        return bounded if isinstance(bounded, list) else []
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('api_extension', e)
-        return []
-
-
-def _dumped(value: Any) -> Any:
-    """A pydantic model as a plain dict; anything else unchanged."""
-    return value.model_dump() if hasattr(value, 'model_dump') else value
-
-
-async def _tasks_for_plan(manager: Any, plan_id: str) -> Any:
-    """One plan's ``Tasks`` document, dumped to plain data."""
-    tasks = await invoke_governed_helper(manager.get_tasks, plan_id, deadline=10.0)
-    return _dumped(tasks)
-
-
-async def _all_tasks(manager: Any) -> list[Any]:
-    """Every feature's tasks, dumped element-wise and bounded.
-
-    A DIFFERENT instance of the same silent-empty failure family, found
-    auditing this bug: `get_all_tasks()` returns `list[Tasks]` -- a bare LIST
-    of pydantic models, which has no `.model_dump()` of its own (only each
-    ELEMENT does; a bare `list` fails the `hasattr(tasks, 'model_dump')` check
-    that only ever applied to the `plan_id` branch's single `Tasks | None`).
-    The raw list of pydantic objects always reached `_public_external_result`
-    unconverted, which cannot serialize a pydantic instance
-    (`ValueError('...unsupported value')`) -- caught by the broad `except` in
-    the caller and reported as `{}`, indistinguishable from "no tasks in any
-    feature", for ANY non-empty result -- not just an oversized one.
-    """
-    tasks = await invoke_governed_helper(manager.get_all_tasks, deadline=10.0)
-    return [_dumped(t) for t in (tasks or [])][:_MAX_EXTERNAL_COLLECTION_ITEMS]
-
-
-def _dumped_task_document(raw_tasks: Any) -> Any:
-    """Dump the nested ``tasks`` list of a single-plan document, if present."""
-    if not isinstance(raw_tasks, dict) or not isinstance(raw_tasks.get('tasks'), list):
-        return raw_tasks
-    return {
-        **raw_tasks,
-        'tasks': [
-            _dumped(task)
-            for task in raw_tasks['tasks'][:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        ],
-    }
+    raise unavailable('Spec-driven development', 'sdd.documents.read')
 
 
 @router.get('/sdd/tasks')
-async def get_tasks(plan_id: str | None = None) -> list[Any] | dict[str, Any]:
+async def get_tasks() -> list[Any] | dict[str, Any]:
     """Retrieve tasks for a plan or all tasks.
 
     Args:
@@ -6757,22 +4904,7 @@ async def get_tasks(plan_id: str | None = None) -> list[Any] | dict[str, Any]:
     Returns:
         Tasks data.
     """
-    try:
-        # The id is validated BEFORE the manager is constructed, preserving the
-        # original order: a bad plan_id must not reach SDDManager at all.
-        if plan_id:
-            plan_id = _validate_runtime_id(plan_id)
-        manager = SDDManager(DEFAULT_AGENT_DIR)
-        if plan_id:
-            raw_tasks = await _tasks_for_plan(manager, plan_id)
-        else:
-            raw_tasks = await _all_tasks(manager)
-        return _public_external_result(_dumped_task_document(raw_tasks))
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('get_tasks', e)
-        return {}
+    raise unavailable('Spec-driven development', 'sdd.documents.read')
 
 
 @router.post('/sdd/sync')
@@ -6785,23 +4917,7 @@ async def sync_sdd_to_memory(data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Success status.
     """
-    try:
-        bounded_data = _bounded_query_params(data)
-        safe_data, _privacy_report = sanitize_for_persistence(bounded_data)
-        if not isinstance(safe_data, dict):
-            raise HTTPException(status_code=400, detail='Invalid SDD sync request')
-        engine = await get_engine_bounded()
-
-        manager = SDDManager(DEFAULT_AGENT_DIR)
-        await invoke_governed_helper(
-            manager.sync_to_memory, engine, deadline=30.0, **safe_data
-        )
-        return {'status': 'success'}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('api_extension', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    raise unavailable('Spec-driven development', 'sdd.documents.read')
 
 
 # ---------------------------------------------------------------------------
@@ -6811,42 +4927,9 @@ async def sync_sdd_to_memory(data: dict[str, Any]) -> dict[str, Any]:
 
 @router.post('/graph/magma')
 async def magma_retrieve(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Retrieve context using MAGMA orthogonal views.
+    """Retrieve context through the served ``retrieval.search`` operation."""
 
-    Args:
-        data: Dictionary containing query, view_type, and policy options.
-
-    Returns:
-        Retrieved context from specified orthogonal view.
-    """
-    try:
-        engine = await get_engine_bounded()
-
-        view_type = data.get('view_type', 'semantic')
-        query = data.get('query', '')
-        if not isinstance(view_type, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(
-            view_type
-        ):
-            raise HTTPException(status_code=400, detail='Invalid MAGMA view type')
-        if not isinstance(query, str) or len(query.encode('utf-8')) > 8192:
-            raise HTTPException(status_code=400, detail='Invalid MAGMA query')
-        policy = _bounded_query_params(data.get('policy', {}))
-
-        result = await invoke_governed_helper(
-            engine.retrieve_orthogonal_context,
-            query=query,
-            view_type=view_type,
-            policy=policy,
-            deadline=15.0,
-        )
-        if not isinstance(result, list):
-            raise HTTPException(status_code=422, detail='Invalid MAGMA result')
-        return _public_external_result(result[:_MAX_EXTERNAL_COLLECTION_ITEMS])
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('magma_retrieval', e)
-        return []
+    return await _retrieve(data.get('query', ''), _MAX_EXTERNAL_COLLECTION_ITEMS)
 
 
 # ---------------------------------------------------------------------------
@@ -6931,7 +5014,7 @@ async def list_resources() -> list[dict[str, Any]]:
         # one accessible graph can exceed that combined -- truncate here
         # rather than let a later whole-collection bound reject the page.
         return resources[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('list_resources', e)
@@ -6956,7 +5039,7 @@ async def spawn_agent(data: dict[str, Any]) -> dict[str, Any]:
             engine.spawn_specialized_agent, deadline=30.0, **bounded_data
         )
         return _public_external_result(agent.model_dump())
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('api_extension', e)
@@ -6983,15 +5066,9 @@ async def spawn_agent(data: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _library(engine: Any, *, union: bool = False) -> Any:
+def _library(engine: Any) -> Any:
     """The AU Agent Library over ``engine``; ``union`` reads tenant + commons."""
-    from agent_utilities.orchestration.agent_library import AgentLibrary
-
-    if not union:
-        return AgentLibrary(engine, read=engine.backend.execute)
-    return AgentLibrary(
-        engine, read=lambda cypher, params: _union_rows(engine, cypher, params)[0]
-    )
+    raise unavailable('Library', 'graph.query')
 
 
 @router.get('/agent-library/agents')
@@ -7006,14 +5083,14 @@ async def list_library_agents() -> list[dict[str, Any]]:
     """
     try:
         engine = await get_engine_bounded()
-        library = _library(engine, union=True)
+        library = _library(engine)
         records = await invoke_governed_helper(
             library.list, limit=_MAX_EXTERNAL_COLLECTION_ITEMS, deadline=10.0
         )
         agents = [record.view() for record in records]
         bounded = _public_external_result(agents[:_MAX_EXTERNAL_COLLECTION_ITEMS])
         return bounded if isinstance(bounded, list) else []
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('list_library_agents', e)
@@ -7039,7 +5116,7 @@ async def list_library_tools(mcp_server: str | None = None) -> list[dict[str, An
             engine.backend.execute, query, params, deadline=15.0
         )
         return _bounded_list_result(_sorted_library_tools(rows))
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('list_library_tools', e)
@@ -7085,46 +5162,6 @@ def _sorted_library_tools(rows: Any) -> list[dict[str, Any]]:
     return tools
 
 
-def _library_bound_servers(bound_rows: Any) -> set[str]:
-    """The mcp_servers that already have an Agent Library entry bound."""
-    return {
-        str(row.get('server'))
-        for row in (bound_rows or [])
-        if isinstance(row, dict) and row.get('server')
-    }
-
-
-def _tool_names_by_server(tool_rows: Any) -> dict[str, list[str]]:
-    """Group ``:Tool`` rows by owning mcp_server, keeping up to 8 sample names."""
-    by_server: dict[str, list[str]] = {}
-    for row in tool_rows or []:
-        if not isinstance(row, dict):
-            continue
-        server = row.get('server')
-        if not server:
-            continue
-        names = by_server.setdefault(str(server), [])
-        name = row.get('name')
-        if name and len(names) < 8:
-            names.append(str(name))
-    return by_server
-
-
-def _library_agent_suggestion(
-    server: str, names: list[str], tool_rows: Any
-) -> dict[str, Any]:
-    """The proposal for one server that has no Agent Library entry yet."""
-    return {
-        'mcp_server': server,
-        'tool_count': sum(1 for r in tool_rows if r.get('server') == server),
-        'sample_tools': names,
-        'reason': (
-            f"Tools from '{server}' are installed and ingested, "
-            'but no agent in the Library uses them yet.'
-        ),
-    }
-
-
 @router.get('/agent-library/suggestions')
 async def suggest_library_agents() -> list[dict[str, Any]]:
     """Suggest agents to build, derived from the installed tool inventory.
@@ -7135,40 +5172,7 @@ async def suggest_library_agents() -> list[dict[str, Any]]:
     yet. Nothing here is hardcoded: an uningested package, or one that
     already has a composed agent, produces no suggestion.
     """
-    try:
-        engine = await get_engine_bounded()
-        tool_rows = await invoke_governed_helper(
-            engine.backend.execute,
-            'MATCH (t:Tool) WHERE t.mcp_server IS NOT NULL AND t.mcp_server <> "" '
-            f'RETURN t.mcp_server AS server, t.name AS name LIMIT {_MAX_LIST_FILES}',
-            {},
-            deadline=15.0,
-        )
-        bound_rows = await invoke_governed_helper(
-            engine.backend.execute,
-            'MATCH (r:CallableResource) WHERE r.resource_type = $skill '
-            'AND r.provider_ref = $ref AND r.mcp_server IS NOT NULL '
-            'RETURN DISTINCT r.mcp_server AS server',
-            {'skill': 'AGENT_SKILL', 'ref': _AGENT_LIBRARY_PROVIDER_REF},
-            deadline=15.0,
-        )
-        bound = _library_bound_servers(bound_rows)
-        suggestions = [
-            _library_agent_suggestion(server, names, tool_rows)
-            for server, names in _tool_names_by_server(tool_rows).items()
-            if server not in bound
-        ]
-        suggestions.sort(key=lambda s: s.get('tool_count', 0), reverse=True)
-        bounded = _public_external_result(suggestions[:_MAX_EXTERNAL_COLLECTION_ITEMS])
-        return bounded if isinstance(bounded, list) else []
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('suggest_library_agents', e)
-        raise HTTPException(
-            status_code=503,
-            detail='Agent Library suggestions are unavailable',
-        ) from e
+    raise unavailable('Agent library', 'agents.library.list')
 
 
 @router.get('/agent-library/agents/{agent_id:path}')
@@ -7188,7 +5192,7 @@ async def get_library_agent(agent_id: str) -> dict[str, Any]:
         view['agent_card'] = record.agent_card
         view['tools'] = [dict(ref) for ref in record.tool_refs]
         return _public_external_result(view)
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('get_library_agent', e)
@@ -7211,18 +5215,7 @@ def _validate_library_agent_fields(
     name: str, instructions: str, bind_server: str, model_preference: str
 ) -> None:
     """The field contract shared by ``POST`` and ``PUT`` /agent-library/agents."""
-    if not name or len(name) > 120:
-        raise HTTPException(status_code=422, detail='Agent name is required')
-    if not instructions:
-        raise HTTPException(status_code=422, detail='Agent instructions are required')
-    if len(instructions.encode('utf-8')) > _MAX_INSTRUCTIONS_BYTES:
-        raise HTTPException(
-            status_code=400, detail='Instructions exceed the safety bound'
-        )
-    if bind_server and not _SAFE_DELEGATION_TOKEN.fullmatch(bind_server):
-        raise HTTPException(status_code=400, detail='Invalid MCP server name')
-    if model_preference and not _SAFE_DELEGATION_TOKEN.fullmatch(model_preference):
-        raise HTTPException(status_code=400, detail='Invalid model id')
+    raise unavailable('Validate library agent fields', 'graph.query')
 
 
 def _library_agent_spec(data: dict[str, Any]) -> _LibraryAgentSpec:
@@ -7246,11 +5239,6 @@ def _library_agent_spec(data: dict[str, Any]) -> _LibraryAgentSpec:
     )
 
 
-def _library_tool_ids(library: Any, spec: _LibraryAgentSpec) -> list[str]:
-    """The submitted tool ids, plus every ingested tool of a bound MCP server."""
-    return library.bound_tools(spec.tool_ids, spec.bind_server)
-
-
 def _library_agent_response(
     agent_id: str, spec: _LibraryAgentSpec, bound_tools: list[str]
 ) -> dict[str, Any]:
@@ -7270,20 +5258,7 @@ def _persist_library_agent(
     engine: Any, spec: _LibraryAgentSpec
 ) -> tuple[str, list[str]]:
     """Save the agent through AU's Agent Library (Skill + CallableResource)."""
-    from agent_utilities.orchestration.agent_library import AgentRecord
-
-    saved = _library(engine).save(
-        AgentRecord(
-            name=spec.name,
-            system_prompt=spec.instructions,
-            description=spec.description,
-            tools=tuple(spec.tool_ids),
-            model_profile=spec.model_preference,
-            mcp_server=spec.bind_server,
-            source='agent-webui',
-        )
-    )
-    return saved.agent_id, list(saved.tools)
+    raise unavailable('Persist library agent', 'graph.query')
 
 
 @router.post('/agent-library/agents')
@@ -7306,7 +5281,7 @@ async def create_library_agent(data: dict[str, Any]) -> dict[str, Any]:
         return _public_external_result(
             _library_agent_response(resource_id, spec, bound_tools)
         )
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
@@ -7315,75 +5290,11 @@ async def create_library_agent(data: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
-def _load_editable_library_agent(engine: Any, agent_id: str) -> str:
-    """The ``Skill`` id behind an editable, locally-composed Agent Library entry.
-
-    Only an entry this feature itself created
-    (``provider_ref == _AGENT_LIBRARY_PROVIDER_REF``) may be edited; an
-    ingested/external ``A2A_AGENT`` is a 403, matching the restriction
-    ``DELETE`` already enforces for archiving.
-    """
-    rows = engine.backend.execute(
-        'MATCH (r:CallableResource {id: $id}) '
-        'RETURN r.resource_type AS rtype, r.provider_ref AS provider_ref, '
-        'r.source_ref AS source_ref',
-        {'id': agent_id},
-    )
-    if not rows or not isinstance(rows[0], dict):
-        raise HTTPException(status_code=404, detail='Agent not found')
-    rtype = str(rows[0].get('rtype') or '')
-    provider_ref = str(rows[0].get('provider_ref') or '')
-    if rtype != 'AGENT_SKILL' or provider_ref != _AGENT_LIBRARY_PROVIDER_REF:
-        raise HTTPException(
-            status_code=403,
-            detail='Only agents composed in the Agent Library can be edited here',
-        )
-    skill_id = str(rows[0].get('source_ref') or '').removeprefix('skill://')
-    return f'skill:{skill_id}'
-
-
 def _persist_library_agent_update(
     engine: Any, agent_id: str, spec: _LibraryAgentSpec
 ) -> list[str]:
     """Rewrite an editable entry's Skill + CallableResource and its tool edges."""
-    from agent_utilities.knowledge_graph.ingestion.skill_workflow_ingest import (
-        runnable_skill_digest,
-    )
-
-    skill_id = _load_editable_library_agent(engine, agent_id)
-    common: dict[str, Any] = {
-        'name': spec.name,
-        'description': spec.description or spec.name,
-        'instruction_digest': runnable_skill_digest(spec.instructions),
-        'updated_at': datetime.now(timezone.utc).isoformat(),
-        'mcp_server': spec.bind_server or None,
-        'model_preference': spec.model_preference or None,
-    }
-    engine.backend.execute(
-        'MATCH (s:Skill {id: $id}) '
-        'SET s.name = $name, s.description = $description, '
-        's.instruction_digest = $instruction_digest, s.updated_at = $updated_at, '
-        's.mcp_server = $mcp_server, s.body = $instructions, '
-        's.instruction = $instructions',
-        {'id': skill_id, 'instructions': spec.instructions, **common},
-    )
-    engine.backend.execute(
-        'MATCH (r:CallableResource {id: $id}) '
-        'SET r.name = $name, r.description = $description, '
-        'r.instruction_digest = $instruction_digest, r.updated_at = $updated_at, '
-        'r.mcp_server = $mcp_server, r.model_preference = $model_preference, '
-        'r.system_prompt = $instructions',
-        {'id': agent_id, 'instructions': spec.instructions, **common},
-    )
-    # Full-replace: drop every existing binding then re-add exactly the
-    # submitted set, so the edited agent's tools never accumulate stale
-    # edges from a prior save.
-    engine.backend.execute(
-        'MATCH (r:CallableResource {id: $id})-[e:USES_TOOL]->() DELETE e',
-        {'id': agent_id},
-    )
-    library = _library(engine)
-    return library.bind_tools(agent_id, _library_tool_ids(library, spec))
+    raise unavailable('Persist library agent update', 'graph.query')
 
 
 @router.put('/agent-library/agents/{agent_id:path}')
@@ -7409,7 +5320,7 @@ async def update_library_agent(agent_id: str, data: dict[str, Any]) -> dict[str,
         return _public_external_result(
             _library_agent_response(agent_id, spec, bound_tools)
         )
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
@@ -7424,39 +5335,7 @@ async def archive_library_agent(agent_id: str) -> dict[str, Any]:
     ``deregister_function`` convention: it stops being listed, but the node
     and its provenance stay in the graph)."""
 
-    agent_id = _validate_runtime_id(agent_id)
-    try:
-        engine = await get_engine_bounded()
-        rows = await invoke_governed_helper(
-            engine.backend.execute,
-            'MATCH (r:CallableResource {id: $id}) '
-            'RETURN r.resource_type AS rtype, r.provider_ref AS provider_ref',
-            {'id': agent_id},
-            deadline=10.0,
-        )
-        if not rows or not isinstance(rows[0], dict):
-            raise HTTPException(status_code=404, detail='Agent not found')
-        rtype = str(rows[0].get('rtype') or '')
-        provider_ref = str(rows[0].get('provider_ref') or '')
-        if rtype not in {'AGENT_SKILL', 'A2A_AGENT'}:
-            raise HTTPException(status_code=404, detail='Agent not found')
-        if rtype == 'AGENT_SKILL' and provider_ref != _AGENT_LIBRARY_PROVIDER_REF:
-            raise HTTPException(
-                status_code=403,
-                detail='Only agents composed in the Agent Library can be archived here',
-            )
-        await invoke_governed_helper(
-            engine.backend.execute,
-            "MATCH (r:CallableResource {id: $id}) SET r.status = 'ARCHIVED'",
-            {'id': agent_id},
-            deadline=10.0,
-        )
-        return {'status': 'success', 'id': agent_id, 'archived': True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('archive_library_agent', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    raise unavailable('Agent library', 'agents.library.list')
 
 
 def _validated_a2a_url(raw_url: Any) -> str:
@@ -7517,7 +5396,7 @@ async def register_a2a_agent(data: dict[str, Any]) -> dict[str, Any]:
             'endpoint_configured': True,
             'summary': _public_external_result(summary),
         }
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('register_a2a_agent', e)
@@ -7532,49 +5411,7 @@ async def agent_config_summary() -> dict[str, Any]:
     surfaces only what matters for choosing a model when composing an agent —
     never API keys, secret references, or provider credentials.
     """
-    try:
-        from agent_utilities.core.config import AgentConfig
-
-        cfg = await invoke_governed_helper(AgentConfig, deadline=15.0)
-        chat_models = [
-            {
-                'id': m.id,
-                'provider': m.provider,
-                'intelligence_level': m.intelligence_level,
-                'vision': m.vision,
-                'reasoning': m.reasoning,
-                'tools_enabled': m.tools_enabled,
-                'can_route': m.can_route,
-                'can_kg': m.can_kg,
-                'context_window': m.context_window,
-            }
-            for m in (cfg.chat_models or [])
-        ]
-        embedding_models = [
-            {
-                'id': m.id,
-                'provider': m.provider,
-                'chunk_size': m.chunk_size,
-                'context_window': m.context_window,
-            }
-            for m in (cfg.embedding_models or [])
-        ]
-        result = {
-            'app_profile': cfg.app_profile,
-            'deployment_profile': cfg.deployment_profile,
-            'chat_models': chat_models,
-            'embedding_models': embedding_models,
-        }
-        bounded = _public_external_result(result)
-        return bounded if isinstance(bounded, dict) else result
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('agent_config_summary', e)
-        raise HTTPException(
-            status_code=503,
-            detail='Agent configuration is unavailable',
-        ) from e
+    raise unavailable('Agent library', 'agents.library.list')
 
 
 # ---------------------------------------------------------------------------
@@ -7589,32 +5426,7 @@ async def get_maintenance_status() -> dict[str, Any]:
     Returns:
         Maintenance operation status and history.
     """
-    try:
-        try:
-            engine = await get_engine_bounded()
-        except HTTPException as exc:
-            # CONCEPT:AU-ECO.ui.engine-fallback-reachable -- the
-            # `if not engine` degrade below was unreachable dead code for
-            # the same reason as get_graph_stats(); this route's degraded
-            # response already carries an honest 'unavailable' status
-            # distinct from 'idle'/other real states, so no shape change is
-            # needed here -- only making it reachable. A genuine 503
-            # (bounded deadline/capacity) still hard-fails.
-            if exc.status_code != 501:
-                raise
-            return {'status': 'unavailable', 'operations': {}}
-        if not engine or not engine.backend:
-            return {'status': 'unavailable', 'operations': {}}
-
-        maintainer = GraphMaintainer(engine)
-        status = await invoke_governed_helper(maintainer.get_status, deadline=10.0)
-        bounded = _public_external_result(status)
-        return bounded if isinstance(bounded, dict) else {'status': 'unavailable'}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('api_extension', e)
-        return {'status': 'error', 'operations': {}}
+    raise unavailable('Graph maintenance', 'ops.maintenance.run')
 
 
 @router.post('/maintenance/trigger')
@@ -7627,25 +5439,7 @@ async def trigger_maintenance(data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Operation status and results.
     """
-    try:
-        operation = data.get('operation')
-        if not isinstance(operation, str) or not _SAFE_DELEGATION_TOKEN.fullmatch(
-            operation
-        ):
-            raise HTTPException(status_code=400, detail='Invalid maintenance operation')
-
-        engine = await get_engine_bounded()
-        maintainer = GraphMaintainer(engine)
-        result = await invoke_governed_helper(
-            maintainer.trigger_operation, operation, deadline=30.0
-        )
-        bounded = _public_external_result({'status': 'success', 'result': result})
-        return bounded if isinstance(bounded, dict) else {'status': 'error'}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('api_extension', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    raise unavailable('Graph maintenance', 'ops.maintenance.run')
 
 
 @router.get('/pipeline/status')
@@ -7655,20 +5449,7 @@ async def get_pipeline_status() -> dict[str, Any]:
     Returns:
         Pipeline status and phase information.
     """
-    try:
-        engine = await get_engine_bounded()
-        if not engine:
-            return {'status': 'unavailable', 'phases': {}}
-
-        runner = PipelineRunner(PHASES)
-        status = await invoke_governed_helper(runner.get_status, deadline=10.0)
-        bounded = _public_external_result(status)
-        return bounded if isinstance(bounded, dict) else {'status': 'unavailable'}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('api_extension', e)
-        return {'status': 'error', 'phases': {}}
+    raise unavailable('Ingestion pipeline', 'ingest.pipeline.run')
 
 
 @router.post('/pipeline/trigger')
@@ -7681,22 +5462,7 @@ async def trigger_pipeline(data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Pipeline execution status.
     """
-    try:
-        engine = await get_engine_bounded()
-
-        config = PipelineConfig(workspace_path=str(DEFAULT_AGENT_DIR))
-        ctx = PipelineContext(
-            config=config, nx_graph=engine.graph, backend=engine.backend
-        )
-        runner = PipelineRunner(PHASES)
-        result = await runner.run(ctx)
-        bounded = _public_external_result({'status': 'success', 'result': result})
-        return bounded if isinstance(bounded, dict) else {'status': 'error'}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('api_extension', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    raise unavailable('Ingestion pipeline', 'ingest.pipeline.run')
 
 
 # ---------------------------------------------------------------------------
@@ -7705,46 +5471,10 @@ async def trigger_pipeline(data: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get('/models')
-async def list_configured_models(request: Request) -> dict[str, Any]:
-    """Return the configured LLM model registry.
+async def list_configured_models() -> list[dict[str, Any]]:
+    """List the configured chat models for the model picker."""
 
-    Mirrors the core server's ``GET /models`` endpoint so the web UI can
-    power its model picker and cost display from the same declarative
-    configuration as the terminal UI and graph orchestrator. When no
-    registry is attached to ``app.state.model_registry`` (e.g. the server
-    was started without ``MODELS_CONFIG`` and without explicit kwargs) the
-    response still validates as an empty registry.
-
-    Returns:
-        ``{"models": [...ModelDefinition...], "default_id": "..."}``.
-    """
-    app = request.app
-    # The registry may live on the root app or on a parent app when we are
-    # mounted under /api/enhanced; walk the parent chain until we find it.
-    reg = getattr(app.state, 'model_registry', None)
-    while reg is None:
-        parent = getattr(app, 'parent', None)
-        if parent is None:
-            break
-        app = parent
-        reg = getattr(app.state, 'model_registry', None)
-    if reg is None:
-        return {'models': [], 'default_id': None}
-    if hasattr(reg, 'to_api_payload'):
-        payload = reg.to_api_payload()
-        bounded = _public_external_result(payload)
-        return bounded if isinstance(bounded, dict) else {'models': []}
-    # Be forgiving for tests that mock the registry with a plain dict.
-    bounded = _public_external_result(reg)
-    return bounded if isinstance(bounded, dict) else {'models': []}
-
-
-async def _current_backend() -> Any:
-    if current_app_composition() is not None:
-        return (await get_engine_bounded()).backend
-    from agent_utilities.knowledge_graph.backends import get_active_backend
-
-    return get_active_backend()
+    return _model_rows(await _served_settings(), 'chat_models')
 
 
 @router.get('/config/backend')
@@ -7754,26 +5484,7 @@ async def get_backend_config() -> dict[str, Any]:
     Returns:
         Backend type and connection settings.
     """
-    try:
-        import os
-
-        backend = await _current_backend()
-        if not backend:
-            return {'status': 'no_backend'}
-
-        config = {
-            'backend_type': backend.__class__.__name__,
-            'env_vars': {
-                'GRAPH_BACKEND': os.getenv('GRAPH_BACKEND', 'ladybug'),
-                'GRAPH_DB_PATH': (
-                    'configured' if os.getenv('GRAPH_DB_PATH') else 'default'
-                ),
-            },
-        }
-        return config
-    except Exception as e:
-        _log_failure('api_extension', e)
-        return {'status': 'error'}
+    raise unavailable('Graph backend settings', 'ops.config')
 
 
 @router.put('/config/backend')
@@ -7858,7 +5569,7 @@ async def _optional_engine() -> Any | None:
     """Acquire the engine, degrading to ``None`` on anything but a real 503."""
     try:
         return await get_engine_bounded()
-    except HTTPException as exc:
+    except FastAPIHTTPException as exc:
         if exc.status_code == 503:
             raise
         return None
@@ -7888,7 +5599,7 @@ async def _graph_prompt_records(engine: Any) -> list[Any] | None:
         prompts = list(prompt_result or [])[:_MAX_EXTERNAL_COLLECTION_ITEMS]
         bounded = _public_external_result(prompts)
         return bounded if isinstance(bounded, list) else []
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('api_extension', e)
@@ -8214,7 +5925,7 @@ async def toggle_graph_tool(tool_id: str, request: Request) -> dict[str, Any]:
     tool_id = _validate_runtime_id(tool_id)
     try:
         engine = await get_engine_bounded()
-    except HTTPException as exc:
+    except FastAPIHTTPException as exc:
         if exc.status_code == 503:
             raise
         engine = None
@@ -8239,9 +5950,7 @@ async def toggle_graph_tool(tool_id: str, request: Request) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────
 
 import sqlite3
-import uuid
 
-from agent_utilities.models.goal import GoalIteration, GoalSpec, GoalStatus
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -8266,9 +5975,11 @@ background_goal_runs: dict[str, dict[str, Any]] = {}
 def _is_gateway_active() -> bool:
     """Check if the port 8100 epistemic gateway is up and healthy."""
     try:
-        from agent_utilities.core.http_client import create_http_client
+        import httpx
 
-        with create_http_client(timeout=0.2, follow_redirects=False) as client:
+        with httpx.Client(
+            timeout=0.2, follow_redirects=False, trust_env=False
+        ) as client:
             with client.stream('GET', _loopback_gateway_url('/sessions')) as response:
                 return response.status_code == 200
     except Exception:
@@ -8278,7 +5989,7 @@ def _is_gateway_active() -> bool:
 async def _proxy_to_gateway(method: str, path: str, json_data: Any = None) -> Any:
     """Forward a bounded request to the loopback epistemic gateway."""
 
-    from agent_utilities.core.http_client import create_async_http_client
+    import httpx
 
     verb = method.upper()
     if verb not in {'GET', 'POST', 'DELETE', 'PUT'}:
@@ -8288,7 +5999,9 @@ async def _proxy_to_gateway(method: str, path: str, json_data: Any = None) -> An
         if len(encoded_request) > _MAX_EXTERNAL_ARGUMENT_BYTES:
             raise ValueError('Gateway request exceeds its safety bound')
 
-    async with create_async_http_client(timeout=30.0, follow_redirects=False) as client:
+    async with httpx.AsyncClient(
+        timeout=30.0, follow_redirects=False, trust_env=False
+    ) as client:
         body = bytearray()
         async with client.stream(
             verb,
@@ -8470,170 +6183,30 @@ def _scrub_existing_session_rows(conn: Any) -> None:
             )
 
 
-async def _proxied_sessions(is_admin: bool) -> list[Any] | None:
-    """Sessions from the epistemic-gateway, or ``None`` if it did not answer.
-
-    The proxied gateway session store carries no per-caller ownership field
-    (unlike the local store), so a non-admin caller's "own sessions" cannot be
-    verified from this data. Fail closed rather than show every session to
-    every user (AU-OS fail-closed rule: a degraded read must never grant
-    permission).
-    """
-    try:
-        proxied = await _proxy_to_gateway('GET', '/sessions')
-    except Exception as e:
-        _log_failure('proxy_get_all_sessions', e, level=logging.WARNING)
-        return None
-    if proxied is None:
-        return None
-    if not is_admin:
-        return []
-    return proxied if isinstance(proxied, list) else []
-
-
-def _read_local_sessions(db_path: Any, is_admin: bool) -> list[dict[str, Any]]:
-    """The durable sqlite sessions this caller may see, newest first."""
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    if is_admin:
-        cursor.execute(
-            'SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?',
-            (_MAX_SESSION_RECORDS,),
-        )
-    else:
-        cursor.execute(
-            'SELECT * FROM sessions WHERE owner = ? ORDER BY updated_at DESC LIMIT ?',
-            (_actor_id_from_request(None), _MAX_SESSION_RECORDS),
-        )
-    rows = cursor.fetchall()
-    res = []
-    for row in rows:
-        d = dict(row)
-        d['background'] = bool(d.get('background', 0))
-        d['needs_input'] = bool(d.get('needs_input', 0))
-        res.append(d)
-    conn.close()
-    return res
-
-
 @router.get('/sessions')
-async def get_all_sessions() -> list[dict[str, Any]]:
-    """Retrieve durable sqlite-backed agent sessions (TUI-20).
+async def get_all_sessions(limit: int = 50) -> list[dict[str, Any]]:
+    """List the caller's agent tasks through ``agents.tasks.list``.
 
-    Cross-user visibility boundary (R9 / D-WUI-33): an `admin`-role caller sees
-    every session; anyone else sees only sessions they own. This is a
-    server-side data-layer scope, not a UI filter — `WebUIAuthorizationMiddleware`
-    only decides whether the route may be reached at all (any authenticated
-    `user`-tier caller, per `nav-registry.ts`'s `control-plane.sessions`
-    `minRole`); which ROWS come back is decided here, every time, regardless of
-    what the caller asks for.
+    Graph OS scopes the list to the verified caller. The WebUI adds no rows.
     """
-    is_admin = _current_webui_is_admin()
-    if _is_gateway_active():
-        proxied = await _proxied_sessions(is_admin)
-        if proxied is not None:
-            return proxied
 
-    db_path = _get_db_path()
-    if not db_path.exists():
-        return []
-    try:
-        safe_sessions, _privacy_report = sanitize_for_persistence(
-            _read_local_sessions(db_path, is_admin)
-        )
-        return safe_sessions if isinstance(safe_sessions, list) else []
-    except Exception as e:
-        _log_failure('api_extension', e)
-        return []
-
-
-def _read_local_session_detail(
-    db_path: Any, session_id: str, is_admin: bool
-) -> dict[str, Any]:
-    """One session plus its turns, owner-scoped; a miss is a 404."""
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-
-    cursor.execute('SELECT * FROM sessions WHERE id = ?', (session_id,))
-    sess_row = cursor.fetchone()
-    if not sess_row or (
-        not is_admin and sess_row['owner'] != _actor_id_from_request(None)
-    ):
-        conn.close()
-        raise HTTPException(status_code=404, detail='Session not found')
-
-    sess_dict = dict(sess_row)
-    sess_dict['background'] = bool(sess_dict.get('background', 0))
-    sess_dict['needs_input'] = bool(sess_dict.get('needs_input', 0))
-
-    cursor.execute(
-        'SELECT * FROM turns WHERE session_id = ? ORDER BY turn_number ASC LIMIT ?',
-        (session_id, _MAX_SESSION_TURNS),
-    )
-    sess_dict['turns'] = [dict(t) for t in cursor.fetchall()]
-
-    conn.close()
-    return sess_dict
+    value = await served('agents.tasks.list', {'limit': max(1, min(limit, 100))})
+    return _result_rows(value, 100)
 
 
 # Sentinel for "the gateway did not answer", distinct from a `null` body.
 _GATEWAY_NO_ANSWER = object()
 
 
-async def _proxied_session_detail(session_id: str, is_admin: bool) -> Any:
-    """One session from the gateway, or `_GATEWAY_NO_ANSWER` if it did not.
-
-    The sentinel (rather than `None`) keeps a genuine `null` gateway body
-    returning `null`, exactly as the inline version this replaced did --
-    only a real failure falls through to the local store.
-
-    See `_proxied_sessions`: the gateway store carries no ownership field to
-    verify against, so a non-admin caller cannot be proven to own this
-    session -- fail closed with the same 404 a missing session gets.
-    """
-    try:
-        result = await _proxy_to_gateway('GET', f'/sessions/{session_id}')
-        if not is_admin:
-            raise HTTPException(status_code=404, detail='Session not found')
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('proxy_get_session_details', e, level=logging.WARNING)
-        return _GATEWAY_NO_ANSWER
-
-
 @router.get('/sessions/{session_id}')
 async def get_session_details(session_id: str) -> dict[str, Any]:
-    """Retrieve details and turn records for a specific session.
+    """Read one agent task through ``agents.tasks.get``."""
 
-    Same cross-user boundary as `get_all_sessions`: a non-admin caller who
-    guesses/reuses another user's session id gets 404, not their data —
-    "not found" rather than "forbidden" so existence of another user's
-    session is never disclosed either.
-    """
-    session_id = _validate_runtime_id(session_id)
-    is_admin = _current_webui_is_admin()
-    if _is_gateway_active():
-        proxied = await _proxied_session_detail(session_id, is_admin)
-        if proxied is not _GATEWAY_NO_ANSWER:
-            return proxied
-
-    db_path = _get_db_path()
-    if not db_path.exists():
-        raise HTTPException(status_code=404, detail='Database not found')
-    try:
-        safe_session, _privacy_report = sanitize_for_persistence(
-            _read_local_session_detail(db_path, session_id, is_admin)
-        )
-        return safe_session if isinstance(safe_session, dict) else {}
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure('api_extension', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__)
+    task = await served(
+        'agents.tasks.get', {'task_id': _validate_runtime_id(session_id)}
+    )
+    bounded = _public_external_result(task)
+    return bounded if isinstance(bounded, dict) else {}
 
 
 @router.delete('/sessions/{session_id}')
@@ -8675,7 +6248,7 @@ async def delete_session(session_id: str) -> dict[str, Any]:
         conn.commit()
         conn.close()
         return {'status': 'success', 'message': f'Session {session_id} deleted.'}
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('api_extension', e)
@@ -8707,7 +6280,7 @@ async def submit_session_reply(
         _append_session_reply_turn(db_path, session_id, content)
         _wake_waiting_goal_run(session_id, content)
         return {'status': 'success', 'message': 'Reply submitted successfully.'}
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('api_extension', e)
@@ -8775,177 +6348,14 @@ def _wake_waiting_goal_run(session_id: str, content: str) -> None:
 
 @router.post('/sessions/{session_id}/cancel')
 async def cancel_session_run(session_id: str) -> dict[str, Any]:
-    """Cancel any active background or goal execution on this session."""
-    session_id = _validate_runtime_id(session_id)
-    if _is_gateway_active():
-        try:
-            return await _proxy_to_gateway('POST', f'/sessions/{session_id}/cancel')
-        except Exception as e:
-            _log_failure('proxy_cancel_session_run', e, level=logging.WARNING)
+    """Cancel one agent task through ``agents.tasks.cancel``."""
 
-    cancelled = False
-    for goal_id, run in list(background_goal_runs.items()):
-        if run['session_id'] == session_id:
-            task = run['task']
-            if not task.done():
-                task.cancel()
-            background_goal_runs.pop(goal_id, None)
-            if goal_id in active_goals:
-                active_goals[goal_id]['status'] = GoalStatus.CANCELLED
-            cancelled = True
-
-    db_path = _get_db_path()
-    try:
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE sessions SET status = 'cancelled', updated_at = ? WHERE id = ?",
-            (time.time(), session_id),
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        _log_failure('api_extension', e)
-    return {'status': 'success', 'cancelled': cancelled}
-
-
-def _initial_goal_state(goal_id: str, session_id: str) -> dict[str, Any]:
-    """The in-memory record a running goal publishes progress through."""
-    return {
-        'goal_id': goal_id,
-        'session_id': session_id,
-        'status': GoalStatus.RUNNING,
-        'iterations': [],
-        'total_iterations': 0,
-        'total_duration_ms': 0,
-        'total_tool_calls': 0,
-        'summary': '',
-        'error': '',
-    }
-
-
-def _write_goal_session_status(db_path: Any, session_id: str, status: str) -> None:
-    """Best-effort session-status write; a failed write must not stop the loop."""
-    try:
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-        cursor.execute(
-            'UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?',
-            (status, time.time(), session_id),
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        _log_failure('api_extension', e)
-
-
-def _run_goal_validation(
-    validation_action: str, iterations_run: int
-) -> tuple[bool, str]:
-    """Evaluate one iteration's validation predicate.
-
-    Validation actions are bounded filesystem predicates. Arbitrary shell
-    commands are intentionally unsupported at this API trust boundary.
-    """
-    if validation_action == 'none':
-        return iterations_run >= 3, ''
-    cmd_success = False
-    try:
-        workspace = DEFAULT_AGENT_DIR.resolve()
-        if validation_action == 'workspace-present':
-            cmd_success = workspace.is_dir()
-        elif validation_action == 'repository-present':
-            cmd_success = workspace.is_dir() and (workspace / '.git').exists()
-    except Exception as e:
-        return False, f'Validation failed: {type(e).__name__}'
-    return cmd_success, (
-        'Validation action passed.'
-        if cmd_success
-        else 'Validation action did not pass.'
+    task = await served(
+        'agents.tasks.cancel',
+        {'task_id': _validate_runtime_id(session_id)},
+        idempotency_key=uuid.uuid4().hex,
     )
-
-
-def _build_goal_iteration(validation_action: str, iterations_run: int) -> GoalIteration:
-    """Run one bounded goal step and record it as a `GoalIteration`."""
-    iter_start = time.time()
-    action_desc = f'Executing bounded goal step {iterations_run}.'
-    if validation_action != 'none':
-        action_desc += ' Applying the configured validation action.'
-    tool_calls_count = 2 if validation_action != 'none' else 1
-    cmd_success, validation_output = _run_goal_validation(
-        validation_action, iterations_run
-    )
-    return GoalIteration(
-        iteration=iterations_run,
-        action=action_desc,
-        result=f'Iteration step complete. Command success: {cmd_success}',
-        validation_output=validation_output,
-        is_complete=cmd_success,
-        duration_ms=int((time.time() - iter_start) * 1000),
-        tool_calls=tool_calls_count,
-        timestamp=time.time(),
-    )
-
-
-def _goal_iteration_markdown(iteration: GoalIteration) -> str:
-    """The assistant turn body one iteration writes into the console."""
-    content_md = (
-        f'### Iteration {iteration.iteration}\n'
-        f'**Action:** {iteration.action}\n'
-        f'**Result:** {iteration.result}\n'
-    )
-    if iteration.validation_output:
-        content_md += (
-            f'\n**Validation Output:**\n```\n{iteration.validation_output}\n```'
-        )
-    return content_md
-
-
-def _record_goal_iteration(
-    db_path: Any, session_id: str, iteration: GoalIteration
-) -> None:
-    """Synchronize an iteration back to SQLite so the console shows progress."""
-    try:
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-        cursor.execute('SELECT turn_count FROM sessions WHERE id = ?', (session_id,))
-        tc_row = cursor.fetchone()
-        turn_num = tc_row[0] if tc_row else 0
-        cursor.execute(
-            'INSERT INTO turns (id, session_id, turn_number, role, content, created_at, status, usage_json, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (
-                str(uuid.uuid4()),
-                session_id,
-                turn_num + 1,
-                'assistant',
-                _goal_iteration_markdown(iteration),
-                time.time(),
-                'completed',
-                '{}',
-                iteration.duration_ms,
-            ),
-        )
-        preview = (
-            f'Iteration {iteration.iteration} complete. '
-            f'Success: {iteration.is_complete}'
-        )
-        cursor.execute(
-            'UPDATE sessions SET turn_count = turn_count + 1, last_response_preview = ?, updated_at = ? WHERE id = ?',
-            (preview, time.time(), session_id),
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        _log_failure('api_extension', e)
-
-
-def _absorb_goal_iteration(goal_id: str, iteration: GoalIteration) -> None:
-    """Fold one iteration's totals into the goal's published progress record."""
-    state = active_goals[goal_id]
-    state['iterations'].append(iteration)
-    state['total_iterations'] = iteration.iteration
-    state['total_duration_ms'] += iteration.duration_ms
-    state['total_tool_calls'] += iteration.tool_calls
+    return {'status': 'cancelled', 'task': _public_external_result(task)}
 
 
 async def run_goal_loop(
@@ -8957,29 +6367,7 @@ async def run_goal_loop(
     constraints: list[str],
 ):
     """Background asyncio worker loop implementing Concept ORCH-5.0."""
-    db_path = _get_db_path()
-    active_goals[goal_id] = _initial_goal_state(goal_id, session_id)
-
-    iterations_run = 0
-    success = False
-
-    _write_goal_session_status(db_path, session_id, 'running')
-    while iterations_run < max_iterations and not success:
-        iterations_run += 1
-        iteration = _build_goal_iteration(validation_action, iterations_run)
-        _absorb_goal_iteration(goal_id, iteration)
-        _record_goal_iteration(db_path, session_id, iteration)
-        if iteration.is_complete:
-            success = True
-            break
-        await asyncio.sleep(2)
-
-    final_status = GoalStatus.COMPLETED if success else GoalStatus.FAILED
-    active_goals[goal_id]['status'] = final_status
-    active_goals[goal_id]['summary'] = (
-        f'Goal finished with status: {final_status.value}. Iterations run: {iterations_run}.'
-    )
-    _write_goal_session_status(db_path, session_id, final_status.value)
+    raise unavailable('Run goal loop', 'graph.query')
 
 
 def _sanitized_goal_request(payload: StartGoalPayload) -> tuple[str, list[str]]:
@@ -9021,15 +6409,7 @@ def _goal_spec_for(
     session_id: str,
 ) -> Any:
     """The `GoalSpec` a goal run is launched from."""
-    spec = GoalSpec.parse_goal_input(safe_objective)
-    spec.id = goal_id
-    spec.session_id = session_id
-    if payload.max_iterations:
-        spec.max_iterations = payload.max_iterations
-    spec.validation_cmd = ''
-    if safe_constraints:
-        spec.constraints = safe_constraints
-    return spec
+    raise unavailable('Goal spec for', 'graph.query')
 
 
 def _initialize_goal_session(
@@ -9176,41 +6556,7 @@ async def get_goal_iterations(goal_id: str) -> dict[str, Any]:
 @router.post('/goals/{goal_id}/cancel')
 async def cancel_goal(goal_id: str) -> dict[str, Any]:
     """Cancel an active autonomous goal loop (ORCH-5.0)."""
-    goal_id = _validate_runtime_id(goal_id)
-    if _is_gateway_active():
-        try:
-            return await _proxy_to_gateway('POST', f'/goals/{goal_id}/cancel')
-        except Exception as e:
-            _log_failure('proxy_cancel_goal', e, level=logging.WARNING)
-
-    if goal_id not in background_goal_runs:
-        raise HTTPException(status_code=404, detail='Active goal run not found')
-
-    run = background_goal_runs[goal_id]
-    task = run['task']
-    if not task.done():
-        task.cancel()
-
-    session_id = run['session_id']
-    background_goal_runs.pop(goal_id, None)
-
-    if goal_id in active_goals:
-        active_goals[goal_id]['status'] = GoalStatus.CANCELLED
-        active_goals[goal_id]['summary'] = 'Goal cancelled by user.'
-
-    db_path = _get_db_path()
-    try:
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE sessions SET status = 'cancelled', updated_at = ? WHERE id = ?",
-            (time.time(), session_id),
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        _log_failure('api_extension', e)
-    return {'status': 'success', 'message': 'Goal cancelled successfully.'}
+    raise unavailable('Autonomous goals', 'agents.goals.run')
 
 
 # ---------------------------------------------------------------------------
@@ -9220,29 +6566,12 @@ async def cancel_goal(goal_id: str) -> dict[str, Any]:
 
 @router.get('/config')
 async def get_config_file() -> dict[str, Any]:
-    """Read the central AgentConfig document from its XDG config directory."""
+    """Read the operational settings, with inline secrets redacted."""
 
-    config_path = config_dir() / 'config.json'
-    if not config_path.exists():
-        return {
-            'graph_timeout': '1200000',
-            'log_level': 'INFO',
-            'openai_api_key': '',
-            'anthropic_api_key': '',
-            'gemini_api_key': '',
-            'github_token': '',
-        }
-    try:
-        data = _read_bounded_json(config_path)
-        if not isinstance(data, dict):
-            return {}
-        browser_view, _privacy_report = sanitize_for_persistence(
-            _redact_inline_secrets(data)
-        )
-        return browser_view if isinstance(browser_view, dict) else {}
-    except Exception as e:
-        _log_failure('api_extension', e)
-        return {}
+    view, _privacy_report = sanitize_for_persistence(
+        _redact_inline_secrets(await _served_settings())
+    )
+    return view if isinstance(view, dict) else {}
 
 
 _CONFIG_SECTION_MARKER = re.compile(r'^\s*#\s*-{3,}\s*(.+?)\s*-{3,}\s*$')
@@ -9252,18 +6581,7 @@ _config_field_groups_cache: dict[str, str] | None = None
 
 def _config_source_text() -> str:
     """The installed `AgentConfig` source, read as data and never executed."""
-    from agent_utilities.core.config import AgentConfig
-
-    source_file = inspect.getsourcefile(AgentConfig)
-    if not source_file:
-        return ''
-    path = Path(source_file)
-    if path.is_symlink():
-        raise RuntimeError('refusing symbolic-link source file')
-    text = path.read_text(encoding='utf-8')
-    if len(text) > 4 * 1024 * 1024:
-        raise ValueError('config source exceeds the safety bound')
-    return text
+    raise unavailable('Config source text', 'graph.query')
 
 
 def _config_class_body_lines(text: str) -> list[str]:
@@ -9343,22 +6661,7 @@ async def get_config_field_groups() -> dict[str, Any]:
     key would miss and every field would fall into "Other".
     """
 
-    from agent_utilities.core.config import AgentConfig
-
-    groups = _config_field_groups()
-    aliased: dict[str, str] = {}
-    for attribute_name, section in groups.items():
-        field_info = AgentConfig.model_fields.get(attribute_name)
-        key = (
-            field_info.alias
-            if field_info is not None and field_info.alias
-            else attribute_name
-        )
-        aliased[key] = section
-    return {
-        'fields': aliased,
-        'field_count': len(aliased),
-    }
+    raise unavailable('Agent configuration', 'ops.config')
 
 
 # `chat_models`/`embedding_models` already have their own dedicated,
@@ -9392,53 +6695,19 @@ async def get_agent_config_schema() -> dict[str, Any]:
     frontend never hand-copies that literal string either.
     """
 
-    from agent_utilities.core.config import AgentConfig
-
-    # Default `by_alias=True`: AgentConfig (a `BaseSettings`) declares an
-    # env-var `alias` (e.g. `OPENAI_API_KEY`) on nearly every field, and
-    # `model_validate`/`model_dump` -- with no `populate_by_name` set --
-    # recognize ONLY that alias, not the Python attribute name
-    # (`openai_api_key`). The persisted `config.json` document (what `GET
-    # /config` returns and `PUT /config` writes) is alias-keyed to match, so
-    # this schema must be too, or the properties this form renders controls
-    # for would never line up with the values `/config` actually holds.
-    # `get_config_field_groups()` below re-keys its attribute-name-derived
-    # map to the same alias vocabulary for the same reason.
-    schema = AgentConfig.model_json_schema()
-    properties = schema.get('properties')
-    field_names = properties if isinstance(properties, dict) else {}
-    secret_fields = sorted(name for name in field_names if _is_inline_secret_key(name))
-    return {
-        'schema': schema,
-        'excluded_fields': sorted(_CONFIG_FORM_EXCLUDED_FIELDS),
-        'secret_fields': secret_fields,
-        'secret_clear_sentinel': _EXPLICIT_CLEAR_SENTINEL,
-    }
+    raise unavailable('Agent configuration', 'ops.config')
 
 
 @router.get('/config/secret-status')
-async def get_config_secret_status() -> dict[str, Any]:
-    """Presence-only signal for literal-secret-shaped AgentConfig fields.
+async def get_config_secret_status() -> dict[str, bool]:
+    """Report which secret-bearing settings have a value, never the value."""
 
-    `/config` (GET) redacts every secret-shaped value to `''`
-    (`_redact_inline_secrets`) so the browser never receives a stored
-    secret — but that makes "never configured" and "configured, and
-    correctly hidden" look identical in that response. This route answers
-    ONLY "is a non-empty value currently persisted for this key" — a
-    boolean, never the value itself — so the 1:1 form can render an honest
-    "Configured (redacted)" vs. "Not set" badge instead of collapsing both
-    states into the same blank input. A key absent from the returned map has
-    no persisted value (treat as not-set), matching `/config`'s own
-    "unset key is absent" convention.
-    """
-
-    document = _load_config_document()
-    status = {
-        key: value not in (None, '')
-        for key, value in document.items()
-        if _is_inline_secret_key(key)
+    settings = await _served_settings()
+    return {
+        key: bool(value)
+        for key, value in settings.items()
+        if _redact_inline_secrets(value, key) != value
     }
-    return {'fields': status}
 
 
 # The `/config` GET response redacts every secret-shaped field to `''`
@@ -9478,123 +6747,21 @@ def _preserve_unedited_secrets(new: Any, existing: Any, key: str = '') -> Any:
 @router.put('/config')
 async def update_config_file(data: dict[str, Any]) -> dict[str, Any]:
     """Validate and atomically write the central AgentConfig document."""
-    import json
-
-    from agent_utilities.core.config import AgentConfig
-
-    # No local `config_dir` import here (unlike some other handlers in this
-    # file) -- it would shadow the module-level `config_dir` this function's
-    # sibling `_load_config_document()`/`get_config_secret_status()` use,
-    # which is exactly the name tests monkeypatch to redirect config I/O to
-    # a temp directory. A local re-import silently bypasses that and writes
-    # to the real XDG config path instead.
-
-    def contains_inline_secret(value: Any, key: str = '') -> bool:
-        if isinstance(value, dict):
-            return any(contains_inline_secret(v, str(k)) for k, v in value.items())
-        if isinstance(value, list):
-            return any(contains_inline_secret(item, key) for item in value)
-        if not _is_inline_secret_key(key) or value in (
-            None,
-            '',
-            _EXPLICIT_CLEAR_SENTINEL,
-        ):
-            return False
-        return True
-
-    # This guard must run on the CALLER's raw payload, before
-    # `_preserve_unedited_secrets` merges in whatever was already persisted
-    # -- checking the merged document instead would reject every save of a
-    # config that already has a legitimate literal secret on disk (the
-    # preserved value itself would look like a "new" inline secret).
-    if contains_inline_secret(data):
-        raise HTTPException(
-            status_code=400,
-            detail='Inline secrets are not accepted; configure secret references',
-        )
-    document = _preserve_unedited_secrets(data, _load_config_document())
-    try:
-        AgentConfig.model_validate(document)
-    except Exception as e:
-        _log_failure('validate_agent_config', e)
-        raise HTTPException(status_code=422, detail='Invalid AgentConfig') from e
-
-    target_dir = _private_directory(config_dir())
-    config_path = target_dir / 'config.json'
-    try:
-        payload = json.dumps(document, indent=2, sort_keys=True).encode('utf-8')
-        if len(payload) > _MAX_EXTERNAL_RESULT_BYTES:
-            raise ValueError('AgentConfig document exceeds its safety bound')
-        _atomic_private_write(config_path, payload)
-        return {'status': 'success'}
-    except Exception as e:
-        _log_failure('write_agent_config', e)
-        raise HTTPException(status_code=500, detail='Failed to save config') from e
+    raise unavailable('Agent configuration', 'ops.config')
 
 
 @router.get('/llm/models')
 async def list_llm_models() -> list[dict[str, Any]]:
-    """List the configured chat models for the LLM template composer (D-AOBS-4).
+    """List the configured chat models, identity fields only."""
 
-    Reads the live `AgentConfig.chat_models` registry (`core/config.py`'s
-    `ChatModelConfig`) — the same registry `create_model` resolves against —
-    rather than re-deriving a second model list. Only capability/identity
-    fields are returned; `api_key_ref`/`oauth2`/`headers_ref` are runtime
-    secret REFERENCES (never literal secrets — enforced by ChatModelConfig's
-    own validator) but are still excluded here because they are wiring
-    detail, not something a template author needs to pick a model.
-    """
-    try:
-        from agent_utilities.core.config import config
-
-        models = []
-        for m in config.chat_models:
-            models.append(
-                {
-                    'id': m.id,
-                    'provider': m.provider,
-                    'intelligence_level': m.intelligence_level,
-                    'vision': m.vision,
-                    'reasoning': m.reasoning,
-                    'tools_enabled': m.tools_enabled,
-                    'context_window': m.context_window,
-                    'can_route': m.can_route,
-                    'can_kg': m.can_kg,
-                }
-            )
-        return models
-    except Exception as e:
-        _log_failure('api_extension', e)
-        return []
+    return _model_rows(await _served_settings(), 'chat_models')
 
 
 @router.get('/llm/embedding-models')
 async def list_embedding_models() -> list[dict[str, Any]]:
-    """List the configured embedding models (BUG-260 sibling of `/llm/models`).
+    """List the configured embedding models, identity fields only."""
 
-    Mirrors `list_llm_models` for `AgentConfig.embedding_models`
-    (`core/config.py`'s `EmbeddingModelConfig`) — the LLM template composer's
-    "embedding model" tab picks from this the same way it picks a chat model
-    from `/llm/models`.
-    """
-    try:
-        from agent_utilities.core.config import config
-
-        models = []
-        for m in config.embedding_models:
-            models.append(
-                {
-                    'id': m.id,
-                    'provider': m.provider,
-                    'chunk_size': m.chunk_size,
-                    'context_window': m.context_window,
-                    'gpu_group': m.gpu_group,
-                }
-            )
-        return models
-    except Exception as e:
-        _log_failure('api_extension', e)
-        return []
+    return _model_rows(await _served_settings(), 'embedding_models')
 
 
 # BUG-260: the LLM template composer used to hand-pick a handful of display
@@ -9609,23 +6776,6 @@ async def list_embedding_models() -> list[dict[str, Any]]:
 _EDITABLE_MODEL_KINDS = ('chat', 'embedding')
 
 
-def _flatten_model_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Resolve a Pydantic `model_json_schema()` root `$ref` (emitted for a
-    self-referencing model — `EmbeddingModelConfig.fallback` points back at
-    `EmbeddingModelConfig` itself) into one flat schema with real
-    `properties`/`required` at the top level, so the frontend never needs its
-    own `$defs`/`$ref` resolver just to read a field list.
-    """
-    root_ref = schema.get('$ref')
-    if not isinstance(root_ref, str) or not root_ref.startswith('#/$defs/'):
-        return schema
-    defs = schema.get('$defs')
-    if not isinstance(defs, dict):
-        return schema
-    resolved = defs.get(root_ref.removeprefix('#/$defs/'))
-    return resolved if isinstance(resolved, dict) else schema
-
-
 @router.get('/llm/model-schema')
 async def get_llm_model_schema() -> dict[str, Any]:
     """Return the JSON Schema for both model kinds AgentConfig registers.
@@ -9635,12 +6785,7 @@ async def get_llm_model_schema() -> dict[str, Any]:
     generated-not-hand-maintained field set the create/edit form in
     `LLMTemplatesView.tsx` renders itself from.
     """
-    from agent_utilities.core.config import ChatModelConfig, EmbeddingModelConfig
-
-    return {
-        'chat': _flatten_model_schema(ChatModelConfig.model_json_schema()),
-        'embedding': _flatten_model_schema(EmbeddingModelConfig.model_json_schema()),
-    }
+    raise unavailable('Model configuration', 'ops.config')
 
 
 @router.get('/llm/model-detail')
@@ -9658,23 +6803,7 @@ async def get_llm_model_detail(kind: str, model_id: str) -> dict[str, Any]:
     this route is only ever called to populate the edit form for a model the
     operator explicitly opened.
     """
-    if kind not in _EDITABLE_MODEL_KINDS:
-        raise HTTPException(status_code=400, detail='Unknown model kind')
-    from agent_utilities.core.config import config
-
-    registry = config.chat_models if kind == 'chat' else config.embedding_models
-    for m in registry:
-        if m.id == model_id:
-            return m.model_dump(mode='json')
-    raise HTTPException(status_code=404, detail='Model not found')
-
-
-def _load_config_document() -> dict[str, Any]:
-    config_path = config_dir() / 'config.json'
-    if not config_path.exists():
-        return {}
-    data = _read_bounded_json(config_path)
-    return data if isinstance(data, dict) else {}
+    raise unavailable('Model configuration', 'ops.config')
 
 
 def _write_model_registry(kind: str, models: list[dict[str, Any]]) -> None:
@@ -9687,55 +6816,7 @@ def _write_model_registry(kind: str, models: list[dict[str, Any]]) -> None:
     existing whole-document write, scoped to just the touched key so an
     editor for one registry can never clobber the rest of AgentConfig).
     """
-    from agent_utilities.core.config import AgentConfig
-
-    if kind not in _EDITABLE_MODEL_KINDS:
-        raise HTTPException(status_code=400, detail='Unknown model kind')
-    if not isinstance(models, list) or len(models) > _MAX_EXTERNAL_COLLECTION_ITEMS:
-        raise HTTPException(status_code=400, detail='Invalid model list')
-
-    document = _load_config_document()
-    document[_model_registry_key(kind)] = _validated_models(kind, models)
-    try:
-        AgentConfig.model_validate(document)
-    except Exception as e:
-        _log_failure('validate_agent_config', e)
-        raise HTTPException(status_code=422, detail='Invalid AgentConfig') from e
-
-    _write_config_document(kind, document)
-
-
-def _model_registry_key(kind: str) -> str:
-    return 'chat_models' if kind == 'chat' else 'embedding_models'
-
-
-def _validated_models(kind: str, models: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Validate each entry against the AgentConfig model type for `kind`."""
-    from agent_utilities.core.config import ChatModelConfig, EmbeddingModelConfig
-
-    model_type = ChatModelConfig if kind == 'chat' else EmbeddingModelConfig
-    try:
-        return [model_type.model_validate(m).model_dump(mode='json') for m in models]
-    except Exception as e:
-        _log_failure(f'validate_{kind}_model', e)
-        raise HTTPException(
-            status_code=422, detail=f'Invalid {kind} model configuration'
-        ) from e
-
-
-def _write_config_document(kind: str, document: dict[str, Any]) -> None:
-    """Atomically persist the whole AgentConfig document under its size bound."""
-    config_path = _private_directory(config_dir()) / 'config.json'
-    try:
-        payload = json.dumps(document, indent=2, sort_keys=True).encode('utf-8')
-        if len(payload) > _MAX_EXTERNAL_RESULT_BYTES:
-            raise ValueError('AgentConfig document exceeds its safety bound')
-        _atomic_private_write(config_path, payload)
-    except HTTPException:
-        raise
-    except Exception as e:
-        _log_failure(f'write_{kind}_models', e)
-        raise HTTPException(status_code=500, detail='Failed to save config') from e
+    raise unavailable('Write model registry', 'graph.query')
 
 
 @router.put('/llm/models')
@@ -9887,7 +6968,7 @@ async def update_prompt_by_name(name: str, data: dict[str, Any]) -> dict[str, An
             raise ValueError('Prompt document exceeds its safety bound')
         _atomic_private_write(f, payload)
         return {'status': 'success'}
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('save_prompt', e)
@@ -9901,42 +6982,11 @@ async def update_prompt_by_name(name: str, data: dict[str, Any]) -> dict[str, An
 
 @router.get('/ecosystem/services')
 async def list_ecosystem_services() -> list[str]:
-    """Dynamically scan installed MCP servers and backend packages.
+    """List the fleet servers that the served ``fleet.status`` reports."""
 
-    This is the sole live-parity authority `src/lib/integrations-catalog.ts`
-    composes against, and its own module docstring is explicit about the
-    contract: "a package this endpoint does not report is never listed, and
-    every package it DOES report gets an item, full stop." Previously this
-    handler undermined that contract from the other direction -- after the
-    real directory scan, it unconditionally appended eight hardcoded package
-    names ("Guarantee standard services for validation / UI fallback") if
-    they were not already present. On a deployment where one of those eight
-    is genuinely not installed (a minimal profile, a partial checkout, a
-    misconfigured `AGENT_PACKAGES_ROOT`), that fabricated a live-looking
-    catalog entry for a package that does not exist -- the exact mirror of
-    BUG-018 (which silently DROPPED unknown packages instead of fabricating
-    known ones). Report only what the scan actually found.
-
-    Raises 503 rather than returning an empty list when the packages root
-    itself cannot be resolved, so a misconfigured deployment reads as
-    "unavailable", not as "zero packages installed" -- the same empty-vs-
-    unavailable distinction this catalog's design requires everywhere else.
-    """
-    agents_dir = get_agent_packages_dir() / 'agents'
-    if not (agents_dir.exists() and agents_dir.is_dir()):
-        raise HTTPException(
-            status_code=503,
-            detail=f'Agent packages directory not found at {agents_dir}',
-        )
-
-    services = []
-    for index, p in enumerate(agents_dir.iterdir()):
-        if index >= _MAX_EXTERNAL_COLLECTION_ITEMS:
-            break
-        if p.is_dir():
-            services.append(p.name)
-
-    return services[:_MAX_EXTERNAL_COLLECTION_ITEMS]
+    rows = _result_rows(await served('fleet.status', {}), 1024)
+    names = (row.get('name') or row.get('server') for row in rows)
+    return sorted({name for name in names if isinstance(name, str) and name})
 
 
 def _bounded_tunnel_inventory(raw_hosts: Any) -> list[tuple[Any, Any]]:
@@ -10001,7 +7051,7 @@ async def get_tunnel_hosts() -> dict[str, Any]:
                 for inventory_key, record in inventory
             ]
         }
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('load_tunnel_hosts', e)
@@ -10071,7 +7121,7 @@ async def add_tunnel_host(payload: dict[str, Any]) -> dict[str, str]:
             'message': 'Host registered',
             'reference': _opaque_reference('host', registration['alias']),
         }
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except KeyError as e:
         raise HTTPException(
@@ -10199,7 +7249,7 @@ async def list_docker_containers() -> list[dict[str, Any]]:
             for index, container in enumerate(raw_containers, start=1)
             if isinstance(container, dict)
         ]
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('container_inventory', e, level=logging.DEBUG)
@@ -10480,7 +7530,7 @@ async def transcribe_voice_chunk(file: UploadFile = File(...)) -> dict[str, str]
             {'text': _bounded_transcript(result).strip()}
         )
         return {'text': str(public_result.get('text') or '')}
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:
         _log_failure('voice_transcription', e)
@@ -11541,30 +8591,6 @@ async def _slash_graph(args: str) -> dict:
     return {'response_markdown': response_md, 'client_actions': []}
 
 
-async def _slash_kb_list(kb_engine) -> str:
-    """Render `/kb list` -- connected knowledge bases."""
-    try:
-        bases = await invoke_governed_helper(
-            kb_engine.list_knowledge_bases,
-            deadline=15.0,
-        )
-    except Exception as e:  # noqa: BLE001
-        return f'Error listing knowledge bases: {type(e).__name__}'
-    if not bases:
-        return 'No knowledge bases found.'
-    lines = ['### Connected Knowledge Bases:\n']
-    for b in list(bases)[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-        if isinstance(b, dict):
-            name = b.get('id') or b.get('name', 'unknown')
-            desc = b.get('description') or b.get('name', '')
-            count = b.get('article_count')
-            suffix = f' ({count} articles)' if count is not None else ''
-            lines.append(f'- `{name}` {desc}{suffix}')
-        else:
-            lines.append(f'- `{b}`')
-    return '\n'.join(lines)
-
-
 def _format_kb_hit(h: Any) -> list[str]:
     """Render one `/kb search` result's lines (helper for `_slash_kb_search`)."""
     if not isinstance(h, dict):
@@ -11599,166 +8625,24 @@ async def _slash_kb_search(kb_engine, query: str) -> str:
     return '\n'.join(lines)
 
 
-async def _slash_kb_ingest(kb_engine, path: str) -> str:
-    """Render `/kb ingest <url_or_path>` -- start a workspace-docs ingestion job."""
-    if not path:
-        return 'Usage: `/kb ingest <url_or_path>`'
-    try:
-        result = await invoke_governed_helper(
-            kb_engine.ingest,
-            deadline=120.0,
-            kb_id='workspace-docs',
-            source=_workspace_ingestion_source(path),
-            name='workspace-docs',
-        )
-    except Exception as e:  # noqa: BLE001
-        return f'Failed to ingest `{path}`: {type(e).__name__}'
-    job_id = result.get('job_id') if isinstance(result, dict) else None
-    return f'Started KB ingestion of `{path}` into `workspace-docs`' + (
-        f' (job `{job_id}`).' if job_id else '.'
-    )
-
-
 async def _slash_kb(args: str) -> dict:
     """Dispatch `/kb <list|search|ingest>`."""
-    sub_parts = args.split(maxsplit=1)
-    sub = sub_parts[0].lower() if sub_parts else 'list'
-    rest = sub_parts[1] if len(sub_parts) > 1 else ''
-
-    try:
-        engine = await get_engine_bounded()
-        kb_engine = await invoke_governed_helper(
-            KBIngestionEngine,
-            engine.graph,
-            engine.backend,
-            deadline=10.0,
-        )
-    except Exception as e:  # noqa: BLE001
-        return {
-            'response_markdown': (f'KB backend not available: {type(e).__name__}'),
-            'client_actions': [],
-        }
-
-    if sub == 'list':
-        response_md = await _slash_kb_list(kb_engine)
-    elif sub == 'search':
-        response_md = await _slash_kb_search(kb_engine, rest)
-    elif sub == 'ingest':
-        response_md = await _slash_kb_ingest(kb_engine, rest)
-    else:
-        response_md = f'Unknown `/kb` subcommand: `{sub}`'
-
-    return {'response_markdown': response_md, 'client_actions': []}
-
-
-async def _slash_sdd_specs(manager) -> str:
-    """Render `/sdd specs` -- active spec-driven specifications."""
-    try:
-        specs = manager.list_specs()
-    except Exception as e:  # noqa: BLE001
-        return f'Error listing specs: {type(e).__name__}'
-    if not specs:
-        return 'No specifications found under `.specify/specs`.'
-    lines = ['### Active Spec-Driven Specifications:\n']
-    for s in list(specs)[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-        sd = s.model_dump() if hasattr(s, 'model_dump') else s
-        sid = sd.get('id') if isinstance(sd, dict) else str(s)
-        title = sd.get('title', '') if isinstance(sd, dict) else ''
-        status = sd.get('status', '') if isinstance(sd, dict) else ''
-        lines.append(
-            f'- **{sid}**: {title}' + (f' (Status: `{status}`)' if status else '')
-        )
-    return '\n'.join(lines)
-
-
-async def _slash_sdd_constitution(manager) -> str:
-    """Render `/sdd constitution` -- project governance rules."""
-    try:
-        constitution = manager.get_constitution()
-    except Exception as e:  # noqa: BLE001
-        return f'Error reading constitution: {type(e).__name__}'
-    if not constitution:
-        return 'No constitution found at `.specify/memory/constitution.md`.'
-    if isinstance(constitution, dict):
-        body = (
-            constitution.get('content') or constitution.get('text') or str(constitution)
-        )
-        return f'### Project Constitution\n\n{body}'
-    return f'### Project Constitution\n\n{constitution}'
-
-
-async def _slash_sdd_sync(manager) -> str:
-    """Handle `/sdd sync` -- synchronize local specs with the KG."""
-    try:
-        engine = await get_engine_bounded()
-        manager.sync_to_memory(engine)
-    except Exception as e:  # noqa: BLE001
-        return f'SDD sync failed: {type(e).__name__}'
-    return 'Synchronized local specifications with the Knowledge Graph.'
+    raise unavailable('Slash kb', 'graph.query')
 
 
 async def _slash_sdd(args: str) -> dict:
     """Dispatch `/sdd <specs|constitution|sync>`."""
-    sub = args.strip().lower() or 'specs'
-    try:
-        manager = SDDManager(DEFAULT_AGENT_DIR)
-    except Exception as e:  # noqa: BLE001
-        return {
-            'response_markdown': (f'SDD backend not available: {type(e).__name__}'),
-            'client_actions': [],
-        }
-
-    if sub == 'specs':
-        response_md = await _slash_sdd_specs(manager)
-    elif sub == 'constitution':
-        response_md = await _slash_sdd_constitution(manager)
-    elif sub == 'sync':
-        response_md = await _slash_sdd_sync(manager)
-    else:
-        response_md = f'Unknown `/sdd` subcommand: `{sub}`'
-
-    return {'response_markdown': response_md, 'client_actions': []}
+    raise unavailable('Slash sdd', 'graph.query')
 
 
 def _slash_cron_calendar() -> str:
     """Render `/cron calendar` -- scheduled background tasks."""
-    try:
-        from agent_utilities.core.scheduler import get_cron_tasks
-
-        registry = get_cron_tasks()
-        tasks = list(registry.tasks)
-    except Exception as e:  # noqa: BLE001
-        return f'Cron scheduler not available: {type(e).__name__}'
-    if not tasks:
-        return 'No scheduled background tasks registered.'
-    lines = ['### Scheduled Background Tasks:\n']
-    for t in tasks[:_MAX_EXTERNAL_COLLECTION_ITEMS]:
-        lines.append(
-            f'- `{t.name or t.id}`: every '
-            f'{t.interval_minutes} min '
-            f'(last run: {t.last_run or "never"})'
-        )
-    return '\n'.join(lines)
+    raise unavailable('Slash cron calendar', 'graph.query')
 
 
 def _slash_cron_logs() -> str:
     """Render `/cron logs` -- recent cron execution log entries."""
-    try:
-        from agent_utilities.core.scheduler import get_cron_logs
-
-        entries = list(get_cron_logs().entries)
-    except Exception as e:  # noqa: BLE001
-        return f'Cron logs not available: {type(e).__name__}'
-    if not entries:
-        return 'No cron execution logs recorded yet.'
-    lines = ['### Cron Job Execution Logs (recent):\n']
-    for entry in entries[-10:]:
-        lines.append(
-            f'- `{entry.timestamp}` - '
-            f'`{entry.task_name or entry.task_id}` - '
-            f'{entry.status}: {entry.message}'
-        )
-    return '\n'.join(lines)
+    raise unavailable('Slash cron logs', 'graph.query')
 
 
 async def _slash_cron(args: str) -> dict:
@@ -11937,12 +8821,6 @@ async def autocomplete_slash_command(query: str = ''):
 # ---------------------------------------------------------------------------
 
 
-def _canvas_node_id(name: str) -> str:
-    """Stable canvas-sidecar node id for a given workflow id/name."""
-    slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
-    return f'workflowcanvas:{slug}'
-
-
 def _workflow_steps(steps_raw: Any) -> list[Any]:
     """A workflow's steps, whether stored as a CSV string or a list."""
     if isinstance(steps_raw, str):
@@ -11961,7 +8839,7 @@ async def _workflow_orchestrates(engine: Any, workflow_id: str) -> list[str]:
             {'workflow_id': workflow_id},
             deadline=15.0,
         )
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as edge_err:  # noqa: BLE001
         _log_failure('resolve_workflow_orchestration', edge_err, level=logging.DEBUG)
@@ -12002,7 +8880,7 @@ async def _workflow_canvas(engine: Any, workflow_id: str) -> Any:
             {'workflow_id': workflow_id},
             deadline=15.0,
         )
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as canvas_err:  # noqa: BLE001
         _log_failure('load_workflow_canvas', canvas_err, level=logging.DEBUG)
@@ -12050,7 +8928,7 @@ async def list_workflows() -> list[dict[str, Any]]:
             if record is not None:
                 workflows.append(record)
         return workflows
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         # D-W5WR-4 / D-WD-7: this used to swallow ANY backend failure --
@@ -12081,119 +8959,6 @@ class _WorkflowSaveRequest:
     canvas_payload: str | None
 
 
-def _bounded_workflow_tokens(items: Any, max_bytes: int) -> bool:
-    """True when `items` is a bounded list of bounded UTF-8 strings."""
-    return (
-        isinstance(items, list)
-        and len(items) <= _MAX_EXTERNAL_COLLECTION_ITEMS
-        and all(
-            isinstance(item, str) and len(item.encode('utf-8')) <= max_bytes
-            for item in items
-        )
-    )
-
-
-def _validated_workflow_name(body: dict[str, Any]) -> str:
-    name = body.get('name') or 'Untitled Workflow'
-    if not isinstance(name, str) or not name.strip() or len(name.encode('utf-8')) > 512:
-        raise HTTPException(status_code=400, detail='Invalid workflow name')
-    return name
-
-
-def _workflow_canvas_from_body(body: dict[str, Any]) -> Any:
-    """The editor canvas, assembled from loose `nodes`/`edges` when needed."""
-    canvas = body.get('canvas')
-    if canvas is None and ('nodes' in body or 'edges' in body):
-        return {
-            'nodes': body.get('nodes', []),
-            'edges': body.get('edges', []),
-            'layout': body.get('layout'),
-        }
-    return canvas
-
-
-def _encoded_workflow_canvas(canvas: Any) -> tuple[Any, str | None]:
-    """Bound and serialize the canvas, or ``(None, None)`` when absent."""
-    if canvas is None:
-        return None, None
-    try:
-        bounded = _bounded_external_value(canvas)
-        payload = json.dumps(
-            bounded,
-            separators=(',', ':'),
-            ensure_ascii=False,
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail='Invalid workflow canvas') from exc
-    if len(payload.encode('utf-8')) > _MAX_EXTERNAL_RESULT_BYTES:
-        raise HTTPException(status_code=400, detail='Workflow canvas is too large')
-    return bounded, payload
-
-
-def _workflow_save_request(body: Any) -> _WorkflowSaveRequest:
-    """Validate a ``POST /workflows`` body into a `_WorkflowSaveRequest`."""
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail='Workflow body must be an object')
-    steps = body.get('steps') or []
-    orchestrates = body.get('orchestrates') or []
-    name = _validated_workflow_name(body)
-    if not _bounded_workflow_tokens(steps, 2048) or not _bounded_workflow_tokens(
-        orchestrates, _MAX_WORKFLOW_ID_BYTES
-    ):
-        raise HTTPException(status_code=400, detail='Invalid workflow steps')
-    canvas, canvas_payload = _encoded_workflow_canvas(_workflow_canvas_from_body(body))
-    return _WorkflowSaveRequest(
-        name=name,
-        steps=steps,
-        orchestrates=orchestrates,
-        canvas=canvas,
-        canvas_payload=canvas_payload,
-    )
-
-
-async def _persist_workflow_spec(
-    engine: Any, spec: Any, workflow_to_batch: Any
-) -> None:
-    """Build the canonical batch, then persist via the engine's node/edge API
-    (the engine exposes add_node/link_nodes rather than a raw write_batch)."""
-
-    def persist_workflow() -> None:
-        batch = workflow_to_batch(spec)
-        for node in batch.nodes:
-            engine.add_node(node.id, node.type, dict(node.props or {}))
-        for edge in batch.edges:
-            engine.link_nodes(edge.source, edge.target, edge.rel_type)
-
-    await invoke_governed_helper(persist_workflow, deadline=30.0)
-
-
-async def _persist_workflow_canvas(
-    engine: Any, spec: Any, name: str, canvas_payload: str | None
-) -> None:
-    """Persist the canvas sidecar so the editor restores exactly on reload.
-
-    Non-fatal: the spec is saved even if the canvas sidecar fails.
-    """
-    try:
-        await invoke_governed_helper(
-            engine.add_node,
-            _canvas_node_id(spec.id),
-            'WorkflowCanvas',
-            {
-                'workflow_id': spec.id,
-                'name': name,
-                'canvas': canvas_payload,
-                'updated_at': datetime.now(timezone.utc).isoformat(),
-            },
-            deadline=15.0,
-        )
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        _log_failure('api_extension', e, level=logging.WARNING)
-
-
 @router.post('/workflows')
 async def save_workflow(request: Request) -> dict[str, Any]:
     """Persist a workflow as a canonical ``WorkflowSpec`` + canvas sidecar.
@@ -12204,104 +8969,11 @@ async def save_workflow(request: Request) -> dict[str, Any]:
     on a sibling ``:WorkflowCanvas`` node keyed by the workflow id so the
     canvas round-trips exactly. Returns ``{id, saved}``.
     """
-    saved = _workflow_save_request(await request.json())
-
-    try:
-        from agent_utilities.knowledge_graph.enrichment.orchestration import (
-            WorkflowSpec,
-            workflow_to_batch,
-        )
-    except Exception as e:  # noqa: BLE001
-        _log_failure('api_extension', e)
-        raise HTTPException(
-            status_code=503,
-            detail=f'Workflow orchestration unavailable: {type(e).__name__}',
-        ) from e
-
-    spec = WorkflowSpec(
-        name=saved.name, steps=saved.steps, orchestrates=saved.orchestrates
-    )
-
-    try:
-        engine = await get_engine_bounded()
-        await _persist_workflow_spec(engine, spec, workflow_to_batch)
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        _log_failure('save_workflow', e)
-        raise HTTPException(
-            status_code=500, detail=f'Failed to persist workflow: {type(e).__name__}'
-        ) from e
-
-    if saved.canvas is not None:
-        await _persist_workflow_canvas(engine, spec, saved.name, saved.canvas_payload)
-    return {'id': spec.id, 'saved': True}
-
-
-def _workflow_name_and_steps(rows: Any, wid: str) -> tuple[str, list[Any]]:
-    """A `:Workflow` row's name and steps, defaulting to the id and []."""
-    if not rows:
-        return wid, []
-    wdata = rows[0].get('w', {})
-    if not isinstance(wdata, dict):
-        return wid, []
-    return wdata.get('name', wid), _workflow_steps(wdata.get('steps', ''))
-
-
-async def _resolve_workflow_record(wid: str) -> tuple[str, list[Any], list[str]]:
-    """Resolve a saved workflow's ``(name, steps, orchestrates)`` from the KG.
-
-    Best-effort: a lookup failure leaves the caller to fall back to whatever
-    the request body supplied.
-    """
-    name = wid
-    steps: list[Any] = []
-    orchestrates: list[str] = []
-    try:
-        engine = await get_engine_bounded()
-        rows = await invoke_governed_helper(
-            engine.backend.execute,
-            'MATCH (w:Workflow) WHERE w.id = $workflow_id RETURN w LIMIT 1',
-            {'workflow_id': wid},
-            deadline=15.0,
-        )
-        name, steps = _workflow_name_and_steps(rows, wid)
-        erows = await invoke_governed_helper(
-            engine.backend.execute,
-            'MATCH (w:Workflow)-[:ORCHESTRATES]->(t) '
-            'WHERE w.id = $workflow_id RETURN t '
-            f'LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}',
-            {'workflow_id': wid},
-            deadline=15.0,
-        )
-        orchestrates = _orchestrated_target_ids(erows)
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        _log_failure('api_extension', e, level=logging.WARNING)
-    return name, steps, orchestrates
-
-
-def _require_workflow_identifier(wid: str) -> None:
-    """Reject an empty, NUL-bearing or oversized workflow identifier."""
-    if not wid or '\x00' in wid or len(wid.encode('utf-8')) > _MAX_WORKFLOW_ID_BYTES:
-        raise HTTPException(status_code=400, detail='Invalid workflow identifier')
-
-
-def _workflow_run_response(run_id: str, result: Any) -> dict[str, Any]:
-    """Shape a dispatch result into the run response body."""
-    if isinstance(result, dict):
-        return {
-            'run_id': run_id,
-            'status': result.get('status', 'completed'),
-            'result': result,
-            'summary': result.get('summary'),
-        }
-    return {'run_id': run_id, 'status': 'completed', 'result': result}
+    raise unavailable('Workflows', 'workflows.run')
 
 
 @router.post('/workflows/{wid:path}/run')
-async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
+async def run_workflow(request: Request) -> dict[str, Any]:
     """Run a saved workflow by dispatching it through the orchestration engine.
 
     Loads the workflow, builds a ``WorkflowSpec`` and dispatches it via
@@ -12309,53 +8981,7 @@ async def run_workflow(wid: str, request: Request) -> dict[str, Any]:
     Wraps failures so an error returns ``{status: "error", error}`` instead of
     a 500. Returns ``{run_id, status, result/summary}``.
     """
-    _require_workflow_identifier(wid)
-    run_id = uuid.uuid4().hex[:12]
-
-    # Resolve the spec — prefer the live KG record, fall back to request body.
-    name, steps, orchestrates = await _resolve_workflow_record(wid)
-    try:
-        body = await request.json()
-    except Exception:  # noqa: BLE001
-        body = {}
-    if not steps:
-        steps = body.get('steps', [])
-    if not orchestrates:
-        orchestrates = body.get('orchestrates', [])
-
-    try:
-        from agent_utilities.knowledge_graph.enrichment.orchestration import (
-            WorkflowSpec,
-        )
-        from agent_utilities.orchestration.engine import AgentOrchestrationEngine
-    except Exception as e:  # noqa: BLE001
-        _log_failure('api_extension', e)
-        return {
-            'run_id': run_id,
-            'status': 'error',
-            'error': f'Workflow orchestration unavailable: {type(e).__name__}',
-        }
-
-    spec = WorkflowSpec(name=name, steps=steps, orchestrates=orchestrates)
-
-    try:
-        orch = await invoke_governed_helper(
-            AgentOrchestrationEngine,
-            engine=await get_engine_bounded(),
-            deadline=10.0,
-        )
-        result = await invoke_governed_helper(
-            orch.dispatch,
-            task=spec,
-            mode='workflow',
-            deadline=120.0,
-        )
-        return _workflow_run_response(run_id, result)
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        _log_failure('api_extension', e)
-        return {'run_id': run_id, 'status': 'error', 'error': type(e).__name__}
+    raise unavailable('Workflows', 'workflows.run')
 
 
 # ---------------------------------------------------------------------------
@@ -12404,13 +9030,7 @@ async def _canonical_kg_tool(tool_name: str, **kwargs: Any) -> Any:
 
     Returns the tool's decoded JSON payload (tools return JSON strings).
     """
-    import json
-
-    from agent_utilities.mcp import kg_server
-
-    kg_server.ensure_tools_registered()
-    raw = await kg_server._execute_tool(tool_name, **kwargs)
-    return json.loads(raw) if isinstance(raw, str) else raw
+    raise unavailable('Canonical kg tool', 'graph.query')
 
 
 def _raise_canonical_error(result: Any, status_code: int = 500) -> None:
@@ -12877,26 +9497,11 @@ class AtlasSourceSync(_AtlasRequestModel):
 
 # Descriptive aliases make the generated OpenAPI names useful to clients while
 # keeping one request contract for preview and execute.
-AtlasSyncRequest = AtlasSourceSync
 AtlasSyncPreview = AtlasSourceSync
 
 
 AtlasSourceDispatcher = Callable[[str, dict[str, Any]], Any]
 _atlas_source_dispatcher: AtlasSourceDispatcher | None = None
-
-
-def set_atlas_source_dispatcher(dispatcher: AtlasSourceDispatcher | None) -> None:
-    """Install an injectable decoded-tool dispatcher for tests/embedded hosts.
-
-    The callable receives ``(tool_name, kwargs)`` and may return a decoded JSON
-    value or an awaitable of one.  Production leaves it unset so every call
-    goes through ``_canonical_kg_tool``.  This seam is intentionally explicit:
-    an AU action that has not landed is reported as unavailable rather than
-    replaced with a local approximation.
-    """
-
-    global _atlas_source_dispatcher
-    _atlas_source_dispatcher = dispatcher
 
 
 async def _atlas_dispatch(tool_name: str, **kwargs: Any) -> Any:
@@ -13325,219 +9930,6 @@ def _atlas_valid_reference(value: Any) -> str | None:
     return value if _ATLAS_REF_PATTERN.fullmatch(value) else None
 
 
-def _atlas_catalog_value(descriptor: dict[str, Any], field_name: str) -> Any:
-    """Read a canonical descriptor field in snake- or wire-camel-case."""
-
-    if field_name in descriptor:
-        return descriptor[field_name]
-    parts = field_name.split('_')
-    camel_name = parts[0] + ''.join(part.capitalize() for part in parts[1:])
-    return descriptor.get(camel_name)
-
-
-def _atlas_catalog_query_modes(descriptor: dict[str, Any]) -> list[str]:
-    dialects = descriptor.get('dialects')
-    dialect_values = list(dialects) if isinstance(dialects, (list, tuple)) else []
-    modes: list[str] = []
-    for mode in [_atlas_catalog_value(descriptor, 'query_mode'), *dialect_values]:
-        if isinstance(mode, str) and _ATLAS_BACKEND_PATTERN.fullmatch(mode):
-            if mode not in modes:
-                modes.append(mode)
-    return modes
-
-
-def _atlas_catalog_capabilities(descriptor: dict[str, Any]) -> list[str]:
-    values = descriptor.get('capabilities')
-    capabilities = list(values) if isinstance(values, (list, tuple)) else []
-    return [
-        item
-        for item in capabilities
-        if isinstance(item, str) and _ATLAS_RECORD_ID_PATTERN.fullmatch(item)
-    ]
-
-
-def _atlas_catalog_availability(
-    descriptor: dict[str, Any],
-) -> tuple[str, bool, str | None]:
-    availability = str(descriptor.get('availability') or '').casefold()
-    available = descriptor.get('available') is True
-    if available and availability == 'available':
-        state = 'available'
-    elif availability in {'unsupported', 'unavailable'}:
-        state = 'unavailable'
-    elif availability in {'configured', 'unverified'}:
-        state = 'degraded'
-    else:
-        state = 'not_configured'
-    reason = descriptor.get('reason')
-    return state, available, reason if isinstance(reason, str) else None
-
-
-def _atlas_catalog_connection(
-    descriptor: dict[str, Any], *, available: bool
-) -> dict[str, Any] | None:
-    connection_names = _atlas_catalog_value(descriptor, 'connection_names')
-    if not isinstance(connection_names, list) or not connection_names:
-        return None
-    profile_ref = next(
-        (
-            _atlas_valid_reference(_atlas_catalog_value(descriptor, field_name))
-            for field_name in (
-                'connection_profile_ref',
-                'auth_profile_ref',
-                'tls_profile_ref',
-            )
-            if _atlas_valid_reference(_atlas_catalog_value(descriptor, field_name))
-        ),
-        None,
-    )
-    connection: dict[str, Any] = {
-        'state': 'connected' if available else 'disconnected',
-        'reason': (
-            'registered connection is live'
-            if available
-            else 'registered connection is not live'
-        ),
-    }
-    if profile_ref is not None:
-        connection['profile_ref'] = profile_ref
-    return connection
-
-
-def _atlas_catalog_provider(
-    descriptor: dict[str, Any], *, observed_at: str
-) -> dict[str, Any] | None:
-    source_id = descriptor.get('provider') or _atlas_catalog_value(
-        descriptor, 'source_id'
-    )
-    label = descriptor.get('label')
-    if not _atlas_record_identifier_is_safe(source_id):
-        return None
-    if not isinstance(label, str) or not label.strip():
-        return None
-    state, available, reason = _atlas_catalog_availability(descriptor)
-    provider: dict[str, Any] = {
-        'source_id': source_id,
-        'label': label,
-        'description': reason,
-        'availability': {
-            'state': state,
-            'reason': reason,
-            'observed_at': observed_at,
-        },
-        'query_modes': _atlas_catalog_query_modes(descriptor),
-        'capabilities': _atlas_catalog_capabilities(descriptor),
-    }
-    connection = _atlas_catalog_connection(descriptor, available=available)
-    if connection is not None:
-        provider['connection'] = connection
-    return provider
-
-
-def _atlas_direct_catalog_wire(body: dict[str, Any]) -> dict[str, Any] | None:
-    if isinstance(body.get('providers'), list) and isinstance(
-        body.get('observed_at'), str
-    ):
-        return body
-    return None
-
-
-def _atlas_source_catalog_payload(
-    body: dict[str, Any],
-) -> tuple[dict[str, Any], list[Any]] | None:
-    source_entry = body.get('sources')
-    if not isinstance(source_entry, dict):
-        return None
-    # ``graph_catalog`` currently returns the typed AU SourceCatalog directly
-    # as the ``sources`` modality.  Keep accepting the older capability-wrapper
-    # shape as well because mixed-version graph-os deployments can still emit
-    # ``{available: true, items: {...}}`` while they roll forward.
-    if source_entry.get('available') is True:
-        catalog = source_entry.get('items')
-        if not isinstance(catalog, dict):
-            return None
-    else:
-        catalog = source_entry
-    descriptors = catalog.get('sources')
-    if not isinstance(descriptors, list):
-        return None
-    return catalog, descriptors
-
-
-def _atlas_catalog_providers(
-    descriptors: list[Any], *, observed_at: str
-) -> list[dict[str, Any]] | None:
-    providers: list[dict[str, Any]] = []
-    for descriptor in descriptors:
-        if not isinstance(descriptor, dict):
-            return None
-        provider = _atlas_catalog_provider(descriptor, observed_at=observed_at)
-        if provider is None:
-            return None
-        providers.append(provider)
-    return providers
-
-
-def _atlas_catalog_version(catalog: dict[str, Any]) -> str:
-    schema_version = catalog.get('schema_version')
-    return (
-        schema_version if isinstance(schema_version, str) else 'atlas-source-catalog.v1'
-    )
-
-
-def _atlas_catalog_result(
-    catalog: dict[str, Any], providers: list[dict[str, Any]], observed_at: str
-) -> dict[str, Any]:
-    return {
-        'catalog_version': _atlas_catalog_version(catalog),
-        'observed_at': observed_at,
-        'providers': providers,
-    }
-
-
-def _atlas_source_catalog_wire(body: Any) -> dict[str, Any] | None:
-    """Project AU's capability envelope into the WebUI source contract.
-
-    ``graph_catalog(action='list')`` intentionally aggregates modalities and
-    wraps the source catalogue in ``sources.items``.  Atlas's source screen
-    needs only that typed source projection.  A future AU implementation may
-    return the WebUI contract directly; that shape is accepted unchanged.
-    """
-
-    if not isinstance(body, dict):
-        return None
-    direct = _atlas_direct_catalog_wire(body)
-    if direct is not None:
-        return direct
-    payload = _atlas_source_catalog_payload(body)
-    if payload is None:
-        return None
-    catalog, descriptors = payload
-    observed_at = _atlas_observed_at()
-    providers = _atlas_catalog_providers(descriptors, observed_at=observed_at)
-    if providers is None:
-        return None
-    return _atlas_catalog_result(catalog, providers, observed_at)
-
-
-async def _atlas_execute_ui_catalog() -> JSONResponse:
-    response = await _atlas_execute(
-        'catalog',
-        _ATLAS_SOURCE_CATALOG_TOOL,
-        action='list',
-    )
-    if response.status_code != 200:
-        return response
-    projected = _atlas_source_catalog_wire(_atlas_response_body(response))
-    if projected is None:
-        return _atlas_error_response('catalog', 'capability_unavailable', 501)
-    try:
-        return JSONResponse(status_code=200, content=_atlas_safe_result(projected))
-    except (TypeError, ValueError) as error:
-        _log_failure('atlas.catalog', error, level=logging.WARNING)
-        return _atlas_error_response('catalog', 'backend_contract_invalid', 502)
-
-
 _ATLAS_CONNECTION_STATES = frozenset(
     {'connected', 'disconnected', 'checking', 'unavailable', 'error'}
 )
@@ -13691,9 +10083,13 @@ def _atlas_sync_kwargs(request: AtlasSourceSync) -> dict[str, Any]:
 
 @router.get('/atlas/sources')
 async def atlas_source_catalog() -> JSONResponse:
-    """Return the server-owned provider/source catalog used by Atlas."""
+    """List the ingest sources from the served ``ingest.sources.list``."""
 
-    return await _atlas_execute_ui_catalog()
+    value = await served('ingest.sources.list', {})
+    return JSONResponse(
+        status_code=200,
+        content={'sources': _atlas_safe_result(_result_rows(value, 1024))},
+    )
 
 
 @router.get('/atlas/sources/{source_id}/connection')
@@ -14061,15 +10457,18 @@ async def atlas_source_sync_preview(request: AtlasSyncPreview) -> JSONResponse:
 
 
 @router.post('/atlas/sources/sync')
-async def atlas_source_sync(request: AtlasSyncRequest) -> JSONResponse:
-    """Execute the canonical connector-to-KG sync for a governed source."""
+async def atlas_source_sync(request: AtlasSourceSync) -> JSONResponse:
+    """Start one source sync through the served ``ingest.sources.sync``."""
 
-    try:
-        kwargs = _atlas_sync_kwargs(request)
-    except (TypeError, ValueError) as error:
-        _log_failure('atlas.sync', error, level=logging.WARNING)
-        return _atlas_error_response('sync', 'invalid_request', 422)
-    return await _atlas_execute('sync', 'source_sync', **kwargs)
+    value = await served(
+        'ingest.sources.sync',
+        {
+            'source_id': _atlas_source_connection_key(request.source),
+            'mode': 'full' if request.mode == 'full' else 'incremental',
+        },
+        idempotency_key=uuid.uuid4().hex,
+    )
+    return JSONResponse(status_code=200, content=_atlas_safe_result(value))
 
 
 @router.get('/atlas/sources/runs/{run_id}')
@@ -14127,30 +10526,7 @@ def get_ontology_kg() -> Any:
         HTTPException: 501 when the engine cannot be initialized, or when the
             ontology layer is unavailable in this environment.
     """
-    from agent_utilities.knowledge_graph.facade import KnowledgeGraph
-
-    engine = get_engine()
-    backend = engine.backend
-    with _ontology_kg_cache_lock:
-        try:
-            cached = _ontology_kg_cache.get(backend)
-        except TypeError:
-            # Backend not weak-referenceable — fall back to a fresh facade.
-            cached = None
-        if cached is not None:
-            kg = cached
-        else:
-            kg = KnowledgeGraph()
-            # Bind to the live store; the facade derives compute from the store graph.
-            kg._store = backend
-            try:
-                _ontology_kg_cache[backend] = kg
-            except TypeError:
-                pass
-        ontology = kg.ontology
-    if ontology is None:
-        raise HTTPException(status_code=501, detail='Ontology layer unavailable')
-    return kg, ontology
+    raise unavailable('Get ontology kg', 'graph.query')
 
 
 async def _get_ontology_kg_bounded() -> Any:
@@ -14170,23 +10546,14 @@ def _ontology_facade_for(engine: Any, scoped_engine: Any) -> tuple[Any, Any] | N
     unavailable for that graph, so callers can degrade a single graph rather
     than raise.
     """
-    if scoped_engine is engine:
-        return get_ontology_kg()
-    from agent_utilities.knowledge_graph.facade import KnowledgeGraph
-
-    kg = KnowledgeGraph()
-    kg._store = scoped_engine.backend
-    ontology = kg.ontology
-    if ontology is None:
-        return None
-    return kg, ontology
+    raise unavailable('Ontology facade for', 'graph.query')
 
 
 def _actor_id_from_request(request: Request | None) -> str:
     """Return only the server-minted ambient actor, never caller headers/body."""
 
     del request
-    from agent_utilities.security.brain_context import current_actor
+    from .host import current_actor
 
     return _durable_actor_reference(current_actor().actor_id)
 
@@ -14212,8 +10579,7 @@ def _current_webui_is_admin() -> bool:
     """
 
     try:
-        from agent_utilities.security.brain_context import current_actor
-
+        from .host import current_actor
         from .rbac import resolve_webui_role, role_at_least
 
         actor = current_actor()
@@ -14230,7 +10596,7 @@ def _actor_context(request: Request | None) -> Any:
     """Return the server-minted actor with trusted KG capability aliases."""
 
     del request
-    from agent_utilities.security.brain_context import current_actor
+    from .host import current_actor
 
     actor = current_actor()
     roles = set(actor.roles)
@@ -14251,29 +10617,7 @@ def _serialize_property_type(name: str, pt: Any) -> dict[str, Any]:
     ``python_type``/``element_type`` hold Python ``type`` objects which are not
     JSON serializable, so they are rendered as their type names.
     """
-    from agent_utilities.knowledge_graph.ontology import column_type_for
-
-    py = getattr(pt, 'python_type', None)
-    elem = getattr(pt, 'element_type', None)
-    try:
-        column_type = column_type_for(name)
-    except Exception:  # noqa: BLE001
-        column_type = ''
-    return {
-        'name': getattr(pt, 'name', name),
-        'description': getattr(pt, 'description', ''),
-        'xsd_iri': getattr(pt, 'xsd_iri', ''),
-        'python_type': getattr(py, '__name__', None) if py is not None else None,
-        'storage_hint': getattr(pt, 'storage_hint', ''),
-        'is_complex': bool(getattr(pt, 'is_complex', False)),
-        'element_type': (
-            getattr(elem, 'name', getattr(elem, '__name__', str(elem)))
-            if elem is not None
-            else None
-        ),
-        'dimension': getattr(pt, 'dimension', None),
-        'column_type': column_type,
-    }
+    raise unavailable('Serialize property type', 'graph.query')
 
 
 def _node_properties(backend: Any, object_id: str) -> dict[str, Any]:
@@ -14335,11 +10679,7 @@ def _session_scoped_to(session: Any, graph_name: str | None) -> Any:
     read in that same scope -- see `_graph_union_executor`'s docstring for why
     a scoped backend view and a retargeted session are required TOGETHER.
     """
-    if session is None or graph_name is None or graph_name == session.graph:
-        return contextlib.nullcontext()
-    from agent_utilities.knowledge_graph.core.session import use_session
-
-    return use_session(session.with_graph(graph_name))
+    raise unavailable('Session scoped to', 'graph.query')
 
 
 def _locate_object_graph(
@@ -14359,28 +10699,7 @@ def _locate_object_graph(
     lookup when there is no verified ambient session, matching every other
     union helper in this file.
     """
-    from agent_utilities.knowledge_graph.core.session import current_session
-
-    def _call(scoped_engine: Any) -> dict[str, Any]:
-        return _node_properties(scoped_engine.backend, object_id)
-
-    session = current_session()
-    result = _rows_per_accessible_graph(engine, _call)
-    if result is None:
-        props = _call(engine)
-        if not props:
-            return None
-        return (session.graph if session is not None else None), engine, props
-    per_graph, _degraded = result
-    for graph_name, props in per_graph:
-        if props:
-            scoped_engine = (
-                engine
-                if session is not None and graph_name == session.graph
-                else engine.for_graph(graph_name)
-            )
-            return graph_name, scoped_engine, props
-    return None
+    raise unavailable('Locate object graph', 'graph.query')
 
 
 def _interface_implementers_by_type(ontology: Any) -> dict[str, list[str]]:
@@ -14455,7 +10774,7 @@ async def list_object_types() -> list[dict[str, Any]]:
             }
             for name in sorted(names)[:_MAX_EXTERNAL_COLLECTION_ITEMS]
         ]
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('list_object_types', e)
@@ -14471,7 +10790,7 @@ async def list_ontology_property_types() -> list[dict[str, Any]]:
             _serialize_property_type(name, pt)
             for name, pt in sorted(ontology.property_types.items())
         ][:_MAX_EXTERNAL_COLLECTION_ITEMS]
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('list_property_types', e)
@@ -14496,7 +10815,7 @@ async def list_ontology_interfaces() -> list[dict[str, Any]]:
                 data['implementers'] = []
             out.append(data)
         return out
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('api_extension', e)
@@ -14514,7 +10833,7 @@ async def get_interface_implementers(name: str) -> dict[str, Any]:
             :_MAX_EXTERNAL_COLLECTION_ITEMS
         ]
         return {'interface': name, 'implementers': implementers}
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=type(e).__name__) from e
@@ -14527,18 +10846,7 @@ def _object_set_rows(
     ontology: Any, object_set: Any, actor: Any, *, limit: int = 200
 ) -> list[dict[str, Any]]:
     """Materialize an ObjectSet to permission-enforced summary rows."""
-    from agent_utilities.knowledge_graph.ontology.permissioning import enforce
-
-    ids = object_set.ids()[:limit]
-    rows: list[dict[str, Any]] = []
-    for nid in ids:
-        try:
-            props = object_set._view.props(nid)
-        except Exception:  # noqa: BLE001
-            props = {'id': nid}
-        props.setdefault('id', nid)
-        rows.append(dict(props))
-    return enforce(rows, actor)
+    raise unavailable('Object set rows', 'graph.query')
 
 
 @dataclass(frozen=True)
@@ -14632,7 +10940,7 @@ async def ontology_object_set_search(
                 'count': len(rows),
             }
         )
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('api_extension', e)
@@ -14705,7 +11013,7 @@ async def ontology_object_set_search_around(
                 'count': len(rows),
             }
         )
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('api_extension', e)
@@ -14853,7 +11161,7 @@ async def ontology_object_set_pivot(data: dict[str, Any]) -> dict[str, Any]:
                 'groups': {str(k): v for k, v in merged_groups.items()},
             }
         )
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('api_extension', e)
@@ -15022,7 +11330,7 @@ async def ontology_object_set_aggregate(data: dict[str, Any]) -> dict[str, Any]:
                 'total_objects': total_objects,
             }
         )
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except ValueError as e:
         raise HTTPException(status_code=422, detail=type(e).__name__) from e
@@ -15038,13 +11346,7 @@ def _is_property_filter_spec(spec: Any) -> bool:
 
 def _property_filter_from(spec: dict[str, Any]) -> Any:
     """One raw filter entry as an ontology `PropertyFilter`."""
-    from agent_utilities.knowledge_graph.ontology.object_set import PropertyFilter
-
-    return PropertyFilter(
-        field=str(spec.get('property') or spec.get('field')),
-        op=str(spec.get('op', 'eq')),
-        value=spec.get('value'),
-    )
+    raise unavailable('Property filter from', 'graph.query')
 
 
 def _object_set_property_filters(data: dict[str, Any]) -> list[Any]:
@@ -15249,7 +11551,7 @@ async def ontology_object_set_save(
             'count': len(ids),
             'kind': kind,
         }
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('save_object_set', e)
@@ -15360,7 +11662,7 @@ async def ontology_object_set_list(request: Request) -> dict[str, Any]:
         visible.sort(key=lambda r: r.get('created_at') or 0.0, reverse=True)
         visible = visible[:_MAX_EXTERNAL_COLLECTION_ITEMS]
         return {'sets': visible, 'count': len(visible)}
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('list_object_sets', e)
@@ -15380,30 +11682,7 @@ async def ontology_actions(object_type: str | None = None) -> list[dict[str, Any
     ``verb``, ``description``, ``produces_effect`` and ``required_capability``
     so the client can filter to mutation/external-effect actions.
     """
-    try:
-        from agent_utilities.knowledge_graph.actions import DEFAULT_REGISTRY
-
-        if object_type:
-            actions = DEFAULT_REGISTRY.actions_for_type(object_type)
-        else:
-            actions = DEFAULT_REGISTRY.list_actions()
-
-        return [
-            {
-                'name': a.name,
-                'verb': a.verb,
-                'description': a.description,
-                'produces_effect': getattr(
-                    a.produces_effect, 'value', str(a.produces_effect)
-                ),
-                'required_capability': a.required_capability,
-                'acts_on': list(a.acts_on or []),
-            }
-            for a in list(actions)[:_MAX_EXTERNAL_COLLECTION_ITEMS]
-        ]
-    except Exception as e:  # noqa: BLE001
-        _log_failure('api_extension', e)
-        return []
+    raise unavailable('Ontology explorer', 'ontology.objects.read')
 
 
 @dataclass(frozen=True)
@@ -15416,110 +11695,6 @@ class _BulkActionPlan:
     params: dict[str, Any]
     id_param: str
     decision_provider: Any
-
-
-def _bulk_action_decision_provider(approve: Any, actor: Any, actor_id: str) -> Any:
-    """Wire an explicit operator approval as the HITL gate's decision provider.
-
-    A mutating bulk action is a HIGH-risk verb that the HITL escalation gate
-    (CONCEPT:AU-OS.observability.empty-derive-from-effect) pauses for human
-    approval -- without a decision it auto-denies, never silently writes. When
-    the caller supplies an explicit ``approve`` payload (the operator pressing
-    'approve' in the bulk-action dialog), this returns a provider so the
-    writeback proceeds under a recorded, role-checked approval; otherwise it
-    returns ``None`` and the gate's own default applies.
-    """
-    if not approve:
-        return None
-    if not isinstance(approve, dict):
-        raise HTTPException(status_code=400, detail='Invalid approval payload')
-    if not set(actor.roles).intersection({'admin', 'kg:admin'}):
-        raise HTTPException(status_code=403, detail='Admin approval required')
-    reason = approve.get('reason') or 'bulk action approved by operator'
-    if not isinstance(reason, str) or len(reason.encode('utf-8')) > 2048:
-        raise HTTPException(status_code=400, detail='Invalid approval reason')
-    reason, _privacy_report = sanitize_for_persistence(reason)
-
-    def decision_provider(_request: Any) -> dict[str, Any]:
-        return {
-            'approved': True,
-            'approver': actor_id,
-            'approver_role': 'admin',
-            'reason': reason,
-        }
-
-    return decision_provider
-
-
-def _bulk_action_id_param(action_def: Any, params: dict[str, Any]) -> str:
-    """The action parameter each target id binds to, or '' if there is none.
-
-    The per-target object id must reach the action's templated side-effects
-    (e.g. ``target: "$concept_id"``). Resolved ONCE so each iteration can bind
-    the loop's target id to it when the caller did not pin it explicitly.
-    """
-    if action_def is None:
-        return ''
-    for parameter in action_def.parameters:
-        if (
-            parameter.required
-            and parameter.name.endswith('_id')
-            and parameter.name not in params
-        ):
-            return parameter.name
-    # Only a declared ``target_id`` param may receive the fallback --
-    # validate_params rejects unknown keys.
-    declared = {parameter.name for parameter in action_def.parameters}
-    if 'target_id' in declared and 'target_id' not in params:
-        return 'target_id'
-    return ''
-
-
-def _bulk_action_record(invocation: Any, target_id: str) -> dict[str, Any]:
-    """One target's per-object result row."""
-    edit_ids = list(getattr(invocation, 'edit_ids', []) or [])
-    return {
-        'id': target_id,
-        'status': str(invocation.status),
-        'edit_ids': edit_ids[:_MAX_EXTERNAL_COLLECTION_ITEMS],
-    }
-
-
-async def _apply_bulk_action(plan: _BulkActionPlan, ids: list[str]) -> dict[str, Any]:
-    """Run the planned action over every target through the governed executor."""
-    from agent_utilities.knowledge_graph.actions import ActionStatus
-
-    results: list[dict[str, Any]] = []
-    errors: list[dict[str, Any]] = []
-    applied = 0
-    for target_id in ids:
-        # Bind the loop's target id under the action's declared ``*_id``
-        # parameter so single-target $-templates resolve per object.
-        call_params = dict(plan.params)
-        if plan.id_param:
-            call_params[plan.id_param] = target_id
-        inv = await invoke_governed_helper(
-            plan.executor.execute,
-            plan.action_name,
-            plan.actor,
-            call_params,
-            target_id=target_id,
-            decision_provider=plan.decision_provider,
-            deadline=120.0,
-        )
-        results.append(_bulk_action_record(inv, target_id))
-        if inv.status == ActionStatus.SUCCESS:
-            applied += 1
-        elif inv.status in (ActionStatus.ERROR, ActionStatus.DENIED):
-            errors.append(
-                {
-                    'id': target_id,
-                    'status': str(inv.status),
-                    'error': getattr(inv, 'error', '')
-                    or getattr(inv, 'result_summary', ''),
-                }
-            )
-    return {'applied': applied, 'results': results, 'errors': errors}
 
 
 @router.post('/ontology/object-set/action')
@@ -15536,42 +11711,7 @@ async def ontology_object_set_action(
     lacking the action's ``required_capability`` is DENIED per target. Returns
     ``{applied, results:[{id, status, edit_ids}], errors}``.
     """
-    try:
-        from agent_utilities.knowledge_graph.actions import (
-            DEFAULT_REGISTRY,
-            ActionExecutor,
-        )
-
-        _kg, ontology = await _get_ontology_kg_bounded()
-        ids = _bounded_identifier_list(data.get('ids'), required=True)
-        action_name = str(data.get('action_name') or '').strip()
-        if not action_name or not _SAFE_DELEGATION_TOKEN.fullmatch(action_name):
-            raise HTTPException(status_code=422, detail='action_name is required')
-        params = _bounded_query_params(data.get('params') or {})
-
-        ambient_actor = _actor_context(request)
-        actor_id = _durable_actor_reference(ambient_actor.actor_id)
-        actor = replace(ambient_actor, actor_id=actor_id)
-
-        plan = _BulkActionPlan(
-            # Bind the executor's ledger to the SAME live-store ledger the
-            # object view reads, so bulk writeback edits are durable and
-            # surface in history.
-            executor=ActionExecutor(DEFAULT_REGISTRY, ledger=ontology.edits),
-            action_name=action_name,
-            actor=actor,
-            params=params,
-            id_param=_bulk_action_id_param(DEFAULT_REGISTRY.get(action_name), params),
-            decision_provider=_bulk_action_decision_provider(
-                data.get('approve'), actor, actor_id
-            ),
-        )
-        return _public_external_result(await _apply_bulk_action(plan, ids))
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        _log_failure('api_extension', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    raise unavailable('Ontology explorer', 'ontology.objects.read')
 
 
 def _durable_edit_history(backend: Any, object_id: str) -> list[dict[str, Any]]:
@@ -15627,109 +11767,8 @@ def _durable_edit_history(backend: Any, object_id: str) -> list[dict[str, Any]]:
     return edits
 
 
-async def _object_derived_properties(
-    ontology: Any, view_props: dict[str, Any], object_type: Any, actor: Any
-) -> dict[str, Any]:
-    """The object's derived properties; a compute failure degrades to {}."""
-    try:
-        return await invoke_governed_helper(
-            ontology.derive_all,
-            view_props,
-            object_type=object_type,
-            actor_id=actor.actor_id,
-            deadline=30.0,
-        )
-    except Exception:  # noqa: BLE001
-        return {}
-
-
-def _object_markings(object_id: str) -> list[Any]:
-    """The object's security markings; an unreadable set degrades to []."""
-    from agent_utilities.knowledge_graph.ontology.permissioning import markings_for
-
-    try:
-        return sorted(markings_for(object_id))
-    except Exception:  # noqa: BLE001
-        return []
-
-
-async def _object_edit_history(
-    ontology: Any, backend: Any, object_id: str
-) -> list[Any]:
-    """The object's edit history.
-
-    Prefer the durable, cross-request audit trail from the store; fall back to
-    the in-process ledger mirror when nothing was persisted.
-    """
-    history = await invoke_governed_helper(
-        _durable_edit_history, backend, object_id, deadline=15.0
-    )
-    if history:
-        return history
-    try:
-        fallback_history = await invoke_governed_helper(
-            ontology.history,
-            object_id,
-            deadline=15.0,
-        )
-    except Exception:  # noqa: BLE001
-        return []
-    return [e.model_dump(mode='json') for e in fallback_history]
-
-
-def _object_view_payload(
-    ontology: Any, object_type: Any, layout_choice: str
-) -> dict[str, Any]:
-    """Resolve the requested layout into a concrete view payload.
-
-    ``configured`` serves the stored ObjectView widget composition for this
-    type (when one exists); ``standard`` derives the layout from the type's
-    interface schema. The selection genuinely changes the returned ``view``.
-    """
-    if not object_type:
-        return {}
-    configured = (
-        _load_object_views().get(str(object_type))
-        if layout_choice == 'configured'
-        else None
-    )
-    if configured is None:
-        return _standard_object_view(ontology, str(object_type))
-    return {
-        'object_type': object_type,
-        'view_type': 'configured',
-        **configured,
-    }
-
-
-def _enforced_object_properties(
-    props: dict[str, Any], object_id: str, actor: Any
-) -> dict[str, Any]:
-    """Run the object through the fine-grained permissioning gate.
-
-    A fully-redacted/denied object is a 404, not an empty object.
-    """
-    from agent_utilities.knowledge_graph.ontology.permissioning import enforce
-
-    props.setdefault('id', object_id)
-    enforced = enforce([props], actor)
-    if not enforced:
-        raise HTTPException(status_code=404, detail='Object not found or denied')
-    return enforced[0]
-
-
-def _object_type_of(view_props: dict[str, Any]) -> Any:
-    return (
-        view_props.get('type')
-        or view_props.get('_type')
-        or view_props.get('object_type')
-    )
-
-
 @router.get('/ontology/object/{object_id}')
-async def get_ontology_object(
-    object_id: str, request: Request, layout: str = 'standard'
-) -> dict[str, Any]:
+async def get_ontology_object(object_id: str, request: Request) -> dict[str, Any]:
     """Full object view: properties, in/out links, derived props, markings, history.
 
     The properties are passed through the fine-grained permissioning gate
@@ -15751,58 +11790,7 @@ async def get_ontology_object(
     wrong-graph (empty) links/derived/history, worse than the tenant-only
     status quo.
     """
-    object_id = _validate_runtime_id(object_id)
-    if layout not in {'standard', 'configured'}:
-        raise HTTPException(status_code=400, detail='Invalid object layout')
-    try:
-        from agent_utilities.knowledge_graph.core.session import current_session
-
-        engine = await get_engine_bounded()
-        located = await invoke_governed_helper(
-            _locate_object_graph, engine, object_id, deadline=15.0
-        )
-        if located is None:
-            raise HTTPException(status_code=404, detail='Object not found or denied')
-        graph_name, scoped_engine, props = located
-        facade = _ontology_facade_for(engine, scoped_engine)
-        if facade is None:
-            raise HTTPException(status_code=501, detail='Ontology layer unavailable')
-        _scoped_kg, ontology = facade
-        backend = scoped_engine.backend
-        actor = _actor_context(request)
-
-        with _session_scoped_to(current_session(), graph_name):
-            view_props = _enforced_object_properties(props, object_id, actor)
-            object_type = _object_type_of(view_props)
-            derived = await _object_derived_properties(
-                ontology, view_props, object_type, actor
-            )
-            markings = _object_markings(object_id)
-            history = await _object_edit_history(ontology, backend, object_id)
-            layout_choice = (layout or 'standard').strip().lower()
-            view = _object_view_payload(ontology, object_type, layout_choice)
-            links = await invoke_governed_helper(
-                _node_links, backend, object_id, deadline=15.0
-            )
-
-        return _public_external_result(
-            {
-                'id': object_id,
-                'object_type': object_type,
-                'properties': view_props,
-                'links': links,
-                'derived': derived,
-                'markings': markings[:_MAX_EXTERNAL_COLLECTION_ITEMS],
-                'history': history[:_MAX_EXTERNAL_COLLECTION_ITEMS],
-                'layout': view.get('view_type', 'standard') if view else layout_choice,
-                'view': view,
-            }
-        )
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        _log_failure('api_extension', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    raise unavailable('Ontology explorer', 'ontology.objects.read')
 
 
 async def _edit_property_set(
@@ -15912,7 +11900,7 @@ async def edit_ontology_object(
                 },
             }
         )
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('api_extension', e)
@@ -15921,22 +11909,7 @@ async def edit_ontology_object(
 
 def _rehydrated_edit(hist: dict[str, Any], object_id: str) -> Any:
     """One durable ``object_edit`` record as a ledger `Edit`."""
-    from agent_utilities.knowledge_graph.ontology.edits import Edit, EditType
-
-    return Edit(
-        id=hist['id'],
-        actor=_durable_actor_reference(hist.get('actor', 'system')),
-        edit_type=EditType(hist['edit_type']),
-        object_id=hist.get('object_id', object_id),
-        before=hist.get('before') or {},
-        after=hist.get('after') or {},
-        link_source=hist.get('link_source', ''),
-        link_label=hist.get('link_label', ''),
-        link_target=hist.get('link_target', ''),
-        provenance=hist.get('provenance', ''),
-        invocation_ref=hist.get('invocation_ref', ''),
-        timestamp=hist.get('timestamp', 0.0) or 0.0,
-    )
+    raise unavailable('Rehydrated edit', 'graph.query')
 
 
 async def _ensure_edit_on_ledger(
@@ -16002,7 +11975,7 @@ async def revert_ontology_edit(
                 },
             }
         )
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except KeyError as e:
         raise HTTPException(status_code=404, detail=type(e).__name__) from e
@@ -16048,25 +12021,11 @@ async def invoke_ontology_function(
         if not isinstance(bounded, dict):
             raise HTTPException(status_code=422, detail='Invalid function result')
         return bounded
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('api_extension', e)
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
-
-
-def _derive_request_fields(data: dict[str, Any]) -> tuple[str, str]:
-    """Validate ``{object_id, derived_name}`` for a derived-property compute."""
-    object_id = data.get('object_id')
-    derived_name = data.get('derived_name')
-    if not isinstance(object_id, str) or not isinstance(derived_name, str):
-        raise HTTPException(
-            status_code=422, detail='object_id and derived_name are required'
-        )
-    object_id = _validate_runtime_id(object_id)
-    if not _SAFE_DELEGATION_TOKEN.fullmatch(derived_name):
-        raise HTTPException(status_code=400, detail='Invalid derived property')
-    return object_id, derived_name
 
 
 @router.post('/ontology/derive')
@@ -16094,46 +12053,7 @@ async def derive_ontology_property(data: dict[str, Any]) -> dict[str, Any]:
     (``ont.derive(obj, name, object_type=otype)``), just bound to the
     correct graph.
     """
-    try:
-        object_id, derived_name = _derive_request_fields(data)
-
-        from agent_utilities.knowledge_graph.core.session import current_session
-
-        engine = await get_engine_bounded()
-        located = await invoke_governed_helper(
-            _locate_object_graph, engine, str(object_id), deadline=15.0
-        )
-        if located is None:
-            raise HTTPException(status_code=404, detail='Object not found')
-        graph_name, scoped_engine, props = located
-        facade = _ontology_facade_for(engine, scoped_engine)
-        if facade is None:
-            raise HTTPException(status_code=501, detail='Ontology layer unavailable')
-        _scoped_kg, ontology = facade
-
-        props.setdefault('id', str(object_id))
-        object_type = data.get('object_type') or _object_type_of(props)
-        bounded_props = _bounded_query_params(props)
-        session = current_session()
-        with _session_scoped_to(session, graph_name):
-            result = await invoke_governed_helper(
-                ontology.derive,
-                bounded_props,
-                derived_name,
-                object_type=str(object_type or '') or None,
-                deadline=30.0,
-            )
-        bounded = _public_external_result(
-            json.loads(json.dumps(result.model_dump(), default=str))
-        )
-        if not isinstance(bounded, dict):
-            raise HTTPException(status_code=422, detail='Invalid derived result')
-        return bounded
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        _log_failure('derive_property', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    raise unavailable('Ontology explorer', 'ontology.objects.read')
 
 
 def _document_source(data: dict[str, Any]) -> tuple[Any, Any]:
@@ -16215,7 +12135,7 @@ async def process_ontology_document(data: dict[str, Any]) -> dict[str, Any]:
             **kwargs,
         )
         return _public_external_result(_document_ingest_result(result))
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('api_extension', e)
@@ -16327,7 +12247,7 @@ async def get_ontology_object_view(object_type: str) -> dict[str, Any]:
                 **configured,
             }
         return _standard_object_view(ontology, object_type)
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('get_object_view', e)
@@ -16355,8 +12275,81 @@ async def save_ontology_object_view(
             'view_type': 'configured',
             **definition,
         }
-    except HTTPException:
+    except FastAPIHTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         _log_failure('save_object_view', e)
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
+
+
+# Served Graph OS operation helpers
+
+
+async def _write_memory(key: str, data: dict[str, Any]) -> Any:
+    value, _privacy_report = sanitize_for_persistence(_bounded_query_params(data))
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=400, detail='Invalid memory record')
+    record = await served(
+        'memory.write',
+        {'key': key, 'value': value},
+        idempotency_key=uuid.uuid4().hex,
+    )
+    return _public_external_result(record)
+
+
+def _result_rows(value: Any, limit: int) -> list[dict[str, Any]]:
+    """Project an operation value onto a bounded list of row objects."""
+
+    rows = value
+    if isinstance(value, dict):
+        rows = next(
+            (value[key] for key in _ROW_KEYS if isinstance(value.get(key), list)),
+            [value],
+        )
+    if not isinstance(rows, list):
+        return []
+    bounded = _public_external_result(rows[: max(0, limit)])
+    return [row for row in bounded if isinstance(row, dict)]
+
+
+_ROW_KEYS = ('results', 'hits', 'items', 'rows', 'tasks', 'sources', 'servers')
+
+
+async def _retrieve(query: Any, limit: int) -> list[dict[str, Any]]:
+    if not isinstance(query, str) or not query.strip():
+        raise HTTPException(status_code=400, detail='A search query is required')
+    if len(query.encode('utf-8')) > 4096:
+        raise HTTPException(status_code=400, detail='Search query is too long')
+    value = await served('retrieval.search', {'query': query})
+    return _result_rows(value, min(limit, _MAX_EXTERNAL_COLLECTION_ITEMS))
+
+
+async def _served_settings() -> dict[str, Any]:
+    """The caller's operational settings from the served ``ops.config``."""
+
+    value = await served('ops.config')
+    settings = value.get('settings') if isinstance(value, dict) else None
+    return settings if isinstance(settings, dict) else {}
+
+
+def _model_rows(settings: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    rows = settings.get(key)
+    if not isinstance(rows, list):
+        return []
+    return [
+        {name: item[name] for name in _MODEL_FIELDS if name in item}
+        for item in rows
+        if isinstance(item, dict)
+    ]
+
+
+_MODEL_FIELDS = ('id', 'name', 'provider', 'model', 'model_id', 'description')
+
+
+def _union_engine_call(
+    engine: Any, actor: Any, call: Any
+) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+    """Union reads over every readable graph need ``graph.query``."""
+
+    del engine, actor, call
+    raise unavailable('Union engine call', 'graph.query')

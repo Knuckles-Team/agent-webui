@@ -38,12 +38,56 @@ export class ApiError extends Error {
   /** Raw response body text */
   public body: string
 
+  /** Set when the backend answered "not available" (HTTP 501 `not_available`). */
+  public notAvailable: NotAvailable | null
+
   constructor(status: number, body: string) {
-    super(`API ${status}: ${body}`)
+    const notAvailable = notAvailableAnswer(status, body)
+    super(apiErrorMessage(status, body, notAvailable))
     this.status = status
     this.body = body
+    this.notAvailable = notAvailable
     this.name = 'ApiError'
   }
+}
+
+/** The "not available" answer carried by an HTTP 501 body, else `null`. */
+function notAvailableAnswer(status: number, body: string): NotAvailable | null {
+  return status === 501 ? parseNotAvailable(body) : null
+}
+
+function apiErrorMessage(status: number, body: string, notAvailable: NotAvailable | null): string {
+  return notAvailable?.message ?? `API ${status}: ${body}`
+}
+
+/** A capability whose Graph OS served operation does not exist yet. */
+export interface NotAvailable {
+  feature: string
+  operation: string
+  message: string
+}
+
+/**
+ * Read the backend's "not available" answer: `{detail: {error: 'not_available',
+ * feature, needs_operation, message}}`. Returns `null` for any other body.
+ */
+export function parseNotAvailable(body: string): NotAvailable | null {
+  try {
+    const raw: unknown = JSON.parse(body)
+    const detail = (raw as { detail?: unknown } | null)?.detail as Record<string, unknown> | undefined
+    if (detail?.error !== 'not_available') return null
+    const feature = typeof detail.feature === 'string' ? detail.feature : 'This feature'
+    const operation = typeof detail.needs_operation === 'string' ? detail.needs_operation : ''
+    const message = typeof detail.message === 'string' ? detail.message : `${feature} is not available yet.`
+    return { feature, operation, message }
+  } catch {
+    return null
+  }
+}
+
+/** Whether `error` is the backend's "not available" answer. */
+export function isNotAvailable(error: unknown): error is ApiError & { notAvailable: NotAvailable } {
+  return error instanceof ApiError && error.notAvailable !== null
 }
 
 /** Thrown when a response fails its declared schema. Never masked/caught-and-ignored. */

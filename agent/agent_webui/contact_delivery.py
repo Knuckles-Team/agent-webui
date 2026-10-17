@@ -22,9 +22,10 @@ from dataclasses import dataclass
 from typing import Protocol, cast
 from urllib.parse import urlsplit
 
-from agent_utilities.knowledge_graph.core.session import current_session
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+from .host import current_grant as current_session
 
 logger = logging.getLogger(__name__)
 

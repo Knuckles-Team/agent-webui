@@ -35,13 +35,13 @@
 #                                     # (use this while another lane is actively deploying;
 #                                     # see README.md "Coordinating concurrent deploys")
 #
-# Env overrides: see docker/build_and_push.sh for AU_SRC_PATH / IMAGE /
-# EG_WHEELHOUSE_PATH / BUILD_BACKEND / DOCKER* / BUILDKIT* (build_and_push.sh
+# Env overrides: see docker/build_and_push.sh for IMAGE /
+# BUILD_BACKEND / DOCKER* / BUILDKIT* (build_and_push.sh
 # auto-detects a build backend -- a reachable docker daemon, OR the shared
 # cluster-native buildkitd Deployment (services/buildkit-service/) when no
 # docker daemon is reachable -- and prints which one it picked and why; see
 # that script's header for the full detection order and the 2026-08-17
-# migration off r820's now-dead docker daemon). Additional ones for this script:
+# migration off the build host's now-dead docker daemon). Additional ones for this script:
 #   NAMESPACE           k8s namespace (default: apps)
 #   DEPLOYMENT          k8s Deployment name (default: agent-webui)
 #   CANONICAL_CHECKOUT  path to the agent-webui checkout that is NFS-exported to

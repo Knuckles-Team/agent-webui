@@ -7,8 +7,8 @@ name: CI
 #            .config/pre-commit.yaml at the commit and pre-push stages
 #            (diff-scoped on a PR, every file on main), which includes the
 #            spec-status / spec-decomposition / spec-trailers hooks.
-#   tests -- WebUI-specific: bootstrap (pinned siblings, locked Python and
-#            frontend deps, engine wheel), full type check and lint, then the
+#   tests -- WebUI-specific: bootstrap (gate tooling, locked Python and
+#            frontend deps), full type check and lint, then the
 #            pr-test-scope subset (PR) or the full suite (main).
 #   gates -- the single required check: succeeds only when hooks and tests do.
 #   build -- main only: frontend bundle and wheel/sdist build, no upload.
@@ -86,10 +86,10 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Bootstrap (pinned siblings, locked Python and frontend deps, engine wheel)
+      - name: Bootstrap (gate tooling, locked Python and frontend deps)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/bootstrap.sh --no-hooks --engine-wheel
+        run: scripts/bootstrap.sh --no-hooks
 
       - name: Bootstrap-dependent hooks (siblings, lockfile, Node toolchain)
         timeout-minutes: 15

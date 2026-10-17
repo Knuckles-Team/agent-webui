@@ -725,7 +725,7 @@ async def test_an_expired_session_with_a_refresh_token_is_silently_renewed():
 
 
 def _configure_arm_origin(monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent_utilities.core.config import config
+    from agent_webui.host import config
 
     monkeypatch.setattr(config, 'allowed_origins', 'https://webui.example.test')
     monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui')
@@ -1220,9 +1220,8 @@ async def test_attended_receipt_is_forwarded_only_for_its_exact_request_origin(
 
 @pytest.mark.anyio
 async def test_finalize_consumes_recent_auth_once_and_mints_exact_arm(monkeypatch):
-    from agent_utilities.security import request_identity
-    from agent_utilities.security.actor_identity import ActorType
-    from agent_utilities.security.brain_context import ActorContext
+    from agent_webui import host
+    from agent_webui.host import ActorContext
 
     _configure_arm_origin(monkeypatch)
     consumed: set[str] = set()
@@ -1266,7 +1265,7 @@ async def test_finalize_consumes_recent_auth_once_and_mints_exact_arm(monkeypatc
 
     actor = ActorContext(
         actor_id='user-1',
-        actor_type=ActorType.HUMAN,
+        actor_type='human',
         tenant_id='homelab',
         roles=('kg:write',),
         authenticated=True,
@@ -1276,7 +1275,7 @@ async def test_finalize_consumes_recent_auth_once_and_mints_exact_arm(monkeypatc
     async def verified_actor(_token):
         return actor
 
-    monkeypatch.setattr(request_identity, 'actor_from_bearer_token', verified_actor)
+    monkeypatch.setattr(host, 'verify_bearer', verified_actor)
     middleware = OIDCBrowserSessionMiddleware(
         _noop_app,
         settings=_arm_settings(),

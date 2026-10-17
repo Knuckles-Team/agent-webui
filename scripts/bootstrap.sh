@@ -2,40 +2,29 @@
 # One-command setup for an agent-webui checkout (local or Claude Code cloud).
 #
 # From a fresh clone with git, python3 and node available this:
-#   1. checks out the pinned `.uv-workspace-siblings/` sources listed in
-#      scripts/siblings.lock (uv.lock references them as editable paths);
+#   1. checks out the pinned `.uv-workspace-siblings/` gate tooling listed in
+#      scripts/siblings.lock (no dependency installs from it);
 #   2. ensures uv >= 0.9 (older releases cannot fetch new CPython patch
 #      releases), installs the pinned Python and syncs the locked environment
 #      (`.venv`) with the test extra;
 #   3. installs the frontend dependencies from pnpm-lock.yaml;
 #   4. installs the pre-commit and pre-push git hooks from .config/pre-commit.yaml.
 #
-# epistemic-graph (a native Rust engine with no satisfying PyPI release) is not
-# built by default; tests that import agent_utilities' knowledge-graph or
-# numeric layers need it and error at collection without it. Pass --engine-wheel
-# to install the published wheel from the epistemic-graph `engine-main` GitHub
-# Release (seconds; set GH_TOKEN to avoid the anonymous rate limit), or --engine
-# to build it from the pinned source (Rust + maturin; tens of minutes cold).
-#
 # Idempotent and non-interactive. Afterwards run every commit-stage gate with:
 #   uvx pre-commit run --config .config/pre-commit.yaml --all-files
 #
-# Usage: scripts/bootstrap.sh [--siblings-only] [--engine | --engine-wheel] [--no-frontend] [--no-hooks]
+# Usage: scripts/bootstrap.sh [--siblings-only] [--no-frontend] [--no-hooks]
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 SIBLINGS_ONLY=0
-ENGINE=0
-ENGINE_WHEEL=0
 FRONTEND=1
 HOOKS=1
 for arg in "$@"; do
   case "$arg" in
     --siblings-only) SIBLINGS_ONLY=1 ;;
-    --engine) ENGINE=1 ;;
-    --engine-wheel) ENGINE_WHEEL=1 ;;
     --no-frontend) FRONTEND=0 ;;
     --no-hooks) HOOKS=0 ;;
     -h | --help)
@@ -126,36 +115,8 @@ PYTHON_VERSION="$(sed -n 's/^requires-python *= *">=\([0-9]*\.[0-9]*\).*/\1/p' p
 uv python install "$PYTHON_VERSION"
 
 SYNC=(uv sync --frozen --python "$PYTHON_VERSION" --extra test)
-if [ "$ENGINE" -eq 1 ]; then
-  log "building epistemic-graph from source; this is the slow step"
-else
-  SYNC+=(--no-install-package epistemic-graph)
-fi
 log "${SYNC[*]}"
-# Sync may change the environment even if the later wheel install fails.
-rm -f .venv/engine-wheel-receipt.json
 "${SYNC[@]}"
-
-# The published engine wheel, for the tests that import agent-utilities'
-# knowledge-graph and numeric layers. Plain curl: CI runners have no gh CLI.
-if [ "$ENGINE_WHEEL" -eq 1 ] && [ "$ENGINE" -eq 0 ]; then
-  api=https://api.github.com/repos/Knuckles-Team/epistemic-graph/releases/tags/engine-main
-  auth=()
-  [ -n "${GH_TOKEN:-}" ] && auth=(-H "Authorization: Bearer $GH_TOKEN")
-  wheel_dir="$(mktemp -d)"
-  curl --fail --silent --show-error --location "${auth[@]}" \
-    --output "$wheel_dir/release.json" "$api"
-  wheel_url="$(python3 scripts/release/verify_engine_wheel.py "$wheel_dir/release.json")"
-  log "installing $(basename "$wheel_url")"
-  curl --fail --silent --show-error --location --retry 3 "${auth[@]}" \
-    --output "$wheel_dir/$(basename "$wheel_url")" "$wheel_url"
-  python3 scripts/release/verify_engine_wheel.py "$wheel_dir/release.json" \
-    --wheel "$wheel_dir/$(basename "$wheel_url")" --receipt "$wheel_dir/receipt.json"
-  uv pip install --python .venv/bin/python "$wheel_dir/$(basename "$wheel_url")"
-  .venv/bin/python -c "import agent_utilities.numeric"
-  .venv/bin/python -c "import agent_webui.api_extensions"
-  cp "$wheel_dir/receipt.json" .venv/engine-wheel-receipt.json
-fi
 
 # ── 3. frontend dependencies (from the lockfile only) ───────────────────────
 if [ "$FRONTEND" -eq 1 ] && [ -f pnpm-lock.yaml ]; then

@@ -99,11 +99,9 @@ redaction, and the 64/65-character boundary. Bind these tested tests to
 record after publishing this source. This evidence covers failure logging;
 it does not establish acceptance of the other consumer requirements.
 
-### 2026-10-17: borrowed host composition (APIUI-06.1)
+### Host composition without an engine (APIUI-06.1)
 
-Extend the existing factory with an optional synchronous engine getter. Bind
-that getter and a snapshot of workspace helpers per ASGI invocation; reuse the
-existing bounded executor's context propagation. Host composition owns engine,
-agent and session lifecycle. Injection does not create identity or authority.
-GraphOS consumes this producer interface by merged commit until publication.
-The broader APIUI-06 migration remains separately assessed.
+The WebUI holds no graph engine. A host composes its own routes on the real
+factory through `application_composer`. Graph data reaches the WebUI only
+through Graph OS served operations in `host.py`. Host composition owns agent
+and session lifecycle. Injection does not create identity or authority.

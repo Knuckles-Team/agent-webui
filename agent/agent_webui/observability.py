@@ -61,6 +61,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 import traceback
 import uuid
@@ -117,29 +118,28 @@ _RESERVED_RECORD_ATTRS = frozenset(
 )
 
 
+_REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r'[a-zA-Z][a-zA-Z0-9+.-]*://[^\s\'"<>]+'), '<url>'),
+    (re.compile(r'[\w.+-]+@[\w-]+(?:\.[\w-]+)+'), '<email>'),
+    (re.compile(r'\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b'), '<host>'),
+    (re.compile(r'\b[\w-]+(?:\.[\w-]+)+:\d{2,5}\b'), '<host>'),
+    (re.compile(r'(?<![\w.])/(?:[\w.@-]+/)+[\w.@-]*'), '<path>'),
+)
+
+
 def sanitize_text(value: str) -> str:
-    """Redact endpoint/path/host:port/email-shaped text before it is logged.
-
-    Delegates to ``agent_utilities.core.log_privacy.sanitize_log_text`` —
-    reused, not reimplemented. Falls back to the raw text if agent_utilities
-    is unavailable for any reason, so logging itself never breaks a request.
-    """
-    try:
-        from agent_utilities.core.log_privacy import sanitize_log_text
-
-        return sanitize_log_text(value)
-    except Exception:  # noqa: BLE001 — logging must never fail the request
-        return value
+    """Redact URL, email, host:port, IP and path-shaped text before logging."""
+    text = str(value)
+    for pattern, replacement in _REDACTIONS:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 def current_correlation_id() -> str | None:
     """Return the ambient correlation id, if a request has bound one."""
-    try:
-        from agent_utilities.observability.correlation import get_correlation_id
+    from .host import get_correlation_id
 
-        return get_correlation_id()
-    except Exception:  # noqa: BLE001 — best-effort; never fails the caller
-        return None
+    return get_correlation_id()
 
 
 def new_error_id() -> str:

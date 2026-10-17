@@ -228,10 +228,8 @@ def _configure_identity(
     human: bool = True,
     allowed_origins: str = 'https://au.example',
 ) -> None:
-    import agent_utilities.security.request_identity as request_identity
-    from agent_utilities.core.config import config
-    from agent_utilities.security.actor_identity import ActorType
-    from agent_utilities.security.brain_context import ActorContext
+    from agent_webui import host
+    from agent_webui.host import ActorContext, config
 
     monkeypatch.setenv('WEBUI_SESSION_KEY', _SESSION_KEY)
     monkeypatch.setenv('WEBUI_OIDC_CLIENT_ID', 'agent-webui')
@@ -250,7 +248,7 @@ def _configure_identity(
     monkeypatch.setattr(config, 'allowed_origins', allowed_origins, raising=False)
     actor = ActorContext(
         actor_id='human-operator' if human else 'service-client',
-        actor_type=ActorType.HUMAN if human else ActorType.AUTOMATED_SERVICE,
+        actor_type='human' if human else 'automated_service',
         tenant_id='homelab',
         roles=('kg:read', 'kg:write'),
         authenticated=True,
@@ -260,9 +258,7 @@ def _configure_identity(
     async def actor_from_bearer_token(_token: str) -> ActorContext:
         return actor
 
-    monkeypatch.setattr(
-        request_identity, 'actor_from_bearer_token', actor_from_bearer_token
-    )
+    monkeypatch.setattr(host, 'verify_bearer', actor_from_bearer_token)
 
 
 def _app(

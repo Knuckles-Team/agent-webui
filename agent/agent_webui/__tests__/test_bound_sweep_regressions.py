@@ -258,66 +258,6 @@ class TestTunnelHostsSlicesBeforeBounding:
         assert len(data['hosts']) == 256
 
 
-class TestGetAllTasksHandlesTheListOfPydanticModelsShape:
-    """A DIFFERENT root cause than the oversized-collection bug, found while
-    auditing it, but the SAME failure family: a shape mismatch upstream of
-    `_public_external_result` that this route's broad ``except`` turns into
-    an indistinguishable-from-empty ``{}``.
-
-    ``SDDManager.get_all_tasks()`` (``agent_utilities/sdd/__init__.py``)
-    returns ``list[Tasks]`` -- a bare Python ``list`` of pydantic models,
-    which itself has no ``.model_dump()`` (only each ELEMENT does). The
-    ``plan_id``-filtered branch's ``tasks.model_dump() if hasattr(tasks,
-    'model_dump') else tasks`` line never applied here (a bare ``list``
-    fails that ``hasattr`` check), so the raw list of pydantic objects
-    always reached ``_public_external_result`` unconverted --
-    `_bounded_external_value` cannot serialize a pydantic instance and
-    raises ``ValueError('...unsupported value')`` on ANY non-empty result,
-    not just an oversized one. The existing shared fixture
-    (``tests/conftest.py``'s ``mock_sdd_manager``) mocks
-    ``get_all_tasks.return_value`` as a single ``MagicMock(tasks=[])``,
-    which auto-satisfies ``hasattr(..., 'model_dump')`` and never exercised
-    the real ``list[Tasks]`` shape -- masking this from every existing test.
-    """
-
-    def test_survives_the_real_list_of_tasks_shape(self, client):
-        task_group = MagicMock()
-        task_group.model_dump.return_value = {
-            'feature_id': 'feature-1',
-            'tasks': [{'id': 't1', 'description': 'do the thing'}],
-        }
-        manager = MagicMock()
-        manager.get_all_tasks.return_value = [task_group]
-
-        with patch('agent_webui.api_extensions.SDDManager', return_value=manager):
-            response = client.get('/api/enhanced/sdd/tasks')
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data == [
-            {
-                'feature_id': 'feature-1',
-                'tasks': [{'id': 't1', 'description': 'do the thing'}],
-            }
-        ]
-
-    def test_more_than_256_task_groups_is_sliced_not_raised(self, client):
-        groups = []
-        for i in range(300):
-            g = MagicMock()
-            g.model_dump.return_value = {'feature_id': f'feature-{i}', 'tasks': []}
-            groups.append(g)
-        manager = MagicMock()
-        manager.get_all_tasks.return_value = groups
-
-        with patch('agent_webui.api_extensions.SDDManager', return_value=manager):
-            response = client.get('/api/enhanced/sdd/tasks')
-
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data) == 256
-
-
 class TestDockerContainersSlicesBeforeBounding:
     def test_more_than_256_containers_still_returns_the_capped_page(self, client):
         raw_containers = [

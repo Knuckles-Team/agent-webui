@@ -306,7 +306,7 @@ def _session(tenant: str | None = 'tenant-a', actor: str = 'alice'):
         session.tenant = tenant
         session.actor.actor_id = actor
     return patch(
-        'agent_utilities.knowledge_graph.core.session.current_session',
+        'agent_webui.host.current_grant',
         return_value=session,
     )
 

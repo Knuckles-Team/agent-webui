@@ -12,13 +12,12 @@ Requirements: git, Python 3, Node.js (see `.node-version`) with `pnpm` or
 scripts/bootstrap.sh
 ```
 
-The script is idempotent. It checks out the sibling sources pinned in
+The script is idempotent. It checks out the gate tooling pinned in
 `scripts/siblings.lock` under `.uv-workspace-siblings/`, installs uv 0.9 or
 newer when needed, installs the pinned Python, runs `uv sync --frozen` with the
 test extra, installs frontend dependencies with `pnpm install --frozen-lockfile`,
 and installs the pre-commit and pre-push hooks from `.config/pre-commit.yaml`.
-Pass `--engine` to also build the epistemic-graph engine from source, which the
-knowledge-graph tests need. Claude Code cloud sessions run the same script
+Every Python dependency installs from PyPI. Claude Code cloud sessions run the same script
 through `.claude/hooks/session-start.sh`.
 
 ## Check the operator's change

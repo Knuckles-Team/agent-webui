@@ -15,8 +15,6 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from ..app_composition import EngineProvider
-
 
 @dataclass(frozen=True)
 class AppBackend:
@@ -51,32 +49,27 @@ def build_apps_router(apps: list[AppBackend]) -> APIRouter:
     return router
 
 
-def default_apps(engine_provider: EngineProvider | None = None) -> list[AppBackend]:
-    """Hosted apps over a supplied engine getter or the standalone default."""
+def default_apps() -> list[AppBackend]:
+    """The apps this WebUI hosts.
 
+    Markets reads market signals from the graph. Graph OS does not serve a
+    market-signal operation yet, so the app reports "not available".
+    """
+
+    from ..host import unavailable
     from .markets import EngineGateway, build_markets_router
 
     def gateway() -> EngineGateway:
-        from ..api_extensions import invoke_governed_helper
-
-        return EngineGateway(
-            client_provider=_resolve_engine_provider(engine_provider),
-            invoke=invoke_governed_helper,
-        )
+        raise unavailable('Markets', 'markets.signals.read')
 
     return [
         AppBackend(
             app_id='markets',
             router=build_markets_router(gateway),
-            available=lambda: gateway().supports_markets(),
-            unavailable_reason='The engine does not serve market signals yet',
+            available=lambda: False,
+            unavailable_reason=(
+                'Markets is not available: Graph OS does not serve the '
+                'markets.signals.read operation yet.'
+            ),
         )
     ]
-
-
-def _resolve_engine_provider(provider: EngineProvider | None) -> EngineProvider:
-    if provider is not None:
-        return provider
-    from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
-
-    return IntelligenceGraphEngine.get_active

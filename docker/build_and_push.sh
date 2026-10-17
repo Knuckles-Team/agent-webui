@@ -12,11 +12,11 @@
 # invoked standalone for a build-only smoke test.
 #
 # ── Pluggable build backend (2026-08-17) ─────────────────────────────────────
-# r820 was the only host in this cluster with a working `docker build` daemon (a
+# The control-plane build host was the only host in this cluster with a working `docker build` daemon (a
 # leftover from the pre-cutover Swarm era). It was deliberately stopped when
 # docker was sunset in the Swarm->RKE2 migration (2026-07-11), so this script
 # started failing outright with "cannot reach the docker daemon via context
-# 'r820'". The fix is NOT to start dockerd back up on r820 -- it is the sole
+# '<build-host>'". The fix is NOT to start dockerd back up on that host -- it is the sole
 # k8s control-plane node, cannot be safely rebooted (halts at POST awaiting a
 # keypress, and its iDRAC password lives in the OpenBao it would take down),
 # and a docker daemon rewrites iptables in ways that can disrupt cilium on a
@@ -44,24 +44,12 @@
 # before any build step runs, so "why did this ship stale bits" never has to
 # be reconstructed after the fact.
 #
-# Both backends feed the IDENTICAL Dockerfile the identical three named build
-# contexts (`context`, `au-src`, `eg-wheelhouse`) and build-args, so trap (b)
-# (pin the exact locally-built agent-utilities wheel FILE, never a bare
-# `agent-utilities[...]` name -- D-W5WR-1) is enforced by the Dockerfile
-# itself, identically, regardless of backend. The build-info.txt verification
-# (the check that closes trap/incident #3 -- "shipped stale/wrong frontend
-# code") is likewise ONE shared function, `assert_build_info`, that both
-# backends' captured output is checked against -- see WHY BUILD-INFO.TXT below
-# for why *how* that text is obtained still differs by backend.
-#
-# WHY THE EXTRA BUILD CONTEXT (au-src): agent-webui's runtime imports
-# agent_utilities.security.persistence_privacy and friends at module load,
-# but PyPI's newest agent-utilities (1.26.4) doesn't have that module -- see
-# the Dockerfile header for the full empirical trail. So the build needs
-# agent-utilities' actual source tree (built into a wheel in-image, no Rust
-# required). NEVER "simplify" this to `pip install agent-utilities[...]` --
-# that silently resolves from stale PyPI (D-W5WR-1) and crash-loops
-# production on a missing module.
+# Both backends feed the IDENTICAL Dockerfile one build context and the same
+# build-args. Every Python dependency, agent-utilities included, installs from
+# PyPI inside the image; there are no source build contexts. The build-info.txt
+# verification is ONE shared function, `assert_build_info`, that both backends'
+# captured output is checked against -- see WHY BUILD-INFO.TXT below for why
+# *how* that text is obtained still differs by backend.
 #
 # WHY build-info.txt, AND WHY THE CHECK'S MECHANICS DIFFER BY BACKEND: baked
 # into the served SPA bundle at BUILD_SHA/BUILT_AT (see Dockerfile's
@@ -83,34 +71,17 @@
 # release or `docker/deploy.sh` would deploy by digest. Under docker,
 # `--build-only` verifies the local tag directly and never pushes at all.
 #
-# ── TEMPORARY (2026-08-17): epistemic-graph PyPI wheelhouse ── BUG-258/
-# BUG-262 added the `graphos` extra, which requires
-# `epistemic-graph[full]>=2.23.2,<3.0.0` (agent-utilities' own pyproject.toml
-# comment on that floor). Verified empirically: PyPI's newest published
-# epistemic-graph is still 2.23.0 -- the floor is UNSATISFIABLE from the index
-# alone. epistemic-graph's own repo has released source up to 2.26.1 (tagged,
-# changelogged) but its PyPI publish pipeline hasn't kept pace -- a gap in
-# THAT project, not this one. Rather than block BUG-258/BUG-262 on an
-# unrelated repo's publish backlog, EG_WHEELHOUSE_PATH (required, see below)
-# supplies a pre-built wheel out of band via a THIRD named build context,
-# `eg-wheelhouse`, fed to BOTH backends identically. DELETE EG_WHEELHOUSE_PATH
-# (here, in docker/Dockerfile, and in docker/deploy.sh's docs) the moment
-# PyPI's epistemic-graph catches up to agent-utilities' declared floor.
-#
 # Usage:
 #   docker/build_and_push.sh [--push] [--tag TAG] [--backend auto|docker|buildkit]
 #
-# Env overrides (all optional except EG_WHEELHOUSE_PATH, see above):
-#   AU_SRC_PATH         path to an agent-utilities checkout (default: ../agent-utilities)
-#   EG_WHEELHOUSE_PATH  REQUIRED (temporary, see above): a directory containing
-#                        a pre-built epistemic_graph-*.whl at >=2.23.2,<3.0.0
+# Env overrides (all optional):
 #   IMAGE               image name:tag prefix (default: knucklessg1/agent-webui)
 #   BUILD_BACKEND       auto (default) | docker | buildkit -- see detection order above
 #   DOCKER               full docker invocation to use verbatim if set (bypasses
 #                        the local-daemon/DOCKER_CONTEXT probe below entirely)
 #   DOCKER_BIN           docker binary to invoke (default: docker)
 #   DOCKER_CONTEXT        docker context to fall back to if no local daemon is
-#                        reachable (default: r820)
+#                        reachable (default: the build-host context)
 #   DOCKER_BUILDER        buildx builder to build with, explicitly (default:
 #                        "default", buildx's own name for the resolved
 #                        context's daemon-embedded builder) -- never left to
@@ -124,7 +95,6 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-AU_SRC_PATH="${AU_SRC_PATH:-${REPO_ROOT}/../agent-utilities}"
 IMAGE="${IMAGE:-knucklessg1/agent-webui}"
 BUILD_BACKEND="${BUILD_BACKEND:-auto}"
 DOCKER_BIN="${DOCKER_BIN:-docker}"
@@ -167,7 +137,7 @@ probe_docker() {
     BACKEND_REASON="docker context '${DOCKER_CONTEXT}' reachable"
     return 0
   fi
-  DOCKER_PROBE_ERR="no local docker daemon, and context '${DOCKER_CONTEXT}' unreachable (is r820 up? 'docker context ls' shows it configured?)"
+  DOCKER_PROBE_ERR="no local docker daemon, and context '${DOCKER_CONTEXT}' unreachable (is the build host up? 'docker context ls' shows it configured?)"
   return 1
 }
 
@@ -215,7 +185,7 @@ select_backend() {
         log "FAILED: no build backend available."
         log "  docker:   ${DOCKER_PROBE_ERR}"
         log "  buildkit: ${BUILDKIT_PROBE_ERR}"
-        log "Do NOT start dockerd on r820 to work around this -- it is the sole" \
+        log "Do NOT start dockerd on the build host to work around this -- it is the sole" \
             "k8s control-plane node, cannot be safely rebooted, and dockerd's" \
             "iptables rewrites can disrupt cilium on a live cluster."
         exit 69
@@ -252,35 +222,6 @@ assert_build_info() {
 
 select_backend
 
-if [ ! -d "${AU_SRC_PATH}" ]; then
-  log "AU_SRC_PATH does not exist: ${AU_SRC_PATH}"
-  log "set AU_SRC_PATH to an agent-utilities checkout (source, not a wheel)"
-  exit 66
-fi
-if ! grep -q '^name = "agent-utilities"' "${AU_SRC_PATH}/pyproject.toml" 2>/dev/null; then
-  log "AU_SRC_PATH does not look like an agent-utilities source checkout" \
-      "(no pyproject.toml declaring name=\"agent-utilities\"): ${AU_SRC_PATH}"
-  log "this build NEVER installs agent-utilities from PyPI (D-W5WR-1) -- it must be a real source tree"
-  exit 66
-fi
-
-# ── TEMPORARY (see header): epistemic-graph wheelhouse, required by BOTH backends
-if [ -z "${EG_WHEELHOUSE_PATH:-}" ]; then
-  log "FAILED: EG_WHEELHOUSE_PATH is not set."
-  log "epistemic-graph's PyPI releases (newest: 2.23.0) do not yet satisfy" \
-      "agent-utilities' graphos extra floor (>=2.23.2,<3.0.0) -- see this" \
-      "script's header for the full explanation. Set EG_WHEELHOUSE_PATH to a" \
-      "directory containing a pre-built epistemic_graph-*.whl at a satisfying" \
-      "version (a shared one may already exist under a wheelhouse location" \
-      "other lanes populate, or build one from the epistemic-graph checkout" \
-      "with 'maturin build --release --features full')."
-  exit 66
-fi
-if [ ! -d "${EG_WHEELHOUSE_PATH}" ] || ! ls "${EG_WHEELHOUSE_PATH}"/epistemic_graph-*.whl >/dev/null 2>&1; then
-  log "EG_WHEELHOUSE_PATH does not contain an epistemic_graph-*.whl: ${EG_WHEELHOUSE_PATH}"
-  exit 66
-fi
-
 BUILD_SHA="$(cd "${REPO_ROOT}" && git rev-parse --short HEAD)"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -302,7 +243,7 @@ docker_get_build_info() {
 
 build_and_push_docker() {
   log "Building ${IMAGE}:${TAG} via docker (${DOCKER_CMD})" \
-      "(au-src=${AU_SRC_PATH}, eg-wheelhouse=${EG_WHEELHOUSE_PATH}, sha=${BUILD_SHA})"
+      "(sha=${BUILD_SHA})"
   # `buildx build --builder "${DOCKER_BUILDER}"` (not a bare `docker build`):
   # discovered running this for real -- a host's AMBIENT "current" buildx
   # builder (`docker buildx ls`'s `*`-marked entry, ~/.docker/buildx state,
@@ -316,8 +257,6 @@ build_and_push_docker() {
   # other work on a shared dev host).
   ${DOCKER_CMD} buildx build --builder "${DOCKER_BUILDER:-default}" \
     -f "${REPO_ROOT}/docker/Dockerfile" \
-    --build-context au-src="${AU_SRC_PATH}" \
-    --build-context eg-wheelhouse="${EG_WHEELHOUSE_PATH}" \
     --build-arg BUILD_SHA="${BUILD_SHA}" \
     --build-arg BUILD_TIME="${BUILD_TIME}" \
     -t "${IMAGE}:${TAG}" \
@@ -343,7 +282,7 @@ build_and_push_docker() {
 
 build_and_push_buildkit() {
   log "Building ${IMAGE}:${TAG} via buildkitd@${RESOLVED_ADDR}" \
-      "(au-src=${AU_SRC_PATH}, eg-wheelhouse=${EG_WHEELHOUSE_PATH}, sha=${BUILD_SHA})"
+      "(sha=${BUILD_SHA})"
   local metadata_file
   metadata_file="$(mktemp /var/tmp/agent-webui-build-meta.XXXXXX.json)"
   # shellcheck disable=SC2064
@@ -352,10 +291,6 @@ build_and_push_buildkit() {
     --frontend dockerfile.v0 \
     --local context="${REPO_ROOT}" \
     --local dockerfile="${REPO_ROOT}/docker" \
-    --local au-src="${AU_SRC_PATH}" \
-    --opt context:au-src=local:au-src \
-    --local eg-wheelhouse="${EG_WHEELHOUSE_PATH}" \
-    --opt context:eg-wheelhouse=local:eg-wheelhouse \
     --opt build-arg:BUILD_SHA="${BUILD_SHA}" \
     --opt build-arg:BUILD_TIME="${BUILD_TIME}" \
     --output "type=image,\"name=${IMAGE}:${TAG},${LATEST_TAG}\",push=true" \

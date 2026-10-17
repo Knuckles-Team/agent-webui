@@ -20,6 +20,7 @@ Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`
 
 ## APIUI-06.1 host composition
 
-Extend `agent/agent_webui/__tests__/test_application_composer.py` with real
-factory requests against two injected apps. Verify info, catalog and backend routes, bounded helper calls, and interleaved HTTP and WebSocket/stream completion.
-Verify provider failure without singleton acquisition, context reset, and absence of borrowed-resource shutdown. Keep standalone resolver tests. No live credentials or stores.
+`agent/agent_webui/__tests__/test_served_operations.py` drives the real factory
+with a fake Graph OS transport. Verify each wired route sends its served
+operation and each unwired route answers 501 `not_available`. No live
+credentials or stores.

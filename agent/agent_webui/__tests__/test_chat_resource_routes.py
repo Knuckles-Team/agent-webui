@@ -79,7 +79,7 @@ def _routes_by_path(app) -> dict[str, set[str]]:
 
 def _configure_verifier(patch: pytest.MonkeyPatch) -> None:
     """The complete JWT verifier every WebUI listener requires."""
-    from agent_utilities.core.config import config
+    from agent_webui.host import config
 
     patch.setattr(
         config,
@@ -100,35 +100,12 @@ def served_authority(monkeypatch):
     without both, which a bare test process has neither of. Setting them is
     part of standing the boundary up, not of weakening it.
     """
-    from agent_utilities.core.config import config
+    from agent_webui.host import config
 
     # The complete JWT verifier comes from the shared autouse
     # ``_complete_jwt_verifier`` fixture; the module-scoped app below
     # configures its own (it is built before function-scoped fixtures run).
     monkeypatch.setattr(config, 'kg_policy_version', 'test-1', raising=False)
-
-    # Minting a real GraphSession performs a placement read against a live
-    # engine/coordinator, which a unit test process has none of. Project the
-    # verified actor into a session directly instead, exactly as
-    # ``test_mcp_delegation_routes.py`` does -- identity verification itself
-    # is exercised by the security-boundary suite; what this file pins is
-    # what happens AFTER an authenticated request is admitted.
-    from agent_utilities.knowledge_graph.core.session import GraphSession
-
-    def _session_for(actor: Any) -> GraphSession:
-        return GraphSession(
-            actor=actor,
-            tenant=str(actor.tenant_id or 'test-tenant'),
-            scopes=frozenset({'kg:read', 'kg:write', 'kg:admin'}),
-            graph='test-graph',
-            policy_version='test-1',
-            trace_context='chat-resource-routes-test',
-            audience='agent-webui-test',
-        )
-
-    monkeypatch.setattr(
-        'agent_utilities.security.request_identity.mint_graph_session', _session_for
-    )
 
 
 def _authenticated(app: Any) -> Any:

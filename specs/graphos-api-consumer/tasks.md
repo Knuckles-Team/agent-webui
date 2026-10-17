@@ -18,4 +18,4 @@
 
 No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `WEBUI-API-R001`, `WEBUI-API-R002`, `WEBUI-API-R003`, `WEBUI-API-R004`, `WEBUI-API-R005`, `APIUI-01`, `APIUI-02`, `APIUI-03`, `APIUI-03.1`, `APIUI-03.2`, `APIUI-03.3`, `APIUI-03.4`, `APIUI-04`, `APIUI-05`, `APIUI-06`, `WEBUI-API-R003.1`, `WEBUI-API-R003.2`.
 
-- [x] APIUI-06.1: Bind borrowed engine/helper composition per app. Preserve standalone defaults; prove isolation, failure and lifecycle through the real factory.
+- [x] APIUI-06.1: Compose host routes through `application_composer` with no engine in the WebUI; prove served-operation calls and `not_available` answers through the real factory.

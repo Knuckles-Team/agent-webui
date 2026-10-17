@@ -21,8 +21,10 @@ from fastapi.testclient import TestClient
 
 
 def _make_client(mock_agent, helpers: dict) -> TestClient:
+    from _agent_webui_shared_fixtures import authenticated_asgi_app
+
     app = create_agent_web_app(mock_agent, helpers)
-    return TestClient(app, raise_server_exceptions=False)
+    return TestClient(authenticated_asgi_app(app), raise_server_exceptions=False)
 
 
 @pytest.fixture

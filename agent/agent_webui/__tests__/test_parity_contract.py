@@ -59,9 +59,10 @@ def _normalize(path: str) -> str:
 
     Both frontend template-literal placeholders (``${var}``) and FastAPI
     path captures (``{name}``) are flattened to ``*``. A trailing slash is
-    stripped so ``/foo`` and ``/foo/`` compare equal.
+    stripped so ``/foo`` and ``/foo/`` compare equal. A placeholder that the
+    fetch pattern cut at a nested quote is a query suffix and is dropped.
     """
-    path = path.split('?', 1)[0]
+    path = re.sub(r'\$\{[^}]*$', '', path).split('?', 1)[0]
     path = path.split('#', 1)[0]
     path = _TEMPLATE_PLACEHOLDER.sub('*', path)
     path = _ROUTE_PLACEHOLDER.sub('*', path)
