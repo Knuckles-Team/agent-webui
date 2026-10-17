@@ -3,6 +3,14 @@
 This file defines the current repository contract for contributors and
 automation. `CLAUDE.md` imports it, so edit this file when the contract changes.
 
+## Boundaries
+
+- **Owns:** what a person sees in the browser.
+- **Never builds:** data access other than through graph-os, or a decision (route decisions to epistemic-graph). Served operations go to graph-os.
+- **Allowed dependencies:** `graph_os.client` and agent-connector-sdk. It imports no EG or graph-os internals in-process.
+
+Route every feature with the [ecosystem boundaries standard](https://github.com/Knuckles-Team/pipelines/blob/main/reference/ecosystem-boundaries.md) before any code. A part this repository does not own goes to its owner's specs.
+
 ## What this repository owns
 
 Agent WebUI owns the browser presentation layer for Graph OS and the FastAPI
