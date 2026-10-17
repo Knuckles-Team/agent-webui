@@ -13,18 +13,14 @@ classifiers = [
     "Environment :: Console",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3"]
-# D-W6-BSF-1: raised from >=3.11 -- agent-utilities (a REAL runtime
-# dependency: the Dockerfile's own frontend-build/runtime stages document
-# this app importing agent_utilities.security.persistence_privacy and
-# friends at module load, not merely a test-extra floor) requires
-# >=3.12,<3.15. The `test` extra's `agent-utilities[agent-headless,graph]`
-# pin only surfaced this because it is now resolved as a real editable
-# path dependency (D-W6-BSF-1's sibling fix) instead of a loose `>=2.0.0`
-# published-floor reference that never triggered interpreter-floor
-# resolution.
 requires-python = ">=3.12,<3.15"
 dependencies = [
-    "agent-utilities>=2.5.0",
+    # The in-run harness: only `agent_utilities.core.paths` (XDG config/data dirs).
+    "agent-utilities>=3.0.0",
+    # Persistence privacy: `agent_connector_sdk.privacy` scrubs values before the
+    # WebUI stores or logs them.
+    "agent-connector-sdk>=0.1.0",
+    "httpx>=0.28.1",
     "fastapi>=0.143.3",
     "langfuse>=5.0.2",
     # Match the pinned AU agent-headless runtime; retain the browser UI extra.
@@ -40,11 +36,7 @@ dependencies = [
     "uvicorn>=0.54.0",
     "watchfiles>=1.3.0",
     "logfire[fastapi,starlette]>=5.2.0",
-    # D-WA-1 (reports/deferred/lane-webui-auth.md): agent_utilities.security.auth._decode_jwt
-    # needs joserfc to verify any bearer JWT; its absence turns into a 401 "Token validation
-    # failed" that reads as a rejected credential rather than a missing dependency. Declared
-    # directly (mirrors requirements.txt) so a fresh image build gets it unconditionally
-    # regardless of which agent-utilities version/extras the image-build step installs.
+    # `agent_webui.host.decode_jwt` verifies bearer JWTs as an OpenID Connect relying party.
     "joserfc>=1.7.5"
 ]
 
@@ -59,50 +51,6 @@ test = [
     "opentelemetry-instrumentation-starlette>=0.65b0",
     "opentelemetry-instrumentation-fastapi>=0.65b0",
     "opentelemetry-instrumentation-asgi>=0.65b0",
-    # `agent` was renamed to `agent-runtime` upstream (agent-utilities
-    # pyproject.toml); the old name is a silent no-op extra (uv/pip warn and
-    # skip it rather than error), so this floor was quietly installing without
-    # the agent runtime closure. Caught building docker/Dockerfile (D-WUI-30).
-    # `agent-runtime` -> `agent-headless`: `agent-runtime` self-references
-    # agent-utilities' own `ag-ui` extra (agent-webui -- THIS repo -- as a
-    # dependency of its own dependency closure) and `terminal`
-    # (agent-terminal-ui), neither of which this serving-plane package
-    # renders or needs; `agent-headless` is agent-utilities' purpose-built
-    # "same skill/runtime stack, minus the frontend component libs" extra
-    # (see that extra's own comment in agent-utilities' pyproject.toml) and
-    # is what docker/Dockerfile's runtime `uv pip install` already installs
-    # (`[graph,mcp,metrics]`, D-WD-6/LANE F) -- this mirrors that surface for
-    # the `test` extra instead of the circular `agent-runtime`. Verified: the
-    # ~50 `agent_utilities` submodules this repo imports (knowledge_graph,
-    # core, security, gateway, observability, models, mcp, sdd,
-    # orchestration, server) all import cleanly under
-    # `[agent-headless,graph,metrics]` alone, with epistemic-graph absent.
-    # LANE F: `metrics` (prometheus-client, a single light pure-Python wheel)
-    # turns the already-wired `GatewayMetricsMiddleware` (installed for free
-    # by `register_graph_routes` — see server.py's `create_agent_web_app`)
-    # from a graceful no-op into real per-route request-count/duration series
-    # on `GET /metrics` — reusing the EXISTING gateway metrics stack instead
-    # of a bespoke usage-analytics store.
-    #
-    # BUG-258/BUG-262 (2026-08-17): "imports cleanly ... with epistemic-graph
-    # absent" (above) was true and is still true -- import-time cleanliness
-    # was never the question. GOC-73 moved `epistemic-graph` from
-    # agent-utilities' hard base dependency to the opt-in `graphos` extra;
-    # before GOC-73 this repo got the engine CLIENT for free as a transitive
-    # base dep, so nobody had to name it. This app's own KG/MCP surface
-    # (`agent_webui.api_extensions`'s `/graph/*` routes, the MCP-servers
-    # inventory panel) resolves the engine at CALL time via
-    # `agent_utilities.knowledge_graph.core.graph_compute.GraphComputeEngine`,
-    # which needs `epistemic_graph.client` importable to reach the deployed
-    # `GRAPH_SERVICE_ENDPOINTS`. Confirmed live (2026-08-17): a freshly
-    # restarted pod logs "engine surface discovery: 'epistemic_graph' client
-    # unavailable ... ModuleNotFoundError" for every request that needs it —
-    # `graph-os` (a separately, correctly-packaged process) reaches the SAME
-    # engine fine, proving this is a missing-dependency gap in THIS image's
-    # closure, not a cluster outage. `graphos` pulls the published
-    # `epistemic-graph[full]` wheel like any other PyPI dependency (see
-    # agent-utilities' own `graphos` extra comment for the full contract).
-    "agent-utilities[agent-headless,graph,graphos,metrics]>=2.0.0"
 ]
 
 [[project.authors]]
@@ -170,26 +118,11 @@ override-dependencies = [
     "fastmcp-slim[client,server]>=4.1.0",
 ]
 
-# Development and ecosystem validation use the co-versioned sibling source so
-# the lock cannot silently fall back to an older published security posture.
+# The harness and SDK resolve from their source repositories until they publish.
 # This table is uv-only and is not included in the wheel's dependency metadata.
-#
-# D-W6-BSF-1 (2026-08-07): agent-utilities became its own self-contained uv
-# WORKSPACE ROOT the same day (D-75-1/D-CIP-19/D-W3BP-4). uv rejects a
-# workspace member that is itself a workspace root ("Nested workspaces are
-# not supported"), which broke `agent-utilities = { workspace = true }` here
-# for every checkout of this repo, canonical included (verified: `uv run
-# --all-extras python -c "..."` failed identically on a clean, unmodified
-# canonical checkout before this fix, both as a plain source AND when this
-# repo declared its own `[tool.uv.workspace]` naming agent-utilities as a
-# member -- the nesting error is unconditional either way). The fix is a
-# plain editable PATH dependency instead of a workspace-member reference --
-# path deps have no such restriction, and this repo has no other reason to
-# be a uv workspace itself. `.uv-workspace-siblings/agent-utilities` is a
-# local, untracked symlink to the real sibling checkout (see `.gitignore`'s
-# matching comment); dev/lane-machine-only, materialized once per checkout.
 [tool.uv.sources]
-agent-utilities = { path = ".uv-workspace-siblings/agent-utilities", editable = true }
+agent-utilities = { git = "https://github.com/Knuckles-Team/agent-utilities", branch = "refactor/au-cut-to-eg" }
+agent-connector-sdk = { git = "https://github.com/Knuckles-Team/agent-connector-sdk", branch = "main" }
 
 [tool.ruff]
 line-length = 88

@@ -9,9 +9,9 @@ from .snapshots import Caller, actor_ref
 
 def verified_caller() -> Caller:
     """The caller's tenant and a digest of their actor id, from the ambient
-    verified ``GraphSession``; 401 when there is no tenant-bound session."""
+    verified request grant; 401 when there is no tenant-bound session."""
 
-    from agent_utilities.knowledge_graph.core.session import current_session
+    from ...host import current_grant as current_session
 
     session = current_session()
     tenant = str(getattr(session, 'tenant', '') or '').strip() if session else ''

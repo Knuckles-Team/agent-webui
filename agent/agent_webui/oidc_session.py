@@ -377,7 +377,7 @@ def _trusted_request_scheme(scope: Any, hostname: str) -> str | None:
 
 
 def _configured_origins() -> set[str]:
-    from agent_utilities.core.config import config
+    from .host import config
 
     return {
         entry.strip().lower().removesuffix('/')
@@ -939,8 +939,9 @@ class OIDCBrowserSessionMiddleware:
     ) -> dict[str, Any]:
         """Verify one provider JWT through the canonical Graph OS verifier."""
 
-        from agent_utilities.core.config import config
-        from agent_utilities.security.auth import _decode_jwt, _fetch_jwks
+        from .host import config
+        from .host import decode_jwt as _decode_jwt
+        from .host import fetch_jwks as _fetch_jwks
 
         jwks_uri = str(config.auth_jwt_jwks_uri or '').strip()
         if not jwks_uri or not audience:
@@ -1163,7 +1164,7 @@ class OIDCBrowserSessionMiddleware:
 
     async def _stepup_identity(self, token: str) -> tuple[str, str] | None:
         try:
-            from agent_utilities.core.config import config
+            from .host import config
 
             claims = await self._verified_jwt_claims(
                 token,
@@ -1332,7 +1333,7 @@ class OIDCBrowserSessionMiddleware:
     async def _finalize_actor(
         self, token: str, grant: dict[str, Any]
     ) -> tuple[Any, str, str]:
-        from agent_utilities.security.request_identity import actor_from_bearer_token
+        from .host import verify_bearer as actor_from_bearer_token
 
         actor = await actor_from_bearer_token(token)
         actor_id = str(getattr(actor, 'actor_id', '') or '').strip()
@@ -1779,7 +1780,7 @@ class OIDCBrowserSessionMiddleware:
         id_token: str,
     ) -> _VerifiedStepupClaims | None:
         try:
-            from agent_utilities.core.config import config
+            from .host import config
 
             access_claims = await self._verified_jwt_claims(
                 access_token, audience=str(config.auth_jwt_audience or '')

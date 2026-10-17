@@ -8,7 +8,6 @@ with enhanced workspace management, real-time observability via Logfire,
 and a high-performance React-based frontend.
 """
 
-import importlib
 import json
 import logging
 import os
@@ -528,35 +527,16 @@ def _resolve_access_log_policy(listener_host: str) -> str:
 
 
 def _require_graph_session_minter() -> Any:
-    """Fail startup unless request identity can mint a scoped graph session.
+    """Return the request-grant minter the identity gate binds per request.
 
-    The WebUI mints its own **unrouted** session
-    (:func:`agent_webui.graph_identity.mint_frontend_graph_session`): identical
-    verified authority, no engine placement route. See that module for why a
-    thin frontend must not bind one — in short, the engine gates
-    ``PlacementRoute`` behind cluster-administrator capability, so the shared
-    minter would make every authenticated request depend on authority a
-    frontend has no business holding.
-
-    The shared boundary is still required to be importable and to expose its
-    own minter: it owns the unauthenticated path, ``UNAUTHENTICATED_PATHS``,
-    and the actor projection this specialization builds on, and the contract
-    test pins the two minters' authority against each other.
+    The WebUI mints no graph session. Graph OS admits every served operation
+    the WebUI calls with the caller's own credential. The grant carries only
+    the route scopes the WebUI enforces on its own routes.
     """
 
-    try:
-        module = importlib.import_module('agent_utilities.security.request_identity')
-    except Exception as exc:  # noqa: BLE001 - converted to a startup contract
-        raise RuntimeError(
-            'Agent WebUI requires agent_utilities request identity support'
-        ) from exc
-    if not callable(getattr(module, 'mint_graph_session', None)):
-        raise RuntimeError(
-            'Agent WebUI requires callable request_identity.mint_graph_session'
-        )
-    from .graph_identity import mint_frontend_graph_session
+    from .host import grant_for
 
-    return mint_frontend_graph_session
+    return grant_for
 
 
 def _startup_security_contract(
@@ -1143,7 +1123,7 @@ def _origin_headers_are_singular(
 def _configured_allowed_origins() -> set[str]:
     """The normalized ``ALLOWED_ORIGINS`` allowlist from ``AgentConfig``."""
 
-    from agent_utilities.core.config import config
+    from .host import config
 
     return {
         value.strip().rstrip('/').lower()
@@ -1432,7 +1412,7 @@ class WebUIAuthorizationMiddleware:
             await self.app(scope, receive, send)
             return
 
-        from agent_utilities.knowledge_graph.core.session import current_session
+        from .host import current_grant as current_session
 
         path, method = _request_route(scope)
         required = self._required_scope(scope_type=scope_type, path=path, method=method)
@@ -1577,10 +1557,7 @@ class RequestObservabilityMiddleware:
             await self.app(scope, receive, send)
             return
 
-        from agent_utilities.observability.correlation import (
-            CORRELATION_HEADER,
-            bind_carrier,
-        )
+        from .host import CORRELATION_HEADER, bind_correlation
 
         inbound_correlation_id = _inbound_header_value(scope, CORRELATION_HEADER)
         path, http_method = _request_route(scope)
@@ -1595,8 +1572,8 @@ class RequestObservabilityMiddleware:
         # Mint a fresh id when the caller sent none. ``bind_carrier(None)``
         # would reuse any ambient id, and the host thread carries one for its
         # whole lifetime, so every request would log the same id.
-        with bind_carrier(
-            {CORRELATION_HEADER: inbound_correlation_id or uuid.uuid4().hex}
+        with bind_correlation(
+            inbound_correlation_id or uuid.uuid4().hex
         ) as correlation_id:
             log_fields['correlation_id'] = correlation_id
             await self._serve_observed(
@@ -1675,7 +1652,7 @@ def _jwt_verifier_fields() -> tuple[Any, Any, Any]:
     as one tuple everywhere rather than being re-listed at each call site.
     """
 
-    from agent_utilities.core.config import config
+    from .host import config
 
     return (
         config.auth_jwt_jwks_uri,
@@ -1720,7 +1697,7 @@ def _configure_served_boundary(
     host-injected session boundary.
     """
 
-    from agent_utilities.core.config import config
+    from .host import config
 
     host = (listener_host or config.host or '127.0.0.1').strip() or '127.0.0.1'
 
@@ -1762,36 +1739,44 @@ def _prevalidated_jwt_claims(scope: Any) -> dict[str, Any] | None:
     return None
 
 
-async def _admit_websocket_tenant(
-    scope: Any,
-    send: Any,
-    *,
-    actor: Any,
-    session: Any,
-) -> bool:
-    """Whether tenant admission permits this websocket; closes it if not.
+async def _send_json(send: Any, status: int, payload: dict[str, Any]) -> None:
+    """Send one JSON refusal with a ``WWW-Authenticate: Bearer`` challenge."""
 
-    ``False`` always means the socket has ALREADY been closed with the code
-    that matches the reason, so the caller must simply return.
+    await send(
+        {
+            'type': 'http.response.start',
+            'status': status,
+            'headers': [
+                (b'content-type', b'application/json'),
+                (b'www-authenticate', b'Bearer'),
+            ],
+        }
+    )
+    await send({'type': 'http.response.body', 'body': json.dumps(payload).encode()})
+
+
+class ActorIdentityMiddleware:
+    """The unauthenticated leg of the identity gate.
+
+    A liveness path is served under a non-authoritative actor with no grant.
+    Every other request without a verified identity gets 401.
     """
 
-    from .graph_admission import (
-        EngineAdmissionUnavailableError,
-        TenantNotProvisionedError,
-        ensure_tenant_admission,
-    )
+    def __init__(self, app: Any) -> None:
+        self.app = app
 
-    try:
-        await ensure_tenant_admission(actor, session)
-    except TenantNotProvisionedError:
-        _log_ws_denial(scope, reason='tenant-not-provisioned')
-        await send({'type': 'websocket.close', 'code': 4403})
-        return False
-    except EngineAdmissionUnavailableError:
-        _log_ws_denial(scope, reason='engine-admission-unavailable')
-        await send({'type': 'websocket.close', 'code': 4503})
-        return False
-    return True
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        from .host import ActorContext, use_actor, use_grant
+
+        path = str(scope.get('path') or '')
+        if path not in _PUBLIC_LIVENESS_PATHS:
+            await _send_json(send, 401, {'error': 'Verified Bearer identity required'})
+            return
+        probe = ActorContext(
+            actor_id='health-probe', tenant_id='health', authenticated=False
+        )
+        with use_actor(probe), use_grant(None):
+            await self.app(scope, receive, send)
 
 
 async def _serve_public_shell(app: Any, scope: Any, receive: Any, send: Any) -> None:
@@ -1803,13 +1788,12 @@ async def _serve_public_shell(app: Any, scope: Any, receive: Any, send: Any) -> 
     inherited graph session suspended (the shared liveness-path posture).
     """
 
-    from agent_utilities.knowledge_graph.core.session import suspend_session
-    from agent_utilities.security.brain_context import ActorContext, use_actor
+    from .host import ActorContext, use_actor, use_grant
 
     anonymous = ActorContext(
         actor_id='public-shell', tenant_id='public', authenticated=False
     )
-    with use_actor(anonymous), suspend_session():
+    with use_actor(anonymous), use_grant(None):
         await app(scope, receive, send)
 
 
@@ -1832,11 +1816,8 @@ def _ensure_actor_identity_middleware(
     :mod:`agent_webui.graph_identity`.
     """
 
-    from agent_utilities.security.request_identity import (
-        ActorIdentityMiddleware,
-        actor_from_bearer_token,
-        actor_from_claims,
-    )
+    from .host import actor_from_claims
+    from .host import verify_bearer as actor_from_bearer_token
 
     async def _authenticated_http_actor(scope: Any) -> Any:
         """Return the verified actor for an HTTP request, or ``None``.
@@ -1850,8 +1831,7 @@ def _ensure_actor_identity_middleware(
         ``actor_from_claims`` / ``actor_from_bearer_token``.
         """
 
-        from agent_utilities.core.config import config
-        from agent_utilities.security.auth import parse_bearer_authorization
+        from .host import config, parse_bearer_authorization
 
         try:
             token = parse_bearer_authorization(_authorization_header_values(scope))
@@ -1948,7 +1928,7 @@ def _ensure_actor_identity_middleware(
             failure in a browser (W-18).
             """
 
-            from agent_utilities.core.config import config
+            from .host import config
 
             if not valid_credential:
                 # W-18: a raw Authorization header was present but was not
@@ -1993,11 +1973,6 @@ def _ensure_actor_identity_middleware(
                 await send({'type': 'websocket.close', 'code': 4401})
                 return
 
-            if not await _admit_websocket_tenant(
-                scope, send, actor=actor, session=session
-            ):
-                return
-
             await self._serve_bound_websocket(
                 scope, receive, send, actor=actor, session=session
             )
@@ -2013,11 +1988,9 @@ def _ensure_actor_identity_middleware(
         ) -> None:
             """Serve the socket with ``actor``/``session`` bound for its lifetime."""
 
-            from agent_utilities.knowledge_graph.core.session import (
-                reset_session,
-                set_session,
-            )
-            from agent_utilities.security.brain_context import reset_actor, set_actor
+            from .host import reset_actor, set_actor
+            from .host import reset_grant as reset_session
+            from .host import set_grant as set_session
 
             actor_token = set_actor(actor)
             session_token = set_session(session)
@@ -2037,17 +2010,10 @@ def _ensure_actor_identity_middleware(
             the injected minter in place of the module-level one.
             """
 
-            from agent_utilities.knowledge_graph.core.session import (
-                SessionExpiredError,
-                reset_session,
-                set_session,
-            )
-            from agent_utilities.security.brain_context import (
-                CredentialExpiredError,
-                reset_actor,
-                set_actor,
-            )
-            from agent_utilities.security.request_identity import _send_json
+            from .host import CredentialExpiredError, reset_actor, set_actor
+            from .host import CredentialExpiredError as SessionExpiredError
+            from .host import reset_grant as reset_session
+            from .host import set_grant as set_session
 
             try:
                 session = mint_graph_session(actor)
@@ -2062,26 +2028,6 @@ def _ensure_actor_identity_middleware(
                 await _send_json(send, 403, {'error': 'Verified tenant claim required'})
                 return
 
-            from .graph_admission import (
-                EngineAdmissionUnavailableError,
-                TenantNotProvisionedError,
-                ensure_tenant_admission,
-            )
-
-            try:
-                await ensure_tenant_admission(actor, session)
-            except TenantNotProvisionedError as exc:
-                _log_denial(
-                    scope, event='authorization', reason='tenant_not_provisioned'
-                )
-                await _send_json(send, 403, {'error': str(exc)})
-                return
-            except EngineAdmissionUnavailableError as exc:
-                _log_denial(
-                    scope, event='authorization', reason='engine_admission_unavailable'
-                )
-                await _send_json(send, 503, {'error': str(exc)})
-                return
             try:
                 actor_token = set_actor(actor)
                 try:
@@ -2238,7 +2184,7 @@ def _require_exact_allowed_origins(origins: list[str]) -> None:
 def _install_host_boundary(app: FastAPI, listener_host: str) -> None:
     """Reject Host-header confusion and require an allowlist when remote."""
 
-    from agent_utilities.core.config import config
+    from .host import config
 
     configured = _configured_csv_entries(config.allowed_hosts)
     if '*' in configured:
@@ -2257,7 +2203,7 @@ def _install_host_boundary(app: FastAPI, listener_host: str) -> None:
 def _install_request_body_boundary(app: FastAPI) -> None:
     """Install a streaming request cap sourced from ``AgentConfig``."""
 
-    from agent_utilities.core.config import config
+    from .host import config
 
     try:
         configured = int(config.max_upload_size)
@@ -2468,6 +2414,20 @@ def _ensure_request_observability_middleware(app: FastAPI) -> None:
         app.add_middleware(RequestObservabilityMiddleware)
 
 
+def _public_error_detail(exc: Any) -> Any:
+    """The client-facing detail of an HTTP error.
+
+    The "not available" answer is the WebUI's own fixed text, so the browser
+    receives it whole. Every other detail is masked.
+    """
+
+    from .host import OperationUnavailable
+
+    if isinstance(exc, OperationUnavailable):
+        return exc.detail
+    return 'Request failed' if exc.status_code < 500 else 'Internal request failed'
+
+
 def create_agent_web_app(
     agent: Agent,
     workspace_helpers: dict[str, Any],
@@ -2560,9 +2520,7 @@ def create_agent_web_app(
                 'status_code': exc.status_code,
             },
         )
-        detail = (
-            'Request failed' if exc.status_code < 500 else 'Internal request failed'
-        )
+        detail = _public_error_detail(exc)
         return JSONResponse(
             status_code=exc.status_code,
             content={'detail': detail},
