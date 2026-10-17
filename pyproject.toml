@@ -27,7 +27,8 @@ dependencies = [
     "agent-utilities>=2.5.0",
     "fastapi>=0.143.3",
     "langfuse>=5.0.2",
-    "pydantic-ai-slim[ui]>=2.57.0",
+    # Match the pinned AU agent-headless runtime; retain the browser UI extra.
+    "pydantic-ai-slim[ui]==2.54.0",
     # api_extensions.py's `/upload` route takes a multipart Form/File payload --
     # FastAPI raises RuntimeError at route-registration time (not import time)
     # without this. Not pulled transitively by any of the deps above; verified
