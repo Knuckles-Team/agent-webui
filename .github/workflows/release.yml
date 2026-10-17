@@ -97,6 +97,8 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           echo "PIPELINES_CONTRACT_COMMIT=$(git -C .pipeline-contract rev-parse HEAD)" >> "$GITHUB_ENV"
+          # wheel-readiness binds its receipt to the source commit.
+          echo "SOURCE_COMMIT=${GITHUB_SHA}" >> "$GITHUB_ENV"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
