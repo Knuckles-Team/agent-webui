@@ -35,8 +35,8 @@
 #                                     # (use this while another lane is actively deploying;
 #                                     # see README.md "Coordinating concurrent deploys")
 #
-# Env overrides: see docker/build_and_push.sh for AU_SRC_PATH / IMAGE /
-# EG_WHEELHOUSE_PATH / BUILD_BACKEND / DOCKER* / BUILDKIT* (build_and_push.sh
+# Env overrides: see docker/build_and_push.sh for IMAGE /
+# BUILD_BACKEND / DOCKER* / BUILDKIT* (build_and_push.sh
 # auto-detects a build backend -- a reachable docker daemon, OR the shared
 # cluster-native buildkitd Deployment (services/buildkit-service/) when no
 # docker daemon is reachable -- and prints which one it picked and why; see

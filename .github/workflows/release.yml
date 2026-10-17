@@ -14,15 +14,9 @@ name: Release
 #                     existing immutable PyPI release, publishes only when
 #                     absent, then creates the GitHub release for the tag.
 #   publish-docker -- needs: publish-pypi. Builds and publishes the container
-#                     image FROM THE SAME COMMIT; it needs the au-src build
-#                     context and the epistemic-graph PyPI floor check, which
-#                     container_pipeline@main does not provide.
-#
-# CROSS-REPO ORDERING: epistemic-graph must publish to PyPI before
-# agent-utilities, which this image installs from source with a version floor
-# on epistemic-graph. `publish-docker` verifies that floor is resolvable
-# (scripts/release/check_eg_pypi_resolvable.py) and fails with one clear message
-# naming the missing version.
+#                     image FROM THE SAME COMMIT; the image installs the
+#                     wheel and every dependency (agent-utilities included)
+#                     from PyPI.
 
 on:
   push:
@@ -216,40 +210,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # Never installed from PyPI (D-W5WR-1) -- built from source, same as
-      # docker/build_and_push.sh's AU_SRC_PATH. PyPI's newest agent-utilities
-      # (1.26.4, verified 2026-08-07) is missing modules this app imports at
-      # startup; see docker/Dockerfile's header for the full empirical trail.
-      - name: Checkout agent-utilities (au-src build context)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Knuckles-Team/agent-utilities
-          ref: main
-          path: au-src
-          persist-credentials: false
-
-      # ---- Cross-repo release-order gate (see top-of-file comment). Stdlib
-      # -only, no environment sync needed: verifies the epistemic-graph floor
-      # au-src/pyproject.toml declares is actually resolvable on PyPI before
-      # spending any build time. eg must publish before au; au must publish
-      # before this image can install it from the index. Turns that deadlock
-      # into one clear line instead of a pip resolver backtrace.
-      #
-      # `--extras agent-headless,graph,metrics` scopes the check to exactly
-      # the extras the runtime stage below actually installs
-      # (docker/Dockerfile's
-      # `uv pip install ... "${AU_WHEEL}[agent-headless,graph,metrics]"`) --
-      # none of which pull in epistemic-graph (GOC-73's `graphos` extra is
-      # opt-in and not among them, including transitively through
-      # `agent-headless`'s own self-referenced `mcp`/`sandbox`). Without
-      # this the gate scanned au-src's WHOLE pyproject.toml (every
-      # optional-dependencies entry, `graphos` included) and failed even
-      # though this image never resolves epistemic-graph from PyPI at all.
-      # Keep this flag's extras list in sync with the runtime
-      # `uv pip install` line if that ever changes.
-      - name: Verify required epistemic-graph release is resolvable on PyPI
-        run: python3 scripts/release/check_eg_pypi_resolvable.py au-src/pyproject.toml --extras agent-headless,graph,metrics
-
       - name: Compute build metadata
         id: meta_build
         run: |
@@ -279,8 +239,6 @@ jobs:
           context: .
           file: docker/Dockerfile
           target: runtime
-          build-contexts: |
-            au-src=au-src
           build-args: |
             BUILD_SHA=${{ steps.meta_build.outputs.sha }}
             BUILD_TIME=${{ steps.meta_build.outputs.time }}
