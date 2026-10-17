@@ -129,8 +129,8 @@ jobs:
           uv pip install --require-hashes -r .pipeline-contract/.github/actions/publish-python-package/twine-requirements.txt
           # wheel-readiness proves dist/ holds only wheels; the sdist is built
           # beside it and uploaded with the wheel.
-          uv build --wheel
-          uv build --sdist --out-dir sdist
+          uv build --wheel --no-create-gitignore
+          uv build --sdist --out-dir sdist --no-create-gitignore
           BUILD_VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           {
             echo "BUILD_VERSION=${BUILD_VERSION}"
