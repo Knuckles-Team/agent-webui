@@ -365,7 +365,7 @@ function CatalogEmpty() {
 }
 
 function providerCountLabel(count: number, observedAt: string) {
-  return `${count} provider${count === 1 ? '' : 's'} reported by GraphOS · observed ${observedAt}`
+  return `${count} provider${count === 1 ? '' : 's'} reported by Arbora · observed ${observedAt}`
 }
 
 function CatalogVersion({ version }: { version?: string }) {

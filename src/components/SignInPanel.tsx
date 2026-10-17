@@ -139,7 +139,7 @@ function SetupForm() {
     run(() => createFirstAdministrator(code, username, password), SIGNED_IN)
   })
   return (
-    <Shell title="Create the first administrator" description="Enter the setup code from the Graph OS log.">
+    <Shell title="Create the first administrator" description="Enter the setup code from the Arbora log.">
       <form className="space-y-3" onSubmit={submit}>
         <TextField label="Setup code" value={code} onValue={setCode} />
         <TextField label="Username" autoComplete="username" value={username} onValue={setUsername} />
@@ -239,7 +239,7 @@ function LocalSignInForm() {
       />
     )
   return (
-    <Shell title="Sign in" description="Sign in to Graph OS.">
+    <Shell title="Sign in" description="Sign in to Arbora.">
       <form className="space-y-3" onSubmit={submit}>
         <TextField label="Username" autoComplete="username" value={username} onValue={setUsername} />
         <TextField

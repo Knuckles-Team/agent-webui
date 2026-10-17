@@ -1,0 +1,235 @@
+{
+  "schema_version": 2,
+  "spec_id": "WEBUI-API",
+  "owner_repo": "agent-webui",
+  "delivery_state": "SPECIFIED",
+  "requirement_ids": [
+    "WEBUI-API-R001",
+    "WEBUI-API-R002",
+    "WEBUI-API-R003",
+    "WEBUI-API-R003.1",
+    "WEBUI-API-R003.2",
+    "WEBUI-API-R004",
+    "APIUI-01",
+    "APIUI-02",
+    "APIUI-03",
+    "APIUI-03.1",
+    "APIUI-03.2",
+    "APIUI-03.3",
+    "APIUI-03.4",
+    "APIUI-04",
+    "APIUI-05",
+    "APIUI-06",
+    "WEBUI-API-R005",
+    "APIUI-06.1"
+  ],
+  "requirements": [
+    {
+      "id": "WEBUI-API-R001",
+      "title": "Generated Arbora API client with typed decisions and confirmation flows",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "0144228da540",
+        "2d3f1b884e39",
+        "406c63f7d322",
+        "6df9b8aa2f64",
+        "fed13820d806"
+      ],
+      "verified_by": [
+        "src/components/decisions/__tests__/arbora-decisions-transport.test.ts:44"
+      ]
+    },
+    {
+      "id": "WEBUI-API-R002",
+      "title": "Typed ontology, graph, Atlas and object-set operations replace host routes",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "1509bdb19bd4",
+        "98dd7d8a354e"
+      ],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-API-R003",
+      "title": "Remaining domain routes migrate to generated operations with a route census (rollup)",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [
+        "1509bdb19bd4",
+        "98dd7d8a354e"
+      ],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-API-R003.1",
+        "WEBUI-API-R003.2"
+      ]
+    },
+    {
+      "id": "WEBUI-API-R003.1",
+      "title": "Route-census typed model",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "98dd7d8a354e"
+      ],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-API-R003.2",
+      "title": "Route-census data file and lint rule (remaining)",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-API-R004",
+      "title": "Each request carries its own correlation id",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "2d3f1b884e39",
+        "3cc97501bab5",
+        "dce5092f45fd",
+        "eb748b7a950d"
+      ],
+      "verified_by": []
+    },
+    {
+      "id": "APIUI-01",
+      "title": "Generated TypeScript client from a pinned Arbora schema",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "327ed00ea70e",
+        "3fabfbee78e3",
+        "6394f229b798"
+      ],
+      "verified_by": []
+    },
+    {
+      "id": "APIUI-02",
+      "title": "Typed operations preserve preview-confirm-step-up for effects",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "0144228da540",
+        "406c63f7d322"
+      ],
+      "verified_by": []
+    },
+    {
+      "id": "APIUI-03",
+      "title": "Ontology, graph, Atlas and object-set operations preserve tenant semantics (rollup)",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "1509bdb19bd4"
+      ],
+      "verified_by": [],
+      "rollup_of": [
+        "APIUI-03.1",
+        "APIUI-03.2",
+        "APIUI-03.3",
+        "APIUI-03.4"
+      ]
+    },
+    {
+      "id": "APIUI-03.1",
+      "title": "Ontology reads and writes use typed Arbora operations with preserved tenant semantics",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "1509bdb19bd4"
+      ],
+      "verified_by": []
+    },
+    {
+      "id": "APIUI-03.2",
+      "title": "Graph reads and writes use typed Arbora operations with preserved tenant semantics",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "1509bdb19bd4"
+      ],
+      "verified_by": []
+    },
+    {
+      "id": "APIUI-03.3",
+      "title": "Atlas reads and writes use typed Arbora operations with preserved tenant semantics",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "1509bdb19bd4"
+      ],
+      "verified_by": []
+    },
+    {
+      "id": "APIUI-03.4",
+      "title": "Object-set reads and writes use typed Arbora operations with preserved tenant semantics",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "1509bdb19bd4"
+      ],
+      "verified_by": []
+    },
+    {
+      "id": "APIUI-04",
+      "title": "Prompts, SDD, knowledge base, sessions and goals migrate to typed calls",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "fe7688de370c"
+      ],
+      "verified_by": []
+    },
+    {
+      "id": "APIUI-05",
+      "title": "Host drops direct internal imports once replacement operations are proven",
+      "delivery_state": "LANDED",
+      "landed_in": [
+        "1509bdb19bd4"
+      ],
+      "verified_by": []
+    },
+    {
+      "id": "APIUI-06",
+      "title": "Shared auth and streaming are preserved without exposing a service bearer",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "19d92fda94cd",
+        "2d3f1b884e39",
+        "d8a6ed888f41"
+      ],
+      "verified_by": [
+        "src/lib/arbora-api/__tests__/invoke-no-bearer.test.ts:31",
+        "src/lib/arbora-api/__tests__/invoke-no-bearer.test.ts:45",
+        "src/lib/arbora-api/__tests__/invoke-no-bearer.test.ts:56"
+      ],
+      "rollup_of": [
+        "APIUI-06.1"
+      ]
+    },
+    {
+      "id": "WEBUI-API-R005",
+      "title": "Failure logs carry a sanitized typed error code",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "4924a5237ee7",
+        "4ad4466122fe",
+        "c183f7a2a67b",
+        "e225859bb82a"
+      ],
+      "verified_by": [
+        "tests/test_log_failure_error_code.py:23",
+        "tests/test_log_failure_error_code.py:31",
+        "tests/test_log_failure_error_code.py:38",
+        "tests/test_log_failure_error_code.py:45",
+        "tests/test_log_failure_error_code.py:59"
+      ]
+    },
+    {
+      "id": "APIUI-06.1",
+      "title": "Host composition without an engine",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "0940bc0c0d99",
+        "1d3334c8e819",
+        "bd46338613c1"
+      ],
+      "verified_by": [
+        "agent/agent_webui/__tests__/test_served_operations.py:188",
+        "agent/agent_webui/__tests__/test_served_operations.py:275"
+      ]
+    }
+  ]
+}

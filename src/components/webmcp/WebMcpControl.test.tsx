@@ -65,7 +65,7 @@ describe('attended WebMCP controls', () => {
         callId: 'call-1',
         leaseId: 'lease-1',
         toolId: 'agent-webui.navigate',
-        toolTitle: 'Navigate in Graph OS',
+        toolTitle: 'Navigate in Arbora',
         toolVersion: '1.0.0',
         schemaDigest: `sha256:${'a'.repeat(64)}`,
         argumentDigest: `sha256:${'b'.repeat(64)}`,

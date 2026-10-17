@@ -1,5 +1,5 @@
-site_name: Graph OS web UI
-site_description: The browser workspace for governed agents, workflows, and knowledge in Graph OS.
+site_name: Arbora web UI
+site_description: The browser workspace for governed agents, workflows, and knowledge in Arbora.
 site_url: https://knuckles-team.github.io/agent-webui/
 repo_name: Knuckles-Team/agent-webui
 repo_url: https://github.com/Knuckles-Team/agent-webui
@@ -73,13 +73,13 @@ extra:
     current: agent-webui
     sites:
       - slug: agent-webui
-        name: Graph OS Agent Web UI
+        name: Arbora Agent Web UI
         role: operator experience
         url: https://knuckles-team.github.io/agent-webui/
-      - slug: graph-os
-        name: Graph OS
+      - slug: arbora
+        name: Arbora
         role: public runtime gateway
-        url: https://knuckles-team.github.io/graph-os/
+        url: https://knuckles-team.github.io/arbora/
       - slug: agent-utilities
         name: Agent Utilities
         role: agent control plane

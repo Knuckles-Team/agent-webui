@@ -165,7 +165,7 @@ describe('Atlas source API', () => {
 })
 
 const sourceScope: SourceScope = {
-  authority: 'graph-os',
+  authority: 'arbora',
   tenant: 'homelab',
   principal: 'alice@example.com',
 }
@@ -174,7 +174,7 @@ describe('Atlas source query scope keys', () => {
   it('keeps authority, tenant, and principal in every source query key', () => {
     const otherScope: SourceScope = { ...sourceScope, principal: 'bob@example.com' }
 
-    expect(atlasSourceScopeKey(sourceScope)).toEqual(['scope', 'graph-os', 'homelab', 'alice@example.com'])
+    expect(atlasSourceScopeKey(sourceScope)).toEqual(['scope', 'arbora', 'homelab', 'alice@example.com'])
     expect(atlasSourceCatalogQueryKey(DEFAULT_ATLAS_SOURCE_ROUTES, sourceScope)).not.toEqual(
       atlasSourceCatalogQueryKey(DEFAULT_ATLAS_SOURCE_ROUTES, otherScope),
     )

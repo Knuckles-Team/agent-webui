@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpAppHost } from '../McpAppHost'
 import { MCP_APP_RESOURCE_ROUTE, MCP_TOOL_CALL_ROUTE } from '@/lib/mcp-client'
 
-const APP_URI = 'ui://graph-os/task-progress.html'
+const APP_URI = 'ui://arbora/task-progress.html'
 const APP_HTML = '<html><head></head><body><div id="jobId">-</div></body></html>'
 const TOOL_SCHEMAS = new Map<string, Record<string, unknown>>([['graph_jobs', { type: 'object' }]])
 
@@ -118,7 +118,7 @@ describe('McpAppHost (wiring)', () => {
     const frame = await mountApp(['graph_jobs'])
 
     expect(calls[0].route).toBe(MCP_APP_RESOURCE_ROUTE)
-    expect(calls[0].body).toEqual({ server: 'graph-os', uri: APP_URI, timeout_ms: 10000 })
+    expect(calls[0].body).toEqual({ server: 'arbora', uri: APP_URI, timeout_ms: 10000 })
     expect(frame.srcdoc).toContain('id="jobId"')
     // The HTML that came off the wire is rendered only inside the sandbox.
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
@@ -149,7 +149,7 @@ describe('McpAppHost (wiring)', () => {
     })
     const toolCall = calls.find((call) => call.route === MCP_TOOL_CALL_ROUTE)
     expect(toolCall?.body).toEqual({
-      server: 'graph-os',
+      server: 'arbora',
       tool: 'graph_jobs',
       arguments: { action: 'status', job_id: 'orch-1' },
       timeout_ms: 10000,

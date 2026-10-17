@@ -440,7 +440,7 @@
     },
     {
       "id": "FIN-UI-R003",
-      "title": "GraphOS Markets app with scanner, search, and layered chart",
+      "title": "Arbora Markets app with scanner, search, and layered chart",
       "delivery_state": "LANDED",
       "landed_in": [
         "cf2a61dd04a9",

@@ -39,7 +39,7 @@
     "/",
     "/dashboards",
     "/system-status",
-    "/graphos-readiness",
+    "/arbora-readiness",
     "/observability",
     "/broker",
     "/usage",

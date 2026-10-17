@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { invokeIdentity, type IdentityReply } from '@/lib/graphos-api/identity'
+import { invokeIdentity, type IdentityReply } from '@/lib/arbora-api/identity'
 
 interface IdentityPolicy {
   epoch: number

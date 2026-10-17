@@ -45,7 +45,7 @@ wheels = [
 
 [[package]]
 name = "agent-webui"
-version = "2.7.0"
+version = "2.7.1"
 source = { editable = "." }
 dependencies = [
     { name = "agent-connector-sdk" },

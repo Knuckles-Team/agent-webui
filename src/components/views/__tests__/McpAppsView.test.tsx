@@ -20,8 +20,8 @@ import { MAX_CATALOG_TOOLS, MCP_APP_RESOURCE_ROUTE, MCP_TOOL_CALL_ROUTE, mcpServ
 // The route is paginated; the client asks for its whole documented budget
 // in one page so MCP Apps discovery is never narrowed to the
 // alphabetically-first slice of a large server's catalog.
-const TOOLS_ROUTE = mcpServerToolsRoute('graph-os', undefined, MAX_CATALOG_TOOLS)
-const APP_URI = 'ui://graph-os/task-progress.html'
+const TOOLS_ROUTE = mcpServerToolsRoute('arbora', undefined, MAX_CATALOG_TOOLS)
+const APP_URI = 'ui://arbora/task-progress.html'
 const APP_HTML = '<html><head></head><body><div id="jobId">-</div></body></html>'
 
 interface FetchCall {
@@ -84,7 +84,7 @@ const TOOL_INVENTORY = [
 function toolsRouteResponse(): Response {
   return new Response(
     JSON.stringify({
-      server: 'graph-os',
+      server: 'arbora',
       tools: TOOL_INVENTORY,
       total: 37,
       offset: 0,
@@ -190,7 +190,7 @@ describe('McpAppsView (wiring)', () => {
   it('offers a tool WITH meta.ui.resourceUri as a launchable app', async () => {
     renderMcpAppsView()
     expect(await screen.findByTestId('mcp-app-card-graph_task_progress_app')).toBeInTheDocument()
-    expect(screen.getByText(/1 of 37 graph-os tools/)).toBeInTheDocument()
+    expect(screen.getByText(/1 of 37 arbora tools/)).toBeInTheDocument()
   })
 
   it('never offers a tool WITHOUT meta.ui.resourceUri as launchable (known-bad proof)', async () => {
@@ -223,7 +223,7 @@ describe('McpAppsView (wiring)', () => {
     await waitFor(() => {
       const resourceCall = calls.find((c) => c.url === MCP_APP_RESOURCE_ROUTE)
       expect(resourceCall).toBeDefined()
-      expect(resourceCall?.body).toEqual({ server: 'graph-os', uri: APP_URI, timeout_ms: 10000 })
+      expect(resourceCall?.body).toEqual({ server: 'arbora', uri: APP_URI, timeout_ms: 10000 })
     })
 
     const frame = await findLaunchedFrame()

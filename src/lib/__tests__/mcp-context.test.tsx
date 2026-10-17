@@ -101,7 +101,7 @@ describe('MCPProvider', () => {
     // (MAX_CATALOG_TOOLS) rather than letting the backend's smaller default
     // silently narrow the catalog to its alphabetically-first slice.
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/enhanced/mcp/servers/graph-os/tools?limit=200',
+      '/api/enhanced/mcp/servers/arbora/tools?limit=200',
       expect.objectContaining({ method: 'GET', credentials: 'same-origin' }),
     )
   })

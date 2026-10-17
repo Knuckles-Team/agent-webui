@@ -1,4 +1,4 @@
-"""Live-path and trust-boundary tests for the Graph OS browser channel."""
+"""Live-path and trust-boundary tests for the Arbora browser channel."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ class RecordingConnection:
         self.messages.append(message)
         if message.type == 'catalog.register':
             return {
-                'authority': 'graph-os',
+                'authority': 'arbora',
                 'route_id': message.route_id,
                 'registration_generation': message.registration_generation,
                 'catalog_digest': message.catalog_digest,
@@ -130,7 +130,7 @@ class _AuCancel(BaseModel):
 
 
 class RecordingPort:
-    authority = 'graph-os'
+    authority = 'arbora'
     supports_durable_fences = True
     supports_durable_audit = True
     supports_attended_leases = True
@@ -174,7 +174,7 @@ class FailingOpenPort(RecordingPort):
 
     async def open_channel(self, binding: BrowserControlBinding, send: Any) -> Any:
         self.bindings.append(binding)
-        raise RuntimeError('synthetic Graph OS open failure')
+        raise RuntimeError('synthetic Arbora open failure')
 
     async def revoke_attended_arm(self, binding: BrowserControlBinding) -> Any:
         self.revoked.append(binding)
@@ -482,7 +482,7 @@ def test_structural_au_message_is_validated_and_sent_to_browser(
         assert websocket.receive_json() == {
             'protocol': 'webmcp.control.v1',
             'type': 'channel.ready',
-            'authority': 'graph-os',
+            'authority': 'arbora',
             'route_id': 'knowledge.graph',
             'registration_generation': 7,
             'catalog_digest': _CATALOG_DIGEST,
@@ -541,7 +541,7 @@ def test_one_injected_connection_handles_every_browser_event_and_outbound_send(
     ) as websocket:
         websocket.send_json(_OPEN)
         websocket.send_json(_CATALOG)
-        assert websocket.receive_json()['authority'] == 'graph-os'
+        assert websocket.receive_json()['authority'] == 'arbora'
         for event in events:
             websocket.send_json(event)
             assert websocket.receive_json() == {
@@ -560,7 +560,7 @@ def test_one_injected_connection_handles_every_browser_event_and_outbound_send(
     ]
 
 
-def test_channel_ready_refuses_a_tampered_graph_os_catalog_receipt(
+def test_channel_ready_refuses_a_tampered_arbora_catalog_receipt(
     mock_agent: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -852,7 +852,7 @@ def test_duplicate_tool_id_with_a_different_version_is_rejected(
         [{**_CATALOG['tools'][0], 'required_roles': ['é']}],
     ],
 )
-def test_catalog_descriptor_invariants_fail_before_graph_os(
+def test_catalog_descriptor_invariants_fail_before_arbora(
     mock_agent: Any,
     monkeypatch: pytest.MonkeyPatch,
     tools: list[dict[str, Any]],

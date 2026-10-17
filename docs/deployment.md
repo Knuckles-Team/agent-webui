@@ -1,8 +1,8 @@
 # Deployment and operations
 
-Graph OS ships as a Python wheel and a container image. In a complete Graph OS
+Arbora ships as a Python wheel and a container image. In a complete Arbora
 deployment it runs as the browser-facing presentation service and composes the
-canonical gateway routes provided by Graph OS and Agent Utilities.
+canonical gateway routes provided by Arbora and Agent Utilities.
 
 ## Security boundary
 
@@ -14,7 +14,7 @@ closed unless all of the following are configured:
 - exact browser origins where cross-origin access is required; and
 - an authentication-aware same-origin proxy for browser API and WebSocket requests.
 
-The browser does not retain a Graph OS service bearer. Server-side adapters mint
+The browser does not retain an Arbora service bearer. Server-side adapters mint
 the request-scoped graph identity and perform privileged MCP operations through
 audited, host-injected delegation ports.
 
@@ -73,7 +73,7 @@ updates and checks both.
 
 ## Concurrent operators
 
-Only one Graph OS Kubernetes Deployment is active for a given environment. When
+Only one Arbora Kubernetes Deployment is active for a given environment. When
 another operator is deploying, build and push without changing the cluster:
 
 ```bash
@@ -108,7 +108,7 @@ After deployment, confirm:
 - liveness and readiness probes pass;
 - the WebUI security doctor reports `ok`;
 - the served frontend bundle matches the release commit; and
-- authenticated Graph OS and MCP delegation paths return governed responses.
+- authenticated Arbora and MCP delegation paths return governed responses.
 
 ## Rollback
 

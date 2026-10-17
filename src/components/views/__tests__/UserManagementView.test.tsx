@@ -317,7 +317,7 @@ describe('UserManagementView identity operations', () => {
             })
           : response(403, {
               ok: false,
-              error: { code: 'SCOPE_REQUIRED', source: 'graphos', message: 'denied', retryable: false },
+              error: { code: 'SCOPE_REQUIRED', source: 'arbora', message: 'denied', retryable: false },
               meta,
             }),
     )

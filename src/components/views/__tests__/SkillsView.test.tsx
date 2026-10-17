@@ -67,7 +67,7 @@ describe('SkillsView catalog contract', () => {
     vi.unstubAllGlobals()
   })
 
-  it('accepts the provenance-bearing GraphOS catalog projection', () => {
+  it('accepts the provenance-bearing Arbora catalog projection', () => {
     const parsed = toolsDataSchema.parse(CATALOG)
     expect(parsed.source).toBe('epistemic_graph')
     expect(parsed.counts).toEqual({ servers: 1, tools: 1, skills: 1, workflows: 1 })

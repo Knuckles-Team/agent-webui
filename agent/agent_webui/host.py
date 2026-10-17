@@ -1,9 +1,9 @@
 """The WebUI's one seam to its host: settings, request actor, served operations.
 
-agent-webui is presentation only. It runs inside Graph OS and reaches data and
-operations through the Graph OS served API (``POST <api>/ops/<op_id>``),
-validated by ``graph_os.client`` when the host provides it. It never imports
-graph engine, Graph OS internals, or harness modules in process.
+agent-webui is presentation only. It runs inside Arbora and reaches data and
+operations through the Arbora served API (``POST <api>/ops/<op_id>``),
+validated by ``arbora.client`` when the host provides it. It never imports
+graph engine, Arbora internals, or harness modules in process.
 
 * :data:`config` reads the WebUI's own deployment settings from the
   environment.
@@ -11,8 +11,8 @@ graph engine, Graph OS internals, or harness modules in process.
   actor. The identity gate in ``server.py`` binds it per request.
 * :func:`verify_bearer` checks a bearer JWT against the configured JWKS as an
   OpenID Connect relying party.
-* :func:`invoke_operation` calls one served Graph OS operation with the
-  caller's credential. Graph OS owns admission for every call.
+* :func:`invoke_operation` calls one served Arbora operation with the
+  caller's credential. Arbora owns admission for every call.
 * :class:`OperationUnavailable` is the one "not available" answer for a
   capability whose served operation does not exist yet. The SPA shows it as a
   "not available" state.
@@ -86,7 +86,7 @@ _FIELDS: dict[str, tuple[str, Any, Any]] = {
     'gateway_rate_limit': ('GATEWAY_RATE_LIMIT', 0.0, _float),
     'gateway_rate_burst': ('GATEWAY_RATE_BURST', 0.0, _float),
     'workspace_path': ('WORKSPACE_PATH', None, _text),
-    'graph_os_api_url': ('GRAPH_OS_API_URL', 'http://127.0.0.1:8000/api/v1', str),
+    'arbora_api_url': ('ARBORA_API_URL', 'http://127.0.0.1:8000/api/v1', str),
 }
 
 
@@ -468,7 +468,7 @@ async def verify_bearer(token: str) -> ActorContext:
 
 
 # ---------------------------------------------------------------------------
-# Graph OS served operations
+# Arbora served operations
 # ---------------------------------------------------------------------------
 
 
@@ -478,14 +478,14 @@ def _unavailable_detail(feature: str, operation: str) -> dict[str, str]:
         'feature': feature,
         'needs_operation': operation,
         'message': (
-            f'{feature} is not available: Graph OS does not serve '
+            f'{feature} is not available: Arbora does not serve '
             f'the {operation} operation yet.'
         ),
     }
 
 
 class OperationUnavailable(HTTPException):
-    """The capability needs a Graph OS served operation that is not available."""
+    """The capability needs an Arbora served operation that is not available."""
 
     def __init__(self, feature: str, operation: str) -> None:
         self.feature = feature
@@ -502,7 +502,7 @@ def unavailable(feature: str, operation: str) -> OperationUnavailable:
 
 
 class HttpOperationTransport:
-    """Call served Graph OS operations over its HTTP API."""
+    """Call served Arbora operations over its HTTP API."""
 
     def __init__(
         self,
@@ -540,7 +540,7 @@ class HttpOperationTransport:
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, Mapping):
-            raise RuntimeError('Graph OS returned a non-object operation result')
+            raise RuntimeError('Arbora returned a non-object operation result')
         return payload
 
 
@@ -562,28 +562,28 @@ async def invoke_operation(
     transport: Any = None,
     idempotency_key: str | None = None,
 ) -> Mapping[str, Any]:
-    """Invoke one served Graph OS operation as the bound actor.
+    """Invoke one served Arbora operation as the bound actor.
 
-    ``graph_os.client`` validates the operation ID and the registry digest
+    ``arbora.client`` validates the operation ID and the registry digest
     when the host provides it.
     """
 
     if transport is None:
         actor = bound_actor()
         transport = HttpOperationTransport(
-            config.graph_os_api_url,
+            config.arbora_api_url,
             credential=actor.credential if actor is not None else None,
         )
     if idempotency_key:
         transport = _KeyedTransport(transport, idempotency_key)
     try:
-        from graph_os.client.invoke import invoke as client_invoke
+        from arbora.client.invoke import invoke as client_invoke
     except ImportError:
         return await transport.invoke(op_id, params)
     return await client_invoke(transport, op_id, params)  # type: ignore[arg-type]
 
 
-#: Graph OS error codes that the WebUI passes to the browser as their own status.
+#: Arbora error codes that the WebUI passes to the browser as their own status.
 _ERROR_STATUS = {
     'UNAUTHENTICATED': 401,
     'PERMISSION_DENIED': 403,
@@ -603,10 +603,10 @@ def _error_code(payload: Mapping[str, Any]) -> str:
 
 
 def operation_value(payload: Mapping[str, Any]) -> Any:
-    """Return the ``value`` of one Graph OS operation envelope.
+    """Return the ``value`` of one Arbora operation envelope.
 
     A refusal envelope becomes an :class:`HTTPException` with the matching
-    status. The detail carries the Graph OS error code, never its message.
+    status. The detail carries the Arbora error code, never its message.
     """
 
     if payload.get('ok') is False:
@@ -625,7 +625,7 @@ async def served(
     idempotency_key: str | None = None,
     transport: Any = None,
 ) -> Any:
-    """Invoke one served Graph OS operation and return its value."""
+    """Invoke one served Arbora operation and return its value."""
 
     try:
         payload = await invoke_operation(
@@ -641,7 +641,7 @@ async def served(
             body = None
         if isinstance(body, Mapping):
             return operation_value(body)
-        raise HTTPException(status_code=502, detail='graph_os_error') from exc
+        raise HTTPException(status_code=502, detail='arbora_error') from exc
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=503, detail='graph_os_unreachable') from exc
+        raise HTTPException(status_code=503, detail='arbora_unreachable') from exc
     return operation_value(payload)

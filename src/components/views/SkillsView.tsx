@@ -171,7 +171,7 @@ const toolsDataSchema: z.ZodType<ToolsData> = z.object({
   }),
 })
 
-// Exported so contract tests pin the exact GraphOS-owned response boundary.
+// Exported so contract tests pin the exact Arbora-owned response boundary.
 export { catalogEntrySchema, toolsDataSchema }
 
 /** Group items by `domain` (falling back to "Uncategorized"), sorted by
@@ -1186,7 +1186,7 @@ export default function SkillsView() {
                 Tools & Cognitive Registry
               </CardTitle>
               <CardDescription>
-                Live MCP registrations and typed tool, skill, and workflow catalogs from the GraphOS gateway.
+                Live MCP registrations and typed tool, skill, and workflow catalogs from the Arbora gateway.
               </CardDescription>
             </div>
             <div className="flex items-center gap-2 w-full md:w-auto">

@@ -2,7 +2,7 @@
  * Release gate for consistent product branding (APP-01, WEBUI-APPS-R002).
  *
  * Confirms the browser-facing title/metadata/web manifest, the docs site
- * name, and the README all present the GraphOS product identity. This does
+ * name, and the README all present the Arbora product identity. This does
  * not check package, import, or environment naming — that is a separate,
  * larger identifier rename tracked by APP-02/WEBUI-APPS-R003.
  */
@@ -25,7 +25,7 @@ async function text(path) {
 }
 
 function requireBrand(path, content, label) {
-  if (!BRAND.test(content)) fail(`${path} ${label} does not present the GraphOS brand`)
+  if (!BRAND.test(content)) fail(`${path} ${label} does not present the Arbora brand`)
 }
 
 const indexHtml = await text('index.html')
@@ -56,5 +56,5 @@ if (errors.length > 0) {
   for (const error of errors) console.error(`- ${error}`)
   process.exitCode = 1
 } else {
-  console.log('site brand check passed (title, web manifest, docs site name, and README all present the GraphOS brand)')
+  console.log('site brand check passed (title, web manifest, docs site name, and README all present the Arbora brand)')
 }

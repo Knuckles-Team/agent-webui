@@ -1,8 +1,8 @@
 <section class="site-hero" aria-labelledby="webui-hero-title">
-  <p class="site-hero__eyebrow">Operator experience for GraphOS</p>
+  <p class="site-hero__eyebrow">Operator experience for Arbora</p>
   <h1 class="site-hero__title" id="webui-hero-title">See the work. Guide the agent. Explore the evidence.</h1>
   <p class="site-hero__summary">
-    Graph OS brings conversations, governed actions, workflows, fleet activity,
+    Arbora brings conversations, governed actions, workflows, fleet activity,
     and epistemic knowledge into one role-aware browser workspace.
   </p>
   <div class="site-hero__actions">
@@ -12,7 +12,7 @@
   </div>
 </section>
 
-![The Graph OS Atlas workspace presents guided knowledge entry points and expert query tools.](assets/screenshots/atlas-workspace.png)
+![The Arbora Atlas workspace presents guided knowledge entry points and expert query tools.](assets/screenshots/atlas-workspace.png)
 
 ## One interface, explicit authority
 
@@ -23,7 +23,7 @@
       <div class="site-ownership__value">Browser presentation, accessible route composition, local interaction state, and the WebUI FastAPI boundary.</div>
     </article>
     <article class="site-ownership__item">
-      <span class="site-ownership__label">GraphOS owns</span>
+      <span class="site-ownership__label">Arbora owns</span>
       <div class="site-ownership__value">Public routing, verified identity, runtime policy, fleet supervision, and composition of this UI.</div>
     </article>
     <article class="site-ownership__item">
@@ -38,12 +38,12 @@
 <div class="site-card-grid">
   <article class="site-card">
     <h3 class="site-card__title">Try it</h3>
-    <p class="site-card__body">Install the GraphOS WebUI integration, start one local composition, and open the browser workspace.</p>
+    <p class="site-card__body">Install the Arbora WebUI integration, start one local composition, and open the browser workspace.</p>
     <p><a href="start/">Open the start guide →</a></p>
   </article>
   <article class="site-card">
     <h3 class="site-card__title">Understand it</h3>
-    <p class="site-card__body">Follow one request from the browser through GraphOS to agents, knowledge, and connector effects.</p>
+    <p class="site-card__body">Follow one request from the browser through Arbora to agents, knowledge, and connector effects.</p>
     <p><a href="ecosystem/">See how the ecosystem fits →</a></p>
   </article>
   <article class="site-card">
@@ -59,7 +59,7 @@
 - Build workflows and inspect active sessions, goals, schedules, and fleet health.
 - Use Atlas to move between graph, RDF, schema, object, table, document, code,
   and memory views.
-- Discover MCP Apps and connector capabilities through the GraphOS boundary.
+- Discover MCP Apps and connector capabilities through the Arbora boundary.
 - Apply the same role-aware navigation and server authorization model across
   the complete workspace.
 
@@ -72,7 +72,7 @@
   </li>
   <li class="site-flow__step">
     <h3 class="site-flow__title">Govern</h3>
-    <p class="site-flow__body">The same-origin WebUI host and GraphOS verify identity, route the request, and apply policy.</p>
+    <p class="site-flow__body">The same-origin WebUI host and Arbora verify identity, route the request, and apply policy.</p>
   </li>
   <li class="site-flow__step">
     <h3 class="site-flow__title">Run</h3>

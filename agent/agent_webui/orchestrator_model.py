@@ -1,8 +1,8 @@
-"""agent-webui's chat model: one served Graph OS agent run per turn.
+"""agent-webui's chat model: one served Arbora agent run per turn.
 
 ``agent.to_web()`` owns the AG-UI transport. pydantic-ai's ``FunctionModel``
 plugs a plain function in as the model. That function sends the newest user
-message to the Graph OS ``agents.run`` served operation, as the verified
+message to the Arbora ``agents.run`` served operation, as the verified
 caller, and returns the reply text. The WebUI holds no agent runtime of its
 own.
 
@@ -135,11 +135,11 @@ def build_orchestrator_model(
     agent_name: str | None = None,
     invoke: Any = None,
 ) -> FunctionModel:
-    """Build the ``FunctionModel`` that runs each chat turn through Graph OS.
+    """Build the ``FunctionModel`` that runs each chat turn through Arbora.
 
     Args:
         engine_provider: Unused. Kept so a host that passes one still works.
-        agent_name: The named agent the turn asks Graph OS to run. Defaults to
+        agent_name: The named agent the turn asks Arbora to run. Defaults to
             ``DEFAULT_WEBUI_AGENT_NAME``.
         invoke: The served-operation invoker. Defaults to
             :func:`agent_webui.host.invoke_operation`.

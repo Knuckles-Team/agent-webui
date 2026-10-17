@@ -19,7 +19,7 @@ function okReply(result: unknown): Promise<Response> {
   return reply(200, { ok: true, result, meta: META })
 }
 
-// The typed Graph OS transport reads a CSRF token from `/auth/session` before
+// The typed Arbora transport reads a CSRF token from `/auth/session` before
 // every operation call, so every fetcher below must answer it with a valid
 // authenticated session -- a 404 or an unauthenticated session there blocks
 // the operation call before it is ever attempted.
@@ -110,7 +110,7 @@ describe('AdminView identity tabs', () => {
         ? okReply({ mode: 'none', epoch: 1 })
         : reply(428, {
             ok: false,
-            error: { code: 'STEP_UP_REQUIRED', source: 'graphos', message: 'step-up required', retryable: false },
+            error: { code: 'STEP_UP_REQUIRED', source: 'arbora', message: 'step-up required', retryable: false },
             meta: META,
           }),
     )

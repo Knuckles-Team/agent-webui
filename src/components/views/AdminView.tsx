@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { invokeIdentity, type IdentityOp, type IdentityPage, type IdentityReply } from '@/lib/graphos-api/identity'
+import { invokeIdentity, type IdentityOp, type IdentityPage, type IdentityReply } from '@/lib/arbora-api/identity'
 import UserManagementView from './UserManagementView'
 import TenantsPanel from './admin/TenantsPanel'
 import ShardsPanel from './admin/ShardsPanel'
@@ -664,7 +664,7 @@ function IssuerRotationPanel() {
       <CardHeader>
         <CardTitle>Issuer key rotation</CardTitle>
         <CardDescription>
-          Rotate the Graph OS signer with overlap. A fresh administrator MFA confirmation is required.
+          Rotate the Arbora signer with overlap. A fresh administrator MFA confirmation is required.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -862,7 +862,7 @@ export default function AdminView() {
           <ShieldCheck className="size-6" />
           Admin Console
         </h1>
-        <p className="text-sm text-muted-foreground">Graph OS identity, security and engine administration.</p>
+        <p className="text-sm text-muted-foreground">Arbora identity, security and engine administration.</p>
       </div>
       <Tabs defaultValue="users">
         <TabsList className="flex h-auto flex-wrap justify-start">
@@ -893,14 +893,14 @@ export default function AdminView() {
           <ListPanel
             title="Service accounts"
             op="identity.service_accounts.list"
-            description="Active service principals from Graph OS identity."
+            description="Active service principals from Arbora identity."
           />
         </TabsContent>
         <TabsContent value="groups" className="space-y-4">
           <ListPanel
             title="Groups"
             op="identity.groups.list"
-            description="Groups and memberships from Graph OS identity."
+            description="Groups and memberships from Arbora identity."
           />
           <RoleGroupEditor kind="group" />
         </TabsContent>
@@ -908,7 +908,7 @@ export default function AdminView() {
           <ListPanel
             title="Roles and scopes"
             op="identity.roles.list"
-            description="Roles and effective scope grants from Graph OS identity."
+            description="Roles and effective scope grants from Arbora identity."
           />
           <RoleGroupEditor kind="role" />
         </TabsContent>

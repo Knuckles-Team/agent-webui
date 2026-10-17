@@ -2,7 +2,7 @@
  * @file csrf.ts
  * @description The one CSRF chokepoint for cookie-authenticated requests.
  *
- * The Graph OS identity broker refuses every state-changing request that a
+ * The Arbora identity broker refuses every state-changing request that a
  * browser session authenticates unless it carries the session's CSRF token
  * (`X-CSRF-Token`, a one-way digest of the session id the server hands out on
  * `/auth/session`) and a same-origin `Origin`. Browsers add the `Origin`;

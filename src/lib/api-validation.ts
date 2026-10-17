@@ -60,7 +60,7 @@ function apiErrorMessage(status: number, body: string, notAvailable: NotAvailabl
   return notAvailable?.message ?? `API ${status}: ${body}`
 }
 
-/** A capability whose Graph OS served operation does not exist yet. */
+/** A capability whose Arbora served operation does not exist yet. */
 export interface NotAvailable {
   feature: string
   operation: string

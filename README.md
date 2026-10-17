@@ -1,11 +1,11 @@
-# Graph OS web UI
+# Arbora web UI
 
 <p align="center">
-  <img src="docs/assets/brands/agent-webui-logo-v1.png" alt="Graph OS Agent Web UI logo" width="160" />
+  <img src="docs/assets/brands/agent-webui-logo-v1.png" alt="Arbora Agent Web UI logo" width="160" />
 </p>
 
 <p align="center">
-  <strong>The browser workspace for governed agents, workflows, and knowledge in Graph OS.</strong><br>
+  <strong>The browser workspace for governed agents, workflows, and knowledge in Arbora.</strong><br>
   <sub>Conversations · approvals · workflows · fleet activity · Atlas knowledge views</sub>
 </p>
 
@@ -45,16 +45,16 @@
 
 ## Overview
 
-Graph OS Agent Web UI is the browser workspace composed by Graph OS. It brings agent
+Arbora Agent Web UI is the browser workspace composed by Arbora. It brings agent
 conversations, approvals, workflows, fleet activity, and Epistemic Graph
 exploration into one React application. Its FastAPI host keeps privileged
 credentials and gateway delegation on the server side.
 
 | Agent Web UI owns | Other components own |
 |---|---|
-| Browser presentation, local interaction state, accessible route composition, and the FastAPI boundary | Graph OS owns public routing, identity, policy, and fleet supervision; Agent Utilities owns agent behavior; Epistemic Graph owns durable knowledge; connector services own external-system effects |
+| Browser presentation, local interaction state, accessible route composition, and the FastAPI boundary | Arbora owns public routing, identity, policy, and fleet supervision; Agent Utilities owns agent behavior; Epistemic Graph owns durable knowledge; connector services own external-system effects |
 
-Current package Version: 2.7.0.
+Current package Version: 2.7.1.
 
 ## Key capabilities
 
@@ -63,7 +63,7 @@ Current package Version: 2.7.0.
 - Explore property graphs, RDF, schemas, objects, tables, documents, code, and memories through Atlas and Epistemic Graph.
 - Discover MCP Apps and connector capabilities without exposing service credentials to the browser.
 - Apply one role-aware navigation and server authorization model across the complete workspace.
-- Run as the Graph OS-hosted browser co-service or as an independently deployed ASGI application.
+- Run as the Arbora-hosted browser co-service or as an independently deployed ASGI application.
 
 ## Documentation
 
@@ -75,20 +75,20 @@ then use the shared platform map to move between components:
 | Agent Web UI | Browser operator workspace and Atlas knowledge views | [Docs](https://knuckles-team.github.io/agent-webui/) |
 | Agent Terminal UI | Terminal and headless client; REST operations are available, with no ACP conversational path | [Docs](https://knuckles-team.github.io/agent-terminal-ui/) |
 | Geniusbot | Desktop cockpit for chat, graph, fleet, health, and operator workflows | [Docs](https://knuckles-team.github.io/geniusbot/) |
-| Graph OS messaging | Hosts chat and voice entrypoints; Agent Utilities supplies adapter and routing behavior | [Docs](https://knuckles-team.github.io/graph-os/) |
-| Graph OS | Public MCP, REST, A2A, identity, policy, and runtime composition | [Docs](https://knuckles-team.github.io/graph-os/) |
+| Arbora messaging | Hosts chat and voice entrypoints; Agent Utilities supplies adapter and routing behavior | [Docs](https://knuckles-team.github.io/arbora/) |
+| Arbora | Public MCP, REST, A2A, identity, policy, and runtime composition | [Docs](https://knuckles-team.github.io/arbora/) |
 | Agent Utilities | Agent decisions, workflows, evaluation, and skills | [Docs](https://knuckles-team.github.io/agent-utilities/) |
 | Epistemic Graph | Durable multimodal data, reasoning, provenance, and transactions | [Docs](https://knuckles-team.github.io/epistemic-graph/) |
 | Agent Connector SDK | Typed source adapters, connector serving, and write-back contracts | [Docs](https://knuckles-team.github.io/agent-connector-sdk/) |
 
 ## Architecture
 
-![Runtime architecture: people use Agent Web UI, Agent Terminal UI, Geniusbot, and Graph OS-hosted messaging. MCP, REST, and A2A clients enter through Graph OS; source systems flow through Agent Connector SDK into Epistemic Graph.](https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/main/docs/assets/runtime-architecture.svg)
+![Runtime architecture: people use Agent Web UI, Agent Terminal UI, Geniusbot, and Arbora-hosted messaging. MCP, REST, and A2A clients enter through Arbora; source systems flow through Agent Connector SDK into Epistemic Graph.](https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/main/docs/assets/runtime-architecture.svg)
 
-People also enter through Agent Terminal UI and Geniusbot or Graph OS-hosted
+People also enter through Agent Terminal UI and Geniusbot or Arbora-hosted
 messaging; Agent Terminal UI exposes REST operations, with no ACP conversational
 path. External applications connect over MCP, REST, or A2A. The browser talks
-only to its same-origin FastAPI host. Graph OS injects gateway routes and
+only to its same-origin FastAPI host. Arbora injects gateway routes and
 verified request context, then delegates agent behavior to Agent Utilities and
 durable knowledge to Epistemic Graph. Source systems connect through Agent
 Connector SDK directly to Epistemic Graph. Agent Web UI renders typed results
@@ -99,15 +99,15 @@ for the request flow and trust boundaries.
 
 ## Quick start
 
-Generate a local profile and start Graph OS with Agent Web UI enabled:
+Generate a local profile and start Arbora with Agent Web UI enabled:
 
 ```bash
-uvx --from "graph-os[webui]" setup-config generate --profile tiny
+uvx --from "arbora[webui]" setup-config generate --profile tiny
 export ENABLE_WEB_UI=true
-uvx --from "graph-os[webui]" graph-os --transport streamable-http --host 127.0.0.1 --port 8000
+uvx --from "arbora[webui]" arbora --transport streamable-http --host 127.0.0.1 --port 8000
 ```
 
-Open <http://127.0.0.1:8080>. Graph OS serves MCP on port `8000` and the Agent
+Open <http://127.0.0.1:8080>. Arbora serves MCP on port `8000` and the Agent
 Web UI co-service on port `8080`. The [start guide](https://knuckles-team.github.io/agent-webui/start/)
 covers local source development and deployment profiles.
 
@@ -119,4 +119,4 @@ before opening a pull request.
 
 ## License
 
-Graph OS Agent Web UI is available under the [MIT License](LICENSE).
+Arbora Agent Web UI is available under the [MIT License](LICENSE).

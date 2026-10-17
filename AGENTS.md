@@ -6,14 +6,14 @@ automation. `CLAUDE.md` imports it, so edit this file when the contract changes.
 ## Boundaries
 
 - **Owns:** what a person sees in the browser.
-- **Never builds:** data access other than through graph-os, or a decision (route decisions to epistemic-graph). Served operations go to graph-os.
-- **Allowed dependencies:** `graph_os.client` and agent-connector-sdk. It imports no EG or graph-os internals in-process.
+- **Never builds:** data access other than through arbora, or a decision (route decisions to epistemic-graph). Served operations go to arbora.
+- **Allowed dependencies:** `arbora.client` and agent-connector-sdk. It imports no EG or arbora internals in-process.
 
 Route every feature with the [ecosystem boundaries standard](https://github.com/Knuckles-Team/pipelines/blob/main/reference/ecosystem-boundaries.md) before any code. A part this repository does not own goes to its owner's specs.
 
 ## What this repository owns
 
-Agent WebUI owns the browser presentation layer for Graph OS. It also owns
+Agent WebUI owns the browser presentation layer for Arbora. It also owns
 the FastAPI host that safely adapts browser protocols to the platform gateway.
 Its public surface includes:
 
@@ -25,7 +25,7 @@ Its public surface includes:
 - sandboxed MCP App rendering and host-mediated MCP calls; and
 - the packaged frontend assets, Python wheel, container image, and Pages site.
 
-Keep authority at its owning layer. Graph OS owns authentication, composition,
+Keep authority at its owning layer. Arbora owns authentication, composition,
 routing, and gateway contracts. epistemic-graph owns durable graph state,
 queries, reasoning, schemas, and evidence. Agent Utilities owns agent and
 workflow control-plane behavior. Connector packages own source transport. This
@@ -38,7 +38,7 @@ The runtime path is:
 
 ```text
 browser -> React application -> Agent WebUI FastAPI host
-        -> authenticated Graph OS gateway -> epistemic-graph / agent fleet
+        -> authenticated Arbora gateway -> epistemic-graph / agent fleet
 ```
 
 - `src/App.tsx` and `src/Chat.tsx`: application shell and streaming chat.
@@ -166,7 +166,7 @@ and test gates are release requirements. Treat a clean baseline as an invariant.
   boundaries. Validate untrusted values before rendering or forwarding them.
 - Follow the checked-in Prettier, ESLint, Ruff, and mypy configuration. Use the
   `@/` alias for cross-directory frontend imports and relative imports locally.
-- Never place a Graph OS service bearer, provider secret, or raw durable
+- Never place an Arbora service bearer, provider secret, or raw durable
   credential in browser state. Keep MCP Apps sandboxed and host-mediated.
 - Non-loopback serving must retain checked JWT/OIDC, exact host and origin
   allowlists, bounded requests, CSP enforcement, and redacted access logging.

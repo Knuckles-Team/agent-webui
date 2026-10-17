@@ -208,6 +208,6 @@ describe('WebMCP provider remote projection', () => {
       TestSocket.instances[0].open()
     })
 
-    expect(screen.getByRole('status')).toHaveTextContent('Graph OS validation is pending')
+    expect(screen.getByRole('status')).toHaveTextContent('Arbora validation is pending')
   })
 })

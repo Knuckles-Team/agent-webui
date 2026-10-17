@@ -1,4 +1,4 @@
-"""WebUI routes backed by Graph OS served operations, over a faked Graph OS HTTP API.
+"""WebUI routes backed by Arbora served operations, over a faked Arbora HTTP API.
 
 Each test drives the real app (identity gate, route scopes, the ``host`` seam)
 and answers ``POST <api>/ops/<op_id>`` with an in-process ``httpx`` transport.
@@ -22,7 +22,7 @@ from pydantic_ai.models.test import TestModel
 _ADMIN = 'kg:read kg:write kg:admin'
 
 
-class FakeGraphOs:
+class FakeArbora:
     """Record each served-operation call and answer from a per-op table."""
 
     def __init__(self) -> None:
@@ -44,8 +44,8 @@ class FakeGraphOs:
 
 
 @pytest.fixture
-def graph_os(monkeypatch: pytest.MonkeyPatch) -> FakeGraphOs:
-    fake = FakeGraphOs()
+def arbora(monkeypatch: pytest.MonkeyPatch) -> FakeArbora:
+    fake = FakeArbora()
     real_client = httpx.AsyncClient
 
     def client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
@@ -58,7 +58,7 @@ def graph_os(monkeypatch: pytest.MonkeyPatch) -> FakeGraphOs:
 
 
 @pytest.fixture
-def app(graph_os: FakeGraphOs) -> Any:
+def app(arbora: FakeArbora) -> Any:
     return create_agent_web_app(Agent(TestModel()), workspace_helpers={})
 
 
@@ -187,13 +187,13 @@ def _client(app: Any, scope: str = _ADMIN) -> TestClient:
 )
 # spec: APIUI-06.1
 def test_read_routes_project_the_served_operation(
-    app, graph_os, method, path, body, op_id, value, sent, expected
+    app, arbora, method, path, body, op_id, value, sent, expected
 ) -> None:
-    graph_os.results[op_id] = value
+    arbora.results[op_id] = value
     response = _client(app).request(method, f'/api/enhanced{path}', json=body)
     assert response.status_code == 200, response.text
     assert response.json() == expected
-    called, params, headers = graph_os.calls[-1]
+    called, params, headers = arbora.calls[-1]
     assert called == op_id
     assert sent.items() <= params.items()
     assert headers['accept'] == 'application/json'
@@ -234,18 +234,18 @@ def test_read_routes_project_the_served_operation(
     ],
 )
 def test_write_routes_send_one_idempotency_key(
-    app, graph_os, path, body, op_id, sent
+    app, arbora, path, body, op_id, sent
 ) -> None:
-    graph_os.results[op_id] = {'status': 'ok'}
+    arbora.results[op_id] = {'status': 'ok'}
     response = _client(app).post(f'/api/enhanced{path}', json=body)
     assert response.status_code == 200, response.text
-    called, params, headers = graph_os.calls[-1]
+    called, params, headers = arbora.calls[-1]
     assert called == op_id
     assert sent.items() <= params.items()
     assert len(headers['idempotency-key']) == 32
 
 
-def test_a_missing_operation_answers_not_available(app, graph_os) -> None:
+def test_a_missing_operation_answers_not_available(app, arbora) -> None:
     response = _client(app).get('/api/enhanced/graph/search?query=x')
     assert response.status_code == 501
     assert response.json()['detail']['needs_operation'] == 'retrieval.search'
@@ -255,8 +255,8 @@ def test_a_missing_operation_answers_not_available(app, graph_os) -> None:
     ('code', 'status'),
     [('PERMISSION_DENIED', 403), ('INVALID_ARGUMENT', 400), ('SOMETHING_NEW', 502)],
 )
-def test_a_graph_os_refusal_keeps_its_status(app, graph_os, code, status) -> None:
-    graph_os.results['retrieval.search'] = httpx.Response(
+def test_a_arbora_refusal_keeps_its_status(app, arbora, code, status) -> None:
+    arbora.results['retrieval.search'] = httpx.Response(
         403, json={'ok': False, 'error': {'code': code, 'message': 'secret detail'}}
     )
     response = _client(app).get('/api/enhanced/graph/search?query=x')
@@ -274,22 +274,22 @@ def test_a_graph_os_refusal_keeps_its_status(app, graph_os, code, status) -> Non
 )
 # spec: APIUI-06.1
 def test_routes_without_a_served_operation_answer_not_available(
-    app, graph_os, path, operation
+    app, arbora, path, operation
 ) -> None:
     response = _client(app).get(f'/api/enhanced{path}')
     assert response.status_code == 501
     detail = response.json()['detail']
     assert (detail['error'], detail['needs_operation']) == ('not_available', operation)
-    assert graph_os.calls == []
+    assert arbora.calls == []
 
 
-def test_unsafe_graph_queries_never_reach_graph_os(app, graph_os) -> None:
-    graph_os.results['query.uql'] = []
+def test_unsafe_graph_queries_never_reach_arbora(app, arbora) -> None:
+    arbora.results['query.uql'] = []
     response = _client(app).post(
         '/api/enhanced/graph/query', json={'query': 'MATCH (n) DETACH DELETE n'}
     )
     assert response.status_code == 400
-    assert graph_os.calls == []
+    assert arbora.calls == []
 
 
 @pytest.mark.parametrize(
@@ -303,20 +303,20 @@ def test_unsafe_graph_queries_never_reach_graph_os(app, graph_os) -> None:
         ('kg:read', 'GET', '/api/enhanced/sessions', 200),
     ],
 )
-def test_route_scopes_gate_before_graph_os(
-    app, graph_os, scope, method, path, expected
+def test_route_scopes_gate_before_arbora(
+    app, arbora, scope, method, path, expected
 ) -> None:
-    graph_os.results.update(
+    arbora.results.update(
         {'query.uql': [], 'retrieval.search': [], 'agents.tasks.list': []}
     )
     response = _client(app, scope).request(
         method, path, json={'query': 'MATCH (n) RETURN n'} if method == 'POST' else None
     )
     assert response.status_code == expected
-    assert bool(graph_os.calls) == (expected == 200)
+    assert bool(arbora.calls) == (expected == 200)
 
 
-def test_an_unauthenticated_request_is_refused(app, graph_os) -> None:
+def test_an_unauthenticated_request_is_refused(app, arbora) -> None:
     response = TestClient(app).get('/api/enhanced/graph/search?query=x')
     assert response.status_code == 401
-    assert graph_os.calls == []
+    assert arbora.calls == []

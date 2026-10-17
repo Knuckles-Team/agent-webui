@@ -14,7 +14,7 @@ the existing LGTM/Loki stack as structured data instead of prose.
 
 * Correlation ids come from ``agent_utilities.observability.correlation`` —
   the SAME cross-agent trace-correlation module the rest of the ecosystem
-  uses to tie a request to its downstream graph-os/engine calls. This module
+  uses to tie a request to its downstream arbora/engine calls. This module
   never mints its own id scheme; it binds the shared contextvar for the
   lifetime of one request/connection so every inner layer (authorization,
   identity, route handlers, and any outbound call the request triggers)
@@ -157,7 +157,7 @@ class StructuredLogFormatter(logging.Formatter):
     """Render one JSON object (or a readable line) per record.
 
     Every record carries the ambient correlation id (item 2: ties a browser
-    request to its server-side handling and to any downstream graph-os
+    request to its server-side handling and to any downstream arbora
     call), plus whatever structured fields the call site passed via
     ``extra=``. Exception tracebacks are preserved (never stripped) so
     unhandled errors are diagnosable from logs alone — the whole point of

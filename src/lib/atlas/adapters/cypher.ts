@@ -1,6 +1,6 @@
 /**
  * @file adapters/cypher.ts
- * @description Read-only Cypher over graph-os's governed graph-query surface.
+ * @description Read-only Cypher over arbora's governed graph-query surface.
  *
  * The canonical REST twin (`/api/graph/query`) is used instead of the
  * admin-only enhanced route used by CypherReplView: it carries Atlas's explicit

@@ -1,7 +1,7 @@
 """Every WebUI listener has a verifier; only the static shell is public.
 
 There is no unauthenticated loopback path any more. A deployment configures a
-complete JWT verifier or its host injects a session boundary (Graph OS's
+complete JWT verifier or its host injects a session boundary (Arbora's
 identity gate). Without a credential a browser can load only the static SPA
 bundle that renders the sign-in screens; every application route still
 answers 401.

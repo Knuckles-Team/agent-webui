@@ -7,7 +7,7 @@ description: >-
   you want to inspect or operate the fleet from the UI, manage engine tenants or
   shards, review the mutation/risk approval queue, or check service health.
 license: MIT
-tags: [graph-os, webui, admin, fleet, tenants, shards, rbac, health]
+tags: [arbora, webui, admin, fleet, tenants, shards, rbac, health]
 tier: surface
 metadata:
   author: Genius

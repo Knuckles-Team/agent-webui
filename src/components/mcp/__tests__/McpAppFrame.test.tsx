@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { MCP_APP_SANDBOX, McpAppFrame } from '../McpAppFrame'
 
-const baseMeta = { resourceUri: 'ui://graph-os/task-progress.html' }
+const baseMeta = { resourceUri: 'ui://arbora/task-progress.html' }
 
 describe('McpAppFrame', () => {
   it('renders the app in the minimum sandbox, with no same-origin/popup escape', () => {

@@ -5,15 +5,15 @@
  *
  * This is what `McpAppFrame`'s `callTool` and its app-HTML fetch are wired to.
  * It deliberately does NOT open an MCP connection from the browser. Two hard
- * constraints make a direct browser→graph-os MCP connection impossible to do
+ * constraints make a direct browser→arbora MCP connection impossible to do
  * safely, not merely inconvenient:
  *
- *  1. **`MCP_ALLOWED_HOSTS`.** graph-os's listener rejects any request whose
+ *  1. **`MCP_ALLOWED_HOSTS`.** arbora's listener rejects any request whose
  *     `Host` authority is not in its exact allow-list (`400 host rejected`;
  *     `agent_utilities/mcp/server_factory.py` → `MCP_ALLOWED_HOSTS is
  *     required`). A browser cannot set `Host`, so the only requests that can
  *     ever be accepted are ones a server-side client makes.
- *  2. **The bearer is a service credential.** graph-os authenticates children
+ *  2. **The bearer is a service credential.** arbora authenticates children
  *     with an OIDC client-credentials bearer minted by
  *     `agent_utilities/mcp/client_credentials.py`. Shipping that to JS would
  *     hand every page (and every MCP App iframe) a fleet-wide credential.
@@ -83,8 +83,8 @@ function parseToolPayload(payload: unknown): { entries: unknown[]; total: number
   return parseToolEnvelope(payload as Record<string, unknown>) ?? { entries: [], total: null }
 }
 
-/** Default MCP server name delegated to — graph-os, the KG/fleet gateway. */
-export const DEFAULT_MCP_SERVER = 'graph-os'
+/** Default MCP server name delegated to — arbora, the KG/fleet gateway. */
+export const DEFAULT_MCP_SERVER = 'arbora'
 
 /** Governed catalog is bounded at 200 tools per server (algorithmic budget: T <= 200). */
 export const MAX_CATALOG_TOOLS = 200

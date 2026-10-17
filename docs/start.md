@@ -1,28 +1,28 @@
-# Start Graph OS
+# Start Arbora
 
-Graph OS is served as a GraphOS co-service. This is the shortest path to a
+Arbora is served as an Arbora co-service. This is the shortest path to a
 browser surface with the correct routing and authority boundaries.
 
 ## Requirements
 
 - Python 3.12 through 3.14
 - A local or deployed epistemic-graph endpoint accepted by the generated
-  GraphOS profile
+  Arbora profile
 - A supported model provider configured for conversations and agent runs
 
 ## Install and run
 
 ```bash
-uvx --from "graph-os[webui]" setup-config generate --profile tiny
+uvx --from "arbora[webui]" setup-config generate --profile tiny
 export ENABLE_WEB_UI=true
-uvx --from "graph-os[webui]" graph-os --transport streamable-http --host 127.0.0.1 --port 8000
+uvx --from "arbora[webui]" arbora --transport streamable-http --host 127.0.0.1 --port 8000
 ```
 
 Open <http://127.0.0.1:8080>. The MCP transport listens on port `8000`; the
-WebUI co-service uses port `8080`. Set `GRAPH_OS_WEBUI_PORT` when that port is
+WebUI co-service uses port `8080`. Set `ARBORA_WEBUI_PORT` when that port is
 already in use.
 
-The successful first screen shows the Graph OS navigation and dashboard.
+The successful first screen shows the Arbora navigation and dashboard.
 Atlas at `/explore` presents the graph, object, schema, data, document, and
 memory entry points exposed by the connected runtime.
 
@@ -34,7 +34,7 @@ memory entry points exposed by the connected runtime.
 
 ## Work on the interface from source
 
-Use the packaged GraphOS process for the backend, then run Vite for frontend
+Use the packaged Arbora process for the backend, then run Vite for frontend
 changes:
 
 ```bash
@@ -45,7 +45,7 @@ BACKEND_PORT=8080 pnpm run dev
 ```
 
 Vite serves the development frontend at <http://127.0.0.1:9000> and proxies
-API, ACP, and browser-control traffic to the GraphOS-hosted WebUI co-service.
+API, ACP, and browser-control traffic to the Arbora-hosted WebUI co-service.
 
 ## Check the build
 

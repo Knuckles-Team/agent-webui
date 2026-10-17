@@ -1,6 +1,6 @@
 /**
  * @file readiness-api.ts
- * @description Typed client for the GraphOS `graphos.readiness.v1` snapshot
+ * @description Typed client for the Arbora `arbora.readiness.v1` snapshot
  * (GOC-02, `agent_utilities/knowledge_graph/readiness.py`).
  *
  * An independent audit of this program found that health/readiness can
@@ -119,7 +119,7 @@ export interface FetchReadinessOptions {
 }
 
 /**
- * Fetch one live `graphos.readiness.v1` snapshot. Every call re-runs every
+ * Fetch one live `arbora.readiness.v1` snapshot. Every call re-runs every
  * check server-side, including the synthetic-query canary — there is no
  * client-side cache here, matching the backend's own "never cached, never
  * re-served" contract.

@@ -243,7 +243,7 @@ function AccountSection({
       {identity.raw?.mode === 'none' && (
         <p className="text-xs text-muted-foreground pt-1 border-t">
           Unauthenticated demo mode — this is the bootstrap administrator. Secure the install with{' '}
-          <code className="font-mono">graph-os-identity claim</code>.
+          <code className="font-mono">arbora-identity claim</code>.
         </p>
       )}
     </div>

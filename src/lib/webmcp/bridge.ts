@@ -174,7 +174,7 @@ function assertBoundedResult(result: unknown): void {
 
 /**
  * Executes commands only through the exact definitions retained by the native
- * WebMCP registry. Graph OS remains the lease, replay, authorization, and call
+ * WebMCP registry. Arbora remains the lease, replay, authorization, and call
  * authority; this class holds only in-flight browser work and attended UI state.
  */
 export class RemoteWebMcpDispatcher {

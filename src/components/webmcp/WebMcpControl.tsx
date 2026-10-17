@@ -51,7 +51,7 @@ export function WebMcpControl({ channel, visible, isAttendedGesture = browserTru
             <p role="status" className="text-xs text-muted-foreground">
               {view.status === 'armed'
                 ? `Armed for ${scopeSummary(view)} in this visible page.`
-                : `Connected for ${scopeSummary(view)}; Graph OS validation is pending.`}
+                : `Connected for ${scopeSummary(view)}; Arbora validation is pending.`}
             </p>
             {view.expiresAt !== null && (
               <p className="text-xs text-muted-foreground">
@@ -81,8 +81,7 @@ export function WebMcpControl({ channel, visible, isAttendedGesture = browserTru
         ) : (
           <div className="mt-2 space-y-2">
             <p className="text-xs text-muted-foreground">
-              Allow Graph OS to request only the registered tools in this page. Control ends on page or identity
-              change.
+              Allow Arbora to request only the registered tools in this page. Control ends on page or identity change.
             </p>
             <Button
               type="button"
@@ -109,7 +108,7 @@ export function WebMcpControl({ channel, visible, isAttendedGesture = browserTru
           <DialogHeader>
             <DialogTitle>Confirm browser action</DialogTitle>
             <DialogDescription id="webmcp-confirmation-description">
-              Graph OS is requesting one local UI change. The approval applies only to this call, tool version, schema,
+              Arbora is requesting one local UI change. The approval applies only to this call, tool version, schema,
               and argument digest.
             </DialogDescription>
           </DialogHeader>

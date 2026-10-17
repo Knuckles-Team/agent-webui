@@ -2,7 +2,7 @@
  * @file adapters/uql-contract.ts
  * @description Runtime contracts and lossless decoding for the canonical UQL route.
  *
- * Graph-OS returns UQL through the same `/api/graph/query` action twin used by
+ * Arbora returns UQL through the same `/api/graph/query` action twin used by
  * the other query dialects. Depending on the engine build, the result can expose
  * raw rows beside an EvidenceBundle, or only expose those rows in a reasoning
  * trace. The decoder keeps both forms explicit and never manufactures graph

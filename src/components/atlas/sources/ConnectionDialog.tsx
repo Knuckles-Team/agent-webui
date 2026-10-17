@@ -95,7 +95,7 @@ export function ConnectionDialog({
               data-testid="atlas-connection-profile-ref"
             />
             <p id="atlas-connection-profile-help" className="text-muted-foreground text-xs">
-              The profile is resolved by GraphOS at run time; only its opaque reference is kept in the UI request.
+              The profile is resolved by Arbora at run time; only its opaque reference is kept in the UI request.
             </p>
             {validationError && (
               <p id="atlas-connection-profile-error" className="text-destructive text-xs" role="alert">

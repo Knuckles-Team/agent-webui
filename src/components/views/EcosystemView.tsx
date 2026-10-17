@@ -1085,7 +1085,7 @@ function InfraDomain({
                   </CardHeader>
                   <CardContent className="pb-3 text-xs leading-relaxed text-muted-foreground flex-1 flex flex-col justify-end">
                     <p>
-                      Direct container mutation is disabled. Submit lifecycle changes through governed GraphOS
+                      Direct container mutation is disabled. Submit lifecycle changes through governed Arbora
                       delegation.
                     </p>
                   </CardContent>
@@ -1223,11 +1223,11 @@ function InfraDomain({
               <CardTitle className="flex items-center gap-2">
                 <Terminal className="text-green-500 size-5" /> Governed Remote Operations
               </CardTitle>
-              <CardDescription>Remote execution is mediated by GraphOS ActionPolicy.</CardDescription>
+              <CardDescription>Remote execution is mediated by Arbora ActionPolicy.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="rounded-md border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
-                Raw shell commands are not accepted by this UI. Use a typed GraphOS delegation action; it will apply
+                Raw shell commands are not accepted by this UI. Use a typed Arbora delegation action; it will apply
                 authorization, approval, argument validation, timeouts, audit references, and redacted results before
                 dispatch.
               </div>

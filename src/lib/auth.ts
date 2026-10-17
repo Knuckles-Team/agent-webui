@@ -1,9 +1,9 @@
 /**
  * @file auth.ts
  * @description Reads the signed-in principal's identity and role from the one
- * server-side identity boundary: Graph OS's identity broker
- * (`graph_os/identity`, which owns `/auth/*` whenever the WebUI is served by
- * Graph OS) or, for a standalone WebUI, the single-client OIDC boundary
+ * server-side identity boundary: Arbora's identity broker
+ * (`arbora/identity`, which owns `/auth/*` whenever the WebUI is served by
+ * Arbora) or, for a standalone WebUI, the single-client OIDC boundary
  * (`agent/agent_webui/oidc_session.py`).
  *
  * This is deliberately NOT a second auth path: the `webui_role` that
@@ -40,7 +40,7 @@ export interface AuthSession {
   /** Computed server-side by `agent/agent_webui/rbac.py::resolve_webui_role`. */
   webui_role?: string | null
   expires_at?: number | null
-  /** Graph OS identity broker only: the stored auth mode (`null` while the
+  /** Arbora identity broker only: the stored auth mode (`null` while the
    *  first administrator has not been created yet). */
   mode?: AuthMode | null
   /** The banner every surface shows (only the `none` demo mode has one). */

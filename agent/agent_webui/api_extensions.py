@@ -1078,7 +1078,7 @@ def set_workspace_helpers(helpers: dict[str, Any]) -> None:
 def get_engine() -> Any:
     """The WebUI holds no graph engine.
 
-    Graph data comes from Graph OS served operations. A route that still
+    Graph data comes from Arbora served operations. A route that still
     needs an in-process engine answers "not available".
     """
     raise unavailable('Graph engine', 'query.uql')
@@ -1966,7 +1966,7 @@ async def delete_mcp_server(server_name: str, hard: bool = False) -> dict[str, A
 async def call_mcp_tool_route(data: dict[str, Any]) -> dict[str, Any]:
     """Invoke one MCP tool through the served ``fleet.call`` operation.
 
-    Graph OS owns the allowlist, actor policy, credentials and audit. The
+    Arbora owns the allowlist, actor policy, credentials and audit. The
     WebUI checks only the request shape.
     """
 
@@ -3114,7 +3114,7 @@ async def get_graph_relationships() -> list[dict[str, Any]]:
 # ★ THE AGGREGATE IN EVERY QUERY BELOW IS LOAD-BEARING, NOT DECORATION --
 #   BUT NOT FOR THE REASON THIS COMMENT ORIGINALLY GAVE.
 #   Measured 2026-08-25 against the live engine (eg 2.27.0, `platform/
-#   graph-os`) the SAME projection with and without an aggregate:
+#   arbora`) the SAME projection with and without an aggregate:
 #       MATCH (n:Skill) RETURN n.name as name LIMIT 5          -> []      (!)
 #       MATCH (n:Skill) RETURN n.name as name, count(*) as c   -> 308 rows
 #       MATCH (a)-[r]->(b) RETURN a.id as s, b.id as o         -> []      (!)
@@ -4074,7 +4074,7 @@ _GRAPH_STATS_BY_TYPE_LIMIT = 200
 # than left as a bare literal) so the value carries its measurement
 # rationale and so the regression tests can drive the real deadline path.
 #
-# Measured in-pod (graph-os), per single isolated request:
+# Measured in-pod (arbora), per single isolated request:
 #   * 25,121-row tenant graph, 2026-08-25, service principal
 #       - `SELECT COUNT(*) FROM nodes` .......................... 0.07s
 #       - `MATCH (a)-[r]->(b) RETURN count(r)` .................. 0.52s
@@ -4505,7 +4505,7 @@ async def update_memory(memory_id: str, data: dict[str, Any]) -> dict[str, Any]:
 
 @router.delete('/graph/memory/{memory_id}')
 async def delete_memory(memory_id: str) -> dict[str, Any]:
-    """Memory deletion needs a served operation that Graph OS does not have."""
+    """Memory deletion needs a served operation that Arbora does not have."""
 
     _validate_runtime_id(memory_id)
     raise unavailable('Graph memory deletion', 'memory.delete')
@@ -6187,7 +6187,7 @@ def _scrub_existing_session_rows(conn: Any) -> None:
 async def get_all_sessions(limit: int = 50) -> list[dict[str, Any]]:
     """List the caller's agent tasks through ``agents.tasks.list``.
 
-    Graph OS scopes the list to the verified caller. The WebUI adds no rows.
+    Arbora scopes the list to the verified caller. The WebUI adds no rows.
     """
 
     value = await served('agents.tasks.list', {'limit': max(1, min(limit, 100))})
@@ -7582,7 +7582,7 @@ async def _call_mcp_tool(
     *,
     timeout: float = 30.0,
 ) -> Any:
-    """Invoke an MCP tool through the host's governed GraphOS delegation seam.
+    """Invoke an MCP tool through the host's governed Arbora delegation seam.
 
     The WebUI intentionally never reads launch commands, spawns registry
     entries, or composes child environments. The host injects ``call_mcp_tool``
@@ -8996,7 +8996,7 @@ async def run_workflow(request: Request) -> dict[str, Any]:
 # Relationship to the canonical gateway routes (drift policy):
 #
 # * The canonical KG REST surface (/api/graph/*, /api/ontology/*, /api/object/*)
-#   is owned by Graph OS.  A Graph OS host mounts it through the public
+#   is owned by Arbora.  An Arbora host mounts it through the public
 #   ``ApplicationComposer`` port passed to ``create_agent_web_app``; standalone
 #   WebUI intentionally does not expose those gateway routes.
 # * Routes here that have a 1:1 canonical tool twin dispatch through
@@ -9023,7 +9023,7 @@ async def _canonical_kg_tool(tool_name: str, **kwargs: Any) -> Any:
     """Dispatch a call through the canonical KG tool surface.
 
     ``agent_utilities.mcp.kg_server.REGISTERED_TOOLS`` holds the single
-    canonical implementation behind both the graph-os MCP tools and the API
+    canonical implementation behind both the arbora MCP tools and the API
     gateway's action-routed REST twins. Routes here that mirror one of those
     tools 1:1 must dispatch through it — never reimplement the body — so the
     webui surface cannot drift from what gateway/MCP clients observe.
@@ -9043,7 +9043,7 @@ def _raise_canonical_error(result: Any, status_code: int = 500) -> None:
 # Atlas governed source façade
 #
 # Atlas does not own a second connector registry.  These routes are a typed,
-# privacy-preserving HTTP façade over the canonical graph-os tools and are kept
+# privacy-preserving HTTP façade over the canonical arbora tools and are kept
 # deliberately small so the source-control plane remains authoritative in
 # agent-utilities.  In particular, a connection declaration contains aliases,
 # policy knobs, and opaque profile references only.  A DSN, endpoint, identity,
@@ -12282,7 +12282,7 @@ async def save_ontology_object_view(
         raise HTTPException(status_code=500, detail=type(e).__name__) from e
 
 
-# Served Graph OS operation helpers
+# Served Arbora operation helpers
 
 
 async def _write_memory(key: str, data: dict[str, Any]) -> Any:

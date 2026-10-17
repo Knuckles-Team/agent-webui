@@ -1,7 +1,7 @@
-"""Authenticated transport for Graph OS control of an attended browser document.
+"""Authenticated transport for Arbora control of an attended browser document.
 
 This module owns no lease, call, replay, policy, or receipt state.  It validates
-the browser wire boundary and hands every event to one host-injected Graph OS
+the browser wire boundary and hands every event to one host-injected Arbora
 ``BrowserControlPort``.  The port remains the sole authority for browser
 control; the WebUI only keeps the WebSocket open.
 """
@@ -267,7 +267,7 @@ class ControlCancel(_WireModel):
 class ChannelReady(_WireModel):
     protocol: Literal['webmcp.control.v1']
     type: Literal['channel.ready']
-    authority: Literal['graph-os']
+    authority: Literal['arbora']
     route_id: str = Field(min_length=1, max_length=128, pattern=_OPAQUE_ID_PATTERN)
     registration_generation: int = Field(ge=1, le=2**53 - 1)
     catalog_digest: str = Field(pattern=_DIGEST_PATTERN)
@@ -275,7 +275,7 @@ class ChannelReady(_WireModel):
 
 
 class CatalogRegistrationReceipt(_WireModel):
-    authority: Literal['graph-os']
+    authority: Literal['arbora']
     route_id: str = Field(min_length=1, max_length=128, pattern=_OPAQUE_ID_PATTERN)
     registration_generation: int = Field(ge=1, le=2**53 - 1)
     catalog_digest: str = Field(pattern=_DIGEST_PATTERN)
@@ -370,7 +370,7 @@ class _ChannelRateLimiter:
 
 
 class BrowserControlPort(Protocol):
-    """Host-injected Graph OS authority; WebUI remains a transport adapter."""
+    """Host-injected Arbora authority; WebUI remains a transport adapter."""
 
     authority: str
     supports_durable_fences: bool
@@ -401,7 +401,7 @@ class BrowserControlPort(Protocol):
 def _port_enabled(port: BrowserControlPort | None) -> bool:
     checks = (
         port is not None,
-        getattr(port, 'authority', None) == 'graph-os',
+        getattr(port, 'authority', None) == 'arbora',
         getattr(port, 'supports_durable_fences', False) is True,
         getattr(port, 'supports_durable_audit', False) is True,
         getattr(port, 'supports_attended_leases', False) is True,
@@ -416,7 +416,7 @@ def _port_enabled(port: BrowserControlPort | None) -> bool:
 
 
 def browser_control_port_enabled(port: Any) -> bool:
-    """Return whether every executable Graph OS authority seam is present."""
+    """Return whether every executable Arbora authority seam is present."""
 
     return _port_enabled(cast(BrowserControlPort | None, port))
 
@@ -827,7 +827,7 @@ async def _revoke_unopened_arm(
     port: BrowserControlPort | None,
     binding: BrowserControlBinding | None,
 ) -> None:
-    """Release an arm if Graph OS never returned a channel connection."""
+    """Release an arm if Arbora never returned a channel connection."""
 
     if port is None or binding is None:
         return
@@ -837,7 +837,7 @@ async def _revoke_unopened_arm(
             timeout=_PORT_TIMEOUT_SECONDS,
         )
         if not _revocation_matches_binding(receipt, binding):
-            raise ValueError('Graph OS returned a mismatched revocation receipt')
+            raise ValueError('Arbora returned a mismatched revocation receipt')
     except Exception as error:
         logger.warning(
             'Browser-control unopened arm revoke failed: error_type=%s',
@@ -891,7 +891,7 @@ async def _register_initial_catalog(
         or verified.catalog_digest != binding.catalog_digest
         or verified.tool_scope_digest != binding.tool_scope_digest
     ):
-        raise ValueError('Graph OS returned a mismatched catalog receipt')
+        raise ValueError('Arbora returned a mismatched catalog receipt')
     return verified
 
 
@@ -1033,7 +1033,7 @@ def build_browser_control_router(port: BrowserControlPort | None) -> APIRouter:
 
 
 async def revalidate_browser_control_session(binding: Any) -> bool:
-    """Invoke the opaque per-login IdP backchannel verifier from Graph OS."""
+    """Invoke the opaque per-login IdP backchannel verifier from Arbora."""
 
     callback = getattr(binding, 'session_revalidator', None)
     if not callable(callback):
