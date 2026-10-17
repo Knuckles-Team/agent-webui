@@ -1,17 +1,10 @@
 # Pinned sibling source checkouts under `.uv-workspace-siblings/`.
 #
-# uv.lock records agent-utilities (and, through it, epistemic-graph) as
-# editable path sources (see [tool.uv.sources] in pyproject.toml), so a fresh
-# clone cannot sync or check the lock until they exist on disk. This file is
-# the one source of truth for which commit each is checked out at;
-# scripts/bootstrap.sh reads it. Bump a pin by editing its commit here, then
-# run `uv lock` and commit both files together.
+# Tooling only: no dependency installs from these. Every Python dependency
+# resolves from PyPI (pyproject.toml has no git, path or editable sources).
+# The agent-utilities checkout supplies the shared gate scripts that
+# scripts/run_agent_utilities_gate.py runs (check-stubs, check-sprawl,
+# okf-no-legacy-concepts). scripts/bootstrap.sh reads this file.
 #
 # Columns: path  repository  commit  when
-#   when = always -> needed for `uv sync --frozen` and the shared gates
-#   when = lock   -> read for its metadata (`uv lock`, the uv-lock hook);
-#                    built only by `scripts/bootstrap.sh --engine`
-# bootstrap checks out every row.
 .uv-workspace-siblings/agent-utilities  https://github.com/Knuckles-Team/agent-utilities  f0cd9fd58d168f2c094787b08eab0ef4e06303aa  always
-.uv-workspace-siblings/agent-utilities/.uv-workspace-siblings/agent-connector-sdk  https://github.com/Knuckles-Team/agent-connector-sdk  8e2d7c50896a9e416ec76e53c4a9a585cc5f4d28  always
-.uv-workspace-siblings/agent-utilities/.uv-workspace-siblings/epistemic-graph  https://github.com/Knuckles-Team/epistemic-graph  6a795577dff539da06c52f467220422bf23e0b03  lock

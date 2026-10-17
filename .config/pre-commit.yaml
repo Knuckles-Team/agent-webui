@@ -98,10 +98,9 @@ repos:
   hooks:
   - id: uv-lock
     name: uv-lock (verify, never mutate)
-    # uv.lock references the pinned `.uv-workspace-siblings/` checkouts
-    # (scripts/siblings.lock), so the check needs them on disk. uv is pinned
-    # because lockfile formatting differs between uv releases.
-    entry: python scripts/run_if_available.py --gate uv-lock --require .uv-workspace-siblings/agent-utilities/pyproject.toml --require .uv-workspace-siblings/agent-utilities/.uv-workspace-siblings/epistemic-graph/pyproject.toml -- uv lock --check
+    # Every locked dependency resolves from PyPI. uv is pinned because
+    # lockfile formatting differs between uv releases.
+    entry: python scripts/run_if_available.py --gate uv-lock --require uv -- uv lock --check
     language: python
     additional_dependencies: [uv==0.11.7]
     files: ^(uv\.lock|pyproject\.toml|uv\.toml|scripts/siblings\.lock)$

@@ -72,16 +72,14 @@ Use Python 3.12–3.14, the Node.js version in `.node-version`, `pnpm`, and `uv`
 Code cloud session through `.claude/hooks/session-start.sh`) with:
 
 ```bash
-scripts/bootstrap.sh            # pinned siblings, uv >= 0.9, Python, locked .venv, pnpm deps, git hooks
-scripts/bootstrap.sh --engine   # also build epistemic-graph from source (slow)
+scripts/bootstrap.sh            # gate tooling, uv >= 0.9, Python, locked .venv, pnpm deps, git hooks
 cp .env.example .env
 ```
 
-`uv.lock` references agent-utilities and epistemic-graph as editable sources
-under `.uv-workspace-siblings/`; `scripts/siblings.lock` pins their commits and
-the bootstrap checks them out (an existing workspace symlink is left alone).
-Bump a pin there, run `uv lock`, and commit both files together. Tests that
-import the knowledge-graph or numeric layers need the `--engine` build.
+Every locked dependency, agent-utilities and agent-connector-sdk included,
+resolves from PyPI. `scripts/siblings.lock` pins only the agent-utilities
+checkout under `.uv-workspace-siblings/` that supplies shared gate scripts; the
+bootstrap checks it out (an existing workspace symlink is left alone).
 
 Run the development services in separate terminals:
 
