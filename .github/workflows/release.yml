@@ -127,7 +127,10 @@ jobs:
           source .venv/bin/activate
           uv pip install -r requirements.txt || true
           uv pip install --require-hashes -r .pipeline-contract/.github/actions/publish-python-package/twine-requirements.txt
-          uv build
+          # wheel-readiness proves dist/ holds only wheels; the sdist is built
+          # beside it and uploaded with the wheel.
+          uv build --wheel --no-create-gitignore
+          uv build --sdist --out-dir sdist --no-create-gitignore
           BUILD_VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           {
             echo "BUILD_VERSION=${BUILD_VERSION}"
@@ -164,7 +167,7 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           set -euo pipefail
-          if ! .venv/bin/twine upload dist/*.whl dist/*.tar.gz --verbose; then
+          if ! .venv/bin/twine upload dist/*.whl sdist/*.tar.gz --verbose; then
             echo "Upload failed; checking whether a concurrent publisher completed the exact release."
             python3 scripts/release/check_pypi_artifacts.py pyproject.toml dist --expect-existing
           fi
