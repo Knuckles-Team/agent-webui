@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const errors = []
 const fail = (message) => errors.push(message)
-const BRAND = /graph\s*os/i
+const BRAND = /arbora/i
 
 async function text(path) {
   try {
