@@ -13,9 +13,9 @@ Route every feature with the [ecosystem boundaries standard](https://github.com/
 
 ## What this repository owns
 
-Agent WebUI owns the browser presentation layer for Graph OS and the FastAPI
-host that safely adapts browser protocols to the platform gateway. Its public
-surface includes:
+Agent WebUI owns the browser presentation layer for Graph OS. It also owns
+the FastAPI host that safely adapts browser protocols to the platform gateway.
+Its public surface includes:
 
 - the React chat, Atlas, ontology, graph, workflow, administration, and
   operational views;
