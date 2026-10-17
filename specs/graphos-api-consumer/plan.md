@@ -98,3 +98,10 @@ redaction, and the 64/65-character boundary. Bind these tested tests to
 `WEBUI-API-R005` without changing their semantics. Generate the delivery
 record after publishing this source. This evidence covers failure logging;
 it does not establish acceptance of the other consumer requirements.
+
+### Host composition without an engine (APIUI-06.1)
+
+The WebUI holds no graph engine. A host composes its own routes on the real
+factory through `application_composer`. Graph data reaches the WebUI only
+through Graph OS served operations in `host.py`. Host composition owns agent
+and session lifecycle. Injection does not create identity or authority.

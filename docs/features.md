@@ -99,3 +99,12 @@ provider, channel, destination, or retention period.
 
 - `GET /api/enhanced/pipeline/status` - Get pipeline status
 - `POST /api/enhanced/pipeline/trigger` - Trigger pipeline phase
+
+## Host composition
+
+The WebUI holds no graph engine. A host passes `application_composer` to
+`create_agent_web_app` to add its own routes. Graph data comes from Graph OS
+served operations; a feature whose operation is not served answers 501
+`not_available`. Composition grants no identity or session authority. The host
+must still supply its configured `session_boundary` and enforce its own
+admission contract.

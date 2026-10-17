@@ -20,7 +20,8 @@
     "APIUI-04",
     "APIUI-05",
     "APIUI-06",
-    "WEBUI-API-R005"
+    "WEBUI-API-R005",
+    "APIUI-06.1"
   ],
   "requirements": [
     {
@@ -193,6 +194,9 @@
         "src/lib/graphos-api/__tests__/invoke-no-bearer.test.ts:31",
         "src/lib/graphos-api/__tests__/invoke-no-bearer.test.ts:45",
         "src/lib/graphos-api/__tests__/invoke-no-bearer.test.ts:56"
+      ],
+      "rollup_of": [
+        "APIUI-06.1"
       ]
     },
     {
@@ -211,6 +215,18 @@
         "tests/test_log_failure_error_code.py:38",
         "tests/test_log_failure_error_code.py:45",
         "tests/test_log_failure_error_code.py:59"
+      ]
+    },
+    {
+      "id": "APIUI-06.1",
+      "title": "Borrowed per-app host composition",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "0940bc0c0d99",
+        "bd46338613c1"
+      ],
+      "verified_by": [
+        "agent/agent_webui/__tests__/test_application_composer.py:183"
       ]
     }
   ]
