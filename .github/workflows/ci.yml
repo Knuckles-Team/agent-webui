@@ -109,11 +109,21 @@ jobs:
       # The base the differential steps compare against: the pull request
       # base or the previous push, else the root commit.
       - name: Resolve the published base
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
-          if [ -z "${BASE:-}" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
-            BASE="$(git rev-list --max-parents=0 HEAD)"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            # checkout tests GitHub's synthetic merge. Its first parent is
+            # the actual target; the event's base SHA can lag behind main.
+            # Fail closed if checkout ever changes to the direct PR head.
+            BASE="$(git rev-parse --verify HEAD^1)"
+            test "$(git rev-parse --verify HEAD^2)" = "$PR_HEAD_SHA"
+          else
+            BASE="${{ github.event.before }}"
+            if [ -z "${BASE:-}" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+              BASE="$(git rev-list --max-parents=0 HEAD)"
+            fi
           fi
           echo "PRE_COMMIT_FROM_REF=$BASE" >> "$GITHUB_ENV"
 
