@@ -99,3 +99,20 @@ provider, channel, destination, or retention period.
 
 - `GET /api/enhanced/pipeline/status` - Get pipeline status
 - `POST /api/enhanced/pipeline/trigger` - Trigger pipeline phase
+
+## Host-owned engine composition
+
+A host with an already-created engine can pass a synchronous
+`engine_provider` to `create_agent_web_app`. The public type is
+`agent_webui.app_composition.EngineProvider`: a zero-argument callable returning
+an `IntelligenceGraphEngine`. For example, `engine_provider=lambda: engine`
+borrows the host's instance. The existing `workspace_helpers` mapping is
+snapshotted for that injected application. HTTP, WebSocket and streaming
+handlers resolve these resources within the application's context.
+
+An injected provider that raises or returns no engine fails unavailable; it
+does not fall back to the process singleton. WebUI does not close the borrowed
+engine or agent. The host remains responsible for their lifecycle. Omitting
+the provider preserves standalone resolution. Resource injection grants no
+identity or session authority. The host must still supply its configured
+`session_boundary` and enforce its own admission contract.
