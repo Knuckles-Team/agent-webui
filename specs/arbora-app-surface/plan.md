@@ -43,13 +43,13 @@ Reuse and new: the run view above stays; the harness block is new.
 Decisions: the client reads `runs.get` and `runs.metrics` only. Rejected alternative: computing context use or cost in the client.
 The engine owns the run trace, and a client copy drifts.
 
-Cross-repository: depends on three rows. The `GRAPHOS-OPS` row for run metrics serves `runs.get` and `runs.metrics`. The `AU-HARNESS` row for the run trace writes the fields. The `AU-HARNESS` row for `update_plan` owns the plan state.
+Cross-repository: depends on three rows. The `ARBORA-OPS` row for run metrics serves `runs.get` and `runs.metrics`. The `AU-HARNESS` row for the run trace writes the fields. The `AU-HARNESS` row for `update_plan` owns the plan state.
 
 ## WEBUI-APPS-R005 role-aware navigation and per-user dashboards
 
 Data flow: principal role → nav registry filter → DashboardView layout read and write → rendered page.
 Attach point: src/lib/nav-registry.ts and src/components/views/DashboardView.tsx.
-Reused: the identity session from `IDUI-02` and the AppSurface contract. Role definitions stay with `GRAPHOS-IDENTITY` rows.
+Reused: the identity session from `IDUI-02` and the AppSurface contract. Role definitions stay with `ARBORA-IDENTITY` rows.
 Decision: filter navigation by the declared role in the client. Arbora still authorizes each call. Rejected alternative: a separate client role table.
 
 ## WEBUI-APPS-R006 goals, sessions and fleets panel
@@ -70,7 +70,7 @@ Existing code: `src/components/views/GraphView.tsx:792`, `:796`, `:801`; `src/co
 
 Decision: the engine decides authorization and the client shows the verdict. Rejected alternative: a client-side role check, which drifts from the engine policy.
 
-Cross-repository: `GRAPHOS-OPS-R008` generates the engine-bound operations, `GRAPHOS-OPS-R009` enforces invoke authority and `GRAPHOS-OPS-R013` serves `POST /api/v1/ops/{op_id}`. EG owns the served `ApplyMutation` version check (`EG-DURABLE-KERNEL-R084.3`) and unchanged-state conflict refusal (`EG-DURABLE-KERNEL-R084.4`). Embedded read parity in `EG-TYPED-PACKS-R088` is not proof of served write authorization.
+Cross-repository: `ARBORA-OPS-R008` generates the engine-bound operations, `ARBORA-OPS-R009` enforces invoke authority and `ARBORA-OPS-R013` serves `POST /api/v1/ops/{op_id}`. EG owns the served `ApplyMutation` version check (`EG-DURABLE-KERNEL-R084.3`) and unchanged-state conflict refusal (`EG-DURABLE-KERNEL-R084.4`). Embedded read parity in `EG-TYPED-PACKS-R088` is not proof of served write authorization.
 
 ## Memory files (WEBUI-APPS-R031)
 
@@ -139,7 +139,7 @@ contracts, owner authority, implementation evidence or acceptance receipts.
 
 These clauses preserve the existing shell and producer responsibilities. They add only the reviewed missing browser consumers.
 
-All new typed operation calls reuse `src/lib/arbora-api/invoke.ts` under `WEBUI-API-R001` and the generated API client. Arbora registration, authorization and serving remain `GRAPHOS-OPS-R008`, `GRAPHOS-OPS-R009` and `GRAPHOS-OPS-R013`. Existing event transports carry owner-defined subscriptions; the browser must not create a second event protocol.
+All new typed operation calls reuse `src/lib/arbora-api/invoke.ts` under `WEBUI-API-R001` and the generated API client. Arbora registration, authorization and serving remain `ARBORA-OPS-R008`, `ARBORA-OPS-R009` and `ARBORA-OPS-R013`. Existing event transports carry owner-defined subscriptions; the browser must not create a second event protocol.
 
 No operation ID absent from a producer contract is assigned here. The owner must publish exact specialized operation IDs and schema bindings before definition closure or runtime acceptance. A missing binding is an unavailable dependency, not permission for local policy or a browser-owned index. Specialized producer extensions remain with EG, SDK, AU and Arbora. This batch defines the exact information and behavior their WebUI consumer requires.
 
@@ -151,7 +151,7 @@ Input `AU:103`; original record SHA-256 `68bae14976bd3581bc33ee65b153b5ad60f807f
 
 Source obligation: Evolution dashboards show per-run metrics and prompt-optimization progress drawn from recorded traces. Reviewers judge proposals by measured outcomes.
 
-Existing owner anchors: AU-HARNESS-R011; AU-HARNESS-R017; EG-ORCH-VOCAB-R009; GRAPHOS-OPS-R021.4.4/.5. Entry: ObservabilityView harness block.
+Existing owner anchors: AU-HARNESS-R011; AU-HARNESS-R017; EG-ORCH-VOCAB-R009; ARBORA-OPS-R021.4.4/.5. Entry: ObservabilityView harness block.
 
 Use generated proposal identity, prompt revision, agent identity, progress state and source RunTrace references. Keep measured run metrics separate from decision calibration and coverage.
 
@@ -171,7 +171,7 @@ Input `WEBUI:3`; original record SHA-256 `38936b5f2136263c40c29fe639c984243fed8b
 
 Source obligation: On first run, the platform discovers agent sessions from every supported harness. It syncs them into local queryable indexes. The web interface offers unified browsing and search across them with cost summaries.
 
-Existing owner anchors: APIUI-04; WEBUI-APPS-R006; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: SessionsView and goal-session-fleet panel.
+Existing owner anchors: APIUI-04; WEBUI-APPS-R006; ARBORA-OPS-R008; ARBORA-OPS-R009. Entry: SessionsView and goal-session-fleet panel.
 
 Consume the versioned host supported-harness manifest and discovery status for every manifest entry. Session identity includes source harness, source session ID, tenant and authoritative indexed revision.
 
@@ -191,7 +191,7 @@ Input `WEBUI:4`; original record SHA-256 `dd790b40c92758d720375c78ccd4278845b8d3
 
 Source obligation: The platform tracks token and cost usage per agent, indexes it in local storage, and exposes it for fast analysis by model, project and agent.
 
-Existing owner anchors: EG-ORCH-VOCAB-R010.1–.6; GRAPHOS-OPS-R021.4.3/.4; WEBUI-APPS-R004.3. Entry: ObservabilityView usage section.
+Existing owner anchors: EG-ORCH-VOCAB-R010.1–.6; ARBORA-OPS-R021.4.3/.4; WEBUI-APPS-R004.3. Entry: ObservabilityView usage section.
 
 Consume generated model, project and agent identities, input/output token counts and total usage cost. Preserve owner-defined cached/reasoning categories, accounting units and missing-value semantics.
 
@@ -211,7 +211,7 @@ Input `WEBUI:5`; original record SHA-256 `0b416b47d85530fb35cf44bf5dc79e04e1b974
 
 Source obligation: Connected client views reflect graph changes immediately without page refresh. The graph layout stays readable under concurrent edits from multiple users.
 
-Existing owner anchors: EG-DURABLE-KERNEL-R084.3/.4; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009; WEBUI-APPS-R030. Entry: GraphView and GraphCanvas.
+Existing owner anchors: EG-DURABLE-KERNEL-R084.3/.4; ARBORA-OPS-R008; ARBORA-OPS-R009; WEBUI-APPS-R030. Entry: GraphView and GraphCanvas.
 
 Consume authorized snapshot identity and ordered change events with graph incarnation, revision, cursor and event identity. A tombstone remains distinct from an inaccessible entity.
 
@@ -231,7 +231,7 @@ Input `WEBUI:6`; original record SHA-256 `3dc3c464a10a5178a413463f2b43baeb015732
 
 Source obligation: An operator inspects and compares retrieval quality interactively: hits-at-k metrics, n-gram highlighting, side-by-side algorithm comparison and context search.
 
-Existing owner anchors: WEBUI-APPS-R001; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: TableExplorer TryItPanel.
+Existing owner anchors: WEBUI-APPS-R001; ARBORA-OPS-R008; ARBORA-OPS-R009. Entry: TableExplorer TryItPanel.
 
 Consume EG evaluation identity, corpus revision, relevance-label revision, algorithm version, k, hits-at-k and context-span offsets. Keep result ranking separate from relevance labels.
 
@@ -251,7 +251,7 @@ Input `WEBUI:7`; original record SHA-256 `483b80b268ba6924ced162740792071fb43f48
 
 Source obligation: The web interface renders interactive scatter and line charts with pan, zoom and selection. Datasets reach billions of points. Screen-bounded binning keeps payload size bounded.
 
-Existing owner anchors: FIN-UI-R002.1/.2; FIN-UI-R003; WEBUI-APPS-R001; GRAPHOS-OPS-R008. Entry: Shared Atlas chart renderer.
+Existing owner anchors: FIN-UI-R002.1/.2; FIN-UI-R003; WEBUI-APPS-R001; ARBORA-OPS-R008. Entry: Shared Atlas chart renderer.
 
 Consume EG viewport bounds, pixel dimensions, bin revision, source cardinality, count/extrema and selection references. Scatter bins and line continuity have distinct generated result variants.
 
@@ -271,7 +271,7 @@ Input `WEBUI:8`; original record SHA-256 `c00e7f00c83f38949d4da47e43c1e3d430e43d
 
 Source obligation: A table schema browser lets the user toggle vectorization per column and observe vector index statistics.
 
-Existing owner anchors: EG-FEDERATED-QUERY-R077.1/.2/.5; EG-FEDERATED-QUERY-R077.6.1–.6; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: TableExplorer schema browser.
+Existing owner anchors: EG-FEDERATED-QUERY-R077.1/.2/.5; EG-FEDERATED-QUERY-R077.6.1–.6; ARBORA-OPS-R008; ARBORA-OPS-R009. Entry: TableExplorer schema browser.
 
 Consume stable table/column IDs, schema revision, ColumnVectorBinding, embedder identity/dimension and versioned index statistics. Advice and binding state remain distinct.
 
@@ -291,7 +291,7 @@ Input `WEBUI:9`; original record SHA-256 `adf594bd4203d666df7254ef4f9481e91cdb84
 
 Source obligation: The web interface offers a browser-based code editor with extension and keyboard-shortcut compatibility for remote development.
 
-Existing owner anchors: WEBUI-APPS-R001; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: WorkspaceIDEView.
+Existing owner anchors: WEBUI-APPS-R001; ARBORA-OPS-R008; ARBORA-OPS-R009. Entry: WorkspaceIDEView.
 
 Consume a versioned host compatibility manifest naming editor protocol, extension IDs/versions, supported capabilities and keybinding profiles. Keep remote workspace identity scoped to the session.
 
@@ -311,7 +311,7 @@ Input `WEBUI:10`; original record SHA-256 `c82a815c87428a5baf4379ef7790bafb24a5d
 
 Source obligation: The web interface shows a live meeting transcript. The user chooses a local or hosted language-model provider for post-meeting summaries.
 
-Existing owner anchors: WEBUI-APPS-R001; APIUI-04; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: Meeting AppSurface and existing dictation seam.
+Existing owner anchors: WEBUI-APPS-R001; APIUI-04; ARBORA-OPS-R008; ARBORA-OPS-R009. Entry: Meeting AppSurface and existing dictation seam.
 
 Consume meeting ID, segment ID, sequence, correction revision, timestamps and finalization state. Summary requests bind final transcript revision, admitted provider identity and local/hosted execution class.
 
@@ -331,7 +331,7 @@ Input `WEBUI:11`; original record SHA-256 `b1708c96d6b9cadcb1c9f35cc5cb7dde4e60e
 
 Source obligation: The web interface presents a searchable bookmark knowledge base with meaning-based semantic filtering, an interactive mindmap and CSV or JSON export.
 
-Existing owner anchors: SDK-SOURCE-INGEST-R005.7–.12; WEBUI-APPS-R001; GRAPHOS-OPS-R008; GRAPHOS-OPS-R009. Entry: Bookmark AppSurface and GraphCanvas.
+Existing owner anchors: SDK-SOURCE-INGEST-R005.7–.12; WEBUI-APPS-R001; ARBORA-OPS-R008; ARBORA-OPS-R009. Entry: Bookmark AppSurface and GraphCanvas.
 
 Consume bookmark/source IDs, ingestion provenance, semantic-index revision, authorized relationships and bounded export schema. Reuse the existing SDK bookmark envelopes and extraction vocabulary.
 

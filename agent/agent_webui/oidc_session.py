@@ -2314,7 +2314,7 @@ class OIDCBrowserSessionMiddleware:
 
 @dataclass(frozen=True, slots=True)
 class BrowserSessionEvidence:
-    """Verified facts for one already-admitted browser session (GRAPHOS-IDENTITY-R005).
+    """Verified facts for one already-admitted browser session (ARBORA-IDENTITY-R005).
 
     The sole DTO :func:`verify_browser_session` accepts from a
     :class:`BrowserSessionAuthority`. It carries only facts that authority
