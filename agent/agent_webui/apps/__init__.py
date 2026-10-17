@@ -15,6 +15,8 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from ..app_composition import EngineProvider
+
 
 @dataclass(frozen=True)
 class AppBackend:
@@ -49,10 +51,8 @@ def build_apps_router(apps: list[AppBackend]) -> APIRouter:
     return router
 
 
-def default_apps() -> list[AppBackend]:
-    """The apps this WebUI hosts, over the process engine's session client."""
-
-    from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
+def default_apps(engine_provider: EngineProvider | None = None) -> list[AppBackend]:
+    """Hosted apps over a supplied engine getter or the standalone default."""
 
     from .markets import EngineGateway, build_markets_router
 
@@ -60,7 +60,7 @@ def default_apps() -> list[AppBackend]:
         from ..api_extensions import invoke_governed_helper
 
         return EngineGateway(
-            client_provider=IntelligenceGraphEngine.get_active,
+            client_provider=_resolve_engine_provider(engine_provider),
             invoke=invoke_governed_helper,
         )
 
@@ -72,3 +72,11 @@ def default_apps() -> list[AppBackend]:
             unavailable_reason='The engine does not serve market signals yet',
         )
     ]
+
+
+def _resolve_engine_provider(provider: EngineProvider | None) -> EngineProvider:
+    if provider is not None:
+        return provider
+    from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
+
+    return IntelligenceGraphEngine.get_active

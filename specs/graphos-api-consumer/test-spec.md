@@ -17,3 +17,9 @@
 | Failure log error code (WEBUI-API-R005) | Raise an error with `engine_error_code=ACCESS_DENIED`, a malformed code, and no code | Log line names `error_code=ACCESS_DENIED` or `error_code=none`. Message text is absent |
 
 Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`, `uv run --all-extras pytest agent/agent_webui/__tests__` and `pre-commit run --config .config/pre-commit.yaml --all-files`. E2E provisions a local Graph OS fixture or uses hosted CI; an inaccessible private deployment is not a PR blocker. CCCC: no new function over cyclomatic 10/cognitive 15 and no regression per configured hook. Run jscpd/Dupehound if configured; missing configuration is a documented gap, not a pass. KISS: one generated client, one host seam and no duplicate domain API. Record exact commands, exit codes, registry digest, route census and commit in `tasks.md`.
+
+## APIUI-06.1 host composition
+
+Extend `agent/agent_webui/__tests__/test_application_composer.py` with real
+factory requests against two injected apps. Verify info, catalog and backend routes, bounded helper calls, and interleaved HTTP and WebSocket/stream completion.
+Verify provider failure without singleton acquisition, context reset, and absence of borrowed-resource shutdown. Keep standalone resolver tests. No live credentials or stores.

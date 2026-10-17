@@ -9,6 +9,7 @@ and a high-performance React-based frontend.
 """
 
 import importlib
+import inspect
 import json
 import logging
 import os
@@ -36,12 +37,14 @@ from starlette.routing import Route as StarletteRoute
 
 from .api_extensions import (
     chats_router,
+    get_engine,
     set_workspace_helpers,
     sync_work_status,
 )
 from .api_extensions import (
     router as enhanced_router,
 )
+from .app_composition import AppCompositionMiddleware, EngineProvider
 from .apps import build_apps_router, default_apps
 from .browser_control import BrowserControlPort, build_browser_control_router
 from .contact_delivery import ContactDeliveryPort, build_contact_router
@@ -2468,6 +2471,17 @@ def _ensure_request_observability_middleware(app: FastAPI) -> None:
         app.add_middleware(RequestObservabilityMiddleware)
 
 
+def _configure_engine_provider(
+    provider: EngineProvider | None, helpers: dict[str, Any]
+) -> EngineProvider | None:
+    if provider is None:
+        set_workspace_helpers(helpers)
+        return None
+    if not callable(provider) or inspect.iscoroutinefunction(provider):
+        raise TypeError('engine_provider must be a synchronous borrowed-engine getter')
+    return get_engine
+
+
 def create_agent_web_app(
     agent: Agent,
     workspace_helpers: dict[str, Any],
@@ -2479,6 +2493,7 @@ def create_agent_web_app(
     browser_control: BrowserControlPort | None = None,
     application_composer: ApplicationComposer | None = None,
     session_boundary: SessionBoundary | None = None,
+    engine_provider: EngineProvider | None = None,
 ) -> FastAPI:
     """Create the agent-web FastAPI application.
 
@@ -2511,6 +2526,10 @@ def create_agent_web_app(
             ``/auth/*`` and presents every admitted request to the WebUI's
             identity gate as a verified bearer. Mutually exclusive with the
             ``WEBUI_OIDC_*`` single-client browser SSO.
+        engine_provider: Optional synchronous getter of the host's borrowed
+            engine. Supplied helpers are snapshotted per injected app; no global
+            engine fallback or resource shutdown occurs for this composition.
+            This supplies resources only, never identity or session authority.
 
     Returns:
         A fully configured FastAPI application instance.
@@ -2523,7 +2542,9 @@ def create_agent_web_app(
             custom_rendering=html_source is not None,
         )
     )
-    set_workspace_helpers(workspace_helpers)
+    apps_engine_provider = _configure_engine_provider(
+        engine_provider, workspace_helpers
+    )
 
     default_models = _default_provider_models()
 
@@ -2650,7 +2671,13 @@ def create_agent_web_app(
     app.include_router(build_contact_router(contact_delivery), prefix='/api')
     app.include_router(build_browser_control_router(browser_control))
     # Hosted application surfaces (EH-429): `/api/apps` plus each app's routes.
-    app.include_router(build_apps_router(default_apps()))
+    app.include_router(
+        build_apps_router(
+            default_apps(
+                engine_provider=apps_engine_provider,
+            )
+        )
+    )
 
     # Current Pydantic AI has no ``builtin_tools`` web-adapter argument.
     # Native tools now belong to the Agent capability contract and are discovered
@@ -2783,6 +2810,11 @@ def create_agent_web_app(
     # Starlette prepends later middleware. Install Host validation after the
     # OIDC owner so malformed/disallowed Host never reaches `/auth/*`.
     _install_host_boundary(app, resolved_listener_host)
+    app.add_middleware(
+        AppCompositionMiddleware,
+        engine_provider=engine_provider,
+        workspace_helpers=dict(workspace_helpers),
+    )
     # LANE F: mounted LAST (add_middleware prepends, so this is the OUTERMOST
     # layer — see RequestObservabilityMiddleware's own docstring).
     _ensure_request_observability_middleware(app)

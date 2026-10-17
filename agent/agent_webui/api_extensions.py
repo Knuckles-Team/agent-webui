@@ -14,7 +14,7 @@ import secrets
 import stat
 import threading
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from concurrent import futures as _futures
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -53,6 +53,8 @@ from fastapi import (
     HTTPException as FastAPIHTTPException,
 )
 from fastapi.responses import JSONResponse, Response
+
+from .app_composition import current_app_composition
 
 # Global constant for agent directory
 
@@ -1060,6 +1062,13 @@ DEFAULT_AGENT_DIR = _private_directory(_WEBUI_DATA_DIR / 'workspace')
 workspace_helpers: dict[str, Any] = {}
 
 
+def _current_workspace_helpers() -> Mapping[str, Any]:
+    composition = current_app_composition()
+    return (
+        composition.workspace_helpers if composition is not None else workspace_helpers
+    )
+
+
 def get_helper(name: str, fallback: Any = None) -> Any:
     """Safely retrieve a registered workspace helper by name.
 
@@ -1070,7 +1079,7 @@ def get_helper(name: str, fallback: Any = None) -> Any:
     Returns:
         The matched helper function or the fallback value.
     """
-    helper = workspace_helpers.get(name)
+    helper = _current_workspace_helpers().get(name)
     if not helper:
         logger.warning('Requested workspace helper was not found')
         return fallback
@@ -1156,7 +1165,7 @@ def set_workspace_helpers(helpers: dict[str, Any]) -> None:
 
 
 def get_engine() -> IntelligenceGraphEngine:
-    """Helper to get the active graph engine, lazy-initializing it if necessary.
+    """Resolve an injected borrowed engine, otherwise the standalone singleton.
 
     CONCEPT:AU-ECO.ui.one-engine-authority — the ONLY sanctioned way to acquire
     the process-wide engine is ``IntelligenceGraphEngine.get_or_create()``: it
@@ -1173,6 +1182,28 @@ def get_engine() -> IntelligenceGraphEngine:
     makes that divergence structurally impossible: whichever caller
     constructs first, it is always the same operational authority.
     """
+    composition = current_app_composition()
+    if composition is not None:
+        return _borrowed_engine(composition.engine_provider)
+    return _standalone_engine()
+
+
+def _borrowed_engine(
+    provider: Callable[[], IntelligenceGraphEngine],
+) -> IntelligenceGraphEngine:
+    try:
+        engine = provider()
+    except Exception as exc:
+        raise HTTPException(503, 'Host engine unavailable') from exc
+    if engine is None or inspect.isawaitable(engine):
+        if inspect.iscoroutine(engine):
+            engine.close()
+        raise HTTPException(503, 'Host engine unavailable')
+    return engine
+
+
+def _standalone_engine() -> IntelligenceGraphEngine:
+    """Preserve the standalone engine's existing lazy acquisition contract."""
     import sys
 
     get_active_fn = IntelligenceGraphEngine.get_active
@@ -1265,14 +1296,16 @@ async def get_info() -> dict[str, str]:
         return {
             'name': identity.get('name', 'Agent'),
             'description': identity.get('description', 'AI Agent'),
-            'emoji': identity.get('emoji', workspace_helpers.get('agent_emoji', '🤖')),
+            'emoji': identity.get(
+                'emoji', _current_workspace_helpers().get('agent_emoji', '🤖')
+            ),
             'user_emoji': '👤',
         }
 
     # Legacy fallback for edge cases during startup
-    name = workspace_helpers.get('agent_name', 'Agent')
-    description = workspace_helpers.get('agent_description', 'AI Agent')
-    emoji = workspace_helpers.get('agent_emoji', '🤖')
+    name = _current_workspace_helpers().get('agent_name', 'Agent')
+    description = _current_workspace_helpers().get('agent_description', 'AI Agent')
+    emoji = _current_workspace_helpers().get('agent_emoji', '🤖')
 
     return {
         'name': name,
@@ -2750,7 +2783,7 @@ async def reload_agent(request: Request) -> dict[str, Any]:
 
         # Legacy fallback
         await invoke_governed_helper(
-            workspace_helpers['initialize_workspace'],
+            _current_workspace_helpers()['initialize_workspace'],
             deadline=30.0,
         )
         reloadable = getattr(request.app.state, 'reload_app', None)
@@ -7706,6 +7739,14 @@ async def list_configured_models(request: Request) -> dict[str, Any]:
     return bounded if isinstance(bounded, dict) else {'models': []}
 
 
+async def _current_backend() -> Any:
+    if current_app_composition() is not None:
+        return (await get_engine_bounded()).backend
+    from agent_utilities.knowledge_graph.backends import get_active_backend
+
+    return get_active_backend()
+
+
 @router.get('/config/backend')
 async def get_backend_config() -> dict[str, Any]:
     """Get current backend configuration.
@@ -7716,9 +7757,7 @@ async def get_backend_config() -> dict[str, Any]:
     try:
         import os
 
-        from agent_utilities.knowledge_graph.backends import get_active_backend
-
-        backend = get_active_backend()
+        backend = await _current_backend()
         if not backend:
             return {'status': 'no_backend'}
 
