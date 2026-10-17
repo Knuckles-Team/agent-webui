@@ -406,8 +406,10 @@
     {
       "id": "WEBUI-APPS-R005.1.1",
       "title": "Registry role contract",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "a390f7a0dabb"
+      ],
       "verified_by": [
         "src/lib/__tests__/nav-registry.test.ts:77"
       ]
@@ -454,8 +456,10 @@
     {
       "id": "WEBUI-APPS-R005.5.1",
       "title": "Census detects a throwing view",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "a390f7a0dabb"
+      ],
       "verified_by": [
         "src/__tests__/routes/route-render.hostile.test.tsx:163"
       ]
@@ -481,8 +485,10 @@
     {
       "id": "WEBUI-APPS-R005.6.1",
       "title": "Registry purpose copy",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "a390f7a0dabb"
+      ],
       "verified_by": [
         "src/lib/__tests__/nav-registry.test.ts:96"
       ]
