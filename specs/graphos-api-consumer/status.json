@@ -186,7 +186,7 @@
     {
       "id": "APIUI-06",
       "title": "Shared auth and streaming are preserved without exposing a service bearer",
-      "delivery_state": "SPECIFIED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "19d92fda94cd",
         "2d3f1b884e39",
@@ -222,8 +222,10 @@
     {
       "id": "APIUI-06.1",
       "title": "Borrowed per-app host composition",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "bd46338613c1"
+      ],
       "verified_by": [
         "agent/agent_webui/__tests__/test_application_composer.py:183"
       ]
