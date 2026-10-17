@@ -145,6 +145,11 @@ jobs:
           path: dist/*.whl
           if-no-files-found: error
 
+      # The shared create-version-release action verifies this proof
+      # (release-readiness.json) before it creates the GitHub release.
+      - name: Prove wheel runtime readiness
+        uses: ./.pipeline-contract/.github/actions/wheel-readiness
+
       - name: Check immutable PyPI artifact state
         id: pypi_preflight
         run: python3 scripts/release/check_pypi_artifacts.py pyproject.toml dist --github-output "$GITHUB_OUTPUT"
