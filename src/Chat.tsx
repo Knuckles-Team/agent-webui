@@ -1412,7 +1412,7 @@ const Chat = ({ pageContext }: ChatProps) => {
   }
 
   /** Body of the `/help` slash command. */
-  const slashHelp = (): string => `### 💻 Graph OS Slash Commands
+  const slashHelp = (): string => `### 💻 Arbora Slash Commands
 
 Available commands:
 - **\`/help\`**: Show this help summary.

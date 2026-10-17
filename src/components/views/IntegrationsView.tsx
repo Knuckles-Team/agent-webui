@@ -12,7 +12,7 @@
  *   descriptor" (`src/lib/integrations-catalog.ts`'s `composeItem`). Same
  *   shape: a missing/invalid capability signal means NO card claims
  *   availability, never a greyed-out placeholder card.
- * - `GraphOSReadinessView.tsx` (GOC-02): a typed client
+ * - `ArboraReadinessView.tsx` (GOC-02): a typed client
  *   (`integrations-catalog.ts`) that never softens a validation failure
  *   into a plausible "probably fine" state, rendered with an explicit
  *   per-section status rather than a single opaque spinner-or-not.

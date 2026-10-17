@@ -16,7 +16,7 @@ afterEach(() => {
 
 describe('console confirmation route (APIUI-02)', () => {
   it('is registered as a deep link', () => {
-    expect(matchRoute(`/console/confirm/graphos_plan:${'a'.repeat(48)}`)?.route.id).toBe('console.confirm')
+    expect(matchRoute(`/console/confirm/arbora_plan:${'a'.repeat(48)}`)?.route.id).toBe('console.confirm')
   })
 
   it('rejects malformed plan refs without a network call', () => {
@@ -37,19 +37,19 @@ describe('console confirmation route (APIUI-02)', () => {
         status: 404,
         json: async () => ({
           ok: false,
-          error: { code: 'UNKNOWN_OP', source: 'graphos', message: 'Request refused', retryable: false },
+          error: { code: 'UNKNOWN_OP', source: 'arbora', message: 'Request refused', retryable: false },
           meta: { registry_digest: 'digest', api_version: 'v1' },
         }),
       })
     vi.stubGlobal('fetch', fetcher)
-    window.history.replaceState({}, '', `/console/confirm/graphos_plan:${'a'.repeat(48)}`)
+    window.history.replaceState({}, '', `/console/confirm/arbora_plan:${'a'.repeat(48)}`)
     render(<ConsoleConfirmView />)
     expect((await screen.findByRole('alert')).textContent).toContain('UNKNOWN_OP')
     expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('confirms a server-side plan by reference alone, never replaying the original arguments', async () => {
-    const planRef = `graphos_plan:${'b'.repeat(48)}`
+    const planRef = `arbora_plan:${'b'.repeat(48)}`
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ authenticated: true, csrf_token: 'csrf' }) })
@@ -83,7 +83,7 @@ describe('console confirmation route (APIUI-02)', () => {
       expect.objectContaining({
         body: expect.stringContaining(`"plan_ref":"${planRef}"`),
         headers: expect.objectContaining({
-          'GraphOS-Plan-Ref': planRef,
+          'Arbora-Plan-Ref': planRef,
           'X-CSRF-Token': 'csrf',
           'Idempotency-Key': expect.any(String),
         }),

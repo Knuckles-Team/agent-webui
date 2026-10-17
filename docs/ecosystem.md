@@ -1,22 +1,22 @@
 # How the ecosystem fits
 
 The five repositories form one runtime. Each owns one kind of authority, and
-Graph OS presents those capabilities without duplicating them.
+Arbora presents those capabilities without duplicating them.
 
-![Knuckles-Team runtime architecture showing Graph OS, GraphOS, agent-utilities, epistemic-graph, and agent-connector-sdk in their owned positions.](https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/main/docs/assets/runtime-architecture.svg)
+![Knuckles-Team runtime architecture showing Arbora, Arbora, agent-utilities, epistemic-graph, and agent-connector-sdk in their owned positions.](https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/main/docs/assets/runtime-architecture.svg)
 
 ## Component ownership
 
 <div class="site-card-grid">
   <article class="site-card">
-    <h3 class="site-card__title">Graph OS</h3>
+    <h3 class="site-card__title">Arbora</h3>
     <p class="site-card__body">The operator experience: browser presentation, local interaction state, accessible navigation, and a same-origin server boundary.</p>
     <p><a href="https://knuckles-team.github.io/agent-webui/">Documentation →</a></p>
   </article>
   <article class="site-card">
-    <h3 class="site-card__title">GraphOS</h3>
+    <h3 class="site-card__title">Arbora</h3>
     <p class="site-card__body">The public runtime gateway: MCP, REST, A2A, identity, policy, fleet supervision, and WebUI composition.</p>
-    <p><a href="https://knuckles-team.github.io/graph-os/">Documentation →</a></p>
+    <p><a href="https://knuckles-team.github.io/arbora/">Documentation →</a></p>
   </article>
   <article class="site-card">
     <h3 class="site-card__title">agent-utilities</h3>
@@ -40,11 +40,11 @@ Graph OS presents those capabilities without duplicating them.
 <ol class="site-flow">
   <li class="site-flow__step">
     <h3 class="site-flow__title">Present</h3>
-    <p class="site-flow__body">Graph OS collects the operator's intent and renders typed events and results.</p>
+    <p class="site-flow__body">Arbora collects the operator's intent and renders typed events and results.</p>
   </li>
   <li class="site-flow__step">
     <h3 class="site-flow__title">Admit</h3>
-    <p class="site-flow__body">GraphOS verifies identity, applies runtime policy, and selects the owned service boundary.</p>
+    <p class="site-flow__body">Arbora verifies identity, applies runtime policy, and selects the owned service boundary.</p>
   </li>
   <li class="site-flow__step">
     <h3 class="site-flow__title">Act</h3>
@@ -60,18 +60,18 @@ Graph OS presents those capabilities without duplicating them.
 
 | Surface | Authority | WebUI responsibility |
 |---|---|---|
-| Chat, sessions, goals, workflows, prompts, skills | agent-utilities through GraphOS | Render state, collect input, and surface approvals |
-| Graph, RDF, schema, objects, tables, code, documents, memories | epistemic-graph through GraphOS | Provide guided and expert exploration without storing a second truth |
-| MCP Apps, connector catalogs, source operations | GraphOS and connector services | Discover typed capabilities and render governed invocation results |
-| Identity, roles, request policy, fleet health | GraphOS | Apply the server decision to navigation and interaction controls |
+| Chat, sessions, goals, workflows, prompts, skills | agent-utilities through Arbora | Render state, collect input, and surface approvals |
+| Graph, RDF, schema, objects, tables, code, documents, memories | epistemic-graph through Arbora | Provide guided and expert exploration without storing a second truth |
+| MCP Apps, connector catalogs, source operations | Arbora and connector services | Discover typed capabilities and render governed invocation results |
+| Identity, roles, request policy, fleet health | Arbora | Apply the server decision to navigation and interaction controls |
 
-The browser never receives a GraphOS service credential. The WebUI FastAPI host
+The browser never receives an Arbora service credential. The WebUI FastAPI host
 performs same-origin delegation using the verified request context injected by
-GraphOS, and every downstream component remains authoritative only for its own
+Arbora, and every downstream component remains authoritative only for its own
 contract.
 
 ## Shared language
 
-Use the [ecosystem glossary](glossary.md) for the canonical meaning of GraphOS,
+Use the [ecosystem glossary](glossary.md) for the canonical meaning of Arbora,
 the agent control plane, the knowledge engine, connector boundary, MCP, A2A,
 OWL, RDF, SHACL, and UQL.

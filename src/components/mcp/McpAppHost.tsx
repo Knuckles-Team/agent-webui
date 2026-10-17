@@ -41,7 +41,7 @@ export interface McpAppHostProps {
   allowedToolSchemas?: ReadonlyMap<string, Record<string, unknown>>
   /** The host's ceiling for CSP domains, regardless of what `meta.csp` asks. */
   allowedDomains?: string[]
-  /** MCP server to delegate to; defaults to graph-os. */
+  /** MCP server to delegate to; defaults to arbora. */
   server?: string
   title?: string
   className?: string

@@ -18,8 +18,8 @@
  *     from a confirmed-empty roster or a confirmed-forbidden read.
  *
  *  3. "User roster" -- list, search, create, and act on identity-admin users
- *     and service accounts through the typed Graph OS identity operations in
- *     `src/lib/graphos-api/identity.ts`. The server alone decides roles,
+ *     and service accounts through the typed Arbora identity operations in
+ *     `src/lib/arbora-api/identity.ts`. The server alone decides roles,
  *     scopes, and whether a fresh MFA session is required.
  */
 
@@ -42,7 +42,7 @@ import {
   type IdentityReply,
   type IdentityUser,
   type IdentityOp,
-} from '@/lib/graphos-api/identity'
+} from '@/lib/arbora-api/identity'
 
 function IdentityCard() {
   const { identity, loading } = useIdentity()

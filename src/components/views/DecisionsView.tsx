@@ -17,7 +17,7 @@ import type { DecisionsTransport } from '@/components/decisions/decisions-transp
  *
  * This component takes `transport` as a required prop with no default: no
  * production implementation is wired into this repository yet (the
- * authenticated Graph OS decision-read client is not available here), so it
+ * authenticated Arbora decision-read client is not available here), so it
  * is not registered as an application route until that lands and a caller
  * can supply a real transport.
  */

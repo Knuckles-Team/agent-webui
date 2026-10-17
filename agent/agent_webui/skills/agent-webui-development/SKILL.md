@@ -9,7 +9,7 @@ description: >-
   preparing a commit/PR in this repository — not for using the shipped UI
   (see the `kg-webui-*` skills for that).
 license: MIT
-tags: [graph-os, webui, development, build, test, gates, routing]
+tags: [arbora, webui, development, build, test, gates, routing]
 tier: repository
 metadata:
   author: Genius
@@ -92,11 +92,11 @@ Specs are already designed. The work is implementation, delivered in very small,
 
 ## What this repository owns
 
-The browser presentation layer for Graph OS, plus the FastAPI host that
+The browser presentation layer for Arbora, plus the FastAPI host that
 adapts browser protocols to the platform gateway (React views, streaming/
 WebSocket/REST adapters, browser identity/session/CSP enforcement, sandboxed
 MCP App rendering, packaged frontend assets / wheel / container image).
-Graph OS owns auth, composition, routing contracts and the gateway;
+Arbora owns auth, composition, routing contracts and the gateway;
 epistemic-graph owns durable graph state; agent-utilities owns agent/
 workflow control-plane behavior; connector packages own source transport.
 Reuse the canonical gateway action or client — never add a second
@@ -207,7 +207,7 @@ closed instead (`CANNOT RUN`, exit status 2). Never bypass a gate with
 `--no-verify`, `SKIP`, a diagnostic-ignore comment, or warning suppression.
 
 Documentation changes also run `public-surface` and `mkdocs build --strict`.
-Skills under `agent/agent_webui/skills/` are not in `mkdocs.yml` nav — graph-os
+Skills under `agent/agent_webui/skills/` are not in `mkdocs.yml` nav — arbora
 discovers them as package data, not Pages content — so a skill-only change
 skips `mkdocs build --strict` unless it also touches `docs/` or `mkdocs.yml`.
 
@@ -216,7 +216,7 @@ skips `mkdocs build --strict` unless it also touches `docs/` or `mkdocs.yml`.
 - Keep changes small, typed, and tied to one observable outcome. Use
   Pydantic models at Python boundaries and TypeScript types at browser
   boundaries; validate untrusted values before rendering or forwarding them.
-- Never place a Graph OS service bearer, provider secret, or raw durable
+- Never place an Arbora service bearer, provider secret, or raw durable
   credential in browser state.
 - Never stage with `git add -A` or `git add .`; stage an explicit path
   allowlist and review `git diff --cached` before committing.

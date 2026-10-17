@@ -7,7 +7,7 @@ description: >-
   results. Use when you want to extract entities/facts from a document in the UI,
   monitor an extraction job, or download extracted facts as JSONL.
 license: MIT
-tags: [graph-os, webui, extraction, facts, documents, entities]
+tags: [arbora, webui, extraction, facts, documents, entities]
 tier: surface
 metadata:
   author: Genius

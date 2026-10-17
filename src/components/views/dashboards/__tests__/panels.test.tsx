@@ -113,7 +113,7 @@ describe('LogsPanel', () => {
       '/api/graph/logs': {
         body: {
           status: 'success',
-          result: { logs: [{ timestamp: 1000, message: 'hello world', level: 'INFO', stream: 'graph-os' }] },
+          result: { logs: [{ timestamp: 1000, message: 'hello world', level: 'INFO', stream: 'arbora' }] },
         },
       },
     }) as unknown as typeof fetch
@@ -121,7 +121,7 @@ describe('LogsPanel', () => {
     await waitFor(() => {
       expect(screen.getByText('hello world')).toBeInTheDocument()
     })
-    expect(screen.getByText('graph-os')).toBeInTheDocument()
+    expect(screen.getByText('arbora')).toBeInTheDocument()
   })
 })
 

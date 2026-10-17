@@ -28,7 +28,7 @@ function completeBundle(): Record<string, unknown> {
     answer_candidate: 'one result',
     claims: [{ id: 'n1', text: 'one' }],
     evidence_spans: [{ ref: 'source:n1' }],
-    source_authority: { source: 'graph-os' },
+    source_authority: { source: 'arbora' },
     contradictions: [],
     confidence: null,
     freshness: { observed_at: '2026-08-29T00:00:00Z' },
@@ -167,7 +167,7 @@ describe('UQL Atlas adapter', () => {
     const provenance = {
       source_graphs: ['__commons__'],
       graph: '__commons__',
-      connection: 'graph-os',
+      connection: 'arbora',
       citations: ['source:n1'],
     }
     const bundle = completeBundle()
@@ -203,7 +203,7 @@ describe('UQL Atlas adapter', () => {
     expect(result.payload.metadata.provenance).toMatchObject({
       sourceGraphs: ['__commons__'],
       graph: '__commons__',
-      connection: 'graph-os',
+      connection: 'arbora',
       citations: ['source:n1'],
     })
     expect(result.sources).toEqual(['__commons__'])
@@ -322,7 +322,7 @@ describe('UQL Atlas adapter', () => {
           provenance: {
             source_graphs: ['safe-graph'],
             graph: 'safe-graph',
-            connection: 'graph-os',
+            connection: 'arbora',
             dsn: secret,
             endpoint: 'https://db.example.test/query',
             citations: [secret, 'source:n1'],

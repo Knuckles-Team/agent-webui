@@ -7,7 +7,7 @@
  * Two rules this component enforces structurally, not by caller discipline:
  *
  * 1. A metric whose `value` is `null`/`undefined` renders as an explicit
- *    "no value reported" mark ("--"), never as `0`. `GraphOSReadinessView`'s
+ *    "no value reported" mark ("--"), never as `0`. `ArboraReadinessView`'s
  *    module docstring records why this matters generally ("never trust a
  *    signal about state; check state") -- a metric card is exactly the kind
  *    of surface a "probably fine" `0` fallback would misrepresent as a

@@ -1,23 +1,23 @@
 # Architecture
 
-Graph OS is the browser and same-origin presentation boundary for GraphOS.
+Arbora is the browser and same-origin presentation boundary for Arbora.
 It renders runtime capabilities; it does not duplicate their authorities.
 
-![Runtime architecture: Graph OS enters GraphOS, which composes agent-utilities, epistemic-graph, and connector services.](https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/main/docs/assets/runtime-architecture.svg)
+![Runtime architecture: Arbora enters Arbora, which composes agent-utilities, epistemic-graph, and connector services.](https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/main/docs/assets/runtime-architecture.svg)
 
 ## Runtime composition
 
-GraphOS starts Graph OS as a supervised co-service when `ENABLE_WEB_UI=true`.
+Arbora starts Arbora as a supervised co-service when `ENABLE_WEB_UI=true`.
 The composition path is explicit:
 
-1. GraphOS creates the native gateway application and checked process context.
-2. The GraphOS WebUI host creates the Graph OS FastAPI application.
-3. GraphOS injects its gateway route composer through `ApplicationComposer`.
-4. Graph OS mounts the single-page application after every typed API route.
+1. Arbora creates the native gateway application and checked process context.
+2. The Arbora WebUI host creates the Arbora FastAPI application.
+3. Arbora injects its gateway route composer through `ApplicationComposer`.
+4. Arbora mounts the single-page application after every typed API route.
 5. Security and observability middleware wrap the complete application.
 
-The standalone Graph OS server deliberately omits GraphOS-owned routes. Use
-the GraphOS-hosted composition for the complete platform surface.
+The standalone Arbora server deliberately omits Arbora-owned routes. Use
+the Arbora-hosted composition for the complete platform surface.
 
 ## Browser request path
 
@@ -31,7 +31,7 @@ the GraphOS-hosted composition for the complete platform surface.
     <p class="site-flow__body">FastAPI validates browser boundaries and converts UI intent into a typed, server-side operation.</p>
   </li>
   <li class="site-flow__step">
-    <h3 class="site-flow__title">GraphOS</h3>
+    <h3 class="site-flow__title">Arbora</h3>
     <p class="site-flow__body">The injected gateway checks identity, applies runtime policy, and delegates to the owning service.</p>
   </li>
   <li class="site-flow__step">
@@ -45,15 +45,15 @@ the GraphOS-hosted composition for the complete platform surface.
 | Boundary | Owns | Does not own |
 |---|---|---|
 | React application | Presentation, interaction state, route metadata, accessibility | Service credentials, policy truth, durable graph state |
-| Graph OS FastAPI host | Same-origin browser endpoints, SPA serving, host checks, request bounds, CSP | GraphOS fleet lifecycle or graph-engine implementation |
-| GraphOS composition | Checked identity, public routing, runtime policy, fleet supervision, injected gateway routes | Agent reasoning, durable knowledge, vendor-specific transport |
+| Arbora FastAPI host | Same-origin browser endpoints, SPA serving, host checks, request bounds, CSP | Arbora fleet lifecycle or graph-engine implementation |
+| Arbora composition | Checked identity, public routing, runtime policy, fleet supervision, injected gateway routes | Agent reasoning, durable knowledge, vendor-specific transport |
 | agent-utilities | Agent decisions, workflows, evaluation, skills | Public gateway hosting or database semantics |
 | epistemic-graph | Durable data, reasoning, provenance, transactions | Agent orchestration or browser presentation |
 | Connector services | Authorized source reads and writes through SDK contracts | Global policy or graph authority |
 
 ## Identity and credentials
 
-The browser never receives a GraphOS service bearer. The WebUI host stops
+The browser never receives an Arbora service bearer. The WebUI host stops
 the browser session, derives the request actor from the checked server
 context, and uses host-injected delegation ports for privileged operations.
 Role metadata affects navigation, but the server remains authoritative for
@@ -74,7 +74,7 @@ presentation state.
 ## Knowledge workspace
 
 Atlas is the shared entry point for graph, RDF, schema, object, table, document,
-code, and memory exploration. Each view uses the same GraphOS-injected request
+code, and memory exploration. Each view uses the same Arbora-injected request
 context. Query and reasoning semantics remain in epistemic-graph; the browser
 selects a view and renders the returned typed result.
 

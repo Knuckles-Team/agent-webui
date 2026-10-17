@@ -2,7 +2,7 @@
  * Runtime contracts for Atlas external sources.
  *
  * Atlas never guesses which providers exist or what they can do.  The source
- * catalog is an observation from GraphOS; these schemas validate that
+ * catalog is an observation from Arbora; these schemas validate that
  * observation before it reaches a card or an action.  Connection configuration
  * is deliberately reference-only: the browser may submit a controlled profile
  * reference, but it cannot submit a password, token, URL, DSN, or endpoint.

@@ -34,7 +34,7 @@ provider, channel, destination, or retention period.
   server-side chat records from `/api/enhanced/chats`.
 - **Model discovery** reads the backend registry for the model picker and usage
   display, including zero-cost local models.
-- **Structured traces** link browser requests to their downstream GraphOS and
+- **Structured traces** link browser requests to their downstream Arbora and
   engine activity without exposing credentials to the frontend.
 
 ## API Endpoint Summary
@@ -103,7 +103,7 @@ provider, channel, destination, or retention period.
 ## Host composition
 
 The WebUI holds no graph engine. A host passes `application_composer` to
-`create_agent_web_app` to add its own routes. Graph data comes from Graph OS
+`create_agent_web_app` to add its own routes. Graph data comes from Arbora
 served operations; a feature whose operation is not served answers 501
 `not_available`. Composition grants no identity or session authority. The host
 must still supply its configured `session_boundary` and enforce its own

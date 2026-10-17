@@ -6,7 +6,7 @@ import { parseStrictJson } from './strict-json'
 
 const validatedExecutors = new WeakSet<(...args: never[]) => unknown>()
 
-/** The local draft and Graph OS channel both cap serialized results at 1.5 KiB. */
+/** The local draft and Arbora channel both cap serialized results at 1.5 KiB. */
 export const WEBMCP_OUTPUT_BYTE_BUDGET = 1_500
 export const WEBMCP_OUTPUT_CHARACTER_BUDGET = WEBMCP_OUTPUT_BYTE_BUDGET
 

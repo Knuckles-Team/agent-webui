@@ -43,7 +43,7 @@ rejected so credentials or private route state cannot be persisted and echoed.
 
 The provider is mounted below the existing `PageContextProvider` in `App.tsx`;
 the Atlas registrar is mounted inside `AtlasWorkbench`. This keeps the browser
-surface separate from graph-os/backend MCP context and gives each tool only the
+surface separate from arbora/backend MCP context and gives each tool only the
 typed callback seam it needs.
 
 ## Browser and deployment prerequisites
@@ -56,11 +56,11 @@ default is `self`). A deployment that enables `document.domain`, including via
 `Origin-Agent-Cluster: ?0`, disables the API. No cross-origin `exposedTo` access
 is configured here.
 
-## Graph OS leased browser control
+## Arbora leased browser control
 
 WebMCP tools live in, and act on, one open browser document. Browser-native agents
 can use the registered draft API directly. An authenticated operator may also
-explicitly arm the Graph OS bridge from the visible control in the WebUI. Arming
+explicitly arm the Arbora bridge from the visible control in the WebUI. Arming
 opens the same-origin `/ws/browser-control` channel with the existing OIDC cookie;
 JavaScript never receives or sends a Keycloak token, service bearer, OpenBao
 value, tenant assertion, or principal assertion.
@@ -71,7 +71,7 @@ sequenceDiagram
   participant IdP
   participant Page as WebMcpProvider
   participant Channel as /ws/browser-control
-  participant GraphOS as BrowserControlService
+  participant Arbora as BrowserControlService
 
   Page->>Page: Register and acknowledge local definitions
   User->>Page: Arm current visible page
@@ -83,14 +83,14 @@ sequenceDiagram
   Page->>Channel: POST current generation/catalog/tool digests to finalize
   Channel-->>Page: Non-secret armed status; HttpOnly one-use receipt set
   Page->>Channel: channel.open + versioned catalog
-  Channel->>GraphOS: Verify session, route, generation, policy
-  GraphOS-->>Page: channel.ready for exact route + generation
-  GraphOS-->>Page: control.confirmation_request (mutation only)
+  Channel->>Arbora: Verify session, route, generation, policy
+  Arbora-->>Page: channel.ready for exact route + generation
+  Arbora-->>Page: control.confirmation_request (mutation only)
   User->>Page: Confirm exact call/tool/schema/argument digest
-  Page->>GraphOS: control.confirm
-  GraphOS-->>Page: control.call (read or confirmed mutation)
+  Page->>Arbora: control.confirm
+  Arbora-->>Page: control.call (read or confirmed mutation)
   Page->>Page: Invoke retained validated definition
-  Page->>GraphOS: bounded result or honest cancellation effect
+  Page->>Arbora: bounded result or honest cancellation effect
 ```
 
 `ActiveWebMcpRegistry` retains only browser-acknowledged definitions from the
@@ -98,7 +98,7 @@ current identity, document, route, page context, and generation. The capability
 catalog is deterministic and versioned. Each tool carries its input/output JSON
 schemas, a canonical SHA-256 schema digest, current role and route binding,
 read/mutation class, exact-request confirmation policy, and source reference.
-The browser sends the language-neutral catalog projection to Graph OS, while the
+The browser sends the language-neutral catalog projection to Arbora, while the
 original validated `execute` callback remains the sole local executor.
 
 The trusted click is local UX evidence only. Server authority comes from the
@@ -111,11 +111,11 @@ JavaScript. The redirect continuation contains only the path, with query and
 fragment removed. Authorization and global revoke operations are serialized so
 stale cleanup completes before another arm can start.
 
-Graph OS owns authorization, leases, replay fences, call state, durable receipts,
+Arbora owns authorization, leases, replay fences, call state, durable receipts,
 and terminal outcomes. The WebUI retains only the active local definitions,
 in-flight abort controllers, and the attended confirmation being displayed. A
 mutation uses two phases: the initial confirmation request never runs; only
-the later `control.call` carrying Graph OS's `confirmed_mutation` authorization
+the later `control.call` carrying Arbora's `confirmed_mutation` authorization
 and the exact approved digest reaches the local definition. Arguments, schemas,
 channel frames, and UTF-8 results are bounded; result errors are reduced to safe
 codes. Denied or cancelled confirmations retain a bounded call/digest tombstone

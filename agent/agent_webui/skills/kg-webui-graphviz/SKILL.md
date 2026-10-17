@@ -7,7 +7,7 @@ description: >-
   the Knowledge Graph, render a vertex neighborhood, browse temporal/as-of graph
   state, or draw the code call-graph in the web UI.
 license: MIT
-tags: [graph-os, webui, visualization, graph, vertex, code-graph]
+tags: [arbora, webui, visualization, graph, vertex, code-graph]
 tier: surface
 metadata:
   author: Genius

@@ -6,7 +6,7 @@ import { z } from 'zod'
  * (see `specs/decision-evidence/plan.md` for the data and interaction
  * contract these mirror). These schemas describe the conceptual read
  * contract the decision explorer and calibration dashboard render; a typed
- * Graph OS client is expected to supersede ad hoc validation here once it
+ * Arbora client is expected to supersede ad hoc validation here once it
  * lands on this repository (see `decisions-transport.ts`'s file doc).
  *
  * The wire shape mirrors the engine's serde encoding (snake_case fields,

@@ -26,7 +26,7 @@ function validSnapshot(overall: ReadinessState = 'ready'): ReadinessSnapshot {
     READINESS_CHECK_ORDER.map((name) => [name, validCheck('ready')]),
   ) as unknown as ReadinessChecks
   return {
-    schema_version: 'graphos.readiness.v1',
+    schema_version: 'arbora.readiness.v1',
     snapshot_id: 'sha256:abc123',
     observed_at: '2026-08-16T00:00:00+00:00',
     principal: { subject: null, tenant: null, policy_epoch: null },

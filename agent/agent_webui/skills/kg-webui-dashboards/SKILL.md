@@ -7,7 +7,7 @@ description: >-
   to build a metrics dashboard in the UI, chart PromQL, view traces/logs panels,
   or analyze token usage and cost by model/project/agent.
 license: MIT
-tags: [graph-os, webui, dashboards, analytics, promql, traces, observability]
+tags: [arbora, webui, dashboards, analytics, promql, traces, observability]
 tier: surface
 metadata:
   author: Genius

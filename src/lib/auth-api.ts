@@ -1,6 +1,6 @@
 /**
  * @file auth-api.ts
- * @description The browser side of the Graph OS identity broker's own routes:
+ * @description The browser side of the Arbora identity broker's own routes:
  * sign-in, the second factor, first-run setup, sign-out and the list of
  * enabled identity providers. Every call is a same-origin JSON request, so
  * the browser attaches `Origin`; the CSRF chokepoint (`csrf.ts`) adds the

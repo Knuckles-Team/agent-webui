@@ -4,7 +4,7 @@
  * (W-16, W-17): an avatar+name trigger that opens a dropdown with "Profile"
  * and "Log out".
  *
- * Sign-out is the server's: under the Graph OS identity broker it is a
+ * Sign-out is the server's: under the Arbora identity broker it is a
  * `POST /auth/logout` that revokes the session server-side; a standalone
  * WebUI's single-client OIDC boundary keeps its `/auth/logout` redirect.
  * This component reimplements no session logic.
@@ -103,7 +103,7 @@ function AuthMenuItem({ identity }: { identity: Identity }) {
     )
   }
   if (identity.raw?.mode) {
-    // Graph OS identity broker: sign-out revokes the session server-side.
+    // Arbora identity broker: sign-out revokes the session server-side.
     return (
       <DropdownMenuItem variant="destructive" onClick={signOutAndReload}>
         <LogOut />

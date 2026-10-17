@@ -9,7 +9,7 @@
 | Password reset and unknown user | API/browser | Uniform user-facing response; successful token one-use and bounded |
 | TOTP/WebAuthn/recovery | Browser/test authenticator | Correct challenge works; replay, wrong origin and consumed code fail |
 | Admin policy and mapping preview | Generated API contract + browser two principals | Admin permitted, member denied, preview has no write side effect |
-| Elevation request/approve/revoke | Browser plus Graph OS contract | Two-person/step-up requirements, scope and expiry enforced; revocation visible |
+| Elevation request/approve/revoke | Browser plus Arbora contract | Two-person/step-up requirements, scope and expiry enforced; revocation visible |
 | Session/tenant change during request | Browser race fixture | Prior tenant cache and privileged controls cleared |
 | Accessibility | Playwright keyboard and screen-reader assertions | Focus management, labels, errors and tabs usable |
 

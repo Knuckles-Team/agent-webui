@@ -72,7 +72,7 @@ class FakeSocket {
     this.receive({
       protocol: WEBMCP_CONTROL_PROTOCOL,
       type: 'channel.ready',
-      authority: 'graph-os',
+      authority: 'arbora',
       route_id: opened.route_id,
       registration_generation: opened.registration_generation,
       catalog_digest: catalog.catalog_digest,
@@ -552,7 +552,7 @@ describe('attended WebMCP control channel', () => {
     expect(socket.close).toHaveBeenCalledWith(1008, 'protocol-error')
   })
 
-  it('refuses a Graph OS readiness receipt with a tampered catalog digest', async () => {
+  it('refuses an Arbora readiness receipt with a tampered catalog digest', async () => {
     const { channel, socket } = channelWithSocket()
     await channel.arm()
     socket.open()
@@ -562,7 +562,7 @@ describe('attended WebMCP control channel', () => {
     socket.receive({
       protocol: WEBMCP_CONTROL_PROTOCOL,
       type: 'channel.ready',
-      authority: 'graph-os',
+      authority: 'arbora',
       route_id: opened.route_id,
       registration_generation: opened.registration_generation,
       catalog_digest: `sha256:${'0'.repeat(64)}`,

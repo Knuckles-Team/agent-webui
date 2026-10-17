@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { invoke } from '@/lib/graphos-api/invoke'
-import { PLAN_REF } from '@/lib/graphos-api/identity'
+import { invoke } from '@/lib/arbora-api/invoke'
+import { PLAN_REF } from '@/lib/arbora-api/identity'
 import { matchRoute } from '@/lib/nav-registry'
 
 /**
@@ -14,7 +14,7 @@ import { matchRoute } from '@/lib/nav-registry'
  * redirects here with a server-issued `plan_ref`; this page fetches that exact
  * plan and, on confirm, sends only the reference back — never the original
  * request arguments a browser tab could have tampered with. Built on the
- * shared `invoke` transport (`src/lib/graphos-api/invoke.ts`) already used by
+ * shared `invoke` transport (`src/lib/arbora-api/invoke.ts`) already used by
  * identity, so no second HTTP/CSRF path is introduced.
  */
 

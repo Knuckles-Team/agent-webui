@@ -7,7 +7,7 @@ description: >-
   and the code call-graph views. Use when you want to drive a coding session in
   the UI, run SWE-bench, or explore the code graph / symbol navigation.
 license: MIT
-tags: [graph-os, webui, swe, code, workspace, provenance, swe-bench]
+tags: [arbora, webui, swe, code, workspace, provenance, swe-bench]
 tier: surface
 metadata:
   author: Genius

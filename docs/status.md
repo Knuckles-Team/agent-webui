@@ -1,6 +1,6 @@
 # Status
 
-Graph OS is the browser workspace composed and hosted by Graph OS. The
+Arbora is the browser workspace composed and hosted by Arbora. The
 published package also exposes the same FastAPI application for standalone ASGI
 deployment.
 
@@ -9,8 +9,8 @@ deployment.
 | Surface | Current contract |
 |---|---|
 | Browser workspace | Conversations, approvals, workflows, fleet activity, and Atlas knowledge views share one role-aware application shell. |
-| Graph OS composition | Graph OS starts Graph OS as a supervised co-service and injects governed application routes. |
-| Standalone host | The standalone FastAPI application serves Web UI-owned routes without claiming Graph OS-owned gateway authority. |
+| Arbora composition | Arbora starts Arbora as a supervised co-service and injects governed application routes. |
+| Standalone host | The standalone FastAPI application serves Web UI-owned routes without claiming Arbora-owned gateway authority. |
 | Knowledge views | Atlas renders typed graph, RDF, schema, object, table, document, code, and memory results from the owning services. |
 | Security boundary | The browser keeps privileged service credentials server-side; the host remains authoritative for identity and permissions. |
 

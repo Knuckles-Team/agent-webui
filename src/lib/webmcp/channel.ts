@@ -20,7 +20,7 @@ const ChannelReadySchema = z
   .object({
     protocol: z.literal(WEBMCP_CONTROL_PROTOCOL),
     type: z.literal('channel.ready'),
-    authority: z.literal('graph-os'),
+    authority: z.literal('arbora'),
     route_id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
     registration_generation: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
     catalog_digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),

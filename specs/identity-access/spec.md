@@ -8,7 +8,7 @@
 
 ## Outcome and actors
 
-A visitor can understand the configured sign-in mode, authenticate or use an explicitly local bootstrap mode, manage their session and MFA, and an authorized administrator can manage identity policy through the Graph OS identity API. A permitted user can request elevation and see an auditable approve/revoke state. Browser controls never grant a role or capability by changing local state alone.
+A visitor can understand the configured sign-in mode, authenticate or use an explicitly local bootstrap mode, manage their session and MFA, and an authorized administrator can manage identity policy through the Arbora identity API. A permitted user can request elevation and see an auditable approve/revoke state. Browser controls never grant a role or capability by changing local state alone.
 
 Actors are visitor, authenticated member, identity administrator, elevation requester and separate approver. The same protected route rules apply to REST, streaming and WebSocket entry points. Local bootstrap is allowed only on loopback with explicit operator acknowledgment and visible banner; all non-loopback modes require verified identity. MFA is configurable globally and by group, not imposed unconditionally on all administrators.
 
@@ -24,10 +24,10 @@ Actors are visitor, authenticated member, identity administrator, elevation requ
 | IDUI-06 | Identity mode, tenant or session change invalidates cached protected data and closes active privileged interactions | GRAPHOS-IDENTITY-R004–GRAPHOS-IDENTITY-R007 | Two-principal browser test |
 | IDUI-07 | All forms, errors, tab panels and modal confirmations are keyboard and screen-reader usable, with equivalent mobile behavior | all | Accessibility E2E |
 
-Errors must avoid disclosing whether a username, tenant or protected record exists. A failed step-up never turns into a successful action after retry unless a new valid confirmation and receipt are obtained. The UI's role labels are explanatory; authorization comes from Graph OS and its delegated database scopes.
+Errors must avoid disclosing whether a username, tenant or protected record exists. A failed step-up never turns into a successful action after retry unless a new valid confirmation and receipt are obtained. The UI's role labels are explanatory; authorization comes from Arbora and its delegated database scopes.
 
 ## Completion
 
-BUILT requires merged WebUI source for each applicable requirement. ACCEPTED requires a fresh-checkout test identity service, real browser positive/negative probes, server/Graph OS contract tests and exact-commit CI evidence. If a backend operation is not available, that requirement remains open; a mock screen does not count as delivered. State and receipts belong in `tasks.md`.
+BUILT requires merged WebUI source for each applicable requirement. ACCEPTED requires a fresh-checkout test identity service, real browser positive/negative probes, server/Arbora contract tests and exact-commit CI evidence. If a backend operation is not available, that requirement remains open; a mock screen does not count as delivered. State and receipts belong in `tasks.md`.
 
 Requirement IDs are defined in [requirements.md](requirements.md); delivery state per ID is in `status.json`.

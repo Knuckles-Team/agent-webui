@@ -937,7 +937,7 @@ class OIDCBrowserSessionMiddleware:
     async def _verified_jwt_claims(
         self, token: str, *, audience: str
     ) -> dict[str, Any]:
-        """Verify one provider JWT through the canonical Graph OS verifier."""
+        """Verify one provider JWT through the canonical Arbora verifier."""
 
         from .host import config
         from .host import decode_jwt as _decode_jwt
@@ -2389,7 +2389,7 @@ async def verify_browser_session(
 ) -> int | None:
     """Verify one browser session for ``scope`` and return its MFA timestamp.
 
-    This is the one chokepoint a caller projection (graph-os's browser
+    This is the one chokepoint a caller projection (arbora's browser
     producer bridge) uses to turn a qualified :class:`BrowserSessionAuthority`
     into the exact verified MFA timestamp (or ``None``) it needs. The caller
     must already have bound ``session`` to this exact request -- for example

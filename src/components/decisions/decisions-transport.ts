@@ -14,7 +14,7 @@ import type {
  * on, following the same split `src/lib/kg-lod/contract.ts`'s `LodTransport`
  * establishes: a typed interface the view layer is written against, kept
  * separate from any one implementation. No production implementation is
- * wired up in this repository yet — the authenticated Graph OS read client
+ * wired up in this repository yet — the authenticated Arbora read client
  * these views need is not available here. `DecisionsView` and its tabs
  * therefore take a `DecisionsTransport` as a required prop with no default;
  * tests inject an explicit fixture transport (see

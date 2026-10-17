@@ -7,7 +7,7 @@
 | Finance ontology, accounting, sessions and golden fixtures | epistemic-graph | EG-FINANCE-PRIMITIVES-R004–EG-FINANCE-PRIMITIVES-R006, EG-FINANCE-PRIMITIVES-R013 | PENDING | Merged owner spec/code, fixed-point and provenance fixture output |
 | Provider data, account reads and CSV import | agent-connector-sdk / emerald-exchange | SDK-FINANCE-SOURCES-R002, SDK-FINANCE-SOURCES-R003, SDK-FINANCE-SOURCES-R004 | PENDING | Qualified source coverage, entitlement, preview/idempotency contract tests |
 | Strategy, backtest, recommendation and leverage | epistemic-graph / agent-utilities | EG-FINANCE-PRIMITIVES-R007–EG-FINANCE-PRIMITIVES-R009, EG-FINANCE-PRIMITIVES-R010 | PENDING | Versioned deterministic outputs, abstention, scorecard and risk-policy proof |
-| DCA scheduling and alert delivery | graph-os / emerald-exchange | GRAPHOS-DATA-MARKET-R006, EG-FINANCE-PRIMITIVES-R011 | PENDING | Replay-safe event and delivery receipts |
+| DCA scheduling and alert delivery | arbora / emerald-exchange | GRAPHOS-DATA-MARKET-R006, EG-FINANCE-PRIMITIVES-R011 | PENDING | Replay-safe event and delivery receipts |
 | Source intake and leverage guide | media-downloader / emerald-exchange | EMERALD-GUIDE-R001, EMERALD-MEDIA-R001 | PENDING | Public citations, source capture time, claims separated from executable rules |
 | Responsive Markets route and views | agent-webui | FIN-UI-R001 | SPECIFIED | PR/commit, FIN-T01–T04, T07–T14, served-path and visual evidence |
 | Shared Finance/Atlas ChartRenderer | agent-webui | FIN-UI-R002 | SPECIFIED | PR/commit, FIN-T05–T06, T13–T14 and mobile performance evidence |

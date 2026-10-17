@@ -6,7 +6,7 @@ const body = JSON.stringify({
     error: 'not_available',
     feature: 'Graph browser',
     needs_operation: 'graph.nodes.list',
-    message: 'Graph browser is not available: Graph OS does not serve the graph.nodes.list operation yet.',
+    message: 'Graph browser is not available: Arbora does not serve the graph.nodes.list operation yet.',
   },
 })
 

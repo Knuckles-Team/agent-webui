@@ -1,4 +1,4 @@
-# WEBUI-DESIGN — Accessible GraphOS browser design system
+# WEBUI-DESIGN — Accessible Arbora browser design system
 
 **ID:** WEBUI-DESIGN
 **Owner:** agent-webui
@@ -8,7 +8,7 @@
 
 ## Outcome
 
-A contributor builds new GraphOS browser surfaces from one documented set of tokens, responsive patterns and interaction states. Chat, Atlas and an operational form remain usable by keyboard, screen reader, touch and reduced-motion users. Visual review compares a stable before/after screenshot set, and new components reuse the existing UI primitives. The design guidance can be used with the universal spec/design/accessibility skills, but this spec is complete without installing any external skill or reading a private document.
+A contributor builds new Arbora browser surfaces from one documented set of tokens, responsive patterns and interaction states. Chat, Atlas and an operational form remain usable by keyboard, screen reader, touch and reduced-motion users. Visual review compares a stable before/after screenshot set, and new components reuse the existing UI primitives. The design guidance can be used with the universal spec/design/accessibility skills, but this spec is complete without installing any external skill or reading a private document.
 
 ## Requirements
 

@@ -75,7 +75,7 @@ logfire.configure(send_to_logfire='if-token-present' if _LOGFIRE_ENABLED else Fa
 if _LOGFIRE_ENABLED:
     logfire.instrument_pydantic_ai()
 
-__version__ = '2.7.0'
+__version__ = '2.7.1'
 
 print(f'Agent WebUI v{__version__}', file=sys.stderr)
 
@@ -529,7 +529,7 @@ def _resolve_access_log_policy(listener_host: str) -> str:
 def _require_graph_session_minter() -> Any:
     """Return the request-grant minter the identity gate binds per request.
 
-    The WebUI mints no graph session. Graph OS admits every served operation
+    The WebUI mints no graph session. Arbora admits every served operation
     the WebUI calls with the caller's own credential. The grant carries only
     the route scopes the WebUI enforces on its own routes.
     """
@@ -1541,7 +1541,7 @@ class RequestObservabilityMiddleware:
     honoured (so a browser or an upstream proxy can supply one); otherwise a
     fresh id is minted. Because this middleware is outermost, every inner
     layer (authorization/identity denial logging, route handlers, and any
-    downstream graph-os call the request triggers via
+    downstream arbora call the request triggers via
     ``correlation.inject()``) runs inside the SAME bound contextvar and logs
     the SAME id. The id is also echoed back as a response header so a
     browser-side failure report can be grepped straight to its server-side
@@ -1669,7 +1669,7 @@ def _require_identity_verifier(
 
     Identity is enforced on EVERY listener, loopback included: there is no
     unauthenticated development path. A deployment either configures a
-    complete JWT verifier or its host injects a session boundary (Graph OS's
+    complete JWT verifier or its host injects a session boundary (Arbora's
     identity gate, whose ``none`` auth mode is the demo posture and still
     resolves a real principal).
     """
@@ -2459,12 +2459,12 @@ def create_agent_web_app(
         contact_delivery: Optional host-injected governed contact delivery
             adapter. The route remains registered but fails closed when this
             adapter or its server-side destination/retention policy is absent.
-        browser_control: Optional host-injected Graph OS browser-control
+        browser_control: Optional host-injected Arbora browser-control
             authority. The WebSocket route remains registered but fails closed
             unless the authoritative lease/fence/audit service is available.
-        application_composer: Optional host-owned route composer. Graph OS uses
+        application_composer: Optional host-owned route composer. Arbora uses
             this public port to add its gateway routes without WebUI importing
-            Graph OS or gateway internals. Composition happens after WebUI
+            Arbora or gateway internals. Composition happens after WebUI
             routes and before the catch-all SPA mount.
         session_boundary: Optional host-owned browser session boundary. Graph
             OS installs its identity gate through this port: it owns
@@ -2679,9 +2679,9 @@ def create_agent_web_app(
         gives them the same real payload as ``/api/health`` instead.
 
         This is the SPA/dashboard listener's OWN liveness (port
-        ``GRAPH_OS_WEBUI_PORT``, default 8080 -- see
+        ``ARBORA_WEBUI_PORT``, default 8080 -- see
         ``agent_utilities.server.webui_co_service``). It is a different
-        listener from the graph-os gateway's `/health`/`/health/ready` on
+        listener from the arbora gateway's `/health`/`/health/ready` on
         port 8000 (`agent_utilities/server/routers/core.py`), which k8s's
         liveness/readiness/startup probes target and which this route does
         not touch.
@@ -2721,7 +2721,7 @@ def create_agent_web_app(
     if _LOGFIRE_ENABLED:
         logfire.instrument_starlette(app)
     # Install the WebUI-owned security boundary after route composition so
-    # injected Graph OS routes and standalone WebUI routes share the same
+    # injected Arbora routes and standalone WebUI routes share the same
     # authenticated actor/session boundary.
     _ensure_authorization_middleware(app)
     _ensure_actor_identity_middleware(
@@ -2796,7 +2796,7 @@ def main() -> None:
     app = create_agent_web_app(
         agent,
         # The standalone command serves WebUI-owned UI/session behavior only.
-        # Graph OS supplies fleet delegation and gateway routes when it embeds
+        # Arbora supplies fleet delegation and gateway routes when it embeds
         # this factory; missing host services therefore fail closed here.
         workspace_helpers={'deployment': 'standalone'},
         listener_host=host,

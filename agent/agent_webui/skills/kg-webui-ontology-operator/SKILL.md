@@ -8,7 +8,7 @@ description: >-
   the UI, run a governed bulk action over an object set, or inspect an object's
   properties, derived values, links and edit history.
 license: MIT
-tags: [graph-os, webui, ontology, object-set, actions, operator]
+tags: [arbora, webui, ontology, object-set, actions, operator]
 tier: surface
 metadata:
   author: Genius

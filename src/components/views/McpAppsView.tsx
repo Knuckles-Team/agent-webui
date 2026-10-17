@@ -30,7 +30,7 @@ import { useMCP } from '@/lib/mcp-context'
 /**
  * This host's own tool-call allow-list per known MCP Apps entry-point tool.
  *
- * agent-utilities PR #54 condenses graph-os's served MCP contract down to
+ * agent-utilities PR #54 condenses arbora's served MCP contract down to
  * `ask`/`find`/`write`/`act`/`manage`/`why`; `graph_jobs`/`graph_traces` are no
  * longer listed tools themselves -- they are operations reached through
  * `ask`/`act` (e.g. `action: 'graph_jobs.<op>'` + `params`). Allow `ask` and

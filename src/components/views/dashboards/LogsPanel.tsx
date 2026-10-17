@@ -95,7 +95,7 @@ export function LogsPanel({ title, range, refreshSignal, onRemove }: LogsPanelPr
       <div className="flex flex-wrap gap-2">
         <Input
           aria-label="Log stream"
-          placeholder="stream (e.g. graph-os)…"
+          placeholder="stream (e.g. arbora)…"
           value={stream}
           className="max-w-[14rem] text-sm"
           onChange={(e) => {

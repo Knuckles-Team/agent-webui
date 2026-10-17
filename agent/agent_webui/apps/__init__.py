@@ -52,7 +52,7 @@ def build_apps_router(apps: list[AppBackend]) -> APIRouter:
 def default_apps() -> list[AppBackend]:
     """The apps this WebUI hosts.
 
-    Markets reads market signals from the graph. Graph OS does not serve a
+    Markets reads market signals from the graph. Arbora does not serve a
     market-signal operation yet, so the app reports "not available".
     """
 
@@ -68,7 +68,7 @@ def default_apps() -> list[AppBackend]:
             router=build_markets_router(gateway),
             available=lambda: False,
             unavailable_reason=(
-                'Markets is not available: Graph OS does not serve the '
+                'Markets is not available: Arbora does not serve the '
                 'markets.signals.read operation yet.'
             ),
         )

@@ -51,7 +51,9 @@ jobs:
       # These hooks need the bootstrapped siblings or the Node toolchain; the
       # `tests` job runs them after bootstrap; its mandatory full lint owns
       # eslint-staged's coverage without a duplicate whole-repository pass.
-      skip-hooks: check-stubs,check-sprawl,okf-no-legacy-concepts,uv-lock,eslint-staged,no-fabrication-gate
+      # ste-staged (STE-lite prose lint) is advisory: the `tests` job runs it
+      # report-only (operator gate cut).
+      skip-hooks: check-stubs,check-sprawl,okf-no-legacy-concepts,uv-lock,eslint-staged,no-fabrication-gate,ste-staged
       all-files: ${{ github.event_name != 'pull_request' }}
       timeout-minutes: ${{ github.event_name == 'pull_request' && 15 || 60 }}
 
@@ -105,6 +107,14 @@ jobs:
           for hook in uv-lock no-fabrication-gate; do
             uvx pre-commit run "$hook" --config .config/pre-commit.yaml --hook-stage pre-push --all-files --show-diff-on-failure
           done
+
+      - name: STE-lite prose lint (advisory, report-only)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit-${{ github.run_id }}-${{ github.run_attempt }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: uvx pre-commit run ste-staged --config .config/pre-commit.yaml --hook-stage pre-commit --from-ref "$BASE_SHA" --to-ref HEAD
 
       - name: Type check and full lint (manual-stage hooks, always full)
         timeout-minutes: 15

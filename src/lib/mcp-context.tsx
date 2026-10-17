@@ -57,7 +57,7 @@ export interface MCPProviderProps {
   /** Public, 404, and unauthenticated shells keep the shared provider mounted
    * for one-owner semantics but must not probe the governed catalog. */
   enabled?: boolean
-  /** MCP server whose governed catalog is loaded. Defaults to graph-os, the
+  /** MCP server whose governed catalog is loaded. Defaults to arbora, the
    * fleet gateway — the same default `mcp-client.ts`'s callers use. */
   server?: string
 }

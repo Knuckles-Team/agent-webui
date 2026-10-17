@@ -37,12 +37,12 @@ describe('dashboards/queries adapters', () => {
 
   it('adaptLogs maps varied log field names', () => {
     const logs = adaptLogs({
-      logs: [{ ts: 1000, msg: 'hello', severity: 'WARN', source: 'graph-os' }],
+      logs: [{ ts: 1000, msg: 'hello', severity: 'WARN', source: 'arbora' }],
     })
     expect(logs).toHaveLength(1)
     expect(logs[0].message).toBe('hello')
     expect(logs[0].level).toBe('WARN')
-    expect(logs[0].stream).toBe('graph-os')
+    expect(logs[0].stream).toBe('arbora')
   })
 
   it('adaptTraces derives span_count from spans when absent', () => {

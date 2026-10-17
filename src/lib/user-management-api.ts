@@ -3,7 +3,7 @@
  * @description Typed API layer for the User Management panel (principals +
  * role grants).
  *
- * WIRING (honest, empirically verified 2026-08-25 against the live `graph-os`
+ * WIRING (honest, empirically verified 2026-08-25 against the live `arbora`
  * pod, `KG_DAEMON_ROLE=client` probe over `http://127.0.0.1:8080`):
  *
  *   - `GET /auth/session` is REAL and working (HTTP 200,

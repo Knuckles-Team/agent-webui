@@ -15,7 +15,7 @@ Browser Finance route / Atlas series result
   -> shared ChartRenderer and finance view models
   -> validated WebUI API adapter
   -> WebUI FastAPI host with session and RBAC checks
-  -> authenticated graph-os gateway
+  -> authenticated arbora gateway
   -> epistemic-graph finance storage/compute
   -> Emerald Exchange + agent-connector-sdk for provider/account ingress and governed effects
 ```
@@ -66,7 +66,7 @@ cp .env.example .env
 pnpm run dev:server
 ```
 
-In a second terminal run `pnpm run dev`. `pnpm run dev:server` listens on port 38001. The Vite config listens on port 9000 and proxies `/api` to that backend. An authenticated Graph OS backend and provider entitlements are required for live integration. Contract/UI tests use deterministic fixtures without credentials. Do not commit `.env`.
+In a second terminal run `pnpm run dev`. `pnpm run dev:server` listens on port 38001. The Vite config listens on port 9000 and proxies `/api` to that backend. An authenticated Arbora backend and provider entitlements are required for live integration. Contract/UI tests use deterministic fixtures without credentials. Do not commit `.env`.
 
 ## Quality and delivery gates
 
@@ -78,7 +78,7 @@ Run `pnpm run typecheck`, `pnpm run lint`, `pnpm run test`, `pnpm run test:e2e`,
 |---|---|---|
 | [epistemic-graph](https://github.com/Knuckles-Team/epistemic-graph) | finance-v1 accounts, activities, lots, reference sessions, fixed-point accounting, strategy/backtest/recommendation/leverage outputs and golden fixtures | EG-FINANCE-PRIMITIVES-R004–EG-FINANCE-PRIMITIVES-R006, EG-FINANCE-PRIMITIVES-R007–EG-FINANCE-PRIMITIVES-R009, EG-FINANCE-PRIMITIVES-R010, EG-FINANCE-PRIMITIVES-R013 |
 | [agent-connector-sdk](https://github.com/Knuckles-Team/agent-connector-sdk) and [emerald-exchange](https://github.com/Knuckles-Team/emerald-exchange) | qualified stock/FX/commodity source and account/import transport; governed effect boundary | SDK-FINANCE-SOURCES-R002, SDK-FINANCE-SOURCES-R003, SDK-FINANCE-SOURCES-R004 |
-| [graph-os](https://github.com/Knuckles-Team/graph-os) | authenticated finance projection, replay-safe DCA scheduling and outbox alert delivery | GRAPHOS-DATA-MARKET-R006, EG-FINANCE-PRIMITIVES-R011 |
+| [arbora](https://github.com/Knuckles-Team/arbora) | authenticated finance projection, replay-safe DCA scheduling and outbox alert delivery | GRAPHOS-DATA-MARKET-R006, EG-FINANCE-PRIMITIVES-R011 |
 | [agent-utilities](https://github.com/Knuckles-Team/agent-utilities) | workflow orchestration without a duplicate finance math authority | EG-FINANCE-PRIMITIVES-R009, GRAPHOS-DATA-MARKET-R006 |
 | [media-downloader](https://github.com/Knuckles-Team/media-downloader) and Emerald skills | source intake, claim/evidence separation and leveraged-trading guide | EMERALD-GUIDE-R001, EMERALD-MEDIA-R001 |
 | [agent-webui](https://github.com/Knuckles-Team/agent-webui) | this Markets workspace and shared chart | FIN-UI-R001, FIN-UI-R002 |

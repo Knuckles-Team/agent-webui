@@ -1,7 +1,7 @@
 {
-  "name": "Graph OS",
-  "short_name": "Graph OS",
-  "description": "A governed web interface for Graph OS agents, knowledge, and workflows.",
+  "name": "Arbora",
+  "short_name": "Arbora",
+  "description": "A governed web interface for Arbora agents, knowledge, and workflows.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
