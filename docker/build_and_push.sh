@@ -12,11 +12,11 @@
 # invoked standalone for a build-only smoke test.
 #
 # ── Pluggable build backend (2026-08-17) ─────────────────────────────────────
-# r820 was the only host in this cluster with a working `docker build` daemon (a
+# The control-plane build host was the only host in this cluster with a working `docker build` daemon (a
 # leftover from the pre-cutover Swarm era). It was deliberately stopped when
 # docker was sunset in the Swarm->RKE2 migration (2026-07-11), so this script
 # started failing outright with "cannot reach the docker daemon via context
-# 'r820'". The fix is NOT to start dockerd back up on r820 -- it is the sole
+# '<build-host>'". The fix is NOT to start dockerd back up on that host -- it is the sole
 # k8s control-plane node, cannot be safely rebooted (halts at POST awaiting a
 # keypress, and its iDRAC password lives in the OpenBao it would take down),
 # and a docker daemon rewrites iptables in ways that can disrupt cilium on a
@@ -81,7 +81,7 @@
 #                        the local-daemon/DOCKER_CONTEXT probe below entirely)
 #   DOCKER_BIN           docker binary to invoke (default: docker)
 #   DOCKER_CONTEXT        docker context to fall back to if no local daemon is
-#                        reachable (default: r820)
+#                        reachable (default: the build-host context)
 #   DOCKER_BUILDER        buildx builder to build with, explicitly (default:
 #                        "default", buildx's own name for the resolved
 #                        context's daemon-embedded builder) -- never left to
@@ -137,7 +137,7 @@ probe_docker() {
     BACKEND_REASON="docker context '${DOCKER_CONTEXT}' reachable"
     return 0
   fi
-  DOCKER_PROBE_ERR="no local docker daemon, and context '${DOCKER_CONTEXT}' unreachable (is r820 up? 'docker context ls' shows it configured?)"
+  DOCKER_PROBE_ERR="no local docker daemon, and context '${DOCKER_CONTEXT}' unreachable (is the build host up? 'docker context ls' shows it configured?)"
   return 1
 }
 
@@ -185,7 +185,7 @@ select_backend() {
         log "FAILED: no build backend available."
         log "  docker:   ${DOCKER_PROBE_ERR}"
         log "  buildkit: ${BUILDKIT_PROBE_ERR}"
-        log "Do NOT start dockerd on r820 to work around this -- it is the sole" \
+        log "Do NOT start dockerd on the build host to work around this -- it is the sole" \
             "k8s control-plane node, cannot be safely rebooted, and dockerd's" \
             "iptables rewrites can disrupt cilium on a live cluster."
         exit 69
