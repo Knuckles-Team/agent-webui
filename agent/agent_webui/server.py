@@ -76,7 +76,7 @@ logfire.configure(send_to_logfire='if-token-present' if _LOGFIRE_ENABLED else Fa
 if _LOGFIRE_ENABLED:
     logfire.instrument_pydantic_ai()
 
-__version__ = '2.6.3'
+__version__ = '2.7.0'
 
 print(f'Agent WebUI v{__version__}', file=sys.stderr)
 

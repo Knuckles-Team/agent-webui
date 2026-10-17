@@ -313,10 +313,11 @@ async def test_reply_stream_falls_back_to_final_text_with_no_text_delta_events(
     assert chunks.count('ANSWER FROM THE GRAPH') == 1
 
 
-# --- characterization for _latest_user_text (WD10-C-MISC, pre-refactor) ------
+# --- characterization for user-text extraction (WD10-C-MISC) ---------------
 #
-# Extracted before splitting _latest_user_text into helpers, to pin the exact
-# branch behavior: str content, list-of-str content, list-of-object content
+# Valid upstream messages exercise _latest_user_text; duck-typed objects
+# exercise _user_prompt_chunks directly because UserPromptPart rejects them.
+# Pin str content, list-of-str content, and helper-only list-of-object content
 # (``.content`` preferred over ``.text``, falsy ``.content`` falls through to
 # ``.text``), skipping non-ModelRequest/non-UserPromptPart entries, and
 # walking backward past a tool-return-only turn to the prior real user turn.
@@ -342,20 +343,18 @@ def test_latest_user_text_joins_list_of_str_items() -> None:
     assert _latest_user_text([message]) == 'a\nb'
 
 
-def test_latest_user_text_reads_content_attr_over_text_attr() -> None:
-    from agent_webui.orchestrator_model import _latest_user_text
+def test_user_prompt_chunks_reads_content_attr_over_text_attr() -> None:
+    from agent_webui.orchestrator_model import _user_prompt_chunks
 
     item = _ContentLike(content='from-content', text='from-text')
-    message = ModelRequest(parts=[UserPromptPart(content=[item])])
-    assert _latest_user_text([message]) == 'from-content'
+    assert _user_prompt_chunks([item]) == ['from-content']
 
 
-def test_latest_user_text_falls_back_to_text_attr_when_content_falsy() -> None:
-    from agent_webui.orchestrator_model import _latest_user_text
+def test_user_prompt_chunks_falls_back_to_text_attr_when_content_falsy() -> None:
+    from agent_webui.orchestrator_model import _user_prompt_chunks
 
     item = _ContentLike(content='', text='from-text')
-    message = ModelRequest(parts=[UserPromptPart(content=[item])])
-    assert _latest_user_text([message]) == 'from-text'
+    assert _user_prompt_chunks([item]) == ['from-text']
 
 
 def test_latest_user_text_skips_non_user_prompt_parts_and_walks_backward() -> None:
