@@ -39,11 +39,11 @@ def _reset_active_engine():
     from agent_utilities.knowledge_graph.core.engine import IntelligenceGraphEngine
 
     previous = IntelligenceGraphEngine.get_active()
-    IntelligenceGraphEngine.set_active(None)
+    IntelligenceGraphEngine._set_active_for_tests(None)
     try:
         yield
     finally:
-        IntelligenceGraphEngine.set_active(previous)
+        IntelligenceGraphEngine._set_active_for_tests(previous)
 
 
 def test_get_engine_fallback_reaches_get_or_create(monkeypatch):
