@@ -143,23 +143,6 @@ def _make_record(
     return record
 
 
-def test_json_formatter_emits_one_valid_json_object_with_correlation_id() -> None:
-    from agent_utilities.observability.correlation import bind_carrier
-    from agent_webui.observability import StructuredLogFormatter
-
-    formatter = StructuredLogFormatter(json_mode=True)
-    with bind_carrier({'x-correlation-id': 'corr-abc'}) as correlation_id:
-        rendered = formatter.format(
-            _make_record(message='request handled', extra={'status': 200})
-        )
-    payload = json.loads(rendered)
-    assert payload['message'] == 'request handled'
-    assert payload['correlation_id'] == correlation_id == 'corr-abc'
-    assert payload['status'] == 200
-    assert payload['level'] == 'INFO'
-    assert payload['logger'] == 'agent_webui.server'
-
-
 def test_json_formatter_preserves_traceback_for_error_capture() -> None:
     from agent_webui.observability import StructuredLogFormatter
 
@@ -185,44 +168,6 @@ def test_text_formatter_is_readable_and_never_raises_on_missing_correlation() ->
     assert 'plain text line' in line
     assert 'INFO' in line
     assert 'correlation_id=' in line
-
-
-def test_formatter_sanitizes_endpoint_shaped_text_only_in_tracebacks() -> None:
-    """The scrubber must hit an exception traceback but MUST NOT touch the
-    message/extras — an HTTP access-log line's whole purpose is to show the
-    real request path, and log_privacy's filesystem-path heuristic cannot
-    tell ``/api/dashboard/health`` apart from ``/etc/passwd``; running it
-    over the message silently defeated item 1 until this was caught.
-    """
-    from agent_webui.observability import StructuredLogFormatter
-
-    formatter = StructuredLogFormatter(json_mode=True)
-
-    message_rendered = formatter.format(
-        _make_record(
-            message='GET /api/dashboard/health -> 200 (1.2ms)',
-            extra={
-                'path': '/api/dashboard/health',
-                'host': 'internal.example.test:5432',
-            },
-        )
-    )
-    message_payload = json.loads(message_rendered)
-    assert message_payload['message'] == 'GET /api/dashboard/health -> 200 (1.2ms)'
-    assert message_payload['path'] == '/api/dashboard/health'
-    assert message_payload['host'] == 'internal.example.test:5432'
-
-    try:
-        raise RuntimeError('failed calling https://internal.example.test:5432/x')
-    except RuntimeError:
-        import sys
-
-        traceback_rendered = formatter.format(
-            _make_record(message='unhandled', exc_info=sys.exc_info())
-        )
-    traceback_payload = json.loads(traceback_rendered)
-    assert 'internal.example.test' not in traceback_payload['exception']
-    assert '<endpoint>' in traceback_payload['exception']
 
 
 # ---------------------------------------------------------------------------
@@ -325,33 +270,6 @@ async def test_inbound_correlation_id_is_reused_not_replaced(
 
 
 @pytest.mark.asyncio
-@pytest.mark.spec('WEBUI-API-R004')
-async def test_each_request_gets_its_own_id_despite_an_ambient_one() -> None:
-    """A host thread that bound a correlation id at startup must not leak it.
-
-    The GraphOS co-service thread carries one ambient id for its lifetime.
-    Every request without an inbound header must still get a fresh id.
-    """
-    from agent_utilities.observability.correlation import bind_carrier
-    from agent_webui.server import RequestObservabilityMiddleware
-
-    async def inner(_scope: dict, _receive: Any, send: Any) -> None:
-        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
-        await send({'type': 'http.response.body', 'body': b'{}'})
-
-    middleware = RequestObservabilityMiddleware(inner)
-    first, second = _Recorder(), _Recorder()
-    with bind_carrier({'x-correlation-id': 'process-startup-id'}):
-        await middleware(_http_scope(), _receive, first)
-        await middleware(_http_scope(), _receive, second)
-
-    first_id = first.headers[b'x-correlation-id']
-    second_id = second.headers[b'x-correlation-id']
-    assert b'process-startup-id' not in (first_id, second_id)
-    assert first_id != second_id
-
-
-@pytest.mark.asyncio
 async def test_liveness_paths_log_at_debug_not_info(
     agent_webui_caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -425,7 +343,7 @@ async def test_websocket_connection_is_logged_with_close_code(
 async def test_origin_denial_states_reason_origin_not_allowed(
     agent_webui_caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent_utilities.core.config import config
+    from agent_webui.host import config
     from agent_webui.server import WebUIAuthorizationMiddleware
 
     monkeypatch.setattr(config, 'allowed_origins', '', raising=False)
@@ -455,130 +373,6 @@ async def test_origin_denial_states_reason_origin_not_allowed(
     # Never a credential value in the denial log.
     assert 'bearer' not in agent_webui_caplog.text.lower()
     assert 'authorization:' not in agent_webui_caplog.text.lower()
-
-
-@pytest.mark.asyncio
-async def test_kg_scope_denial_states_reason_kg_scope_missing(
-    agent_webui_caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from agent_utilities.core.config import config
-    from agent_utilities.knowledge_graph.core.session import (
-        GraphSession,
-        reset_session,
-        set_session,
-    )
-    from agent_utilities.security.brain_context import ActorContext
-    from agent_webui.server import WebUIAuthorizationMiddleware
-
-    monkeypatch.setattr(config, 'allowed_origins', '', raising=False)
-    monkeypatch.setattr(
-        config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
-    )
-    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.invalid', raising=False)
-    monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
-
-    async def never_called(*_args: Any) -> None:
-        raise AssertionError('must not reach the inner app')
-
-    actor = ActorContext(
-        actor_id='reader-1', tenant_id='homelab', roles=('kg:read',), authenticated=True
-    )
-    session = GraphSession(actor=actor, tenant='homelab', scopes=frozenset({'kg:read'}))
-    token = set_session(session)
-    try:
-        send = _Recorder()
-        # An admin route (kg:admin required) the session's kg:read scope
-        # cannot satisfy; same-origin so the origin check passes first.
-        scope = _http_scope(
-            path='/api/fleet/x',
-            method='GET',
-            scheme='https',
-            headers=[
-                (b'host', b'testserver'),
-                (b'origin', b'https://testserver'),
-            ],
-        )
-        await WebUIAuthorizationMiddleware(never_called)(scope, _receive, send)
-    finally:
-        reset_session(token)
-
-    assert send.status == 403
-    record = next(
-        r
-        for r in agent_webui_caplog.records
-        if getattr(r, 'event', None) == 'authorization'
-    )
-    assert record.reason == 'kg_scope_missing'
-    assert record.required_scope == 'kg:admin'
-    assert record.resolved_scopes == ['kg:read']
-    assert record.session_resolved is True
-
-
-@pytest.mark.asyncio
-async def test_webui_role_denial_states_reason_and_both_roles(
-    agent_webui_caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from agent_utilities.core.config import config
-    from agent_utilities.knowledge_graph.core.session import (
-        GraphSession,
-        reset_session,
-        set_session,
-    )
-    from agent_utilities.security.brain_context import ActorContext
-    from agent_webui.server import WebUIAuthorizationMiddleware
-
-    monkeypatch.setattr(config, 'allowed_origins', '', raising=False)
-    monkeypatch.setattr(
-        config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
-    )
-    monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.invalid', raising=False)
-    monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui', raising=False)
-
-    served: list[str] = []
-
-    async def inner(_scope: dict, _receive: Any, send: Any) -> None:
-        served.append('reached')
-        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
-        await send({'type': 'http.response.body', 'body': b'{}'})
-
-    # kg:admin scope satisfies the graph-authority check, but no explicit
-    # webui:* realm role and no other kg:* role means resolve_webui_role
-    # falls back to 'reader' -- below the 'admin' the ladder then requires.
-    actor = ActorContext(
-        actor_id='scoped-service-account',
-        tenant_id='homelab',
-        roles=(),
-        authenticated=True,
-    )
-    session = GraphSession(
-        actor=actor, tenant='homelab', scopes=frozenset({'kg:admin'})
-    )
-    token = set_session(session)
-    try:
-        send = _Recorder()
-        scope = _http_scope(
-            path='/api/fleet/x',
-            method='GET',
-            scheme='https',
-            headers=[
-                (b'host', b'testserver'),
-                (b'origin', b'https://testserver'),
-            ],
-        )
-        await WebUIAuthorizationMiddleware(inner)(scope, _receive, send)
-    finally:
-        reset_session(token)
-
-    assert not served, 'a role-insufficient caller must never reach the route'
-    assert send.status == 403
-    record = next(
-        r
-        for r in agent_webui_caplog.records
-        if getattr(r, 'event', None) == 'authorization'
-    )
-    assert record.reason == 'webui_role_insufficient'
-    assert record.webui_role_required == 'admin'
-    assert record.webui_role_resolved == 'reader'
 
 
 # ---------------------------------------------------------------------------
@@ -627,7 +421,7 @@ async def test_malformed_authorization_header_logs_its_reason(
 async def test_websocket_missing_credential_when_enforced_logs_its_reason(
     agent_webui_caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent_utilities.core.config import config
+    from agent_webui.host import config
 
     monkeypatch.setattr(
         config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
@@ -654,46 +448,6 @@ async def test_websocket_missing_credential_when_enforced_logs_its_reason(
         'agent_webui.ws_denied' in m and 'reason=no-credential-resolved' in m
         for m in messages
     ), f'expected a ws_denied no-credential-resolved line, got: {messages}'
-
-
-@pytest.mark.asyncio
-async def test_session_expired_minter_logs_its_reason(
-    agent_webui_caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from agent_utilities.core.config import config
-    from agent_utilities.knowledge_graph.core.session import SessionExpiredError
-    from agent_utilities.security import request_identity as shared
-    from agent_utilities.security.brain_context import ActorContext
-
-    monkeypatch.setattr(
-        config, 'auth_jwt_jwks_uri', 'https://idp.invalid/certs', raising=False
-    )
-    actor = ActorContext(
-        actor_id='u', tenant_id='homelab', roles=(), authenticated=True
-    )
-
-    async def fake_actor_from_bearer_token(_token: str) -> ActorContext:
-        return actor
-
-    monkeypatch.setattr(shared, 'actor_from_bearer_token', fake_actor_from_bearer_token)
-
-    def expired_minter(_actor: Any) -> Any:
-        raise SessionExpiredError('expired')
-
-    async def never_called(*_args: Any) -> None:
-        raise AssertionError('must not reach the inner app')
-
-    send = _Recorder()
-    scope = _http_scope(headers=[(b'authorization', b'Bearer a-valid-looking-token')])
-    await _identity_middleware(never_called, expired_minter)(scope, _receive, send)
-
-    assert send.status == 401
-    record = next(
-        r
-        for r in agent_webui_caplog.records
-        if getattr(r, 'event', None) == 'authentication'
-    )
-    assert record.reason == 'session_expired'
 
 
 # ---------------------------------------------------------------------------

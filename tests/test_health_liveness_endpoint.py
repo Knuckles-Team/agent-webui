@@ -33,8 +33,6 @@ the instance means covering it too.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -47,32 +45,18 @@ _FAKE_INDEX_HTML = (
 
 
 @pytest.fixture
-def webui_dist_present():
-    """Materialize a throwaway ``dist/index.html`` so the SPA mount is live.
+def webui_dist_present(tmp_path, monkeypatch):
+    """Materialize a private ``dist/index.html`` so the SPA mount is live.
 
-    ``create_agent_web_app`` only mounts ``SPAStaticFiles`` when
-    ``dist_path.exists()`` is true (server.py, ``if not html_source: if
-    dist_path.exists(): app.mount(...)``); in this checkout ``dist/`` doesn't
-    exist (it's a gitignored Vite build artifact), so without this fixture
-    the bug never reproduces -- an unmatched path 404s honestly instead of
-    being swallowed. Removes only what it created.
+    The server resolves ``dist`` beside its own module file, so the fixture
+    points that file into ``tmp_path``. The real build output is never touched.
     """
-    import agent_webui
+    from agent_webui import server as server_module
 
-    dist_dir = Path(agent_webui.__file__).parent / 'dist'
-    index_path = dist_dir / 'index.html'
-    dist_already_existed = dist_dir.exists()
-    dist_dir.mkdir(parents=True, exist_ok=True)
-    index_path.write_text(_FAKE_INDEX_HTML)
-    try:
-        yield
-    finally:
-        index_path.unlink(missing_ok=True)
-        if not dist_already_existed:
-            try:
-                dist_dir.rmdir()
-            except OSError:
-                pass
+    package = tmp_path / 'agent_webui'
+    (package / 'dist').mkdir(parents=True)
+    (package / 'dist' / 'index.html').write_text(_FAKE_INDEX_HTML)
+    monkeypatch.setattr(server_module, '__file__', str(package / 'server.py'))
 
 
 @pytest.fixture

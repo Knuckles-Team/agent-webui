@@ -25,30 +25,21 @@ _ASSET = 'console.log("bundle")'
 
 
 @pytest.fixture
-def built_bundle():
-    """A throwaway ``dist/`` so the SPA mount (and its public shell) is live."""
-    import agent_webui
+def built_bundle(tmp_path, monkeypatch):
+    """A private ``dist/`` so the SPA mount (and its public shell) is live.
 
-    dist = Path(agent_webui.__file__).parent / 'dist'
-    existed = dist.exists()
-    assets = dist / 'assets'
-    assets_existed = assets.exists()
-    assets.mkdir(parents=True, exist_ok=True)
-    index = dist / 'index.html'
-    asset = assets / 'identity-test.js'
-    index.write_text(_INDEX)
-    asset.write_text(_ASSET)
-    try:
-        yield dist
-    finally:
-        asset.unlink(missing_ok=True)
-        index.unlink(missing_ok=True)
-        for directory, was_there in ((assets, assets_existed), (dist, existed)):
-            if not was_there:
-                try:
-                    directory.rmdir()
-                except OSError:
-                    pass
+    The server resolves ``dist`` beside its own module file, so the fixture
+    points that file into ``tmp_path``. The real build output is never touched.
+    """
+    from agent_webui import server as server_module
+
+    package = tmp_path / 'agent_webui'
+    dist = package / 'dist'
+    (dist / 'assets').mkdir(parents=True)
+    (dist / 'index.html').write_text(_INDEX)
+    (dist / 'assets' / 'identity-test.js').write_text(_ASSET)
+    monkeypatch.setattr(server_module, '__file__', str(package / 'server.py'))
+    return dist
 
 
 def _build(**kwargs: Any) -> Any:
@@ -60,7 +51,7 @@ def _build(**kwargs: Any) -> Any:
 
 
 def _no_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent_utilities.core.config import config
+    from agent_webui.host import config
 
     for field in ('auth_jwt_jwks_uri', 'auth_jwt_issuer', 'auth_jwt_audience'):
         monkeypatch.setattr(config, field, None, raising=False)
@@ -75,7 +66,7 @@ def test_a_loopback_listener_without_a_verifier_is_refused(
 
 
 def test_a_half_configured_verifier_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent_utilities.core.config import config
+    from agent_webui.host import config
 
     monkeypatch.setattr(config, 'auth_jwt_audience', None, raising=False)
     with pytest.raises(RuntimeError, match='JWKS URI, issuer, and audience'):
