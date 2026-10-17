@@ -10,6 +10,7 @@ import json
 from typing import Any
 
 import httpx
+import msgpack
 import pytest
 from _agent_webui_shared_fixtures import authenticated_asgi_app
 from agent_webui import host
@@ -157,6 +158,24 @@ def _client(app: Any, scope: str = _ADMIN) -> TestClient:
         ),
         (
             'GET',
+            '/graph/nodes?node_type=Tool',
+            None,
+            'eg.graph.GetNodesByLabel',
+            [['t1', {'node_type': 'Tool', 'name': 'ping'}]],
+            {'label': 'Tool', 'after': None},
+            [{'id': 't1', 'labels': ['Tool'], 'properties': {'name': 'ping'}}],
+        ),
+        (
+            'GET',
+            '/graph/relationships',
+            None,
+            'eg.graph.GetEdgesPage',
+            [['a', 'b', 0, list(msgpack.packb({'type': 'USES'}))]],
+            {'after': None},
+            [{'source': 'a', 'type': 'USES', 'target': 'b'}],
+        ),
+        (
+            'GET',
             '/atlas/sources',
             None,
             'ingest.sources.list',
@@ -195,6 +214,16 @@ def test_read_routes_project_the_served_operation(
             {'server': 'a-mcp', 'tool': 'ping', 'arguments': {'n': 1}},
         ),
         ('/sessions/task-1/cancel', None, 'agents.tasks.cancel', {'task_id': 'task-1'}),
+        (
+            '/graph/link',
+            {'source': 'a', 'target': 'b', 'relationship_type': 'USES'},
+            'eg.graph.AddEdge',
+            {
+                'source_id': 'a',
+                'target_id': 'b',
+                'properties_msgpack': list(msgpack.packb({'type': 'USES'})),
+            },
+        ),
         (
             '/atlas/sources/sync',
             {'source': 'github', 'mode': 'full'},

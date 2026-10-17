@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 from urllib.parse import quote, urlsplit
 
+import msgpack
 from agent_connector_sdk.privacy import sanitize_for_persistence
 from agent_connector_sdk.privacy_reference import persistence_reference
 from agent_utilities.core.paths import config_dir, data_dir
@@ -3023,145 +3024,72 @@ def _build_canvas_nodes(
 
 @router.get('/graph/nodes')
 async def get_graph_nodes(node_type: str | None = None) -> list[dict[str, Any]]:
-    """Query Knowledge Graph for nodes of a specific type or all nodes.
+    """List graph nodes, optionally of one type, through ``eg.graph.GetNodesByLabel``.
 
-    Args:
-        node_type: Optional filter for node type (e.g., 'Job', 'Log',
-                   'Memory', 'KnowledgeBase')
-
-    Returns:
-        List of node dictionaries with properties.
-
-    This does not go through Cypher at all. `properties(n)` asked the engine's
-    Cypher RETURN clause to call a function it does not implement
-    (`eg-query`'s `parse_proj_expr` recognizes only a fixed aggregate set plus
-    the special-cased `type(r)`), and `RETURN n` is the ORIGINAL, still-broken
-    whole-object projection documented at `get_graph_stats`. There is no
-    scalar-column way to ask Cypher for "all of a node's properties" (the
-    grammar has no wildcard/`RETURN n.*`), so this uses `nodes_by_label` --
-    the engine's OWN purpose-built native replacement for exactly this
-    `MATCH (n[:Label]) ... LIMIT k` shape -- fanned out across every
-    accessible graph by `_collect_graph_node_rows`.
+    One bounded, keyset-ordered label scan; an empty label scans every node.
+    Each ``(id, properties)`` row becomes one canvas node.
     """
     if node_type and not _SAFE_GRAPH_LABEL.fullmatch(node_type):
         raise HTTPException(status_code=400, detail='Invalid graph node type')
+    rows = await served(
+        'eg.graph.GetNodesByLabel',
+        {
+            'label': node_type or '',
+            'after': None,
+            'limit': _MAX_EXTERNAL_COLLECTION_ITEMS,
+        },
+    )
+    if not isinstance(rows, list):
+        return []
+    budget_bytes = (_MAX_EXTERNAL_RESULT_BYTES * 3) // 4
+    return _public_external_result(_build_canvas_nodes(rows, node_type, budget_bytes))
+
+
+def _edge_type(packed: Any) -> str:
+    """The ``type`` property of one MessagePack-encoded edge property map."""
+
+    if isinstance(packed, list):
+        try:
+            packed = bytes(packed)
+        except (TypeError, ValueError):
+            return ''
+    if not isinstance(packed, bytes | bytearray) or not packed:
+        return ''
     try:
-        engine = await _graph_read_engine()
-        if engine is None:
-            return []
-        if not callable(getattr(engine.backend, 'nodes_by_label', None)):
-            raise HTTPException(
-                status_code=503,
-                detail='Knowledge Graph node query failed',
-            )
-        budget = _MAX_EXTERNAL_COLLECTION_ITEMS
-        # Leave headroom under the serialized ceiling for the JSON envelope.
-        budget_bytes = (_MAX_EXTERNAL_RESULT_BYTES * 3) // 4
-        rows, source_graphs, degraded_graphs = await _collect_graph_node_rows(
-            engine, node_type, budget
-        )
-        # `source_graphs`/`degraded_graphs` are computed for observability
-        # parity with `get_graph_stats`, but this route's response is a bare
-        # JSON array (`list[dict]`, consumed directly by GraphView.tsx's node
-        # list) -- there is no envelope field to carry them without breaking
-        # that contract. Logged instead so the union's effect stays visible
-        # operationally even though it can't ride the response body.
-        if degraded_graphs:
-            logger.warning(
-                'get_graph_nodes: degraded graphs %s (source graphs: %s)',
-                sorted(degraded_graphs),
-                sorted(source_graphs),
-            )
-        return _public_external_result(
-            _build_canvas_nodes(rows, node_type, budget_bytes)
-        )
-    except FastAPIHTTPException:
-        raise
-    except Exception as e:
-        # D-W6-10: this used to swallow ANY backend failure (including an
-        # authorization rejection such as PlacementAuthorityError) into a
-        # bare `[]` -- indistinguishable, to both this route's caller and to
-        # GraphView.tsx, from a graph that is genuinely empty. Raise instead
-        # so the frontend's existing `.catch(() => null)` -> "Failed to load
-        # graph database nodes" toast (GraphView.tsx's own fetchData, already
-        # wired, previously never fired because a 200 + `[]` looks like
-        # success) fires on a REAL failure, and stays silent for a REAL empty
-        # graph (which never reaches this except block at all). `_log_failure`
-        # already logs the exception TYPE (e.g. `error_type=ValueError`) to
-        # the server log without the message/args, so the cause stays legible
-        # to an operator reading logs while nothing internal reaches the
-        # client response below.
-        _log_failure('get_graph_nodes', e)
-        raise HTTPException(
-            status_code=503,
-            detail='Knowledge Graph node query failed',
-        ) from e
+        properties = msgpack.unpackb(packed, raw=False)
+    except (ValueError, msgpack.ExtraData, msgpack.FormatError, msgpack.StackError):
+        return ''
+    if not isinstance(properties, dict):
+        return ''
+    edge_type = properties.get('type')
+    return edge_type if isinstance(edge_type, str) else ''
 
 
 @router.get('/graph/relationships')
 async def get_graph_relationships() -> list[dict[str, Any]]:
-    """Query Knowledge Graph for relationships between nodes.
+    """List graph relationships through ``eg.graph.GetEdgesPage``.
 
-    Returns:
-        List of relationship dictionaries with source, target, and type.
+    One bounded, keyset-ordered edge page. Each
+    ``(source, target, ordinal, properties)`` row becomes
+    ``{source, type, target}``.
     """
-    try:
-        try:
-            engine = await get_engine_bounded()
-        except FastAPIHTTPException as exc:
-            # See the matching note in get_graph_nodes() -- same fix, same
-            # reasoning: "no engine" degrades to an honest empty list; a
-            # genuine 503 still hard-fails, and D-W6-10's post-acquisition
-            # 503 hardening below is untouched.
-            if exc.status_code != 501:
-                raise
-            return []
-
-        query = (
-            'MATCH (a)-[r]->(b) RETURN a.id as source, '
-            f'type(r) as type, b.id as target LIMIT {_MAX_EXTERNAL_COLLECTION_ITEMS}'
+    rows = await served(
+        'eg.graph.GetEdgesPage',
+        {'after': None, 'limit': _MAX_EXTERNAL_COLLECTION_ITEMS},
+    )
+    relationships = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, list | tuple) or len(row) != 4:
+            continue
+        source, target, _ordinal, packed = row
+        relationships.append(
+            {
+                'source': source if isinstance(source, str) else '',
+                'type': _edge_type(packed),
+                'target': target if isinstance(target, str) else '',
+            }
         )
-        # FIX LANE Priority 1: unioned across every graph this actor may read
-        # (`_read_union_cypher` -- `tenant_sharing.read_union`, same primitive
-        # `get_graph_stats` already uses), not `engine.backend.execute` alone,
-        # so relationships among commons-graph nodes (e.g. `Tool`-to-`Server`
-        # edges) are visible here too. A relationship row carries no single
-        # `id` column, so `read_union`'s id-dedup is a no-op for every row here
-        # (its own documented behaviour for an unclassifiable id -- "keep,
-        # never drop") -- which is correct: two physically partitioned graphs
-        # (GOC-61) never share an edge, so nothing needs de-duplicating.
-        result, _source_graphs = await _read_union_cypher(
-            engine, query, None, deadline=10.0
-        )
-        relationships = []
-        for row in result:
-            relationships.append(
-                {
-                    'source': row.get('source', ''),
-                    'type': row.get('type', ''),
-                    'target': row.get('target', ''),
-                }
-            )
-        # Re-bound after the union merge (same fix `list_resources` already
-        # applies): the Cypher `LIMIT` above caps each GRAPH's own read at
-        # `_MAX_EXTERNAL_COLLECTION_ITEMS`, but `_read_union_cypher` can read
-        # more than one accessible graph (tenant + `__commons__`), and their
-        # combined row count can exceed that cap even though neither graph's
-        # own read did. Without this, `_public_external_result` raised
-        # `ValueError('...oversized collection')` on the merged list and the
-        # broad `except` below turned a real, over-cap result into a loud
-        # 503 -- never silently `[]`, but still indistinguishable from a
-        # genuine backend failure for a tenant with a busy commons graph.
-        return _public_external_result(relationships[:_MAX_EXTERNAL_COLLECTION_ITEMS])
-    except FastAPIHTTPException:
-        raise
-    except Exception as e:
-        # D-W6-10: mirror of get_graph_nodes' fix above -- see that comment.
-        _log_failure('get_graph_relationships', e)
-        raise HTTPException(
-            status_code=503,
-            detail='Knowledge Graph relationship query failed',
-        ) from e
+    return _public_external_result(relationships[:_MAX_EXTERNAL_COLLECTION_ITEMS])
 
 
 # ---------------------------------------------------------------------------
@@ -4585,43 +4513,38 @@ async def delete_memory(memory_id: str) -> dict[str, Any]:
 
 @router.post('/graph/link')
 async def link_nodes(data: dict[str, Any]) -> dict[str, Any]:
-    """Create a relationship between two nodes in the Knowledge Graph.
+    """Create one relationship through ``eg.graph.AddEdge``.
 
     Args:
-        data: Dictionary containing source, target, relationship_type, and properties.
+        data: ``source``, ``target``, ``relationship_type`` and optional
+            ``properties``. The relationship type is stored as the edge's
+            ``type`` property.
 
     Returns:
         Success status.
     """
-    try:
-        source = _validate_runtime_id(data.get('source', ''))
-        target = _validate_runtime_id(data.get('target', ''))
-        relationship_type = data.get('relationship_type')
-        if not isinstance(relationship_type, str) or not _SAFE_GRAPH_LABEL.fullmatch(
-            relationship_type
-        ):
-            raise HTTPException(status_code=400, detail='Invalid relationship type')
-        properties = _bounded_query_params(data.get('properties', {}))
-        safe_properties, _privacy_report = sanitize_for_persistence(properties)
-        if not isinstance(safe_properties, dict):
-            raise HTTPException(status_code=400, detail='Invalid link properties')
-
-        engine = await get_engine_bounded()
-
-        await invoke_governed_helper(
-            engine.link_nodes,
-            source,
-            target,
-            relationship_type,
-            safe_properties,
-            deadline=10.0,
-        )
-        return {'status': 'success'}
-    except FastAPIHTTPException:
-        raise
-    except Exception as e:
-        _log_failure('api_extension', e)
-        raise HTTPException(status_code=500, detail=type(e).__name__) from e
+    source = _validate_runtime_id(data.get('source', ''))
+    target = _validate_runtime_id(data.get('target', ''))
+    relationship_type = data.get('relationship_type')
+    if not isinstance(relationship_type, str) or not _SAFE_GRAPH_LABEL.fullmatch(
+        relationship_type
+    ):
+        raise HTTPException(status_code=400, detail='Invalid relationship type')
+    properties = _bounded_query_params(data.get('properties', {}))
+    safe_properties, _privacy_report = sanitize_for_persistence(properties)
+    if not isinstance(safe_properties, dict):
+        raise HTTPException(status_code=400, detail='Invalid link properties')
+    packed = msgpack.packb({**safe_properties, 'type': relationship_type})
+    await served(
+        'eg.graph.AddEdge',
+        {
+            'source_id': source,
+            'target_id': target,
+            'properties_msgpack': list(packed),
+        },
+        idempotency_key=uuid.uuid4().hex,
+    )
+    return {'status': 'success'}
 
 
 @router.get('/graph/search')

@@ -21,6 +21,8 @@ dependencies = [
     # WebUI stores or logs them.
     "agent-connector-sdk>=0.2.0,<1.0.0",
     "httpx>=0.28.1",
+    # Edge properties travel to eg.graph.AddEdge / GetEdgesPage as MessagePack.
+    "msgpack>=1.1.0",
     "fastapi>=0.143.3",
     "langfuse>=5.0.2",
     # server.py and orchestrator_model.py import pydantic_ai directly. Match the
