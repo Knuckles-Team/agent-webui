@@ -15,6 +15,7 @@
     "/agent-library",
     "/llm-templates",
     "/mcp-apps",
+    "/console/confirm/:planRef",
     "/explore",
     "/graph",
     "/graph-3d",
