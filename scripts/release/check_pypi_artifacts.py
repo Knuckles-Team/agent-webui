@@ -14,14 +14,13 @@ import hashlib
 import json
 import subprocess
 import sys
+import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
-
-import tomllib
 
 PYPI_RELEASE_URL = 'https://pypi.org/pypi/{project}/{version}/json'
 PUBLISHABLE_SUFFIXES = ('.whl', '.tar.gz')

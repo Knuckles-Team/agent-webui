@@ -170,7 +170,7 @@ def test_release_workflow_preflights_and_rechecks_without_skip_existing() -> Non
     assert "if: steps.pypi_preflight.outputs.publish == 'true'" in workflow
     assert '--expect-existing' in workflow
     assert '--skip-existing' not in workflow
-    assert 'twine upload dist/*.whl dist/*.tar.gz --verbose' in workflow
+    assert 'twine upload dist/*.whl sdist/*.tar.gz --verbose' in workflow
     assert 'twine upload dist/* --verbose' not in workflow
     assert (
         'uses: ./.pipeline-contract/.github/actions/create-version-release' in workflow

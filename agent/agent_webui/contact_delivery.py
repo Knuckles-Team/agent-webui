@@ -263,7 +263,7 @@ async def _deliver_with_deadline(
             timeout=_DELIVERY_TIMEOUT_SECONDS,
         )
         return ContactDeliveryResult.model_validate(raw_outcome, strict=True)
-    except (ValidationError, asyncio.TimeoutError) as error:
+    except (TimeoutError, ValidationError) as error:
         logger.error(
             'Contact delivery outcome unknown: error_type=%s',
             type(error).__name__,

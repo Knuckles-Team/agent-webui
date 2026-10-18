@@ -109,9 +109,10 @@ if ! uv_is_current; then
 fi
 log "$(uv --version)"
 
-# The interpreter floor of `requires-python` is the version the suite runs on.
-PYTHON_VERSION="$(sed -n 's/^requires-python *= *">=\([0-9]*\.[0-9]*\).*/\1/p' pyproject.toml)"
-: "${PYTHON_VERSION:?could not read requires-python from pyproject.toml}"
+# The environment interpreter (.python-version) is the version the suite runs
+# on; requires-python keeps the 3.12 install floor.
+PYTHON_VERSION="$(tr -d '[:space:]' < .python-version)"
+: "${PYTHON_VERSION:?could not read .python-version}"
 uv python install "$PYTHON_VERSION"
 
 SYNC=(uv sync --frozen --python "$PYTHON_VERSION" --extra test)

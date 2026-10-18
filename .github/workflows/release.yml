@@ -123,7 +123,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          uv venv --python 3.13 .venv
+          uv venv --python 3.14 .venv
           source .venv/bin/activate
           uv pip install -r requirements.txt || true
           uv pip install --require-hashes -r .pipeline-contract/.github/actions/publish-python-package/twine-requirements.txt
