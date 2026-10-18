@@ -18,7 +18,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from concurrent import futures as _futures
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -1320,9 +1320,7 @@ def _list_files_dir_entry(dir_path: Path, base_path: Path) -> dict[str, Any] | N
     return {
         'name': str(dir_path.relative_to(base_path)),
         'size': 0,
-        'modified_iso': datetime.fromtimestamp(
-            st.st_mtime, tz=timezone.utc
-        ).isoformat(),
+        'modified_iso': datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat(),
         'is_dir': True,
     }
 
@@ -1339,9 +1337,7 @@ def _list_files_file_entry(
     return {
         'name': str(file_path.relative_to(base_path)),
         'size': st.st_size,
-        'modified_iso': datetime.fromtimestamp(
-            st.st_mtime, tz=timezone.utc
-        ).isoformat(),
+        'modified_iso': datetime.fromtimestamp(st.st_mtime, tz=UTC).isoformat(),
         'is_dir': False,
     }
 
@@ -5586,7 +5582,7 @@ def _system_prompt_record(sys_prompt: str) -> dict[str, Any]:
         'description': 'The default system prompt configured for this agent.',
         'author': 'System',
         'version': 1,
-        'created_at': datetime.now(timezone.utc).isoformat(),
+        'created_at': datetime.now(UTC).isoformat(),
     }
 
 
@@ -9921,7 +9917,7 @@ def _atlas_response_body(response: JSONResponse) -> Any | None:
 
 
 def _atlas_observed_at() -> str:
-    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    return datetime.now(UTC).isoformat().replace('+00:00', 'Z')
 
 
 def _atlas_valid_reference(value: Any) -> str | None:

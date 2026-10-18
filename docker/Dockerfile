@@ -60,7 +60,7 @@ COPY scripts/no_fabrication_gate.mjs ./scripts/no_fabrication_gate.mjs
 RUN pnpm build \
     && printf 'sha=%s\nbuilt_at=%s\n' "${BUILD_SHA}" "${BUILD_TIME}" > agent/agent_webui/dist/build-info.txt
 
-FROM python:3.14-slim AS wheel-build
+FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 AS wheel-build
 COPY --from=ghcr.io/astral-sh/uv:0.11.7@sha256:240fb85ab0f263ef12f492d8476aa3a2e4e1e333f7d67fbdd923d00a506a516a /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -72,7 +72,7 @@ COPY agent ./agent
 COPY --from=frontend-build /app/agent/agent_webui/dist ./agent/agent_webui/dist
 RUN uv build --wheel --out-dir /dist
 
-FROM python:3.14-slim AS runtime
+FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 AS runtime
 # socat provides the :80 -> :8000 privileged-port shim (see header); the image
 # otherwise ships no build toolchain, no node_modules, no source tree.
 ARG BUILD_SHA=unknown

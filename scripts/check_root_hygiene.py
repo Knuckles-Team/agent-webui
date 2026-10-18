@@ -94,6 +94,7 @@ ALLOWED_DOTFILES: frozenset[str] = frozenset(
         # proof, not by review.
         ".repo-layout.toml",
         ".bumpversion.cfg",  # release version bump config (bump2version)
+        ".python-version",  # the environment interpreter (3.14) uv, bootstrap and CI use
         # WD4-TOOL-02: dependency-cruiser's own conventional config filename
         # (run via `pnpm dlx dependency-cruiser`, never installed into
         # package.json -- see .dependency-cruiser.cjs's own header). Same

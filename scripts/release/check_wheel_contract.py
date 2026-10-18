@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import argparse
 import ast
+import tomllib
 from pathlib import Path
 from zipfile import ZipFile
-
-import tomllib
 
 
 def _function(module: ast.Module, name: str) -> ast.FunctionDef:

@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Awaitable, Callable
-from typing import Annotated, Any, Literal, TypeVar
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
@@ -39,7 +39,6 @@ from .snapshots import (
 )
 from .timeframes import TIMEFRAMES, range_start
 
-T = TypeVar('T')
 Timeframe = Literal['1m', '15m', '1h', '4h', '12h', '1D', '1W', '1M']
 RangeCode = Literal['1M', '3M', '1Y', '5Y', 'all']
 AssetClass = Literal[
@@ -111,7 +110,7 @@ def _layers(raw: str) -> frozenset[str]:
     return chosen
 
 
-async def _guarded(call: Awaitable[T]) -> T:
+async def _guarded[T](call: Awaitable[T]) -> T:
     try:
         return await call
     except MarketsRefused as error:
