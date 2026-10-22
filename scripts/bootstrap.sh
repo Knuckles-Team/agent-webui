@@ -100,7 +100,7 @@ if ! uv_is_current; then
   log "uv >= 0.9 not found; installing it"
   python3 -m pip install --user --quiet --upgrade "uv>=0.9" 2>/dev/null ||
     python3 -m pip install --user --quiet --upgrade --break-system-packages "uv>=0.9" 2>/dev/null ||
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+    true
   hash -r
   uv_is_current || {
     echo "bootstrap: uv >= 0.9 is required (https://docs.astral.sh/uv/)" >&2
