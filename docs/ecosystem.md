@@ -3,7 +3,9 @@
 The five repositories form one runtime. Each owns one kind of authority, and
 Arbora presents those capabilities without duplicating them.
 
-![Knuckles-Team runtime architecture showing Arbora, Arbora, agent-utilities, epistemic-graph, and agent-connector-sdk in their owned positions.](https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/main/docs/assets/runtime-architecture.svg)
+[![Knuckles-Team runtime architecture showing Arbora, Arbora, agent-utilities, epistemic-graph, and agent-connector-sdk in their owned positions.](https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/main/docs/assets/runtime-architecture.svg)](https://knuckles-team.github.io/.github/architecture/#webui)
+
+[Explore the live architecture](https://knuckles-team.github.io/.github/architecture/#webui)
 
 ## Component ownership
 

@@ -3,7 +3,9 @@
 Arbora is the browser and same-origin presentation boundary for Arbora.
 It renders runtime capabilities; it does not duplicate their authorities.
 
-![Runtime architecture: Arbora enters Arbora, which composes agent-utilities, epistemic-graph, and connector services.](https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/main/docs/assets/runtime-architecture.svg)
+[![Runtime architecture: Arbora enters Arbora, which composes agent-utilities, epistemic-graph, and connector services.](https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/main/docs/assets/runtime-architecture.svg)](https://knuckles-team.github.io/.github/architecture/#webui)
+
+[Explore the live architecture](https://knuckles-team.github.io/.github/architecture/#webui)
 
 ## Runtime composition
 
