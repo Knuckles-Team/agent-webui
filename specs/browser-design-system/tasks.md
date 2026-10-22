@@ -13,7 +13,7 @@ No task above names a requirement ID individually; together they must close ever
 
 ## Duplicate-primitive and telemetry audit (WEBUI-DESIGN-R007)
 
-- [x] Add `src/components/ui/__tests__/no-duplicate-primitives.test.ts`: every exported primitive name in `src/components/ui/` resolves to exactly one file, and no telemetry/analytics/session-replay dependency is declared in `package.json` (WEBUI-DESIGN-R007).
+- [x] Add `src/components/ui/__tests__/no-duplicate-primitives.test.ts`: every exported primitive name in `src/components/ui/` resolves to exactly one file. Also assert that no telemetry/analytics/session-replay dependency is declared in `package.json` (WEBUI-DESIGN-R007).
 
 ## Strict style policy (WEBUI-DESIGN-R008, WEBUI-DESIGN-R009)
 
