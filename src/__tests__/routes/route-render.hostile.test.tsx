@@ -74,21 +74,16 @@ const MOUNT_ATTEMPTS = 3
 
 /**
  * Per-test wall-clock budget for the matrix tests (both the plain and the
- * baseline `it.fails` form).
+ * baseline `it.fails` form): vitest's 5s default, stated explicitly.
  *
- * Every matrix test mounts the real route through the full provider tree and
- * flushes up to `MOUNT_ATTEMPTS` times; the heaviest mount in the suite is
- * `knowledge.graph`, which still carries the full Sigma canvas stack while
- * the 'never-resolving' fixture leaves every fetch pending. On an idle
- * machine that body takes ~0.5s, but under load on the shared self-hosted CI
- * runner it exceeded vitest's default 5s testTimeout — run 39093296325
- * (2026-10-18, main): the same body ran 10.1s there while every neighbouring
- * (route, fixture) pair in the same run stayed at ~320ms, and the identical
- * suite passed on the previous main run. The budget below absorbs that
- * variance without changing what the test asserts: a genuinely hung mount
- * still fails, just later, and the job-level timeout remains the outer bound.
+ * A matrix body costs ~0.4s (median of 460 bodies; slowest ~0.9s), so 5s is
+ * over 5x headroom. The one recorded overrun (run 39093296325, a 10.1s body
+ * beside ~320ms neighbours, no source change) was CPU starvation on a
+ * self-hosted runner pod: 16 replicas request 2 CPU but may burst to 12, so
+ * co-scheduled cargo builds can starve a vitest worker. That is an
+ * infrastructure failure, fixed in the runner capacity, not in this budget.
  */
-const HOSTILE_MATRIX_TEST_TIMEOUT_MS = 30_000
+const HOSTILE_MATRIX_TEST_TIMEOUT_MS = 5_000
 
 async function anyAttemptTripped(mount: () => Promise<boolean>): Promise<boolean> {
   for (let attempt = 0; attempt < MOUNT_ATTEMPTS; attempt += 1) {
