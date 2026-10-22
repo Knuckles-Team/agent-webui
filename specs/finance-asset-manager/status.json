@@ -46,7 +46,9 @@
       "id": "FIN-UI-R001",
       "title": "Mobile-first Markets app with five-destination navigation (rollup)",
       "delivery_state": "LANDED",
-      "landed_in": [],
+      "landed_in": [
+        "407ef6a4b673"
+      ],
       "verified_by": [],
       "rollup_of": [
         "FIN-UI-R001.1",
@@ -75,7 +77,9 @@
       "id": "FIN-UI-R002",
       "title": "Shared ChartRenderer for line, candle, and overlay data (rollup)",
       "delivery_state": "LANDED",
-      "landed_in": [],
+      "landed_in": [
+        "407ef6a4b673"
+      ],
       "verified_by": [],
       "rollup_of": [
         "FIN-UI-R002.1",
@@ -154,7 +158,9 @@
       "id": "FIN-UI-R008",
       "title": "Detail tabs and range controls expose only supported data (rollup)",
       "delivery_state": "LANDED",
-      "landed_in": [],
+      "landed_in": [
+        "407ef6a4b673"
+      ],
       "verified_by": [],
       "rollup_of": [
         "FIN-UI-R008.1",
@@ -197,6 +203,7 @@
       "title": "Chart overlays show strategy version and simulation state (rollup)",
       "delivery_state": "LANDED",
       "landed_in": [
+        "508e7c11c573",
         "a3dd06faa65b"
       ],
       "verified_by": [],
@@ -231,6 +238,7 @@
       "title": "Performance cards render owner-calculated values verbatim (rollup)",
       "delivery_state": "LANDED",
       "landed_in": [
+        "508e7c11c573",
         "a3dd06faa65b"
       ],
       "verified_by": [],
@@ -266,6 +274,7 @@
       "title": "Strategy views cite evidence and never submit orders (rollup)",
       "delivery_state": "LANDED",
       "landed_in": [
+        "508e7c11c573",
         "a3dd06faa65b"
       ],
       "verified_by": [],
@@ -300,6 +309,7 @@
       "title": "DCA and alert views distinguish delivery states (rollup)",
       "delivery_state": "LANDED",
       "landed_in": [
+        "508e7c11c573",
         "61fc4d6854e1"
       ],
       "verified_by": [],
@@ -335,7 +345,8 @@
       "title": "CSV import preview with idempotent receipt (rollup)",
       "delivery_state": "LANDED",
       "landed_in": [
-        "61fc4d6854e1"
+        "61fc4d6854e1",
+        "83e9b629b83e"
       ],
       "verified_by": [],
       "rollup_of": [
@@ -371,7 +382,8 @@
       "title": "Offline PWA shell marks cached data stale (rollup)",
       "delivery_state": "LANDED",
       "landed_in": [
-        "61fc4d6854e1"
+        "61fc4d6854e1",
+        "83e9b629b83e"
       ],
       "verified_by": [],
       "rollup_of": [
@@ -406,7 +418,8 @@
       "title": "Charts and controls meet accessibility requirements (rollup)",
       "delivery_state": "LANDED",
       "landed_in": [
-        "4aef66253171"
+        "4aef66253171",
+        "83e9b629b83e"
       ],
       "verified_by": [],
       "rollup_of": [

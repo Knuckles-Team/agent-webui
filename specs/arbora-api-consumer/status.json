@@ -186,14 +186,18 @@
       "title": "Shared auth and streaming are preserved without exposing a service bearer",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "0940bc0c0d99",
         "19d92fda94cd",
+        "1d3334c8e819",
         "2d3f1b884e39",
         "d8a6ed888f41"
       ],
       "verified_by": [
         "src/lib/arbora-api/__tests__/invoke-no-bearer.test.ts:31",
         "src/lib/arbora-api/__tests__/invoke-no-bearer.test.ts:45",
-        "src/lib/arbora-api/__tests__/invoke-no-bearer.test.ts:56"
+        "src/lib/arbora-api/__tests__/invoke-no-bearer.test.ts:56",
+        "agent/agent_webui/__tests__/test_served_operations.py:188",
+        "agent/agent_webui/__tests__/test_served_operations.py:275"
       ],
       "rollup_of": [
         "WEBUI-API-R011.1"
