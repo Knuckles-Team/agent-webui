@@ -5,13 +5,13 @@ import { renderWithProviders } from '@/__tests__/fixtures'
 import { baseAggregate, createFixtureTransport, emptyReceiptPage, emptyTimelinePage } from './decisions-fixtures'
 
 /**
- * DecisionCalibrationTab (requirements WEBUI-DECIDE-R001, DEC-03, DEC-04):
+ * DecisionCalibrationTab (requirements WEBUI-DECIDE-R001, WEBUI-DECIDE-R005, WEBUI-DECIDE-R006):
  * the real component against an explicit fixture `DecisionsTransport`.
  */
 
 describe('DecisionCalibrationTab', () => {
-  // spec: DEC-03, WEBUI-DECIDE-R001
-  it('renders per-option stat tiles, the success rate, and the min-support caption, labeled independently of the unavailable calibration/coverage notice (DEC-03)', async () => {
+  // spec: WEBUI-DECIDE-R005, WEBUI-DECIDE-R001
+  it('renders per-option stat tiles, the success rate, and the min-support caption, labeled independently of the unavailable calibration/coverage notice (WEBUI-DECIDE-R005)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue(baseAggregate)
     renderWithProviders(<DecisionCalibrationTab transport={transport} />)
@@ -30,8 +30,8 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.getByText(/bounds for their evaluation set below/i)).toBeInTheDocument()
   })
 
-  // spec: DEC-04
-  it('does not interpret an empty aggregate as proof of zero outcomes (DEC-04)', async () => {
+  // spec: WEBUI-DECIDE-R006
+  it('does not interpret an empty aggregate as proof of zero outcomes (WEBUI-DECIDE-R006)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue({ schema_version: 1, min_support: 10, rows: [] })
     renderWithProviders(<DecisionCalibrationTab transport={transport} />)
@@ -64,8 +64,8 @@ describe('DecisionCalibrationTab', () => {
     expect(lastCall?.fromMs).toBe(0)
   })
 
-  // spec: DEC-03
-  it('labels policy cohorts independently and warns against comparing changed policies (DEC-03)', async () => {
+  // spec: WEBUI-DECIDE-R005
+  it('labels policy cohorts independently and warns against comparing changed policies (WEBUI-DECIDE-R005)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue({
       ...baseAggregate,
@@ -83,8 +83,8 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.getAllByText(/no uncertainty interval or act-risk bound/i)).toHaveLength(2)
   })
 
-  // spec: DEC-04
-  it('shows certified bounds only from a passing, non-synthetic receipt and withholds them for a synthetic one (DEC-04)', async () => {
+  // spec: WEBUI-DECIDE-R006
+  it('shows certified bounds only from a passing, non-synthetic receipt and withholds them for a synthetic one (WEBUI-DECIDE-R006)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue(baseAggregate)
     transport.getDecisionEvalReceipts.mockResolvedValue({
@@ -138,8 +138,8 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.getAllByText('Coverage interval')).toHaveLength(1)
   })
 
-  // spec: DEC-04
-  it('shows server job time and failed gates without inventing a drift alert (DEC-04)', async () => {
+  // spec: WEBUI-DECIDE-R006
+  it('shows server job time and failed gates without inventing a drift alert (WEBUI-DECIDE-R006)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue(baseAggregate)
     transport.getDecisionEvalTimeline.mockResolvedValue({
@@ -178,7 +178,7 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.queryByText('70.0%–90.0%')).not.toBeInTheDocument()
   })
 
-  it('reports only explicit stored policy breaches and withholds low-support claims (DEC-04)', async () => {
+  it('reports only explicit stored policy breaches and withholds low-support claims (WEBUI-DECIDE-R006)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue(baseAggregate)
     const receipt = {
@@ -225,8 +225,8 @@ describe('DecisionCalibrationTab', () => {
     expect(screen.queryByText(/statistical drift detected/i)).not.toBeInTheDocument()
   })
 
-  // spec: DEC-06
-  it('every status-bearing control is reachable by keyboard and carries text, not color alone (DEC-06)', async () => {
+  // spec: WEBUI-DECIDE-R008
+  it('every status-bearing control is reachable by keyboard and carries text, not color alone (WEBUI-DECIDE-R008)', async () => {
     const transport = createFixtureTransport()
     transport.getDecisionAggregate.mockResolvedValue(baseAggregate)
     transport.getDecisionEvalReceipts.mockResolvedValue(emptyReceiptPage)

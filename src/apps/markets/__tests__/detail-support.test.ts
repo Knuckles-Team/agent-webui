@@ -17,7 +17,7 @@ const CRYPTO: SeriesCapabilities = {
   hasDividends: false,
 }
 
-describe('detail-support (FIN-UI-R001.1, FUI-05.1)', () => {
+describe('detail-support (FIN-UI-R001.1, FIN-UI-R008.1)', () => {
   it('offers Dividends for a dividend-paying instrument and withholds Rates when unsupported', () => {
     const result = supportedDetailTabs(STOCK)
     expect(result.tabs).toContain('dividends')

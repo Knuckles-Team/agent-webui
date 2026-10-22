@@ -108,7 +108,7 @@ describe('UserManagementView', () => {
     identityResult = null
   })
 
-  it('shows the shared loading status message (DS-05) while the identity hook is still resolving', () => {
+  it('shows the shared loading status message (WEBUI-DESIGN-R006) while the identity hook is still resolving', () => {
     identityResult = { identity: READER_IDENTITY, loading: true }
     global.fetch = mockConfigureFetch({}) as unknown as typeof fetch
 
@@ -119,7 +119,7 @@ describe('UserManagementView', () => {
     expect(selfCard.getByRole('status')).toBeInTheDocument()
   })
 
-  it('shows the shared loading status message (DS-05) while the principals roster is still loading', () => {
+  it('shows the shared loading status message (WEBUI-DESIGN-R006) while the principals roster is still loading', () => {
     identityResult = { identity: ADMIN_IDENTITY, loading: false }
     global.fetch = vi.fn(() => new Promise(() => undefined)) as unknown as typeof fetch
 

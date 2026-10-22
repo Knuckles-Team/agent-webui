@@ -1,7 +1,7 @@
 /**
  * @file InstrumentGroups.tsx
  * @description User-defined instrument group tabs plus a Basic/Holdings
- * mode toggle (FUI-02). The selected group and mode persist across
+ * mode toggle (FIN-UI-R005). The selected group and mode persist across
  * navigation and refresh via the URL (`instrument-groups-state.ts`), and
  * the six fetch outcomes below each get their own distinct, text-labeled
  * rendering — never collapsed into one "no data" view. This depends on

@@ -3,10 +3,10 @@
 No exact-head publication receipt is recorded.
 
 - [ ] Inventory current brand identifiers, package consumers, generated assets, site links, consent keys and tool IDs on main.
-- [x] Make browser title, metadata, web manifest, docs site name and README consistently present the Arbora brand, with a `site:brand:check` gate (part of `pnpm run build`) proving it. (APP-01; index.html/webmanifest already said "Arbora"; this fixes `mkdocs.yml` `site_name`/ecosystem entry and `README.md`'s heading, overview line and license line, and is deliberately scoped to brand copy only — no package, import or environment rename.)
+- [x] Make browser title, metadata, web manifest, docs site name and README consistently present the Arbora brand, with a `site:brand:check` gate (part of `pnpm run build`) proving it. (WEBUI-APPS-R038; index.html/webmanifest already said "Arbora"; this fixes `mkdocs.yml` `site_name`/ecosystem entry and `README.md`'s heading, overview line and license line, and is deliberately scoped to brand copy only — no package, import or environment rename.)
 - [ ] Add `apps` navigation and one typed `AppSurface` contract using existing route, contribution, WebMCP and renderer seams.
 - [ ] Integrate Markets as first native consumer and add valid/invalid contributed-app fixtures.
-- [x] Perform atomic public-name package and consumer cutover; regenerate assets and digests; document browser migration. (APP-02, APP-06, WEBUI-APPS-R002's remaining theme-token/asset-regeneration surface, WEBUI-APPS-R003: source commit 677a27e0f701eca99cad20887a0b5c4b8ec9734e exists on local branch feat/eh427-retire-review-20260926 but conflicts heavily with main — rename touches package.json, pyproject.toml, uv.lock, pnpm-lock.yaml and deletes files main already restructured; needs a fresh, smaller port, not a direct cherry-pick. The operator has not yet confirmed this package-identity rename; do not attempt it without that confirmation.)
+- [x] Perform atomic public-name package and consumer cutover; regenerate assets and digests; document browser migration. (WEBUI-APPS-R039, WEBUI-APPS-R043, WEBUI-APPS-R002's remaining theme-token/asset-regeneration surface, WEBUI-APPS-R003: source commit 677a27e0f701eca99cad20887a0b5c4b8ec9734e exists on local branch feat/eh427-retire-review-20260926 but conflicts heavily with main — rename touches package.json, pyproject.toml, uv.lock, pnpm-lock.yaml and deletes files main already restructured; needs a fresh, smaller port, not a direct cherry-pick. The operator has not yet confirmed this package-identity rename; do not attempt it without that confirmation.)
 - [ ] Run all test-spec gates, installed wheel and Pages build on exact commit; record consumer and publication evidence.
 - [ ] Review every requirement after attaching browser, package and public-site evidence.
 - [ ] **WEBUI-APPS-R004:** Run harness surface (rollup of 1 to 6)
@@ -31,7 +31,7 @@ No exact-head publication receipt is recorded.
 - [ ] **WEBUI-APPS-R031.6:** Save evidence.
 - [ ] **WEBUI-APPS-R031.7:** Memory files hot-path proof.
 
-No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `APP-01`, `APP-02`, `APP-03`, `APP-04`, `APP-05`, `APP-06`, `APP-07`, `WEBUI-APPS-R001`, `WEBUI-APPS-R002`, `WEBUI-APPS-R003`, `WEBUI-APPS-R004`.
+No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `WEBUI-APPS-R038`, `WEBUI-APPS-R039`, `WEBUI-APPS-R040`, `WEBUI-APPS-R041`, `WEBUI-APPS-R042`, `WEBUI-APPS-R043`, `WEBUI-APPS-R044`, `WEBUI-APPS-R001`, `WEBUI-APPS-R002`, `WEBUI-APPS-R003`, `WEBUI-APPS-R004`.
 - [ ] **WEBUI-APPS-R005:** Navigation and dashboards follow the signed-in user's role (rollup).
 - [ ] **WEBUI-APPS-R005.1:** Nav entry declares a minimum role.
 - [ ] **WEBUI-APPS-R005.1.1:** Registry role contract.

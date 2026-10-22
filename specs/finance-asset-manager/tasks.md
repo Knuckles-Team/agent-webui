@@ -11,14 +11,14 @@
 | Source intake and leverage guide | media-downloader / emerald-exchange | EMERALD-GUIDE-R001, EMERALD-MEDIA-R001 | PENDING | Public citations, source capture time, claims separated from executable rules |
 | Responsive Markets route and views | agent-webui | FIN-UI-R001 | SPECIFIED | PR/commit, FIN-T01–T04, T07–T14, served-path and visual evidence |
 | Shared Finance/Atlas ChartRenderer | agent-webui | FIN-UI-R002 | SPECIFIED | PR/commit, FIN-T05–T06, T13–T14 and mobile performance evidence |
-| Detail-tab/ChartRenderer/supportedChartMode contracts (PR #59) | agent-webui | FIN-UI-R001.1, FIN-UI-R002.1, FUI-05.1 | LANDED | `chart-contract.test.ts`, `detail-support.test.ts` — 11 passed |
-| Overlay/performance/strategy/delivery contracts (PR #60) | agent-webui | FUI-07.1, FUI-08.1, FUI-09.1, FUI-10.1 | LANDED | 4 new vitest files — 19 passed |
-| CSV import/offline-cache/a11y contracts (PR #61) | agent-webui | FUI-11.1, FUI-12.1, FUI-13.1 | LANDED | vitest — 13 passed |
-| Live wiring of detail-tab/ChartRenderer/supportedChartMode (remaining) | agent-webui | FIN-UI-R001.2, FIN-UI-R002.2, FUI-05.2 | SPECIFIED | Live ChartPage/ChartRenderer component wiring, PR pending |
-| Live wiring of overlay/performance/strategy (remaining) | agent-webui | FUI-07.2, FUI-08.2, FUI-09.2 | SPECIFIED | `overlay-wiring.test.ts`, `PerformanceCardView.test.tsx`, `StrategyPanel.test.tsx` — 10 passed, PR pending |
-| Live wiring of delivery (remaining) | agent-webui | FUI-10.2 | SPECIFIED | `DeliveryStateList.test.tsx` — 3 passed, PR pending |
-| Live wiring of CSV import/offline-cache (remaining) | agent-webui | FUI-11.2, FUI-12.2 | SPECIFIED | `CsvImportFlow.test.tsx`, `OfflineCacheView.test.tsx` — 7 passed, PR pending |
-| Live wiring of a11y (remaining) | agent-webui | FUI-13.2 | SPECIFIED | `ChartA11ySummary.test.tsx` — 4 passed, PR pending |
+| Detail-tab/ChartRenderer/supportedChartMode contracts (PR #59) | agent-webui | FIN-UI-R001.1, FIN-UI-R002.1, FIN-UI-R008.1 | LANDED | `chart-contract.test.ts`, `detail-support.test.ts` — 11 passed |
+| Overlay/performance/strategy/delivery contracts (PR #60) | agent-webui | FIN-UI-R010.1, FIN-UI-R011.1, FIN-UI-R012.1, FIN-UI-R013.1 | LANDED | 4 new vitest files — 19 passed |
+| CSV import/offline-cache/a11y contracts (PR #61) | agent-webui | FIN-UI-R014.1, FIN-UI-R015.1, FIN-UI-R016.1 | LANDED | vitest — 13 passed |
+| Live wiring of detail-tab/ChartRenderer/supportedChartMode (remaining) | agent-webui | FIN-UI-R001.2, FIN-UI-R002.2, FIN-UI-R008.2 | SPECIFIED | Live ChartPage/ChartRenderer component wiring, PR pending |
+| Live wiring of overlay/performance/strategy (remaining) | agent-webui | FIN-UI-R010.2, FIN-UI-R011.2, FIN-UI-R012.2 | SPECIFIED | `overlay-wiring.test.ts`, `PerformanceCardView.test.tsx`, `StrategyPanel.test.tsx` — 10 passed, PR pending |
+| Live wiring of delivery (remaining) | agent-webui | FIN-UI-R013.2 | SPECIFIED | `DeliveryStateList.test.tsx` — 3 passed, PR pending |
+| Live wiring of CSV import/offline-cache (remaining) | agent-webui | FIN-UI-R014.2, FIN-UI-R015.2 | SPECIFIED | `CsvImportFlow.test.tsx`, `OfflineCacheView.test.tsx` — 7 passed, PR pending |
+| Live wiring of a11y (remaining) | agent-webui | FIN-UI-R016.2 | SPECIFIED | `ChartA11ySummary.test.tsx` — 4 passed, PR pending |
 
 ## Build sequence
 
@@ -35,12 +35,12 @@
 
 | Date | Commit/PR | Environment and fixture/service revision | Tests/gates | Decision |
 |---|---|---|---|---|
-| 2026-10-08 | Port of 0809b6d3ca onto `origin/main` (PR pending) | Local worktree, pnpm/uv toolchain, no live provider | `pytest agent/agent_webui/__tests__/test_markets_app.py` 14 passed; `vitest run src/apps/markets src/lib/apps` 26 passed; `tsc --noEmit` clean; `node scripts/generate-site-assets.mjs` + `check-site-assets.mjs` pass; `no_fabrication_gate.mjs` OK | FUI-03 and FIN-UI-R003 code merged to a branch off current main; owner repository dependencies (EG finance primitives, SDK sources) remain PENDING, so this spec stays SPECIFIED overall |
-| 2026-10-09 | Markets five-destination nav, stacked on the 0809b6d3ca port branch (PR pending) | Local worktree, pnpm toolchain | `vitest run src/apps/markets` 29 passed (new `MarketsNav.test.tsx`); `tsc --noEmit` clean; site-assets generate/check and no-fabrication gate pass | FUI-01 code merged to a branch stacked on the still-open Markets-app-port PR; News and Portfolio destinations state their PENDING owner dependency honestly; Calendar reuses the existing macro-events route; spec stays SPECIFIED overall |
+| 2026-10-08 | Port of 0809b6d3ca onto `origin/main` (PR pending) | Local worktree, pnpm/uv toolchain, no live provider | `pytest agent/agent_webui/__tests__/test_markets_app.py` 14 passed; `vitest run src/apps/markets src/lib/apps` 26 passed; `tsc --noEmit` clean; `node scripts/generate-site-assets.mjs` + `check-site-assets.mjs` pass; `no_fabrication_gate.mjs` OK | FIN-UI-R006 and FIN-UI-R003 code merged to a branch off current main; owner repository dependencies (EG finance primitives, SDK sources) remain PENDING, so this spec stays SPECIFIED overall |
+| 2026-10-09 | Markets five-destination nav, stacked on the 0809b6d3ca port branch (PR pending) | Local worktree, pnpm toolchain | `vitest run src/apps/markets` 29 passed (new `MarketsNav.test.tsx`); `tsc --noEmit` clean; site-assets generate/check and no-fabrication gate pass | FIN-UI-R004 code merged to a branch stacked on the still-open Markets-app-port PR; News and Portfolio destinations state their PENDING owner dependency honestly; Calendar reuses the existing macro-events route; spec stays SPECIFIED overall |
 
 ## Unreferenced requirement IDs
 
-The build sequence above cites `FIN-UI-R001` and `FIN-UI-R002` by work package but does not name `FIN-UI-R003` or the `FUI-01`–`FUI-13` sub-requirements individually. Add their coverage to the corresponding build-sequence and evidence-log rows as each is implemented. All IDs are defined in [requirements.md](requirements.md).
+The build sequence above cites `FIN-UI-R001` and `FIN-UI-R002` by work package but does not name `FIN-UI-R003` or the `FIN-UI-R004`–`FIN-UI-R016` sub-requirements individually. Add their coverage to the corresponding build-sequence and evidence-log rows as each is implemented. All IDs are defined in [requirements.md](requirements.md).
 
 ## Status rules
 
@@ -48,10 +48,10 @@ The build sequence above cites `FIN-UI-R001` and `FIN-UI-R002` by work package b
 
 ## Decomposition children (tracked)
 
-- [x] **FUI-05:** Detail tabs and range controls expose only supported data (rollup)
-- [x] **FUI-07:** Chart overlays show strategy version and simulation state (rollup)
-- [x] **FUI-08:** Performance cards render owner-calculated values verbatim (rollup)
-- [x] **FUI-09:** Strategy views cite evidence and never submit orders (rollup)
-- [ ] **FUI-10:** DCA and alert views distinguish delivery states (rollup)
-- [ ] **FUI-11:** CSV import preview with idempotent receipt (rollup)
-- [ ] **FUI-12:** Offline PWA shell marks cached data stale (rollup)
+- [x] **FIN-UI-R008:** Detail tabs and range controls expose only supported data (rollup)
+- [x] **FIN-UI-R010:** Chart overlays show strategy version and simulation state (rollup)
+- [x] **FIN-UI-R011:** Performance cards render owner-calculated values verbatim (rollup)
+- [x] **FIN-UI-R012:** Strategy views cite evidence and never submit orders (rollup)
+- [ ] **FIN-UI-R013:** DCA and alert views distinguish delivery states (rollup)
+- [ ] **FIN-UI-R014:** CSV import preview with idempotent receipt (rollup)
+- [ ] **FIN-UI-R015:** Offline PWA shell marks cached data stale (rollup)

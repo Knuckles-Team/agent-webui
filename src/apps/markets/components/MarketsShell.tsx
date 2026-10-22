@@ -1,7 +1,7 @@
 /**
  * @file MarketsShell.tsx
  * @description Wraps one Markets destination's page content with the
- * five-destination navigation (FUI-01): a side rail beside the content on
+ * five-destination navigation (FIN-UI-R004): a side rail beside the content on
  * desktop, a bottom bar below it on mobile. Bottom padding keeps the bar from
  * covering the last row of content.
  */

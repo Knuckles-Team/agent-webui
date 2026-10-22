@@ -1,7 +1,7 @@
 /**
  * @file overlay-wiring.ts
- * @description Live chart overlay wiring (FUI-07.2): wires the versioned,
- * simulation-flagged overlay marker type (FUI-07.1, {@link ChartOverlay}) into
+ * @description Live chart overlay wiring (FIN-UI-R010.2): wires the versioned,
+ * simulation-flagged overlay marker type (FIN-UI-R010.1, {@link ChartOverlay}) into
  * chart rendering by resolving each overlay onto the bar it must be drawn
  * beside — in both the full-resolution series and a decimated one — so a
  * decimated view never drops, re-labels, or re-versions a marker.

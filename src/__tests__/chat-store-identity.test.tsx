@@ -35,8 +35,8 @@ afterEach(() => {
   window.localStorage.clear()
 })
 
-describe('conversation cache ownership (IDUI-06)', () => {
-  // spec: IDUI-06
+describe('conversation cache ownership (WEBUI-IDENTITY-R008)', () => {
+  // spec: WEBUI-IDENTITY-R008
   it.each(['success', 'unavailable'] as const)(
     'removes prior-user entries immediately when the new request is %s',
     async (outcome) => {

@@ -1,7 +1,7 @@
 /**
  * @file OfflineCacheView.tsx
- * @description Live offline PWA shell wiring (FUI-12.2): renders the
- * offline cache staleness contract (FUI-12.1, {@link viewCachedFact}) so
+ * @description Live offline PWA shell wiring (FIN-UI-R015.2): renders the
+ * offline cache staleness contract (FIN-UI-R015.1, {@link viewCachedFact}) so
  * the installed PWA shell keeps showing a previously cached financial fact
  * while offline, marked stale, with any current-market/account/order action
  * disabled rather than hidden — the viewer sees why the action is unusable.

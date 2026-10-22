@@ -1,12 +1,12 @@
 /**
  * @file performance-card.ts
- * @description Typed performance/benchmark card contract (FUI-08.1).
+ * @description Typed performance/benchmark card contract (FIN-UI-R011.1).
  * Performance figures are fixed-point decimal strings calculated by the
  * owning service; the UI reproduces them verbatim (never parses them back
  * to float and recomputes or rounds) alongside the return method, currency,
  * source, as-of time, and session, and shows an explicit unavailable state
  * rather than a computed figure. Wiring into a PerformanceCard component is
- * FUI-08.2.
+ * FIN-UI-R011.2.
  */
 
 export type ReturnMethod = 'twr' | 'mwr' | 'simple'

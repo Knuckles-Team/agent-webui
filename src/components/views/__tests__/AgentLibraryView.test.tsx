@@ -288,7 +288,7 @@ describe('AgentLibraryView', () => {
     expect(screen.queryByText(/The Agent Library could not be fetched/)).not.toBeInTheDocument()
   })
 
-  it('shows the shared empty status message for no chat/embedding models configured (DS-05)', async () => {
+  it('shows the shared empty status message for no chat/embedding models configured (WEBUI-DESIGN-R006)', async () => {
     const user = (await import('@testing-library/user-event')).default.setup()
     render(<AgentLibraryView />)
     await user.click(screen.getByRole('tab', { name: 'Model & Config' }))
@@ -298,7 +298,7 @@ describe('AgentLibraryView', () => {
     expect(screen.getByText('No embedding models configured.')).toBeInTheDocument()
   })
 
-  it('shows the shared empty status message for a filter with no ingested tools (DS-05)', async () => {
+  it('shows the shared empty status message for a filter with no ingested tools (WEBUI-DESIGN-R006)', async () => {
     const user = (await import('@testing-library/user-event')).default.setup()
     installFetch([{ matches: (url) => url.includes('/agent-library/tools'), respond: () => jsonResponse([]) }])
     render(<AgentLibraryView />)
@@ -310,7 +310,7 @@ describe('AgentLibraryView', () => {
     })
   })
 
-  it('shows the shared loading status message while agents load, with a Cancel that aborts the fetch (DS-05)', async () => {
+  it('shows the shared loading status message while agents load, with a Cancel that aborts the fetch (WEBUI-DESIGN-R006)', async () => {
     const user = (await import('@testing-library/user-event')).default.setup()
     const pendingAgents: PendingAgentRequest[] = []
     installFetch([{ matches: isAgentListRequest, respond: respondWithPendingAgent.bind(null, pendingAgents) }])

@@ -1,7 +1,7 @@
 /**
  * @file DeliveryStateList.tsx
- * @description Live DCA/alert delivery-state wiring (FUI-10.2): renders the
- * delivery-receipt dedupe contract (FUI-10.1, {@link dedupeByEventId}) as a
+ * @description Live DCA/alert delivery-state wiring (FIN-UI-R013.2): renders the
+ * delivery-receipt dedupe contract (FIN-UI-R013.1, {@link dedupeByEventId}) as a
  * list, so due, missed, failed, replayed, paper-filled, and delivered each
  * render as a visibly distinct outcome. A duplicated event ID or a channel
  * retry collapses to one receipt before rendering, and a paper fill is

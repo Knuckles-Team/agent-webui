@@ -1,10 +1,10 @@
 /**
  * @file offline-cache.ts
- * @description Typed offline-cache staleness contract (FUI-12.1). The
+ * @description Typed offline-cache staleness contract (FIN-UI-R015.1). The
  * installed PWA shell keeps showing a previously cached financial fact
  * while offline, but marks it stale and disables any action implying
  * current market, account, or order state. Wiring a service-worker cache
- * and real `navigator.onLine` checks into the shell is FUI-12.2.
+ * and real `navigator.onLine` checks into the shell is FIN-UI-R015.2.
  */
 
 export interface CachedFact<T> {

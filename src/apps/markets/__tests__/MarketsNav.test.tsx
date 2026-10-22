@@ -30,8 +30,8 @@ afterEach(() => {
   visit('/')
 })
 
-describe('Markets five-destination navigation (FUI-01)', () => {
-  // spec: FUI-01
+describe('Markets five-destination navigation (FIN-UI-R004)', () => {
+  // spec: FIN-UI-R004
   it('marks only the current destination active in both the bottom bar and the side rail', () => {
     visit('/apps/markets/calendar')
     renderWithProviders(<MarketsNav />)
@@ -44,7 +44,7 @@ describe('Markets five-destination navigation (FUI-01)', () => {
     }
   })
 
-  // spec: FUI-01
+  // spec: FIN-UI-R004
   it('moves the active destination when the in-app location changes', () => {
     visit('/apps/markets')
     renderWithProviders(<MarketsNav />)
@@ -60,7 +60,7 @@ describe('Markets five-destination navigation (FUI-01)', () => {
   })
 })
 
-describe('Markets destination pages (FUI-01)', () => {
+describe('Markets destination pages (FIN-UI-R004)', () => {
   it('News states its pending reason rather than an empty feed', () => {
     visit('/apps/markets/news')
     renderWithProviders(<MarketsNews />)

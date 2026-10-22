@@ -5,7 +5,7 @@ import InstrumentGroups from '../InstrumentGroups'
 import type { InstrumentGroupsResult, InstrumentGroupsTransport } from '../instrument-groups-transport'
 
 /**
- * InstrumentGroups (FUI-02): a fixture-driven test for each of the six
+ * InstrumentGroups (FIN-UI-R005): a fixture-driven test for each of the six
  * distinguishable data states plus the ordinary ready state, and for
  * group/mode selection persisting in the URL. Depends on
  * EG-FINANCE-PRIMITIVES-R004 (PENDING); this exercises the typed
@@ -39,7 +39,7 @@ describe('InstrumentGroups', () => {
     expect(screen.getByText('Loading your instrument groups…')).toBeInTheDocument()
   })
 
-  // spec: FUI-02
+  // spec: FIN-UI-R005
   it('shows a distinct genuinely-empty state, not a loading or failure state', async () => {
     const transport = makeTransport({ status: 'empty' })
     renderWithProviders(<InstrumentGroups transport={transport} />)

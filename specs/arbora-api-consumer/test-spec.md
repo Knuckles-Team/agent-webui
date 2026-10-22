@@ -18,7 +18,7 @@
 
 Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`, `uv run --all-extras pytest agent/agent_webui/__tests__` and `pre-commit run --config .config/pre-commit.yaml --all-files`. E2E provisions a local Arbora fixture or uses hosted CI; an inaccessible private deployment is not a PR blocker. CCCC: no new function over cyclomatic 10/cognitive 15 and no regression per configured hook. Run jscpd/Dupehound if configured; missing configuration is a documented gap, not a pass. KISS: one generated client, one host seam and no duplicate domain API. Record exact commands, exit codes, registry digest, route census and commit in `tasks.md`.
 
-## APIUI-06.1 host composition
+## WEBUI-API-R011.1 host composition
 
 `agent/agent_webui/__tests__/test_served_operations.py` drives the real factory
 with a fake Arbora transport. Verify each wired route sends its served

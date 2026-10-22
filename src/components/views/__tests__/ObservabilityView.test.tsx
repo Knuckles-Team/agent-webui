@@ -72,7 +72,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('ObservabilityView — DS-05 status language', () => {
+describe('ObservabilityView — WEBUI-DESIGN-R006 status language', () => {
   it('shows the shared empty status message for a metrics query with no series', async () => {
     mockGatewayFetch({})
     renderWithProviders(<ObservabilityView />)

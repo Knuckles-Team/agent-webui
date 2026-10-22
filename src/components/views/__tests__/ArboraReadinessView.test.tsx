@@ -129,7 +129,7 @@ describe('ArboraReadinessView', () => {
     })
   })
 
-  it('shows the shared loading status message (DS-05) while the first probe is in flight', () => {
+  it('shows the shared loading status message (WEBUI-DESIGN-R006) while the first probe is in flight', () => {
     mockedFetch.mockReturnValue(new Promise(() => undefined))
 
     render(<ArboraReadinessView />)
@@ -138,7 +138,7 @@ describe('ArboraReadinessView', () => {
     expect(screen.getByRole('status')).toBeInTheDocument()
   })
 
-  it('uses role=alert (not role=status) for an error state (DS-05)', async () => {
+  it('uses role=alert (not role=status) for an error state (WEBUI-DESIGN-R006)', async () => {
     mockedFetch.mockResolvedValue({ ok: false, data: null, unavailable: false, error: 'response shape mismatch' })
 
     render(<ArboraReadinessView />)

@@ -10,18 +10,18 @@
     "WEBUI-API-R003.1",
     "WEBUI-API-R003.2",
     "WEBUI-API-R004",
-    "APIUI-01",
-    "APIUI-02",
-    "APIUI-03",
-    "APIUI-03.1",
-    "APIUI-03.2",
-    "APIUI-03.3",
-    "APIUI-03.4",
-    "APIUI-04",
-    "APIUI-05",
-    "APIUI-06",
+    "WEBUI-API-R006",
+    "WEBUI-API-R007",
+    "WEBUI-API-R008",
+    "WEBUI-API-R008.1",
+    "WEBUI-API-R008.2",
+    "WEBUI-API-R008.3",
+    "WEBUI-API-R008.4",
+    "WEBUI-API-R009",
+    "WEBUI-API-R010",
+    "WEBUI-API-R011",
     "WEBUI-API-R005",
-    "APIUI-06.1"
+    "WEBUI-API-R011.1"
   ],
   "requirements": [
     {
@@ -92,7 +92,7 @@
       "verified_by": []
     },
     {
-      "id": "APIUI-01",
+      "id": "WEBUI-API-R006",
       "title": "Generated TypeScript client from a pinned Arbora schema",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -103,7 +103,7 @@
       "verified_by": []
     },
     {
-      "id": "APIUI-02",
+      "id": "WEBUI-API-R007",
       "title": "Typed operations preserve preview-confirm-step-up for effects",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -113,7 +113,7 @@
       "verified_by": []
     },
     {
-      "id": "APIUI-03",
+      "id": "WEBUI-API-R008",
       "title": "Ontology, graph, Atlas and object-set operations preserve tenant semantics (rollup)",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -121,14 +121,14 @@
       ],
       "verified_by": [],
       "rollup_of": [
-        "APIUI-03.1",
-        "APIUI-03.2",
-        "APIUI-03.3",
-        "APIUI-03.4"
+        "WEBUI-API-R008.1",
+        "WEBUI-API-R008.2",
+        "WEBUI-API-R008.3",
+        "WEBUI-API-R008.4"
       ]
     },
     {
-      "id": "APIUI-03.1",
+      "id": "WEBUI-API-R008.1",
       "title": "Ontology reads and writes use typed Arbora operations with preserved tenant semantics",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -137,7 +137,7 @@
       "verified_by": []
     },
     {
-      "id": "APIUI-03.2",
+      "id": "WEBUI-API-R008.2",
       "title": "Graph reads and writes use typed Arbora operations with preserved tenant semantics",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -146,7 +146,7 @@
       "verified_by": []
     },
     {
-      "id": "APIUI-03.3",
+      "id": "WEBUI-API-R008.3",
       "title": "Atlas reads and writes use typed Arbora operations with preserved tenant semantics",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -155,7 +155,7 @@
       "verified_by": []
     },
     {
-      "id": "APIUI-03.4",
+      "id": "WEBUI-API-R008.4",
       "title": "Object-set reads and writes use typed Arbora operations with preserved tenant semantics",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -164,7 +164,7 @@
       "verified_by": []
     },
     {
-      "id": "APIUI-04",
+      "id": "WEBUI-API-R009",
       "title": "Prompts, SDD, knowledge base, sessions and goals migrate to typed calls",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -173,7 +173,7 @@
       "verified_by": []
     },
     {
-      "id": "APIUI-05",
+      "id": "WEBUI-API-R010",
       "title": "Host drops direct internal imports once replacement operations are proven",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -182,7 +182,7 @@
       "verified_by": []
     },
     {
-      "id": "APIUI-06",
+      "id": "WEBUI-API-R011",
       "title": "Shared auth and streaming are preserved without exposing a service bearer",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -196,7 +196,7 @@
         "src/lib/arbora-api/__tests__/invoke-no-bearer.test.ts:56"
       ],
       "rollup_of": [
-        "APIUI-06.1"
+        "WEBUI-API-R011.1"
       ]
     },
     {
@@ -218,7 +218,7 @@
       ]
     },
     {
-      "id": "APIUI-06.1",
+      "id": "WEBUI-API-R011.1",
       "title": "Host composition without an engine",
       "delivery_state": "VERIFIED",
       "landed_in": [

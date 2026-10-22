@@ -20,8 +20,8 @@ const UNMAPPED: ColumnMapping = {
   header_to_field: Object.fromEntries(Object.entries(FULL_MAPPING.header_to_field).filter(([, v]) => v !== 'fees')),
 }
 
-describe('CsvImportFlow (FUI-11.2)', () => {
-  // spec: FUI-11.2
+describe('CsvImportFlow (FIN-UI-R014.2)', () => {
+  // spec: FIN-UI-R014.2
   it('previews the column mapping and row errors before anything commits', () => {
     const preview: CsvImportPreview = {
       file_digest: 'sha256:abc',
@@ -36,7 +36,7 @@ describe('CsvImportFlow (FUI-11.2)', () => {
     expect(screen.queryByTestId('csv-import-holdings')).toBeNull()
   })
 
-  // spec: FUI-11.2
+  // spec: FIN-UI-R014.2
   it('shows no mapping errors for a complete mapping and reports the digest as the receipt', () => {
     const preview: CsvImportPreview = {
       file_digest: 'sha256:abc',
@@ -49,7 +49,7 @@ describe('CsvImportFlow (FUI-11.2)', () => {
     expect(screen.getByTestId('csv-import-receipt')).toHaveTextContent('sha256:abc')
   })
 
-  // spec: FUI-11.2
+  // spec: FIN-UI-R014.2
   it('marks a repeated import of a duplicate-digest file as the same logical receipt', () => {
     const preview: CsvImportPreview = {
       file_digest: 'sha256:abc',
@@ -61,7 +61,7 @@ describe('CsvImportFlow (FUI-11.2)', () => {
     expect(screen.getByTestId('csv-import-receipt')).toHaveAttribute('data-repeat', 'true')
   })
 
-  // spec: FUI-11.2
+  // spec: FIN-UI-R014.2
   it('displays post-import holdings exactly as the owning service returned them', () => {
     const preview: CsvImportPreview = {
       file_digest: 'sha256:abc',

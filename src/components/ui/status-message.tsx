@@ -2,7 +2,7 @@
  * @file status-message.tsx
  * @description The one shared primitive for the seven-state "status
  * language" `docs/design-system.md` documents under "State tokens (status
- * language)" for DS-05: loading, empty, stale, denied, error, success and
+ * language)" for WEBUI-DESIGN-R006: loading, empty, stale, denied, error, success and
  * pending each render distinct TEXT, not color alone. Color reinforces the
  * distinction (via `meta.classes`) but a screen reader, a high-contrast
  * theme, or a colorblind reading of the page still gets a different label
@@ -22,7 +22,7 @@ import { cn } from '@/lib/utils'
 export type StatusKind = 'loading' | 'empty' | 'stale' | 'denied' | 'error' | 'success' | 'pending'
 
 interface StatusMeta {
-  /** The always-present, distinct text for this state (DS-05). */
+  /** The always-present, distinct text for this state (WEBUI-DESIGN-R006). */
   label: string
   icon: typeof Loader2
   /** `alert` states interrupt (denied/error); the rest are ambient `status`. */
@@ -58,12 +58,12 @@ export interface StatusMessageProps {
   label?: string
   /** Natural-language detail shown after the label (an error's actual
    * message, a stale timestamp, who denied it, ...). Optional: the label
-   * alone already satisfies DS-05 for a state with nothing more to say. */
+   * alone already satisfies WEBUI-DESIGN-R006 for a state with nothing more to say. */
   detail?: string
   /**
    * Interrupt affordance for a long-running `loading`/`pending` operation.
    * Render this prop only when the caller has confirmed cancellation is
-   * actually safe for that operation (DS-05: "a long-running operation can
+   * actually safe for that operation (WEBUI-DESIGN-R006: "a long-running operation can
    * be interrupted where doing so is safe") -- there is no default Cancel,
    * so a caller that never passes it never implies a safe-to-cancel action
    * that isn't.

@@ -1,6 +1,6 @@
 /**
  * @file design-tokens.test.ts
- * @description Token audit for DS-01 (docs/design-system.md). Confirms the
+ * @description Token audit for WEBUI-DESIGN-R002 (docs/design-system.md). Confirms the
  * color values documented there still match the live `src/index.css` source
  * and that every documented pairing clears its stated WCAG contrast target,
  * using the same OKLCH-to-sRGB and contrast math the knowledge-graph canvas
@@ -49,8 +49,8 @@ const DOCUMENTED_COLOR: Record<string, { light: string; dark: string }> = {
   '--ring': { light: 'oklch(0.52 0.16 260)', dark: 'oklch(0.62 0.16 260)' },
 }
 
-describe('design-system token audit (DS-01)', () => {
-  // spec: DS-01
+describe('design-system token audit (WEBUI-DESIGN-R002)', () => {
+  // spec: WEBUI-DESIGN-R002
   it.each(Object.entries(DOCUMENTED_COLOR))('%s matches docs/design-system.md in :root and .dark', (name, doc) => {
     expect(LIGHT[name]).toBe(doc.light)
     expect(DARK[name]).toBe(doc.dark)
@@ -64,8 +64,8 @@ describe('design-system token audit (DS-01)', () => {
     expect(CSS_SOURCE).toMatch(/:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--ring\)/)
   })
 
-  // spec: DS-04
-  it('disables nonessential animation and transition motion under prefers-reduced-motion (DS-04)', () => {
+  // spec: WEBUI-DESIGN-R005
+  it('disables nonessential animation and transition motion under prefers-reduced-motion (WEBUI-DESIGN-R005)', () => {
     const reduceBlock = /@media \(prefers-reduced-motion: reduce\)\s*\{([^]*?)\n\}/.exec(CSS_SOURCE)
     expect(reduceBlock).not.toBeNull()
     expect(reduceBlock?.[1]).toMatch(/animation-duration:\s*0\.01ms\s*!important/)
@@ -93,8 +93,8 @@ function contrastCases(theme: 'light' | 'dark'): ContrastCase[] {
   ]
 }
 
-describe.each(['light', 'dark'] as const)('%s theme contrast targets (DS-01)', (theme) => {
-  // spec: DS-01
+describe.each(['light', 'dark'] as const)('%s theme contrast targets (WEBUI-DESIGN-R002)', (theme) => {
+  // spec: WEBUI-DESIGN-R002
   it.each(contrastCases(theme))('$name clears $target:1', ({ fg, bg, target }) => {
     const ratio = contrastRatio(cssColorToHex(fg, '#000000'), cssColorToHex(bg, '#ffffff'))
     expect(ratio).toBeGreaterThanOrEqual(target)

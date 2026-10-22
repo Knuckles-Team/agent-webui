@@ -14,12 +14,12 @@ All domain and administrative actions in the browser use one typed, versioned Ar
 
 | ID | WebUI obligation | Related IDs | Proof |
 |---|---|---|---|
-| APIUI-01 | Generate TypeScript types and client from a pinned Arbora `/api/v1` schema/digest, with one `invoke` adapter and stable error envelope | WEBUI-API-R001 | Regeneration-diff and contract tests |
-| APIUI-02 | Migrate decisions, Markets/apps, WebMCP and console confirmation to typed operations, preserving preview/confirm/step-up for effects | WEBUI-API-R001 | Positive/negative effect tests |
-| APIUI-03 | Migrate ontology, graph, Atlas and object-set reads/writes without losing tenant, purpose, paging or error semantics | WEBUI-API-R002 | Cross-surface fixtures and browser tests |
-| APIUI-04 | Migrate prompts, SDD, knowledge base, sessions, goals, MCP servers/tools and model management operations | WEBUI-API-R003 | Route-census and contract tests |
-| APIUI-05 | Remove direct AU-internal imports and domain handlers from the WebUI host once replacement operations are proven. Preserve browser-local endpoints by explicit inventory | AU-BOUNDARY-R039, WEBUI-API-R001, WEBUI-API-R002, WEBUI-API-R003 | Static dependency and route-census gate |
-| APIUI-06 | Preserve shared auth, credential delegation, streaming/cancel and error handling. Never expose an Arbora service bearer to JavaScript | all | Host integration and adversarial browser tests |
+| WEBUI-API-R006 | Generate TypeScript types and client from a pinned Arbora `/api/v1` schema/digest, with one `invoke` adapter and stable error envelope | WEBUI-API-R001 | Regeneration-diff and contract tests |
+| WEBUI-API-R007 | Migrate decisions, Markets/apps, WebMCP and console confirmation to typed operations, preserving preview/confirm/step-up for effects | WEBUI-API-R001 | Positive/negative effect tests |
+| WEBUI-API-R008 | Migrate ontology, graph, Atlas and object-set reads/writes without losing tenant, purpose, paging or error semantics | WEBUI-API-R002 | Cross-surface fixtures and browser tests |
+| WEBUI-API-R009 | Migrate prompts, SDD, knowledge base, sessions, goals, MCP servers/tools and model management operations | WEBUI-API-R003 | Route-census and contract tests |
+| WEBUI-API-R010 | Remove direct AU-internal imports and domain handlers from the WebUI host once replacement operations are proven. Preserve browser-local endpoints by explicit inventory | AU-BOUNDARY-R039, WEBUI-API-R001, WEBUI-API-R002, WEBUI-API-R003 | Static dependency and route-census gate |
+| WEBUI-API-R011 | Preserve shared auth, credential delegation, streaming/cancel and error handling. Never expose an Arbora service bearer to JavaScript | all | Host integration and adversarial browser tests |
 
 User stories: a tenant reader can browse graph and Atlas results without changing identity. An operator can preview and confirm an effect with its exact plan reference. A contributor can regenerate the client from a public schema and see CI fail if a required operation disappears. Unsupported operations present a typed unavailable state rather than silently falling back to a legacy direct route.
 

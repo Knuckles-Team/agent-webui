@@ -1,7 +1,7 @@
 /**
  * @file PerformanceCardView.tsx
- * @description Live performance/benchmark card wiring (FUI-08.2): renders
- * the verbatim-value contract (FUI-08.1, {@link renderPerformanceCard}) as a
+ * @description Live performance/benchmark card wiring (FIN-UI-R011.2): renders
+ * the verbatim-value contract (FIN-UI-R011.1, {@link renderPerformanceCard}) as a
  * component, reproducing the owning service's decimal string unchanged
  * alongside the return method, currency, source, as-of time, and session —
  * never parsing the value back to a number and recomputing it here.

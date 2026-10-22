@@ -14,7 +14,7 @@ const MAPPING: ColumnMapping = {
   },
 }
 
-describe('csv-import (FUI-11.1)', () => {
+describe('csv-import (FIN-UI-R014.1)', () => {
   it('accepts a complete, unambiguous mapping', () => {
     expect(mappingErrors(HEADERS, MAPPING)).toEqual([])
   })

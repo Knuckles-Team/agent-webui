@@ -3,7 +3,7 @@
  * @description Typed contract for the shared ChartRenderer (FIN-UI-R002.1):
  * a series is either a scalar line or a complete OHLC candle series, never a
  * mix, and overlay points carry the strategy version and simulation flag
- * that produced them (FUI-07.1). Decimating a series for display must never
+ * that produced them (FIN-UI-R010.1). Decimating a series for display must never
  * alter the already-finalized state/trail/flip output it is drawn beside;
  * that invariant is checked here as a pure comparison, not inside a
  * component. Live wiring of a ChartRenderer prop to this contract is

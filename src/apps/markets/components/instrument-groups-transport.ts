@@ -1,7 +1,7 @@
 /**
  * @file instrument-groups-transport.ts
  * @description The one data-access seam `InstrumentGroups` depends on
- * (FUI-02), following the same split as `src/components/decisions/decisions-transport.ts`
+ * (FIN-UI-R005), following the same split as `src/components/decisions/decisions-transport.ts`
  * and `src/lib/kg-lod/contract.ts`'s `LodTransport`: a typed interface the
  * view is written against, kept separate from any one implementation. No
  * production implementation is wired up here — this repository's groups
