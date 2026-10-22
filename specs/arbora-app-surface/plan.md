@@ -436,15 +436,11 @@ The second retains the full rendered acceptance obligation and remains open.
 Test bindings name only the narrow children, not their full-acceptance parents.
 The canonical child rollup keeps every parent pending until both children pass.
 
-## Amendments — 2026-10-19 hostile-harness CI budget (WEBUI-APPS-R005.5)
+## Hostile-harness test budget (WEBUI-APPS-R005.5)
 
-Main CI run 39093296325 (2026-10-18) saw one timed-out census test. The
-`knowledge.graph` mount under the 'never-resolving' fixture exceeded vitest's
-5s default when the runner ran under load. There, the body took 10.1s.
-Every neighbour took ~320ms in the same run. The identical suite
-passed on the previous main run. No source changed in between.
-Under load, the heaviest mount times out. Each matrix test now gets an
-explicit 30s budget, plain and baseline `it.fails` form alike.
-A hung mount still fails, just later. The job-level timeout bounds
-the budget. The assertions, fixtures and baseline registry stay as they
-were.
+Each matrix test has an explicit 5 s budget, the vitest default.
+A matrix body takes about 0.4 s; the slowest local body takes 0.9 s.
+One main CI body took 10.1 s while its neighbours took 320 ms.
+The cause was CPU starvation of the self-hosted runner pod.
+The runner pods request 2 CPUs and may use 12, so co-scheduled Rust compiler jobs can starve them.
+That failure is an infrastructure failure. The runner capacity owns the fix, not the test budget.
