@@ -6,7 +6,7 @@ import { surfaceProblems } from '../contract'
 import { pathParam } from '../location'
 
 describe('AppSurface contract', () => {
-  // spec: APP-03, APP-04, WEBUI-APPS-R001
+  // spec: WEBUI-APPS-R040, WEBUI-APPS-R041, WEBUI-APPS-R001
   it('every hosted app satisfies the contract', () => {
     for (const surface of APP_SURFACES) expect(surfaceProblems(surface), surface.id).toEqual([])
   })

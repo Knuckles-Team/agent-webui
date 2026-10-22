@@ -5,7 +5,7 @@ import { renderWithProviders } from '@/__tests__/fixtures'
 import { baseRecord, baseRow, createFixtureTransport, emptyProvenance } from './decisions-fixtures'
 
 /**
- * DecisionExplorerTab (requirement DEC-01, part of WEBUI-DECIDE-R002): the
+ * DecisionExplorerTab (requirement WEBUI-DECIDE-R003, part of WEBUI-DECIDE-R002): the
  * real component against an explicit fixture `DecisionsTransport` (see
  * `decisions-fixtures.ts`) — no network, no module mocking.
  */
@@ -38,8 +38,8 @@ describe('DecisionExplorerTab', () => {
     expect(screen.queryByText(/no decisions recorded yet/i)).not.toBeInTheDocument()
   })
 
-  // spec: DEC-01, WEBUI-DECIDE-R002
-  it('selecting a row loads and renders its premises, outcome, and why-not (DEC-01)', async () => {
+  // spec: WEBUI-DECIDE-R003, WEBUI-DECIDE-R002
+  it('selecting a row loads and renders its premises, outcome, and why-not (WEBUI-DECIDE-R003)', async () => {
     const transport = createFixtureTransport()
     transport.listDecisions.mockResolvedValue([baseRow])
     transport.getDecision.mockResolvedValue(baseRecord)
@@ -61,8 +61,8 @@ describe('DecisionExplorerTab', () => {
     expect(within(card as HTMLElement).getAllByText(/retired/i).length).toBeGreaterThanOrEqual(2)
   })
 
-  // spec: DEC-06
-  it('selecting a row with the keyboard alone (no pointer) loads its detail (DEC-06)', async () => {
+  // spec: WEBUI-DECIDE-R008
+  it('selecting a row with the keyboard alone (no pointer) loads its detail (WEBUI-DECIDE-R008)', async () => {
     const transport = createFixtureTransport()
     transport.listDecisions.mockResolvedValue([baseRow])
     transport.getDecision.mockResolvedValue(baseRecord)

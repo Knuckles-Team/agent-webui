@@ -1,6 +1,6 @@
 /**
  * @file MarketsCalendar.tsx
- * @description The Calendar destination (FUI-01): documented macro events
+ * @description The Calendar destination (FIN-UI-R004): documented macro events
  * with their public source, reusing the existing `GET
  * /api/apps/markets/macro-events` route and schema (already served for the
  * chart's macro overlay).

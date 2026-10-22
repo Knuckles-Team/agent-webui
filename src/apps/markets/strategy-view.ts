@@ -1,10 +1,10 @@
 /**
  * @file strategy-view.ts
- * @description Typed strategy/recommendation view contract (FUI-09.1).
+ * @description Typed strategy/recommendation view contract (FIN-UI-R012.1).
  * Every recommendation cites the versioned evidence and scorecard behind
  * it, or carries an explicit abstention reason; the type intentionally has
  * no order-submission field, so no path through this model can place an
- * order. Wiring into a StrategyPanel component is FUI-09.2.
+ * order. Wiring into a StrategyPanel component is FIN-UI-R012.2.
  */
 
 export type AbstainReason = 'thin_history' | 'warmup' | 'drift' | 'missing_scorecard'

@@ -1,6 +1,6 @@
 /**
  * @file MarketsMenu.tsx
- * @description The Menu destination (FUI-01): what Markets is, the notices
+ * @description The Menu destination (FIN-UI-R004): what Markets is, the notices
  * every page carries, and a link back to the Markets overview.
  */
 import { navigateInApp } from '@/lib/apps/location'

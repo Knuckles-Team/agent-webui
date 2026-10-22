@@ -235,7 +235,7 @@ function OutcomeSection({ outcome }: { outcome: DecisionOutcome }) {
 
 /** Within the given budget, the on-demand outcome, or `{ kind: 'timeout' }`
  * on an abort — the request never writes back to the original record
- * (DEC-02). */
+ * (WEBUI-DECIDE-R004). */
 async function requestWhyNotOnDemand(
   transport: DecisionsTransport,
   recordId: string,

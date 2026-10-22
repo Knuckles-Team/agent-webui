@@ -5,8 +5,8 @@ import type { CachedFact } from '../../offline-cache'
 
 const PRICE_FACT: CachedFact<{ price: number }> = { data: { price: 100 }, cached_at: 1000 }
 
-describe('OfflineCacheView (FUI-12.2)', () => {
-  // spec: FUI-12.2
+describe('OfflineCacheView (FIN-UI-R015.2)', () => {
+  // spec: FIN-UI-R015.2
   it('shows previously cached data while offline, marked stale, with current-data actions disabled', () => {
     render(
       <OfflineCacheView
@@ -25,7 +25,7 @@ describe('OfflineCacheView (FUI-12.2)', () => {
     expect(screen.getByText('place_order unavailable')).toBeInTheDocument()
   })
 
-  // spec: FUI-12.2
+  // spec: FIN-UI-R015.2
   it('renders a fresh online cache with no stale badge and no disabled actions', () => {
     render(
       <OfflineCacheView
@@ -42,7 +42,7 @@ describe('OfflineCacheView (FUI-12.2)', () => {
     expect(screen.queryByTestId('offline-cache-disabled-action')).toBeNull()
   })
 
-  // spec: FUI-12.2
+  // spec: FIN-UI-R015.2
   it('marks an expired cache stale and disables current-data actions even while online', () => {
     render(
       <OfflineCacheView

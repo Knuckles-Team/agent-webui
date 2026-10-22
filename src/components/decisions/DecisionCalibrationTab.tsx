@@ -19,7 +19,7 @@ import DecisionEvaluationTimeline from './DecisionEvaluationTimeline'
  * nothing beyond a display percentage from two integers (`successes`/
  * `trials`) it already received, and explicitly labels the aggregate as
  * carrying no calibration or coverage claim on its own (requirements
- * WEBUI-DECIDE-R001, DEC-03, DEC-04); independently labeled evidence for
+ * WEBUI-DECIDE-R001, WEBUI-DECIDE-R005, WEBUI-DECIDE-R006); independently labeled evidence for
  * those claims comes only from the evaluation receipts/timeline below.
  *
  * No charting library is added for this: a fixed-hue single-series bar (the

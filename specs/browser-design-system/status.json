@@ -5,14 +5,14 @@
   "delivery_state": "LANDED",
   "requirement_ids": [
     "WEBUI-DESIGN-R001",
-    "DS-01",
-    "DS-02",
-    "DS-03",
-    "DS-04",
-    "DS-05",
-    "DS-06",
-    "DS-07",
-    "DS-08"
+    "WEBUI-DESIGN-R002",
+    "WEBUI-DESIGN-R003",
+    "WEBUI-DESIGN-R004",
+    "WEBUI-DESIGN-R005",
+    "WEBUI-DESIGN-R006",
+    "WEBUI-DESIGN-R007",
+    "WEBUI-DESIGN-R008",
+    "WEBUI-DESIGN-R009"
   ],
   "requirements": [
     {
@@ -28,7 +28,7 @@
       ]
     },
     {
-      "id": "DS-01",
+      "id": "WEBUI-DESIGN-R002",
       "title": "Design tokens documented with contrast targets",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -41,7 +41,7 @@
       ]
     },
     {
-      "id": "DS-02",
+      "id": "WEBUI-DESIGN-R003",
       "title": "Controls have accessible names and visible focus",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -53,7 +53,7 @@
       ]
     },
     {
-      "id": "DS-03",
+      "id": "WEBUI-DESIGN-R004",
       "title": "Responsive layout covers 320px mobile through desktop",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -65,7 +65,7 @@
       ]
     },
     {
-      "id": "DS-04",
+      "id": "WEBUI-DESIGN-R005",
       "title": "Gesture actions have alternatives and respect reduced motion",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -77,7 +77,7 @@
       ]
     },
     {
-      "id": "DS-05",
+      "id": "WEBUI-DESIGN-R006",
       "title": "Status states are distinguishable by text, not only color",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -95,7 +95,7 @@
       ]
     },
     {
-      "id": "DS-06",
+      "id": "WEBUI-DESIGN-R007",
       "title": "No duplicate primitives or unsolicited telemetry introduced",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -109,7 +109,7 @@
       ]
     },
     {
-      "id": "DS-07",
+      "id": "WEBUI-DESIGN-R008",
       "title": "Fonts load from the same origin",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -120,7 +120,7 @@
       "verified_by": []
     },
     {
-      "id": "DS-08",
+      "id": "WEBUI-DESIGN-R009",
       "title": "Runtime style elements satisfy the strict policy",
       "delivery_state": "VERIFIED",
       "landed_in": [

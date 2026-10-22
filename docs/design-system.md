@@ -75,7 +75,7 @@ new color.
 
 Loading, empty, stale, denied, error, success and pending states are each
 written out in text; color reinforces but never carries the distinction alone
-(DS-05). `src/components/ui/status-message.tsx` (`StatusMessage`) is the
+(WEBUI-DESIGN-R006). `src/components/ui/status-message.tsx` (`StatusMessage`) is the
 shared primitive for exactly this seven-state vocabulary, covering the one
 case `BlockedState.tsx` does not (whole-panel/integration availability) —
 the outcome of a single item, field or operation. Each state's label is

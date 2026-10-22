@@ -5,12 +5,12 @@
   "delivery_state": "VERIFIED",
   "requirement_ids": [
     "WEBUI-DECIDE-R001",
-    "DEC-01",
-    "DEC-02",
-    "DEC-03",
-    "DEC-04",
-    "DEC-05",
-    "DEC-06",
+    "WEBUI-DECIDE-R003",
+    "WEBUI-DECIDE-R004",
+    "WEBUI-DECIDE-R005",
+    "WEBUI-DECIDE-R006",
+    "WEBUI-DECIDE-R007",
+    "WEBUI-DECIDE-R008",
     "WEBUI-DECIDE-R002"
   ],
   "requirements": [
@@ -28,7 +28,7 @@
       ]
     },
     {
-      "id": "DEC-01",
+      "id": "WEBUI-DECIDE-R003",
       "title": "Decision explorer cites premises, derivations and certificate",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -41,7 +41,7 @@
       ]
     },
     {
-      "id": "DEC-02",
+      "id": "WEBUI-DECIDE-R004",
       "title": "Why-not explanations run on demand within a bounded budget",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -57,7 +57,7 @@
       ]
     },
     {
-      "id": "DEC-03",
+      "id": "WEBUI-DECIDE-R005",
       "title": "Dashboard labels each evaluation field independently",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -71,7 +71,7 @@
       ]
     },
     {
-      "id": "DEC-04",
+      "id": "WEBUI-DECIDE-R006",
       "title": "No coverage claim shown for inadequate evaluation data",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -86,7 +86,7 @@
       ]
     },
     {
-      "id": "DEC-05",
+      "id": "WEBUI-DECIDE-R007",
       "title": "Tenant or purpose change invalidates cached decision queries",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -100,7 +100,7 @@
       ]
     },
     {
-      "id": "DEC-06",
+      "id": "WEBUI-DECIDE-R008",
       "title": "Explanation views work without color, hover or pointer",
       "delivery_state": "VERIFIED",
       "landed_in": [

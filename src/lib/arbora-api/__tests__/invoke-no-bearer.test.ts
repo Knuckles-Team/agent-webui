@@ -1,6 +1,6 @@
 /**
  * @file invoke-no-bearer.test.ts
- * @description Adversarial coverage for APIUI-06: `invoke()` preserves the
+ * @description Adversarial coverage for WEBUI-API-R011: `invoke()` preserves the
  * shared same-origin cookie session and CSRF token, never emits an Arbora
  * service bearer to the browser, propagates cancellation into the in-flight
  * request rather than swallowing it, and surfaces a denial as a typed
@@ -28,7 +28,7 @@ function flattenCallText(calls: unknown[][]): string {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('invoke() never exposes an Arbora service bearer', () => {
-  // spec: APIUI-06
+  // spec: WEBUI-API-R011
   it('sets no Authorization header on the session fetch or the operation call', async () => {
     const fetcher = vi
       .fn()
@@ -42,7 +42,7 @@ describe('invoke() never exposes an Arbora service bearer', () => {
     }
   })
 
-  // spec: APIUI-06
+  // spec: WEBUI-API-R011
   it('never carries a bearer or service-token credential in any request header or body', async () => {
     const fetcher = vi
       .fn()
@@ -53,7 +53,7 @@ describe('invoke() never exposes an Arbora service bearer', () => {
     expect(flattenCallText(fetcher.mock.calls)).not.toMatch(BEARER_LEAK)
   })
 
-  // spec: APIUI-06
+  // spec: WEBUI-API-R011
   it('relies only on the same-origin cookie session plus the fetched CSRF token', async () => {
     const fetcher = vi
       .fn()

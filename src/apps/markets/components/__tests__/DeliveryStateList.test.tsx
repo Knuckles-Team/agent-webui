@@ -12,8 +12,8 @@ const ALL_STATES: DeliveryReceipt[] = [
   { event_id: 'evt-delivered', state: 'delivered', observed_at: '2026-10-09T00:00:00Z' },
 ]
 
-describe('DeliveryStateList (FUI-10.2)', () => {
-  // spec: FUI-10.2
+describe('DeliveryStateList (FIN-UI-R013.2)', () => {
+  // spec: FIN-UI-R013.2
   it('renders due, missed, failed, replayed, paper-filled, and delivered as visibly distinct outcomes', () => {
     render(<DeliveryStateList receipts={ALL_STATES} />)
     const rows = screen.getAllByTestId('delivery-state-row')
@@ -22,7 +22,7 @@ describe('DeliveryStateList (FUI-10.2)', () => {
     expect(new Set(statesSeen).size).toBe(6)
   })
 
-  // spec: FUI-10.2
+  // spec: FIN-UI-R013.2
   it('never shows a paper fill with the live-fill marker, only the delivered state gets it', () => {
     render(<DeliveryStateList receipts={ALL_STATES} />)
     const rows = screen.getAllByTestId('delivery-state-row')
@@ -32,7 +32,7 @@ describe('DeliveryStateList (FUI-10.2)', () => {
     expect(delivered.querySelector('[data-testid="delivery-state-live-badge"]')).not.toBeNull()
   })
 
-  // spec: FUI-10.2
+  // spec: FIN-UI-R013.2
   it('collapses a duplicated event ID and a channel retry to a single distinct row', () => {
     const receipts: DeliveryReceipt[] = [
       { event_id: 'evt-dup', state: 'due', observed_at: '2026-10-09T00:00:00Z' },

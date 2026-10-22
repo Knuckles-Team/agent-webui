@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { viewCachedFact } from '../offline-cache'
 
-describe('offline-cache (FUI-12.1)', () => {
+describe('offline-cache (FIN-UI-R015.1)', () => {
   it('marks a cached fact stale and disables current-state actions while offline', () => {
     const view = viewCachedFact({ data: { price: 100 }, cached_at: 1000 }, false, 2000, 60_000)
     expect(view.stale).toBe(true)

@@ -27,7 +27,7 @@ Regenerate from a digest-matched arbora + epistemic-graph pair with
 (the canonical source `openapi.json` here is copied from), then re-run
 `pnpm run arbora:client:gen`.
 
-## WEBUI-API-R001 / APIUI-02 finding
+## WEBUI-API-R001 / WEBUI-API-R007 finding
 
 There is no `decide.*` operation namespace. The real decision-related
 operations are `eg.query.Decide`, `eg.coordination.DecisionLog`,

@@ -25,7 +25,7 @@ Standalone sidebar navigation and conversation tests use the existing
 Keep the catalog hook and React Query real. A rendered regression checks that
 capability-gated links remain absent until the catalog loads, then shows only
 available apps. Preserve modified-click and conversation-remount coverage.
-This focused regression does not establish the broader `APP-07` accessibility
+This focused regression does not establish the broader `WEBUI-APPS-R044` accessibility
 acceptance criteria.
 
 ## Run harness surface (WEBUI-APPS-R004)
@@ -49,14 +49,14 @@ Cross-repository: depends on three rows. The `ARBORA-OPS` row for run metrics se
 
 Data flow: principal role → nav registry filter → DashboardView layout read and write → rendered page.
 Attach point: src/lib/nav-registry.ts and src/components/views/DashboardView.tsx.
-Reused: the identity session from `IDUI-02` and the AppSurface contract. Role definitions stay with `ARBORA-IDENTITY` rows.
+Reused: the identity session from `WEBUI-IDENTITY-R004` and the AppSurface contract. Role definitions stay with `ARBORA-IDENTITY` rows.
 Decision: filter navigation by the declared role in the client. Arbora still authorizes each call. Rejected alternative: a separate client role table.
 
 ## WEBUI-APPS-R006 goals, sessions and fleets panel
 
 Data flow: goals, sessions and fleets operations → link builder → panel filtered by goal.
 Attach point: first child row locates the current goals and sessions views and replaces them.
-Reused: the typed client of `APIUI-04`. Fleet execution stays with `AU-CONTROL` rows.
+Reused: the typed client of `WEBUI-API-R009`. Fleet execution stays with `AU-CONTROL` rows.
 Decision: relate by returned identifiers. Rejected alternative: infer links by name matching in the browser.
 ## Graph edits through the engine (WEBUI-APPS-R030)
 
@@ -82,7 +82,7 @@ Neither definition establishes installed operations or runtime acceptance.
 EG owns content, compare-and-set, retention and sync decisions. Arbora owns authenticated serving, hosted projection and authenticated materialization acknowledgments. AU consumes EG decisions. WebUI renders the returned state.
 
 Current main `28df14e42c751d5fb99b60c973a5164144ef090d` has Memory-node CRUD in `src/components/views/MemoryView.tsx:439`, mounted from `src/lib/nav-registry.ts:664`; it has no Files tab or `src/lib/memory-files.ts`.
-The existing `src/lib/arbora-api/invoke.ts:56` sends generated operations to `/api/v1/ops/{op_id}` with same-origin credentials, CSRF handling, idempotency options and validated envelopes. Reuse that adapter under `WEBUI-API-R001`, `APIUI-01` and `APIUI-06`.
+The existing `src/lib/arbora-api/invoke.ts:56` sends generated operations to `/api/v1/ops/{op_id}` with same-origin credentials, CSRF handling, idempotency options and validated envelopes. Reuse that adapter under `WEBUI-API-R001`, `WEBUI-API-R006` and `WEBUI-API-R011`.
 `gatewayPost` prefixes the graph facade and is not the operation adapter. Served tests must prove the real same-origin host route and installed schemas. The browser helper alone does not prove them.
 
 ### Explicit wire and view mapping
@@ -171,7 +171,7 @@ Input `WEBUI:3`; original record SHA-256 `38936b5f2136263c40c29fe639c984243fed8b
 
 Source obligation: On first run, the platform discovers agent sessions from every supported harness. It syncs them into local queryable indexes. The web interface offers unified browsing and search across them with cost summaries.
 
-Existing owner anchors: APIUI-04; WEBUI-APPS-R006; ARBORA-OPS-R008; ARBORA-OPS-R009. Entry: SessionsView and goal-session-fleet panel.
+Existing owner anchors: WEBUI-API-R009; WEBUI-APPS-R006; ARBORA-OPS-R008; ARBORA-OPS-R009. Entry: SessionsView and goal-session-fleet panel.
 
 Consume the versioned host supported-harness manifest and discovery status for every manifest entry. Session identity includes source harness, source session ID, tenant and authoritative indexed revision.
 
@@ -311,7 +311,7 @@ Input `WEBUI:10`; original record SHA-256 `c82a815c87428a5baf4379ef7790bafb24a5d
 
 Source obligation: The web interface shows a live meeting transcript. The user chooses a local or hosted language-model provider for post-meeting summaries.
 
-Existing owner anchors: WEBUI-APPS-R001; APIUI-04; ARBORA-OPS-R008; ARBORA-OPS-R009. Entry: Meeting AppSurface and existing dictation seam.
+Existing owner anchors: WEBUI-APPS-R001; WEBUI-API-R009; ARBORA-OPS-R008; ARBORA-OPS-R009. Entry: Meeting AppSurface and existing dictation seam.
 
 Consume meeting ID, segment ID, sequence, correction revision, timestamps and finalization state. Summary requests bind final transcript revision, admitted provider identity and local/hosted execution class.
 

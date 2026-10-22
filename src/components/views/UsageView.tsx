@@ -215,7 +215,7 @@ function Heatmap({ cells }: { cells: UsageActivityCell[] }) {
   )
 }
 
-/** The shared DS-05 empty-state primitive, centered the way this view's
+/** The shared WEBUI-DESIGN-R006 empty-state primitive, centered the way this view's
  * tab bodies already were -- every call site below passes its own specific
  * copy via `label`, so the visible text is unchanged. */
 function Empty({ children }: { children: string }) {

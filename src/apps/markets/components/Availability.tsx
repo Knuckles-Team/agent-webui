@@ -32,7 +32,7 @@ export function RequestFailed({ what, error }: { what: string; error: unknown })
   )
 }
 
-/** A Markets destination whose data source has not shipped yet (FUI-01).
+/** A Markets destination whose data source has not shipped yet (FIN-UI-R004).
  * States the gap honestly instead of showing an empty page. */
 export function FeaturePending({ feature, reason }: { feature: string; reason: string }) {
   return (

@@ -1,9 +1,9 @@
 /**
  * @file StrategyPanel.tsx
- * @description Live strategy/recommendation view wiring (FUI-09.2): renders
- * the evidence/abstain contract (FUI-09.1, {@link recommendationView}) as a
+ * @description Live strategy/recommendation view wiring (FIN-UI-R012.2): renders
+ * the evidence/abstain contract (FIN-UI-R012.1, {@link recommendationView}) as a
  * component. It reads only `evidence` and `abstain_reason`/`reason` off the
- * typed view, which by construction (FUI-09.1) has no order-submission
+ * typed view, which by construction (FIN-UI-R012.1) has no order-submission
  * field, so no handler in this component can originate an order request.
  */
 import { recommendationView } from '../strategy-view'

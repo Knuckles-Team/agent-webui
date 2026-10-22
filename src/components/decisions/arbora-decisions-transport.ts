@@ -28,7 +28,7 @@ import type { DecisionAggregateOptions, DecisionsTransport, ListDecisionsOptions
  *   A record's provenance (premises, inputs) is already embedded in the
  *   `DecisionLog.get` response; evaluations/resolutions are a different,
  *   not-yet-exposed read. Refuses with `DECISION_PROVENANCE_UNAVAILABLE`.
- * `getWhyNotOnDemand` (DEC-02) likewise has no production operation pinned
+ * `getWhyNotOnDemand` (WEBUI-DECIDE-R004) likewise has no production operation pinned
  * yet, so it resolves `{ kind: 'refused' }` rather than guessing an op id.
  *
  * `eg.*` operations carry a placeholder `{"type":"object"}` schema in the

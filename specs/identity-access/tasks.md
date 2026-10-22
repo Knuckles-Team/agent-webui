@@ -10,4 +10,4 @@
 - [ ] Reuse the same elevation operation from UI, chat and A2A; test step-up, two-person approval, expiry and revocation.
 - [ ] Run `test-spec.md` including hosted browser and accessibility cases on exact merged source; attach commit and evidence before acceptance.
 
-No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `IDUI-01`, `IDUI-02`, `IDUI-03`, `IDUI-04`, `IDUI-05`, `IDUI-06`, `IDUI-07`, `WEBUI-IDENTITY-R001`, `WEBUI-IDENTITY-R002`.
+No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `WEBUI-IDENTITY-R003`, `WEBUI-IDENTITY-R004`, `WEBUI-IDENTITY-R005`, `WEBUI-IDENTITY-R006`, `WEBUI-IDENTITY-R007`, `WEBUI-IDENTITY-R008`, `WEBUI-IDENTITY-R009`, `WEBUI-IDENTITY-R001`, `WEBUI-IDENTITY-R002`.

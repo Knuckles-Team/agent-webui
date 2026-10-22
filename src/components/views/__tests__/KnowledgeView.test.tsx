@@ -4,7 +4,7 @@ import KnowledgeView from '@/components/views/KnowledgeView'
 
 /**
  * KnowledgeView fetches `GET /api/enhanced/skills` on mount and filters to
- * `*-docs` entries. These tests exercise the DS-05 status language
+ * `*-docs` entries. These tests exercise the WEBUI-DESIGN-R006 status language
  * (`StatusMessage`) its skill list renders: loading while the request is in
  * flight, and the shared empty state when no documentation skills exist.
  */
@@ -26,7 +26,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('KnowledgeView skill-list status language (DS-05)', () => {
+describe('KnowledgeView skill-list status language (WEBUI-DESIGN-R006)', () => {
   it('shows the shared loading status message while the skill list is in flight', () => {
     global.fetch = vi.fn(() => new Promise(() => undefined)) as unknown as typeof fetch
     render(<KnowledgeView />)

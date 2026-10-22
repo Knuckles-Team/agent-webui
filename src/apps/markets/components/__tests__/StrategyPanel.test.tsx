@@ -13,8 +13,8 @@ const WARMUP: StrategyRecommendation = { evidence: [], abstain_reason: 'warmup' 
 const DRIFT: StrategyRecommendation = { evidence: [], abstain_reason: 'drift' }
 const MISSING_SCORECARD: StrategyRecommendation = { evidence: [], abstain_reason: 'missing_scorecard' }
 
-describe('StrategyPanel (FUI-09.2)', () => {
-  // spec: FUI-09.2
+describe('StrategyPanel (FIN-UI-R012.2)', () => {
+  // spec: FIN-UI-R012.2
   it('shows the cited evidence for a calibrated proposal and submits no order from the panel', () => {
     render(<StrategyPanel recommendation={CALIBRATED_PROPOSAL} />)
     expect(screen.getByTestId('strategy-panel')).toHaveAttribute('data-state', 'proposal')
@@ -23,7 +23,7 @@ describe('StrategyPanel (FUI-09.2)', () => {
     expect(screen.queryAllByRole('button')).toHaveLength(0)
   })
 
-  // spec: FUI-09.2
+  // spec: FIN-UI-R012.2
   it.each([
     [THIN_HISTORY, 'Not enough price history to recommend yet'],
     [WARMUP, 'Strategy is still warming up'],

@@ -99,7 +99,7 @@ redaction, and the 64/65-character boundary. Bind these tested tests to
 record after publishing this source. This evidence covers failure logging;
 it does not establish acceptance of the other consumer requirements.
 
-### Host composition without an engine (APIUI-06.1)
+### Host composition without an engine (WEBUI-API-R011.1)
 
 The WebUI holds no graph engine. A host composes its own routes on the real
 factory through `application_composer`. Graph data reaches the WebUI only
