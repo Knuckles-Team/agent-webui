@@ -1,0 +1,161 @@
+{
+  "schema_version": 2,
+  "spec_id": "WEBUI-DASH",
+  "owner_repo": "agent-webui",
+  "delivery_state": "SPECIFIED",
+  "requirement_ids": [
+    "WEBUI-DASH-R001",
+    "WEBUI-DASH-R002",
+    "WEBUI-DASH-R003",
+    "WEBUI-DASH-R004",
+    "WEBUI-DASH-R005",
+    "WEBUI-DASH-R006",
+    "WEBUI-DASH-R007",
+    "WEBUI-DASH-R008",
+    "WEBUI-DASH-R009",
+    "WEBUI-DASH-R010",
+    "WEBUI-DASH-R011",
+    "WEBUI-DASH-R012",
+    "WEBUI-DASH-R013",
+    "WEBUI-DASH-R014",
+    "WEBUI-DASH-R015",
+    "WEBUI-DASH-R016"
+  ],
+  "requirements": [
+    {
+      "id": "WEBUI-DASH-R001",
+      "title": "Dashboard document model",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/lib/dashboards/__tests__/model.test.ts:13"
+      ]
+    },
+    {
+      "id": "WEBUI-DASH-R002",
+      "title": "Table, line, bar and KPI panels",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/components/dashboards/__tests__/DashboardsView.test.tsx:42"
+      ]
+    },
+    {
+      "id": "WEBUI-DASH-R003",
+      "title": "Pie, map and graph panels (remaining)",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-DASH-R004",
+      "title": "UQL panel queries through arbora",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/lib/dashboards/__tests__/query.test.ts:7"
+      ]
+    },
+    {
+      "id": "WEBUI-DASH-R005",
+      "title": "Natural-language, fleet.call and EG panel queries (remaining)",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-DASH-R006",
+      "title": "Hand-built dashboards",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/components/dashboards/__tests__/DashboardsView.test.tsx:42"
+      ]
+    },
+    {
+      "id": "WEBUI-DASH-R007",
+      "title": "WebMCP dashboard tools",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/lib/dashboards/__tests__/tools.test.ts:50"
+      ]
+    },
+    {
+      "id": "WEBUI-DASH-R008",
+      "title": "Visible and undoable agent edits",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/lib/dashboards/__tests__/history.test.ts:5"
+      ]
+    },
+    {
+      "id": "WEBUI-DASH-R009",
+      "title": "Confirmed destructive agent changes",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/components/dashboards/__tests__/DashboardsView.test.tsx:42",
+        "src/lib/dashboards/__tests__/tools.test.ts:108"
+      ]
+    },
+    {
+      "id": "WEBUI-DASH-R010",
+      "title": "Save through arbora as catalog assets (remaining)",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-DASH-R011",
+      "title": "Local fallback marked pending",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/lib/dashboards/__tests__/store.test.ts:29"
+      ]
+    },
+    {
+      "id": "WEBUI-DASH-R012",
+      "title": "Ownership and sharing (remaining)",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-DASH-R013",
+      "title": "Refresh, parameters and filters",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/lib/dashboards/__tests__/params.test.ts:4"
+      ]
+    },
+    {
+      "id": "WEBUI-DASH-R014",
+      "title": "Accessible and themed panels",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/components/dashboards/__tests__/DashboardsView.test.tsx:42"
+      ]
+    },
+    {
+      "id": "WEBUI-DASH-R015",
+      "title": "Dashboards route wiring",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/components/dashboards/__tests__/DashboardsView.test.tsx:42"
+      ]
+    },
+    {
+      "id": "WEBUI-DASH-R016",
+      "title": "Catalog browse and search page (remaining)",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    }
+  ]
+}

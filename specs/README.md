@@ -64,3 +64,4 @@ bootstrap skill, together with the [SDD full lifecycle](https://github.com/Knuck
 - [`WEBUI-APPS`](arbora-app-surface/spec.md) — application routes and integrated navigation.
 - [`WEBUI-IDENTITY`](identity-access/spec.md) — authentication state and tenant-safe browser behavior.
 - [`delete-past-chats.md`](delete-past-chats.md), [`update-color-scheme.md`](update-color-scheme.md), and [`update-tools-dropdown.md`](update-tools-dropdown.md) are existing brief feature drafts. Preserve them; expand to the shared feature directory format when resumed.
+- [`WEBUI-DASH`](agent-dashboards/spec.md) — user and agent built dashboards with WebMCP tools, arbora queries and arbora saves.

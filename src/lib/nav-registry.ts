@@ -211,6 +211,18 @@ export const ROUTES: readonly RouteDef[] = [
     element: lazy(() => import('@/components/views/FilesView')),
   },
   {
+    id: 'workspace.dashboards',
+    path: '/data-dashboards',
+    label: 'Dashboards',
+    section: 'workspace',
+    navigation: 'primary',
+    blurb: 'Build dashboards from graph queries, by hand or with the chat agent.',
+    icon: LayoutDashboard,
+    minRole: 'reader',
+    mobile: 'adapted',
+    element: lazy(() => import('@/components/dashboards/DashboardsView')),
+  },
+  {
     id: 'workspace.ide',
     path: '/ide',
     label: 'IDE',
