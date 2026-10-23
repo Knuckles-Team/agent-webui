@@ -16,7 +16,13 @@
     "WEBUI-IDENTITY-R003.1",
     "WEBUI-IDENTITY-R003.2",
     "WEBUI-IDENTITY-R003.3",
-    "WEBUI-IDENTITY-R010"
+    "WEBUI-IDENTITY-R010",
+    "WEBUI-IDENTITY-R003.1.1",
+    "WEBUI-IDENTITY-R003.1.2",
+    "WEBUI-IDENTITY-R003.2.1",
+    "WEBUI-IDENTITY-R003.2.2",
+    "WEBUI-IDENTITY-R003.3.1",
+    "WEBUI-IDENTITY-R003.3.2"
   ],
   "requirements": [
     {
@@ -121,25 +127,95 @@
       "title": "Explicit no-auth mode with bounded anonymous policy",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-IDENTITY-R003.1.1",
+        "WEBUI-IDENTITY-R003.1.2"
+      ]
     },
     {
       "id": "WEBUI-IDENTITY-R003.2",
       "title": "Built-in EG authentication through Arbora",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-IDENTITY-R003.2.1",
+        "WEBUI-IDENTITY-R003.2.2"
+      ]
     },
     {
       "id": "WEBUI-IDENTITY-R003.3",
       "title": "External OIDC provider interoperability",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-IDENTITY-R003.3.1",
+        "WEBUI-IDENTITY-R003.3.2"
+      ]
     },
     {
       "id": "WEBUI-IDENTITY-R010",
       "title": "Long-session renewal and mode-transition coherence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-IDENTITY-R003.1.1",
+      "title": "Explicit anonymous source refusal boundary",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "e695dc9d3633"
+      ],
+      "verified_by": [
+        "tests/test_explicit_auth_modes.py:103",
+        "tests/test_explicit_auth_modes.py:148",
+        "tests/test_explicit_auth_modes.py:17",
+        "tests/test_explicit_auth_modes.py:56",
+        "tests/test_explicit_auth_modes.py:71"
+      ]
+    },
+    {
+      "id": "WEBUI-IDENTITY-R003.1.2",
+      "title": "Complete installed anonymous journeys",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-IDENTITY-R003.2.1",
+      "title": "EG boundary configuration source refusal",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "e695dc9d3633"
+      ],
+      "verified_by": [
+        "tests/test_explicit_auth_modes.py:184"
+      ]
+    },
+    {
+      "id": "WEBUI-IDENTITY-R003.2.2",
+      "title": "Installed EG identity journeys",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-IDENTITY-R003.3.1",
+      "title": "OIDC configuration source refusal",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "e695dc9d3633"
+      ],
+      "verified_by": [
+        "tests/test_explicit_auth_modes.py:175"
+      ]
+    },
+    {
+      "id": "WEBUI-IDENTITY-R003.3.2",
+      "title": "External provider interoperability qualification",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
