@@ -2052,8 +2052,10 @@
     {
       "id": "WEBUI-APPS-R049.1.9",
       "title": "Loaded Work and Operate commands",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "beb333e7f687"
+      ],
       "verified_by": [
         "src/components/workspace/__tests__/LoadedWorkspaceCommands.test.tsx:2"
       ]
