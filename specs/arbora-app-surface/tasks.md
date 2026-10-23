@@ -186,3 +186,5 @@ Unchecked tasks remain open. Definitions alone do not establish runtime delivery
 - [ ] WEBUI-APPS-R049.1.8: Bind attended editor and review tests. Check the trusted-event default in a real browser. Do not classify a provider request as a local tool mutation.
 
 - [ ] WEBUI-APPS-R049.1.9: Bind loaded Work and Operate command adapters. Keep capability discovery separate from permission to call tools.
+
+- [ ] WEBUI-APPS-R049.1.3: Qualify task refresh and attended cancellation against the served provider. Retain separate native browser and complete migration acceptance.

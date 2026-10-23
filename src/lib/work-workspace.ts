@@ -89,6 +89,12 @@ export const workApi = {
     fetchValidated('/api/enhanced/sessions?limit=50', z.array(AgentTaskSchema), { signal }),
   getTask: (taskId: string, signal?: AbortSignal) =>
     fetchValidated(`/api/enhanced/sessions/${encodeURIComponent(id.parse(taskId))}`, AgentTaskSchema, { signal }),
+  cancelTask: (taskId: string) =>
+    fetchValidated(
+      `/api/enhanced/sessions/${encodeURIComponent(id.parse(taskId))}/cancel`,
+      z.object({ status: z.literal('cancelled'), task: z.unknown() }),
+      { method: 'POST' },
+    ),
   listRuns: () => gatewayPost('/traces', { action: 'search', query: '', limit: 50 }, RunSearchSchema),
   getRun: (traceId: string) =>
     gatewayPost('/traces', { action: 'waterfall', trace_id: id.parse(traceId) }, RunDetailSchema),
