@@ -2,7 +2,7 @@
 // spec: WEBUI-APPS-R049.1.3
 // spec: WEBUI-APPS-R049.1.1
 import { Suspense, useState } from 'react'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { PrivateAppSurface } from '@/App'
 import { ROUTES } from '@/lib/nav-registry'
@@ -28,6 +28,7 @@ vi.mock('@/components/ChatPanel', () => ({
   },
 }))
 vi.mock('@/lib/webmcp/provider', () => ({
+  useWebMcpToolSet: vi.fn(),
   WebMcpProvider: ({ children }: { children: React.ReactNode }) => children,
   WorkspaceWebMcpControl: () => <p>Attended control</p>,
 }))
@@ -54,6 +55,25 @@ describe('new workspace composition', () => {
     expect(screen.queryByText('Legacy sidebar')).not.toBeInTheDocument()
     expect(screen.queryByText('Legacy dashboard')).not.toBeInTheDocument()
     expect(probes.dashboard).not.toHaveBeenCalled()
+  })
+  it('does not admit command destinations while identity is unresolved', async () => {
+    render(
+      <Suspense fallback={<p>Loading</p>}>
+        <PrivateAppSurface
+          route={route}
+          currentView={route.id}
+          isChat={false}
+          isDashboard={false}
+          routeAccessDenied
+          identity={identity}
+          identityLoading
+          isObjectDetail={false}
+          objectId=""
+        />
+      </Suspense>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Find destination' }))
+    expect(screen.getByRole('status')).toHaveTextContent('No matching available destinations')
   })
   it('retains one assistant while switching actual workspace contexts and keeps the rail outside scrolling content', async () => {
     const work = ROUTES.find((entry) => entry.id === 'workspace.work-proof')!

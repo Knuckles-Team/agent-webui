@@ -1,3 +1,4 @@
+import { WorkspaceCommandPalette } from './WorkspaceCommands'
 import { useEffect, useState } from 'react'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
 import { navigateWork, parseWorkState } from '@/lib/work-workspace'
@@ -63,6 +64,7 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
             </a>
           ))}
         </nav>
+        <WorkspaceCommandPalette />
         <a className="inline-flex min-h-11 items-center text-sm underline" href="/privacy">
           Privacy
         </a>

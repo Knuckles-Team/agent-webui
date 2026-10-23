@@ -193,6 +193,10 @@ WEBUI-APPS-R049.1.5 binds `CurrentResponseTaskLink.test.tsx` and `Chat.conversat
 
 The `workspace-layout.spec.ts` fixture checks task-link geometry at 740 by 320 and 320 by 740. Scroll and resize before pointer navigation. Check the link center against `elementFromPoint`, positive transcript height and a full touch target. Keep the composer in normal flow. This fixture uses synthetic API responses, not live identity or execution acceptance.
 
+### Bounded workspace command search
+
+WEBUI-APPS-R049.1.6 binds `WorkspaceCommands.test.tsx`. Check migrated roots and loaded Explore entries without backend calls. Test typed manual/tool equivalence, native modified links, denied roles, arbitrary path rejection and stale handles. Check owner changes, location changes, keyboard opening and explicit dismissal. Tool catalog results omit URL query text. Real browser focus restoration, touch targets, resizing and native provider registration require separate acceptance.
+
 ## Consent lifecycle regression boundary
 
 R046.2.1 binds the consent banner and workspace navigation source tests. Check normal-flow placement, explicit dismissal, choices, management access and focus restoration. Dismissal must not grant optional consent. Test failed storage across route remounts and consumers. Unrelated session-storage events must not clear a failed-denial fallback or restore an old grant.
