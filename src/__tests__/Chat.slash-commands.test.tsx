@@ -9,8 +9,8 @@ import type { PageContextEnvelope } from '@/lib/page-context'
  * Characterization coverage for `handleSlashCommand` (WC1-WEB-01). No prior
  * test in this repo exercised this function at all, so these tests pin its
  * OBSERVED behaviour against the unmodified source before any refactor, one
- * assertion per switch arm. Must remain byte-identical and green through
- * the refactor commit.
+ * assertion per switch arm. The session fixture is explicitly authenticated
+ * because denied sessions no longer mount the conversation UI.
  */
 
 function jsonResponse(body: unknown, ok = true): Response {
@@ -72,7 +72,7 @@ beforeEach(() => {
         )
       }
       if (path.startsWith('/auth/session')) {
-        return Promise.resolve(jsonResponse({ authenticated: false, roles: [] }))
+        return Promise.resolve(jsonResponse({ authenticated: true, subject: 'reader', roles: [] }))
       }
       return Promise.resolve(jsonResponse([]))
     }),

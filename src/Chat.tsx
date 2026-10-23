@@ -64,8 +64,12 @@ import { GraphActivity, type GraphEvent } from '@/components/ai-elements/graph-a
 import { AccessibleImage } from '@/components/ai-elements/image'
 import VoiceDictationButton from '@/components/VoiceDictationButton'
 import { pageContextSystemPrompt, type PageContextEnvelope } from '@/lib/page-context'
+import { CurrentResponseTaskLink } from '@/components/workspace/CurrentResponseTaskLink'
+import type { Role } from '@/lib/nav-registry'
 import { useIdentity } from '@/lib/auth'
 import {
+  conversationOwnerKey,
+  hasUnassignedConversationHistory,
   readConversationMessages,
   removeConversationMessages,
   saveConversationEntry,
@@ -1080,7 +1084,7 @@ function renderModelSelect(
  * Orchestrates the chat lifecycle including message history management,
  * streaming response handling, and tool interaction flows.
  */
-const Chat = ({ pageContext }: ChatProps) => {
+const OwnedChat = ({ pageContext, ownerKey, role }: ChatProps & { ownerKey: string; role: Role }) => {
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number>(0)
@@ -1140,13 +1144,30 @@ const Chat = ({ pageContext }: ChatProps) => {
   const [sweBusy, setSweBusy] = useState(false)
   const sweEventSourceRef = useRef<EventSource | null>(null)
 
+  const [conversationId, setConversationId] = useConversationIdFromUrl()
+  const userKey = ownerKey
+  // Allocate before the first submit so the optimistic message and wire request
+  // use the same persisted conversation, not the AI SDK's unrelated default ID.
+  const requestConversationId = useMemo(
+    () => (conversationId === '/' ? `/${nanoid()}` : conversationId),
+    [conversationId],
+  )
+
+  const conversationLifetime = useMemo(() => ({ active: true }), [requestConversationId])
+  useLayoutEffect(() => {
+    conversationLifetime.active = true
+    return () => {
+      conversationLifetime.active = false
+    }
+  }, [conversationLifetime])
+
   const pageContextRef = useRef(pageContext)
   pageContextRef.current = pageContext
   const transport = useMemo(
     () =>
       new DefaultChatTransport<UIMessage>({
         api: '/api/chats/messages',
-        prepareSendMessagesRequest: ({ id, messages, body, trigger, messageId }) => {
+        prepareSendMessagesRequest: ({ messages, body, trigger, messageId }) => {
           const context = pageContextRef.current
           const contextMessage: UIMessage = {
             id: 'agent-webui-page-context',
@@ -1156,7 +1177,7 @@ const Chat = ({ pageContext }: ChatProps) => {
           return {
             body: {
               ...body,
-              id,
+              id: requestConversationId,
               trigger,
               messages: [contextMessage, ...messages],
               ...(messageId ? { messageId } : {}),
@@ -1165,14 +1186,37 @@ const Chat = ({ pageContext }: ChatProps) => {
           }
         },
       }),
-    [],
+    [requestConversationId],
   )
-  const { messages, sendMessage, status, setMessages, regenerate, addToolOutput, error } = useChat({ transport })
-  const throttledMessages = useThrottle<UIMessage[]>(messages, 500)
-  const [conversationId, setConversationId] = useConversationIdFromUrl()
+  const { messages, sendMessage, status, setMessages, regenerate, addToolOutput, error, stop } = useChat({
+    id: JSON.stringify([userKey, requestConversationId]),
+    transport,
+  })
+  useEffect(
+    () => () => {
+      void stop()
+    },
+    [stop],
+  )
+  const messageSnapshot = useMemo(
+    () => ({ userKey, conversationId: requestConversationId, messages }),
+    [userKey, requestConversationId, messages],
+  )
+  const throttledSnapshot = useThrottle(messageSnapshot, 500)
+  const throttledMessages =
+    throttledSnapshot.userKey === userKey && throttledSnapshot.conversationId === requestConversationId
+      ? throttledSnapshot.messages
+      : messages
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { identity } = useIdentity()
-  const userKey = identity.userKey
+
+  // Drafts and attachments are scoped to the observed conversation owner too.
+  useLayoutEffect(() => {
+    setInput('')
+    setAttachments([])
+    setSuggestions([])
+    setSweSessionId(null)
+    setSweBackend('')
+  }, [userKey, requestConversationId])
 
   // Persist mode selection so navigation/reload preserves the user's choice.
   useEffect(() => {
@@ -1199,7 +1243,7 @@ const Chat = ({ pageContext }: ChatProps) => {
     () => () => {
       sweEventSourceRef.current?.close()
     },
-    [],
+    [conversationLifetime],
   )
 
   /** Best-effort teardown of the active SWE runtime session (OS-5.33), used by both
@@ -1246,12 +1290,14 @@ const Chat = ({ pageContext }: ChatProps) => {
       let sid = sweSessionId
       if (!sid) {
         const res = await api.createSweSession({ prefer_docker: false })
+        if (!conversationLifetime.active) return
         sid = res.session_id
         setSweSessionId(sid)
         setSweBackend(res.backend)
 
         const es = new EventSource(api.sweEventsUrl(sid))
         es.onmessage = (evt) => {
+          if (!conversationLifetime.active) return
           try {
             const parsed = JSON.parse(evt.data as string) as SweStreamEvent
             const assistantMsg: UIMessage = {
@@ -1267,6 +1313,7 @@ const Chat = ({ pageContext }: ChatProps) => {
         sweEventSourceRef.current = es
       }
 
+      if (!conversationLifetime.active) return
       await api.sweAct(sid, { kind: 'cmd_run', command: text })
     } catch (err) {
       const errorMsg: UIMessage = {
@@ -1399,6 +1446,7 @@ const Chat = ({ pageContext }: ChatProps) => {
 
       const reader = new FileReader()
       reader.onload = (event) => {
+        if (!conversationLifetime.active) return
         const base64 = event.target?.result as string
         setAttachments((prev) => [...prev, { url: URL.createObjectURL(file), base64, type: file.type }])
       }
@@ -1464,7 +1512,7 @@ Available commands:
       role: 'assistant',
       parts: [{ type: 'text', text: `🔄 Started a fresh conversation${modelMsg}. How can I assist you today?` }],
     }
-    setMessages([welcomeMsg])
+    writeConversationMessages(userKey, newConversationId, [welcomeMsg])
     setInput('')
   }
 
@@ -1699,7 +1747,7 @@ Available commands:
       }
 
       if (conversationId === '/') {
-        const newConversationId = `/${nanoid()}`
+        const newConversationId = requestConversationId
         setConversationId(newConversationId)
 
         saveConversationEntry(userKey, newConversationId, input)
@@ -1747,10 +1795,10 @@ Available commands:
 
   // Persist messages to local storage whenever they are updated
   useEffect(() => {
-    if (conversationId && throttledMessages.length > 0) {
+    if (conversationId !== '/' && throttledMessages.length > 0) {
       writeConversationMessages(userKey, conversationId, throttledMessages)
     }
-  }, [throttledMessages, conversationId])
+  }, [throttledMessages, conversationId, userKey])
 
   /**
    * Triggers a message regeneration for the specified ID
@@ -1794,8 +1842,8 @@ Available commands:
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <Conversation className="flex-1">
+    <div className="flex min-h-0 flex-col h-full overflow-auto" data-testid="chat-flow">
+      <Conversation className="min-h-24 flex-1 shrink-0">
         <ConversationContent>
           {messages.map((message: UIMessage) => (
             <div key={message.id}>
@@ -1903,13 +1951,19 @@ Available commands:
                 })()}
             </div>
           ))}
+          <CurrentResponseTaskLink
+            message={messages.at(-1)}
+            conversationId={requestConversationId}
+            status={status}
+            role={role}
+          />
           {status === 'submitted' && <Loader className="motion-reduce:animate-none" />}
           {renderErrorBanner(status, error)}
         </ConversationContent>
         <ConversationScrollButton aria-label="Scroll to latest message" />
       </Conversation>
 
-      <div className="sticky bottom-0 p-3 relative">
+      <div className="relative shrink-0 p-3" data-testid="chat-composer">
         {renderSuggestionsList(suggestions, activeSuggestionIndex, (suggestion) => {
           setInput(suggestion)
           setSuggestions([])
@@ -2012,6 +2066,25 @@ Available commands:
         </PromptInput>
       </div>
     </div>
+  )
+}
+
+/** Preserve workspace continuity only while the observed owner remains the same. */
+const Chat = (props: ChatProps) => {
+  const { identity, loading } = useIdentity()
+  if (loading) return <p role="status">Checking conversation access…</p>
+  if (identity.needsSignIn) return <p role="status">Conversation access is not authorized. Sign in to continue.</p>
+  const ownerKey = conversationOwnerKey(identity)
+  return (
+    <>
+      {hasUnassignedConversationHistory(identity.userKey) && (
+        <p role="status">
+          Older browser-only conversations are preserved but cannot be safely assigned to this account and tenant. Keep
+          this browser’s site data. Owner-verified history migration is not available yet.
+        </p>
+      )}
+      <OwnedChat key={ownerKey} {...props} ownerKey={ownerKey} role={identity.role} />
+    </>
   )
 }
 

@@ -1,16 +1,21 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ACTIVE_CONVERSATION_STORAGE_KEY, useConversationIdFromUrl } from '@/hooks/useConversationIdFromUrl'
-import { saveConversationEntry } from '@/lib/chat-store'
+import { conversationOwnerKey, saveConversationEntry } from '@/lib/chat-store'
 import { renderWithProviders } from '@/__tests__/fixtures'
 
 import { AppSidebar } from '../app-sidebar'
 import { SidebarProvider } from '../ui/sidebar'
 
+const caller = vi.hoisted(() => ({ tenant: 'tenant-a', denied: false }))
 vi.mock('@/lib/auth', () => ({
   DEV_IDENTITY_USER_KEY: 'local',
-  useIdentity: () => ({ identity: { userKey: 'reader', role: 'reader' } }),
+  useIdentity: () => ({
+    identity: { userKey: 'reader', role: 'reader', needsSignIn: caller.denied, raw: { tenant: caller.tenant } },
+    loading: false,
+  }),
 }))
 vi.mock('../mode-toggle', () => ({ ModeToggle: () => null }))
 vi.mock('../UserMenu', () => ({ UserMenu: () => null }))
@@ -27,7 +32,11 @@ function sidebarFixtureResponse(url: string) {
 async function deleteFromSidebar(path: string, activeId: string) {
   window.history.replaceState({}, '', path)
   window.localStorage.setItem(ACTIVE_CONVERSATION_STORAGE_KEY, activeId)
-  saveConversationEntry('reader', '/session-1', 'First chat')
+  saveConversationEntry(
+    conversationOwnerKey({ userKey: 'reader', raw: { authenticated: true, roles: [], tenant: caller.tenant } }),
+    '/session-1',
+    'First chat',
+  )
   vi.stubGlobal('fetch', vi.fn().mockImplementation(sidebarFixtureResponse))
   renderWithProviders(
     <SidebarProvider>
@@ -41,6 +50,8 @@ async function deleteFromSidebar(path: string, activeId: string) {
 }
 
 afterEach(() => {
+  caller.tenant = 'tenant-a'
+  caller.denied = false
   vi.unstubAllGlobals()
   window.localStorage.clear()
   window.history.replaceState({}, '', '/')
@@ -100,4 +111,54 @@ describe('conversation deep links across workspace navigation', () => {
       expect(window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY)).toBe('/session-1')
     },
   )
+})
+
+it('retires pending delete confirmation when the same subject changes tenant', async () => {
+  const key = (tenant: string) =>
+    conversationOwnerKey({ userKey: 'reader', raw: { authenticated: true, roles: [], tenant } })
+  saveConversationEntry(key('tenant-a'), '/same', 'Old tenant chat')
+  saveConversationEntry(key('tenant-b'), '/same', 'New tenant chat')
+  const before = window.localStorage.getItem(`chat:${key('tenant-b')}:conversationIds`)
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(sidebarFixtureResponse))
+  const client = new QueryClient()
+  const panel = () => (
+    <QueryClientProvider client={client}>
+      <SidebarProvider>
+        <AppSidebar />
+      </SidebarProvider>
+    </QueryClientProvider>
+  )
+  const view = renderWithProviders(panel())
+  fireEvent.click(screen.getByRole('button', { name: 'Delete Old tenant chat' }))
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+  caller.tenant = 'tenant-b'
+  view.rerender(panel())
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Delete New tenant chat' })).toBeInTheDocument()
+  expect(window.localStorage.getItem(`chat:${key('tenant-b')}:conversationIds`)).toBe(before)
+})
+
+it('retires pending deletion when the current owner becomes denied', () => {
+  const owner = conversationOwnerKey({
+    userKey: 'reader',
+    raw: { authenticated: true, roles: [], tenant: caller.tenant },
+  })
+  saveConversationEntry(owner, '/same', 'Protected chat')
+  const before = window.localStorage.getItem(`chat:${owner}:conversationIds`)
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(sidebarFixtureResponse))
+  const client = new QueryClient()
+  const panel = () => (
+    <QueryClientProvider client={client}>
+      <SidebarProvider>
+        <AppSidebar />
+      </SidebarProvider>
+    </QueryClientProvider>
+  )
+  const view = renderWithProviders(panel())
+  fireEvent.click(screen.getByRole('button', { name: 'Delete Protected chat' }))
+  caller.denied = true
+  view.rerender(panel())
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Delete Protected chat' })).not.toBeInTheDocument()
+  expect(window.localStorage.getItem(`chat:${owner}:conversationIds`)).toBe(before)
 })

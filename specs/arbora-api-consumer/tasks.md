@@ -21,3 +21,7 @@ No task above names a requirement ID individually; together they must close ever
 - [x] WEBUI-API-R011.1: Compose host routes through `application_composer` with no engine in the WebUI; prove served-operation calls and `not_available` answers through the real factory.
 
 - [ ] WEBUI-API-R003.2: Join the domain-route census to WEBUI-APPS-R045 action coverage. Reject unclassified redesign/WebMCP actions. Retain owner boundaries and explicit unavailable results.
+- [ ] WEBUI-API-R011.2: Bind browser conversation identity and preserve validated admitted references in streamed message metadata; qualify the composed browser-to-Arbora path before completion.
+
+- [x] WEBUI-API-R011.2.1: Bind source preservation and refusal fixtures without claiming installed composition.
+- [ ] WEBUI-API-R011.2.2: Qualify the complete parent identity matrix through the installed browser-to-Arbora path.

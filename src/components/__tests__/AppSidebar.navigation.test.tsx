@@ -7,7 +7,10 @@ import { AppSidebar } from '../app-sidebar'
 import { SidebarProvider } from '../ui/sidebar'
 
 vi.mock('@/lib/auth', () => ({ useIdentity: () => ({ identity: { userKey: 'reader', role: 'reader' } }) }))
-vi.mock('@/lib/chat-store', () => ({ useConversations: () => [] }))
+vi.mock('@/lib/chat-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/chat-store')>()),
+  useConversations: () => [],
+}))
 vi.mock('@/hooks/useConversationIdFromUrl', () => ({ useConversationIdFromUrl: () => ['/'] }))
 vi.mock('../mode-toggle', () => ({ ModeToggle: () => null }))
 vi.mock('../UserMenu', () => ({ UserMenu: () => null }))

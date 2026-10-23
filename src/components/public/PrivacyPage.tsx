@@ -1,3 +1,4 @@
+import { PrivacyConsentSettings } from '@/components/ConsentBanner'
 import { PublicPageLayout } from './PublicPageLayout'
 import { LegalPageContent } from './LegalPageContent'
 import { routeById } from '@/lib/nav-registry'
@@ -14,6 +15,7 @@ export default function PrivacyPage() {
       title="Privacy policy"
       description="The reviewed privacy policy for this deployment."
     >
+      <PrivacyConsentSettings />
       <LegalPageContent config={config} text={config.privacyPolicyText} />
     </PublicPageLayout>
   )

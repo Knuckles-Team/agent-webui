@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { matchRoute } from '@/lib/nav-registry'
+import { parseWorkState } from '@/lib/work-workspace'
 
 export const ACTIVE_CONVERSATION_STORAGE_KEY = 'activeConversationId'
 export const ACTIVE_CONVERSATION_CHANGED_EVENT = 'active-conversation-changed'
@@ -27,6 +28,14 @@ export function normalizeConversationId(value: string | null | undefined): strin
 }
 
 export function resolveConversationId(pathname: string, search: string, storedId: string | null): string {
+  if (pathname === '/workspace/work') {
+    try {
+      const requested = parseWorkState(`${pathname}${search}`).conversation
+      if (requested) return normalizeConversationId(requested)
+    } catch {
+      return normalizeConversationId(storedId)
+    }
+  }
   if (pathname === '/chat') {
     const requestedId = new URLSearchParams(search).get('conversation')
     if (requestedId) return normalizeConversationId(requestedId)
@@ -82,10 +91,9 @@ export function useConversationIdFromUrl(): [string, (id: string) => void] {
     const nextId = normalizeConversationId(id)
     persistActiveConversation(nextId)
     setConversationId(nextId)
-    window.dispatchEvent(new Event(ACTIVE_CONVERSATION_CHANGED_EVENT))
 
     const url = new URL(window.location.toString())
-    if (url.pathname === '/chat') {
+    if (url.pathname === '/chat' || url.pathname === '/workspace/work') {
       if (nextId === '/') url.searchParams.delete('conversation')
       else url.searchParams.set('conversation', nextId)
       window.history.pushState({}, '', url.toString())
@@ -97,6 +105,7 @@ export function useConversationIdFromUrl(): [string, (id: string) => void] {
       window.history.pushState({}, '', url.toString())
       window.dispatchEvent(new Event('history-state-changed'))
     }
+    window.dispatchEvent(new Event(ACTIVE_CONVERSATION_CHANGED_EVENT))
   }, [])
 
   return [conversationId, setConversationIdAndUrl]

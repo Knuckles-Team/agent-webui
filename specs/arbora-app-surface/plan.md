@@ -447,9 +447,9 @@ That failure is an infrastructure failure. The runner capacity owns the fix, not
 
 ## Responsive workspace architecture and shared action contract
 
-WEBUI-APPS-R045–R050 reuse src/lib/nav-registry.ts, src/lib/apps/contract.ts, App.tsx, existing views and src/lib/webmcp. The current 58 application destinations are a baseline, not a closed list. Extend the route registry with semantic destination/action descriptors, never introduce a second router. Dynamic entities use a stable canonical identity and scoped parent/context references; relationship paths may differ. List bounded authorized children lazily and support direct search so an infinite dataset does not require an infinite initial payload.
+WEBUI-APPS-R045–R050 reuse src/lib/nav-registry.ts, src/lib/apps/contract.ts, App.tsx, reusable domain widgets and src/lib/webmcp. The current 58 application destinations are a baseline, not a closed list. Extend the route registry with semantic destination/action descriptors, never introduce a second router. Dynamic entities use a stable canonical identity and scoped parent/context references; relationship paths may differ. List bounded authorized children lazily and support direct search so an infinite dataset does not require an infinite initial payload.
 
-Suggested presentation branches are Work, Knowledge, Automate, Operate and Apps, with Settings/admin utilities. The workspace has a persistent context/search bar, compact expandable branch rail and primary task surface. It also has an optional related inspector and run/conversation tray. Map and accessible list are representations of the same state, not separate products. Semantic zoom transitions from ecosystem to branch to entity and deeper actionable leaves. Preserve canonical existing URLs and encode only typed allowlisted context; do not relax the existing WebMCP query/hash/arbitrary URL rejection. Commit semantic changes to browser history, not every camera frame. Back restores prior selection, focus and pane state. Resolve stale/deleted/denied destinations explicitly without disclosing hidden metadata.
+The three primary contexts are Work, Explore and Operate, with contextual settings and help utilities. The workspace has a persistent context/search bar, compact expandable branch rail and primary task surface. It also has an optional related inspector and run/conversation tray. Map and accessible list are representations of the same state, not separate products. Semantic zoom transitions from ecosystem to branch to entity and deeper actionable leaves. Preserve canonical existing URLs and encode only typed allowlisted context; do not relax the existing WebMCP query/hash/arbitrary URL rejection. Commit semantic changes to browser history, not every camera frame. Back restores prior selection, focus and pane state. Resolve stale/deleted/denied destinations explicitly without disclosing hidden metadata.
 
 One dispatcher accepts stable action ID, validated typed arguments and current context revision. It returns a typed outcome and updated visible state. Manual controls and WebMCP invoke it identically. Separate local view mutations, reads and server effects. Form edits do not submit; security-sensitive fields and ceremony actions retain explicit human-only boundaries. Undo is only offered where a safe inverse exists; it never implies that a committed server effect was cancelled. Apply server-issued preview/confirmation/step-up through existing typed Arbora operations. No new client scheduler, graph engine, policy authority or credentials store is introduced.
 
@@ -462,3 +462,45 @@ Delivery order: (1) census and contract tests; (2) shared navigation/action stat
 ## Registered navigation slice and remaining acceptance
 
 R046.1 introduces only registered branch/list navigation and the shared validated navigation dispatcher. It preserves the existing route registry, role checks and native links. Its source tests use synthetic URL events. R046.2 retains real browser history, dynamic deepest-leaf, camera and rendered mobile acceptance. R047 still requires complete action equivalence beyond navigation. No backend, identity boundary or provider capability is added.
+
+## Consolidated information architecture
+
+The primary contexts are Work, Explore and Operate. Existing route declarations remain the compatibility and capability inventory during migration. They do not mandate separate feature pages.
+
+Work combines conversations, runs, goals, plans and authoring tools around the active task. Explore combines knowledge, objects, graphs, queries, data analysis and contextual app data. Operate combines fleet, system health, usage, integrations and policy administration. A context changes the central working surface while preserving relevant task and selection state. Help, account and settings open utility surfaces; they are not extra primary app contexts.
+
+Canonical state contains context, entity ID, relationship path, lens, active task, inspector and focus target. One entity can appear through multiple relationship paths without duplicate identity. Legacy URLs decode into validated state. Back/Forward and native links use the same state codec. Security scopes and capability checks remain unchanged. An alias must not mount an independent legacy shell.
+
+Use one primary working surface, contextual inspector and task tray. At narrow widths, focus one pane while keeping context and pane switching available. Wider layouts reveal relevant panes instead of adding feature pages. Semantic zoom changes relationship/detail context and renders readable native controls. Map/list, search, keyboard, touch and WebMCP share destination IDs and state.
+
+The migration matrix binds every current destination to its replacement state and removal obligation. Reuse proven domain widgets and typed operations, not page-level layout composition. Retire a legacy standalone layout only after its actions, errors, authorization and deep links have parity evidence. Retain domain capability when its old page disappears. App and dynamic entity additions extend the same matrix and context rules.
+
+Navigation measurement counts deliberate activations that change context, lens or inspector before the target task is usable. It excludes text entry, mandatory confirmation and task execution. Record old and new counts from identical starting state. Record viewport-height scroll distance separately from data-region scrolling. Keep context and primary task actions anchored; never meet a budget by hiding content. Compare run inspection, graph-to-related-object exploration, workflow editing, provider configuration and dashboard editing. Every tested leaf must be reachable directly through search or a compatible deep link.
+
+Migration work prioritizes reusable backend, safety, data, action and accessibility contracts. Do not polish old page layouts scheduled for replacement. Parity means preserved capabilities and safe interactions, not pixel matching or exhaustive cosmetic checks of legacy routes. Existing mobile correctness tests can inform new acceptance fixtures; their old layout is not the design target. Implement and test the consolidated surfaces directly. Legacy compatibility adapters only need routing, state, authority and capability evidence.
+
+## Read-only Explore implementation seam
+
+WEBUI-APPS-R049.1.1 uses the workspace component `ExploreWorkspace.tsx` and `src/lib/explore-workspace.ts`. The component retains collection/query state while a typed entity/tool state selects overview, relationships or history. Manual links and mounted WebMCP use one validator and transition function. The implementation gates reads on resolved identity and the existing user role. Published conversation evidence stays bounded without truncating the working query. Existing typed read clients provide data; no backend operation or effect authority is added.
+
+This opt-in source proof is not the completed destination migration. WEBUI-APPS-R049.1.2 keeps old-address adaptation, remaining domains and real browser/native-provider acceptance open. Do not infer camera zoom, full mobile parity or live backend correctness from mounted component tests. Preserve the original source receipt when comparing independent browser evidence.
+
+The R049.1.1 source contract also retains the typed collection query across remounts and native links. The URL carries validated `q` state so reload and modified-click navigation restore the same investigation. The Explore shell does not mount a hidden dashboard. Existing attended controls remain in normal shell flow during denied and loading states. Public context reports the canonical route and a bounded query representation. The full execution query remains separate and unchanged. Reuse the reviewed consent lifecycle; its separate requirements stay with their existing owner.
+
+## Retained Work source composition
+
+WEBUI-APPS-R049.1.3 reuses the existing Chat lifecycle instead of constructing another conversation engine. The Work surface presents conversation selection, independent served task list/get reads and trace/node reads. Typed URL state and tool navigation use the same validator as manual controls. The anchored shared context rail does not replace or duplicate Chat. Switching context preserves legitimate selection without inventing associations.
+
+No served contract currently links conversation, task, trace, subagent and evidence into one proven chain for this slice. Present independent selectors and provenance honestly. Do not label spans as subagents or infer links from similar IDs, timing or labels. This source slice adds no execution, cancellation, permission or backend operation. Those capabilities require their existing owning contracts. The complete migration and real-provider/browser qualification remain under R049.1.2.
+
+### Operate discovery source amendment
+
+Add R049.1.4 as a narrow read-only source slice. Canonical `fleet.status` reports child state; process state does not prove callable tools. `fleet.catalog.list` provides caller-visible descriptors and cursors. Browse without named-server filters to avoid the live priming path. Preserve the three-context shell and existing assistant; do not wrap the legacy Fleet Supervisor page. A reader-level presentation gate never substitutes for gateway `mcp:discover` authorization. Bound the preview to ten catalog pages and report incompleteness honestly.
+
+Retain host provisioning, configuration, containment, approval and execution capabilities as explicit R049.1.2 migration obligations. Do not expose those effects or fabricate their backend contracts. Live auth/no-auth, deployment, mobile, accessibility and browser qualification remain independent acceptance work.
+
+### Current response task navigation source
+
+Use the explicit task identifier returned for the active conversation. Render one link for the current non-streaming assistant response. Share the typed Work dispatcher with the browser tool. Treat all trace references as opaque values. Navigation does not establish execution ownership or authorization. Keep full migration and live-provider acceptance open.
+
+Give Work panes readable minimum tracks when the viewport is short. Scroll the workspace rather than collapse the transcript behind the composer. Keep the transcript and composer in normal flow. Preserve response navigation and keyboard behavior.

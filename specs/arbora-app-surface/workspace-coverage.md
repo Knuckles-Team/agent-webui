@@ -4,7 +4,7 @@ Owner: WEBUI-APPS-R045–R050. Snapshot: main `4c77201c4d96bfa8287d6b663df9c69eb
 
 ## Complete registered destination baseline
 
-Each destination retains its role/capability restriction, canonical URL and deepest detail/action surface. It preserves all visible states and manual/WebMCP equivalence. Dynamic route parameters require valid, stale, missing and unauthorized fixtures. Public pages and 404 also remain reachable. Existing `mobile: unsupported` classifications are explicit unresolved migration obligations under WEBUI-DESIGN-R004.1, not permission to omit features. Marking a route adapted without functional acceptance does not close that obligation.
+Each destination retains its role/capability restriction, compatible URL and deepest detail/action surface. Its standalone page layout is not preserved. It preserves all visible states and manual/WebMCP equivalence. Dynamic route parameters require valid, stale, missing and unauthorized fixtures. Public pages and 404 also remain reachable. Existing `mobile: unsupported` classifications are explicit unresolved migration obligations under WEBUI-DESIGN-R004.1, not permission to omit features. Marking a route adapted without functional acceptance does not close that obligation.
 
 | Stable destination | Canonical path | Minimum role | Existing mobile class | Source surface |
 |---|---|---|---|---|
@@ -102,7 +102,7 @@ R047 adds semantic bounded discovery/navigation/read-state/selection/focus/inspe
 | Baseline deployment. | WEBUI-API-R011.1, WEBUI-APPS-R050. | Exact installed WebUI/Arbora/EG/AU/SDK revisions, origin/auth mode, capability availability and positive/negative real-service smoke receipts. |
 | Current-state inventory. | WEBUI-APPS-R045, WEBUI-API-R003.2. | Every route, dynamic leaf, control and backend route is classified with existing spec ownership; orphan/unclassified additions fail CI. |
 | Semantic shell/action foundation. | WEBUI-APPS-R046/R047/R049. | Existing URLs, persistent chat, map/list/search/back/focus and action-dispatch equivalence; no dropped destinations. |
-| Domain reflow. | WEBUI-DESIGN-R004.1/R004.2. | Every route/action usable at narrow, tall, short, wide, zoomed and changing viewports; unsupported cohort eliminated only with evidence. |
+| Domain reflow. | WEBUI-DESIGN-R004.1/R004.2. | Every migrated capability/action usable at narrow, tall, short, wide, zoomed and changing viewports; unsupported cohort eliminated only with evidence. |
 | Native tooling and security. | WEBUI-APPS-R048, WEBUI-IDENTITY, WEBUI-API-R007/R011. | Actual supported-browser native tool registration and execution; unsupported fallback and adversarial identity/receipt/cancel tests. |
 | Full release qualification. | WEBUI-DESIGN-R005.1/R010, WEBUI-APPS-R050. | Deepest-leaf keyboard/touch/screen-reader/reduced-motion, measured performance and composed auth/no-auth evidence on exact release candidate. |
 
@@ -117,3 +117,70 @@ Run repository bootstrap, spec-standard/spec-status, typecheck, lint and unit/co
 Initial co-service startup exposed a missing identity composition seam. The WebUI factory requires a host-provided `SessionBoundary` or complete JWT verifier, including on loopback. The attempted Arbora composition did not provide it and WebUI startup failed. A boundary owns `/auth/*` and presents admitted requests to the existing identity gate. It excludes the built-in WebUI OIDC browser flow. The implementation must resolve this in the correct Arbora identity/composition owner and validate it here under WEBUI-APPS-R050 and WEBUI-API-R011/R011.1. Do not substitute a no-op boundary, fake bearer or disabled enforcement. WEBUI-IDENTITY-R003.1 owns explicit browser no-auth mode. Built-in EG R003.2 and external OIDC R003.3 share lifecycle R010. Implement real anonymous-policy admission rather than weakening authenticated mode. Upstream no-auth support alone does not complete browser no-auth; qualify each intentionally selected composition separately.
 
 Catalog and source discovery use Arbora `query.nl`/`query.uql` through its existing intent tools, not provisional catalog methods. The API consumer plan defines producer ownership. Explicit no-auth and EG integration depend on canonical dispatcher/effect migration and qualified caller/WebSocket contracts. The identity plan documents those dependencies. Conservative refusal scaffolds preserve safety but do not complete the requested features or mobile/WebMCP equivalence.
+
+## Destination absorption map
+
+WEBUI-APPS-R049.1 owns this migration. All 58 app destinations below become workspace states, not independent feature pages. Each row retires the old standalone layout after capability acceptance. Legacy addresses remain typed compatibility adapters. Work, Explore and Operate are the only primary contexts. Help is a utility, not a fourth context. Public legal/contact content and the 404 fallback remain available.
+
+| Legacy destination | Compatible address | Context | Replacement state | Absorbed capability |
+|---|---|---|---|---|
+| `chat.console` | `/chat` | Work. | Conversation / active run. | Persistent conversation, not a chat page. |
+| `workspace.files` | `/files` | Work. | Task assets / files. | Scoped file tool in task context. |
+| `workspace.dashboards` | `/data-dashboards` | Explore. | Saved analysis / dashboard lens. | Saved workspace composition. |
+| `workspace.ide` | `/ide` | Work. | Task assets / editor. | Editor tool over selected repository/file. |
+| `control-plane.sessions` | `/sessions` | Work. | Session / run history. | Session switcher and run timeline. |
+| `control-plane.fleet` | `/fleet` | Operate. | Fleet / selected host or agent. | Fleet collection and entity inspector. |
+| `control-plane.goals` | `/goals` | Work. | Goal / plan. | Goal tree and execution plan. |
+| `control-plane.workflows` | `/workflows` | Work. | Plan / workflow editor. | Plan topology tool, not separate app. |
+| `control-plane.prompts` | `/prompts` | Work. | Build assets / prompt. | Typed prompt editor. |
+| `control-plane.skills` | `/skills` | Work. | Build assets / skill. | Skill library and definition editor. |
+| `control-plane.scheduler` | `/scheduling` | Work. | Plan / schedule. | Schedule lens over plans and runs. |
+| `control-plane.sdd` | `/sdd` | Work. | Plan / specification. | Specification and evidence tool. |
+| `control-plane.agent-library` | `/agent-library` | Work. | Build assets / agent. | Agent definition picker/editor. |
+| `control-plane.llm-templates` | `/llm-templates` | Work. | Build assets / model template. | Model template definition editor. |
+| `control-plane.mcp-apps` | `/mcp-apps` | Work. | Task tools / sandboxed app. | Scoped sandbox tool surface. |
+| `console.confirm` | `/console/confirm/:planRef` | Work. | Active run / approval. | Receipt-bound approval inspector. |
+| `knowledge.atlas` | `/explore` | Explore. | Evidence / collection. | Shared query and projection workspace. |
+| `knowledge.graph` | `/graph` | Explore. | Evidence / graph lens. | 2D renderer over current selection. |
+| `knowledge.graph-3d` | `/graph-3d` | Explore. | Evidence / graph lens. | 3D renderer over same selection. |
+| `knowledge.graph-3d-lod` | `/graph-3d/lod` | Explore. | Evidence / graph lens. | LOD setting of same graph renderer. |
+| `knowledge.temporal-graph` | `/temporal-graph` | Explore. | Evidence / timeline lens. | Time dimension of same collection. |
+| `knowledge.code-graph` | `/code-graph` | Explore. | Evidence / code lens. | Repository relationships with source inspector. |
+| `knowledge.viz` | `/viz` | Explore. | Evidence / visualization lens. | Chart/visualization tool, no demo destination. |
+| `knowledge.extraction` | `/extraction` | Explore. | Sources / extraction. | Source ingest/extract task inspector. |
+| `knowledge.object-explorer` | `/explorer` | Explore. | Evidence / results. | Search/results collection stage. |
+| `knowledge.object-detail` | `/object/:id` | Explore. | Evidence / selected entity. | Entity inspector with properties/relationships/history. |
+| `knowledge.vertex-explorer` | `/vertex` | Explore. | Evidence / selected entity. | Vertex traversal tool on same entity. |
+| `knowledge.schema` | `/schema` | Explore. | Evidence / schema. | Schema lens and type inspector. |
+| `knowledge.sparql` | `/sparql` | Explore. | Evidence / query editor. | SPARQL language mode, existing authority retained. |
+| `knowledge.cypher` | `/cypher` | Explore. | Evidence / query editor. | Cypher language mode, existing authority retained. |
+| `knowledge.catalogue` | `/catalogue` | Explore. | Sources / catalogue. | Discover sources and inspect contracts. |
+| `knowledge.perspectives` | `/magma` | Explore. | Evidence / perspective. | Perspective lens on same selected evidence. |
+| `knowledge.data-analyst` | `/data-analyst` | Explore. | Evidence / analysis. | Analysis tool attached to collection. |
+| `knowledge.table-explorer` | `/table-explorer` | Explore. | Evidence / table lens. | Table projection, not separate page. |
+| `knowledge.base` | `/knowledge` | Explore. | Sources / knowledge base. | Ingestion/search/article context. |
+| `knowledge.memories` | `/memories` | Explore. | Sources / memory. | Memory collection and record inspector. |
+| `observability.dashboard` | `/` | Work. | Active work / overview. | Recent work and live run summary, no catalogue home. |
+| `observability.live-dashboards` | `/dashboards` | Operate. | Health / dashboard lens. | Live telemetry composition. |
+| `observability.system-status` | `/system-status` | Operate. | Health / status. | Health indicators and dependency inspector. |
+| `observability.arbora-readiness` | `/arbora-readiness` | Operate. | Health / readiness. | Readiness diagnostics in same health context. |
+| `observability.observability` | `/observability` | Operate. | Health / trace. | Logs/metrics/traces lenses with run cross-reference. |
+| `observability.broker` | `/broker` | Operate. | Services / broker. | Broker entity inspector and controls. |
+| `observability.usage` | `/usage` | Operate. | Health / usage. | Usage/cost/token lens with shared run metrics. |
+| `integrations.ecosystem` | `/ecosystem` | Operate. | Services / topology. | Integration topology lens. |
+| `integrations.catalog` | `/integrations` | Operate. | Services / connectors. | Connector discovery/configuration inspector. |
+| `documentation.learn` | `/learn` | Utility. | Help / guided learning. | Contextual help drawer; no primary destination. |
+| `documentation.docs` | `/docs` | Utility. | Help / reference. | Searchable reference drawer preserving deep anchors. |
+| `admin.console` | `/admin` | Operate. | Policy / administration. | Administration action palette and scoped tools. |
+| `admin.users` | `/users` | Operate. | Policy / principals. | Principal/role inspector. |
+| `admin.ops` | `/ops` | Operate. | Services / operations. | Existing privileged operations tools. |
+| `admin.configuration` | `/configuration` | Operate. | Policy / configuration. | Scoped configuration inspector. |
+| `apps.markets` | `/apps/markets` | Explore. | Markets / scanner. | Markets source collection lens. |
+| `apps.markets.news` | `/apps/markets/news` | Explore. | Markets / news. | News lens; unavailable provider remains honest. |
+| `apps.markets.calendar` | `/apps/markets/calendar` | Explore. | Markets / calendar. | Calendar lens over same market scope. |
+| `apps.markets.portfolio` | `/apps/markets/portfolio` | Explore. | Markets / portfolio. | Portfolio lens; unavailable provider remains honest. |
+| `apps.markets.menu` | `/apps/markets/menu` | Explore. | Markets / tools. | Contextual action palette, retire menu page. |
+| `apps.markets.chart` | `/apps/markets/chart/:listing` | Explore. | Markets / listing. | Selected listing inspector with chart tool. |
+| `apps.markets.share` | `/apps/markets/share/:lease` | Explore. | Markets / shared analysis. | Lease-bound read-only workspace state. |
+
+The first redesign proof combines search results, selected entity, relationship traversal and history in one Explore workspace. Retain search and conversation state during traversal. Do not mount the old explorer and detail pages behind tabs. Extract useful domain widgets and clients into the new composition. Native controls, keyboard, touch, deep links and WebMCP use the same controller. Real browser evidence must distinguish mock-service presentation proof from served API acceptance.

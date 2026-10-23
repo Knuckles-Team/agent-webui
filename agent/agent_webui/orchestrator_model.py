@@ -1,22 +1,24 @@
 """agent-webui's chat model: one served Arbora agent run per turn.
 
-``agent.to_web()`` owns the AG-UI transport. pydantic-ai's ``FunctionModel``
+``agent.to_web()`` owns the Vercel AI transport. pydantic-ai's ``FunctionModel``
 plugs a plain function in as the model. That function sends the newest user
 message to the Arbora ``agents.run`` served operation, as the verified
 caller, and returns the reply text. The WebUI holds no agent runtime of its
 own.
 
-The conversation ID (the AG-UI ``threadId``) becomes the A2A ``contextId``, so
+The conversation ID (the Vercel request ``id``) becomes the A2A ``contextId``, so
 successive turns of one browser conversation share one context.
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import uuid
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -66,7 +68,7 @@ def _request_user_chunks(message: ModelRequest) -> list[str]:
 
 
 def _latest_user_text(messages: list[ModelMessage]) -> str:
-    """Extract the newest user message text from the AG-UI conversation history.
+    """Extract the newest user message text from the Vercel conversation history.
 
     ``agent.to_web()`` resends the FULL message history every turn (stateless
     HTTP), so the caller's actual new input is the ``UserPromptPart`` content
@@ -84,24 +86,81 @@ def _latest_user_text(messages: list[ModelMessage]) -> str:
 
 
 def _conversation_session_id(messages: list[ModelMessage]) -> str:
-    """Derive a stable per-conversation session id.
+    """Use explicit conversation identity, never prompt text as an identity key.
 
-    Prefers pydantic-ai's own ``conversation_id`` (populated from the AG-UI
-    ``threadId`` when the frontend supplies one) so successive turns of the
-    SAME browser conversation share the SAME memento/session continuity
-    ``Orchestrator.execute_agent`` gives every other entrypoint. Falls back to
-    a stable hash of the conversation's first user turn when no
-    ``conversation_id`` is present (older pydantic-ai/AG-UI client, or a
-    history replayed without one) -- still stable across the growing
-    history, just unable to distinguish two conversations that happen to
-    open with byte-identical text.
+    Missing legacy identity gets a new isolated context, not false continuity.
+    Arbora scopes this caller-supplied label to the verified tenant and owner.
     """
-    for message in messages:
-        if isinstance(message, ModelRequest) and message.conversation_id:
-            return f'webui:{message.conversation_id}'
-    first_text = _latest_user_text(messages[:1]) or _latest_user_text(messages)
-    digest = hashlib.sha256(first_text.encode('utf-8')).hexdigest()[:32]
-    return f'webui:anon:{digest}'
+    ids = {
+        message.conversation_id
+        for message in messages
+        if isinstance(message, ModelRequest) and message.conversation_id
+    }
+    if len(ids) > 1:
+        raise ValueError('Conflicting conversation identities')
+    return f'webui:{next(iter(ids))}' if ids else f'webui:isolated:{uuid.uuid4().hex}'
+
+
+class RunIdentity(BaseModel):
+    """References returned by Arbora, not client-inferred execution relationships."""
+
+    model_config = ConfigDict(extra='forbid', strict=True)
+    conversation_context: str = Field(min_length=1, max_length=2048)
+    task_id: str = Field(min_length=1, max_length=80)
+    context_id: str = Field(min_length=1, max_length=1024)
+    run_id: str | None = Field(default=None, min_length=1, max_length=128)
+    run_trace_ref: str | None = Field(default=None, min_length=1, max_length=2048)
+
+
+def _run_identity(result: Any, conversation_context: str) -> dict[str, Any] | None:
+    """Copy only the admitted task's explicit identity, without recursive guessing."""
+    if not isinstance(result, dict):
+        return None
+    if 'ok' in result:
+        if result['ok'] is not True or not isinstance(result.get('result'), dict):
+            return None
+        result = result['result']
+    task = result.get('value')
+    if not isinstance(task, dict) or 'id' not in task or 'contextId' not in task:
+        return None
+    metadata = task.get('metadata') or {}
+    arbora = metadata.get('arbora') if isinstance(metadata, dict) else None
+    arbora = arbora if isinstance(arbora, dict) else {}
+    try:
+        identity = RunIdentity(
+            conversation_context=conversation_context,
+            task_id=task['id'],
+            context_id=task['contextId'],
+            run_id=arbora.get('runId'),
+            run_trace_ref=arbora.get('runTraceRef'),
+        )
+    except ValidationError:
+        # The action already executed. Do not turn a malformed display reference
+        # into an execution failure that encourages the caller to repeat effects.
+        logger.warning('Arbora run identity metadata is invalid')
+        return None
+    return {'arbora_run': identity.model_dump(exclude_none=True)}
+
+
+_stream_metadata: ContextVar[dict[str, Any] | None] = ContextVar(
+    'webui_run_metadata', default=None
+)
+
+
+class _OrchestratorFunctionModel(FunctionModel):
+    """Carry gateway identity through the standard Vercel message metadata path."""
+
+    @asynccontextmanager
+    async def request_stream(self, *args: Any, **kwargs: Any):
+        token = _stream_metadata.set(None)
+        try:
+            async with super().request_stream(*args, **kwargs) as response:
+                # FunctionModel peeks the first text before yielding this response.
+                # The turn has completed and its request-local metadata is now set.
+                response.metadata = _stream_metadata.get()
+                yield response
+        finally:
+            _stream_metadata.reset(token)
 
 
 _REPLY_KEYS = ('result', 'value', 'status', 'message', 'artifacts', 'parts')
@@ -147,18 +206,21 @@ def build_orchestrator_model(
     del engine_provider
     resolved_agent_name = (agent_name or '').strip() or DEFAULT_WEBUI_AGENT_NAME
 
-    async def _run_turn(messages: list[ModelMessage], agent_info: AgentInfo) -> str:
+    async def _run_turn(
+        messages: list[ModelMessage], agent_info: AgentInfo
+    ) -> tuple[str, dict[str, Any] | None]:
         from .host import invoke_operation
 
         task = _latest_user_text(messages)
         if not task:
-            return ''
+            return '', None
         run_id = uuid.uuid4().hex
+        conversation_context = _conversation_session_id(messages)
         message: dict[str, Any] = {
             'role': 'user',
             'kind': 'message',
             'messageId': run_id,
-            'contextId': _conversation_session_id(messages),
+            'contextId': conversation_context,
             'parts': [{'kind': 'text', 'text': task}],
             'metadata': {
                 'agent': resolved_agent_name,
@@ -169,18 +231,20 @@ def build_orchestrator_model(
         result = await (invoke or invoke_operation)(
             'agents.run', {'message': message}, idempotency_key=run_id
         )
-        return _reply_text(result).strip()
+        return _reply_text(result).strip(), _run_identity(result, conversation_context)
 
     async def _reply(
         messages: list[ModelMessage], agent_info: AgentInfo
     ) -> ModelResponse:
-        text = await _run_turn(messages, agent_info)
-        return ModelResponse(parts=[TextPart(content=text)])
+        text, metadata = await _run_turn(messages, agent_info)
+        return ModelResponse(parts=[TextPart(content=text)], metadata=metadata)
 
     async def _reply_stream(messages: list[ModelMessage], agent_info: AgentInfo):
-        yield await _run_turn(messages, agent_info)
+        text, metadata = await _run_turn(messages, agent_info)
+        _stream_metadata.set(metadata)
+        yield text
 
-    return FunctionModel(
+    return _OrchestratorFunctionModel(
         _reply,
         stream_function=_reply_stream,
         model_name=f'orchestrator:{resolved_agent_name}',
