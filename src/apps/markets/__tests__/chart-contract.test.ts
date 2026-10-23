@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { decimate, decimationPreservesFinalizedOutput, isValidCandleBar, validateSeriesInput } from '../chart-contract'
 import { CHART } from './fixtures'
 
+// spec: FIN-UI-R002.1, FIN-UI-R008.1
 describe('chart-contract (FIN-UI-R002.1)', () => {
   it('accepts a complete OHLC candle series and rejects an inconsistent bar', () => {
     expect(validateSeriesInput({ kind: 'candle', bars: CHART.bars })).toEqual({ valid: true })

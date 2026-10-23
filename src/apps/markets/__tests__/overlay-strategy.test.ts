@@ -17,6 +17,7 @@ const MARGIN_SIM: ChartOverlay = {
   simulated: true,
 }
 
+// spec: FIN-UI-R010.1
 describe('overlay-strategy (FIN-UI-R010.1)', () => {
   it('labels an overlay with its strategy version', () => {
     expect(overlayLabel(TREND)).toBe('trend_line v3')

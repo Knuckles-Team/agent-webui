@@ -58,11 +58,13 @@
     {
       "id": "FIN-UI-R001.1",
       "title": "Detail-tab support model",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "407ef6a4b673"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/apps/markets/__tests__/detail-support.test.ts:20"
+      ]
     },
     {
       "id": "FIN-UI-R001.2",
@@ -89,11 +91,13 @@
     {
       "id": "FIN-UI-R002.1",
       "title": "Shared ChartRenderer input contract",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "407ef6a4b673"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/apps/markets/__tests__/chart-contract.test.ts:5"
+      ]
     },
     {
       "id": "FIN-UI-R002.2",
@@ -170,11 +174,14 @@
     {
       "id": "FIN-UI-R008.1",
       "title": "Pure supportedChartMode gating function",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "407ef6a4b673"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/apps/markets/__tests__/chart-contract.test.ts:5",
+        "src/apps/markets/__tests__/detail-support.test.ts:20"
+      ]
     },
     {
       "id": "FIN-UI-R008.2",
@@ -201,12 +208,16 @@
     {
       "id": "FIN-UI-R010",
       "title": "Chart overlays show strategy version and simulation state (rollup)",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "508e7c11c573",
         "a3dd06faa65b"
       ],
-      "verified_by": [],
+      "verified_by": [
+        "src/apps/markets/__tests__/overlay-strategy.test.ts:20",
+        "src/apps/markets/__tests__/overlay-wiring.test.ts:27",
+        "src/apps/markets/__tests__/overlay-wiring.test.ts:47"
+      ],
       "rollup_of": [
         "FIN-UI-R010.1",
         "FIN-UI-R010.2"
@@ -215,11 +226,13 @@
     {
       "id": "FIN-UI-R010.1",
       "title": "Overlay marker version/simulation-flag type",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "508e7c11c573"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/apps/markets/__tests__/overlay-strategy.test.ts:20"
+      ]
     },
     {
       "id": "FIN-UI-R010.2",
@@ -236,12 +249,17 @@
     {
       "id": "FIN-UI-R011",
       "title": "Performance cards render owner-calculated values verbatim (rollup)",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "508e7c11c573",
         "a3dd06faa65b"
       ],
-      "verified_by": [],
+      "verified_by": [
+        "src/apps/markets/__tests__/performance-card.test.ts:15",
+        "src/apps/markets/components/__tests__/PerformanceCardView.test.tsx:43",
+        "src/apps/markets/components/__tests__/PerformanceCardView.test.tsx:53",
+        "src/apps/markets/components/__tests__/PerformanceCardView.test.tsx:60"
+      ],
       "rollup_of": [
         "FIN-UI-R011.1",
         "FIN-UI-R011.2"
@@ -250,11 +268,13 @@
     {
       "id": "FIN-UI-R011.1",
       "title": "Performance/benchmark card verbatim-value contract",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "508e7c11c573"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/apps/markets/__tests__/performance-card.test.ts:15"
+      ]
     },
     {
       "id": "FIN-UI-R011.2",
@@ -272,12 +292,16 @@
     {
       "id": "FIN-UI-R012",
       "title": "Strategy views cite evidence and never submit orders (rollup)",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "508e7c11c573",
         "a3dd06faa65b"
       ],
-      "verified_by": [],
+      "verified_by": [
+        "src/apps/markets/__tests__/strategy-view.test.ts:9",
+        "src/apps/markets/components/__tests__/StrategyPanel.test.tsx:17",
+        "src/apps/markets/components/__tests__/StrategyPanel.test.tsx:26"
+      ],
       "rollup_of": [
         "FIN-UI-R012.1",
         "FIN-UI-R012.2"
@@ -286,11 +310,13 @@
     {
       "id": "FIN-UI-R012.1",
       "title": "Strategy view evidence/abstain contract type",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "508e7c11c573"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/apps/markets/__tests__/strategy-view.test.ts:9"
+      ]
     },
     {
       "id": "FIN-UI-R012.2",
@@ -307,12 +333,17 @@
     {
       "id": "FIN-UI-R013",
       "title": "DCA and alert views distinguish delivery states (rollup)",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "508e7c11c573",
         "61fc4d6854e1"
       ],
-      "verified_by": [],
+      "verified_by": [
+        "src/apps/markets/__tests__/delivery-state.test.ts:4",
+        "src/apps/markets/components/__tests__/DeliveryStateList.test.tsx:16",
+        "src/apps/markets/components/__tests__/DeliveryStateList.test.tsx:25",
+        "src/apps/markets/components/__tests__/DeliveryStateList.test.tsx:35"
+      ],
       "rollup_of": [
         "FIN-UI-R013.1",
         "FIN-UI-R013.2"
@@ -321,11 +352,13 @@
     {
       "id": "FIN-UI-R013.1",
       "title": "DCA/alert delivery-receipt dedupe contract",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "508e7c11c573"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/apps/markets/__tests__/delivery-state.test.ts:4"
+      ]
     },
     {
       "id": "FIN-UI-R013.2",
@@ -343,12 +376,18 @@
     {
       "id": "FIN-UI-R014",
       "title": "CSV import preview with idempotent receipt (rollup)",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "61fc4d6854e1",
         "83e9b629b83e"
       ],
-      "verified_by": [],
+      "verified_by": [
+        "src/apps/markets/__tests__/csv-import.test.ts:17",
+        "src/apps/markets/components/__tests__/CsvImportFlow.test.tsx:24",
+        "src/apps/markets/components/__tests__/CsvImportFlow.test.tsx:39",
+        "src/apps/markets/components/__tests__/CsvImportFlow.test.tsx:52",
+        "src/apps/markets/components/__tests__/CsvImportFlow.test.tsx:64"
+      ],
       "rollup_of": [
         "FIN-UI-R014.1",
         "FIN-UI-R014.2"
@@ -357,11 +396,13 @@
     {
       "id": "FIN-UI-R014.1",
       "title": "CSV import preview contract mirroring the SDK",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "83e9b629b83e"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/apps/markets/__tests__/csv-import.test.ts:17"
+      ]
     },
     {
       "id": "FIN-UI-R014.2",
@@ -380,12 +421,17 @@
     {
       "id": "FIN-UI-R015",
       "title": "Offline PWA shell marks cached data stale (rollup)",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "61fc4d6854e1",
         "83e9b629b83e"
       ],
-      "verified_by": [],
+      "verified_by": [
+        "src/apps/markets/__tests__/offline-cache.test.ts:4",
+        "src/apps/markets/components/__tests__/OfflineCacheView.test.tsx:28",
+        "src/apps/markets/components/__tests__/OfflineCacheView.test.tsx:45",
+        "src/apps/markets/components/__tests__/OfflineCacheView.test.tsx:9"
+      ],
       "rollup_of": [
         "FIN-UI-R015.1",
         "FIN-UI-R015.2"
@@ -394,11 +440,13 @@
     {
       "id": "FIN-UI-R015.1",
       "title": "Offline cache staleness contract",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "83e9b629b83e"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/apps/markets/__tests__/offline-cache.test.ts:4"
+      ]
     },
     {
       "id": "FIN-UI-R015.2",
@@ -416,12 +464,18 @@
     {
       "id": "FIN-UI-R016",
       "title": "Charts and controls meet accessibility requirements (rollup)",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "4aef66253171",
         "83e9b629b83e"
       ],
-      "verified_by": [],
+      "verified_by": [
+        "src/apps/markets/__tests__/chart-a11y.test.ts:5",
+        "src/apps/markets/components/__tests__/ChartA11ySummary.test.tsx:13",
+        "src/apps/markets/components/__tests__/ChartA11ySummary.test.tsx:21",
+        "src/apps/markets/components/__tests__/ChartA11ySummary.test.tsx:33",
+        "src/apps/markets/components/__tests__/ChartA11ySummary.test.tsx:7"
+      ],
       "rollup_of": [
         "FIN-UI-R016.1",
         "FIN-UI-R016.2"
@@ -430,12 +484,14 @@
     {
       "id": "FIN-UI-R016.1",
       "title": "Chart accessibility text-summary contract",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "4aef66253171",
         "83e9b629b83e"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/apps/markets/__tests__/chart-a11y.test.ts:5"
+      ]
     },
     {
       "id": "FIN-UI-R016.2",
