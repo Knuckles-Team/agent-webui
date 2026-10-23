@@ -184,3 +184,5 @@ Unchecked tasks remain open. Definitions alone do not establish runtime delivery
 - [ ] WEBUI-APPS-R049.1.7: Bind integrated query/validation lens tests and preserve the existing maintainer boundary. Qualify real provider and browser behavior separately.
 
 - [ ] WEBUI-APPS-R049.1.8: Bind attended editor and review tests. Check the trusted-event default in a real browser. Do not classify a provider request as a local tool mutation.
+
+- [ ] WEBUI-APPS-R049.1.9: Bind loaded Work and Operate command adapters. Keep capability discovery separate from permission to call tools.
