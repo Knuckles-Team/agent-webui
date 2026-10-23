@@ -458,3 +458,7 @@ Keep the existing native WebMCP adapter, registration lifecycle and attended-con
 The official Chrome WebMCP documentation (https://developer.chrome.com/docs/ai/webmcp, checked 2026-10-23) describes a proposed standard, imperative and declarative APIs, and an origin trial from Chrome 149. This is a progressive enhancement, not a universal availability claim. Browser acceptance must record actual API/support and tools Permissions Policy behavior. Existing same-origin/no-cross-origin exposure remains the default; this spec grants no additional browser or remote-control permission.
 
 Delivery order: (1) census and contract tests; (2) shared navigation/action state and responsive shell with current views; (3) domain-by-domain reflow and semantic tools; (4) composed auth/no-auth and performance qualification. Domain backend gaps remain with their existing upstream owners and cannot be concealed by the presentation migration. See workspace-coverage.md for preservation and dependency obligations.
+
+## Registered navigation slice and remaining acceptance
+
+R046.1 introduces only registered branch/list navigation and the shared validated navigation dispatcher. It preserves the existing route registry, role checks and native links. Its source tests use synthetic URL events. R046.2 retains real browser history, dynamic deepest-leaf, camera and rendered mobile acceptance. R047 still requires complete action equivalence beyond navigation. No backend, identity boundary or provider capability is added.

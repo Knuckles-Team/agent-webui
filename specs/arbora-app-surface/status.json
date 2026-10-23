@@ -199,7 +199,9 @@
     "WEBUI-APPS-R047",
     "WEBUI-APPS-R048",
     "WEBUI-APPS-R049",
-    "WEBUI-APPS-R050"
+    "WEBUI-APPS-R050",
+    "WEBUI-APPS-R046.1",
+    "WEBUI-APPS-R046.2"
   ],
   "requirements": [
     {
@@ -1825,7 +1827,11 @@
       "title": "One semantic workspace navigation state",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R046.1",
+        "WEBUI-APPS-R046.2"
+      ]
     },
     {
       "id": "WEBUI-APPS-R047",
@@ -1851,6 +1857,25 @@
     {
       "id": "WEBUI-APPS-R050",
       "title": "Composed deployment and shared-backend acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R046.1",
+      "title": "Registered navigation source slice",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "c15d7b58e1f5"
+      ],
+      "verified_by": [
+        "src/components/__tests__/WorkspaceNavigation.test.tsx:1",
+        "src/lib/__tests__/workspace-navigation.test.tsx:1"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R046.2",
+      "title": "Complete semantic navigation acceptance",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []

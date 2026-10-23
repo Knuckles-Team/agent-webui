@@ -57,7 +57,7 @@ No task above names a requirement ID individually; together they must close ever
 <!-- spec-definition-patch:consumer-definitions-20261012 -->
 ## Consumer implementation tasks
 
-All tasks below remain open. Definitions do not establish runtime delivery.
+Unchecked tasks remain open. Definitions alone do not establish runtime delivery.
 
 - [ ] **WEBUI-APPS-R004.7.1:** Implement and prove model for evolution evidence.
 - [ ] **WEBUI-APPS-R004.7.2:** Implement and prove behavior for evolution evidence.
@@ -145,3 +145,8 @@ All tasks below remain open. Definitions do not establish runtime delivery.
 - [ ] WEBUI-APPS-R048: Implement webmcp lifecycle and authority preservation. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
 - [ ] WEBUI-APPS-R049: Implement preserve every feature through the arbora redesign. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
 - [ ] WEBUI-APPS-R050: Implement composed deployment and shared-backend acceptance. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
+
+## Registered navigation source evidence
+
+- [x] WEBUI-APPS-R046.1: Implement registered navigation controls and shared dispatch. Run the two bound source test files.
+- [ ] WEBUI-APPS-R046.2: Complete dynamic deepest-leaf, semantic zoom and actual browser history/focus acceptance. Include keyboard, touch and rendered mobile layouts.
