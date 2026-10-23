@@ -192,7 +192,8 @@
         "0940bc0c0d99",
         "19d92fda94cd",
         "1d3334c8e819",
-        "2d3f1b884e39"
+        "2d3f1b884e39",
+        "bd46338613c1"
       ],
       "verified_by": [
         "src/lib/arbora-api/__tests__/invoke-no-bearer.test.ts:31",
