@@ -1,3 +1,4 @@
+// spec: WEBUI-API-R011.2.1
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 
@@ -57,7 +58,10 @@ const pageContext: PageContextEnvelope = {
   capturedAt: new Date().toISOString(),
 }
 
+let authenticated = true
+
 beforeEach(() => {
+  authenticated = true
   vi.clearAllMocks()
   window.localStorage.clear()
   MockEventSource.instances = []
@@ -75,7 +79,14 @@ beforeEach(() => {
         return Promise.resolve(jsonResponse({ models: [], default_id: null }))
       }
       if (path.startsWith('/auth/session')) {
-        return Promise.resolve(jsonResponse({ authenticated: false, roles: [] }))
+        return Promise.resolve(
+          jsonResponse({
+            authenticated,
+            subject: authenticated ? 'swe-fixture' : null,
+            webui_role: 'user',
+            roles: [],
+          }),
+        )
       }
       return Promise.resolve(jsonResponse([]))
     }),
@@ -83,15 +94,15 @@ beforeEach(() => {
 })
 
 describe('Chat SWE mode', () => {
-  it('renders a SWE-mode toggle that is off by default', () => {
+  it('renders a SWE-mode toggle that is off by default', async () => {
     renderWithProviders(<Chat pageContext={pageContext} />)
-    const toggle = screen.getByRole('button', { name: /toggle swe mode/i })
+    const toggle = await screen.findByRole('button', { name: /toggle swe mode/i })
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('flips aria-pressed when the toggle is clicked', async () => {
     const { user } = renderWithProviders(<Chat pageContext={pageContext} />)
-    const toggle = screen.getByRole('button', { name: /toggle swe mode/i })
+    const toggle = await screen.findByRole('button', { name: /toggle swe mode/i })
     await user.click(toggle)
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
   })
@@ -99,7 +110,7 @@ describe('Chat SWE mode', () => {
   it('drives the developer-workspace runtime when a message is sent in SWE mode', async () => {
     const { user } = renderWithProviders(<Chat pageContext={pageContext} />)
 
-    const toggle = screen.getByRole('button', { name: /toggle swe mode/i })
+    const toggle = await screen.findByRole('button', { name: /toggle swe mode/i })
     await user.click(toggle)
     await waitFor(() => {
       expect(toggle).toHaveAttribute('aria-pressed', 'true')
@@ -127,7 +138,7 @@ describe('Chat SWE mode', () => {
   it('stops the runtime session when SWE mode is toggled back off', async () => {
     const { user } = renderWithProviders(<Chat pageContext={pageContext} />)
 
-    const toggle = screen.getByRole('button', { name: /toggle swe mode/i })
+    const toggle = await screen.findByRole('button', { name: /toggle swe mode/i })
     await user.click(toggle)
 
     const textarea = screen.getByRole('textbox', { name: /message input/i })
@@ -144,4 +155,13 @@ describe('Chat SWE mode', () => {
     })
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
   })
+})
+
+it('does not expose or start SWE runtime for a signed-out session', async () => {
+  authenticated = false
+  renderWithProviders(<Chat pageContext={pageContext} />)
+  await screen.findByText(/sign in/i)
+  expect(screen.queryByRole('button', { name: /toggle swe mode/i })).not.toBeInTheDocument()
+  expect(api.createSweSession).not.toHaveBeenCalled()
+  expect(api.sweAct).not.toHaveBeenCalled()
 })
