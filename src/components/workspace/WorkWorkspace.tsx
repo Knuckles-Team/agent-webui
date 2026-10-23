@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ApiError } from '@/lib/api-validation'
 import { useIdentity } from '@/lib/auth'
@@ -12,6 +12,9 @@ import { makeTool } from '@/lib/webmcp/tools'
 import { z } from 'zod'
 import { navigateWork, parseWorkState, workApi, workHref, WorkStateSchema, type WorkState } from '@/lib/work-workspace'
 import { useWorkspaceCommands } from './WorkspaceCommands'
+import { WorkTaskControls } from './WorkTaskControls'
+import { createTaskCancellation } from './task-cancellation'
+import { useWorkspaceAdmission } from './useWorkspaceAdmission'
 import { loadedWorkCommands } from './loaded-workspace-commands'
 const button = 'min-h-11 rounded border px-3 py-2 text-sm'
 const EMPTY: WorkState = { conversation: null, task: null, run: null, node: null }
@@ -24,12 +27,26 @@ function destination(location: string) {
 }
 export default function WorkWorkspace() {
   const { identity, loading } = useIdentity()
+  const generation = useWorkspaceAdmission(identity)
   if (loading) return <p role="status">Checking Work access…</p>
   if (identity.needsSignIn || !roleAtLeast(identity.role, 'user'))
     return <p role="alert">Work is not available for this identity.</p>
-  return <AuthorizedWork key={conversationOwnerKey(identity)} identity={identity} />
+  return <AuthorizedWork key={generation} identity={identity} generation={generation} />
 }
-function AuthorizedWork({ identity }: { identity: ReturnType<typeof useIdentity>['identity'] }) {
+function AuthorizedWork({
+  identity,
+  generation,
+}: {
+  identity: ReturnType<typeof useIdentity>['identity']
+  generation: string
+}) {
+  const [cancellation] = useState(createTaskCancellation)
+  useLayoutEffect(() => {
+    cancellation.activate()
+    return () => {
+      cancellation.retire()
+    }
+  }, [cancellation])
   const location = useWorkspaceLocation()
   const { state, error } = destination(location)
   const conversations = useConversations(conversationOwnerKey(identity))
@@ -37,22 +54,22 @@ function AuthorizedWork({ identity }: { identity: ReturnType<typeof useIdentity>
   const heading = useRef<HTMLHeadingElement>(null)
   const previous = useRef(location)
   const tasks = useQuery({
-    queryKey: ['work-tasks', identity.userKey, identity.raw?.tenant],
+    queryKey: ['work-tasks', generation],
     queryFn: ({ signal }) => workApi.listTasks(signal),
     enabled: !error,
   })
   const task = useQuery({
-    queryKey: ['work-task', identity.userKey, identity.raw?.tenant, state.task],
+    queryKey: ['work-task', generation, state.task],
     queryFn: ({ signal }) => workApi.getTask(state.task!, signal),
     enabled: !error && Boolean(state.task),
   })
   const runs = useQuery({
-    queryKey: ['work-runs', identity.userKey, identity.raw?.tenant],
+    queryKey: ['work-runs', generation],
     queryFn: workApi.listRuns,
     enabled: !error,
   })
   const detail = useQuery({
-    queryKey: ['work-run', identity.userKey, identity.raw?.tenant, state.run],
+    queryKey: ['work-run', generation, state.run],
     queryFn: () => workApi.getRun(state.run!),
     enabled: !error && Boolean(state.run),
   })
@@ -230,13 +247,23 @@ function AuthorizedWork({ identity }: { identity: ReturnType<typeof useIdentity>
                 </button>
               </p>
             )}
-            {taskData && (
+            {taskData && !task.isError && (
               <>
                 <h3 className="break-all font-medium">Task {taskData.id}</h3>
                 <p>Status: {taskData.status?.state ?? 'Not reported'}</p>
+                <WorkTaskControls
+                  taskId={taskData.id}
+                  taskState={taskData.status?.state}
+                  context={location}
+                  refreshing={task.isFetching}
+                  cancellation={cancellation}
+                  onRefresh={() => {
+                    void task.refetch()
+                    void tasks.refetch()
+                  }}
+                />
                 <p className="text-sm">
-                  Child-agent execution, linked evidence and cancellation are not exposed by this read-only task
-                  contract.
+                  Child-agent execution and linked evidence are not supplied by this task contract.
                 </p>
               </>
             )}

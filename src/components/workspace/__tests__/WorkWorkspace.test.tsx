@@ -26,8 +26,9 @@ vi.mock('@/lib/chat-store', async (original) => ({
   useConversations: vi.fn(() => [{ id: 'conversation-a', firstMessage: 'Investigate issue', timestamp: 1 }]),
 }))
 vi.mock('@/lib/webmcp/provider', () => ({
-  useWebMcpToolSet: (tools: WebMcpToolDefinition[]) => {
-    state.tools = tools
+  useWebMcpToolSet: function captureNavigation(tools: WebMcpToolDefinition[]) {
+    // This suite inspects navigation; task review has its own mounted coverage.
+    if (tools.some((tool) => tool.name === 'agent-webui.work.select')) state.tools = tools
   },
 }))
 vi.mock('@/lib/work-workspace', async (original) => ({

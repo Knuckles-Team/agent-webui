@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { roleAtLeast } from '@/lib/nav-registry'
 import { conversationOwnerKey } from '@/lib/chat-store'
 import { useWorkspaceCommands } from './WorkspaceCommands'
+import { useWorkspaceAdmission } from './useWorkspaceAdmission'
 import { loadedOperateCommands } from './loaded-workspace-commands'
 import { useIdentity, type Identity } from '@/lib/auth'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
@@ -28,21 +29,7 @@ function readState(location: string) {
 }
 export default function OperateWorkspace() {
   const { identity, loading } = useIdentity()
-  // Opaque admission generation: credential material never enters cache keys.
-  const roles = [...(identity.raw?.roles ?? [])].sort().join('\u0000')
-  const generation = useMemo(
-    () => crypto.randomUUID(),
-    [
-      identity.userKey,
-      identity.role,
-      identity.needsSignIn,
-      identity.raw?.tenant,
-      identity.raw?.expires_at,
-      identity.raw?.csrf_token,
-      identity.raw?.mode,
-      roles,
-    ],
-  )
+  const generation = useWorkspaceAdmission(identity)
   if (loading) return <p role="status">Checking Operate access…</p>
   if (identity.needsSignIn || !roleAtLeast(identity.role, 'reader'))
     return <p role="alert">Operate is not available for this identity.</p>
