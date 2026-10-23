@@ -16,6 +16,7 @@ import { useQueryValidationLens, type Mode } from '@/components/query-validation
 import { useWebMcpToolSet } from '@/lib/webmcp/provider'
 import { makeTool } from '@/lib/webmcp/tools'
 import EvidenceWorkspace from './ExploreWorkspace'
+import { QueryEditorTools } from './QueryEditorTools'
 
 /** New retained composition; no legacy feature-page shell is mounted. */
 export default function ExploreQueryWorkspace() {
@@ -127,6 +128,14 @@ function OwnedExplore({ state, role }: { state: ExploreLensState; role: Role }) 
         <EvidenceWorkspace showHeading={false} active={state.lens === 'evidence'} />
       </div>
       {state.lens !== 'evidence' && <QueryValidationLens controller={displayed} />}
+      {state.lens !== 'evidence' && (
+        <QueryEditorTools
+          controller={displayed}
+          lens={state.lens}
+          context={JSON.stringify(state)}
+          restoreFocus={() => heading.current?.focus({ preventScroll: true })}
+        />
+      )}
       {state.lens !== 'evidence' && (
         <p className="text-xs text-muted-foreground">
           Queries use the existing provider. Entity selection does not scope execution. Provider errors and permissions
