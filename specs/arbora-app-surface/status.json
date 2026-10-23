@@ -193,7 +193,13 @@
     "WEBUI-APPS-R001.8.3",
     "WEBUI-APPS-R001.8.4",
     "WEBUI-APPS-R001.8.5",
-    "WEBUI-APPS-R001.8.6"
+    "WEBUI-APPS-R001.8.6",
+    "WEBUI-APPS-R045",
+    "WEBUI-APPS-R046",
+    "WEBUI-APPS-R047",
+    "WEBUI-APPS-R048",
+    "WEBUI-APPS-R049",
+    "WEBUI-APPS-R050"
   ],
   "requirements": [
     {
@@ -1803,6 +1809,48 @@
     {
       "id": "WEBUI-APPS-R001.8.6",
       "title": "Served acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R045",
+      "title": "Complete capability and leaf census",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R046",
+      "title": "One semantic workspace navigation state",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R047",
+      "title": "Native WebMCP action equivalence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R048",
+      "title": "WebMCP lifecycle and authority preservation",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R049",
+      "title": "Preserve every feature through the Arbora redesign",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R050",
+      "title": "Composed deployment and shared-backend acceptance",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
