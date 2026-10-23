@@ -21,7 +21,10 @@
     "WEBUI-API-R010",
     "WEBUI-API-R011",
     "WEBUI-API-R005",
-    "WEBUI-API-R011.1"
+    "WEBUI-API-R011.1",
+    "WEBUI-API-R011.2",
+    "WEBUI-API-R011.2.1",
+    "WEBUI-API-R011.2.2"
   ],
   "requirements": [
     {
@@ -184,23 +187,21 @@
     {
       "id": "WEBUI-API-R011",
       "title": "Shared auth and streaming are preserved without exposing a service bearer",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "0940bc0c0d99",
         "19d92fda94cd",
         "1d3334c8e819",
-        "2d3f1b884e39",
-        "bd46338613c1"
+        "2d3f1b884e39"
       ],
       "verified_by": [
-        "agent/agent_webui/__tests__/test_served_operations.py:188",
-        "agent/agent_webui/__tests__/test_served_operations.py:275",
         "src/lib/arbora-api/__tests__/invoke-no-bearer.test.ts:31",
         "src/lib/arbora-api/__tests__/invoke-no-bearer.test.ts:45",
         "src/lib/arbora-api/__tests__/invoke-no-bearer.test.ts:56"
       ],
       "rollup_of": [
-        "WEBUI-API-R011.1"
+        "WEBUI-API-R011.1",
+        "WEBUI-API-R011.2"
       ]
     },
     {
@@ -234,6 +235,35 @@
         "agent/agent_webui/__tests__/test_served_operations.py:188",
         "agent/agent_webui/__tests__/test_served_operations.py:275"
       ]
+    },
+    {
+      "id": "WEBUI-API-R011.2",
+      "title": "Chat preserves explicit conversation and admitted task identities",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-API-R011.2.1",
+        "WEBUI-API-R011.2.2"
+      ]
+    },
+    {
+      "id": "WEBUI-API-R011.2.1",
+      "title": "Conversation and admitted-identity source preservation",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "c767b6a5b17f"
+      ],
+      "verified_by": [
+        "agent/agent_webui/__tests__/test_run_identity.py:3"
+      ]
+    },
+    {
+      "id": "WEBUI-API-R011.2.2",
+      "title": "Composed conversation identity qualification",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
     }
   ]
 }
