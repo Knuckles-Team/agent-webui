@@ -11,3 +11,10 @@
 - [ ] Run `test-spec.md` including hosted browser and accessibility cases on exact merged source; attach commit and evidence before acceptance.
 
 No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `WEBUI-IDENTITY-R003`, `WEBUI-IDENTITY-R004`, `WEBUI-IDENTITY-R005`, `WEBUI-IDENTITY-R006`, `WEBUI-IDENTITY-R007`, `WEBUI-IDENTITY-R008`, `WEBUI-IDENTITY-R009`, `WEBUI-IDENTITY-R001`, `WEBUI-IDENTITY-R002`.
+
+## Explicit mode delivery and acceptance
+
+- [ ] WEBUI-IDENTITY-R003.1: Implement explicit no-auth mode with bounded anonymous policy with upstream producer bindings and the planned installed-stack evidence; remain SPECIFIED until delivered.
+- [ ] WEBUI-IDENTITY-R003.2: Implement built-in eg authentication through arbora with upstream producer bindings and the planned installed-stack evidence; remain SPECIFIED until delivered.
+- [ ] WEBUI-IDENTITY-R003.3: Implement external oidc provider interoperability with upstream producer bindings and the planned installed-stack evidence; remain SPECIFIED until delivered.
+- [ ] WEBUI-IDENTITY-R010: Implement long-session renewal and mode-transition coherence with upstream producer bindings and the planned installed-stack evidence; remain SPECIFIED until delivered.

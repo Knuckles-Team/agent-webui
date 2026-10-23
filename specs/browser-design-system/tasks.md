@@ -25,3 +25,11 @@ No task above names a requirement ID individually; together they must close ever
 - [ ] Open a dialog, a select and a toast under the probe; the shell-only probe covers load-time injectors only.
 - [x] Remove the `script-src` `eval` violation in the `api-validation` chunk; this is outside WEBUI-DESIGN-R009 scope.
 - [ ] Rebuild the served bundle on the deployment host after merge.
+
+## Responsive workspace extension: implementation and evidence open
+
+- [ ] WEBUI-DESIGN-R002.1: Implement purposeful density and arbora visual hierarchy. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
+- [ ] WEBUI-DESIGN-R004.1: Implement full mobile and arbitrary-aspect feature parity. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
+- [ ] WEBUI-DESIGN-R004.2: Implement resize, fold and visual viewport continuity. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
+- [ ] WEBUI-DESIGN-R005.1: Implement accessible interruptible semantic zoom. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
+- [ ] WEBUI-DESIGN-R010: Implement measured performance under representative load. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.

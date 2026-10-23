@@ -136,3 +136,12 @@ All tasks below remain open. Definitions do not establish runtime delivery.
 - [ ] Reconcile exact specialized producer requirements, operation IDs and schema revisions before marking any source input definition-complete.
 - [ ] Obtain owner-defined positive finite latency, layout and viewport bounds for R004.8, R030.8 and R001.2.
 - [ ] Bind R006.4 acceptance to every entry in the complete versioned supported-harness manifest.
+
+## Responsive workspace extension: implementation and evidence open
+
+- [ ] WEBUI-APPS-R045: Implement complete capability and leaf census. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
+- [ ] WEBUI-APPS-R046: Implement one semantic workspace navigation state. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
+- [ ] WEBUI-APPS-R047: Implement native webmcp action equivalence. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
+- [ ] WEBUI-APPS-R048: Implement webmcp lifecycle and authority preservation. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
+- [ ] WEBUI-APPS-R049: Implement preserve every feature through the arbora redesign. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
+- [ ] WEBUI-APPS-R050: Implement composed deployment and shared-backend acceptance. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
