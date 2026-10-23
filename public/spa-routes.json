@@ -3,6 +3,7 @@
   "routes": [
     "/chat",
     "/files",
+    "/data-dashboards",
     "/ide",
     "/sessions",
     "/fleet",
