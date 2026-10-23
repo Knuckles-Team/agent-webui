@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import { roleAtLeast } from '@/lib/nav-registry'
+import { conversationOwnerKey } from '@/lib/chat-store'
+import { useWorkspaceCommands } from './WorkspaceCommands'
+import { loadedOperateCommands } from './loaded-workspace-commands'
 import { useIdentity, type Identity } from '@/lib/auth'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
 import { useWebMcpToolSet } from '@/lib/webmcp/provider'
@@ -85,6 +88,11 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
     ],
     [catalog.data, catalog.isError],
   )
+  const commands = useMemo(
+    () => (invalid ? [] : loadedOperateCommands(parseOperateState(location), Object.keys(children ?? {}), items)),
+    [invalid, location, children, items],
+  )
+  useWorkspaceCommands(commands, conversationOwnerKey(identity))
   const latestDiscovery = useRef({ children, items })
   latestDiscovery.current = { children, items }
   const selectedServer =

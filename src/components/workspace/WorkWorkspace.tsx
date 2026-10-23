@@ -11,6 +11,8 @@ import { useWebMcpToolSet } from '@/lib/webmcp/provider'
 import { makeTool } from '@/lib/webmcp/tools'
 import { z } from 'zod'
 import { navigateWork, parseWorkState, workApi, workHref, WorkStateSchema, type WorkState } from '@/lib/work-workspace'
+import { useWorkspaceCommands } from './WorkspaceCommands'
+import { loadedWorkCommands } from './loaded-workspace-commands'
 const button = 'min-h-11 rounded border px-3 py-2 text-sm'
 const EMPTY: WorkState = { conversation: null, task: null, run: null, node: null }
 function destination(location: string) {
@@ -61,6 +63,21 @@ function AuthorizedWork({ identity }: { identity: ReturnType<typeof useIdentity>
   const taskMismatch = Boolean(task.data && !taskData)
   const runMismatch = Boolean(candidateRun && !run)
   const selectedNode = run?.nodes.find((node) => node.id === state.node)
+  const commands = useMemo(
+    function buildWorkCommands() {
+      return error
+        ? []
+        : loadedWorkCommands(parseWorkState(location), {
+            conversations,
+            tasks: tasks.isError ? [] : (tasks.data ?? []),
+            traces: runs.isError ? [] : rows,
+            nodes: detail.isError ? [] : (run?.nodes ?? []),
+          })
+    },
+    [error, location, conversations, tasks.isError, tasks.data, runs.isError, rows, detail.isError, run],
+  )
+  useWorkspaceCommands(commands, conversationOwnerKey(identity))
+
   const context = useMemo(
     () => ({
       // Publish the selected tip, not duplicate all ancestors or echo unbounded labels.
