@@ -6,6 +6,7 @@ const CALIBRATED: StrategyRecommendation = {
   abstain_reason: null,
 }
 
+// spec: FIN-UI-R012.1
 describe('strategy-view (FIN-UI-R012.1)', () => {
   it('shows a calibrated proposal with its cited evidence', () => {
     expect(recommendationView(CALIBRATED)).toEqual({ kind: 'proposal', evidence: CALIBRATED.evidence })
