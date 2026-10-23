@@ -34,8 +34,13 @@ import {
 import { cn } from '@/lib/utils'
 import { isAtlasPath, SECTIONS, roleAtLeast, routesBySection } from '@/lib/nav-registry'
 import { capabilityVisible, useAppAvailability } from '@/lib/apps/catalog'
-import { useIdentity } from '@/lib/auth'
-import { deleteConversationEntry, renameConversationEntry, useConversations } from '@/lib/chat-store'
+import { useIdentity, type Identity } from '@/lib/auth'
+import {
+  conversationOwnerKey,
+  deleteConversationEntry,
+  renameConversationEntry,
+  useConversations,
+} from '@/lib/chat-store'
 import type { ConversationEntry } from '@/types'
 import { ModeToggle } from './mode-toggle'
 import { UserMenu } from './UserMenu'
@@ -113,11 +118,11 @@ function isCurrentConversation(path: string, conversationId: string, activeConve
   return path === '/chat' && conversationId === activeConversationId
 }
 
-export function AppSidebar() {
-  const { identity } = useIdentity()
+function OwnedAppSidebar({ identity, loading }: { identity: Identity; loading: boolean }) {
   // Hosted apps (EH-429) appear once the host reports their engine capability.
   const appAvailability = useAppAvailability()
-  const conversations = useConversations(identity.userKey)
+  const ownerKey = conversationOwnerKey(identity)
+  const conversations = useConversations(ownerKey, !loading && !identity.needsSignIn)
   const [conversationId] = useConversationIdFromUrl()
   const currentPath = useCurrentPath()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -149,8 +154,9 @@ export function AppSidebar() {
   }
 
   const handleConfirmDelete = () => {
+    if (loading || identity.needsSignIn) return
     if (conversationToDelete) {
-      deleteConversation(identity.userKey, conversationToDelete.id)
+      deleteConversation(ownerKey, conversationToDelete.id)
       setDeleteDialogOpen(false)
       setConversationToDelete(null)
       toast.success('Chat deleted successfully')
@@ -167,8 +173,9 @@ export function AppSidebar() {
   const handleSaveRename = (e: React.SyntheticEvent | React.MouseEvent, id: string) => {
     e.preventDefault()
     e.stopPropagation()
+    if (loading || identity.needsSignIn) return
     if (editValue.trim()) {
-      renameConversationEntry(identity.userKey, id, editValue.trim())
+      renameConversationEntry(ownerKey, id, editValue.trim())
       toast.success('Chat renamed')
     }
     setEditingId(null)
@@ -432,4 +439,11 @@ export function AppSidebar() {
       </Sidebar>
     </TooltipProvider>
   )
+}
+
+/** Pending chat edits and confirmations cannot transfer to a different owner. */
+export function AppSidebar() {
+  const { identity, loading } = useIdentity()
+  const ownerKey = loading ? 'unresolved' : identity.needsSignIn ? 'denied' : conversationOwnerKey(identity)
+  return <OwnedAppSidebar key={ownerKey} identity={identity} loading={loading} />
 }

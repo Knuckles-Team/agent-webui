@@ -47,3 +47,13 @@ describe('workspace branch navigator', () => {
     expect(window.location.pathname).toBe('/')
   })
 })
+
+// spec: WEBUI-APPS-R046.2.1
+it('reopens privacy management from the branch menu without a permanent overlay', () => {
+  mount()
+  fireEvent.click(screen.getByText('Explore branches'))
+  const privacy = screen.getByRole('link', { name: 'Privacy settings' })
+  expect(privacy).toHaveAttribute('href', '/privacy')
+  fireEvent.click(privacy)
+  expect(window.location.pathname).toBe('/privacy')
+})

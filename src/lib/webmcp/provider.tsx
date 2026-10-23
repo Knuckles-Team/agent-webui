@@ -38,6 +38,7 @@ export interface WebMcpProviderProps {
   /** Pass the app's auth-loading flag to avoid exposing unresolved identity state. */
   identityLoading?: boolean
   children: ReactNode
+  controlPlacement?: 'floating' | 'workspace'
   /** Injectable only for deterministic browser testing; production requires Event.isTrusted. */
   isAttendedGesture?: ComponentProps<typeof WebMcpControl>['isAttendedGesture']
   /** Test seam for the server-owned attended authorization flow. */
@@ -159,6 +160,14 @@ function createRootTools(
   }
 }
 
+const WorkspaceControlContext = createContext<ComponentProps<typeof WebMcpControl> | null>(null)
+
+/** Same attended channel and confirmation controls, placed in workspace flow. */
+export function WorkspaceWebMcpControl() {
+  const props = useContext(WorkspaceControlContext)
+  return props ? <WebMcpControl {...props} placement="workspace" /> : null
+}
+
 /** Mount once inside `PageContextProvider` to expose only local UI tools. */
 export function WebMcpProvider({
   identity,
@@ -166,6 +175,7 @@ export function WebMcpProvider({
   children,
   isAttendedGesture,
   attendedArmClient,
+  controlPlacement = 'floating',
 }: WebMcpProviderProps) {
   const documentId = useId()
   const pageContext = usePageContextEnvelope()
@@ -232,8 +242,18 @@ export function WebMcpProvider({
 
   return (
     <WebMcpRuntimeContext.Provider value={runtime}>
-      {children}
-      <WebMcpControl channel={controlChannel} visible={remoteEligible} isAttendedGesture={isAttendedGesture} />
+      <WorkspaceControlContext.Provider
+        value={
+          controlPlacement === 'workspace'
+            ? { channel: controlChannel, visible: remoteEligible, isAttendedGesture }
+            : null
+        }
+      >
+        {children}
+      </WorkspaceControlContext.Provider>
+      {controlPlacement === 'floating' && (
+        <WebMcpControl channel={controlChannel} visible={remoteEligible} isAttendedGesture={isAttendedGesture} />
+      )}
     </WebMcpRuntimeContext.Provider>
   )
 }

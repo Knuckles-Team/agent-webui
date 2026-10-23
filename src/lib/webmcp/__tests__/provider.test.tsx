@@ -4,7 +4,7 @@ import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Identity } from '@/lib/auth'
 import { PageContextProvider } from '@/lib/page-context'
-import { WebMcpProvider } from '../provider'
+import { WebMcpProvider, WorkspaceWebMcpControl } from '../provider'
 import type { AttendedArmClient, AttendedArmScope } from '../attended-arm'
 
 class TestSocket {
@@ -210,4 +210,23 @@ describe('WebMCP provider remote projection', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Arbora validation is pending')
   })
+})
+
+// spec: WEBUI-APPS-R049.1.1
+it('places one attended control in workspace flow without implicitly arming it', async () => {
+  installModelContext(async () => undefined)
+  render(
+    <PageContextProvider route="/workspace/explore" view="workspace.explore-proof">
+      <WebMcpProvider identity={IDENTITY} controlPlacement="workspace" attendedArmClient={ATTENDED_ARM_CLIENT}>
+        <main>
+          <WorkspaceWebMcpControl />
+        </main>
+      </WebMcpProvider>
+    </PageContextProvider>,
+  )
+  const control = await screen.findByRole('complementary', { name: 'Remote browser control' })
+  expect(screen.getAllByRole('complementary', { name: 'Remote browser control' })).toHaveLength(1)
+  expect(control).not.toHaveClass('fixed')
+  expect(control.closest('main')).not.toBeNull()
+  expect(TestSocket.instances).toHaveLength(0)
 })

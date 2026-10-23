@@ -54,3 +54,15 @@ This extension is SPECIFIED, not an implementation or acceptance claim. It exten
 - WEBUI-APPS-R048: WebMCP lifecycle and authority preservation.
 - WEBUI-APPS-R049: Preserve every feature through the Arbora redesign.
 - WEBUI-APPS-R050: Composed deployment and shared-backend acceptance.
+
+## Ground-up consolidation, not page preservation
+
+WEBUI-APPS-R049.1 and R049.2 define the redesign outcome. The product has three primary workspace contexts: Work, Explore and Operate. Existing features become task surfaces, lenses or inspectors within those contexts. They do not remain independently laid-out pages behind a new navigation bar. Legal pages may remain separate where required. Help and settings use contextual utilities.
+
+The capability inventory is a preservation contract, not the proposed page inventory. Compatible deep links resolve into workspace state. Source navigation, object-link and consent fixes are foundations only. They do not prove the visual redesign, semantic zoom, mobile parity or measured task improvement. These new requirements remain SPECIFIED.
+
+## Explore source proof and remaining migration
+
+WEBUI-APPS-R049.1.1 is the bounded source proof for retained, read-only Explore investigation. WEBUI-APPS-R049.1.2 retains complete contextual migration and rendered acceptance. Work and Operate remain planned until delivered. The new opt-in route does not migrate old URLs or certify real providers. R049.2 still requires the measured redesign outcome.
+
+WEBUI-APPS-R049.1.3 defines the narrow Work source composition. It retains conversation selection and the existing Chat instance beside independent task/trace read surfaces. It does not complete correlated run investigation or invent missing producer links. R049.1.2 retains full migration and installed-browser acceptance.

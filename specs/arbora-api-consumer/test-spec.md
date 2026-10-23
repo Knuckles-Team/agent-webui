@@ -30,3 +30,15 @@ credentials or stores.
 For WEBUI-API-R003.2, add an unclassified visible action fixture. It has no generated operation, browser-local disposition or explicit unavailable capability. CI must reject it. Compare manual and WebMCP invocation against the same typed gateway error, tenant/purpose scope and preview-confirm-step-up result (R007/R011).
 
 Catalog/source tests use existing query operations. Cover owner, glossary, upstream/downstream lineage, parent-class asset and prompt-candidate questions. Assert no removed bespoke catalog-read operation appears in the generated client, visible action registry or WebMCP descriptors. A UI or mocked answer alone is not query-engine acceptance. Verify real authorized results and unavailable/denied scope against the composed host.
+
+## WEBUI-API-R011.2 conversation and run identity
+
+Run `test_run_identity.py` and the mounted Chat identity tests. Verify equal prompts in distinct conversations never create a shared text-derived context. Reject conflicting history identity before invocation. Verify concurrent streams retain only their own admitted task/context/run references, and legacy text-only results do not fabricate linkage. Test first submit, repeated turns, selection changes and caller changes. Composed live acceptance remains required; these tests do not prove durable conversation resume.
+
+Owner-key migration preserves old subject-only and global cache entries without automatic adoption. Local-only history is not losslessly migrated. Recovery requires an explicit owner-verified migration; callers must keep the original browser data until that migration is available. Denied or unresolved sessions must not hydrate or query conversations. Explicit no-auth conversation admission remains a separate contract requirement.
+
+## Conversation identity source and composed residual
+
+WEBUI-API-R011.2.1 binds the run-identity host fixtures and mounted chat source tests. Preserve their exact identity and refusal assertions. Source test linkage does not establish installed provider acceptance.
+
+WEBUI-API-R011.2.2 retains the full R011.2 acceptance matrix. Run real browser transport and host streaming against the installed Arbora provider. Verify caller and tenant isolation, first-turn identity, conflicting and missing identity, and exact returned references. This qualification remains planned.

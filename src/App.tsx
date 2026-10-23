@@ -47,9 +47,11 @@ import {
 } from './lib/nav-registry.ts'
 import { getDefaultPageActions, PageContextProvider, type PageContextSelection } from './lib/page-context.tsx'
 import { cn } from './lib/utils.ts'
+import { conversationOwnerKey } from '@/lib/chat-store'
+import { WorkspaceContextRail } from './components/workspace/WorkspaceContextRail'
 import { WorkspaceNavigation } from './components/WorkspaceNavigation'
 import { useWorkspaceLocation } from './lib/workspace-navigation'
-import { WebMcpProvider } from './lib/webmcp/provider.tsx'
+import { WebMcpProvider, WorkspaceWebMcpControl } from './lib/webmcp/provider.tsx'
 
 // Lazy: only reachable behind `isObjectDetail`. A static import here pinned it
 // into the entry chunk and defeated nav-registry's dynamic import of the same
@@ -176,6 +178,9 @@ function navigateToObjectId(id: string): void {
 
 /** Routes whose page owns the complete heading and needs no generic shell heading. */
 const ROUTES_WITH_OWN_HEADING = new Set<RouteDef['id']>([
+  'workspace.explore-proof',
+  'workspace.work-proof',
+  'workspace.operate',
   'knowledge.atlas',
   'apps.markets.chart',
   'apps.markets.share',
@@ -291,25 +296,56 @@ function RouteContentSurface({
   )
 }
 
+function isWorkspaceProof(route: RouteDef): boolean {
+  return ['workspace.work-proof', 'workspace.explore-proof', 'workspace.operate'].includes(route.id)
+}
+
 interface PrivateAppSurfaceProps extends Omit<RouteContentSurfaceProps, 'route'> {
   route: RouteDef
   currentView: string
 }
 
-function PrivateAppSurface({ route, currentView, ...routeContentProps }: PrivateAppSurfaceProps) {
+export function PrivateAppSurface({ route, currentView, ...routeContentProps }: PrivateAppSurfaceProps) {
   return (
     <SidebarProvider defaultOpen>
-      <AppSidebar />
+      {!isWorkspaceProof(route) && <AppSidebar />}
       <div className="flex min-w-0 flex-1 flex-col h-dvh overflow-hidden">
         <AuthModeBanner identity={routeContentProps.identity} />
-        <WorkspaceNavigation route={route} currentRole={routeContentProps.identity.role} />
+        {!isWorkspaceProof(route) && (
+          <WorkspaceNavigation route={route} currentRole={routeContentProps.identity.role} />
+        )}
+        {isWorkspaceProof(route) && (
+          <WorkspaceContextRail
+            key={conversationOwnerKey(routeContentProps.identity)}
+            active={
+              route.id === 'workspace.work-proof' ? 'work' : route.id === 'workspace.operate' ? 'operate' : 'explore'
+            }
+            role={routeContentProps.identity.role}
+          />
+        )}
+        <ConsentBanner placement="workspace" />
+        {isWorkspaceProof(route) && (
+          <div className="max-h-[35dvh] shrink-0 overflow-auto">
+            <WorkspaceWebMcpControl />
+          </div>
+        )}
 
-        {/* Dashboard View — Agent-OS Homepage (default landing, always mounted) */}
-        <DashboardSurface isDashboard={routeContentProps.isDashboard} />
-        <RouteContentSurface route={route} {...routeContentProps} />
-
-        {/* One stable assistant instance: full-page on /chat, drawer everywhere else. */}
-        <ChatPanel currentView={currentView} isPrimary={routeContentProps.isChat} />
+        {/* Legacy dashboard remains mounted only outside the redesigned workspace contexts */}
+        {!isWorkspaceProof(route) && <DashboardSurface isDashboard={routeContentProps.isDashboard} />}
+        <div
+          className={
+            route.id === 'workspace.work-proof'
+              ? 'grid min-h-0 flex-1 overflow-auto grid-rows-[minmax(14rem,1fr)_minmax(16rem,1fr)] lg:grid-cols-2 lg:grid-rows-[minmax(16rem,1fr)]'
+              : 'contents'
+          }
+        >
+          <RouteContentSurface route={route} {...routeContentProps} />
+          {/* One stable assistant instance across workspace contexts. */}
+          <ChatPanel
+            currentView={currentView}
+            isPrimary={routeContentProps.isChat || route.id === 'workspace.work-proof'}
+          />
+        </div>
       </div>
     </SidebarProvider>
   )
@@ -406,18 +442,23 @@ export default function App() {
         <MCPProvider enabled={mcpCatalogEnabled}>
           <ThemeProvider defaultTheme="system" storageKey="pydantic-chat-ui-theme">
             <PageContextProvider
-              route={currentRoute}
+              route={isWorkspaceProof(pageRoute) ? pageRoute.path : currentRoute}
               view={currentView}
               baseSelection={baseSelection}
               allowedActions={allowedActions}
             >
-              <WebMcpProvider identity={identity} identityLoading={identityLoading}>
+              <WebMcpProvider
+                identity={identity}
+                identityLoading={identityLoading}
+                controlPlacement={isWorkspaceProof(pageRoute) ? 'workspace' : 'floating'}
+              >
                 <PageHead
                   route={pageRoute}
                   pathname={new URL(currentRoute, window.location.origin).pathname}
                   authMode={identity.raw?.mode}
                 />
-                <ConsentBanner />
+                {pageRoute.id !== 'public.privacy' &&
+                  (isPublicRoute || isNotFound || (!identityLoading && identity.needsSignIn)) && <ConsentBanner />}
                 <AppSurface
                   pageRoute={pageRoute}
                   isPublicRoute={isPublicRoute}

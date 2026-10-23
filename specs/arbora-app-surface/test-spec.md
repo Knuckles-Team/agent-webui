@@ -156,3 +156,47 @@ Run each relevant journey with loading, empty, stale, denied, unavailable, valid
 R046.1 binds `src/lib/__tests__/workspace-navigation.test.tsx` and `src/components/__tests__/WorkspaceNavigation.test.tsx`. Test same-origin, registered-route and role refusal. Preserve native modified-click behavior, query state and disclosure focus. Synthetic popstate checks cover source subscription only.
 
 R046.2 requires the complete parent all-leaf and real browser matrix. Validate dynamic entities, shared paths, semantic zoom, Back/Forward, selection and focus at supported mobile and desktop viewports. These cases remain planned. Full R047 action parity and R050 installed-provider acceptance remain separate and open.
+
+## Three-context redesign acceptance
+
+WEBUI-APPS-R049.1: List the baseline migration matrix and all dynamic leaf fixtures. Assert one context/entity/lens state per destination. Exercise legacy URLs, direct search, Back/Forward and entity relationship traversal. Check the same actions, error states and role/capability refusals. Fail if an old alias mounts a separate feature-page layout. Required legal pages are explicit exceptions, not hidden app contexts.
+
+WEBUI-APPS-R049.2: Run identical baseline and redesigned tasks from recorded starting states. Capture primary-context count, navigation activations and viewport-height scrolling distance. Targets are exactly three primary app contexts and at most three activations from context root to task surface. Exclude typing, policy confirmations and task execution. Do not exclude required navigation or hide controls to satisfy the count. Record bounded-data fixture size and internal data-region scroll separately. Show a reduction against baseline for representative journeys; report unchanged or worse results explicitly.
+
+Test run inspection, related-object exploration, workflow editing, provider configuration and dashboard editing. Repeat on narrow/tall, short/landscape, wide and changing viewports, with keyboard, touch and native tools. Compare manual and WebMCP state transitions. Keep context, current selection and primary actions visible during content scrolling. Check all content remains reachable. Source-only navigation tests or fresh branding cannot qualify these rows.
+
+Do not require visual parity with discarded page layouts. Reuse backend, security, typed action and data tests. Rewrite layout tests for the consolidated workspace. Legacy URL tests cover compatible state and authority, not retained page composition. Existing mobile corrections supply reusable failure cases, not a visual target.
+
+## Retained Explore source and residual qualification
+
+WEBUI-APPS-R049.1.1 uses `ExploreWorkspace.test.tsx` in the workspace component tests. Test retained query/results through entity and relationship/history navigation. Test manual/WebMCP typed selection and malformed destination refusal. Check bounded published context without truncating input. Check resolving identity, insufficient role, missing entity and retryable query failures. Include entity-ID round trips and reject unauthorized history writes.
+
+WEBUI-APPS-R049.1.2 requires the full migration matrix against the installed workspace. Test real Back/Forward, focus restoration, keyboard/touch, resize continuity and native browser tool registration. Check real authorized provider responses independently. Keep source fixtures, rendered fixture evidence and live producer receipts distinct. No source test marker may close the broader migration or measured redesign rows.
+
+Additional R049.1.1 source regressions cover remount and query restoration through typed `q` state. Compare manual, native and modified-click links without losing the collection. `ExploreShell.test.tsx` checks that Explore mounts no hidden dashboard. It also checks normal shell placement of attended controls during denied and loading states. The real WebMCP `provider.test.tsx` checks canonical route context and bounded query publication separately from the full execution query. These source tests do not qualify native browser lifecycle, consent acceptance or full mobile parity. Keep those broader requirements open.
+
+## Work source qualification boundary
+
+WEBUI-APPS-R049.1.3 binds `WorkWorkspace.test.tsx`, `useConversationIdFromUrl.workspace.test.tsx` and shared shell/context-rail tests. Check conversation selection with exactly one existing Chat instance. Test independent served task list/get and trace/node adapters. Test typed URL/tool/manual navigation, anchored context controls and retained selection. Cover loading, denial, missing data and malformed state without fabricated links. Assert that trace spans do not become subagent records. No test may infer conversation/task/trace/evidence associations from fixture naming alone.
+
+These source tests do not qualify real provider associations, native browser lifecycle or full mobile acceptance. They add no execution or cancel action. Keep R049.1.2 open for the complete capability matrix and installed-stack evidence.
+
+### Retained Operate discovery source
+
+WEBUI-APPS-R049.1.4 binds `OperateWorkspace.test.tsx` and `operate-workspace.test.ts`. Check fleet-to-child-to-capability navigation without mounting legacy operational pages. Test strict links, manual/tool parity and capability-to-server membership. Check that filtering keeps input focus. Reject invalid destinations and unsigned identities before reads. Decode actual gateway envelopes and discard unapproved payload fields. Test failed refresh, retained tool handles, same-principal observed credential/scope changes, repeated cursors and short tenth pages. No effectful operation is exposed.
+
+Keep R049.1.2 and R050 open. Existing identity observation does not detect unseen live revocation. The shared transport requires a supported authenticated browser session. This source does not deliver anonymous discovery or real issuer revocation. Installed-provider acceptance, full catalog search and native browser WebMCP qualification remain open.
+
+### Current response task link
+
+WEBUI-APPS-R049.1.5 binds `CurrentResponseTaskLink.test.tsx` and `Chat.conversation-identity.test.tsx`. Compare native hrefs, manual navigation and the registered tool destination. Reject pending, failed, mismatched and malformed responses. Retire handles on response replacement or component unmount. Do not fall back to an older response. SDK ready is not a completion receipt. Explicit metadata may identify an interrupted task without asserting its outcome. Preserve modified-link behavior and backend authorization. Actual task retrieval, installed providers and live identity remain separate acceptance gates.
+
+The `workspace-layout.spec.ts` fixture checks task-link geometry at 740 by 320 and 320 by 740. Scroll and resize before pointer navigation. Check the link center against `elementFromPoint`, positive transcript height and a full touch target. Keep the composer in normal flow. This fixture uses synthetic API responses, not live identity or execution acceptance.
+
+## Consent lifecycle regression boundary
+
+R046.2.1 binds the consent banner and workspace navigation source tests. Check normal-flow placement, explicit dismissal, choices, management access and focus restoration. Dismissal must not grant optional consent. Test failed storage across route remounts and consumers. Unrelated session-storage events must not clear a failed-denial fallback or restore an old grant.
+
+Current App branch inspection establishes the single-prompt property; a mounted App assertion remains planned. Source tests do not prove rendered browser geometry or real browser storage behavior.
+
+R046.2.2 retains the complete R046.2 matrix. Test dynamic deepest leaves, shared paths, semantic zoom, real Back/Forward, selection and focus. Include keyboard, touch, mobile layouts and consent clearance on the exact installed candidate. These complete journeys remain planned.

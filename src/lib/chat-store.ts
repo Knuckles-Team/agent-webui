@@ -12,17 +12,14 @@
  * {@link useConversations} hook, so there is exactly one source of truth to
  * desync from.
  *
- * **Per-user (R9).** Chat sessions and history are per-user state, not shared.
- * Every key is namespaced by `userKey` (from `useIdentity()` in `auth.ts` —
- * the verified subject, or `'local'` in the zero-config single-operator/dev
- * posture). A one-time migration folds any pre-namespacing history recorded
- * under the legacy global keys into the `'local'` namespace so upgrading does
- * not silently orphan existing conversations.
+ * **Per-owner (R9).** Production callers use conversationOwnerKey to namespace
+ * tenant and subject together. Ambiguous older subject-only/global caches remain
+ * on disk; they are not automatically adopted into an authenticated namespace.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
 import type { ConversationEntry } from '@/types'
-import { DEV_IDENTITY_USER_KEY } from './auth'
+import { DEV_IDENTITY_USER_KEY, type Identity } from './auth'
 import { fetchValidated, looseArray } from './api-validation'
 
 // D-WUI-28: /api/chats can answer null/{}/an error envelope instead
@@ -48,6 +45,24 @@ export const CONVERSATIONS_CHANGED_EVENT = 'chat-store:conversations-changed'
 
 const LEGACY_INDEX_KEY = 'conversationIds'
 const MAX_FIRST_MESSAGE_LENGTH = 30
+
+/** Tenant-qualified callers never adopt ambiguous legacy subject-only caches. */
+export function conversationOwnerKey(identity: Pick<Identity, 'userKey' | 'raw'>): string {
+  const tenant = identity.raw?.tenant
+  return JSON.stringify(['owner-v1', tenant ?? null, identity.userKey])
+}
+
+/** Detect presence only, never expose or adopt ambiguous legacy content. */
+export function hasUnassignedConversationHistory(userKey: string): boolean {
+  try {
+    return (
+      window.localStorage.getItem(`chat:${userKey}:conversationIds`) !== null ||
+      window.localStorage.getItem(LEGACY_INDEX_KEY) !== null
+    )
+  } catch {
+    return false
+  }
+}
 
 function indexKey(userKey: string): string {
   return `chat:${userKey}:conversationIds`
@@ -159,16 +174,20 @@ function entriesForUser(snapshot: ConversationSnapshot, userKey: string): Conver
  * (`GET /api/chats`, already scoped to the authenticated caller),
  * local entries winning only where the server has not (yet) recorded that id.
  */
-export function useConversations(userKey: string): ConversationEntry[] {
-  const [local, setLocal] = useState<ConversationSnapshot>(() => ({ userKey, entries: readIndex(userKey) }))
+export function useConversations(userKey: string, enabled = true): ConversationEntry[] {
+  const [local, setLocal] = useState<ConversationSnapshot>(() => ({
+    userKey,
+    entries: enabled ? readIndex(userKey) : [],
+  }))
   const [remote, setRemote] = useState<ConversationSnapshot>({ userKey, entries: [] })
 
   useEffect(() => {
-    setLocal({ userKey, entries: readIndex(userKey) })
-  }, [userKey])
+    setLocal({ userKey, entries: enabled ? readIndex(userKey) : [] })
+  }, [userKey, enabled])
 
   useEffect(() => {
     let cancelled = false
+    if (!enabled) return
     setRemote({ userKey, entries: [] })
     const fetchRemote = async () => {
       try {
@@ -202,11 +221,11 @@ export function useConversations(userKey: string): ConversationEntry[] {
     return () => {
       cancelled = true
     }
-  }, [userKey])
+  }, [userKey, enabled])
 
   useEffect(() => {
     const refresh = () => {
-      setLocal({ userKey, entries: readIndex(userKey) })
+      setLocal({ userKey, entries: enabled ? readIndex(userKey) : [] })
     }
     const handleStorage = (event: StorageEvent) => {
       if (event.key === indexKey(userKey)) refresh()
@@ -217,13 +236,14 @@ export function useConversations(userKey: string): ConversationEntry[] {
       window.removeEventListener('storage', handleStorage)
       window.removeEventListener(CONVERSATIONS_CHANGED_EVENT, refresh)
     }
-  }, [userKey])
+  }, [userKey, enabled])
 
   return useMemo(() => {
+    if (!enabled) return []
     const map = new Map<string, ConversationEntry>()
     // Filter during render: effects run too late to prevent a stale-user frame.
     entriesForUser(local, userKey).forEach((entry) => map.set(entry.id, entry))
     entriesForUser(remote, userKey).forEach((entry) => map.set(entry.id, entry))
     return Array.from(map.values()).sort((a, b) => b.timestamp - a.timestamp)
-  }, [local, remote, userKey])
+  }, [local, remote, userKey, enabled])
 }

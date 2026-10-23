@@ -13,6 +13,7 @@ import type { WebMcpControlChannel, WebMcpChannelView } from '@/lib/webmcp/chann
 
 export interface WebMcpControlProps {
   readonly channel: Pick<WebMcpControlChannel, 'arm' | 'confirm' | 'deny' | 'getView' | 'revoke' | 'subscribe'>
+  readonly placement?: 'floating' | 'workspace'
   readonly visible: boolean
   readonly isAttendedGesture?: (event: MouseEvent<HTMLButtonElement>) => boolean
 }
@@ -27,7 +28,12 @@ function browserTrustedGesture(event: MouseEvent<HTMLButtonElement>): boolean {
   return event.nativeEvent.isTrusted
 }
 
-export function WebMcpControl({ channel, visible, isAttendedGesture = browserTrustedGesture }: WebMcpControlProps) {
+export function WebMcpControl({
+  channel,
+  visible,
+  placement = 'floating',
+  isAttendedGesture = browserTrustedGesture,
+}: WebMcpControlProps) {
   const view = useSyncExternalStore(
     channel.subscribe.bind(channel),
     channel.getView.bind(channel),
@@ -39,7 +45,11 @@ export function WebMcpControl({ channel, visible, isAttendedGesture = browserTru
   return (
     <>
       <aside
-        className="fixed top-16 right-3 z-40 max-w-[min(22rem,calc(100vw-1.5rem))] rounded-lg border bg-background/95 p-3 text-sm shadow-lg backdrop-blur"
+        className={
+          placement === 'workspace'
+            ? 'min-w-0 rounded-lg border bg-background p-3 text-sm'
+            : 'fixed top-16 right-3 z-40 max-w-[min(22rem,calc(100vw-1.5rem))] rounded-lg border bg-background/95 p-3 text-sm shadow-lg backdrop-blur'
+        }
         aria-label="Remote browser control"
       >
         <div className="flex items-center gap-2 font-medium">

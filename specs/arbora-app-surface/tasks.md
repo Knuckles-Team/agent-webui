@@ -150,3 +150,31 @@ Unchecked tasks remain open. Definitions alone do not establish runtime delivery
 
 - [x] WEBUI-APPS-R046.1: Implement registered navigation controls and shared dispatch. Run the two bound source test files.
 - [ ] WEBUI-APPS-R046.2: Complete dynamic deepest-leaf, semantic zoom and actual browser history/focus acceptance. Include keyboard, touch and rendered mobile layouts.
+
+## Consolidated redesign delivery
+
+- [ ] WEBUI-APPS-R049.1: Complete the destination-to-context migration matrix and classify every domain action.
+- [ ] WEBUI-APPS-R049.1: Replace standalone layouts with contextual surfaces. Preserve compatible URLs and authorization.
+- [ ] WEBUI-APPS-R049.1: Retire duplicate shells and redundant navigation after action and state parity tests pass.
+- [ ] WEBUI-APPS-R049.2: Capture old task journeys and compare the actual three-context implementation.
+- [ ] WEBUI-APPS-R049.2: Record navigation counts, scroll distances and viewport evidence. Keep failures and unfinished domains open.
+- [ ] WEBUI-APPS-R049.1: Carry forward backend, safety, data and action tests. Replace page-layout assertions with consolidated workspace acceptance.
+- [ ] WEBUI-APPS-R049.2: Stop cosmetic work on retired layouts. Test the new composition instead of matching old screenshots.
+
+- [ ] WEBUI-APPS-R049.1.1: Bind retained Explore source tests and record their exact source revision and normal gate evidence.
+- [ ] WEBUI-APPS-R049.1.2: Finish the destination migration and installed-browser capability matrix. Keep unfinished contexts and producer checks open.
+
+- [ ] WEBUI-APPS-R049.1.3: Bind the retained Work source tests and preserve one existing Chat instance.
+- [ ] WEBUI-APPS-R049.1.3: Check independent task/trace reads and typed navigation without claiming missing associations.
+- [ ] WEBUI-APPS-R049.1.2: Qualify real producer associations and installed-browser lifecycle before claiming complete correlated Work investigation.
+
+- [ ] WEBUI-APPS-R049.1.4: Bind the retained read-only Operate discovery source and its focused tests.
+- [ ] WEBUI-APPS-R049.1.4: Preserve filter focus, observed-admission isolation and partial catalog reporting.
+- [ ] WEBUI-APPS-R049.1.2: Migrate connector configuration, host launch, containment, approvals, tool load/unload and execution with their actual upstream authority contracts. Qualify served discovery and native browser journeys separately.
+
+- [ ] WEBUI-APPS-R049.1.5: Bind current-response task navigation without inferred trace relationships or execution authority.
+
+## Consent placement repair and remaining browser acceptance
+
+- [x] WEBUI-APPS-R046.2.1: Repair consent prompt dismissal and management. Preserve explicit choice semantics and failed-storage denial through source regressions.
+- [ ] WEBUI-APPS-R046.2.2: Complete every remaining R046.2 browser and all-leaf obligation. Include rendered consent clearance and mobile input journeys.

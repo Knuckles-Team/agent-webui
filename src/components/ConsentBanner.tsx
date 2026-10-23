@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useRef } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { useConsent, type ConsentRecord } from '@/lib/consent'
+import { useConsent, consentStorageUnavailable, type ConsentRecord } from '@/lib/consent'
 import { getSiteConfig, type SiteConfig } from '@/lib/site-config'
 import { MOBILE_SURFACE, mobileSurfaceStyle } from './mobile-surface'
 
@@ -63,17 +64,15 @@ function ConsentActions({ record, analyticsConfigured, onChoose, onRevoke, onClo
           Revoke
         </Button>
       )}
-      {record && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="min-h-[var(--agent-webui-mobile-cta-button-height)]"
-          onClick={onClose}
-        >
-          Close
-        </Button>
-      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="min-h-[var(--agent-webui-mobile-cta-button-height)]"
+        onClick={onClose}
+      >
+        Dismiss
+      </Button>
     </div>
   )
 }
@@ -92,6 +91,7 @@ function analyticsCopy(analyticsConfigured: boolean): { label: string; detail: s
 }
 
 interface ConsentPromptProps {
+  placement: 'floating' | 'workspace'
   config: SiteConfig
   record: ConsentRecord | null
   settingsOpen: boolean
@@ -102,6 +102,7 @@ interface ConsentPromptProps {
 }
 
 function ConsentPrompt({
+  placement,
   config,
   record,
   settingsOpen,
@@ -113,16 +114,22 @@ function ConsentPrompt({
   const copy = analyticsCopy(analyticsConfigured)
   return (
     <aside
-      // Anchored to the TOP of the viewport (not bottom): the chat input is a
-      // sticky-bottom element on this same screen, and a bottom-anchored fixed
-      // surface here would sit on top of it and block typing. Top placement
-      // guarantees this prompt never overlaps or intercepts the chat input.
-      className="fixed inset-x-3 top-3 mx-auto max-w-2xl overflow-y-auto rounded-xl border bg-background/95 p-4 shadow-lg backdrop-blur"
-      style={{
-        ...mobileSurfaceStyle,
-        maxHeight: 'calc(100dvh - 1.5rem - var(--agent-webui-mobile-safe-area-bottom))',
-        zIndex: MOBILE_SURFACE.consentZIndex,
-      }}
+      // Workspace consent participates in flex layout instead of intercepting
+      // navigation or the chat composer. Its own overflow preserves all choices.
+      className={
+        placement === 'workspace'
+          ? 'relative min-h-0 max-h-[35dvh] shrink-0 overflow-y-auto border-b bg-background p-3'
+          : 'fixed inset-x-3 top-3 mx-auto max-w-2xl overflow-y-auto rounded-xl border bg-background/95 p-4 shadow-lg backdrop-blur'
+      }
+      style={
+        placement === 'workspace'
+          ? mobileSurfaceStyle
+          : {
+              ...mobileSurfaceStyle,
+              maxHeight: 'calc(100dvh - 1.5rem - var(--agent-webui-mobile-safe-area-bottom))',
+              zIndex: MOBILE_SURFACE.consentZIndex,
+            }
+      }
       data-mobile-surface="consent"
       aria-label="Privacy consent"
       aria-live="polite"
@@ -150,66 +157,105 @@ function ConsentPrompt({
       </div>
       {settingsOpen && (
         <p className="mt-3 border-t pt-3 text-xs text-muted-foreground">
-          You can change this choice at any time with the Privacy settings button. Product analytics is separate from
-          server-side Langfuse and RunTrace observability.
+          You can change this choice at any time on the Privacy page. Product analytics is separate from server-side
+          Langfuse and RunTrace observability.
         </p>
       )}
     </aside>
   )
 }
 
-function PrivacySettingsButton({ onOpen }: { onOpen: () => void }) {
-  return (
-    <button
-      type="button"
-      // Top-anchored for the same reason as ConsentPrompt above: never share
-      // the chat input's bottom-of-screen region.
-      className="fixed top-3 left-3 rounded-full border bg-background/95 px-3 py-2 text-xs shadow-md backdrop-blur"
-      style={{ ...mobileSurfaceStyle, zIndex: MOBILE_SURFACE.consentZIndex }}
-      data-mobile-surface="consent"
-      onClick={onOpen}
-      aria-label="Open privacy settings"
-    >
-      Privacy settings
-    </button>
-  )
+function reportStorageFailure() {
+  if (consentStorageUnavailable()) {
+    toast.warning(
+      'Privacy settings apply in this tab only. Browser storage is unavailable, so a reload may ask again.',
+    )
+  }
 }
 
-export function ConsentBanner() {
-  const { record, choose, revoke } = useConsent()
-  const [settingsOpen, setSettingsOpen] = useState(false)
+/** Automatic prompts disappear after a choice or dismissal; management lives on /privacy. */
+export function ConsentBanner({ placement = 'floating' }: { placement?: 'floating' | 'workspace' }) {
+  const { record, dismissed, choose, revoke, dismiss } = useConsent()
   const config = getSiteConfig()
-  const analyticsConfigured = config.analytics !== null
-
-  const chooseAndClose = (choice: 'granted' | 'denied') => {
-    choose(choice)
-    setSettingsOpen(false)
+  const finish = () => {
+    reportStorageFailure()
+    if (placement === 'workspace') document.getElementById('workspace-home')?.focus()
   }
-
-  const revokeAndClose = () => {
-    revoke()
-    setSettingsOpen(false)
-  }
-
-  const openSettings = () => {
-    setSettingsOpen(true)
-  }
-
-  const closeSettings = () => {
-    setSettingsOpen(false)
-  }
-
-  if (record && !settingsOpen) return <PrivacySettingsButton onOpen={openSettings} />
+  if (record || dismissed) return null
 
   return (
     <ConsentPrompt
+      placement={placement}
       config={config}
       record={record}
-      settingsOpen={settingsOpen}
-      analyticsConfigured={analyticsConfigured}
-      onChoose={chooseAndClose}
-      onRevoke={revokeAndClose}
-      onClose={closeSettings}
+      settingsOpen={false}
+      analyticsConfigured={config.analytics !== null}
+      onChoose={(choice) => {
+        choose(choice)
+        finish()
+      }}
+      onRevoke={() => {
+        revoke()
+        finish()
+      }}
+      onClose={() => {
+        dismiss()
+        finish()
+      }}
     />
+  )
+}
+
+/** Explicit, always reachable management, independent of automatic prompt dismissal. */
+export function PrivacyConsentSettings() {
+  const disableButton = useRef<HTMLButtonElement>(null)
+  const { record, choose, revoke } = useConsent()
+  const config = getSiteConfig()
+  return (
+    <section aria-label="Privacy settings" className="space-y-3 rounded-lg border p-4">
+      <h2 className="text-lg font-semibold">Privacy settings</h2>
+      <p className="text-sm">Optional analytics: {record?.choice === 'granted' ? 'allowed' : 'not allowed'}.</p>
+      <p className="text-sm text-muted-foreground">
+        Dismissing the prompt does not allow analytics. Choices can be changed here at any time.
+      </p>
+      {config.analytics === null && <p className="text-sm">Analytics is not configured for this deployment.</p>}
+      <div className="flex flex-wrap gap-2">
+        {config.analytics !== null && (
+          <Button
+            className="min-h-11"
+            onClick={() => {
+              choose('granted')
+              reportStorageFailure()
+            }}
+          >
+            Allow analytics
+          </Button>
+        )}
+        <Button
+          ref={disableButton}
+          variant="outline"
+          className="min-h-11"
+          onClick={() => {
+            choose('denied')
+            reportStorageFailure()
+          }}
+        >
+          Disable optional
+        </Button>
+        {record?.choice === 'granted' && (
+          <Button
+            variant="outline"
+            className="min-h-11"
+            onClick={() => {
+              revoke()
+              reportStorageFailure()
+              disableButton.current?.focus()
+            }}
+          >
+            Revoke
+          </Button>
+        )}
+      </div>
+    </section>
   )
 }
