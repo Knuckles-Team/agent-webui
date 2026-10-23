@@ -61,6 +61,18 @@ describe('anchored workspace context rail', () => {
       'shrink-0',
     )
   })
+  it('falls back to retained evidence when a remembered query lens loses maintainer permission', () => {
+    window.history.replaceState({}, '', '/workspace/explore?q=kept&lens=query')
+    const view = render(<WorkspaceContextRail role="maintainer" active="explore" />)
+    expect(screen.getByRole('link', { name: 'explore' })).toHaveAttribute(
+      'href',
+      '/workspace/explore?q=kept&lens=query',
+    )
+    view.rerender(<WorkspaceContextRail role="user" active="explore" />)
+    expect(screen.getByRole('link', { name: 'explore' })).toHaveAttribute('href', '/workspace/explore?q=kept')
+    fireEvent.click(screen.getByRole('link', { name: 'explore' }))
+    expect(window.location.search).toBe('?q=kept')
+  })
   it('does not intercept modified links or navigate an insufficient role', () => {
     window.history.replaceState({}, '', '/workspace/work')
     const view = render(<WorkspaceContextRail role="user" active="work" />)

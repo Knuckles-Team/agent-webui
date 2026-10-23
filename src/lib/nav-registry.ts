@@ -424,7 +424,7 @@ export const ROUTES: readonly RouteDef[] = [
     icon: Compass,
     minRole: 'user',
     mobile: 'adapted',
-    element: lazy(() => import('@/components/workspace/ExploreWorkspace')),
+    element: lazy(() => import('@/components/workspace/ExploreQueryWorkspace')),
   },
   {
     id: 'knowledge.atlas',

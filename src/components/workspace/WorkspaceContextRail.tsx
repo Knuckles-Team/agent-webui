@@ -2,7 +2,7 @@ import { WorkspaceCommandPalette } from './WorkspaceCommands'
 import { useEffect, useState } from 'react'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
 import { navigateWork, parseWorkState } from '@/lib/work-workspace'
-import { navigateExplore, parseExploreState } from '@/lib/explore-workspace'
+import { EXPLORE_LENSES, exploreLensHref, navigateExploreLens, parseExploreLensState } from '@/lib/explore-lens-state'
 import { navigateOperate, parseOperateState } from '@/lib/operate-workspace'
 import { roleAtLeast, type Role } from '@/lib/nav-registry'
 
@@ -17,13 +17,17 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
   useEffect(() => {
     try {
       if (active === 'work') parseWorkState(location)
-      else if (active === 'explore') parseExploreState(location)
+      else if (active === 'explore') parseExploreLensState(location)
       else parseOperateState(location)
       setRemembered((previous) => (previous[active] === location ? previous : { ...previous, [active]: location }))
     } catch {
       /* Never retain malformed or unrelated destinations. */
     }
   }, [active, location])
+  const exploreDestination = (() => {
+    const state = parseExploreLensState(remembered.explore)
+    return exploreLensHref(!roleAtLeast(role, 'maintainer') ? { ...state, lens: 'evidence' } : state)
+  })()
   return (
     <header className="shrink-0 border-b bg-background px-3 py-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -47,7 +51,7 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
               className="inline-flex min-h-11 items-center rounded border px-3 capitalize"
               aria-disabled={!roleAtLeast(role, context === 'operate' ? 'reader' : 'user')}
               aria-current={active === context ? 'page' : undefined}
-              href={remembered[context]}
+              href={context === 'explore' ? exploreDestination : remembered[context]}
               onClick={(event) => {
                 if (!roleAtLeast(role, context === 'operate' ? 'reader' : 'user')) {
                   event.preventDefault()
@@ -56,7 +60,8 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
                 if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
                 event.preventDefault()
                 if (context === 'work') navigateWork(parseWorkState(remembered.work), role)
-                else if (context === 'explore') navigateExplore(parseExploreState(remembered.explore), role)
+                else if (context === 'explore')
+                  navigateExploreLens(parseExploreLensState(exploreDestination), role, EXPLORE_LENSES)
                 else navigateOperate(parseOperateState(remembered.operate), role)
               }}
             >
