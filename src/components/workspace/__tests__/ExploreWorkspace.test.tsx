@@ -1,6 +1,8 @@
+// spec: WEBUI-APPS-R049.1.6
+import { WorkspaceCommandsProvider, WorkspaceCommandPalette } from '../WorkspaceCommands'
 // spec: WEBUI-APPS-R049.1.1
 import { PageContextProvider, usePageContextEnvelope } from '@/lib/page-context'
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'
 import { api } from '@/lib/api'
@@ -87,6 +89,24 @@ async function searchAndOpen() {
 }
 
 describe('retained Explore investigation', () => {
+  it('publishes actual loaded evidence to the matching owner command catalog', async () => {
+    renderWithProviders(
+      <PageContextProvider route="/workspace/explore" view="workspace.explore-proof">
+        <WorkspaceCommandsProvider owner={JSON.stringify(['owner-v1', 'test', 'test-user'])} role="user">
+          <WorkspaceCommandPalette />
+          <ExploreWorkspace />
+        </WorkspaceCommandsProvider>
+      </PageContextProvider>,
+    )
+    fireEvent.change(screen.getByRole('textbox', { name: 'Find evidence' }), { target: { value: 'sample query' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+    await screen.findByRole('link', { name: /Evidence A/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Find destination' }))
+    const command = await within(screen.getByRole('dialog')).findByRole('link', { name: 'Evidence A' })
+    fireEvent.click(command)
+    expect(parseExploreState(window.location.href)).toEqual({ entity: 'a', tool: 'overview', query: 'sample query' })
+    await screen.findByText('Body a')
+  })
   it('retains the search and collection while traversing evidence and synthetic history events', async () => {
     renderWorkspace()
     await searchAndOpen()

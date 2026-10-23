@@ -48,6 +48,7 @@ import {
 import { getDefaultPageActions, PageContextProvider, type PageContextSelection } from './lib/page-context.tsx'
 import { cn } from './lib/utils.ts'
 import { conversationOwnerKey } from '@/lib/chat-store'
+import { WorkspaceCommandsProvider } from './components/workspace/WorkspaceCommands'
 import { WorkspaceContextRail } from './components/workspace/WorkspaceContextRail'
 import { WorkspaceNavigation } from './components/WorkspaceNavigation'
 import { useWorkspaceLocation } from './lib/workspace-navigation'
@@ -301,53 +302,65 @@ function isWorkspaceProof(route: RouteDef): boolean {
 }
 
 interface PrivateAppSurfaceProps extends Omit<RouteContentSurfaceProps, 'route'> {
+  identityLoading?: boolean
   route: RouteDef
   currentView: string
 }
 
-export function PrivateAppSurface({ route, currentView, ...routeContentProps }: PrivateAppSurfaceProps) {
+export function PrivateAppSurface({
+  route,
+  currentView,
+  identityLoading = false,
+  ...routeContentProps
+}: PrivateAppSurfaceProps) {
   return (
-    <SidebarProvider defaultOpen>
-      {!isWorkspaceProof(route) && <AppSidebar />}
-      <div className="flex min-w-0 flex-1 flex-col h-dvh overflow-hidden">
-        <AuthModeBanner identity={routeContentProps.identity} />
-        {!isWorkspaceProof(route) && (
-          <WorkspaceNavigation route={route} currentRole={routeContentProps.identity.role} />
-        )}
-        {isWorkspaceProof(route) && (
-          <WorkspaceContextRail
-            key={conversationOwnerKey(routeContentProps.identity)}
-            active={
-              route.id === 'workspace.work-proof' ? 'work' : route.id === 'workspace.operate' ? 'operate' : 'explore'
-            }
-            role={routeContentProps.identity.role}
-          />
-        )}
-        <ConsentBanner placement="workspace" />
-        {isWorkspaceProof(route) && (
-          <div className="max-h-[35dvh] shrink-0 overflow-auto">
-            <WorkspaceWebMcpControl />
-          </div>
-        )}
+    <WorkspaceCommandsProvider
+      enabled={!identityLoading && !routeContentProps.identity.needsSignIn}
+      owner={conversationOwnerKey(routeContentProps.identity)}
+      role={routeContentProps.identity.role}
+    >
+      <SidebarProvider defaultOpen>
+        {!isWorkspaceProof(route) && <AppSidebar />}
+        <div className="flex min-w-0 flex-1 flex-col h-dvh overflow-hidden">
+          <AuthModeBanner identity={routeContentProps.identity} />
+          {!isWorkspaceProof(route) && (
+            <WorkspaceNavigation route={route} currentRole={routeContentProps.identity.role} />
+          )}
+          {isWorkspaceProof(route) && (
+            <WorkspaceContextRail
+              key={conversationOwnerKey(routeContentProps.identity)}
+              active={
+                route.id === 'workspace.work-proof' ? 'work' : route.id === 'workspace.operate' ? 'operate' : 'explore'
+              }
+              role={routeContentProps.identity.role}
+            />
+          )}
+          <ConsentBanner placement="workspace" />
+          {isWorkspaceProof(route) && (
+            <div className="max-h-[35dvh] shrink-0 overflow-auto">
+              <WorkspaceWebMcpControl />
+            </div>
+          )}
 
-        {/* Legacy dashboard remains mounted only outside the redesigned workspace contexts */}
-        {!isWorkspaceProof(route) && <DashboardSurface isDashboard={routeContentProps.isDashboard} />}
-        <div
-          className={
-            route.id === 'workspace.work-proof'
-              ? 'grid min-h-0 flex-1 overflow-auto grid-rows-[minmax(14rem,1fr)_minmax(16rem,1fr)] lg:grid-cols-2 lg:grid-rows-[minmax(16rem,1fr)]'
-              : 'contents'
-          }
-        >
-          <RouteContentSurface route={route} {...routeContentProps} />
-          {/* One stable assistant instance across workspace contexts. */}
-          <ChatPanel
-            currentView={currentView}
-            isPrimary={routeContentProps.isChat || route.id === 'workspace.work-proof'}
-          />
+          {/* Legacy dashboard remains mounted only outside the redesigned workspace contexts */}
+          {!isWorkspaceProof(route) && <DashboardSurface isDashboard={routeContentProps.isDashboard} />}
+          <div
+            className={
+              route.id === 'workspace.work-proof'
+                ? 'grid min-h-0 flex-1 overflow-auto grid-rows-[minmax(14rem,1fr)_minmax(16rem,1fr)] lg:grid-cols-2 lg:grid-rows-[minmax(16rem,1fr)]'
+                : 'contents'
+            }
+          >
+            <RouteContentSurface route={route} {...routeContentProps} />
+            {/* One stable assistant instance across workspace contexts. */}
+            <ChatPanel
+              currentView={currentView}
+              isPrimary={routeContentProps.isChat || route.id === 'workspace.work-proof'}
+            />
+          </div>
         </div>
-      </div>
-    </SidebarProvider>
+      </SidebarProvider>
+    </WorkspaceCommandsProvider>
   )
 }
 
@@ -393,6 +406,7 @@ function AppSurface({
       isDashboard={isDashboard}
       routeAccessDenied={routeAccessDenied}
       identity={identity}
+      identityLoading={identityLoading}
       isObjectDetail={isObjectDetail}
       objectId={objectId}
     />

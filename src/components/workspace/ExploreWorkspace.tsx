@@ -1,3 +1,5 @@
+import { conversationOwnerKey } from '@/lib/chat-store'
+import { useWorkspaceCommands } from './WorkspaceCommands'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
@@ -55,6 +57,18 @@ export default function ExploreWorkspace() {
     queryFn: () => api.getOntologyObject(state.entity!, 'standard'),
     enabled: canRead && Boolean(state.entity) && !destinationError,
   })
+  const commands = useMemo(
+    () =>
+      canRead
+        ? (results.data?.objects ?? []).map((row) => ({
+            id: row.id,
+            label: row.title ?? row.id,
+            href: exploreHref({ entity: row.id, tool: 'overview', query: state.query }),
+          }))
+        : [],
+    [canRead, results.data, state.query],
+  )
+  useWorkspaceCommands(commands, conversationOwnerKey(identity))
   const conversationContext = useMemo(
     () => ({
       selection:

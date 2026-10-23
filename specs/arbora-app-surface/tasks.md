@@ -174,6 +174,8 @@ Unchecked tasks remain open. Definitions alone do not establish runtime delivery
 
 - [ ] WEBUI-APPS-R049.1.5: Bind current-response task navigation without inferred trace relationships or execution authority.
 
+- [ ] WEBUI-APPS-R049.1.6: Bind the bounded command catalog and shared selection tests. Keep other dynamic leaves and full migration open.
+
 ## Consent placement repair and remaining browser acceptance
 
 - [x] WEBUI-APPS-R046.2.1: Repair consent prompt dismissal and management. Preserve explicit choice semantics and failed-storage denial through source regressions.

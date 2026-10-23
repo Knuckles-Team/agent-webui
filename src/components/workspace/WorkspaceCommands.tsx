@@ -1,0 +1,271 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { z } from 'zod'
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { roleAtLeast, type Role } from '@/lib/nav-registry'
+import { navigateExplore, parseExploreState, exploreHref } from '@/lib/explore-workspace'
+import { navigateWork, parseWorkState, workHref } from '@/lib/work-workspace'
+import { navigateOperate, parseOperateState, operateHref } from '@/lib/operate-workspace'
+import { useWorkspaceLocation } from '@/lib/workspace-navigation'
+import { useWebMcpToolSet } from '@/lib/webmcp/provider'
+import { makeTool } from '@/lib/webmcp/tools'
+
+export interface WorkspaceCommand {
+  id: string
+  label: string
+  href: string
+}
+interface Registration {
+  owner: string
+  location: string
+  entries: readonly WorkspaceCommand[]
+}
+interface CommandContext {
+  owner: string
+  role: Role
+  entries: readonly WorkspaceCommand[]
+  register: (source: symbol, value: Registration | null) => void
+}
+const Context = createContext<CommandContext | null>(null)
+function canonical(href: string, role: Role): string {
+  if (!href.startsWith('/') || href.startsWith('//') || href.includes('#'))
+    throw new Error('Invalid workspace command')
+  const path = new URL(href, 'https://workspace.invalid').pathname
+  if (path === '/workspace/work' && roleAtLeast(role, 'user')) return workHref(parseWorkState(href))
+  if (path === '/workspace/explore' && roleAtLeast(role, 'user')) return exploreHref(parseExploreState(href))
+  if (path === '/workspace/operate' && roleAtLeast(role, 'reader')) return operateHref(parseOperateState(href))
+  throw new Error('Workspace command unavailable')
+}
+function navigate(href: string, role: Role) {
+  const path = new URL(canonical(href, role), 'https://workspace.invalid').pathname
+  if (path === '/workspace/work') navigateWork(parseWorkState(href), role)
+  else if (path === '/workspace/explore') navigateExplore(parseExploreState(href), role)
+  else navigateOperate(parseOperateState(href), role)
+}
+export function WorkspaceCommandsProvider({
+  owner,
+  role,
+  children,
+  enabled = true,
+}: {
+  owner: string
+  role: Role
+  enabled?: boolean
+  children: ReactNode
+}) {
+  const location = useWorkspaceLocation()
+  const [sources, setSources] = useState(new Map<symbol, Registration>())
+  const register = useCallback((source: symbol, value: Registration | null) => {
+    setSources((previous) => {
+      const next = new Map(previous)
+      if (value) next.set(source, value)
+      else next.delete(source)
+      return next
+    })
+  }, [])
+  const entries = useMemo(() => {
+    if (!enabled) return []
+    const roots = ['work', 'explore', 'operate'].map((id) => ({
+      id,
+      label: id[0].toUpperCase() + id.slice(1),
+      href: `/workspace/${id}`,
+    }))
+    const loaded = [...sources.values()]
+      .filter((value) => value.owner === owner && value.location === location)
+      .flatMap((value) => [...value.entries].slice(0, 100))
+    const unique = new Map<string, WorkspaceCommand>()
+    for (const entry of [...roots, ...loaded]) {
+      try {
+        const href = canonical(entry.href, role)
+        if (!unique.has(href))
+          unique.set(href, {
+            ...entry,
+            href,
+            label: (entry.label.trim() || entry.id.trim() || 'Workspace destination').slice(0, 256),
+          })
+      } catch {
+        /* Invalid and unauthorized destinations are not commands. */
+      }
+    }
+    return [...unique.values()].slice(0, 103)
+  }, [sources, owner, role, location, enabled])
+  const value = useMemo(() => ({ owner, role, entries, register }), [owner, role, entries, register])
+  return <Context.Provider value={value}>{children}</Context.Provider>
+}
+/** Register only already-loaded caller-visible destinations, never raw backend tools. */
+export function useWorkspaceCommands(entries: readonly WorkspaceCommand[], loadedOwner: string) {
+  const context = useContext(Context)
+  const location = useWorkspaceLocation()
+  const source = useRef(Symbol('workspace-commands'))
+  const register = context?.register
+  useEffect(() => {
+    if (!register) return
+    const token = source.current
+    register(token, { owner: loadedOwner, location, entries })
+    return () => {
+      register(token, null)
+    }
+  }, [register, loadedOwner, location, entries])
+}
+export function WorkspaceCommandPalette() {
+  const context = useContext(Context)
+  if (!context) return null
+  return <OwnedPalette key={context.owner} context={context} />
+}
+function OwnedPalette({ context }: { context: CommandContext }) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const location = useWorkspaceLocation()
+  const active = useRef(true)
+  const generation = useMemo(() => ({ id: crypto.randomUUID() }), [context.entries, context.role, location])
+  const live = useRef(generation)
+  live.current = generation
+  useEffect(() => {
+    active.current = true
+    return () => {
+      active.current = false
+    }
+  }, [])
+  useEffect(() => {
+    setOpen(false)
+  }, [location])
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && !event.altKey) {
+        event.preventDefault()
+        setOpen((value) => !value)
+      }
+    }
+    window.addEventListener('keydown', listener)
+    return () => {
+      window.removeEventListener('keydown', listener)
+    }
+  }, [])
+  const select = useCallback(
+    (href: string) => {
+      if (!active.current || live.current !== generation || !context.entries.some((entry) => entry.href === href))
+        throw new Error('Workspace command is stale or unavailable')
+      navigate(href, context.role)
+      setOpen(false)
+    },
+    [context.entries, context.role, generation],
+  )
+  const tools = useMemo(() => {
+    if (!context.entries.length) return []
+    const schema = z
+      .object({
+        commandId: z.enum(context.entries.map((_, index) => `${generation.id}:${index}`) as [string, ...string[]]),
+      })
+      .strict()
+    return [
+      makeTool({
+        name: 'agent-webui.workspace.command',
+        title: 'Open a workspace destination',
+        description:
+          'Select a migrated context or caller-visible loaded evidence destination. Navigation only; never executes backend operations.',
+        inputSchema: schema,
+        outputSchema: z.object({ selected: z.literal(true) }),
+        jsonSchema: z.toJSONSchema(schema),
+        readOnly: false,
+        source: 'agent-webui:src/components/workspace/WorkspaceCommands.tsx',
+        execute: ({ commandId }) => {
+          const index = context.entries.findIndex((_, position) => `${generation.id}:${position}` === commandId)
+          if (index < 0) throw new Error('Workspace command identifier is stale')
+          select(context.entries[index].href)
+          return { selected: true as const }
+        },
+      }),
+      makeTool({
+        name: 'agent-webui.workspace.commands',
+        title: 'List available workspace destinations',
+        description:
+          'List bounded labels and ephemeral command identifiers for migrated contexts and currently loaded evidence. Does not expose collection query text.',
+        inputSchema: z.object({ offset: z.number().int().min(0).max(103).default(0) }).strict(),
+        outputSchema: z.object({
+          commands: z.array(z.object({ commandId: z.string(), label: z.string() })).max(5),
+          total: z.number(),
+          nextOffset: z.number().nullable(),
+        }),
+        jsonSchema: z.toJSONSchema(z.object({ offset: z.number().int().min(0).max(103).default(0) }).strict()),
+        readOnly: true,
+        source: 'agent-webui:src/components/workspace/WorkspaceCommands.tsx',
+        execute: ({ offset }) => {
+          if (!active.current || live.current !== generation) throw new Error('Workspace command catalog is stale')
+          return {
+            commands: context.entries.slice(offset, offset + 5).map((entry, index) => ({
+              commandId: `${generation.id}:${offset + index}`,
+              label: Array.from(entry.label)
+                .slice(0, 40)
+                .map((character) =>
+                  character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127
+                    ? ' '
+                    : character.length === 1 && character.charCodeAt(0) >= 0xd800 && character.charCodeAt(0) <= 0xdfff
+                      ? '\ufffd'
+                      : character,
+                )
+                .join(''),
+            })),
+            total: context.entries.length,
+            nextOffset: offset + 5 < context.entries.length ? offset + 5 : null,
+          }
+        },
+      }),
+    ]
+  }, [context.entries, select, generation])
+  useWebMcpToolSet(tools)
+  const matches = context.entries.filter((entry) => entry.label.toLowerCase().includes(search.toLowerCase()))
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(value) => {
+        setOpen(value)
+        if (value) setSearch('')
+      }}
+    >
+      <DialogTrigger asChild>
+        <button className="min-h-11 rounded border px-3 text-sm">Find destination</button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[85dvh] overflow-auto motion-reduce:animate-none" showCloseButton={false}>
+        <DialogTitle>Find a workspace destination</DialogTitle>
+        <DialogDescription>
+          Three contexts and currently loaded evidence. Other capabilities are still being migrated.
+        </DialogDescription>
+        <label>
+          Search destinations
+          <input
+            className="mt-1 min-h-11 w-full rounded border bg-background px-3"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value)
+            }}
+          />
+        </label>
+        <ul className="space-y-1">
+          {matches.map((entry) => (
+            <li key={entry.href}>
+              <a
+                className="block min-h-11 rounded border px-3 py-2 break-words"
+                href={entry.href}
+                onClick={(event) => {
+                  if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+                  event.preventDefault()
+                  select(entry.href)
+                }}
+              >
+                {entry.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+        {!matches.length && <p role="status">No matching available destinations.</p>}
+        <button
+          className="min-h-11 rounded border px-3"
+          onClick={() => {
+            setOpen(false)
+          }}
+        >
+          Close destination search
+        </button>
+      </DialogContent>
+    </Dialog>
+  )
+}
