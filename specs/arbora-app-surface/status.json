@@ -1957,6 +1957,7 @@
       "title": "Retained Work source slice",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "6592af62bedb",
         "c767b6a5b17f"
       ],
       "verified_by": [
