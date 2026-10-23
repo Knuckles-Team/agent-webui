@@ -212,7 +212,8 @@
     "WEBUI-APPS-R049.1.6",
     "WEBUI-APPS-R046.2.1",
     "WEBUI-APPS-R046.2.2",
-    "WEBUI-APPS-R049.1.7"
+    "WEBUI-APPS-R049.1.7",
+    "WEBUI-APPS-R049.1.8"
   ],
   "requirements": [
     {
@@ -1918,7 +1919,8 @@
         "WEBUI-APPS-R049.1.4",
         "WEBUI-APPS-R049.1.5",
         "WEBUI-APPS-R049.1.6",
-        "WEBUI-APPS-R049.1.7"
+        "WEBUI-APPS-R049.1.7",
+        "WEBUI-APPS-R049.1.8"
       ]
     },
     {
@@ -2031,6 +2033,18 @@
       "verified_by": [
         "src/components/workspace/__tests__/ExploreQueryWorkspace.test.tsx:2",
         "src/lib/__tests__/explore-lens-state.test.ts:1"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R049.1.8",
+      "title": "Attended query editor tools",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "422f1629932f"
+      ],
+      "verified_by": [
+        "src/components/workspace/__tests__/ExploreQueryWorkspace.test.tsx:138",
+        "src/components/workspace/__tests__/QueryEditorTools.test.tsx:1"
       ]
     }
   ]
