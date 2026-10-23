@@ -22,7 +22,7 @@
  * still hits this guard.
  */
 
-import { useEffect, useMemo, useState, Suspense, lazy, type ReactNode } from 'react'
+import { useMemo, Suspense, lazy, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppSidebar } from './components/app-sidebar.tsx'
 import { AuthModeBanner } from './components/AuthModeBanner.tsx'
@@ -32,7 +32,7 @@ import { PageHead } from './components/PageHead.tsx'
 import { ResponsiveLimitation } from './components/ResponsiveLimitation.tsx'
 import { SignInPanel } from './components/SignInPanel.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
-import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar.tsx'
+import { SidebarProvider } from './components/ui/sidebar.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
 import ChatPanel from './components/ChatPanel'
 import { useIdentity, type Identity } from './lib/auth.ts'
@@ -47,6 +47,8 @@ import {
 } from './lib/nav-registry.ts'
 import { getDefaultPageActions, PageContextProvider, type PageContextSelection } from './lib/page-context.tsx'
 import { cn } from './lib/utils.ts'
+import { WorkspaceNavigation } from './components/WorkspaceNavigation'
+import { useWorkspaceLocation } from './lib/workspace-navigation'
 import { WebMcpProvider } from './lib/webmcp/provider.tsx'
 
 // Lazy: only reachable behind `isObjectDetail`. A static import here pinned it
@@ -85,10 +87,6 @@ const LEGACY_VIEW_IDS: Record<string, string> = {
   'observability.dashboard': 'dashboard',
 }
 
-function currentPathAndSearch(): string {
-  return `${window.location.pathname}${window.location.search}`
-}
-
 function RouteLoadingFallback() {
   return <div className="py-16 text-center text-sm text-muted-foreground">Loading…</div>
 }
@@ -119,28 +117,7 @@ function deriveRouteFlags(match: ReturnType<typeof matchRoute>) {
  * plus two small effects/hooks, nothing stateful enough to need splitting further.
  */
 function useRouteState() {
-  /** Exact route included in the assistant's typed page-context envelope. */
-  const [currentRoute, setCurrentRoute] = useState(currentPathAndSearch)
-
-  /**
-   * Effect hook to synchronize the current view with the browser URL path.
-   * Listens for custom 'history-state-changed' events for reactive navigation.
-   */
-  useEffect(() => {
-    const handleNavigation = () => {
-      setCurrentRoute(currentPathAndSearch())
-    }
-
-    // Listen for custom navigation events emitted by sidebar/links
-    window.addEventListener('history-state-changed', handleNavigation)
-    window.addEventListener('popstate', handleNavigation)
-    handleNavigation() // Initial check on mount
-
-    return () => {
-      window.removeEventListener('history-state-changed', handleNavigation)
-      window.removeEventListener('popstate', handleNavigation)
-    }
-  }, [])
+  const currentRoute = useWorkspaceLocation()
 
   const pathname = useMemo(() => new URL(currentRoute, window.location.origin).pathname, [currentRoute])
   const match = useMemo(() => matchRoute(pathname), [pathname])
@@ -308,7 +285,7 @@ function RouteContentSurface({
   )
 
   return (
-    <div className="flex flex-col flex-1 h-screen overflow-auto p-8">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-3 sm:p-5">
       <div className="mx-auto w-full">{body}</div>
     </div>
   )
@@ -323,16 +300,9 @@ function PrivateAppSurface({ route, currentView, ...routeContentProps }: Private
   return (
     <SidebarProvider defaultOpen>
       <AppSidebar />
-      <div className="flex flex-col justify-center flex-1 h-screen overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col h-dvh overflow-hidden">
         <AuthModeBanner identity={routeContentProps.identity} />
-        {/* Mobile Header: Only visible on small screens */}
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:hidden">
-          <SidebarTrigger className="-ml-1" />
-          <div className="flex items-center gap-2 px-3">
-            <span className="text-lg">🤖</span>
-            <span className="text-sm font-bold truncate">Arbora</span>
-          </div>
-        </header>
+        <WorkspaceNavigation route={route} currentRole={routeContentProps.identity.role} />
 
         {/* Dashboard View — Agent-OS Homepage (default landing, always mounted) */}
         <DashboardSurface isDashboard={routeContentProps.isDashboard} />

@@ -150,3 +150,9 @@ The following are planned tests, not existing receipts. Test every registered st
 | WEBUI-APPS-R050 | Installed-host browser journeys against real Arbora. Include unavailable-provider cases, authenticated tenant isolation, permitted no-auth tests and shared contract parity receipts. |
 
 Run each relevant journey with loading, empty, stale, denied, unavailable, validation error, success and in-flight cancellation fixtures. Use synthetic tenant data. No auth tokens, private reasoning, real account data or secrets may appear in screenshots, tool results or logs. Existing source and security gates remain mandatory.
+
+## Registered navigation source evidence
+
+R046.1 binds `src/lib/__tests__/workspace-navigation.test.tsx` and `src/components/__tests__/WorkspaceNavigation.test.tsx`. Test same-origin, registered-route and role refusal. Preserve native modified-click behavior, query state and disclosure focus. Synthetic popstate checks cover source subscription only.
+
+R046.2 requires the complete parent all-leaf and real browser matrix. Validate dynamic entities, shared paths, semantic zoom, Back/Forward, selection and focus at supported mobile and desktop viewports. These cases remain planned. Full R047 action parity and R050 installed-provider acceptance remain separate and open.
