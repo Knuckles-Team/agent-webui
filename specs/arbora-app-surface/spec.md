@@ -43,3 +43,14 @@ All new requirements remain SPECIFIED until their real served acceptance passes.
 Definition closure remains open for all twelve source inputs.
 Missing specialized producer bindings, quantitative limits and complete harness-manifest coverage are definition prerequisites as well as runtime dependencies.
 See the open definition prerequisites in plan.md. All new rows remain SPECIFIED.
+
+## Complete responsive Arbora workspace
+
+This extension is SPECIFIED, not an implementation or acceptance claim. It extends the existing owner rather than creating a duplicate redesign specification. The current-state feature inventory and migration obligations are in [workspace-coverage.md](workspace-coverage.md). Every feature remains in scope on mobile and every permitted semantic leaf is directly navigable.
+
+- WEBUI-APPS-R045: Complete capability and leaf census.
+- WEBUI-APPS-R046: One semantic workspace navigation state.
+- WEBUI-APPS-R047: Native WebMCP action equivalence.
+- WEBUI-APPS-R048: WebMCP lifecycle and authority preservation.
+- WEBUI-APPS-R049: Preserve every feature through the Arbora redesign.
+- WEBUI-APPS-R050: Composed deployment and shared-backend acceptance.

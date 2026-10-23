@@ -189,7 +189,7 @@ From a fresh browser, exercise every supported harness in the versioned owner ma
 
 Input `WEBUI:4`; original record SHA-256 `dd790b40c92758d720375c78ccd4278845b8d348022b4d69b978cba049461237`.
 
-Source obligation: The platform tracks token and cost usage per agent, indexes it in local storage, and exposes it for fast analysis by model, project and agent.
+Source obligation: The platform tracks token and cost usage per agent and indexes it in local storage. It exposes usage for fast analysis by model, project and agent.
 
 Existing owner anchors: EG-ORCH-VOCAB-R010.1–.6; ARBORA-OPS-R021.4.3/.4; WEBUI-APPS-R004.3. Entry: ObservabilityView usage section.
 
@@ -444,3 +444,17 @@ One main CI body took 10.1 s while its neighbours took 320 ms.
 The cause was CPU starvation of the self-hosted runner pod.
 The runner pods request 2 CPUs and may use 12, so co-scheduled Rust compiler jobs can starve them.
 That failure is an infrastructure failure. The runner capacity owns the fix, not the test budget.
+
+## Responsive workspace architecture and shared action contract
+
+WEBUI-APPS-R045–R050 reuse src/lib/nav-registry.ts, src/lib/apps/contract.ts, App.tsx, existing views and src/lib/webmcp. The current 58 application destinations are a baseline, not a closed list. Extend the route registry with semantic destination/action descriptors, never introduce a second router. Dynamic entities use a stable canonical identity and scoped parent/context references; relationship paths may differ. List bounded authorized children lazily and support direct search so an infinite dataset does not require an infinite initial payload.
+
+Suggested presentation branches are Work, Knowledge, Automate, Operate and Apps, with Settings/admin utilities. The workspace has a persistent context/search bar, compact expandable branch rail and primary task surface. It also has an optional related inspector and run/conversation tray. Map and accessible list are representations of the same state, not separate products. Semantic zoom transitions from ecosystem to branch to entity and deeper actionable leaves. Preserve canonical existing URLs and encode only typed allowlisted context; do not relax the existing WebMCP query/hash/arbitrary URL rejection. Commit semantic changes to browser history, not every camera frame. Back restores prior selection, focus and pane state. Resolve stale/deleted/denied destinations explicitly without disclosing hidden metadata.
+
+One dispatcher accepts stable action ID, validated typed arguments and current context revision. It returns a typed outcome and updated visible state. Manual controls and WebMCP invoke it identically. Separate local view mutations, reads and server effects. Form edits do not submit; security-sensitive fields and ceremony actions retain explicit human-only boundaries. Undo is only offered where a safe inverse exists; it never implies that a committed server effect was cancelled. Apply server-issued preview/confirmation/step-up through existing typed Arbora operations. No new client scheduler, graph engine, policy authority or credentials store is introduced.
+
+Keep the existing native WebMCP adapter, registration lifecycle and attended-control boundary. Core navigation, Atlas state, Markets and dashboard controllers are migration seams. Tools are registered only for the mounted/authorized context, with bounded schemas/results and retirement on identity or generation changes. Page content and descriptions are untrusted data, never authority. Do not publish all backend MCP tools unchanged. Reconcile stale WebMCP documentation with actual dashboard/query and Markets capabilities. Imperative tools and suitable declarative form annotations share the same dispatcher. Feature-detect the actual API instead of relying on browser names.
+
+The official Chrome WebMCP documentation (https://developer.chrome.com/docs/ai/webmcp, checked 2026-10-23) describes a proposed standard, imperative and declarative APIs, and an origin trial from Chrome 149. This is a progressive enhancement, not a universal availability claim. Browser acceptance must record actual API/support and tools Permissions Policy behavior. Existing same-origin/no-cross-origin exposure remains the default; this spec grants no additional browser or remote-control permission.
+
+Delivery order: (1) census and contract tests; (2) shared navigation/action state and responsive shell with current views; (3) domain-by-domain reflow and semantic tools; (4) composed auth/no-auth and performance qualification. Domain backend gaps remain with their existing upstream owners and cannot be concealed by the presentation migration. See workspace-coverage.md for preservation and dependency obligations.

@@ -2,7 +2,7 @@
   "schema_version": 2,
   "spec_id": "WEBUI-IDENTITY",
   "owner_repo": "agent-webui",
-  "delivery_state": "LANDED",
+  "delivery_state": "SPECIFIED",
   "requirement_ids": [
     "WEBUI-IDENTITY-R003",
     "WEBUI-IDENTITY-R004",
@@ -12,18 +12,27 @@
     "WEBUI-IDENTITY-R008",
     "WEBUI-IDENTITY-R009",
     "WEBUI-IDENTITY-R001",
-    "WEBUI-IDENTITY-R002"
+    "WEBUI-IDENTITY-R002",
+    "WEBUI-IDENTITY-R003.1",
+    "WEBUI-IDENTITY-R003.2",
+    "WEBUI-IDENTITY-R003.3",
+    "WEBUI-IDENTITY-R010"
   ],
   "requirements": [
     {
       "id": "WEBUI-IDENTITY-R003",
       "title": "Identity mode wizard shows the active auth mode with no hidden bypass",
-      "delivery_state": "LANDED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "099127294433",
         "701ae2a51e27"
       ],
-      "verified_by": []
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-IDENTITY-R003.1",
+        "WEBUI-IDENTITY-R003.2",
+        "WEBUI-IDENTITY-R003.3"
+      ]
     },
     {
       "id": "WEBUI-IDENTITY-R004",
@@ -106,6 +115,34 @@
         "src/components/views/__tests__/UserManagementView.test.tsx:192",
         "src/components/views/__tests__/UserManagementView.test.tsx:214"
       ]
+    },
+    {
+      "id": "WEBUI-IDENTITY-R003.1",
+      "title": "Explicit no-auth mode with bounded anonymous policy",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-IDENTITY-R003.2",
+      "title": "Built-in EG authentication through Arbora",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-IDENTITY-R003.3",
+      "title": "External OIDC provider interoperability",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-IDENTITY-R010",
+      "title": "Long-session renewal and mode-transition coherence",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
     }
   ]
 }

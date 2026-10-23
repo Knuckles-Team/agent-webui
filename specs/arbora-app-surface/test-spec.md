@@ -135,3 +135,18 @@ These cases require the real browser route, WebUI host, registered Arbora operat
 | `WEBUI-APPS-R001.8.5` | `e2e/interactive-code-explanations-served.spec.ts::test_evidence` (planned) | Bind walkthrough, artifact bytes and note stream to one query and repository revision. Label disconnected streams and retain sequence/correction identities without exposing hidden source content. |
 | `WEBUI-APPS-R001.8.6` | `e2e/interactive-code-explanations-served.spec.ts::test_served_acceptance` (planned) | From a real served code query, inspect source-linked steps and load the artifact with external network blocked. Independently read graph notes and compare artifact bytes; reject wrong-revision outputs and unauthorized source links. |
 <!-- /spec-definition-patch -->
+
+## Responsive workspace acceptance matrix
+
+The following are planned tests, not existing receipts. Test every registered static destination and representative authorized/denied dynamic leaves, including nested leaves deeper than three levels. Generate action cases from the shared census rather than hand-picking top-level pages.
+
+| Requirement | Required proof |
+|---|---|
+| WEBUI-APPS-R045 | Registry completeness, orphan/duplicate IDs, dynamic detail fixtures and new-route/action omission tests. |
+| WEBUI-APPS-R046 | All-leaf reachability through keyboard, touch, direct URL, search and WebMCP; repeated Back/Forward and shared-entity path tests. |
+| WEBUI-APPS-R047 | Parameterized manual/keyboard/tool equivalence for every inventoried action; same state, validation, permission, confirmation and outcome, including denial/cancellation. |
+| WEBUI-APPS-R048 | Native supported-browser registration/execution plus unsupported fallback; stale generation, hidden-page retirement, replay, revocation, cross-origin and cancellation adversarial tests. |
+| WEBUI-APPS-R049 | Before/after feature and action census parity, deep-link compatibility, storage/consent migration regression and branding snapshots. |
+| WEBUI-APPS-R050 | Installed-host browser journeys against real Arbora. Include unavailable-provider cases, authenticated tenant isolation, permitted no-auth tests and shared contract parity receipts. |
+
+Run each relevant journey with loading, empty, stale, denied, unavailable, validation error, success and in-flight cancellation fixtures. Use synthetic tenant data. No auth tokens, private reasoning, real account data or secrets may appear in screenshots, tool results or logs. Existing source and security gates remain mandatory.

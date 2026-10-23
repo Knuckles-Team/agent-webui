@@ -31,3 +31,7 @@ Errors must avoid disclosing whether a username, tenant or protected record exis
 BUILT requires merged WebUI source for each applicable requirement. ACCEPTED requires a fresh-checkout test identity service, real browser positive/negative probes, server/Arbora contract tests and exact-commit CI evidence. If a backend operation is not available, that requirement remains open; a mock screen does not count as delivered. State and receipts belong in `tasks.md`.
 
 Requirement IDs are defined in [requirements.md](requirements.md); delivery state per ID is in `status.json`.
+
+## Explicit authentication modes and long sessions
+
+WEBUI-IDENTITY-R003.1, R003.2 and R003.3 extend the existing mode owner: no-auth, built-in EG authentication and configured external OIDC providers (Keycloak/Okta). WEBUI-IDENTITY-R010 defines common lifecycle and renewal. No-auth is an intentional operator-selected mode with honest anonymous policy/provenance, not a fallback after auth failure. These additions are SPECIFIED. Existing login/MFA/approval requirements apply when their authentication capability is enabled; anonymous operation cannot mint proof of identity or approval. All modes retain the same responsive navigation and UI/WebMCP action boundary.

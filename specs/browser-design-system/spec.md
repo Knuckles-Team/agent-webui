@@ -47,3 +47,13 @@ The server sends `style-src-elem 'self'`. The browser blocks any inline `<style>
 | react-remove-scroll (Radix Dialog, Select, Menu) | Inserts scroll-lock rules through react-style-singleton | `installCspNonce()` sets `__webpack_nonce__`, which get-nonce reads |
 
 The vite `html.cspNonce` option writes a placeholder into `<meta property="csp-nonce">`. `SecurityHeadersMiddleware` buffers each HTML response, replaces the placeholder with a fresh nonce, and adds the nonce to both style directives. It drops `etag` and `last-modified` and sets `cache-control: no-store` on that document. A directive with an acknowledged `'unsafe-inline'` relaxation receives no nonce, because a nonce disables `'unsafe-inline'`. `src/lib/csp-nonce.ts` reads the nonce for client code. The application does not use the next-themes provider, so next-themes injects no script or style.
+
+## Complete responsive Arbora workspace
+
+This extension is SPECIFIED, not an implementation or acceptance claim. It extends the existing owner rather than creating a duplicate redesign specification. The current-state feature inventory and migration obligations are in [the app-surface inventory](../arbora-app-surface/workspace-coverage.md). Every feature remains in scope on mobile and every permitted semantic leaf is directly navigable.
+
+- WEBUI-DESIGN-R002.1: Purposeful density and Arbora visual hierarchy.
+- WEBUI-DESIGN-R004.1: Full mobile and arbitrary-aspect feature parity.
+- WEBUI-DESIGN-R004.2: Resize, fold and visual viewport continuity.
+- WEBUI-DESIGN-R005.1: Accessible interruptible semantic zoom.
+- WEBUI-DESIGN-R010: Measured performance under representative load.

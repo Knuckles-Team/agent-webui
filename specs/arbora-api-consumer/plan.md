@@ -105,3 +105,11 @@ The WebUI holds no graph engine. A host composes its own routes on the real
 factory through `application_composer`. Graph data reaches the WebUI only
 through Arbora served operations in `host.py`. Host composition owns agent
 and session lifecycle. Injection does not create identity or authority.
+
+## Responsive workspace route/action census consumer
+
+WEBUI-API-R003.2 remains the owner of populated domain-route census data and its CI classifier. WEBUI-APPS-R045 consumes that classification for each visible action: generated Arbora operation, explicitly browser-local behavior or unavailable capability. A redesigned button or WebMCP tool must not silently fall back to a host-owned domain implementation. R007 preview/confirmation/step-up, R011 identity/stream/cancel and R011.1 composed-host refusal remain unchanged. Complete the API census before claiming full capability coverage; UI route presence is not evidence that a backend operation is served.
+
+## Catalog and source discovery use graph queries
+
+Catalog, glossary, stewardship, lineage, prompt-candidate and virtual-source questions use Arbora `ask`/`find` intent routing to `query.nl`, or typed `query.uql` for programmatic clients. Do not introduce or regenerate a bespoke `catalog.search`, `glossary.list/get`, `stewardship.list/get`, `catalog.lineage`, `catalog.prompt_candidates` or `query.sources` operation family. Arbora owns intent routing and the governed source executor; EG owns ontology, relevance and graph query semantics. This follows merged [Arbora #432](https://github.com/Knuckles-Team/arbora/pull/432), ARBORA-OPS-R855.1/R855.4–R855.6 and ARBORA-FLEET-R043.2/R043.3/R043.7. The related [EG #739](https://github.com/Knuckles-Team/epistemic-graph/pull/739) correction owns EG-TYPED-PACKS-R106/R108 and EG-DECISION-ENGINE-R814; its still-open specification is not a delivered producer receipt. The route/action census binds these query operations, preserving typed tenant/purpose, pagination, refusal and cancellation behavior. A local component app catalog or dashboard save contract does not imply a new metadata catalog read API.

@@ -19,3 +19,5 @@
 No task above names a requirement ID individually; together they must close every ID in [requirements.md](requirements.md) — `WEBUI-API-R001`, `WEBUI-API-R002`, `WEBUI-API-R003`, `WEBUI-API-R004`, `WEBUI-API-R005`, `WEBUI-API-R006`, `WEBUI-API-R007`, `WEBUI-API-R008`, `WEBUI-API-R008.1`, `WEBUI-API-R008.2`, `WEBUI-API-R008.3`, `WEBUI-API-R008.4`, `WEBUI-API-R009`, `WEBUI-API-R010`, `WEBUI-API-R011`, `WEBUI-API-R003.1`, `WEBUI-API-R003.2`.
 
 - [x] WEBUI-API-R011.1: Compose host routes through `application_composer` with no engine in the WebUI; prove served-operation calls and `not_available` answers through the real factory.
+
+- [ ] WEBUI-API-R003.2: Join the domain-route census to WEBUI-APPS-R045 action coverage. Reject unclassified redesign/WebMCP actions. Retain owner boundaries and explicit unavailable results.

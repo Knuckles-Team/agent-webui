@@ -24,3 +24,9 @@ Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`
 with a fake Arbora transport. Verify each wired route sends its served
 operation and each unwired route answers 501 `not_available`. No live
 credentials or stores.
+
+## Workspace action coverage consumer
+
+For WEBUI-API-R003.2, add an unclassified visible action fixture. It has no generated operation, browser-local disposition or explicit unavailable capability. CI must reject it. Compare manual and WebMCP invocation against the same typed gateway error, tenant/purpose scope and preview-confirm-step-up result (R007/R011).
+
+Catalog/source tests use existing query operations. Cover owner, glossary, upstream/downstream lineage, parent-class asset and prompt-candidate questions. Assert no removed bespoke catalog-read operation appears in the generated client, visible action registry or WebMCP descriptors. A UI or mocked answer alone is not query-engine acceptance. Verify real authorized results and unavailable/denied scope against the composed host.

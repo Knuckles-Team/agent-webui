@@ -58,10 +58,10 @@ bootstrap skill, together with the [SDD full lifecycle](https://github.com/Knuck
 ## Local specifications
 
 - [`FIN-UI`](finance-asset-manager/spec.md) — FIN-UI-R001 and FIN-UI-R002 Markets and shared chart; specified, implementation unverified.
-- [`WEBUI-DESIGN`](browser-design-system/spec.md) — WEBUI-DESIGN-R001 accessible UI primitives, visual contracts and design-guidance assimilation.
+- [`WEBUI-DESIGN`](browser-design-system/spec.md) — WEBUI-DESIGN-R001 accessible UI primitives, visual contracts, all-viewport feature parity, semantic motion and measured performance.
 - [`WEBUI-DECIDE`](decision-evidence/spec.md) — WEBUI-DECIDE-R001 calibration dashboard and governed decision explanation.
 - [`WEBUI-API`](arbora-api-consumer/spec.md) — WEBUI-API-R001–WEBUI-API-R004 generated client and domain-family migration.
-- [`WEBUI-APPS`](arbora-app-surface/spec.md) — application routes and integrated navigation.
-- [`WEBUI-IDENTITY`](identity-access/spec.md) — authentication state and tenant-safe browser behavior.
+- [`WEBUI-APPS`](arbora-app-surface/spec.md) — application routes, complete responsive workspace, semantic leaf navigation and native WebMCP action parity. See [coverage and dependency matrix](arbora-app-surface/workspace-coverage.md).
+- [`WEBUI-IDENTITY`](identity-access/spec.md) — explicit no-auth/EG/external OIDC modes, renewal/lifecycle and tenant-safe browser behavior.
 - [`delete-past-chats.md`](delete-past-chats.md), [`update-color-scheme.md`](update-color-scheme.md), and [`update-tools-dropdown.md`](update-tools-dropdown.md) are existing brief feature drafts. Preserve them; expand to the shared feature directory format when resumed.
 - [`WEBUI-DASH`](agent-dashboards/spec.md) — user and agent built dashboards with WebMCP tools, arbora queries and arbora saves.
