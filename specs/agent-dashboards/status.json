@@ -25,8 +25,10 @@
     {
       "id": "WEBUI-DASH-R001",
       "title": "Dashboard document model",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "fd405f9d0a6b"
+      ],
       "verified_by": [
         "src/lib/dashboards/__tests__/model.test.ts:13"
       ]
@@ -34,8 +36,10 @@
     {
       "id": "WEBUI-DASH-R002",
       "title": "Table, line, bar and KPI panels",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "fd405f9d0a6b"
+      ],
       "verified_by": [
         "src/components/dashboards/__tests__/DashboardsView.test.tsx:42"
       ]
@@ -50,8 +54,10 @@
     {
       "id": "WEBUI-DASH-R004",
       "title": "UQL panel queries through arbora",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "fd405f9d0a6b"
+      ],
       "verified_by": [
         "src/lib/dashboards/__tests__/query.test.ts:7"
       ]
@@ -66,8 +72,10 @@
     {
       "id": "WEBUI-DASH-R006",
       "title": "Hand-built dashboards",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "fd405f9d0a6b"
+      ],
       "verified_by": [
         "src/components/dashboards/__tests__/DashboardsView.test.tsx:42"
       ]
@@ -75,8 +83,10 @@
     {
       "id": "WEBUI-DASH-R007",
       "title": "WebMCP dashboard tools",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "fd405f9d0a6b"
+      ],
       "verified_by": [
         "src/lib/dashboards/__tests__/tools.test.ts:50"
       ]
@@ -84,8 +94,10 @@
     {
       "id": "WEBUI-DASH-R008",
       "title": "Visible and undoable agent edits",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "fd405f9d0a6b"
+      ],
       "verified_by": [
         "src/lib/dashboards/__tests__/history.test.ts:5"
       ]
@@ -93,8 +105,10 @@
     {
       "id": "WEBUI-DASH-R009",
       "title": "Confirmed destructive agent changes",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "fd405f9d0a6b"
+      ],
       "verified_by": [
         "src/components/dashboards/__tests__/DashboardsView.test.tsx:42",
         "src/lib/dashboards/__tests__/tools.test.ts:108"
@@ -110,8 +124,10 @@
     {
       "id": "WEBUI-DASH-R011",
       "title": "Local fallback marked pending",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "fd405f9d0a6b"
+      ],
       "verified_by": [
         "src/lib/dashboards/__tests__/store.test.ts:29"
       ]
@@ -126,8 +142,10 @@
     {
       "id": "WEBUI-DASH-R013",
       "title": "Refresh, parameters and filters",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "fd405f9d0a6b"
+      ],
       "verified_by": [
         "src/lib/dashboards/__tests__/params.test.ts:4"
       ]
@@ -135,8 +153,10 @@
     {
       "id": "WEBUI-DASH-R014",
       "title": "Accessible and themed panels",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "fd405f9d0a6b"
+      ],
       "verified_by": [
         "src/components/dashboards/__tests__/DashboardsView.test.tsx:42"
       ]
@@ -144,8 +164,10 @@
     {
       "id": "WEBUI-DASH-R015",
       "title": "Dashboards route wiring",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "fd405f9d0a6b"
+      ],
       "verified_by": [
         "src/components/dashboards/__tests__/DashboardsView.test.tsx:42"
       ]
