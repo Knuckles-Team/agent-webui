@@ -1184,8 +1184,9 @@ async def _deny_authorization(
 class WebUIAuthorizationMiddleware:
     """Require graph scopes for every authenticated HTTP/websocket route."""
 
-    def __init__(self, app: Any) -> None:
+    def __init__(self, app: Any, *, anonymous_policy: Any = None) -> None:
         self.app = app
+        self.anonymous_policy = anonymous_policy
 
     @staticmethod
     def _is_admin_route(path: str) -> bool:
@@ -1429,7 +1430,12 @@ class WebUIAuthorizationMiddleware:
                 ws_denial={'reason': 'origin-rejected', 'required': required},
             )
             return
-        if self._authorization_exempt(scope, path):
+        anonymous_read = (
+            scope_type == 'http'
+            and self.anonymous_policy is not None
+            and self.anonymous_policy.allows(method, path, admin=required == 'kg:admin')
+        )
+        if anonymous_read or self._authorization_exempt(scope, path):
             await self._call_with_transport_bounds(scope, receive, send)
             return
 
@@ -1688,20 +1694,34 @@ def _require_identity_verifier(
 def _configure_served_boundary(
     listener_host: str | None,
     session_boundary: 'SessionBoundary | None' = None,
+    auth_mode: str | None = None,
 ) -> str:
     """Resolve the bind host and fail closed for incomplete served identity.
 
-    Every listener requires a verifier: a complete JWT verifier in
-    ``AgentConfig`` (issuer and audience checks are mandatory so a valid token
-    for another service cannot be replayed against the WebUI) or a
-    host-injected session boundary.
+    Protected listeners require a complete JWT verifier or qualified host
+    session boundary. Explicit operator no-auth is loopback-only, rejects
+    configured identity, and never manufactures a verified request actor.
     """
 
     from .host import config
 
     host = (listener_host or config.host or '127.0.0.1').strip() or '127.0.0.1'
 
+    from .auth_policy import AuthMode, resolve_auth_mode, validate_auth_mode
+    from .oidc_session import load_settings
+
+    mode = resolve_auth_mode(auth_mode)
     jwt_fields = _jwt_verifier_fields()
+    validate_auth_mode(
+        mode,
+        loopback=_is_loopback_listener(host),
+        has_verifier=any(jwt_fields),
+        has_boundary=session_boundary is not None,
+        boundary_mode=getattr(session_boundary, 'identity_mode', None),
+        has_browser_sso=load_settings() is not None,
+    )
+    if mode is AuthMode.NONE:
+        return host
     _require_identity_verifier(jwt_fields, session_boundary)
 
     if not _is_loopback_listener(host) and float(config.gateway_rate_limit or 0) <= 0:
@@ -1776,6 +1796,45 @@ class ActorIdentityMiddleware:
             actor_id='health-probe', tenant_id='health', authenticated=False
         )
         with use_actor(probe), use_grant(None):
+            await self.app(scope, receive, send)
+
+
+class ExplicitAnonymousMiddleware:
+    """Operator-selected no-auth, with no inherited actor, bearer or grant.
+
+    Transport and operation policy remain active. A credential presented to
+    this listener is refused, never ignored after unsuccessful authentication.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        from .host import ActorContext, use_actor, use_grant
+
+        if scope.get('type') not in {'http', 'websocket'}:
+            await self.app(scope, receive, send)
+            return
+        credential_cookies = any(
+            (
+                part.strip().partition('=')[0].strip()
+                in {'au_session', '__Host-arbora_session'}
+                or part.strip().partition('=')[0].strip().startswith('au_session.')
+            )
+            for name, value in scope.get('headers', ())
+            if name.lower() == b'cookie'
+            for part in value.decode('latin-1').split(';')
+        )
+        if _authorization_header_values(scope) or credential_cookies:
+            if scope.get('type') == 'websocket':
+                await send({'type': 'websocket.close', 'code': 4401})
+            else:
+                await _send_json(
+                    send, 401, {'error': 'Credentials are not accepted in no-auth mode'}
+                )
+            return
+        anonymous = ActorContext(actor_id='anonymous', authenticated=False)
+        with use_actor(anonymous), use_grant(None):
             await self.app(scope, receive, send)
 
 
@@ -2072,14 +2131,18 @@ def _ensure_actor_identity_middleware(
         app.add_middleware(WebUIActorIdentityMiddleware)
 
 
-def _ensure_authorization_middleware(app: FastAPI) -> None:
+def _ensure_authorization_middleware(
+    app: FastAPI, *, anonymous_policy: Any = None
+) -> None:
     """Install route-wide scope enforcement inside the identity middleware."""
 
     if not any(
         getattr(middleware, 'cls', None) is WebUIAuthorizationMiddleware
         for middleware in app.user_middleware
     ):
-        app.add_middleware(WebUIAuthorizationMiddleware)
+        app.add_middleware(
+            WebUIAuthorizationMiddleware, anonymous_policy=anonymous_policy
+        )
 
 
 def _ensure_browser_sso_middleware(
@@ -2439,6 +2502,8 @@ def create_agent_web_app(
     browser_control: BrowserControlPort | None = None,
     application_composer: ApplicationComposer | None = None,
     session_boundary: SessionBoundary | None = None,
+    auth_mode: str | None = None,
+    anonymous_read_routes: frozenset[str] = frozenset(),
 ) -> FastAPI:
     """Create the agent-web FastAPI application.
 
@@ -2466,6 +2531,11 @@ def create_agent_web_app(
             this public port to add its gateway routes without WebUI importing
             Arbora or gateway internals. Composition happens after WebUI
             routes and before the catch-all SPA mount.
+        auth_mode: Explicit operator identity mode. The default is protected;
+            none is loopback-only and never an authentication-error fallback.
+        anonymous_read_routes: Exact host-selected read paths for the partial
+            anonymous policy. Empty by default; direct workspace/configuration,
+            admin, writes and attended controls still refuse.
         session_boundary: Optional host-owned browser session boundary. Graph
             OS installs its identity gate through this port: it owns
             ``/auth/*`` and presents every admitted request to the WebUI's
@@ -2476,13 +2546,23 @@ def create_agent_web_app(
         A fully configured FastAPI application instance.
     """
 
-    resolved_listener_host = _configure_served_boundary(listener_host, session_boundary)
+    from .auth_policy import AnonymousReadPolicy, AuthMode, resolve_auth_mode
+
+    mode = resolve_auth_mode(auth_mode)
+    anonymous_policy = AnonymousReadPolicy(anonymous_read_routes)
+    if anonymous_read_routes and mode is not AuthMode.NONE:
+        raise RuntimeError('Anonymous policy requires explicit no-auth mode')
+    resolved_listener_host = _configure_served_boundary(
+        listener_host, session_boundary, mode
+    )
     content_security_policy, mint_graph_session, security_contract = (
         _startup_security_contract(
             resolved_listener_host,
             custom_rendering=html_source is not None,
         )
     )
+    security_contract['auth_mode'] = mode.value
+    security_contract['unsecured'] = mode is AuthMode.NONE
     set_workspace_helpers(workspace_helpers)
 
     default_models = _default_provider_models()
@@ -2723,17 +2803,19 @@ def create_agent_web_app(
     # Install the WebUI-owned security boundary after route composition so
     # injected Arbora routes and standalone WebUI routes share the same
     # authenticated actor/session boundary.
-    _ensure_authorization_middleware(app)
-    _ensure_actor_identity_middleware(
-        app,
-        mint_graph_session=mint_graph_session,
+    _ensure_authorization_middleware(
+        app, anonymous_policy=anonymous_policy if mode is AuthMode.NONE else None
     )
-    _ensure_browser_sso_middleware(
-        app,
-        browser_control=browser_control,
-        mint_graph_session=mint_graph_session,
-        session_boundary=session_boundary,
-    )
+    if mode is AuthMode.NONE:
+        app.add_middleware(ExplicitAnonymousMiddleware)
+    else:
+        _ensure_actor_identity_middleware(app, mint_graph_session=mint_graph_session)
+        _ensure_browser_sso_middleware(
+            app,
+            browser_control=browser_control,
+            mint_graph_session=mint_graph_session,
+            session_boundary=session_boundary,
+        )
     _ensure_security_headers_middleware(
         app,
         content_security_policy=content_security_policy,

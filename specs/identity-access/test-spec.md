@@ -29,3 +29,16 @@ These are planned cases, not passing receipts. Record exact installed WebUI/Arbo
 Test public shell reachability, unauthorized API refusal in authenticated modes, authorized API success and expired/revoked sessions. Cover tenant separation, CSRF, login fixation, logout, WebSocket context binding, renewal and attended browser-control restrictions. Run manual and native WebMCP parity against the same mode/role fixtures. No-auth must pass genuine declared anonymous operations without inventing authenticated identity; disabled identity-dependent actions remain visibly explained. A startup-only fake-boundary test, browser fixture or successful upstream no-auth call alone does not qualify the installed browser stack. Provider-specific live evidence is required before claiming Keycloak or Okta production qualification; protocol fixtures remain useful but separately labelled.
 
 Exercise real enhanced file/config/editor handlers in no-auth: the interim implementation must refuse direct effects. Full R003.1 acceptance requires positive and adversarial tests of migrated canonical operations. Cover containment, exact target/action binding, confirmation and native consume-once/CAS. R003.2/R010 require installed caller propagation across real awaits/dispatch, expired/revoked sessions and WebSocket renewal. A denied inactive adapter proves safety, not functional completion.
+
+## Source configuration children
+
+| Child | Source evidence or remaining acceptance |
+|---|---|
+| WEBUI-IDENTITY-R003.1.1 | `tests/test_explicit_auth_modes.py` checks explicit anonymous policy and refusal, not positive governed effects. |
+| WEBUI-IDENTITY-R003.1.2 | Installed anonymous journeys, UI/WebMCP parity and native effects remain open. |
+| WEBUI-IDENTITY-R003.2.1 | `tests/test_explicit_auth_modes.py` refuses missing or untyped EG owners. |
+| WEBUI-IDENTITY-R003.2.2 | Installed EG login/session/logout and HTTP/WebSocket qualification remain open. |
+| WEBUI-IDENTITY-R003.3.1 | `tests/test_explicit_auth_modes.py` refuses incompatible EG ownership and incomplete browser OIDC setup. |
+| WEBUI-IDENTITY-R003.3.2 | OIDC protocol fixtures and live provider acceptance remain open. |
+
+The source markers cover only configuration and refusal behavior. R003.1, R003.2 and R003.3 retain every original parent requirement. R010 renewal and mode-transition acceptance remains open.
