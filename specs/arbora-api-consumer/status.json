@@ -252,10 +252,12 @@
       "title": "Conversation and admitted-identity source preservation",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "bfb532535a0f",
         "c767b6a5b17f"
       ],
       "verified_by": [
-        "agent/agent_webui/__tests__/test_run_identity.py:3"
+        "agent/agent_webui/__tests__/test_run_identity.py:3",
+        "src/__tests__/Chat.swe-mode.test.tsx:1"
       ]
     },
     {
