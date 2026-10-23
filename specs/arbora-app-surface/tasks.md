@@ -182,3 +182,5 @@ Unchecked tasks remain open. Definitions alone do not establish runtime delivery
 - [ ] WEBUI-APPS-R046.2.2: Complete every remaining R046.2 browser and all-leaf obligation. Include rendered consent clearance and mobile input journeys.
 
 - [ ] WEBUI-APPS-R049.1.7: Bind integrated query/validation lens tests and preserve the existing maintainer boundary. Qualify real provider and browser behavior separately.
+
+- [ ] WEBUI-APPS-R049.1.8: Bind attended editor and review tests. Check the trusted-event default in a real browser. Do not classify a provider request as a local tool mutation.

@@ -134,3 +134,74 @@ describe('integrated Explore query lenses', () => {
     expect(api.runSparqlQuery).not.toHaveBeenCalled()
   })
 })
+
+// spec: WEBUI-APPS-R049.1.8
+describe('attended query editor tools', () => {
+  const invoke = (name: string, input = {}) =>
+    state.tools.get(`agent-webui.explore.${name}`)!.execute(input, { signal: new AbortController().signal })
+  it('edits without execution and requires visible confirmation for submission', async () => {
+    renderWithProviders(surface())
+    await act(async () => {
+      await invoke('edit-query', { text: 'SELECT ?review WHERE {}' })
+    })
+    expect(screen.getByRole('textbox', { name: 'SPARQL query' })).toHaveValue('SELECT ?review WHERE {}')
+    expect(api.runSparqlQuery).not.toHaveBeenCalled()
+    await act(async () => {
+      await invoke('request-query-submission')
+    })
+    expect(screen.getByRole('dialog')).toHaveTextContent('SELECT ?review WHERE {}')
+    expect(api.runSparqlQuery).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel submission' }))
+    expect(api.runSparqlQuery).not.toHaveBeenCalled()
+    await act(async () => {
+      await invoke('request-query-submission')
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm provider submission' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('browser interaction')
+    expect(api.runSparqlQuery).not.toHaveBeenCalled()
+  })
+  it('refuses same-tick old handles after an edit and stale review after manual changes', async () => {
+    renderWithProviders(surface())
+    const held = state.tools.get('agent-webui.explore.request-query-submission')!
+    await act(async () => {
+      await invoke('edit-query', { text: 'SELECT ?fresh WHERE {}' })
+      await expect(held.execute({}, { signal: new AbortController().signal })).rejects.toThrow('stale')
+    })
+    await act(async () => {
+      await invoke('request-query-submission')
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'SPARQL query', hidden: true }), {
+      target: { value: 'SELECT ?changed WHERE {}' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm provider submission' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('browser interaction')
+    expect(api.runSparqlQuery).not.toHaveBeenCalled()
+  })
+  it('retires review and held tool after owner change', async () => {
+    const view = renderWithProviders(surface())
+    const held = state.tools.get('agent-webui.explore.edit-query')!
+    await act(async () => {
+      await invoke('request-query-submission')
+    })
+    state.owner = 'owner-b'
+    view.rerender(surface())
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await expect(
+      held.execute({ text: 'SELECT ?old WHERE {}' }, { signal: new AbortController().signal }),
+    ).rejects.toThrow('stale')
+    expect(api.runSparqlQuery).not.toHaveBeenCalled()
+  })
+  it('uses the existing validation callback only after review', async () => {
+    renderWithProviders(surface())
+    fireEvent.click(screen.getByRole('link', { name: 'validation' }))
+    await act(async () => {
+      await invoke('edit-query', { text: 'candidate', sourceType: 'text' })
+    })
+    await act(async () => {
+      await invoke('request-query-submission')
+    })
+    expect(api.validateOntologyCandidate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm provider submission' }))
+    expect(api.validateOntologyCandidate).not.toHaveBeenCalled()
+  })
+})
