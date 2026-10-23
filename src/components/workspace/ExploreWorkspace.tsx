@@ -1,4 +1,5 @@
 import { conversationOwnerKey } from '@/lib/chat-store'
+import { parseExploreLensState } from '@/lib/explore-lens-state'
 import { useWorkspaceCommands } from './WorkspaceCommands'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -8,13 +9,7 @@ import { usePageContextPublisher } from '@/lib/page-context'
 import { roleAtLeast } from '@/lib/nav-registry'
 import { useIdentity } from '@/lib/auth'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
-import {
-  EXPLORE_TOOLS,
-  exploreHref,
-  navigateExplore,
-  parseExploreState,
-  type ExploreState,
-} from '@/lib/explore-workspace'
+import { EXPLORE_TOOLS, exploreHref, navigateExplore, type ExploreState } from '@/lib/explore-workspace'
 import { useWebMcpToolSet } from '@/lib/webmcp/provider'
 import { makeTool } from '@/lib/webmcp/tools'
 import type { ObjectSetResult } from '@/components/views/ObjectExplorerView'
@@ -25,18 +20,25 @@ const button =
 
 function useDestination(location: string) {
   try {
-    return { state: parseExploreState(location), error: null }
+    return { state: parseExploreLensState(location), error: null }
   } catch (error) {
     return { state: { entity: null, tool: 'overview' } as ExploreState, error: String(error) }
   }
 }
 
 /** A new collection/entity composition, not legacy pages mounted inside tabs. */
-export default function ExploreWorkspace() {
+export default function ExploreWorkspace({
+  active = true,
+  showHeading = true,
+}: {
+  active?: boolean
+  showHeading?: boolean
+}) {
   const { identity, loading: identityLoading } = useIdentity()
-  const canRead = !identityLoading && !identity.needsSignIn && roleAtLeast(identity.role, 'user')
+  const canRead = active && !identityLoading && !identity.needsSignIn && roleAtLeast(identity.role, 'user')
   const location = useWorkspaceLocation()
   const { state, error: destinationError } = useDestination(location)
+  const workspaceLens = 'lens' in state ? state.lens : 'evidence'
   const query = state.query ?? ''
   const started = state.query !== undefined
   const [draft, setDraft] = useState(query)
@@ -81,9 +83,9 @@ export default function ExploreWorkspace() {
               },
             ]
           : [],
-      filters: { collectionQuery: query.slice(0, 256), evidenceTool: state.tool },
+      filters: { collectionQuery: query.slice(0, 256), evidenceTool: state.tool, workspaceLens },
     }),
-    [canRead, object.data, query, state.tool],
+    [canRead, object.data, query, state.tool, workspaceLens],
   )
   usePageContextPublisher(conversationContext)
   useEffect(() => {
@@ -101,6 +103,29 @@ export default function ExploreWorkspace() {
       setNavigationError(error instanceof Error ? error.message : 'Navigation failed')
     }
   }
+  const toolGeneration = useMemo(
+    () => ({}),
+    [
+      canRead,
+      identity.role,
+      identity.userKey,
+      identity.raw?.tenant,
+      object.data,
+      results.data,
+      state.entity,
+      state.query,
+      state.tool,
+    ],
+  )
+  const liveToolGeneration = useRef(toolGeneration)
+  liveToolGeneration.current = toolGeneration
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   const tools = useMemo(() => {
     if (!canRead) return []
     const schema = z.object({ entity: z.string().min(1).max(256).nullable(), tool: z.enum(EXPLORE_TOOLS) }).strict()
@@ -121,6 +146,8 @@ export default function ExploreWorkspace() {
         readOnly: false,
         source: 'agent-webui:src/components/workspace/ExploreWorkspace.tsx',
         execute: (next) => {
+          if (!mounted.current || liveToolGeneration.current !== toolGeneration)
+            throw new Error('Evidence navigation context is stale')
           if (next.entity !== null && !allowed.has(next.entity))
             throw new Error('Entity is outside the loaded evidence context')
           navigateExplore({ ...next, query: state.query }, identity.role)
@@ -129,6 +156,7 @@ export default function ExploreWorkspace() {
       }),
     ]
   }, [
+    toolGeneration,
     canRead,
     identity.role,
     identity.userKey,
@@ -143,7 +171,7 @@ export default function ExploreWorkspace() {
   if (!canRead) return <p role="alert">Explore is not available for the current identity.</p>
   return (
     <section aria-label="Explore workspace" className="flex min-h-0 min-w-0 flex-col gap-3">
-      <h1 className="text-xl font-semibold">Explore</h1>
+      {showHeading && <h1 className="text-xl font-semibold">Explore</h1>}
       <nav aria-label="Evidence scope" className="flex flex-wrap items-center gap-2 text-sm">
         <button
           className={button}

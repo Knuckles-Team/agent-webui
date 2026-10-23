@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { z } from 'zod'
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { roleAtLeast, type Role } from '@/lib/nav-registry'
-import { navigateExplore, parseExploreState, exploreHref } from '@/lib/explore-workspace'
+import { EXPLORE_LENSES, navigateExploreLens, parseExploreLensState, exploreLensHref } from '@/lib/explore-lens-state'
 import { navigateWork, parseWorkState, workHref } from '@/lib/work-workspace'
 import { navigateOperate, parseOperateState, operateHref } from '@/lib/operate-workspace'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
@@ -31,14 +31,17 @@ function canonical(href: string, role: Role): string {
     throw new Error('Invalid workspace command')
   const path = new URL(href, 'https://workspace.invalid').pathname
   if (path === '/workspace/work' && roleAtLeast(role, 'user')) return workHref(parseWorkState(href))
-  if (path === '/workspace/explore' && roleAtLeast(role, 'user')) return exploreHref(parseExploreState(href))
+  if (path === '/workspace/explore') {
+    const state = parseExploreLensState(href)
+    if (roleAtLeast(role, state.lens === 'evidence' ? 'user' : 'maintainer')) return exploreLensHref(state)
+  }
   if (path === '/workspace/operate' && roleAtLeast(role, 'reader')) return operateHref(parseOperateState(href))
   throw new Error('Workspace command unavailable')
 }
 function navigate(href: string, role: Role) {
   const path = new URL(canonical(href, role), 'https://workspace.invalid').pathname
   if (path === '/workspace/work') navigateWork(parseWorkState(href), role)
-  else if (path === '/workspace/explore') navigateExplore(parseExploreState(href), role)
+  else if (path === '/workspace/explore') navigateExploreLens(parseExploreLensState(href), role, EXPLORE_LENSES)
   else navigateOperate(parseOperateState(href), role)
 }
 export function WorkspaceCommandsProvider({

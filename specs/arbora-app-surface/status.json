@@ -211,7 +211,8 @@
     "WEBUI-APPS-R049.1.5",
     "WEBUI-APPS-R049.1.6",
     "WEBUI-APPS-R046.2.1",
-    "WEBUI-APPS-R046.2.2"
+    "WEBUI-APPS-R046.2.2",
+    "WEBUI-APPS-R049.1.7"
   ],
   "requirements": [
     {
@@ -1862,7 +1863,13 @@
       "title": "Preserve every feature through the Arbora redesign",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": [],
+      "verified_by": [
+        "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:113",
+        "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:33",
+        "src/components/query-validation/__tests__/request-ownership.test.ts:110",
+        "src/components/query-validation/__tests__/request-ownership.test.ts:137",
+        "src/components/query-validation/__tests__/request-ownership.test.ts:177"
+      ],
       "rollup_of": [
         "WEBUI-APPS-R049.1",
         "WEBUI-APPS-R049.2"
@@ -1910,7 +1917,8 @@
         "WEBUI-APPS-R049.1.3",
         "WEBUI-APPS-R049.1.4",
         "WEBUI-APPS-R049.1.5",
-        "WEBUI-APPS-R049.1.6"
+        "WEBUI-APPS-R049.1.6",
+        "WEBUI-APPS-R049.1.7"
       ]
     },
     {
@@ -2012,6 +2020,18 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R049.1.7",
+      "title": "Retained query and validation lenses",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "5b2573128bf2"
+      ],
+      "verified_by": [
+        "src/components/workspace/__tests__/ExploreQueryWorkspace.test.tsx:2",
+        "src/lib/__tests__/explore-lens-state.test.ts:1"
+      ]
     }
   ]
 }

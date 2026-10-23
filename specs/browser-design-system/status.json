@@ -159,14 +159,18 @@
       "title": "Full mobile and arbitrary-aspect feature parity",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:93"
+      ]
     },
     {
       "id": "WEBUI-DESIGN-R004.2",
       "title": "Resize, fold and visual viewport continuity",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:71"
+      ]
     },
     {
       "id": "WEBUI-DESIGN-R005.1",

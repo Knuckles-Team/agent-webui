@@ -180,3 +180,5 @@ Unchecked tasks remain open. Definitions alone do not establish runtime delivery
 
 - [x] WEBUI-APPS-R046.2.1: Repair consent prompt dismissal and management. Preserve explicit choice semantics and failed-storage denial through source regressions.
 - [ ] WEBUI-APPS-R046.2.2: Complete every remaining R046.2 browser and all-leaf obligation. Include rendered consent clearance and mobile input journeys.
+
+- [ ] WEBUI-APPS-R049.1.7: Bind integrated query/validation lens tests and preserve the existing maintainer boundary. Qualify real provider and browser behavior separately.

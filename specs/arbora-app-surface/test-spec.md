@@ -204,3 +204,7 @@ R046.2.1 binds the consent banner and workspace navigation source tests. Check n
 Current App branch inspection establishes the single-prompt property; a mounted App assertion remains planned. Source tests do not prove rendered browser geometry or real browser storage behavior.
 
 R046.2.2 retains the complete R046.2 matrix. Test dynamic deepest leaves, shared paths, semantic zoom, real Back/Forward, selection and focus. Include keyboard, touch, mobile layouts and consent clearance on the exact installed candidate. These complete journeys remain planned.
+
+### Integrated query and validation lenses
+
+WEBUI-APPS-R049.1.7 binds `ExploreQueryWorkspace.test.tsx` and `explore-lens-state.test.ts`. Test draft retention across lenses, no navigation-triggered requests and owner retirement. Preserve modified links, collection search and evidence selection. Refuse malformed state and insufficient roles. Existing controller tests cover synchronous request ownership and stale replies. Real served provider behavior, actual browser history and native tool registration remain separate acceptance gates.

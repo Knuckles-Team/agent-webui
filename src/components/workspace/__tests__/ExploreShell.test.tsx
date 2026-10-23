@@ -16,7 +16,7 @@ vi.mock('@/components/views/DashboardView', () => ({
 }))
 vi.mock('@/components/workspace/OperateWorkspace', () => ({ default: () => <p>Operate evidence</p> }))
 vi.mock('@/components/workspace/WorkWorkspace', () => ({ default: () => <p>Work evidence</p> }))
-vi.mock('@/components/workspace/ExploreWorkspace', () => ({ default: () => <p>Explore evidence</p> }))
+vi.mock('@/components/workspace/ExploreQueryWorkspace', () => ({ default: () => <p>Explore evidence</p> }))
 vi.mock('@/components/app-sidebar', () => ({ AppSidebar: () => <p>Legacy sidebar</p> }))
 vi.mock('@/components/WorkspaceNavigation', () => ({ WorkspaceNavigation: () => <p>Legacy navigation</p> }))
 vi.mock('@/components/ConsentBanner', () => ({ ConsentBanner: () => null }))
