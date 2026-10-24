@@ -2,7 +2,10 @@
 import { z } from 'zod'
 import { invoke } from '@/lib/arbora-api/invoke'
 
-const runIdSchema = z.string().min(1).max(512)
+const runIdSchema = z
+  .string()
+  .min(1)
+  .refine((value) => Array.from(value).length <= 512 && value.trim().length > 0)
 const utcStamp = z.iso.datetime({ offset: true }).refine((value) => /(?:Z|\+00:00)$/.test(value))
 const snapshotSchema = z
   .object({

@@ -4,7 +4,12 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5196'
 // Synthetic read-only API fixtures against the real app, not authenticated live acceptance.
 export default defineConfig({
   testDir: '.',
-  testMatch: ['workspace-layout.spec.ts', 'workspace-task-lifecycle.spec.ts', 'workspace-density.spec.ts'],
+  testMatch: [
+    'workspace-layout.spec.ts',
+    'workspace-task-lifecycle.spec.ts',
+    'workspace-density.spec.ts',
+    'execution-graph.browser.ts',
+  ],
   workers: 1,
   reporter: 'list',
   outputDir: 'test-results/workspace-layout',

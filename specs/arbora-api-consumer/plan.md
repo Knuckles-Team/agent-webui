@@ -143,3 +143,14 @@ Preserve event identity for deduplication and explicit fold choices.
 Private reasoning, unknown fields and service credentials must not enter browser parts, URLs, logs or local persistence.
 A missing or denied producer must remain unavailable; legacy text-only replies must continue without invented graph data.
 Keep installed-provider proof separate from pure mapping, mounted-widget and synthetic browser fixtures.
+
+### 2026-10-24: Flat execution read adapter
+
+R011.4 defines a bounded source consumer for the separately versioned
+`runs.execution_graph` operation. The existing canonical browser invoke
+transport preserves CSRF, same-origin credentials and abort signals. Require
+exact selected task/run binding and the producer's default-false child
+capabilities. Validate the explicit flat dependency graph and observed event
+evidence without adapting replay-v1 or synthesizing child targets. Unsupported,
+malformed and denied reads remain distinct. This partial source slice does not
+close the public transcript, nested-run or installed-producer requirements.

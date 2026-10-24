@@ -56,3 +56,10 @@ Absent capabilities must disable controls; denial after success must withdraw pr
 Legacy final-text replies must remain readable without claiming rich-part delivery.
 Then qualify the installed host/browser/Arbora path with the same scenarios and exact producer versions.
 No mapping fixture alone establishes served capability availability or child messaging.
+
+## Flat execution read source proof
+
+WEBUI-API-R011.4 uses `execution-graph.test.ts` and mounted `WorkExecutionGraph.test.tsx` through canonical session and invoke transport.
+Require exact root-task/run identity, decoded tuple equality, Unicode preservation, unique evidence and a bounded acyclic dependency graph.
+Reject foreign or malformed keys, duplicates, dangling edges, conflicting evidence and unexpected schema or capability values.
+Missing operations stay unavailable without a fallback. Source fixtures do not establish installed-provider acceptance under R011.3.

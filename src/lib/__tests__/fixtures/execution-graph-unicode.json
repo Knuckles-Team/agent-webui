@@ -1,0 +1,41 @@
+{
+  "schema_version": "arbora-execution-graph-v1",
+  "availability": "available",
+  "run_id": "运行-α",
+  "task_id": "根-β",
+  "snapshot": {
+    "plan_digest": "unicode-plan",
+    "nodes": [
+      {
+        "key": "[\"\\u8fd0\\u884c-\\u03b1\",\"plan_step\",\"\\u6e96\\u5099-\\u00f1\"]",
+        "kind": "plan_step",
+        "task_id": "準備-ñ",
+        "status": "unobserved",
+        "evidence": null
+      },
+      {
+        "key": "[\"\\u8fd0\\u884c-\\u03b1\",\"plan_step\",\"\\u7d50\\u5408-\\ud83d\\ude42\"]",
+        "kind": "plan_step",
+        "task_id": "結合-🙂",
+        "status": "unobserved",
+        "evidence": null
+      }
+    ],
+    "edges": [
+      {
+        "kind": "depends_on",
+        "source": "[\"\\u8fd0\\u884c-\\u03b1\",\"plan_step\",\"\\u6e96\\u5099-\\u00f1\"]",
+        "target": "[\"\\u8fd0\\u884c-\\u03b1\",\"plan_step\",\"\\u7d50\\u5408-\\ud83d\\ude42\"]"
+      }
+    ],
+    "topology_completeness": "complete",
+    "lifecycle_completeness": "incomplete",
+    "lifecycle_reason": "observed_prefix_only",
+    "covered_after": 1,
+    "has_more": false,
+    "can_read_transcript": false,
+    "can_message_active": false,
+    "can_continue_completed": false,
+    "supports_spawned_children": false
+  }
+}

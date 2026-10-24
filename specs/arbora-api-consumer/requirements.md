@@ -30,3 +30,9 @@
 | ID | Requirement | Verification |
 |---|---|---|
 | `WEBUI-API-R011.3` | **Adapt the shared public execution contract.** Extend `orchestrator_model.py` and the existing browser client through registered Arbora operations. Preserve explicit node, owner, root-task, run and context bindings. Project only authorized public summaries, tool activity and transcript parts. Preserve snapshot/cursor semantics and default-false control capabilities. Preserve replay-v1 decoding; negotiate new projections separately. Do not infer child targets or expose service credentials. Depends-on: ARBORA-OPS-R021.4.8, ARBORA-OPS-R021.4.9. | Planned `test_execution_projection.py::test_public_execution_adapter` and `execution-projection.test.ts::binding_and_refusal` cover schema compatibility, exact identity, ordered replay, redaction and denial. Installed-producer qualification remains required. |
+
+## Read-only flat execution source
+
+| ID | Requirement | Verification |
+|---|---|---|
+| `WEBUI-API-R011.4` | **Flat execution read source adapter.** Consume `runs.execution_graph` with `arbora-execution-graph-v1` through the existing canonical invoke transport. Validate exact root-task/run binding, decoded node-key tuples, bounded declared topology and unique observed evidence. Preserve aborts, unavailable results and default-false child capabilities. Never fall back to legacy endpoints or infer scheduling, lineage or child targets. | Source `execution-graph.test.ts` and mounted `WorkExecutionGraph.test.tsx` use the producer contract fixture. They cover malformed, denied and stale reads, Unicode keys and missing bindings. Nested projections, transcripts and installed-producer qualification remain under R011.3. |

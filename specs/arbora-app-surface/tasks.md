@@ -308,3 +308,8 @@ The browser test writes these files into its configured output directory.
 - [ ] **WEBUI-APPS-R049.1.10:** Add explicit capability-gated active-child targeting without implicit Chat retargeting.
 - [ ] **WEBUI-APPS-R049.1.11:** Add completed-child continuation using its separate backend binding.
 - [ ] **WEBUI-APPS-R049.1.12:** Qualify both actions, reconnect and cancellation through the real Work route and released producer.
+
+### Flat dependency source slice
+
+- [x] WEBUI-APPS-R049.1.13: Qualify the bounded inline view with mounted Work and adapter fixtures.
+- [ ] R049.1.2: Keep actual browser, installed-provider and nested execution acceptance open after the source slice.

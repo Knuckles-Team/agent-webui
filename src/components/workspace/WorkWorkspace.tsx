@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ApiError } from '@/lib/api-validation'
 import { currentPlanRunId } from '@/lib/current-plan'
 import { CurrentPlanPanel } from './CurrentPlanPanel'
+import { WorkExecutionGraph } from './WorkExecutionGraph'
 import { useIdentity } from '@/lib/auth'
 import { conversationOwnerKey, useConversations } from '@/lib/chat-store'
 import { useConversationIdFromUrl } from '@/hooks/useConversationIdFromUrl'
@@ -299,11 +300,18 @@ function AuthorizedWork({
                   />
                   <WorkTaskInspector task={taskData} />
                   {!task.isFetching && (
-                    <CurrentPlanPanel
-                      taskId={taskData.id}
-                      runId={currentPlanRunId(taskData)}
-                      generation={generation}
-                    />
+                    <>
+                      <CurrentPlanPanel
+                        taskId={taskData.id}
+                        runId={currentPlanRunId(taskData)}
+                        generation={generation}
+                      />
+                      <WorkExecutionGraph
+                        taskId={taskData.id}
+                        runId={currentPlanRunId(taskData)}
+                        generation={generation}
+                      />
+                    </>
                   )}
                   <p className="text-sm">
                     Child-agent execution and relationships to listed traces are not supplied by this task contract.

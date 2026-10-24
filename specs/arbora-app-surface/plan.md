@@ -423,9 +423,8 @@ Extend WEBUI-APPS-R005.1 and WEBUI-APPS-R005.6 registry tests to enforce explici
 valid minimum roles, reader filtering, unknown-user rejection and the 20-word
 purpose bound. Extend the existing hostile route harness for WEBUI-APPS-R005.5
 with an injected throwing view; do not create a duplicate census harness.
-This is partial test evidence only: the harness retains known-failure baselines,
-and purpose visibility through shell-heading exceptions still needs rendered
-acceptance. Child requirements separate the tested subset from the remaining rendered obligations.
+This is partial test evidence only. The harness retains known-failure baselines.
+Purpose visibility through shell-heading exceptions still needs rendered acceptance. Child requirements separate the tested subset from the remaining rendered obligations.
 Parent rollups do not claim full verification from these partial tests.
 
 ### Acceptance decomposition — 2026-10-16
@@ -871,3 +870,31 @@ Unsupported controls make zero effect requests and show the producer's bounded u
 A lost response remains unknown; reconnect reconciles the original request without automatic resend.
 Cancellation uses only its exact authorized target and reports acknowledgement separately from eventual terminal state.
 Drawn descendants do not imply permission to cancel a subtree.
+
+### 2026-10-24: Bounded flat execution graph source slice
+
+R049.1.13 adds a read-only inline dependency view in the selected Work task.
+It consumes the explicit `runs.execution_graph` operation and
+`arbora-execution-graph-v1` projection, not replay-v1 event inference.
+The selected task response provides `metadata.arbora.runId`; the request also
+passes its root task ID for producer-side ownership validation. Independent
+trace and node selections cannot provide either binding. An absent operation
+remains unavailable, with no legacy fallback or fabricated graph.
+
+The bounded adapter validates the envelope, exact run/task identities, unique
+plan-step keys, explicit predecessor-to-dependent edges and evidence. The layout only places declared nodes; it does not schedule tasks or infer lineage.
+The inline diagram has an equivalent keyboard-accessible dependency list and
+wraps or scrolls within the existing Work panel at narrow widths. Labels remain
+plain text. Refresh, selection and identity changes retire the previous read;
+denied or malformed responses cannot reveal cached protected graph data.
+
+Topology is complete only within the producer-declared flat plan. Lifecycle
+coverage is always incomplete, including when `has_more` is false. Unobserved
+is not pending, queued or successful. Show the covered cursor and whether
+more evidence exists. Child hierarchy, transcript access, private reasoning,
+active-child messaging and completed-child continuation remain unavailable.
+Inspection never changes the Chat target or conversation selection.
+
+Mounted Work and adapter contract fixtures qualify this source slice only.
+The producer is unreleased; no installed-provider, browser rendering, nested
+execution, chat-targeting or full R049.1.2 completion is claimed.
