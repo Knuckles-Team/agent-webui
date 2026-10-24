@@ -1,5 +1,18 @@
 import { expect, test } from '@playwright/test'
 
+// Synthetic responses only; keep browser evidence when the journey fails.
+test.use({ trace: 'retain-on-failure' })
+test.beforeEach(({ page }) => {
+  let count = 0
+  page.on('pageerror', (error) => {
+    if (count++ < 10) console.error('Catalog fixture page error:', error.message.slice(0, 1000))
+  })
+})
+test.afterEach(async ({ page }, info) => {
+  if (info.status !== info.expectedStatus)
+    console.error('Catalog fixture DOM:', (await page.locator('body').innerText()).slice(0, 8000))
+})
+
 // spec: WEBUI-APPS-R046.2.2
 // spec: WEBUI-APPS-R049.1.2
 test('catalog definitions share deep links, keyboard search and native history across viewport changes', async ({
@@ -7,6 +20,7 @@ test('catalog definitions share deep links, keyboard search and native history a
 }, info) => {
   test.setTimeout(120_000)
   let withdrawn = false
+  const sessionToken = crypto.randomUUID()
   await page.route('**/auth/session', (route) =>
     route.fulfill({
       json: {
@@ -15,6 +29,7 @@ test('catalog definitions share deep links, keyboard search and native history a
         tenant: 'synthetic',
         webui_role: 'reader',
         roles: ['kg:read'],
+        csrf_token: sessionToken,
       },
     }),
   )
