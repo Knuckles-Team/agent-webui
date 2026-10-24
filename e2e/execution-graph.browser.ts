@@ -70,7 +70,22 @@ for (const viewport of [
       { schema_version: 'arbora-execution-graph-v1', run_id: fixture.run_id, task_id: fixture.task_id },
     ])
     await expect(graph.getByRole('button', { name: /Message active child|Continue completed child/ })).toHaveCount(0)
-    await graph.screenshot({ path: test.info().outputPath(`flat-execution-${viewport.width}.png`) })
+    // The graph is taller than its nested scroll viewport. Element screenshots
+    // would include clipped/blank regions rather than what a person can see.
+    for (const [name, target] of [
+      ['diagram', graph.getByRole('region', { name: /Scrollable dependency diagram/ })],
+      ['details', join.locator('..')],
+    ] as const) {
+      await target.evaluate((element) =>
+        element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }),
+      )
+      await expect(target).toBeInViewport({ ratio: 1 })
+      await page.screenshot({
+        path: test.info().outputPath(`flat-execution-${name}-${viewport.width}.png`),
+        animations: 'disabled',
+        caret: 'hide',
+      })
+    }
     refused = true
     await refresh.click()
     await expect(graph.getByText('Execution graph access was denied.')).toBeVisible()
