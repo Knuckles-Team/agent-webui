@@ -81,3 +81,20 @@ CSS, device-scale emulation or pinch scaling. The test checks focus visibility
 across each control's center and edges, keyboard query execution, result
 inspection and retained edits. Window widths are 1280, 640 and 740 pixels.
 Each journey uses reduced motion and synthetic identity/API responses.
+
+
+## Persistent loaded workspace map evidence
+
+Run `pnpm exec playwright test --config e2e/workspace-persistent.config.ts`.
+The synthetic journey selects a fleet child and capability through the persistent map.
+It checks URL state, Back/Forward, native task focus and retained unsent chat DOM.
+Map/list presentation adds no history. Four viewports cover desktop, narrow, landscape and irregular dimensions.
+Each viewport checks focused link hit targets with normal and reduced motion.
+A separate isolated Chromium profile checks keyboard navigation at actual 200-percent tab zoom.
+The browser extension sets native zoom; it does not emulate CSS scaling.
+`WorkspaceFrame.test.tsx` checks callback retirement and stable task DOM across map and legacy layout changes.
+
+This evidence supports partial WEBUI-APPS-R046, WEBUI-APPS-R049 and WEBUI-DESIGN-R002.1/R005.1 delivery.
+The existing broad requirements and tasks remain open.
+The map includes loaded admitted destinations, not every legacy capability or dynamic leaf.
+Live authentication, installed providers, manual screen readers and physical fold hardware remain unverified.

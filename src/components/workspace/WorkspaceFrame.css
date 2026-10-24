@@ -1,0 +1,189 @@
+.workspace-frame {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 19rem;
+}
+.workspace-frame-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--muted);
+}
+.workspace-frame-toolbar h2 {
+  font-weight: 600;
+  font-size: 1rem;
+  border-radius: 0.25rem;
+}
+.workspace-frame-eyebrow {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+}
+.workspace-frame-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.workspace-frame-actions button {
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--background);
+}
+.workspace-frame-actions button[aria-pressed='true'] {
+  border-color: var(--primary);
+  background: var(--accent);
+}
+.workspace-frame-layout {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  min-height: 16rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+.workspace-map {
+  min-width: 0;
+  min-height: 12rem;
+  max-height: min(24rem, 45dvh);
+  overflow: auto;
+  padding: 1rem 1rem 6rem;
+  scroll-padding: 1rem 1rem 6rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 35%, var(--background));
+}
+.workspace-map[hidden] {
+  display: none;
+}
+.workspace-map-context {
+  margin-bottom: 1rem;
+}
+.workspace-map-context strong {
+  display: block;
+  font-size: 1.25rem;
+}
+.workspace-map-context p,
+.workspace-map-note {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+.workspace-map-search {
+  display: block;
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+.workspace-map-search input {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--background);
+}
+.workspace-map-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 1rem 0;
+  list-style: none;
+  padding: 0;
+}
+.workspace-map-breadcrumbs li {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.workspace-map-breadcrumbs li + li::before {
+  content: '›';
+  color: var(--muted-foreground);
+}
+.workspace-map-node {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--background);
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+}
+.workspace-map-node[aria-current] {
+  border-color: var(--primary);
+  background: var(--accent);
+  box-shadow: inset 3px 0 var(--primary);
+  font-weight: 600;
+}
+.workspace-map-parent {
+  margin-top: 1rem;
+}
+.workspace-map-parent .workspace-map-node {
+  border-width: 2px;
+}
+.workspace-map-branches,
+.workspace-map-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0 1rem;
+}
+.workspace-map-branches {
+  margin-left: 0.75rem;
+  padding-left: 1rem;
+  border-left: 2px solid var(--border);
+}
+.workspace-map-branches li,
+.workspace-map-list li {
+  position: relative;
+  margin: 0.5rem 0;
+  min-width: 0;
+}
+.workspace-map-branches li::before {
+  content: '';
+  position: absolute;
+  width: 1rem;
+  left: -1rem;
+  top: 22px;
+  border-top: 2px solid var(--border);
+}
+.workspace-task-surface {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 16rem;
+  overflow: hidden;
+}
+.workspace-task-surface > .workspace-body {
+  min-height: 16rem;
+  flex: 1;
+}
+.workspace-frame :focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+@media (min-width: 80rem) {
+  .workspace-frame-layout[data-map-open='true'] {
+    grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
+  }
+  .workspace-frame-layout {
+    min-height: 16rem;
+    overflow: hidden;
+  }
+  .workspace-map {
+    max-height: none;
+    border-right: 1px solid var(--border);
+    border-bottom: 0;
+  }
+}

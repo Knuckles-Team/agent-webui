@@ -116,6 +116,41 @@ export function WorkspaceCommandPalette() {
   if (!context) return null
   return <OwnedPalette key={context.owner} context={context} />
 }
+
+/** A second presentation of the same current, admitted destination catalog. */
+export function useWorkspaceCommandNavigation() {
+  const context = useContext(Context)
+  const location = useWorkspaceLocation()
+  const live = useRef(context)
+  const active = useRef(true)
+  live.current = context
+  useEffect(() => {
+    active.current = true
+    return () => {
+      active.current = false
+    }
+  }, [])
+  const select = useCallback(
+    (href: string) => {
+      if (
+        !context ||
+        !active.current ||
+        live.current !== context ||
+        !context.entries.some((entry) => entry.href === href)
+      )
+        throw new Error('Workspace command is stale or unavailable')
+      navigate(href, context.role)
+    },
+    [context],
+  )
+  let current: string | null = null
+  try {
+    if (context) current = canonical(location, context.role)
+  } catch {
+    // Unknown destinations stay with the native surface; never expose raw query text.
+  }
+  return { entries: context?.entries ?? [], owner: context?.owner ?? '', current, select }
+}
 function OwnedPalette({ context }: { context: CommandContext }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
