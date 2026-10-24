@@ -418,8 +418,8 @@
       "title": "Nav entry declares a minimum role",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "69ce8b315b81",
-        "a390f7a0dabb"
+        "a390f7a0dabb",
+        "af4bf7721747"
       ],
       "verified_by": [
         "src/components/__tests__/AppRoleVisibility.test.tsx:1",
@@ -446,7 +446,7 @@
       "title": "Rendered role filtering",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "69ce8b315b81"
+        "af4bf7721747"
       ],
       "verified_by": [
         "src/components/__tests__/AppRoleVisibility.test.tsx:1"
@@ -482,8 +482,8 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "282b25e95b87",
-        "69ce8b315b81",
-        "a390f7a0dabb"
+        "a390f7a0dabb",
+        "af4bf7721747"
       ],
       "verified_by": [
         "src/__tests__/routes/route-render.hostile.test.tsx:129",
@@ -512,7 +512,7 @@
       "title": "Complete route render acceptance",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "69ce8b315b81"
+        "af4bf7721747"
       ],
       "verified_by": [
         "src/__tests__/routes/route-render.hostile.test.tsx:129",
@@ -524,8 +524,8 @@
       "title": "Each view states its purpose",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "69ce8b315b81",
-        "a390f7a0dabb"
+        "a390f7a0dabb",
+        "af4bf7721747"
       ],
       "verified_by": [
         "src/components/__tests__/AppRoleVisibility.test.tsx:79",
@@ -555,7 +555,7 @@
       "title": "Rendered purpose visibility",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "69ce8b315b81"
+        "af4bf7721747"
       ],
       "verified_by": [
         "src/components/__tests__/AppRoleVisibility.test.tsx:79",
