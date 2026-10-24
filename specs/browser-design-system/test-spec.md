@@ -289,3 +289,7 @@ Do not force that content into the old 224-pixel fixture cap.
 Instead, require a useful working pane larger than the compact assistant and at least 200 pixels high.
 Require adjacent task and assistant edges, ordinary scrolling, complete composer hit targets and retained draft text.
 Enlarged-text cases retain their full keyboard and wheel reachability checks without fixed-height assumptions.
+
+The 200-percent-text journey must inspect the selected Agent mode glyphs, not only the combobox accessibility name.
+Use intrinsic, text-scaled selector sizing so Ask, Plan and Code stay readable.
+Changing this existing presentation must not change execution handlers, request fields or authority.

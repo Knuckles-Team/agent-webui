@@ -371,6 +371,39 @@ test('native composer and task remain reachable with enlarged text at narrow and
     await input.fill('Enlarged text draft')
     await hitTarget(input)
     const mode = page.getByRole('combobox', { name: 'Agent mode' })
+    // The selected execution mode must remain legible, not merely an accessible name on a clipped button.
+    await mode.click()
+    await page.getByRole('option', { name: 'Code', exact: true }).click()
+    const selectedMode = mode.locator('[data-slot="select-value"]')
+    await expect(selectedMode).toHaveText('Code')
+    await expect
+      .poll(() =>
+        selectedMode.evaluate((element) => {
+          const range = document.createRange()
+          range.selectNodeContents(element)
+          const text = range.getBoundingClientRect()
+          const box = element.getBoundingClientRect()
+          const control = element.closest('[role="combobox"]')!.getBoundingClientRect()
+          return (
+            text.left >= 0 &&
+            text.right <= innerWidth &&
+            text.top >= 0 &&
+            text.bottom <= innerHeight &&
+            text.left >= control.left &&
+            text.right <= control.right &&
+            text.top >= control.top &&
+            text.bottom <= control.bottom &&
+            text.width > 0 &&
+            text.left >= box.left - 1 &&
+            text.right <= box.right + 1 &&
+            text.top >= box.top - 1 &&
+            text.bottom <= box.bottom + 1 &&
+            element.scrollWidth <= element.clientWidth + 1
+          )
+        }),
+      )
+      .toBe(true)
+    await input.focus()
     const expand = page.getByRole('button', { name: 'Expand chat', exact: true })
     for (const [control, key] of [
       [mode, 'Tab'],

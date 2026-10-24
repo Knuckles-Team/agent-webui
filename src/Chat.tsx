@@ -2077,7 +2077,7 @@ Available commands:
                   }}
                   value={mode}
                 >
-                  <PromptInputModelSelectTrigger className="w-[90px]" aria-label="Agent mode">
+                  <PromptInputModelSelectTrigger className="w-auto min-w-[5.625rem] shrink-0" aria-label="Agent mode">
                     <PromptInputModelSelectValue />
                   </PromptInputModelSelectTrigger>
                   <PromptInputModelSelectContent>
