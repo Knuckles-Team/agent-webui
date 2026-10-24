@@ -387,3 +387,62 @@ for (const viewport of [
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   })
 }
+
+// spec: WEBUI-APPS-R049.1.2
+for (const viewport of [
+  { width: 1280, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`contextual prompt authoring in Work at ${viewport.width}`, async ({ page }) => {
+    const writes: unknown[] = []
+    let role = 'Original prompt role'
+    await page.route('**/auth/session', (route) =>
+      route.fulfill({
+        json: {
+          authenticated: true,
+          subject: 'prompt-author',
+          tenant: 'prompt-tenant',
+          webui_role: 'admin',
+          roles: ['kg:admin'],
+        },
+      }),
+    )
+    await page.route('**/api/**', async (route) => {
+      const path = new URL(route.request().url()).pathname
+      if (path === '/api/enhanced/prompts')
+        return route.fulfill({
+          json: [{ name: 'sample', title: 'Sample prompt', goal: '', core_directive: '', file_path: 'sample.json' }],
+        })
+      if (path === '/api/enhanced/prompts/sample') {
+        if (route.request().method() === 'PUT') {
+          const body = route.request().postDataJSON() as { identity: { role: string } }
+          writes.push(body)
+          role = body.identity.role
+          return route.fulfill({ json: { status: 'success' } })
+        }
+        return route.fulfill({ json: { title: 'Sample prompt', identity: { role }, tools: [] } })
+      }
+      if (path === '/api/chats' || path === '/api/enhanced/sessions') return route.fulfill({ json: [] })
+      if (path === '/api/enhanced/sessions/task-a')
+        return route.fulfill({ json: { id: 'task-a', status: { state: 'completed' } } })
+      if (path === '/api/configure') return route.fulfill({ json: { models: [], builtinTools: [] } })
+      if (path === '/api/enhanced/models') return route.fulfill({ json: { models: [], default_id: '' } })
+      return route.fulfill({ status: 501, json: { detail: 'Unavailable fixture surface' } })
+    })
+    await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+    await page.setViewportSize(viewport)
+    await page.goto('/workspace/work?task=task-a')
+    await page.getByRole('link', { name: 'Prompt authoring', exact: true }).click()
+    await page.getByRole('textbox', { name: 'Role / Title' }).fill('Draft prompt role')
+    await page.getByRole('link', { name: 'Investigation', exact: true }).click()
+    await expect(page.getByRole('textbox', { name: 'Role / Title' })).toHaveCount(0)
+    await page.goBack()
+    await expect(page.getByRole('textbox', { name: 'Role / Title' })).toHaveValue('Draft prompt role')
+    expect(writes).toEqual([])
+    await expect(page).toHaveURL(/task=task-a.*lens=prompts/)
+    await page.getByRole('button', { name: 'Save Config', exact: true }).click()
+    await expect.poll(() => writes.length).toBe(1)
+    await expect(page.getByRole('textbox', { name: 'Role / Title' })).toHaveValue('Draft prompt role')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  })
+}

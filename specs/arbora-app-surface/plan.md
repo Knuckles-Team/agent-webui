@@ -680,3 +680,28 @@ Use visible attended review for these changes, including the loss of an unsent d
 Bind reviews and semantic review requests to the current owner, conversation and local-copy snapshot.
 Retire reviews when that context changes. Check local storage readback before reporting success.
 Keep the existing conversation selector, legacy links and one retained Chat instance.
+
+### Contextual Work prompt authoring
+
+Extend WEBUI-APPS-R049.1.2 and R049.1.3 with an admin-only prompts lens.
+Reuse the existing validated prompt editor and its canonical list/read/upsert adapter.
+Do not add a backend API or infer a task association.
+Keep conversation, task and independent trace selection in typed Work URLs.
+Keep prompt documents and unsaved edits out of URLs and semantic navigation.
+Share lens selection between native links and WebMCP. Selecting a lens must
+not save a prompt. Preserve drafts while switching lenses in the admitted
+Work workspace, and retire the editor when the identity admission changes.
+Retain the legacy prompts route and its existing editor behavior. This slice
+does not claim full authoring-tool parity, provider acceptance, plan metrics,
+harness discovery, or complete Work destination migration.
+
+## Persistent loaded workspace frame
+
+Extend the existing workspace requirements without new decomposition. Keep the
+three-context rail and task surfaces. Add a persistent map/list of loaded
+caller-visible destinations beside those surfaces. Let the URL select the map
+branch. Native links, breadcrumbs and search use the existing typed dispatchers.
+Presentation changes add no browser history. Preserve the stable chat instance
+and all existing controls during viewport changes. Narrow layouts stack the map
+and task surface with explicit focus controls. This bounded shell does not
+migrate legacy pages or prove all dynamic leaves and installed providers.

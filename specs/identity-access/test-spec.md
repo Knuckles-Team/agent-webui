@@ -53,3 +53,12 @@ keeps its server navigation. Authenticated tabs schedule a read within sixty
 seconds, even if an earlier read preceded logout completion. Request deadlines
 add up to ten seconds. Background browser throttling may extend this delay.
 A click-time hint does not prove completed server logout.
+
+Reproduce installed-candidate evidence with `tests/qualification/run_installed.py`.
+Its prerequisites and source mappings are in `tests/qualification/README.md`.
+Opt-in skips are not acceptance. Synthetic protocol and browser results do not close live-provider or native EG acceptance.
+
+The qualification files must retain collected items when opt-in is absent.
+A diff-scoped run must report explicit skips instead of no tests.
+Runner regressions check source/config isolation and propagate protocol failures, including empty collection.
+Explicit opt-in with missing prerequisites must fail, not skip.

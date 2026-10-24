@@ -1,5 +1,18 @@
 # Arbora shell and app verification
 
+## Loaded destination branches
+
+Partial WEBUI-APPS-R046.2.2 delivery uses the existing command catalog and typed
+selection dispatcher for branch cards, list search and native links. The rendered
+`WorkspaceCommandBranches.test.tsx` checks confirmed parent relationships without inventing task-to-trace associations.
+It checks modified links, breadcrumb focus and retirement. It also checks shared entity IDs at distinct loaded destination paths.
+`e2e/workspace-branches.browser.ts` exercises keyboard drill-in, global search,
+resizing, immediate return, native detail selection and real browser history.
+These synthetic identity/data fixtures do not qualify served authority, complete
+dynamic depth, all-leaf coverage or manual screen-reader acceptance.
+
+## General verification matrix
+
 | Case | Level/fixture | Pass |
 |---|---|---|
 | Product identity | Asset-generator check, metadata/route snapshots | All exposed names and generated hashes match |
@@ -401,6 +414,7 @@ Keep task and trace selections. Check that server history and another owner's ca
 These fixtures do not qualify live-provider history or remote deletion.
 
 
+
 The manual migration fixture also exercised the canonical fleet invocation
 pipeline with installed dependencies and the candidate WebUI source. Both
 discovery operations returned HTTP 200 for `kg:read mcp:discover`. Removing
@@ -409,3 +423,34 @@ with Arbora's `SCOPE_REQUIRED` and that missing scope for both operations.
 Real JWKS verification and the downstream operation pipeline remained active.
 This source-overlay check is not built-wheel, browser, live-provider or
 production identity acceptance.
+
+### Contextual prompt authoring in Work
+
+WEBUI-APPS-R049.1.2/R049.1.3: `WorkPromptLens.test.tsx` covers strict typed lens URLs, admin-only admission and preserved conversation/task/trace state.
+It covers shared manual and semantic lens selection, stale-handle refusal, draft retention and owner retirement.
+It also checks an explicit save through the existing prompt adapter. Existing `PromptsView.test.tsx`
+retains validation, create, overwrite and request-race coverage for the shared editor.
+These source tests do not qualify a real provider or native browser, nor complete editor-tool parity.
+
+
+## Persistent loaded workspace map evidence
+
+Run `pnpm exec playwright test --config e2e/workspace-persistent.config.ts`.
+The synthetic journey selects a fleet child and capability through the persistent map.
+It checks URL state, Back/Forward, native task focus and retained unsent chat DOM.
+Map/list presentation adds no history. Four viewports cover desktop, narrow, landscape and irregular dimensions.
+Each viewport checks focused link hit targets with normal and reduced motion.
+A separate isolated Chromium profile checks keyboard navigation at actual 200-percent tab zoom.
+The browser extension sets native zoom; it does not emulate CSS scaling.
+`WorkspaceFrame.test.tsx` checks callback retirement and stable task DOM across map and legacy layout changes.
+
+This evidence supports partial WEBUI-APPS-R046, WEBUI-APPS-R049 and WEBUI-DESIGN-R002.1/R005.1 delivery.
+The existing broad requirements and tasks remain open.
+The map includes loaded admitted destinations, not every legacy capability or dynamic leaf.
+Live authentication, installed providers, manual screen readers and physical fold hardware remain unverified.
+
+The persistent-map keyboard matrix also covers filter, list selection, breadcrumb return and three Back/Forward cycles.
+It runs at narrow width and native 200-percent zoom with normal and reduced motion.
+Edge hit tests include the fixed assistant trigger and its animated halo.
+The outer workspace scrollport reserves focus clearance when the persistent frame is active.
+This supplements the existing four-viewport continuity journey, including short landscape.
