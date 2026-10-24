@@ -1994,6 +1994,7 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": [
+        "src/components/views/__tests__/ArboraReadinessView.test.tsx:1",
         "src/components/workspace/__tests__/OperateReadinessPanel.test.tsx:1"
       ]
     },

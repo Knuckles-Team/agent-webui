@@ -249,3 +249,7 @@ Both requirements retain their existing acceptance gaps.
 
 R049.1.2 readiness migration preserves the supported dashboard snapshot and its explicit reprobe action.
 Diagnostic HTTP 503 responses are distinct from unreadable, denied or unavailable transport responses.
+
+R049.1.2 supported readiness migration includes its compatibility address and distinct failure states.
+Catalog and readiness controls remain available within Operate without visiting legacy feature pages.
+Complete destination migration and native-control parity remain open.

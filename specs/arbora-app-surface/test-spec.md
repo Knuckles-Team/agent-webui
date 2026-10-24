@@ -300,3 +300,24 @@ An invalid temporary bearer produced HTTP 401 and withdrew evidence; restoring t
 Neither viewport produced page errors or horizontal overflow. All 49 focused source tests passed.
 The browser entered through the root and existing history event; cold-entry assets remain separately owned.
 Synthetic engine and identity fixtures do not qualify live engine, identity-provider or complete migration acceptance.
+
+### Operate compatibility and action acceptance
+
+Preserve the legacy readiness refresh action, backend rollup, provenance, reasons and full check evidence.
+Test its typed compatibility address, role/loading refusal, replacement history and readiness-heading focus.
+Distinguish missing routes from access denial, invalid snapshots and transport failures.
+Exercise catalog filtering, connector and definition selection, refresh, and readiness inspection/reprobe without legacy page navigation.
+Record actual browser history, keyboard and mobile evidence separately from source fixtures and live-provider acceptance.
+
+The installed Arbora 0.1.7 dashboard and enhanced catalog served the production build with synthetic authorities.
+At 1366 by 900 and 375 by 812 pixels, cold readiness entry replaced history and focused the contextual heading.
+Back/Forward retained the Operate destination without returning to the retired layout.
+Catalog filtering, tool/skill definition inspection and refresh succeeded beside readiness diagnosis and explicit reprobe.
+Readiness transitioned from HTTP 503 to 200; a temporary invalid bearer caused HTTP 401 and evidence withdrawal.
+Restoring the synthetic bearer recovered the panel. Neither viewport produced page errors or horizontal overflow.
+The 66 focused tests cover alias refusal, failure distinctions, dynamic checks and existing catalog behavior.
+
+Fleet POST qualification remains blocked: the installed host requires `kg:write` for the synthetic reader's discovery requests.
+Both `fleet.status` and `fleet.catalog.list` returned HTTP 403 before the installed invocation pipeline.
+No grants or admission rules changed. Synthetic browser identity does not qualify production authentication or provider connectivity.
+The integrations alias remains open because package identity and frontend contribution mappings lack a supported served contract.

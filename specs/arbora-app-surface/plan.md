@@ -600,3 +600,12 @@ Installed scheduling, pipeline, maintenance and model-management facades refuse 
 Fleet load/unload require authenticated MCP sessions and are not HTTP actions.
 Legacy broker topic/message requests do not match its advertised queue/publish contract.
 Readiness diagnosis uses the supported dashboard collector rather than those unavailable journeys.
+
+### Supported Operate migration acceptance
+
+Consolidate catalog inspection and readiness diagnosis through their existing Operate controls.
+Retire the standalone readiness layout only after its refresh and evidence behavior passes in Operate.
+Map the legacy readiness address through a typed compatibility adapter with reader access and replacement history.
+Focus the readiness heading on arrival without creating a Back-navigation loop.
+Preserve missing-route, access-denied, invalid-response and transport-failure distinctions before retiring the legacy view.
+Keep integration package descriptors separate from connector identities; their missing contract prevents that alias migration.

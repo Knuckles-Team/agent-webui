@@ -61,7 +61,7 @@ it('withdraws prior evidence on refusal and recovers only after a fresh read', a
   await screen.findByText('Backend readiness: degraded')
   status = 403
   fireEvent.click(screen.getByRole('button', { name: 'Reprobe readiness' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent('could not be retrieved')
+  expect(await screen.findByRole('alert')).toHaveTextContent('access was denied')
   expect(screen.queryByText('snapshot:first')).not.toBeInTheDocument()
   status = 503
   fireEvent.click(screen.getByRole('button', { name: 'Reprobe readiness' }))
@@ -105,9 +105,9 @@ it('rejects malformed, oversized and contradictory snapshots', async () => {
   payload = { error: 'unavailable' }
   await expect(readOperateReadiness()).rejects.toThrow()
   payload = snapshot('ready')
-  await expect(readOperateReadiness()).rejects.toThrow('Inconsistent')
+  await expect(readOperateReadiness()).rejects.toThrow('could not be validated')
   payload = { ...snapshot(), extra: 'x'.repeat(262144) }
-  await expect(readOperateReadiness()).rejects.toThrow('bound')
+  await expect(readOperateReadiness()).rejects.toThrow('could not be validated')
 })
 
 it('prevents duplicate reprobes and retires the selected evidence while a read is pending', async () => {
@@ -130,4 +130,46 @@ it('prevents duplicate reprobes and retires the selected evidence while a read i
   await screen.findByText('Backend readiness: degraded')
   expect(button).toBeEnabled()
   expect(screen.queryByRole('region', { name: 'Readiness check custom' })).not.toBeInTheDocument()
+})
+
+it.each([
+  [404, 'not activated'],
+  [501, 'not activated'],
+  [401, 'access was denied'],
+  [403, 'access was denied'],
+  [500, 'could not be retrieved'],
+])('preserves distinct HTTP %s failure feedback', async (code, message) => {
+  status = code
+  renderWithProviders(<OperateReadinessPanel generation="first" />)
+  expect(await screen.findByRole('alert')).toHaveTextContent(message)
+  expect(screen.queryByText(/Backend readiness:/)).not.toBeInTheDocument()
+})
+it('preserves required failures and full returned evidence without claiming readiness', async () => {
+  payload = {
+    ...snapshot('unavailable'),
+    checks: { synthetic_query: { state: 'unavailable', reason: 'fixture failed', evidence_count: 0 } },
+    required_failures: ['synthetic_query'],
+    degraded_reasons: [],
+  }
+  renderWithProviders(<OperateReadinessPanel generation="first" />)
+  expect(await screen.findByText('Backend readiness: unavailable')).toBeVisible()
+  expect(screen.getByRole('region', { name: 'Required failures' })).toHaveTextContent('synthetic_query')
+  fireEvent.click(screen.getByRole('button', { name: 'synthetic_query: unavailable' }))
+  expect(screen.getByRole('region', { name: 'Readiness check synthetic_query' })).toHaveTextContent(
+    '"evidence_count": 0',
+  )
+})
+
+it('classifies interrupted response bodies as transport failures', async () => {
+  const response = new Response('', { status: 503 })
+  vi.spyOn(response, 'text').mockRejectedValue(new TypeError('synthetic stream failure'))
+  fetcher.mockResolvedValue(response)
+  await expect(readOperateReadiness()).rejects.toMatchObject({ kind: 'transport' })
+})
+it('preserves cancellation after response headers arrive', async () => {
+  const response = new Response('', { status: 503 })
+  const aborted = new DOMException('synthetic cancellation', 'AbortError')
+  vi.spyOn(response, 'text').mockRejectedValue(aborted)
+  fetcher.mockResolvedValue(response)
+  await expect(readOperateReadiness()).rejects.toBe(aborted)
 })

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { readOperateReadiness, type OperateReadiness } from '@/lib/operate-readiness'
+import { focusReadinessOnArrival } from '@/lib/operate-compatibility'
+import { readinessFailureMessage, readOperateReadiness, type OperateReadiness } from '@/lib/operate-readiness'
 
 export function OperateReadinessPanel({ generation }: { generation: string }) {
   const [reprobing, setReprobing] = useState(false)
@@ -19,10 +20,13 @@ export function OperateReadinessPanel({ generation }: { generation: string }) {
       aria-label="Readiness diagnosis"
       className="min-w-0 space-y-3 rounded border p-3 [overflow-wrap:anywhere]"
     >
-      <h2 className="font-medium">Readiness diagnosis</h2>
+      <h2 ref={focusReadinessOnArrival} tabIndex={-1} className="font-medium">
+        Readiness diagnosis
+      </h2>
       <p>Inspect the checks reported by this deployment. Absent checks provide no evidence of readiness.</p>
       <button
         type="button"
+        className="min-h-11 rounded border px-3 py-2 text-sm"
         disabled={busy}
         onClick={() => {
           setReprobing(true)
@@ -34,11 +38,7 @@ export function OperateReadinessPanel({ generation }: { generation: string }) {
         Reprobe readiness
       </button>
       {busy && <p role="status">Probing readiness; previous evidence is withdrawn…</p>}
-      {query.isError && (
-        <p role="alert">
-          Readiness evidence could not be retrieved or validated. Access or the service may be unavailable.
-        </p>
-      )}
+      {query.isError && <p role="alert">{readinessFailureMessage(query.error)}</p>}
       {snapshot && <ReadinessDiagnosis key={`${generation}:${query.dataUpdatedAt}`} snapshot={snapshot} />}
     </section>
   )

@@ -214,3 +214,9 @@ Full operational migration and provider connection acceptance remain unchecked.
 
 R049.1.2 next source batch: contextual readiness diagnosis, selected-check inspection and explicit reprobe through the supported dashboard adapter.
 Legacy alias retirement, complete migration and live-provider acceptance remain open.
+
+R049.1.2 acceptance batch: preserve readiness failure parity and replace its standalone layout with a typed Operate compatibility adapter.
+Qualify catalog and readiness actions, history, focus, keyboard and mobile access before recording completion of this bounded batch.
+
+Bounded readiness alias and catalog/readiness action qualification passed desktop and mobile installed synthetic journeys.
+Full R049.1.2 acceptance remains open, including other destinations, native controls, live providers and production identity.
