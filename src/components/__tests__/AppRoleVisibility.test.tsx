@@ -30,6 +30,7 @@ vi.mock('@/components/views/AdminView', () => ({
     return <p>Admin content</p>
   },
 }))
+vi.mock('@/components/workspace/OperateWorkspace', () => ({ default: () => <p>Reader workspace</p> }))
 vi.mock('@/components/views/DashboardView', () => ({ default: () => <p>Allowed reader dashboard</p> }))
 vi.mock('@/components/ChatPanel', () => ({ default: () => <p>Assistant</p> }))
 vi.mock('@/components/UserMenu', () => ({ UserMenu: () => null }))
@@ -59,7 +60,7 @@ describe('real shell and sidebar role filtering', () => {
     expect(await screen.findByText('Insufficient role')).toBeInTheDocument()
     expect(screen.getAllByRole('link').some((link) => link.getAttribute('href') === '/admin')).toBe(false)
     expect(state.admin).not.toHaveBeenCalled()
-    const home = screen.getAllByRole('link').find((link) => link.getAttribute('href') === '/')
+    const home = screen.getAllByRole('link').find((link) => link.getAttribute('href') === '/overview')
     expect(home).toBeDefined()
     fireEvent.click(home!)
     expect(await screen.findByText('Allowed reader dashboard')).toBeVisible()

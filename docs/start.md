@@ -57,3 +57,17 @@ pnpm run build
 
 Continue with [architecture](architecture.md) for the request path or
 [deployment and operations](deployment.md) for production controls.
+
+## Workspace entry and existing links
+
+After sign-in, `/` opens Work for user-or-higher roles and Operate for readers.
+The previous system overview remains available at `/overview`. Administrator
+links to `/prompts` open the shared prompt-authoring lens in Work. These entry
+changes preserve query and fragment context. They replace the current history
+entry, so Back does not stop on an intermediate redirect. Invalid or conflicting
+Work selections show an error rather than silently changing the selection.
+
+Other existing destinations remain available while their capabilities migrate.
+Prompt edits survive switching Work lenses; changing the admitted identity
+retires those drafts. Leaving Work for an unmigrated destination still leaves
+that workspace, so save wanted changes before doing so.
