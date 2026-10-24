@@ -54,7 +54,7 @@ credentials and gateway delegation on the server side.
 |---|---|
 | Browser presentation, local interaction state, accessible route composition, and the FastAPI boundary | Arbora owns public routing, identity, policy, and fleet supervision; Agent Utilities owns agent behavior; Epistemic Graph owns durable knowledge; connector services own external-system effects |
 
-Current package Version: 2.8.0.
+Current package Version: 2.8.1.
 
 ## Key capabilities
 
