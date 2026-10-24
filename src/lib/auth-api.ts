@@ -1,3 +1,4 @@
+import { invalidateIdentity } from './identity-events'
 /**
  * @file auth-api.ts
  * @description The browser side of the Arbora identity broker's own routes:
@@ -19,16 +20,33 @@ export interface IdentityProviderOption {
   kind: string
 }
 
+function sessionTokenFrom(body: unknown): string {
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    !('csrf_token' in body) ||
+    typeof body.csrf_token !== 'string' ||
+    !body.csrf_token
+  )
+    throw new Error('Identity session has no CSRF token')
+  return body.csrf_token
+}
+
 async function sessionCsrfToken(): Promise<string> {
   const response = await fetch('/auth/session', {
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
   })
-  if (!response.ok) throw new Error('Identity session unavailable')
-  const session = (await response.json()) as { csrf_token?: unknown }
-  if (typeof session.csrf_token !== 'string' || !session.csrf_token)
-    throw new Error('Identity session has no CSRF token')
-  return session.csrf_token
+  if (!response.ok) {
+    invalidateIdentity()
+    throw new Error('Identity session unavailable')
+  }
+  try {
+    return sessionTokenFrom(await response.json())
+  } catch (error) {
+    invalidateIdentity()
+    throw error
+  }
 }
 
 async function postJson(path: string, body: Record<string, unknown>, sessionRequired = false): Promise<Response> {
@@ -74,6 +92,7 @@ export async function createFirstAdministrator(
 export async function signOut(): Promise<void> {
   const response = await postJson('/auth/logout', {}, true)
   if (!response.ok) throw new Error('Identity sign-out was refused')
+  invalidateIdentity()
 }
 
 /** Offline reset choices are uniform for every account; no e-mail claim is made. */

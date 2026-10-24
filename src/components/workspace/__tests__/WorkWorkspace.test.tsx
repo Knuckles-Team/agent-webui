@@ -1,11 +1,12 @@
 // spec: WEBUI-APPS-R049.1.3
-import { act, fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'
 import { PageContextProvider, usePageContextEnvelope } from '@/lib/page-context'
 import { PublicPageContextSchema, toPublicPageContext } from '@/lib/webmcp/contracts'
 import { parseBoundedWebMcpOutput } from '@/lib/webmcp/validation'
 import type { WebMcpToolDefinition } from '@/lib/webmcp/types'
+import { ApiError } from '@/lib/api-validation'
 import { navigateWork, parseWorkState, workApi, workHref } from '@/lib/work-workspace'
 import { useConversations } from '@/lib/chat-store'
 import WorkWorkspace from '../WorkWorkspace'
@@ -113,6 +114,129 @@ describe('retained Work composition', () => {
     })
     expect(screen.getByRole('heading', { name: 'Work' })).toHaveFocus()
     expect(screen.getByLabelText('Selected evidence')).toHaveTextContent('task-a')
+  })
+  it('inspects only returned task output and keeps the conversation while refreshing', async () => {
+    vi.mocked(workApi.getTask).mockResolvedValueOnce({
+      id: 'task-a',
+      status: { state: 'completed' },
+      contextId: 'opaque-task-context',
+      metadata: { arbora: { runId: 'opaque-run', runTraceRef: 'urn:trace:unresolved' } },
+      artifacts: [
+        {
+          artifactId: 'reply-a',
+          name: 'Recorded output',
+          parts: [{ kind: 'text', text: '<script>untrusted output</script>' }],
+        },
+      ],
+    })
+    window.history.replaceState({}, '', '/workspace/work?conversation=conversation-a&task=task-a')
+    mount()
+    await screen.findByText('<script>untrusted output</script>')
+    expect(screen.getByText('urn:trace:unresolved').closest('a')).toBeNull()
+    expect(screen.getByText('opaque-task-context')).toBeInTheDocument()
+    expect(document.querySelector('script')).toBeNull()
+    expect(parseWorkState(window.location.href).conversation).toBe('conversation-a')
+    vi.mocked(workApi.getTask).mockRejectedValueOnce(new ApiError(403, 'Denied'))
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh task' }))
+    await screen.findByText(/Task detail could not be loaded/)
+    expect(screen.queryByText('<script>untrusted output</script>')).not.toBeInTheDocument()
+  })
+  it('follows a loaded parent and returns to the trace without losing conversation or task', async () => {
+    vi.mocked(workApi.getRun).mockResolvedValueOnce({
+      ok: true,
+      unavailable: false,
+      data: {
+        result: {
+          trace: { id: 'trace-a' },
+          nodes: [
+            { id: 'node-a', parentId: 'parent-a', name: 'Child' },
+            { id: 'parent-a', parentId: null, name: 'Parent' },
+          ],
+        },
+      },
+    })
+    window.history.replaceState(
+      {},
+      '',
+      '/workspace/work?conversation=conversation-a&task=task-a&run=trace-a&node=node-a',
+    )
+    mount()
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect recorded parent' }))
+    expect(parseWorkState(window.location.href)).toEqual({
+      conversation: 'conversation-a',
+      task: 'task-a',
+      run: 'trace-a',
+      node: 'parent-a',
+    })
+    expect(screen.queryByRole('button', { name: 'Inspect recorded parent' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trace' }))
+    expect(parseWorkState(window.location.href)).toEqual({
+      conversation: 'conversation-a',
+      task: 'task-a',
+      run: 'trace-a',
+      node: null,
+    })
+    expect(screen.getByLabelText('Selected evidence')).toHaveTextContent('trace-a')
+  })
+  it('does not infer navigation to a recorded parent absent from the loaded trace', async () => {
+    vi.mocked(workApi.getRun).mockResolvedValueOnce({
+      ok: true,
+      unavailable: false,
+      data: {
+        result: {
+          trace: { id: 'trace-a' },
+          nodes: [{ id: 'node-a', parentId: 'unloaded-parent', name: 'Child' }],
+        },
+      },
+    })
+    const selected = { conversation: 'conversation-a', task: 'task-a', run: 'trace-a', node: 'node-a' }
+    window.history.replaceState({}, '', workHref(selected))
+    mount()
+    await screen.findByText('unloaded-parent')
+    expect(screen.queryByRole('button', { name: 'Inspect recorded parent' })).not.toBeInTheDocument()
+    expect(parseWorkState(window.location.href)).toEqual(selected)
+    await expect(
+      state.tools[0].execute({ ...selected, node: 'unloaded-parent' }, { signal: new AbortController().signal }),
+    ).rejects.toThrow('outside')
+    expect(parseWorkState(window.location.href)).toEqual(selected)
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trace' }))
+    expect(parseWorkState(window.location.href)).toEqual({ ...selected, node: null })
+  })
+  it('withdraws stale evidence on failed refresh and restores matching detail on retry', async () => {
+    window.history.replaceState({}, '', '/workspace/work?run=trace-a&node=node-a')
+    mount()
+    await screen.findByRole('button', { name: 'Recorded span · span' })
+    vi.mocked(workApi.getRun).mockRejectedValueOnce(new Error('Access lost'))
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh selected trace' }))
+    await screen.findByText(/Selected trace could not be loaded/)
+    expect(screen.queryByRole('button', { name: 'Recorded span · span' })).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Selected evidence').textContent).toBe('')
+    })
+    await expect(
+      state.tools[0].execute(
+        { conversation: null, task: null, run: 'trace-a', node: 'node-a' },
+        { signal: new AbortController().signal },
+      ),
+    ).rejects.toThrow('outside')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry detail' }))
+    await screen.findByRole('button', { name: 'Recorded span · span' })
+    await waitFor(() => expect(screen.getByLabelText('Selected evidence')).toHaveTextContent('node-a'))
+    expect(workApi.getRun).toHaveBeenCalledTimes(3)
+  })
+  it('withdraws cached task links after a failed list refresh', async () => {
+    mount()
+    await screen.findByRole('link', { name: 'task-a' })
+    vi.mocked(workApi.listTasks).mockRejectedValueOnce(new ApiError(403, 'Denied'))
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh tasks' }))
+    await screen.findByText('Task listing failed. Refresh to retry.')
+    expect(screen.queryByRole('link', { name: 'task-a' })).not.toBeInTheDocument()
+    await expect(
+      state.tools[0].execute(
+        { conversation: null, task: 'task-a', run: null, node: null },
+        { signal: new AbortController().signal },
+      ),
+    ).rejects.toThrow('outside')
   })
   it('shares known-target authority with tools and refuses unknown task/node targets', async () => {
     mount()

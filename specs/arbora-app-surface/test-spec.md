@@ -354,3 +354,58 @@ Full provider, authentication and operational migration acceptance remain open.
 
 `e2e/fixtures/operate-qualification/` preserves the manual synthetic scripts used for the catalog, readiness and migration evidence above.
 Historical assertions remain candidate-specific. This backup adds no implementation or acceptance claim.
+WEBUI-APPS-R049.1.3 continuation uses mounted WorkWorkspace tests for selected
+trace refresh, failed-refresh evidence withdrawal, retry, loaded-parent
+navigation and return to trace. Preserve conversation/task URL fields. A
+missing parent has no navigation control.
+The trace-inspection scenario in e2e/workspace-task-lifecycle.spec.ts drives the mounted app in Chromium with synthetic API responses.
+It checks actual browser Back, parent selection, refusal and retry. These fixtures do not prove served provider behavior,
+native WebMCP or the complete mobile geometry matrix.
+
+WEBUI-APPS-R049.1.3 task inspection uses work-task-inspection.test.ts and the mounted WorkWorkspace suite.
+Check supported text output, absent output, explicit producer refusal, malformed references and unsupported parts.
+Reject duplicate artifact identities and output exceeding the rendering bounds.
+Render untrusted text without HTML execution or inferred links.
+Failed task refresh must withdraw output and references.
+
+The conversation-task-output scenario in e2e/workspace-task-lifecycle.spec.ts drives one mounted Chat instance.
+Send through the existing chat transport with synthetic admitted-task metadata.
+Inspect the returned task, output and references, then select an independent trace and node.
+Preserve the follow-up draft through navigation, browser Back, denial and retry.
+Capture desktop, portrait and short-landscape screenshots.
+These tests prove browser composition with synthetic responses, not live-provider execution or the complete migration.
+
+### Current-main Operate reconciliation
+
+PR 158 reconciles the readiness producer boundary with the Work task-inspection
+coverage on current main without dropping either acceptance record.
+The mounted readiness alias, readiness panel, catalog panel, Operate workspace
+and discovery model suites pass together (56 tests). This source evidence does
+not replace the installed qualification above or close the remaining fleet gap.
+
+Fleet discovery reaches the canonical POST operation paths
+`/api/v1/ops/fleet.status` and `/api/v1/ops/fleet.catalog.list`.
+`WebUIAuthorizationMiddleware._required_http_scope` classifies an unknown POST
+as `kg:write`; neither path was in its exact audited-read allowlist.
+The outer WebUI host refused a reader before the Arbora operation policy evaluated `mcp:discover`. The repair adds only those two audited
+read paths. The security-boundary suite passes 92 tests, including real host
+entry-point reader access, anonymous refusal and neighboring fleet-effect
+refusal. Installed qualification remains required.
+Do not add writer grants to the fixture. Do not bypass the host middleware to turn this acceptance gap green.
+
+R049.1.3 conversation lifecycle tests exercise the real owner-scoped store in mounted controls.
+Check local rename and removal, remote-only refusal, failed storage writes and stale owner or conversation reviews.
+Semantic tools request visible review only; synthetic confirmation must not apply changes.
+The browser journey starts a new conversation, sends once, inspects its task, renames its local copy and removes that copy.
+Keep task and trace selections. Check that server history and another owner's cache remain unchanged.
+These fixtures do not qualify live-provider history or remote deletion.
+
+
+The manual migration fixture also exercised the canonical fleet invocation
+pipeline with installed dependencies and the candidate WebUI source. Both
+discovery operations returned HTTP 200 for `kg:read mcp:discover`. Removing
+only `mcp:discover` from the signed synthetic credential returned HTTP 403
+with Arbora's `SCOPE_REQUIRED` and that missing scope for both operations.
+Real JWKS verification and the downstream operation pipeline remained active.
+This source-overlay check is not built-wheel, browser, live-provider or
+production identity acceptance.

@@ -44,3 +44,12 @@ Exercise real enhanced file/config/editor handlers in no-auth: the interim imple
 The source markers cover only configuration and refusal behavior. R003.1, R003.2 and R003.3 retain every original parent requirement. R010 renewal and mode-transition acceptance remains open.
 
 For the bounded R010 HTTP expiry repair, exercise `/auth/session` through the same session resolver as API traffic. An expired session with no usable renewal must report unauthenticated. Both session-status and API responses must expire its browser cookie chunks. Successful renewal must return the refreshed status and persist the renewed cookies. This does not close the full R010 concurrency, stream, WebSocket or mode-transition acceptance.
+For bounded R010 mounted identity revalidation, share one in-flight session read across mounted consumers. Revalidate on expiry, focus, reconnect and visibility. API authentication refusal and cross-tab logout hints immediately retire displayed authority and CSRF. Revalidate hints with the server; never trust identity data from browser storage. Discard responses that began before invalidation. Test successful renewal, refusal and stale responses with mounted consumers. Keep full provider, streaming, native-effect and concurrent producer-renewal acceptance open.
+
+Session reads have a ten-second deadline. A hung or refused read retires cached
+identity and CSRF. A later focus or reconnect recovers from a fresh server
+answer. Broker logout broadcasts only after success. Standalone redirect logout
+keeps its server navigation. Authenticated tabs schedule a read within sixty
+seconds, even if an earlier read preceded logout completion. Request deadlines
+add up to ten seconds. Background browser throttling may extend this delay.
+A click-time hint does not prove completed server logout.
