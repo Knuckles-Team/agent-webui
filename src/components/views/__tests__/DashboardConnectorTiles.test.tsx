@@ -79,7 +79,7 @@ describe('Operate connector inventory through the real browser adapter', () => {
     expect(records.getByText('Restarts').nextElementSibling).toHaveTextContent('1')
     const archive = within(screen.getByRole('article', { name: 'Connector archive' }))
     expect(archive.getAllByText('Not available')).toHaveLength(4)
-    expect(within(screen.getByRole('region', { name: 'Fleet children' })).getAllByRole('article')).toHaveLength(2)
+    expect(within(screen.getByLabelText('Fleet children')).getAllByRole('article')).toHaveLength(2)
     expect(await screen.findByRole('article', { name: 'Catalog connector catalog-only' })).toHaveTextContent(
       'Registration: unavailable',
     )

@@ -251,3 +251,27 @@ R005.3 additional source evidence: `src/components/views/__tests__/OperateCatalo
 It covers returned servers without fleet processes, registration labels and zero counts.
 It checks field stripping, filtering, empty/refused reads, admission retirement and incompatible payload rejection.
 Fixtures support this source coverage. It does not prove installed-provider or connection-state acceptance.
+
+
+### R005.3 installed catalog qualification
+
+The catalog path was exercised with installed Arbora 0.1.7 and this WebUI 2.8.0 source.
+The isolated runtime used AU 3.1.0, EG 2.27.5 and SDK 0.2.2.
+Synthetic readers supplied one registered server and one catalog-only server, both with zero tools.
+Arbora's real `EnhancedCatalogAuthority` projected the response through its installed WebUI composer and HTTP route.
+A temporary JWT verifier admitted the synthetic reader. A synthetic browser-session port supplied the browser identity.
+No catalog response, HTTP transport or frontend module was mocked.
+The HTTP response contained two servers with `available` and `unavailable` registration values.
+Chromium exercised the built bundle: both tiles, registration labels, filtering, HTTP 503 withdrawal and recovery passed.
+The panel showed no server URL. Browser storage held no catalog data, and no page error occurred.
+This qualifies the installed catalog projection with synthetic authorities, not a durable registry or live identity provider.
+
+Fresh deep-link loading remains blocked: the Operate deep link resolves relative bundle URLs under `workspace/assets/`, which returns HTTP 404.
+The checked build configuration uses an empty Vite base.
+The successful browser check loaded `/` first, then dispatched the existing client-side history event to mount Operate.
+No shell or build configuration was changed in this feature lane. Direct entry and reload acceptance remain open.
+
+The installed `enhanced_catalog_api._project_fleet_server` derives availability only from the presence of a live registration.
+The separate `ChildRuntime.status()` reports MCP runtime state and session count through `Multiplexer.status_snapshot` and `fleet.status`.
+`ChildRuntime.adopt_sessions` sets state to `up` when it receives connected MCP sessions.
+Those values do not establish upstream-provider connectivity. R005.3 connection-state acceptance remains open.
