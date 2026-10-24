@@ -246,7 +246,8 @@
       "landed_in": [
         "12b5f5624953",
         "93401c34a695",
-        "ac86f2de9817"
+        "ac86f2de9817",
+        "ec837ceabe6b"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
