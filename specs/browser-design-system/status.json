@@ -222,7 +222,8 @@
       "title": "Bounded workspace viewport continuity",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "4d0f9693e45d"
+        "4d0f9693e45d",
+        "f91c2a3a3446"
       ],
       "verified_by": [
         "e2e/native-chat.browser.ts:2",
