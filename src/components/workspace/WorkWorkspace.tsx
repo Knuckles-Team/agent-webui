@@ -151,7 +151,7 @@ function AuthorizedWork({
   }, [conversations, rows, run, tasks.data, state.conversation, state.task, state.run, identity.role])
   useWebMcpToolSet(error ? [] : tools)
   return (
-    <section aria-label="Work workspace" className="flex min-w-0 flex-col gap-3">
+    <section aria-label="Work workspace" className="workspace-surface flex min-w-0 flex-col gap-3">
       <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">
         Work
       </h1>
@@ -185,205 +185,207 @@ function AuthorizedWork({
           Active: {activeConversation === '/' ? 'New conversation' : activeConversation}
         </p>
       </section>
-      <section aria-label="Agent tasks" className="rounded border p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-medium">Agent tasks</h2>
-          <button
-            className={button}
-            onClick={() => {
-              void tasks.refetch()
-            }}
-          >
-            Refresh tasks
-          </button>
-        </div>
-        <p className="my-2 text-sm">
-          Caller-visible tasks from Arbora. Conversation ownership and trace linkage are not supplied.
-        </p>
-        {tasks.isFetching && <p role="status">Loading tasks…</p>}
-        {tasks.isError && (
-          <p role="alert">
-            {tasks.error instanceof ApiError && [404, 501].includes(tasks.error.status)
-              ? 'Task inspection is unavailable on this backend.'
-              : 'Task listing failed. Refresh to retry.'}
-          </p>
-        )}
-        {tasks.data?.length === 0 && <p>No tasks were returned.</p>}
-        <ul>
-          {tasks.data?.map((entry) => (
-            <li key={entry.id}>
-              <a
-                href={workHref({ ...state, task: entry.id })}
-                className={`${button} my-1 inline-flex max-w-full flex-wrap break-all`}
-                aria-current={state.task === entry.id ? 'true' : undefined}
-                onClick={(event) => {
-                  if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
-                  event.preventDefault()
-                  navigateWork({ ...state, task: entry.id }, identity.role)
-                }}
-              >
-                {entry.id}
-                {entry.status?.state && ` · ${entry.status.state}`}
-              </a>
-            </li>
-          ))}
-        </ul>
-        {state.task && (
-          <div className="mt-2 border-t pt-2">
-            <button className={button} onClick={() => navigateWork({ ...state, task: null }, identity.role)}>
-              All tasks
-            </button>
-            {task.isFetching && <p role="status">Loading task…</p>}
-            {(task.isError || taskMismatch) && (
-              <p role="alert">
-                Task detail could not be loaded.{' '}
-                <button
-                  className={button}
-                  onClick={() => {
-                    void task.refetch()
-                  }}
-                >
-                  Retry task
-                </button>
-              </p>
-            )}
-            {taskData && !task.isError && (
-              <>
-                <h3 className="break-all font-medium">Task {taskData.id}</h3>
-                <p>Status: {taskData.status?.state ?? 'Not reported'}</p>
-                <WorkTaskControls
-                  taskId={taskData.id}
-                  taskState={taskData.status?.state}
-                  context={location}
-                  refreshing={task.isFetching}
-                  cancellation={cancellation}
-                  onRefresh={() => {
-                    void task.refetch()
-                    void tasks.refetch()
-                  }}
-                />
-                <p className="text-sm">
-                  Child-agent execution and linked evidence are not supplied by this task contract.
-                </p>
-              </>
-            )}
-          </div>
-        )}
-      </section>
-      <section aria-label="Execution inspection" className="rounded border p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-medium">Available execution traces</h2>
-          <button
-            className={button}
-            onClick={() => {
-              void runs.refetch()
-            }}
-            disabled={runs.isFetching}
-          >
-            Refresh traces
-          </button>
-        </div>
-        <p className="my-2 text-sm text-muted-foreground">
-          Conversation-to-run association is unavailable. These are independent caller-visible traces, not runs
-          attributed to the selected conversation.
-        </p>
-        {runs.isFetching && <p role="status">Loading traces…</p>}
-        {runs.data?.unavailable && <p role="status">Trace inspection is not activated on this backend.</p>}
-        {(runs.isError || (runs.data && !runs.data.ok && !runs.data.unavailable)) && (
-          <p role="alert">Trace listing failed. Refresh to retry.</p>
-        )}
-        {runs.data?.ok && rows.length === 0 && <p>No execution traces were returned.</p>}
-        <ul className="space-y-1">
-          {rows.map((row) => (
-            <li key={row.id}>
-              <a
-                className={`${button} inline-flex max-w-full flex-wrap gap-2`}
-                href={workHref({ ...state, run: row.id, node: null })}
-                aria-current={state.run === row.id ? 'true' : undefined}
-                onClick={(event) => {
-                  if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
-                  event.preventDefault()
-                  navigateWork({ ...state, run: row.id, node: null }, identity.role)
-                }}
-              >
-                <span className="break-all">{row.name ?? row.id}</span>
-                {row.status && <span>{row.status}</span>}
-              </a>
-            </li>
-          ))}
-        </ul>
-        {state.run && (
-          <div className="mt-3 border-t pt-3">
+      <div className="workspace-panels workspace-panels-balanced">
+        <section aria-label="Agent tasks" className="rounded border p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-medium">Agent tasks</h2>
             <button
               className={button}
-              onClick={() => navigateWork({ ...state, run: null, node: null }, identity.role)}
+              onClick={() => {
+                void tasks.refetch()
+              }}
             >
-              All traces
+              Refresh tasks
             </button>
-            {detail.isFetching && <p role="status">Loading selected trace…</p>}
-            {detail.data?.unavailable && <p role="status">Trace detail is unavailable on this backend.</p>}
-            {(detail.isError || runMismatch || (detail.data && !detail.data.ok && !detail.data.unavailable)) && (
-              <p role="alert">
-                Selected trace could not be loaded.{' '}
-                <button
-                  className={button}
-                  onClick={() => {
-                    void detail.refetch()
+          </div>
+          <p className="my-2 text-sm">
+            Caller-visible tasks from Arbora. Conversation ownership and trace linkage are not supplied.
+          </p>
+          {tasks.isFetching && <p role="status">Loading tasks…</p>}
+          {tasks.isError && (
+            <p role="alert">
+              {tasks.error instanceof ApiError && [404, 501].includes(tasks.error.status)
+                ? 'Task inspection is unavailable on this backend.'
+                : 'Task listing failed. Refresh to retry.'}
+            </p>
+          )}
+          {tasks.data?.length === 0 && <p>No tasks were returned.</p>}
+          <ul>
+            {tasks.data?.map((entry) => (
+              <li key={entry.id}>
+                <a
+                  href={workHref({ ...state, task: entry.id })}
+                  className={`${button} my-1 inline-flex max-w-full flex-wrap break-all`}
+                  aria-current={state.task === entry.id ? 'true' : undefined}
+                  onClick={(event) => {
+                    if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+                    event.preventDefault()
+                    navigateWork({ ...state, task: entry.id }, identity.role)
                   }}
                 >
-                  Retry detail
-                </button>
-              </p>
-            )}
-            {run && (
-              <>
-                <h3 className="mt-2 break-all font-medium">{run.trace.name ?? run.trace.id}</h3>
-                <p className="text-sm">Recorded spans and generations. A span is not proof of a subagent.</p>
-                <ul>
-                  {run.nodes.map((node) => (
-                    <li key={node.id}>
-                      <button
-                        className={`${button} mt-1 max-w-full break-all text-left`}
-                        aria-pressed={state.node === node.id}
-                        onClick={() => navigateWork({ ...state, node: node.id }, identity.role)}
-                      >
-                        {node.name ?? node.id} {node.kind && `· ${node.kind}`}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                {state.node && !selectedNode && <p role="alert">This node is not present in the selected trace.</p>}
-                {selectedNode && (
-                  <dl className="mt-3 grid gap-1 text-sm">
-                    <dt>Node</dt>
-                    <dd className="break-all">{selectedNode.id}</dd>
-                    <dt>Recorded parent</dt>
-                    <dd className="break-all">{selectedNode.parentId ?? 'No parent recorded'}</dd>
-                    <dt>Latency</dt>
-                    <dd>{selectedNode.latencyMs === undefined ? 'Not reported' : `${selectedNode.latencyMs} ms`}</dd>
-                    {selectedNode.model && (
-                      <>
-                        <dt>Model</dt>
-                        <dd>{selectedNode.model}</dd>
-                      </>
-                    )}
-                    {selectedNode.error && (
-                      <>
-                        <dt>Recorded error</dt>
-                        <dd className="break-words">{selectedNode.error}</dd>
-                      </>
-                    )}
-                  </dl>
-                )}
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Run cancellation, live subagent execution and linked output evidence require upstream contracts and
-                  are not available in this slice.
+                  {entry.id}
+                  {entry.status?.state && ` · ${entry.status.state}`}
+                </a>
+              </li>
+            ))}
+          </ul>
+          {state.task && (
+            <div className="mt-2 border-t pt-2">
+              <button className={button} onClick={() => navigateWork({ ...state, task: null }, identity.role)}>
+                All tasks
+              </button>
+              {task.isFetching && <p role="status">Loading task…</p>}
+              {(task.isError || taskMismatch) && (
+                <p role="alert">
+                  Task detail could not be loaded.{' '}
+                  <button
+                    className={button}
+                    onClick={() => {
+                      void task.refetch()
+                    }}
+                  >
+                    Retry task
+                  </button>
                 </p>
-              </>
-            )}
+              )}
+              {taskData && !task.isError && (
+                <>
+                  <h3 className="break-all font-medium">Task {taskData.id}</h3>
+                  <p>Status: {taskData.status?.state ?? 'Not reported'}</p>
+                  <WorkTaskControls
+                    taskId={taskData.id}
+                    taskState={taskData.status?.state}
+                    context={location}
+                    refreshing={task.isFetching}
+                    cancellation={cancellation}
+                    onRefresh={() => {
+                      void task.refetch()
+                      void tasks.refetch()
+                    }}
+                  />
+                  <p className="text-sm">
+                    Child-agent execution and linked evidence are not supplied by this task contract.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+        </section>
+        <section aria-label="Execution inspection" className="min-w-0 rounded border p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-medium">Available execution traces</h2>
+            <button
+              className={button}
+              onClick={() => {
+                void runs.refetch()
+              }}
+              disabled={runs.isFetching}
+            >
+              Refresh traces
+            </button>
           </div>
-        )}
-      </section>
+          <p className="my-2 text-sm text-muted-foreground">
+            Conversation-to-run association is unavailable. These are independent caller-visible traces, not runs
+            attributed to the selected conversation.
+          </p>
+          {runs.isFetching && <p role="status">Loading traces…</p>}
+          {runs.data?.unavailable && <p role="status">Trace inspection is not activated on this backend.</p>}
+          {(runs.isError || (runs.data && !runs.data.ok && !runs.data.unavailable)) && (
+            <p role="alert">Trace listing failed. Refresh to retry.</p>
+          )}
+          {runs.data?.ok && rows.length === 0 && <p>No execution traces were returned.</p>}
+          <ul className="space-y-1">
+            {rows.map((row) => (
+              <li key={row.id}>
+                <a
+                  className={`${button} inline-flex max-w-full flex-wrap gap-2`}
+                  href={workHref({ ...state, run: row.id, node: null })}
+                  aria-current={state.run === row.id ? 'true' : undefined}
+                  onClick={(event) => {
+                    if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+                    event.preventDefault()
+                    navigateWork({ ...state, run: row.id, node: null }, identity.role)
+                  }}
+                >
+                  <span className="break-all">{row.name ?? row.id}</span>
+                  {row.status && <span>{row.status}</span>}
+                </a>
+              </li>
+            ))}
+          </ul>
+          {state.run && (
+            <div className="mt-3 border-t pt-3">
+              <button
+                className={button}
+                onClick={() => navigateWork({ ...state, run: null, node: null }, identity.role)}
+              >
+                All traces
+              </button>
+              {detail.isFetching && <p role="status">Loading selected trace…</p>}
+              {detail.data?.unavailable && <p role="status">Trace detail is unavailable on this backend.</p>}
+              {(detail.isError || runMismatch || (detail.data && !detail.data.ok && !detail.data.unavailable)) && (
+                <p role="alert">
+                  Selected trace could not be loaded.{' '}
+                  <button
+                    className={button}
+                    onClick={() => {
+                      void detail.refetch()
+                    }}
+                  >
+                    Retry detail
+                  </button>
+                </p>
+              )}
+              {run && (
+                <>
+                  <h3 className="mt-2 break-all font-medium">{run.trace.name ?? run.trace.id}</h3>
+                  <p className="text-sm">Recorded spans and generations. A span is not proof of a subagent.</p>
+                  <ul>
+                    {run.nodes.map((node) => (
+                      <li key={node.id}>
+                        <button
+                          className={`${button} mt-1 max-w-full break-all text-left`}
+                          aria-pressed={state.node === node.id}
+                          onClick={() => navigateWork({ ...state, node: node.id }, identity.role)}
+                        >
+                          {node.name ?? node.id} {node.kind && `· ${node.kind}`}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {state.node && !selectedNode && <p role="alert">This node is not present in the selected trace.</p>}
+                  {selectedNode && (
+                    <dl className="mt-3 grid gap-1 text-sm">
+                      <dt>Node</dt>
+                      <dd className="break-all">{selectedNode.id}</dd>
+                      <dt>Recorded parent</dt>
+                      <dd className="break-all">{selectedNode.parentId ?? 'No parent recorded'}</dd>
+                      <dt>Latency</dt>
+                      <dd>{selectedNode.latencyMs === undefined ? 'Not reported' : `${selectedNode.latencyMs} ms`}</dd>
+                      {selectedNode.model && (
+                        <>
+                          <dt>Model</dt>
+                          <dd>{selectedNode.model}</dd>
+                        </>
+                      )}
+                      {selectedNode.error && (
+                        <>
+                          <dt>Recorded error</dt>
+                          <dd className="break-words">{selectedNode.error}</dd>
+                        </>
+                      )}
+                    </dl>
+                  )}
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Run cancellation, live subagent execution and linked output evidence require upstream contracts and
+                    are not available in this slice.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
     </section>
   )
 }

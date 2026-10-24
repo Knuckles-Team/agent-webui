@@ -41,7 +41,7 @@ const chromeChannel = process.env.PLAYWRIGHT_CHROME_CHANNEL || undefined
 export default defineConfig({
   testDir: './e2e',
   // Run synthetic fixtures only through their dedicated offline configurations.
-  testIgnore: ['**/accessibility.spec.ts', '**/workspace-layout.spec.ts'],
+  testIgnore: ['**/accessibility.spec.ts', '**/workspace-layout.spec.ts', '**/workspace-density.spec.ts'],
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */

@@ -28,8 +28,25 @@ No task above names a requirement ID individually; together they must close ever
 
 ## Responsive workspace extension: implementation and evidence open
 
-- [ ] WEBUI-DESIGN-R002.1: Implement purposeful density and arbora visual hierarchy. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
+- [x] Add container-width panes and bounded reading widths to Work, Explore and Operate under WEBUI-DESIGN-R002.1. Add keyboard-operable optional context disclosures. This is partial delivery.
+- [ ] WEBUI-DESIGN-R002.1: Complete screenshot/task review and attach merged-revision acceptance evidence.
 - [ ] WEBUI-DESIGN-R004.1: Implement full mobile and arbitrary-aspect feature parity. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
 - [ ] WEBUI-DESIGN-R004.2: Implement resize, fold and visual viewport continuity. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
 - [ ] WEBUI-DESIGN-R005.1: Implement accessible interruptible semantic zoom. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
 - [ ] WEBUI-DESIGN-R010: Implement measured performance under representative load. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
+
+## Workspace density validation
+
+On the topic worktree based on `4879ff7c79c4ff2ff84722ae61c717d423fe425e`:
+
+- Workspace component regression suite: 12 files, 93 tests passed.
+- `pnpm run typecheck`: passed.
+- `pnpm run build`: passed, including regeneration of packaged frontend assets.
+- `workspace-density.spec.ts`: passed in Chromium with reduced motion, six
+  viewport screenshots and constrained container geometry.
+- `mkdocs build --strict`: passed.
+
+These receipts cover partial layout work under WEBUI-DESIGN-R002.1. The full
+requirement remains open. They do not establish all-route mobile parity, real-service task completion, manual
+screen-reader acceptance, semantic zoom, or release acceptance. The generated
+status remains authoritative after merge; no status file is hand-edited.
